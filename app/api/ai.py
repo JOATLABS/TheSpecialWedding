@@ -36,6 +36,11 @@ from app.services.ai_service import (
     InsufficientCreditsError,
     ai_service,
 )
+from app.utils.rsvp_status import (
+    RSVP_STATUS_CONFIRMED,
+    RSVP_STATUS_DECLINED,
+    get_rsvp_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -402,29 +407,6 @@ def detect_cultural_style_from_events(events: List[Dict]) -> Optional[str]:
     return None
 
 
-def _calculate_rsvp_status(rsvp: dict) -> str:
-    """
-    Determine RSVP status based on attending field.
-
-    The 'attending' field is a List[str] of event names the guest is attending.
-    - If list has items: guest is confirmed (attending at least one event)
-    - If list is empty: guest declined all events
-    - If field is missing/None: should not happen for submitted RSVPs
-    """
-    attending = rsvp.get("attending")
-
-    if attending is None:
-        return "pending"
-
-    if isinstance(attending, list):
-        return "confirmed" if len(attending) > 0 else "declined"
-
-    if isinstance(attending, dict):
-        return "confirmed" if any(attending.values()) else "declined"
-
-    return "pending"
-
-
 async def get_wedding_by_id(wedding_id: str) -> Optional[Dict]:
     """Get wedding data by ID. Handles both ObjectId and string IDs."""
     try:
@@ -508,10 +490,10 @@ async def get_rsvp_data(wedding_id: str) -> Dict[str, Any]:
         declined = 0
 
         for rsvp in rsvps:
-            status = _calculate_rsvp_status(rsvp)
-            if status == "confirmed":
+            status = get_rsvp_status(rsvp)
+            if status == RSVP_STATUS_CONFIRMED:
                 accepted += 1
-            elif status == "declined":
+            elif status == RSVP_STATUS_DECLINED:
                 declined += 1
 
         pending = guest_count - len(rsvps)

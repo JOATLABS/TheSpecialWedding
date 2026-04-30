@@ -1,4 +1,5 @@
 import asyncio
+import html
 import logging
 import os
 import secrets
@@ -897,6 +898,37 @@ class SupportService:
                     wedding_id=ticket.get("wedding_id"),
                 )
 
+            safe_ticket_number = html.escape(
+                str(ticket.get("ticket_number", "N/A")), quote=True
+            )
+            safe_creator_name = html.escape(creator_name, quote=True)
+            safe_created_by = html.escape(str(created_by or ""), quote=True)
+            safe_category = html.escape(
+                (ticket.get("category") or "general").replace("_", " "), quote=True
+            )
+            safe_priority_color = html.escape(priority_color, quote=True)
+            safe_priority = html.escape(priority, quote=True)
+            safe_subject = html.escape(
+                str(ticket.get("subject", "No Subject")), quote=True
+            )
+            safe_description = html.escape(
+                str(ticket.get("description", "No description provided")),
+                quote=True,
+            )
+            safe_inbox_url = html.escape(inbox_url, quote=True) if inbox_url else ""
+
+            inbox_button_html = (
+                f'''
+                            <div style="text-align: center; margin-top: 20px;">
+                                <a href="{safe_inbox_url}" style="display: inline-block; background-color: #3b82f6; color: white; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 700;">
+                                Open in Inbox
+                                </a>
+                            </div>
+                            '''
+                if inbox_url
+                else ""
+            )
+
             html_content = f"""\
                     <!doctype html>
                     <html>
@@ -911,60 +943,36 @@ class SupportService:
                                 <table style="width: 100%; border-collapse: collapse;">
                                 <tr>
                                     <td style="padding: 6px 0; color: #6b7280; width: 120px;">Ticket #:</td>
-                                    <td style="padding: 6px 0; font-weight: 600;">{
-                ticket.get("ticket_number", "N/A")
-            }</td>
+                                    <td style="padding: 6px 0; font-weight: 600;">{safe_ticket_number}</td>
                                 </tr>
                                 <tr>
                                     <td style="padding: 6px 0; color: #6b7280;">From:</td>
-                                    <td style="padding: 6px 0; font-weight: 600;">{
-                creator_name
-            }<br>
-                                    <span style="font-weight: normal; color: #6b7280;">{
-                created_by
-            }</span>
+                                    <td style="padding: 6px 0; font-weight: 600;">{safe_creator_name}<br>
+                                    <span style="font-weight: normal; color: #6b7280;">{safe_created_by}</span>
                                     </td>
                                 </tr>
                                 <tr>
                                     <td style="padding: 6px 0; color: #6b7280;">Category:</td>
-                                    <td style="padding: 6px 0; text-transform: capitalize;">{
-                (ticket.get("category") or "general").replace("_", " ")
-            }</td>
+                                    <td style="padding: 6px 0; text-transform: capitalize;">{safe_category}</td>
                                 </tr>
                                 <tr>
                                     <td style="padding: 6px 0; color: #6b7280;">Priority:</td>
                                     <td style="padding: 6px 0;">
-                                    <span style="background-color: {
-                priority_color
-            }; color: white; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; text-transform: uppercase;">
-                                        {priority}
+                                    <span style="background-color: {safe_priority_color}; color: white; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; text-transform: uppercase;">
+                                        {safe_priority}
                                     </span>
                                     </td>
                                 </tr>
                                 </table>
                             </div>
 
-                            <h2 style="margin: 0 0 10px 0; font-size: 18px;">{
-                ticket.get("subject", "No Subject")
-            }</h2>
+                            <h2 style="margin: 0 0 10px 0; font-size: 18px;">{safe_subject}</h2>
 
                             <div style="background-color: #f8fafc; border-left: 4px solid #3b82f6; padding: 12px; border-radius: 0 8px 8px 0;">
-                                <p style="margin: 0; line-height: 1.6; white-space: pre-wrap;">{
-                ticket.get("description", "No description provided")
-            }</p>
+                                <p style="margin: 0; line-height: 1.6; white-space: pre-wrap;">{safe_description}</p>
                             </div>
 
-                            {
-                f'''
-                            <div style="text-align: center; margin-top: 20px;">
-                                <a href="{inbox_url}" style="display: inline-block; background-color: #3b82f6; color: white; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 700;">
-                                Open in Inbox
-                                </a>
-                            </div>
-                            '''
-                if inbox_url
-                else ""
-            }
+                            {inbox_button_html}
                             </div>
 
                             <div style="background-color: #f8fafc; padding: 14px; text-align: center; border-top: 1px solid #e5e7eb;">
@@ -1068,6 +1076,26 @@ class SupportService:
                     wedding_id=ticket.get("wedding_id"),
                 )
 
+            safe_ticket_number = html.escape(str(ticket_number), quote=True)
+            safe_ticket_subject = html.escape(str(ticket_subject), quote=True)
+            safe_responder_name = html.escape(str(responder_name), quote=True)
+            safe_message_content = html.escape(str(message_content), quote=True)
+            safe_support_url = (
+                html.escape(support_url, quote=True) if support_url else ""
+            )
+
+            inbox_button_html = (
+                f'''
+                        <div style="text-align: center; margin-top: 24px;">
+                            <a href="{safe_support_url}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
+                                Open in Inbox
+                            </a>
+                        </div>
+                        '''
+                if support_url
+                else ""
+            )
+
             html_content = f"""
             <!doctype html>
             <html>
@@ -1082,19 +1110,15 @@ class SupportService:
                             <table style="width: 100%; border-collapse: collapse;">
                                 <tr>
                                     <td style="padding: 6px 0; color: #6b7280; width: 120px;">Ticket #:</td>
-                                    <td style="padding: 6px 0; font-weight: 600;">{
-                ticket_number
-            }</td>
+                                    <td style="padding: 6px 0; font-weight: 600;">{safe_ticket_number}</td>
                                 </tr>
                                 <tr>
                                     <td style="padding: 6px 0; color: #6b7280;">Subject:</td>
-                                    <td style="padding: 6px 0; font-weight: 600;">{
-                ticket_subject
-            }</td>
+                                    <td style="padding: 6px 0; font-weight: 600;">{safe_ticket_subject}</td>
                                 </tr>
                                 <tr>
                                     <td style="padding: 6px 0; color: #6b7280;">Responded by:</td>
-                                    <td style="padding: 6px 0;">{responder_name}</td>
+                                    <td style="padding: 6px 0;">{safe_responder_name}</td>
                                 </tr>
                             </table>
                         </div>
@@ -1102,22 +1126,10 @@ class SupportService:
                         <h2 style="margin: 20px 0 10px 0; font-size: 16px; color: #374151;">Response:</h2>
 
                         <div style="background-color: #f0fdf4; border-left: 4px solid #10b981; padding: 16px; border-radius: 0 8px 8px 0;">
-                            <p style="margin: 0; line-height: 1.6; white-space: pre-wrap;">{
-                message_content
-            }</p>
+                            <p style="margin: 0; line-height: 1.6; white-space: pre-wrap;">{safe_message_content}</p>
                         </div>
 
-                        {
-                f'''
-                        <div style="text-align: center; margin-top: 24px;">
-                            <a href="{support_url}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
-                                Open in Inbox
-                            </a>
-                        </div>
-                        '''
-                if support_url
-                else ""
-            }
+                        {inbox_button_html}
                     </div>
 
                     <div style="background-color: #f8fafc; padding: 16px; text-align: center; border-top: 1px solid #e5e7eb;">

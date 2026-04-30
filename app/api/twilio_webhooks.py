@@ -8,6 +8,7 @@ This module handles all Twilio webhooks:
 These are webhook endpoints called by Twilio, NOT admin operations.
 """
 
+import html
 import logging
 import os
 from datetime import datetime, timezone
@@ -497,14 +498,22 @@ async def _notify_root_admin_twilio_error(
         )
         subject = f"CRITICAL: Twilio Account Error ({error_code})"
 
+        safe_error_code = html.escape(str(error_code), quote=True)
+        safe_error_message = html.escape(str(error_message or ""), quote=True)
+        safe_message_sid = html.escape(str(message_sid or ""), quote=True)
+        safe_timestamp = html.escape(
+            datetime.now(timezone.utc).strftime("%B %d, %Y at %I:%M %p UTC"),
+            quote=True,
+        )
+
         html_content = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #dc2626;">Twilio Account-Level Error</h2>
             <div style="background-color: #fef2f2; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #fecaca;">
-                <p><strong>Error Code:</strong> {error_code}</p>
-                <p><strong>Message:</strong> {error_message}</p>
-                <p><strong>Message SID:</strong> {message_sid}</p>
-                <p><strong>Time:</strong> {datetime.now(timezone.utc).strftime("%B %d, %Y at %I:%M %p UTC")}</p>
+                <p><strong>Error Code:</strong> {safe_error_code}</p>
+                <p><strong>Message:</strong> {safe_error_message}</p>
+                <p><strong>Message SID:</strong> {safe_message_sid}</p>
+                <p><strong>Time:</strong> {safe_timestamp}</p>
             </div>
             <p style="color: #dc2626; font-weight: bold;">
                 This error affects ALL SMS sends. Please check the Twilio dashboard immediately.
@@ -570,11 +579,14 @@ async def _attempt_email_fallback(
         guest_name = guest.get("name", "Guest")
         original_message = log_record.get("message", "")
 
+        safe_guest_name = html.escape(str(guest_name or ""), quote=True)
+        safe_original_message = html.escape(str(original_message or ""), quote=True)
+
         html_content = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                <p>Dear {guest_name},</p>
-                <p>{original_message}</p>
+                <p>Dear {safe_guest_name},</p>
+                <p>{safe_original_message}</p>
             </div>
             <p style="color: #666; font-size: 12px;">
                 This message was originally sent via SMS but could not be delivered.
@@ -711,6 +723,13 @@ async def _check_delivery_rate_alert():
             "ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io"
         )
 
+        safe_delivery_rate = html.escape(f"{delivery_rate:.1f}", quote=True)
+        safe_threshold = html.escape(str(threshold), quote=True)
+        safe_total = html.escape(str(total), quote=True)
+        safe_delivered = html.escape(str(delivered), quote=True)
+        safe_failed = html.escape(str(failed), quote=True)
+        safe_now = html.escape(now.strftime("%B %d, %Y at %I:%M %p UTC"), quote=True)
+
         await email_service.send_email(
             to_email=root_admin_email,
             subject=f"WARNING: SMS Delivery Rate Drop ({delivery_rate:.1f}%)",
@@ -718,14 +737,14 @@ async def _check_delivery_rate_alert():
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <h2 style="color: #f59e0b;">SMS Delivery Rate Alert</h2>
                 <div style="background-color: #fffbeb; padding: 20px; border-radius: 8px; border: 1px solid #fde68a;">
-                    <p><strong>Delivery Rate:</strong> {delivery_rate:.1f}% (threshold: {threshold}%)</p>
+                    <p><strong>Delivery Rate:</strong> {safe_delivery_rate}% (threshold: {safe_threshold}%)</p>
                     <p><strong>Last Hour Stats:</strong></p>
                     <ul>
-                        <li>Total sent: {total}</li>
-                        <li>Delivered: {delivered}</li>
-                        <li>Failed: {failed}</li>
+                        <li>Total sent: {safe_total}</li>
+                        <li>Delivered: {safe_delivered}</li>
+                        <li>Failed: {safe_failed}</li>
                     </ul>
-                    <p><strong>Time:</strong> {now.strftime("%B %d, %Y at %I:%M %p UTC")}</p>
+                    <p><strong>Time:</strong> {safe_now}</p>
                 </div>
                 <p>Please check the platform metrics dashboard for details.</p>
             </div>
@@ -1138,24 +1157,32 @@ async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
         )
         subject = f"New Guest Message: {ticket['wedding_name']}"
 
+        safe_wedding_name = html.escape(str(ticket.get("wedding_name", "")), quote=True)
+        safe_phone = html.escape(str(ticket.get("phone", "")), quote=True)
+        safe_created_at = html.escape(
+            ticket["created_at"].strftime("%B %d, %Y at %I:%M %p UTC"), quote=True
+        )
+        safe_message = html.escape(str(ticket.get("message", "")), quote=True)
+        safe_inbox_url = html.escape(str(inbox_url), quote=True)
+
         html_content = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #2c3e50;">New Message from Guest</h2>
 
             <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                <p><strong>Wedding:</strong> {ticket["wedding_name"]}</p>
-                <p><strong>From:</strong> {ticket["phone"]}</p>
-                <p><strong>Received:</strong> {ticket["created_at"].strftime("%B %d, %Y at %I:%M %p UTC")}</p>
+                <p><strong>Wedding:</strong> {safe_wedding_name}</p>
+                <p><strong>From:</strong> {safe_phone}</p>
+                <p><strong>Received:</strong> {safe_created_at}</p>
             </div>
 
             <div style="background-color: #fff; padding: 20px; border-left: 4px solid #2c3e50; margin: 20px 0;">
-                <p style="margin: 0;"><em>"{ticket["message"]}"</em></p>
+                <p style="margin: 0;"><em>"{safe_message}"</em></p>
             </div>
 
             <p>Please respond to your guest as soon as possible.</p>
 
             <div style="margin: 30px 0;">
-                <a href="{inbox_url}"
+                <a href="{safe_inbox_url}"
                    style="background-color: #2c3e50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
                     Open in Inbox
                 </a>
@@ -1164,7 +1191,7 @@ async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
             <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
 
             <p style="color: #666; font-size: 12px;">
-                This notification was sent because you are the wedding planner for {ticket["wedding_name"]}.
+                This notification was sent because you are the wedding planner for {safe_wedding_name}.
             </p>
         </div>
         """
@@ -1236,15 +1263,22 @@ async def _notify_planner_help_request(
         )
         subject = f"Guest Needs Help: {wedding_name}"
 
+        safe_wedding_name = html.escape(str(wedding_name or ""), quote=True)
+        safe_phone = html.escape(str(ticket.get("phone", "")), quote=True)
+        safe_created_at = html.escape(
+            ticket["created_at"].strftime("%B %d, %Y at %I:%M %p UTC"), quote=True
+        )
+        safe_inbox_url = html.escape(str(inbox_url), quote=True)
+
         html_content = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #dc2626;">Guest Requested Help</h2>
 
             <div style="background-color: #fef2f2; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #fecaca;">
                 <p><strong>A guest has texted HELP and may need assistance.</strong></p>
-                <p><strong>Wedding:</strong> {wedding_name}</p>
-                <p><strong>From:</strong> {ticket["phone"]}</p>
-                <p><strong>Received:</strong> {ticket["created_at"].strftime("%B %d, %Y at %I:%M %p UTC")}</p>
+                <p><strong>Wedding:</strong> {safe_wedding_name}</p>
+                <p><strong>From:</strong> {safe_phone}</p>
+                <p><strong>Received:</strong> {safe_created_at}</p>
             </div>
 
             <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
@@ -1253,7 +1287,7 @@ async def _notify_planner_help_request(
             </div>
 
             <div style="margin: 30px 0;">
-                <a href="{inbox_url}"
+                <a href="{safe_inbox_url}"
                    style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
                     Open in Inbox
                 </a>
@@ -1262,7 +1296,7 @@ async def _notify_planner_help_request(
             <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
 
             <p style="color: #666; font-size: 12px;">
-                This notification was sent because a guest for {wedding_name} requested help via SMS.
+                This notification was sent because a guest for {safe_wedding_name} requested help via SMS.
             </p>
         </div>
         """

@@ -9,7 +9,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.vendor import ContractKind, ContractStatus, VendorCategory
 
@@ -67,6 +67,21 @@ class UpdateVendorContractRequest(BaseModel):
     service_location: Optional[str] = None
     internal_notes: Optional[str] = None
     sections: Optional[List[VendorContractSectionInput]] = None
+
+    @model_validator(mode="after")
+    def _validate_deposit_within_total(self) -> "UpdateVendorContractRequest":
+        # DTO-level guard: when both fields are present in the same request,
+        # reject deposit > total at the boundary. This catches "set them both
+        # in one PUT" cases. Cross-field consistency for partial updates that
+        # only touch one side is enforced in vendor_service.update_contract,
+        # which folds in the persisted contract's other side.
+        if (
+            self.deposit_amount is not None
+            and self.total_amount is not None
+            and self.deposit_amount > self.total_amount
+        ):
+            raise ValueError("Deposit amount cannot exceed total amount")
+        return self
 
 
 class UpdateVendorContractSectionsRequest(BaseModel):

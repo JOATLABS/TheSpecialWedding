@@ -1,5 +1,6 @@
 """Stripe payment utilities used to manage subscription checkout and lifecycle."""
 
+import html
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
@@ -2873,14 +2874,16 @@ class StripeService:
         if invoice_pdf_url or hosted_invoice_url:
             buttons = []
             if invoice_pdf_url:
+                safe_invoice_pdf_url = html.escape(invoice_pdf_url, quote=True)
                 buttons.append(
-                    f'<a href="{invoice_pdf_url}" style="display: inline-block; background: #2563eb; color: #ffffff; '
+                    f'<a href="{safe_invoice_pdf_url}" style="display: inline-block; background: #2563eb; color: #ffffff; '
                     f"text-decoration: none; padding: 10px 18px; border-radius: 8px; font-size: 14px; "
                     f'font-weight: 500; margin-right: 8px;">Download Invoice PDF</a>'
                 )
             if hosted_invoice_url:
+                safe_hosted_invoice_url = html.escape(hosted_invoice_url, quote=True)
                 buttons.append(
-                    f'<a href="{hosted_invoice_url}" style="display: inline-block; background: #ffffff; color: #2563eb; '
+                    f'<a href="{safe_hosted_invoice_url}" style="display: inline-block; background: #ffffff; color: #2563eb; '
                     f"text-decoration: none; padding: 10px 18px; border-radius: 8px; font-size: 14px; "
                     f'font-weight: 500; border: 1px solid #2563eb;">View Invoice Online</a>'
                 )
@@ -2890,24 +2893,32 @@ class StripeService:
 
         invoice_number_line = ""
         if invoice_number:
-            invoice_number_line = f'<p style="margin: 0 0 8px;"><strong>Invoice:</strong> {invoice_number}</p>'
+            safe_invoice_number = html.escape(str(invoice_number), quote=True)
+            invoice_number_line = f'<p style="margin: 0 0 8px;"><strong>Invoice:</strong> {safe_invoice_number}</p>'
+
+        safe_plan_name = html.escape(str(plan_name), quote=True)
+        safe_user_name = html.escape(str(user_name), quote=True)
+        safe_currency = html.escape(str(currency), quote=True)
+        safe_invoice_date = html.escape(str(invoice_date), quote=True)
+        safe_billing_url = html.escape(str(billing_url), quote=True)
 
         if stripe_status == "trialing" and trial_end:
             trial_end_label = trial_end.strftime("%B %d, %Y")
+            safe_trial_end_label = html.escape(trial_end_label, quote=True)
             subject = f"{plan_name} Trial Activated"
             html_content = f"""
             <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; color: #0f172a;">
-              <h1 style="margin-bottom: 12px;">Your {plan_name} trial is active</h1>
-              <p>Hi {user_name},</p>
-              <p>Your subscription checkout is complete and your <strong>{plan_name}</strong> trial is now active.</p>
+              <h1 style="margin-bottom: 12px;">Your {safe_plan_name} trial is active</h1>
+              <p>Hi {safe_user_name},</p>
+              <p>Your subscription checkout is complete and your <strong>{safe_plan_name}</strong> trial is now active.</p>
               <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0;">
                 {invoice_number_line}
-                <p style="margin: 0 0 8px;"><strong>Trial end date:</strong> {trial_end_label}</p>
-                <p style="margin: 0;"><strong>Billing begins after:</strong> {trial_end_label}</p>
+                <p style="margin: 0 0 8px;"><strong>Trial end date:</strong> {safe_trial_end_label}</p>
+                <p style="margin: 0;"><strong>Billing begins after:</strong> {safe_trial_end_label}</p>
               </div>
               {invoice_links_html}
               <p>Your saved payment method will be used automatically when the trial ends unless you change or cancel the subscription first.</p>
-              <p><a href="{billing_url}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 18px; border-radius: 999px;">Manage billing</a></p>
+              <p><a href="{safe_billing_url}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 18px; border-radius: 999px;">Manage billing</a></p>
             </div>
             """
             notification_title = "Free Trial Active"
@@ -2918,17 +2929,17 @@ class StripeService:
             subject = f"{plan_name} Subscription Activated"
             html_content = f"""
             <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; color: #0f172a;">
-              <h1 style="margin-bottom: 12px;">Your {plan_name} subscription is active</h1>
-              <p>Hi {user_name},</p>
+              <h1 style="margin-bottom: 12px;">Your {safe_plan_name} subscription is active</h1>
+              <p>Hi {safe_user_name},</p>
               <p>Your checkout completed successfully and your subscription is ready to use.</p>
               <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0;">
                 {invoice_number_line}
-                <p style="margin: 0 0 8px;"><strong>Amount received:</strong> ${amount:.2f} {currency}</p>
-                <p style="margin: 0;"><strong>Processed on:</strong> {invoice_date}</p>
+                <p style="margin: 0 0 8px;"><strong>Amount received:</strong> ${amount:.2f} {safe_currency}</p>
+                <p style="margin: 0;"><strong>Processed on:</strong> {safe_invoice_date}</p>
               </div>
               {invoice_links_html}
               <p>You can manage your payment method, billing history, and plan from your billing page any time.</p>
-              <p><a href="{billing_url}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 18px; border-radius: 999px;">Open billing</a></p>
+              <p><a href="{safe_billing_url}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 18px; border-radius: 999px;">Open billing</a></p>
             </div>
             """
             notification_title = "Subscription Active"
@@ -3133,12 +3144,18 @@ class StripeService:
         invoice_pdf: Optional[str] = None,
     ) -> str:
         """Render payment success email HTML"""
+        safe_user_name = html.escape(user_name, quote=True)
+        safe_plan_name = html.escape(plan_name, quote=True)
+        safe_currency = html.escape(currency, quote=True)
+        safe_invoice_date = html.escape(invoice_date, quote=True)
+
         download_section = ""
         if invoice_pdf:
+            safe_invoice_pdf = html.escape(invoice_pdf, quote=True)
             download_section = f"""
                 <tr>
                   <td style="padding:20px 40px 0;">
-                    <a href="{invoice_pdf}" style="display:inline-block;padding:12px 24px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:500;">Download Invoice PDF</a>
+                    <a href="{safe_invoice_pdf}" style="display:inline-block;padding:12px 24px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:500;">Download Invoice PDF</a>
                   </td>
                 </tr>
             """
@@ -3159,26 +3176,26 @@ class StripeService:
                 </tr>
                 <tr>
                   <td style="padding:32px 40px;font-family:'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif;color:#0f172a;">
-                    <p style="margin:0 0 24px;font-size:16px;line-height:1.6;">Hi {user_name},</p>
+                    <p style="margin:0 0 24px;font-size:16px;line-height:1.6;">Hi {safe_user_name},</p>
                     <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#475569;">We've received your payment. Here are the details:</p>
 
                     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border-radius:12px;padding:20px;margin-bottom:24px;">
                       <tr>
                         <td style="padding:8px 16px;">
                           <p style="margin:0;font-size:14px;color:#64748b;">Plan</p>
-                          <p style="margin:4px 0 0;font-size:16px;font-weight:500;color:#0f172a;">{plan_name}</p>
+                          <p style="margin:4px 0 0;font-size:16px;font-weight:500;color:#0f172a;">{safe_plan_name}</p>
                         </td>
                       </tr>
                       <tr>
                         <td style="padding:8px 16px;">
                           <p style="margin:0;font-size:14px;color:#64748b;">Amount</p>
-                          <p style="margin:4px 0 0;font-size:16px;font-weight:500;color:#0f172a;">${amount:.2f} {currency}</p>
+                          <p style="margin:4px 0 0;font-size:16px;font-weight:500;color:#0f172a;">${amount:.2f} {safe_currency}</p>
                         </td>
                       </tr>
                       <tr>
                         <td style="padding:8px 16px;">
                           <p style="margin:0;font-size:14px;color:#64748b;">Date</p>
-                          <p style="margin:4px 0 0;font-size:16px;font-weight:500;color:#0f172a;">{invoice_date}</p>
+                          <p style="margin:4px 0 0;font-size:16px;font-weight:500;color:#0f172a;">{safe_invoice_date}</p>
                         </td>
                       </tr>
                     </table>
@@ -3203,6 +3220,13 @@ class StripeService:
         self, user_name: str, plan_name: str, amount: float, currency: str
     ) -> str:
         """Render payment failed email HTML"""
+        safe_user_name = html.escape(user_name, quote=True)
+        safe_plan_name = html.escape(plan_name, quote=True)
+        safe_currency = html.escape(currency, quote=True)
+        safe_billing_url = html.escape(
+            f"{settings.frontend_url or ''}/admin/planner/billing", quote=True
+        )
+
         return f"""
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8fafc;padding:40px 0;">
           <tr>
@@ -3219,8 +3243,8 @@ class StripeService:
                 </tr>
                 <tr>
                   <td style="padding:32px 40px;font-family:'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif;color:#0f172a;">
-                    <p style="margin:0 0 24px;font-size:16px;line-height:1.6;">Hi {user_name},</p>
-                    <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#475569;">We were unable to process your payment of <strong>${amount:.2f} {currency}</strong> for your <strong>{plan_name}</strong> subscription.</p>
+                    <p style="margin:0 0 24px;font-size:16px;line-height:1.6;">Hi {safe_user_name},</p>
+                    <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#475569;">We were unable to process your payment of <strong>${amount:.2f} {safe_currency}</strong> for your <strong>{safe_plan_name}</strong> subscription.</p>
 
                     <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:20px;margin-bottom:24px;">
                       <p style="margin:0;font-size:14px;color:#991b1b;line-height:1.6;"><strong>What you need to do:</strong></p>
@@ -3234,7 +3258,7 @@ class StripeService:
                     <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
                       <tr>
                         <td style="background:#2563eb;border-radius:8px;">
-                          <a href="{settings.frontend_url or ""}/admin/planner/billing" style="display:inline-block;padding:14px 28px;color:#ffffff;text-decoration:none;font-size:14px;font-weight:500;">Update Payment Method</a>
+                          <a href="{safe_billing_url}" style="display:inline-block;padding:14px 28px;color:#ffffff;text-decoration:none;font-size:14px;font-weight:500;">Update Payment Method</a>
                         </td>
                       </tr>
                     </table>

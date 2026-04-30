@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/Label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/Dialog';
 import { Loader2, DollarSign, Plus, Send, Calendar, CheckCircle2, Clock, AlertCircle, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
+import { formatAdminDate, DEFAULT_TIMEZONE, getLocalDateString } from '@/utils/dateFormat';
 import {
   buildPaymentMilestonesQuery,
   calculatePaymentMilestonesSummary,
@@ -101,7 +101,7 @@ export function PaymentMilestones({
   // Record payment form
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('stripe');
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentDate, setPaymentDate] = useState(getLocalDateString());
   const [paymentNotes, setPaymentNotes] = useState('');
 
   const fetchMilestones = useCallback(async () => {
@@ -196,7 +196,37 @@ export function PaymentMilestones({
       fetchMilestones();
       if (onMilestoneUpdated) onMilestoneUpdated();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to record payment');
+      // 409 Conflict from the record_payment guard means the milestone is
+      // already paid (idempotent retry, full-payment short-circuit, or a
+      // previously-credited stripe_payment_intent_id). Surface a friendly,
+      // specific toast instead of the generic failure message — and refresh
+      // the milestones so the UI reflects the already-paid state.
+      const status = error?.status as number | undefined;
+      const detail = typeof error?.message === 'string' ? error.message.toLowerCase() : '';
+      if (status === 409) {
+        // Cross-milestone intent collision: the same Stripe payment_intent_id
+        // is already recorded against a DIFFERENT milestone. This is a real
+        // routing bug, not a benign retry — keep the modal open and skip the
+        // refetch so the planner sees the conflict and can investigate
+        // instead of mistakenly believing this milestone got paid.
+        if (detail.includes('another milestone')) {
+          toast.warning('This payment is recorded against a different milestone');
+        } else {
+          let message = 'This payment was already credited';
+          if (detail.includes('already fully paid') || detail.includes('fully paid')) {
+            message = 'This milestone is already fully paid';
+          } else if (detail.includes('payment_intent') || detail.includes('idempot')) {
+            message = 'Payment already recorded';
+          }
+          toast.message(message);
+          setShowRecordPaymentModal(false);
+          resetPaymentForm();
+          fetchMilestones();
+          if (onMilestoneUpdated) onMilestoneUpdated();
+        }
+      } else {
+        toast.error(error.message || 'Failed to record payment');
+      }
     } finally {
       setActionLoading(false);
     }
@@ -241,7 +271,7 @@ export function PaymentMilestones({
     setSelectedMilestone(null);
     setPaymentAmount('');
     setPaymentMethod('stripe');
-    setPaymentDate(new Date().toISOString().split('T')[0]);
+    setPaymentDate(getLocalDateString());
     setPaymentNotes('');
   };
 

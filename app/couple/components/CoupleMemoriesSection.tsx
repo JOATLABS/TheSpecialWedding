@@ -39,6 +39,7 @@ import {
   type GuestMemoriesSummary,
 } from '@/services/guestMemoriesApi';
 import { getWeddingEventLabel } from '@/utils/weddingEvents';
+import { getLocalDateString } from '@/utils/dateFormat';
 import GuestMemoriesSummaryCard from '@/components/guest-memories/GuestMemoriesSummaryCard';
 
 type ReviewFilter = 'all' | 'pending' | 'kept' | 'rejected';
@@ -121,7 +122,7 @@ export default function CoupleMemoriesSection({
     if (settings?.upload_closes_at) {
       const date = new Date(settings.upload_closes_at);
       if (!Number.isNaN(date.getTime())) {
-        setCloseDate(date.toISOString().slice(0, 10));
+        setCloseDate(getLocalDateString(date));
       }
     }
   }, [settings?.upload_closes_at]);

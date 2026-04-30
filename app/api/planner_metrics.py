@@ -30,6 +30,11 @@ from app.utils.planner_ownership import (
     combine_mongo_filters,
     normalize_wedding_query_id,
 )
+from app.utils.rsvp_status import (
+    RSVP_STATUS_CONFIRMED,
+    RSVP_STATUS_DECLINED,
+    get_rsvp_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,37 +69,6 @@ def _parse_date_safe(value: Optional[Any]) -> Optional[datetime]:
         return parsed.astimezone(timezone.utc)
     except (ValueError, TypeError):
         return None
-
-
-def _calculate_rsvp_status(rsvp: dict) -> str:
-    """
-    Determine RSVP status based on attending field.
-
-    The 'attending' field is a List[str] of event names the guest is attending.
-    - If list has items: guest is confirmed (attending at least one event)
-    - If list is empty: guest declined all events
-    - If field is missing/None: should not happen for submitted RSVPs
-    """
-    attending = rsvp.get("attending")
-
-    # attending is a List[str] of event names
-    if attending is None:
-        return "pending"
-
-    if isinstance(attending, list):
-        if len(attending) > 0:
-            return "confirmed"
-        else:
-            return "declined"
-
-    # Legacy support: if attending was stored as dict (old format)
-    if isinstance(attending, dict):
-        if any(attending.values()):
-            return "confirmed"
-        elif all(not val for val in attending.values()):
-            return "declined"
-
-    return "pending"
 
 
 def _planner_weddings_scope_key(
@@ -343,18 +317,18 @@ async def get_planner_metrics(
             for rsvp in rsvps:
                 rsvp_guest_id = str(rsvp.get("guest_id", ""))
                 rsvp_guest_ids.add(rsvp_guest_id)
-                status = _calculate_rsvp_status(rsvp)
-                if status == "confirmed":
+                status = get_rsvp_status(rsvp)
+                if status == RSVP_STATUS_CONFIRMED:
                     confirmed += 1
                     confirmed_plus_allowed += guest_plus_ones_map.get(rsvp_guest_id, 0)
-                elif status == "declined":
+                elif status == RSVP_STATUS_DECLINED:
                     declined += 1
 
             # Count submitted plus-ones for confirmed guests
             confirmed_guest_ids = [
                 str(rsvp.get("guest_id", ""))
                 for rsvp in rsvps
-                if _calculate_rsvp_status(rsvp) == "confirmed"
+                if get_rsvp_status(rsvp) == RSVP_STATUS_CONFIRMED
             ]
             if confirmed_guest_ids:
                 confirmed_plus_ones_submitted = (

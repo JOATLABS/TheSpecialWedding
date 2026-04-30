@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { BudgetCategory, RecordPaymentRequest } from '../../types/budget';
 import { Button } from '../ui/Button';
+import { getLocalDateString } from '../../utils/dateFormat';
 
 export interface PaymentFormValues {
   vendorName: string;
@@ -42,7 +43,7 @@ const defaultFormState = (): PaymentFormValues => ({
   vendorName: '',
   amount: '',
   paymentMethod: 'card',
-  paymentDate: new Date().toISOString().slice(0, 10),
+  paymentDate: getLocalDateString(),
   description: '',
   receiptUrl: '',
   status: 'completed',
@@ -243,7 +244,7 @@ export function RecordPaymentModal({
                   onChange={(event) => handleChange('paymentDate', event.target.value)}
                   className="mt-1 rounded-lg border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 text-gray-900 dark:text-gray-100 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
                   required
-                  max={new Date().toISOString().slice(0, 10)}
+                  max={getLocalDateString()}
                 />
               </label>
             </div>

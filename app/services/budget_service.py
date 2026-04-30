@@ -1130,6 +1130,37 @@ class BudgetService:
             {"_id": wedding_id}, {"$set": {"total_budget": total_budget}}
         )
 
+    async def evaluate_budget_alerts(self, wedding_id: str) -> None:
+        """
+        Public, best-effort wrapper around ``_check_budget_alerts``.
+
+        Alert evaluation is intentionally non-critical: payment success must
+        never be blocked by an alert-evaluation failure. Callers in the
+        payment-write path (vendor_service.record_payment,
+        autopilot._sync_payment_to_budget, budget_service.record_contract_payment)
+        invoke this *after* the spend mutation has committed, so a failure here
+        only loses an alert refresh, not the underlying payment.
+
+        The method:
+          - Returns immediately if ``wedding_id`` is falsy (no wedding context).
+          - Delegates to ``_check_budget_alerts`` inside a try/except.
+          - Logs entry at INFO and any failure via ``logger.exception`` so the
+            traceback is captured.
+        """
+        if not wedding_id:
+            return
+        logger.info(
+            "evaluate_budget_alerts: refreshing alerts",
+            extra={"wedding_id": wedding_id},
+        )
+        try:
+            await self._check_budget_alerts(wedding_id)
+        except Exception:
+            logger.exception(
+                "evaluate_budget_alerts: alert evaluation failed (swallowed)",
+                extra={"wedding_id": wedding_id},
+            )
+
     async def _check_budget_alerts(self, wedding_id: str):
         """Check for budget alerts and create notifications"""
         cursor = self.budget_categories.find({"wedding_id": wedding_id})
@@ -1492,9 +1523,10 @@ class BudgetService:
             )
 
             logger.info(f"Recorded contract payment ${amount} for wedding {wedding_id}")
-            # mode="json" — see note in create_budget_category. This method is
-            # currently unreachable (no callers as of 2026-04-27) but kept
-            # consistent so a future caller doesn't reintroduce the bug.
+            # Best-effort alert refresh after spend mutation. Swallows internally
+            # so payment recording is never blocked on alert-evaluation failure.
+            await self.evaluate_budget_alerts(wedding_id)
+            # mode="json" — see note in create_budget_category.
             return payment.model_dump(mode="json")
 
         except Exception as e:

@@ -4,6 +4,7 @@ Contract Email Service
 Sends contract lifecycle emails using Resend.
 """
 
+import html
 import logging
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
@@ -138,12 +139,30 @@ class ContractEmailService:
     def _render_payment_schedule_rows(self, payments: List[Dict[str, Any]]) -> str:
         rows = ""
         for payment in payments:
+            safe_name = html.escape(str(payment.get("name", "Payment")), quote=True)
+            safe_due = html.escape(
+                str(self._format_calendar_date(payment.get("due_date"))),
+                quote=True,
+            )
+            safe_status = html.escape(
+                str(self._payment_status_label(payment.get("status"))),
+                quote=True,
+            )
+            safe_amount = html.escape(
+                str(
+                    self._format_currency(
+                        float(payment.get("amount", 0) or 0),
+                        payment.get("currency", "usd"),
+                    )
+                ),
+                quote=True,
+            )
             rows += f"""
                 <tr>
-                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{payment.get("name", "Payment")}</td>
-                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{self._format_calendar_date(payment.get("due_date"))}</td>
-                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{self._payment_status_label(payment.get("status"))}</td>
-                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: right;">{self._format_currency(float(payment.get("amount", 0) or 0), payment.get("currency", "usd"))}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{safe_name}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{safe_due}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{safe_status}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: right;">{safe_amount}</td>
                 </tr>
             """
         return rows
@@ -179,11 +198,17 @@ class ContractEmailService:
 
             contract_url = f"{getattr(settings, 'frontend_url', 'https://thespecialwedding.io')}/contracts/{token}"
 
+            # Escape every planner-supplied string before f-string interpolation.
+            safe_vendor_name = html.escape(str(vendor_name), quote=True)
+            safe_contract_title = html.escape(str(contract_title), quote=True)
+            safe_contract_url = html.escape(str(contract_url), quote=True)
+
             message_section = ""
             if planner_message:
+                safe_planner_message = html.escape(str(planner_message), quote=True)
                 message_section = f"""
                 <div style="background-color: #f8f9fa; padding: 16px; border-radius: 8px; margin: 16px 0;">
-                    <p style="margin: 0; color: #495057; font-style: italic;">"{planner_message}"</p>
+                    <p style="margin: 0; color: #495057; font-style: italic;">"{safe_planner_message}"</p>
                 </div>
                 """
 
@@ -193,13 +218,13 @@ class ContractEmailService:
                     <h1 style="color: white; margin: 0; font-size: 24px;">Contract Ready for Review</h1>
                 </div>
                 <div style="padding: 32px; background: white; border: 1px solid #e9ecef; border-top: none; border-radius: 0 0 12px 12px;">
-                    <p>Hi {vendor_name},</p>
+                    <p>Hi {safe_vendor_name},</p>
                     <p>You have a new contract ready for your review:</p>
-                    <p style="font-size: 18px; font-weight: 600; color: #333;">{contract_title}</p>
+                    <p style="font-size: 18px; font-weight: 600; color: #333;">{safe_contract_title}</p>
                     {message_section}
                     <div style="text-align: center; margin: 32px 0;">
-                        <a href="{contract_url}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">
-                            View & Sign Contract
+                        <a href="{safe_contract_url}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">
+                            View &amp; Sign Contract
                         </a>
                     </div>
                     <p style="color: #6c757d; font-size: 14px;">If you have any questions, please reach out to your wedding planner directly.</p>
@@ -280,7 +305,29 @@ class ContractEmailService:
             services_html = ""
             for service in package.get("services", []):
                 if service.get("included"):
-                    services_html += f'<li style="margin-bottom: 8px;">{service.get("name", "Service")}</li>'
+                    safe_service_name = html.escape(
+                        str(service.get("name", "Service")), quote=True
+                    )
+                    services_html += (
+                        f'<li style="margin-bottom: 8px;">{safe_service_name}</li>'
+                    )
+
+            # Escape every planner/couple/wedding-supplied string before
+            # f-string interpolation. Numeric `total` is :,.2f-formatted.
+            safe_couple_display = html.escape(str(couple_display), quote=True)
+            safe_planner_company = html.escape(str(planner_company), quote=True)
+            safe_package_name = html.escape(
+                str(package.get("name", "Wedding Package")), quote=True
+            )
+            safe_currency = html.escape(str(currency), quote=True)
+            safe_wedding_date = html.escape(str(wedding_date), quote=True)
+            safe_venue = html.escape(str(venue), quote=True)
+            safe_contract_url = html.escape(str(contract_url), quote=True)
+            safe_planner_email_block = (
+                f" at {html.escape(str(planner_email), quote=True)}"
+                if planner_email
+                else ""
+            )
 
             html_content = f"""
             <!DOCTYPE html>
@@ -295,23 +342,23 @@ class ContractEmailService:
                 </div>
 
                 <div style="padding: 30px 0;">
-                    <p>Hi {couple_display},</p>
+                    <p>Hi {safe_couple_display},</p>
                     <p>{
-                planner_company
+                safe_planner_company
             } shared a wedding planning package with you. You can review the details and sign your agreement online using the secure link below.</p>
 
                     <div style="background: #f8fafc; border-radius: 12px; padding: 20px; margin: 20px 0;">
                         <h2 style="color: #334155; margin: 0 0 15px 0; font-size: 16px;">Package Summary</h2>
                         <p style="margin: 0;"><strong>Package:</strong> {
-                package.get("name", "Wedding Package")
+                safe_package_name
             }</p>
                         <p style="margin: 10px 0 0 0;"><strong>Investment:</strong> ${
-                total:,.2f} {currency}</p>
+                total:,.2f} {safe_currency}</p>
                         <p style="margin: 10px 0 0 0;"><strong>Wedding date:</strong> {
-                wedding_date
+                safe_wedding_date
             }</p>
                         <p style="margin: 10px 0 0 0;"><strong>Venue:</strong> {
-                venue
+                safe_venue
             }</p>
                     </div>
 
@@ -328,16 +375,16 @@ class ContractEmailService:
 
                     <div style="text-align: center; margin: 32px 0;">
                         <a href="{
-                contract_url
+                safe_contract_url
             }" style="display: inline-block; background: #6366f1; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600;">
-                            Review & Sign Contract
+                            Review &amp; Sign Contract
                         </a>
                     </div>
 
                     <p style="color: #64748b;">If you have questions before signing, reply to this email or contact {
-                planner_company
-            }{f" at {planner_email}" if planner_email else ""}.</p>
-                    <p style="margin-top: 20px;">Warmly,<br>{planner_company}</p>
+                safe_planner_company
+            }{safe_planner_email_block}.</p>
+                    <p style="margin-top: 20px;">Warmly,<br>{safe_planner_company}</p>
                 </div>
             </body>
             </html>
@@ -468,6 +515,58 @@ class ContractEmailService:
                     </div>
                 """
 
+            # Escape every planner/couple/payment-supplied string before
+            # f-string interpolation. _format_currency and _format_calendar_date
+            # values are escaped here too in case underlying inputs include
+            # malicious characters.
+            package_currency = contract.get("package_snapshot", {}).get(
+                "currency", "usd"
+            )
+            safe_couple_display = html.escape(str(couple_display), quote=True)
+            safe_current_payment_name = html.escape(
+                str(current_payment.get("name", "your payment")), quote=True
+            )
+            safe_current_payment_label = html.escape(
+                str(current_payment.get("name", "Scheduled Payment")), quote=True
+            )
+            safe_package_name = html.escape(
+                str(
+                    contract.get("package_snapshot", {}).get("name", "Wedding Package")
+                ),
+                quote=True,
+            )
+            safe_paid_amount = html.escape(
+                self._format_currency(
+                    float(current_payment.get("amount", 0) or 0),
+                    current_payment.get("currency", "usd"),
+                ),
+                quote=True,
+            )
+            safe_processed_on = html.escape(
+                self._format_calendar_date(
+                    current_payment.get("paid_at") or datetime.now()
+                ),
+                quote=True,
+            )
+            safe_total_paid = html.escape(
+                self._format_currency(paid_amount, package_currency), quote=True
+            )
+            safe_remaining_balance = html.escape(
+                self._format_currency(remaining_amount, package_currency), quote=True
+            )
+            safe_portal_url = html.escape(str(portal_url), quote=True)
+            safe_planner_name = html.escape(str(planner_name), quote=True)
+            safe_planner_email_block = (
+                f" at {html.escape(str(planner_email), quote=True)}"
+                if planner_email
+                else ""
+            )
+            receipt_link_block = (
+                f'<a href="{html.escape(str(receipt_link), quote=True)}" style="display: inline-block; background: #0f172a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 500;">View Stripe Receipt</a>'
+                if receipt_link
+                else ""
+            )
+
             html_content = f"""
             <!DOCTYPE html>
             <html>
@@ -481,30 +580,30 @@ class ContractEmailService:
                 </div>
 
                 <div style="padding: 30px 0;">
-                    <p>Hi {couple_display},</p>
-                    <p>We successfully processed <strong>{current_payment.get("name", "your payment")}</strong> for your wedding planning package.</p>
+                    <p>Hi {safe_couple_display},</p>
+                    <p>We successfully processed <strong>{safe_current_payment_name}</strong> for your wedding planning package.</p>
 
                     <div style="background: #f8fafc; border-radius: 12px; padding: 20px; margin: 20px 0;">
                         <h2 style="color: #334155; margin: 0 0 15px 0; font-size: 16px;">Payment Receipt</h2>
-                        <p style="margin: 0;"><strong>Package:</strong> {contract.get("package_snapshot", {}).get("name", "Wedding Package")}</p>
-                        <p style="margin: 10px 0 0 0;"><strong>Payment:</strong> {current_payment.get("name", "Scheduled Payment")}</p>
-                        <p style="margin: 10px 0 0 0;"><strong>Paid:</strong> {self._format_currency(float(current_payment.get("amount", 0) or 0), current_payment.get("currency", "usd"))}</p>
-                        <p style="margin: 10px 0 0 0;"><strong>Processed on:</strong> {self._format_calendar_date(current_payment.get("paid_at") or datetime.now())}</p>
-                        <p style="margin: 10px 0 0 0;"><strong>Total paid to date:</strong> {self._format_currency(paid_amount, contract.get("package_snapshot", {}).get("currency", "usd"))}</p>
-                        <p style="margin: 10px 0 0 0;"><strong>Remaining balance:</strong> {self._format_currency(remaining_amount, contract.get("package_snapshot", {}).get("currency", "usd"))}</p>
+                        <p style="margin: 0;"><strong>Package:</strong> {safe_package_name}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Payment:</strong> {safe_current_payment_label}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Paid:</strong> {safe_paid_amount}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Processed on:</strong> {safe_processed_on}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Total paid to date:</strong> {safe_total_paid}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Remaining balance:</strong> {safe_remaining_balance}</p>
                     </div>
 
                     {remaining_schedule_html}
                     {paid_in_full_html}
 
                     <div style="text-align: center; margin: 30px 0;">
-                        <a href="{portal_url}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 500; margin-right: 12px;">
+                        <a href="{safe_portal_url}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 500; margin-right: 12px;">
                             View Payment Portal
                         </a>
-                        {f'<a href="{receipt_link}" style="display: inline-block; background: #0f172a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 500;">View Stripe Receipt</a>' if receipt_link else ""}
+                        {receipt_link_block}
                     </div>
 
-                    <p style="color: #64748b;">Questions about your plan or payment schedule? Contact {planner_name}{f" at {planner_email}" if planner_email else ""}.</p>
+                    <p style="color: #64748b;">Questions about your plan or payment schedule? Contact {safe_planner_name}{safe_planner_email_block}.</p>
                 </div>
             </body>
             </html>
@@ -588,6 +687,33 @@ class ContractEmailService:
                 else f"{settings.frontend_url or 'https://thespecialwedding.io'}/admin/money"
             )
 
+            # Escape every couple/payment/planner-supplied string before
+            # f-string interpolation.
+            safe_planner_name = html.escape(str(planner_name), quote=True)
+            safe_couple_display = html.escape(str(couple_display), quote=True)
+            safe_payment_event_name = html.escape(
+                str(payment.get("name", "a scheduled payment")), quote=True
+            )
+            safe_package_name = html.escape(
+                str(
+                    contract.get("package_snapshot", {}).get("name", "Wedding Package")
+                ),
+                quote=True,
+            )
+            safe_payment_label = html.escape(
+                str(payment.get("name", "Scheduled Payment")), quote=True
+            )
+            safe_amount_received = html.escape(
+                self._format_currency(payment_amount, payment_currency), quote=True
+            )
+            safe_total_paid = html.escape(
+                self._format_currency(paid_amount, payment_currency), quote=True
+            )
+            safe_remaining_balance = html.escape(
+                self._format_currency(remaining_amount, payment_currency), quote=True
+            )
+            safe_contract_url = html.escape(str(contract_url), quote=True)
+
             html_content = f"""
             <!DOCTYPE html>
             <html>
@@ -601,21 +727,21 @@ class ContractEmailService:
                 </div>
 
                 <div style="padding: 30px 0;">
-                    <p>Hi {planner_name},</p>
-                    <p>{couple_display} completed <strong>{payment.get("name", "a scheduled payment")}</strong>.</p>
+                    <p>Hi {safe_planner_name},</p>
+                    <p>{safe_couple_display} completed <strong>{safe_payment_event_name}</strong>.</p>
 
                     <div style="background: #f8fafc; border-radius: 12px; padding: 20px; margin: 20px 0;">
                         <h2 style="color: #334155; margin: 0 0 15px 0; font-size: 16px;">Payment Summary</h2>
-                        <p style="margin: 0;"><strong>Package:</strong> {contract.get("package_snapshot", {}).get("name", "Wedding Package")}</p>
-                        <p style="margin: 10px 0 0 0;"><strong>Couple:</strong> {couple_display}</p>
-                        <p style="margin: 10px 0 0 0;"><strong>Payment:</strong> {payment.get("name", "Scheduled Payment")}</p>
-                        <p style="margin: 10px 0 0 0;"><strong>Amount received:</strong> {self._format_currency(payment_amount, payment_currency)}</p>
-                        <p style="margin: 10px 0 0 0;"><strong>Total paid to date:</strong> {self._format_currency(paid_amount, payment_currency)}</p>
-                        <p style="margin: 10px 0 0 0;"><strong>Remaining balance:</strong> {self._format_currency(remaining_amount, payment_currency)}</p>
+                        <p style="margin: 0;"><strong>Package:</strong> {safe_package_name}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Couple:</strong> {safe_couple_display}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Payment:</strong> {safe_payment_label}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Amount received:</strong> {safe_amount_received}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Total paid to date:</strong> {safe_total_paid}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Remaining balance:</strong> {safe_remaining_balance}</p>
                     </div>
 
                     <div style="text-align: center; margin: 30px 0;">
-                        <a href="{contract_url}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 500;">
+                        <a href="{safe_contract_url}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 500;">
                             Open Planner Dashboard
                         </a>
                     </div>
@@ -708,10 +834,14 @@ class ContractEmailService:
                     "fixed_date": "Fixed date",
                 }.get(trigger, trigger)
 
+                safe_payment_name = html.escape(
+                    str(payment.get("name", f"Payment {i}")), quote=True
+                )
+                safe_trigger_label = html.escape(str(trigger_label), quote=True)
                 schedule_rows += f"""
                 <tr>
-                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{payment.get("name", f"Payment {i}")}</td>
-                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{trigger_label}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{safe_payment_name}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{safe_trigger_label}</td>
                     <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: right;">${amount:,.2f}</td>
                 </tr>
                 """
@@ -720,7 +850,38 @@ class ContractEmailService:
             services_list = ""
             for service in package.get("services", []):
                 if service.get("included"):
-                    services_list += f'<li style="margin-bottom: 8px;">✓ {service.get("name", "Service")}</li>'
+                    safe_service_name = html.escape(
+                        str(service.get("name", "Service")), quote=True
+                    )
+                    services_list += (
+                        f'<li style="margin-bottom: 8px;">✓ {safe_service_name}</li>'
+                    )
+
+            # Escape every couple/contract/package-supplied string before
+            # f-string interpolation.
+            safe_greeting_name = html.escape(str(greeting_name), quote=True)
+            safe_package_name = html.escape(
+                str(package.get("name", "Wedding Package")), quote=True
+            )
+            safe_currency = html.escape(str(currency), quote=True)
+            safe_signed_by = html.escape(
+                str(signature.get("signed_by", "N/A")), quote=True
+            )
+            safe_signed_at = html.escape(
+                str(contract.get("signed_at", "N/A")), quote=True
+            )
+            safe_contract_id = html.escape(str(contract.get("id", "N/A")), quote=True)
+            pdf_block = (
+                f'''
+                    <div style="margin: 30px 0; text-align: center;">
+                        <a href="{html.escape(str(pdf_url), quote=True)}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 500;">
+                            Download Signed Contract (PDF)
+                        </a>
+                    </div>
+                    '''
+                if pdf_url
+                else ""
+            )
 
             html_content = f"""
             <!DOCTYPE html>
@@ -730,27 +891,27 @@ class ContractEmailService:
             </head>
             <body style="font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="text-align: center; padding: 30px 0; border-bottom: 2px solid #6366f1;">
-                    <h1 style="color: #6366f1; margin: 0 0 10px 0;">Contract Signed! 🎉</h1>
+                    <h1 style="color: #6366f1; margin: 0 0 10px 0;">Contract Signed! &#127881;</h1>
                     <p style="color: #64748b; margin: 0;">Your wedding planning journey begins</p>
                 </div>
 
                 <div style="padding: 30px 0;">
-                    <p>Dear {greeting_name},</p>
+                    <p>Dear {safe_greeting_name},</p>
 
                     <p>Thank you for signing your wedding planning agreement! We're thrilled to be part of your special journey.</p>
 
                     <div style="background: #f8fafc; border-radius: 12px; padding: 20px; margin: 20px 0;">
                         <h2 style="color: #334155; margin: 0 0 15px 0; font-size: 16px;">Agreement Summary</h2>
                         <p style="margin: 0;"><strong>Package:</strong> {
-                package.get("name", "Wedding Package")
+                safe_package_name
             }</p>
                         <p style="margin: 10px 0 0 0;"><strong>Total Investment:</strong> ${
-                total:,.2f} {currency}</p>
+                total:,.2f} {safe_currency}</p>
                         <p style="margin: 10px 0 0 0;"><strong>Signed by:</strong> {
-                signature.get("signed_by", "N/A")
+                safe_signed_by
             }</p>
                         <p style="margin: 10px 0 0 0;"><strong>Signed on:</strong> {
-                contract.get("signed_at", "N/A")
+                safe_signed_at
             }</p>
                     </div>
 
@@ -779,17 +940,7 @@ class ContractEmailService:
                         </tbody>
                     </table>
 
-                    {
-                f'''
-                    <div style="margin: 30px 0; text-align: center;">
-                        <a href="{pdf_url}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 500;">
-                            Download Signed Contract (PDF)
-                        </a>
-                    </div>
-                    '''
-                if pdf_url
-                else ""
-            }
+                    {pdf_block}
 
                     <h3 style="color: #334155; margin: 25px 0 15px 0;">What Happens Next?</h3>
                     <ol style="margin: 0; padding-left: 20px; color: #64748b;">
@@ -804,7 +955,7 @@ class ContractEmailService:
                 </div>
 
                 <div style="border-top: 1px solid #e2e8f0; padding-top: 20px; text-align: center; color: #94a3b8; font-size: 12px;">
-                    <p>Contract ID: {contract.get("id", "N/A")}</p>
+                    <p>Contract ID: {safe_contract_id}</p>
                     <p>This email confirms your digitally signed agreement.</p>
                 </div>
             </body>
@@ -851,6 +1002,27 @@ class ContractEmailService:
 
             total = package.get("total_amount", 0)
 
+            # Escape every couple/package-supplied string before f-string
+            # interpolation. settings.frontend_url is a server-controlled
+            # config value but we still escape it defensively.
+            safe_full_name = html.escape(str(full_name), quote=True)
+            safe_couple_email = html.escape(str(couple.get("email", "N/A")), quote=True)
+            safe_package_name = html.escape(
+                str(package.get("name", "Wedding Package")), quote=True
+            )
+            safe_wedding_date = html.escape(
+                str(self._format_calendar_date(contract.get("wedding_date"))),
+                quote=True,
+            )
+            safe_admin_url = html.escape(
+                f"{settings.frontend_url}/admin/contracts", quote=True
+            )
+            deposit_status = (
+                "The first payment has been processed successfully."
+                if contract.get("deposit_processed")
+                else "The contract is signed and the payment method is now saved for the upcoming schedule."
+            )
+
             html_content = f"""
             <!DOCTYPE html>
             <html>
@@ -859,24 +1031,24 @@ class ContractEmailService:
             </head>
             <body style="font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="text-align: center; padding: 20px; background: #f0fdf4; border-radius: 12px; margin-bottom: 20px;">
-                    <h1 style="color: #166534; margin: 0;">New Contract Signed! 🎉</h1>
+                    <h1 style="color: #166534; margin: 0;">New Contract Signed! &#127881;</h1>
                 </div>
 
                 <p>Great news! A new contract has been signed.</p>
 
                 <div style="background: #f8fafc; border-radius: 12px; padding: 20px; margin: 20px 0;">
                     <h3 style="color: #334155; margin: 0 0 15px 0;">Contract Details</h3>
-                    <p style="margin: 0;"><strong>Couple:</strong> {full_name}</p>
-                    <p style="margin: 10px 0 0 0;"><strong>Email:</strong> {couple.get("email", "N/A")}</p>
-                    <p style="margin: 10px 0 0 0;"><strong>Package:</strong> {package.get("name", "Wedding Package")}</p>
+                    <p style="margin: 0;"><strong>Couple:</strong> {safe_full_name}</p>
+                    <p style="margin: 10px 0 0 0;"><strong>Email:</strong> {safe_couple_email}</p>
+                    <p style="margin: 10px 0 0 0;"><strong>Package:</strong> {safe_package_name}</p>
                     <p style="margin: 10px 0 0 0;"><strong>Total:</strong> ${total:,.2f}</p>
-                    <p style="margin: 10px 0 0 0;"><strong>Wedding Date:</strong> {self._format_calendar_date(contract.get("wedding_date"))}</p>
+                    <p style="margin: 10px 0 0 0;"><strong>Wedding Date:</strong> {safe_wedding_date}</p>
                 </div>
 
-                <p>{"The first payment has been processed successfully." if contract.get("deposit_processed") else "The contract is signed and the payment method is now saved for the upcoming schedule."} Login to your dashboard to view the full contract details.</p>
+                <p>{deposit_status} Login to your dashboard to view the full contract details.</p>
 
                 <div style="text-align: center; margin: 30px 0;">
-                    <a href="{settings.frontend_url}/admin/contracts" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 500;">
+                    <a href="{safe_admin_url}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 500;">
                         View Contract
                     </a>
                 </div>

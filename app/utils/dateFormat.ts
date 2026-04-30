@@ -274,6 +274,29 @@ export function isSameUtcCalendarDate(a: DateInput, b: DateInput): boolean {
   )
 }
 
+/**
+ * Format a Date as a YYYY-MM-DD string in the runtime's local timezone.
+ *
+ * Use this anywhere a `<input type="date">` value or `min`/`max` attribute is
+ * derived from a Date — `toISOString()` shifts to UTC and produces the wrong
+ * calendar day for users west of UTC in the late evening (e.g. CDT 11pm on
+ * April 29 becomes "2026-04-30").
+ *
+ * @param value - Date input (defaults to "now")
+ * @returns YYYY-MM-DD in local time, or empty string if input is invalid
+ */
+export function getLocalDateString(value: DateInput = new Date()): string {
+  const parsed = value instanceof Date ? (isValidDate(value) ? value : null) : parseDateInput(value)
+  if (!parsed) {
+    return ''
+  }
+
+  const year = parsed.getFullYear()
+  const month = String(parsed.getMonth() + 1).padStart(2, '0')
+  const day = String(parsed.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export function isSameLocalCalendarDate(a: DateInput, b: DateInput): boolean {
   const first = parseDateInput(a)
   const second = parseDateInput(b)

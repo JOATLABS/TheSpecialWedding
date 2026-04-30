@@ -6,6 +6,7 @@ Sprint 3: Adds email digest generation for unread updates, messages, payments.
 """
 
 import asyncio
+import html
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, cast
@@ -846,9 +847,12 @@ class CouplePortalService:
             sections_html = ""
 
             if digest["unread_messages"] > 0:
+                safe_unread_count = html.escape(
+                    str(digest["unread_messages"]), quote=True
+                )
                 sections_html += f"""
                 <div style="margin-bottom: 20px; padding: 16px; background: #f0f7ff; border-radius: 8px;">
-                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">💬 {digest["unread_messages"]} Unread Message{"s" if digest["unread_messages"] > 1 else ""}</h3>
+                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">💬 {safe_unread_count} Unread Message{"s" if digest["unread_messages"] > 1 else ""}</h3>
                     <p style="color: #555; margin: 0; font-size: 14px;">Your planner sent you a message. Check your portal to read it.</p>
                 </div>
                 """
@@ -856,10 +860,16 @@ class CouplePortalService:
             if digest["new_updates_count"] > 0:
                 updates_list = ""
                 for update in digest["new_updates"]:
-                    updates_list += f'<li style="margin-bottom: 8px;"><strong>{update["title"]}</strong></li>'
+                    safe_update_title = html.escape(
+                        str(update.get("title", "")), quote=True
+                    )
+                    updates_list += f'<li style="margin-bottom: 8px;"><strong>{safe_update_title}</strong></li>'
+                safe_updates_count = html.escape(
+                    str(digest["new_updates_count"]), quote=True
+                )
                 sections_html += f"""
                 <div style="margin-bottom: 20px; padding: 16px; background: #f8f6f3; border-radius: 8px;">
-                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">📋 {digest["new_updates_count"]} New Update{"s" if digest["new_updates_count"] > 1 else ""}</h3>
+                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">📋 {safe_updates_count} New Update{"s" if digest["new_updates_count"] > 1 else ""}</h3>
                     <ul style="color: #555; font-size: 14px; padding-left: 20px; margin: 0;">{updates_list}</ul>
                 </div>
                 """
@@ -867,7 +877,9 @@ class CouplePortalService:
             if len(digest["upcoming_payments"]) > 0:
                 payment_list = ""
                 for p in digest["upcoming_payments"]:
-                    payment_list += f'<li style="margin-bottom: 8px;">{p["name"]}: ${p["amount"]:,.0f} due {p["due_date"]}</li>'
+                    safe_payment_name = html.escape(str(p.get("name", "")), quote=True)
+                    safe_due_date = html.escape(str(p.get("due_date", "")), quote=True)
+                    payment_list += f'<li style="margin-bottom: 8px;">{safe_payment_name}: ${p["amount"]:,.0f} due {safe_due_date}</li>'
                 sections_html += f"""
                 <div style="margin-bottom: 20px; padding: 16px; background: #fff8e6; border-radius: 8px;">
                     <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">💰 Upcoming Payment{"s" if len(digest["upcoming_payments"]) > 1 else ""}</h3>
@@ -876,12 +888,20 @@ class CouplePortalService:
                 """
 
             if digest["pending_forms_count"] > 0:
+                safe_pending_forms_count = html.escape(
+                    str(digest["pending_forms_count"]), quote=True
+                )
                 sections_html += f"""
                 <div style="margin-bottom: 20px; padding: 16px; background: #f5f0eb; border-radius: 8px;">
-                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">📝 {digest["pending_forms_count"]} Form{"s" if digest["pending_forms_count"] > 1 else ""} Pending</h3>
+                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">📝 {safe_pending_forms_count} Form{"s" if digest["pending_forms_count"] > 1 else ""} Pending</h3>
                     <p style="color: #555; margin: 0; font-size: 14px;">Your planner has forms waiting for your response.</p>
                 </div>
                 """
+
+            safe_couple_name = html.escape(couple_name or "there", quote=True)
+            safe_dashboard_url = html.escape(
+                f"{frontend_url}/couple/dashboard", quote=True
+            )
 
             html_content = f"""
             <div style="font-family: 'Georgia', serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
@@ -891,13 +911,13 @@ class CouplePortalService:
                 </div>
 
                 <p style="color: #333; font-size: 16px; line-height: 1.6;">
-                    Hi {couple_name or "there"}, here's what's new with your wedding:
+                    Hi {safe_couple_name}, here's what's new with your wedding:
                 </p>
 
                 {sections_html}
 
                 <div style="text-align: center; margin: 30px 0;">
-                    <a href="{frontend_url}/couple/dashboard"
+                    <a href="{safe_dashboard_url}"
                        style="background-color: #1e3a5f; color: white; padding: 14px 32px;
                               text-decoration: none; border-radius: 6px; font-size: 16px;
                               display: inline-block;">
