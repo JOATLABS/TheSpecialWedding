@@ -108,6 +108,47 @@ def verify_public_route(
     log_step(f"Public wedding route OK: {url}")
 
 
+def verify_ssr_health(session: requests.Session, frontend_base: str) -> None:
+    """Surface SSR-side backend reachability with a readable failure message.
+
+    The slug page already exercises this path indirectly through the layout's
+    server-side fetchWeddingPrivacyInfo call, but a failure there reaches us as
+    an opaque ``__next_error__`` HTML body. The dedicated ``/api/health-ssr``
+    route returns structured JSON so the deploy log shows the resolved
+    ``api_base`` and the underlying fetch error directly — preventing the
+    diagnostic gap that masked the INTERNAL_API_BASE_URL=http://backend-prod
+    regression from CI signal.
+    """
+    url = f"{frontend_base.rstrip('/')}/api/health-ssr"
+    response = request(session, "GET", url)
+
+    if response.ok:
+        try:
+            payload = response.json()
+            api_base = payload.get("api_base", "<unknown>")
+        except Exception:  # pragma: no cover - defensive
+            api_base = "<unknown>"
+        log_step(f"SSR backend reachability OK via {url} (api_base={api_base})")
+        return
+
+    try:
+        payload = response.json()
+        stage = payload.get("stage")
+        api_base = payload.get("api_base")
+        error = payload.get("error")
+        backend_status = payload.get("backend_status")
+        details = (
+            f"stage={stage!r} api_base={api_base!r} "
+            f"error={error!r} backend_status={backend_status!r}"
+        )
+    except Exception:  # pragma: no cover - defensive
+        details = response.text[:300].strip().replace("\n", " ")
+
+    raise RuntimeError(
+        f"SSR cannot reach backend (HTTP {response.status_code} from {url}): {details}"
+    )
+
+
 def _resolve_host_pair(frontend_base: str, api_base: str) -> tuple[str, str]:
     """Return the (frontend_host, api_host) pair used for cookie visibility checks.
 
@@ -388,6 +429,12 @@ def main() -> int:
         log_step("TLS certificate verification disabled for this environment")
 
     verify_health(session, args.api_base, args.frontend_base)
+
+    # SSR-side reachability before slug check — fails with a structured message
+    # naming the resolved api_base and underlying error, so a misconfigured
+    # INTERNAL_API_BASE_URL surfaces in the workflow log as the actual
+    # diagnostic instead of as `public route HTTP 500`.
+    verify_ssr_health(session, args.frontend_base)
 
     if args.public_slug:
         verify_public_route(session, args.frontend_base, args.public_slug)

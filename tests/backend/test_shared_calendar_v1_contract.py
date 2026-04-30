@@ -1426,8 +1426,9 @@ async def test_disconnect_connection_orphans_sync_rows() -> None:
 
     revoked: list[str] = []
 
-    async def fake_revoke(_connection_doc: dict) -> None:
+    async def fake_revoke(_connection_doc: dict) -> bool:
         revoked.append("revoked")
+        return True
 
     setattr(service, "_get_connection_doc", fake_get_connection_doc)
     setattr(service, "_revoke_provider_account", fake_revoke)

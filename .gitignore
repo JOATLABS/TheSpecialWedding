@@ -98,3 +98,10 @@ docs/OLD/
 
 # Rendered worker configs (generated at deploy time, never committed)
 cloudflare-workers/*.wrangler.rendered.toml
+.github/workflows/ci.yml
+docs/PageSpeed Insights.pdf
+docs/superpowers/plans/2026-04-30-performance-baseline-and-efficiency.md
+tmp/pdfs/pagespeed/
+tmp/pdfs/pagespeed-desktop/
+docs/Desktop PageSpeed Insights.pdf
+docs/performance/pagespeed-insights-2026-04-30.md

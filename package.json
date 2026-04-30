@@ -29,6 +29,7 @@
     "deps:update": "node scripts/update-deps.mjs --auto",
     "deps:update:dry": "node scripts/update-deps.mjs --dry-run",
     "deps:update:interactive": "node scripts/update-deps.mjs",
+    "repo:check-copy-artifacts": "node scripts/check-finder-copy-artifacts.mjs",
     "pre-deploy": "npm run security && npm run build"
   },
   "dependencies": {
