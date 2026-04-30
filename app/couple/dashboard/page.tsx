@@ -35,6 +35,10 @@ import {
   type CoupleThreadMessage,
   isSelfAuthored,
 } from '@/types/messaging';
+import {
+  resolveCouplePushConfig,
+  urlBase64ToUint8Array,
+} from '@/utils/webPush';
 
 // ============================================================================
 // TYPES
@@ -2685,8 +2689,8 @@ function PushNotificationWidget() {
     try {
       const res = await coupleFetch('/couple/portal/push/status');
       if (res.ok) {
-        const data = await res.json();
-        setPushStatus(!data.enabled ? 'unsupported' : data.subscribed ? 'subscribed' : 'unsubscribed');
+        const config = resolveCouplePushConfig(await res.json());
+        setPushStatus(!config.enabled ? 'unsupported' : config.subscribed ? 'subscribed' : 'unsubscribed');
       } else {
         setPushStatus('unsubscribed');
       }
@@ -2699,12 +2703,20 @@ function PushNotificationWidget() {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') { setPushStatus('denied'); toast.error('Notification permission denied'); return; }
 
-      const keyRes = await coupleFetch('/web-push/vapid-public-key');
-      if (!keyRes.ok) throw new Error('Push not configured');
-      const { vapid_public_key } = await keyRes.json();
+      const statusRes = await coupleFetch('/couple/portal/push/status');
+      if (!statusRes.ok) {
+        throw new Error(await extractApiErrorMessage(statusRes, 'Push notifications are not available right now'));
+      }
+      const config = resolveCouplePushConfig(await statusRes.json());
+      if (!config.enabled || !config.vapidPublicKey) {
+        throw new Error(config.reason || 'Push notifications are not configured on this server');
+      }
 
       const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: vapid_public_key });
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(config.vapidPublicKey),
+      });
 
       const subRes = await coupleFetch('/couple/portal/push/subscribe', {
         method: 'POST',
@@ -2743,7 +2755,7 @@ function PushNotificationWidget() {
         {pushStatus === 'subscribed' ? <BellRing className="w-5 h-5 text-green-500" /> : <BellOff className="w-5 h-5 text-slate-400 dark:text-slate-500" />}
         <h3 className="font-medium text-slate-900 dark:text-white">Push notifications</h3>
       </div>
-      <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Get notified about updates, messages, and important dates.</p>
+      <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Get notified about planner messages and updates.</p>
 
       {pushStatus === 'loading' && <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"><Loader2 className="w-4 h-4 animate-spin" /> Checking...</div>}
       {pushStatus === 'unsupported' && <p className="text-xs text-slate-500 dark:text-slate-400">Push notifications aren&apos;t available in this browser.</p>}

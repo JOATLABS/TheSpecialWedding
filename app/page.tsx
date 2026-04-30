@@ -28,6 +28,7 @@ type PricingTier = {
   name: string;
   price: string;
   cadence: string;
+  trialDays?: number;
   badge?: string;
   features: string[];
   cta: string;
@@ -86,11 +87,11 @@ const faqs: FAQ[] = [
   },
   {
     question: "Can vendors collaborate in the platform?",
-    answer: "Yes. Invite photographers, caterers, and venues into dedicated workspaces with role-based access to timelines, contracts, deliverables, and file exchanges — plus a vendor advertising portal for agencies.",
+    answer: "Yes. Invite photographers, caterers, and venues into dedicated workspaces with role-based access to timelines, contracts, deliverables, and file exchanges.",
   },
   {
     question: "Is there support on the wedding day?",
-    answer: "Signature and Agency plans include live chat with our success team plus on-call escalation for critical day-of moments.",
+    answer: "Signature and Enterprise plans include live chat with our success team plus on-call escalation for critical day-of moments.",
   },
 ];
 
@@ -103,70 +104,57 @@ const fallbackPricing: PricingTier[] = [
     name: "Boutique",
     price: "$29",
     cadence: "per wedding / month",
+    trialDays: 30,
     features: [
-      "Guest management & RSVP tracking",
-      "SMS & email reminders with delivery tracking",
-      "Couple portal (dashboard, timeline, inbox)",
-      "Photo gallery & guest memory uploads",
-      "Budget tracking by category",
-      "Wedding configuration & branding",
-      "Calendar with Google Sync",
-      "Knowledge base & support docs",
+      "Up to 3 weddings",
+      "150 guests per wedding",
+      "Guest & RSVP manager",
+      "Email invitations",
+      "Wedding website",
+      "Timeline builder",
+      "100 AI credits/month",
     ],
-    cta: "Try Boutique free",
+    cta: "Start 30-day trial",
   },
   {
     name: "Signature",
     price: "$59",
     cadence: "per wedding / month",
+    trialDays: 30,
     badge: "Popular",
     features: [
-      "Everything in Boutique, plus:",
-      "Seating orchestrator with drag-and-drop",
-      "AI contract generation & e-signatures",
-      "Service Packages with AI pricing guidance",
-      "Vendor CRM with payment tracking",
-      "Forms canvas with response analytics",
-      "AI cash flow predictions & budgeting",
-      "Team management with 12+ permissions",
+      "Up to 10 weddings",
+      "350 guests per wedding",
+      "Everything in Boutique",
+      "Seating orchestration",
+      "Guest memories QR uploads",
+      "Automated reminders",
+      "Vendor collaboration",
+      "300 AI credits/month",
+      "Priority support",
     ],
-    cta: "Try Signature free",
+    cta: "Start 30-day trial",
     emphasized: true,
   },
   {
-    name: "Agency",
-    price: "Custom",
-    cadence: "multi-tenant deployments",
+    name: "Enterprise",
+    price: "$149",
+    cadence: "per wedding / month",
+    trialDays: 30,
     features: [
-      "Everything in Signature, plus:",
-      "Dedicated success architect",
-      "Custom domains & white-label branding",
-      "SSO + role provisioning",
-      "Compliance reporting & audit logs",
-      "Vendor advertising portal",
-      "Priority support & SLA",
-      "Advanced analytics & retention cohorts",
+      "Unlimited weddings",
+      "Unlimited guests",
+      "Everything in Signature",
+      "White-label branding",
+      "API access",
+      "1000 AI credits/month",
+      "10 staff seats",
+      "Dedicated support",
+      "Custom integrations",
     ],
-    cta: "Talk with sales",
+    cta: "Start 30-day trial",
   },
 ];
-
-const agencyTier: PricingTier = {
-  name: "Agency",
-  price: "Custom",
-  cadence: "multi-tenant deployments",
-  features: [
-    "Everything in Signature, plus:",
-    "Dedicated success architect",
-    "Custom domains & white-label branding",
-    "SSO + role provisioning",
-    "Compliance reporting & audit logs",
-    "Vendor advertising portal",
-    "Priority support & SLA",
-    "Advanced analytics & retention cohorts",
-  ],
-  cta: "Talk with sales",
-};
 
 const defaultTheme: ThemeConfig = {
   primary_color: "#D4A5A5",
@@ -182,6 +170,7 @@ interface ApiPlan {
   description: string;
   price_monthly: number;
   price_yearly: number;
+  trial_days?: number;
   features_list?: string[];
   is_featured: boolean;
   sort_order: number;
@@ -441,11 +430,11 @@ function LandingContent({
                   href="#pricing"
                   className="flex items-center justify-center rounded-full bg-wedding-rose px-6 py-3 text-base font-semibold text-slate-900 shadow-lg shadow-wedding-rose/40 transition hover:bg-wedding-blush"
                 >
-                  Start your free trial
+                  Start 30-day trial
                 </a>
               ) : (
                 <span className="flex items-center justify-center rounded-full bg-wedding-rose px-6 py-3 text-base font-semibold text-slate-900 shadow-lg shadow-wedding-rose/40">
-                  Start your free trial
+                  Start 30-day trial
                 </span>
               )}
               {!isClone ? (
@@ -523,6 +512,11 @@ function LandingContent({
                       <span className="text-2xl sm:text-3xl font-semibold text-white">{tier.price}</span>
                       <span className="text-[10px] uppercase tracking-[0.3em] text-slate-400">{tier.cadence}</span>
                     </div>
+                    {tier.trialDays ? (
+                      <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.2em] text-wedding-rose">
+                        {tier.trialDays}-day free trial · no card required
+                      </p>
+                    ) : null}
                     <ul className="mt-2 space-y-0.5 text-sm text-slate-200">
                       {tier.features.map((feature) => (
                         <li key={feature} className="flex items-center gap-2">
@@ -595,7 +589,7 @@ function LandingContent({
             Stop juggling tools. Start planning weddings.
           </h2>
           <p className="mt-6 text-base text-slate-200">
-            Join planners who replaced 10+ subscriptions with one platform. Start free today — no credit card required.
+            Join planners who replaced 10+ subscriptions with one platform. Start a 30-day free trial today — no credit card required.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             {!isClone ? (
@@ -848,10 +842,6 @@ export default function HomePage() {
   }, [hasHydrated]);
 
   const handlePricingCTAClick = (planId: string) => {
-    if (planId === 'agency') {
-      window.location.href = 'mailto:sales@thespecialwedding.com?subject=Agency Plan Inquiry';
-      return;
-    }
     setSelectedPlanId(planId);
     setIsSignupModalOpen(true);
   };
@@ -865,13 +855,14 @@ export default function HomePage() {
       name: plan.name,
       price: `$${plan.price_monthly}`,
       cadence: "per wedding / month",
+      trialDays: plan.trial_days || undefined,
       features: plan.features_list || [],
-      cta: `Try ${plan.name} free`,
+      cta: plan.trial_days ? `Start ${plan.trial_days}-day trial` : `Start with ${plan.name}`,
       badge: plan.is_featured ? "Popular" : undefined,
       emphasized: plan.is_featured,
     }));
 
-    return [...apiTiers, agencyTier];
+    return apiTiers;
   }, [apiPlans, plansLoading]);
 
   return (

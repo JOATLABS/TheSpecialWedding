@@ -21,6 +21,7 @@ interface SubscriptionPlan {
   description: string;
   price_monthly: number;
   price_yearly: number;
+  trial_days?: number;
   is_featured?: boolean;
 }
 
@@ -266,6 +267,11 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
                     <span className="text-white">${featuredPlan.price_monthly}/mo</span>
                   </div>
                   <p className="mt-3 text-sm text-slate-200">{featuredPlan.description}</p>
+                  {featuredPlan.trial_days ? (
+                    <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-200">
+                      {featuredPlan.trial_days}-day free trial · no card required
+                    </p>
+                  ) : null}
                   <button
                     type="button"
                     onClick={onAuthModalOpen}

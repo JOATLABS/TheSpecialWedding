@@ -609,6 +609,26 @@ async def create_update(
 
     result = await mongo.db["couple_updates"].insert_one(update_doc)
 
+    async def _push_update_to_couple() -> None:
+        couple_doc = await mongo.db["couple_users"].find_one(
+            {"wedding_id": data.wedding_id},
+            {"email": 1, "wedding_archived": 1, "is_active": 1, "setup_completed": 1},
+        )
+        await _send_couple_push_notification(
+            couple_doc,
+            title=data.title,
+            body=_preview_push_body(data.content),
+            url="/couple/dashboard?section=inbox",
+            tag="couple_update",
+        )
+
+    await best_effort(
+        max_retries=3,
+        initial_delay=0.5,
+        backoff=2.0,
+        op_name="couple_push_update",
+    ).run(_push_update_to_couple)
+
     logger.info(
         f"Couple update created for wedding {data.wedding_id} by {current_user.email}"
     )
@@ -1250,6 +1270,50 @@ def _collect_email_targets(*values: object) -> list[str]:
     return emails
 
 
+def _build_couple_push_principal(couple: Optional[dict]) -> Optional[str]:
+    """Return the push principal for an active, setup-complete couple account."""
+    if not couple:
+        return None
+    if couple.get("wedding_archived"):
+        return None
+    if couple.get("is_active") is not True or couple.get("setup_completed") is not True:
+        return None
+
+    try:
+        return build_couple_principal_key(get_couple_record_id(couple))
+    except ValueError:
+        return None
+
+
+async def _send_couple_push_notification(
+    couple: Optional[dict],
+    *,
+    title: str,
+    body: str,
+    url: str,
+    tag: str,
+) -> None:
+    """Send a Web Push notification to a couple subscription if configured."""
+    principal = _build_couple_push_principal(couple)
+    if not principal or not web_push_service.enabled:
+        return
+
+    await web_push_service.send_notification(
+        user_id=principal,
+        title=title,
+        body=body,
+        url=url,
+        tag=tag,
+    )
+
+
+def _preview_push_body(content: str, max_length: int = 120) -> str:
+    normalized = " ".join(content.split())
+    if len(normalized) <= max_length:
+        return normalized
+    return f"{normalized[: max_length - 3]}..."
+
+
 async def _broadcast_couple_message_change(
     wedding_id: str,
     action: str,
@@ -1566,6 +1630,21 @@ async def planner_send_message(
     planner_targets = _collect_email_targets(
         current_user.email,
         current_user.team_owner_email if current_user.is_team_member else None,
+    )
+
+    await best_effort(
+        max_retries=3,
+        initial_delay=0.5,
+        backoff=2.0,
+        op_name="couple_push_planner_message",
+    ).run(
+        lambda: _send_couple_push_notification(
+            couple_doc,
+            title=f"New message from {planner_name}",
+            body=_preview_push_body(data.content),
+            url="/couple/dashboard?section=inbox",
+            tag="couple_message",
+        )
     )
 
     try:

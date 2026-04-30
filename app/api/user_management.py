@@ -2,7 +2,18 @@ import os
 from datetime import datetime
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from datetime import timedelta
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+)
 from pydantic import BaseModel, EmailStr, Field, validator
 
 from app.dependencies.auth_extended import (
@@ -16,6 +27,11 @@ from app.services.planner_onboarding_email_service import (
     planner_onboarding_email_service,
 )
 from app.services.user_management_service import UserManagementService
+from app.utils.auth_utils import (
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    create_access_token,
+    set_auth_cookie,
+)
 from app.utils.rate_limiter import check_rate_limit, create_rate_limiter, get_client_ip
 
 router = APIRouter()
@@ -363,9 +379,49 @@ async def verify_email(token: str):
 
 
 @router.get("/verify-email-change/{token}", tags=["Public"])
-async def verify_email_change(token: str):
-    """Verify email address change using token - No auth required"""
-    return await user_service.verify_email_change(token)
+async def verify_email_change(token: str, response: Response):
+    """Verify email address change using token - No auth required.
+
+    On success we mint a fresh JWT that carries the *new* email as the `sub`
+    claim and write it to the auth cookie. Without this reissue, every
+    subsequent authenticated request would 401 because the cookie still
+    references the old email and `verify_token` would not find a matching
+    user row — effectively force-logging-out the user the moment they
+    succeed at changing their email.
+    """
+    result = await user_service.verify_email_change(token)
+
+    new_email = result.get("new_email")
+    role = result.get("user_role")
+    if new_email:
+        token_data = {"sub": new_email, "role": role}
+        access_token = create_access_token(
+            data=token_data,
+            expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+        )
+        # Match the cookie name used by login flow.
+        set_auth_cookie(response, "admin_token", access_token)
+
+    # Strip internal fields from the public response.
+    return {
+        "message": result.get("message"),
+        "old_email": result.get("old_email"),
+        "new_email": new_email,
+        "changed_at": result.get("changed_at"),
+    }
+
+
+@router.delete("/profile/email/pending", tags=["Profile"])
+async def cancel_pending_email_change(
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+):
+    """Cancel an in-flight email change for the current user.
+
+    Clears the `pending_email` and verification token without affecting the
+    active email or auth state. Used by the Account Settings modal's
+    "cancel pending change" action.
+    """
+    return await user_service.cancel_pending_email_change(current_user.email)
 
 
 # ==================== PASSWORD RESET ENDPOINTS ====================

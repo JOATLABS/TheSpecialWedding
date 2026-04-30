@@ -13,6 +13,7 @@ from typing_extensions import TypedDict
 from app.core.database import mongo
 from app.models.subscription import (
     PLANNER_BLOCKED_SUBSCRIPTION_STATUSES,
+    SubscriptionStatus,
     normalize_subscription_status,
 )
 from app.models.team_member import resolve_team_permissions
@@ -322,10 +323,10 @@ async def get_current_user_extended(
                     sub_status, _DEFAULT_SUB_BLOCK_REASON
                 )
             # Check trial expiration for wedding planners
-            if (
-                role == "wedding_planner"
-                and user_data.get("subscription_status") == "trial"
-            ):
+            if role == "wedding_planner" and sub_status in {
+                SubscriptionStatus.TRIAL.value,
+                SubscriptionStatus.TRIAL_EXPIRING.value,
+            }:
                 trial_end_date = user_data.get("trial_end_date")
                 if trial_end_date:
                     # Handle both datetime objects and ISO strings, ensuring timezone-aware

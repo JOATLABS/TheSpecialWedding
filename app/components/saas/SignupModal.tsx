@@ -14,9 +14,12 @@ interface SubscriptionPlan {
   price_yearly: number;
   max_weddings: number;
   max_guests_per_wedding: number;
+  trial_days?: number;
   features_list?: string[];
-  features: string[];
+  features: Record<string, boolean> | string[];
   is_featured: boolean;
+  is_active?: boolean;
+  display_order?: number;
 }
 
 const FALLBACK_PLANS: SubscriptionPlan[] = [
@@ -25,10 +28,20 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
     name: 'Boutique',
     description: 'For new planners',
     price_monthly: 29,
-    price_yearly: 348,
+    price_yearly: 290,
+    trial_days: 30,
     max_weddings: 3,
     max_guests_per_wedding: 150,
-    features: ['Guest & RSVP manager', 'Email invitations', 'Wedding website', 'Timeline builder'],
+    features_list: [
+      'Up to 3 weddings',
+      '150 guests per wedding',
+      'Guest & RSVP manager',
+      'Email invitations',
+      'Wedding website',
+      'Timeline builder',
+      '100 AI credits/month',
+    ],
+    features: {},
     is_featured: false
   },
   {
@@ -36,11 +49,46 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
     name: 'Signature',
     description: 'Most popular',
     price_monthly: 59,
-    price_yearly: 708,
+    price_yearly: 590,
+    trial_days: 30,
     max_weddings: 10,
     max_guests_per_wedding: 350,
-    features: ['Seating orchestration', 'Guest memories uploads', 'Automated reminders', 'Vendor collaboration'],
+    features_list: [
+      'Up to 10 weddings',
+      '350 guests per wedding',
+      'Everything in Boutique',
+      'Seating orchestration',
+      'Guest memories QR uploads',
+      'Automated reminders',
+      'Vendor collaboration',
+      '300 AI credits/month',
+      'Priority support',
+    ],
+    features: {},
     is_featured: true
+  },
+  {
+    _id: 'plan_enterprise',
+    name: 'Enterprise',
+    description: 'For high-volume wedding planning firms',
+    price_monthly: 149,
+    price_yearly: 1490,
+    trial_days: 30,
+    max_weddings: -1,
+    max_guests_per_wedding: -1,
+    features_list: [
+      'Unlimited weddings',
+      'Unlimited guests',
+      'Everything in Signature',
+      'White-label branding',
+      'API access',
+      '1000 AI credits/month',
+      '10 staff seats',
+      'Dedicated support',
+      'Custom integrations',
+    ],
+    features: {},
+    is_featured: false
   }
 ];
 
@@ -124,9 +172,11 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
         const response = await fetch(`${apiBaseUrl}/public/subscription-plans`);
         if (response.ok) {
           const data = await response.json();
-          const activePlans = data.filter((p: SubscriptionPlan) => p).sort((a: SubscriptionPlan, b: SubscriptionPlan) =>
-            (a.price_monthly || 0) - (b.price_monthly || 0)
-          );
+          const activePlans = data
+            .filter((p: SubscriptionPlan) => p && p.is_active !== false)
+            .sort((a: SubscriptionPlan, b: SubscriptionPlan) =>
+              (a.display_order ?? a.price_monthly ?? 0) - (b.display_order ?? b.price_monthly ?? 0)
+            );
           if (activePlans.length > 0) {
             setPlans(activePlans);
             const initialPlan = selectedPlanId
@@ -208,7 +258,6 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
           billing_interval: billingInterval,
           success_url: `${window.location.origin}/admin/login?payment=success`,
           cancel_url: `${window.location.origin}/?payment=cancelled`,
-          trial_days: 0,
         })
       });
 
@@ -265,7 +314,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
                     }`}
                   >
                     {interval === 'monthly' ? 'Monthly' : 'Yearly'}
-                    {interval === 'yearly' && <span className="ml-1 text-emerald-300">-15%</span>}
+                    {interval === 'yearly' && <span className="ml-1 text-emerald-300">save 2 mo</span>}
                   </button>
                 ))}
               </div>
@@ -273,6 +322,11 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
               <div className="bg-white/10 rounded-xl p-4 mb-4">
                 <div className="text-3xl font-bold">${displayPrice}</div>
                 <div className="text-sm text-indigo-200">per {billingInterval === 'yearly' ? 'year' : 'month'}</div>
+                {selectedPlan?.trial_days ? (
+                  <div className="mt-1 text-xs font-medium text-emerald-200">
+                    {selectedPlan.trial_days}-day free trial · no card required
+                  </div>
+                ) : null}
               </div>
 
               <div className="space-y-2">

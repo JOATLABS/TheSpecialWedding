@@ -145,9 +145,9 @@ export const SaasLandingPage: React.FC = () => {
     hero_title: "Welcome to Special Wedding",
     hero_subtitle: "Wedding Planning Made Simple",
     hero_description: "The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.",
-    hero_cta_primary: "Start Free Trial",
+    hero_cta_primary: "Start 30-Day Trial",
     contact_cta_label: 'Contact Sales',
-    contact_url: process.env.NEXT_PUBLIC_CONTACT_URL || 'mailto:sales@specialwedding.com',
+    contact_url: process.env.NEXT_PUBLIC_CONTACT_URL || 'mailto:sales@thespecialwedding.io',
     trust_indicators: ["Free 30-day trial", "No setup fees", "Cancel anytime"],
     // Modern hero defaults
     show_decorative_logo: false, // Use modern design by default
@@ -318,24 +318,37 @@ export const SaasLandingPage: React.FC = () => {
   const defaultPlans: SubscriptionPlan[] = useMemo(
     () => [
       {
-        _id: 'signature',
-        name: 'Signature',
-        description: 'Collaborate with unlimited vendors and automate client touchpoints.',
-        price_monthly: 289,
-        price_yearly: 3090,
+        _id: 'plan_boutique',
+        name: 'Boutique',
+        description: 'For new planners onboarding their first weddings.',
+        price_monthly: 29,
+        price_yearly: 290,
+        trial_days: 30,
         is_featured: false,
+        is_active: true,
+        display_order: 1,
+      },
+      {
+        _id: 'plan_signature',
+        name: 'Signature',
+        description: 'Most popular plan with full automation features.',
+        price_monthly: 59,
+        price_yearly: 590,
+        trial_days: 30,
+        is_featured: true,
         is_active: true,
         display_order: 2,
       },
       {
-        _id: 'boutique',
-        name: 'Boutique',
-        description: 'For new planners onboarding their first 3 weddings with concierge support.',
-        price_monthly: 89,
-        price_yearly: 930,
+        _id: 'plan_enterprise',
+        name: 'Enterprise',
+        description: 'For high-volume wedding planning firms.',
+        price_monthly: 149,
+        price_yearly: 1490,
+        trial_days: 30,
         is_featured: false,
         is_active: true,
-        display_order: 0,
+        display_order: 3,
       },
     ],
     []
@@ -685,6 +698,11 @@ export const SaasLandingPage: React.FC = () => {
                     <span className="text-4xl font-semibold">${plan.price_monthly}</span>
                     <span className="text-sm text-slate-500">/month</span>
                   </div>
+                  {plan.trial_days ? (
+                    <p className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                      {plan.trial_days}-day free trial · no card required
+                    </p>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => {
@@ -694,7 +712,7 @@ export const SaasLandingPage: React.FC = () => {
                     }}
                     className="mt-6 inline-flex items-center justify-center rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-[1px] hover:bg-slate-800"
                   >
-                    Start with {plan.name}
+                    {plan.trial_days ? `Start ${plan.trial_days}-day trial` : `Start with ${plan.name}`}
                   </button>
                 </article>
               ))}

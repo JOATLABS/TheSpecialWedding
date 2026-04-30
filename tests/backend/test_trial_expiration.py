@@ -133,22 +133,67 @@ async def test_expired_trials_are_deactivated_and_notified(trial_service):
                 "is_active": True,
                 "email_verified": True,
             },
+            {
+                "_id": "expiring-user",
+                "email": "expiring@example.com",
+                "subscription_status": "trial_expiring",
+                "trial_end_date": now - timedelta(days=1),
+                "is_active": True,
+                "email_verified": True,
+            },
+        ]
+    )
+    database["user_subscriptions"].insert_many(
+        [
+            {
+                "_id": "sub-expired-primary",
+                "user_id": "expired-user",
+                "status": "trial",
+            },
+            {
+                "_id": "sub-expired-duplicate",
+                "user_id": "expired-user",
+                "status": "trial_expiring",
+            },
+            {
+                "_id": "sub-active",
+                "user_id": "active-user",
+                "status": "trial",
+            },
         ]
     )
 
     result = await service.check_and_expire_trials()
 
-    assert result["expired_trials"] == 1
+    assert result["expired_trials"] == 2
     expired_record = users.find_one({"_id": "expired-user"})
     assert expired_record["subscription_status"] == "expired"
     assert expired_record["is_active"] is True
     assert "trial_expired_at" in expired_record
 
+    expiring_record = users.find_one({"_id": "expiring-user"})
+    assert expiring_record["subscription_status"] == "expired"
+    assert expiring_record["is_active"] is True
+    assert "trial_expired_at" in expiring_record
+
     active_record = users.find_one({"_id": "active-user"})
     assert active_record["subscription_status"] == "trial"
     assert active_record["is_active"] is True
 
-    assert email_service.sent_payloads
+    expired_subscription_statuses = {
+        sub["_id"]: sub["status"]
+        for sub in database["user_subscriptions"].find({"user_id": "expired-user"})
+    }
+    assert expired_subscription_statuses == {
+        "sub-expired-primary": "expired",
+        "sub-expired-duplicate": "expired",
+    }
+    assert (
+        database["user_subscriptions"].find_one({"_id": "sub-active"})["status"]
+        == "trial"
+    )
+
+    assert len(email_service.sent_payloads) == 2
     assert email_service.sent_payloads[0]["to_email"] == "expired@example.com"
     assert email_service.sent_payloads[0]["email_type"] == "trial_expired"
 
@@ -184,12 +229,36 @@ async def test_warning_emails_sent_within_window(trial_service, monkeypatch):
                 "is_active": True,
                 "email_verified": True,
             },
+            {
+                "_id": "expiring-user",
+                "email": "expiring@example.com",
+                "subscription_status": "trial_expiring",
+                "trial_end_date": now + timedelta(days=3),
+                "is_active": True,
+                "email_verified": True,
+            },
+            {
+                "_id": "legacy-user",
+                "email": "legacy@example.com",
+                "subscription_status": "trial",
+                "trial_end_date": now + timedelta(days=3),
+                "is_active": True,
+            },
+            {
+                "_id": "unverified-public-user",
+                "email": "unverified-public@example.com",
+                "subscription_status": "trial",
+                "trial_end_date": now + timedelta(days=3),
+                "is_active": True,
+                "email_verified": False,
+                "registration_source": "public_signup",
+            },
         ]
     )
 
     result = await service.send_trial_warning_emails()
 
-    assert result["warnings_sent"] == 1
+    assert result["warnings_sent"] == 3
 
     warned = users.find_one({"_id": "warn-user"})
     assert warned.get("trial_countdown_last_day") in {1, 2, 3}
@@ -198,7 +267,10 @@ async def test_warning_emails_sent_within_window(trial_service, monkeypatch):
     not_warned = users.find_one({"_id": "far-user"})
     assert not_warned.get("trial_warning_sent") is None
 
-    assert email_service.sent_payloads
+    assert len(email_service.sent_payloads) == 3
+    sent_to = {payload["to_email"] for payload in email_service.sent_payloads}
+    assert "legacy@example.com" in sent_to
+    assert "unverified-public@example.com" not in sent_to
     assert email_service.sent_payloads[0]["email_type"] == "trial_warning"
 
 
@@ -257,6 +329,31 @@ async def test_authentication_blocks_expired_trials(auth_context):
             "email": "planner@example.com",
             "role": "wedding_planner",
             "subscription_status": "trial",
+            "trial_end_date": datetime.now(timezone.utc) - timedelta(days=1),
+            "is_active": True,
+            "email_verified": True,
+        }
+    )
+
+    credentials = SimpleNamespace(credentials="token")
+
+    user = await auth_extended.get_current_user_extended(credentials)
+    assert user.user_data["subscription_status"] == "expired"
+    assert user.user_data.get("_subscription_blocked") is True
+
+    updated = users.find_one({"email": "planner@example.com"})
+    assert updated["subscription_status"] == "expired"
+    assert "trial_expired_at" in updated
+
+
+@pytest.mark.asyncio
+async def test_authentication_blocks_expired_trial_expiring_status(auth_context):
+    users = auth_context["users"]
+    users.insert_one(
+        {
+            "email": "planner@example.com",
+            "role": "wedding_planner",
+            "subscription_status": "trial_expiring",
             "trial_end_date": datetime.now(timezone.utc) - timedelta(days=1),
             "is_active": True,
             "email_verified": True,

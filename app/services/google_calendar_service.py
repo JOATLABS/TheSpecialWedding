@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
 import logging
+import re
 import secrets
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
+from uuid import uuid4
 
+import httpx
 import jwt
 from bson import ObjectId
 from cryptography.fernet import Fernet
@@ -36,6 +41,93 @@ from app.services.calendar_audit_service import calendar_audit_service
 logger = logging.getLogger(__name__)
 
 
+# Hard cap on calendarList pagination to prevent unbounded loops on Google
+# accounts with thousands of subscribed calendars. 250 items per page * 20
+# pages = 5,000 calendars before we stop and log a warning.
+_CALENDAR_LIST_PAGE_SIZE = 250
+_CALENDAR_LIST_MAX_PAGES = 20
+
+
+# Mapping from event hex color to Google Calendar's numeric colorId. Hoisted
+# to module scope so it is not rebuilt on every event sync.
+_GOOGLE_EVENT_COLOR_MAP: Dict[str, str] = {
+    "#a4bdfc": "1",
+    "#7ae7bf": "2",
+    "#dbadff": "3",
+    "#ff887c": "4",
+    "#fbd75b": "5",
+    "#ffb878": "6",
+    "#46d6db": "7",
+    "#e1e1e1": "8",
+    "#5484ed": "9",
+    "#51b749": "10",
+    "#dc2127": "11",
+}
+
+
+# Environment values that disable production security checks. Anything not in
+# this set (including misconfigurations and unknown values) is treated as
+# production so security-critical env vars are required (fail-closed).
+_NON_PRODUCTION_ENVIRONMENTS = frozenset({"development", "dev", "local", "test", "ci"})
+
+
+# Regex used to scrub OAuth-bearing substrings from log/DB error strings. We
+# strip anything that looks like a Google OAuth code/token query parameter,
+# JSON field, or the literal token bodies that occasionally appear in error
+# payloads. Conservative on purpose — false positives are fine, leaks are not.
+_REDACT_NAMED_PATTERNS = [
+    re.compile(r"(?i)(refresh_token['\"\s:=]+)[A-Za-z0-9._\-/+]+"),
+    re.compile(r"(?i)(access_token['\"\s:=]+)[A-Za-z0-9._\-/+]+"),
+    re.compile(r"(?i)(\bcode['\"\s:=]+)[A-Za-z0-9._\-/+]+"),
+    re.compile(r"(?i)(authorization['\"\s:=]+)Bearer\s+[A-Za-z0-9._\-/+]+"),
+]
+_REDACT_TOKEN_SHAPES = [
+    re.compile(r"\b1//[A-Za-z0-9_\-]+\b"),  # Google refresh-token shape
+    re.compile(r"\bya29\.[A-Za-z0-9_\-]+\b"),  # Google access-token shape
+]
+
+
+def _redact_sensitive(text: Any) -> str:
+    """Strip OAuth tokens / codes / bearer values from a log or error string."""
+    if text is None:
+        return ""
+    out = str(text)
+    for pattern in _REDACT_NAMED_PATTERNS:
+        out = pattern.sub(r"\1[REDACTED]", out)
+    for pattern in _REDACT_TOKEN_SHAPES:
+        out = pattern.sub("[REDACTED]", out)
+    return out
+
+
+@asynccontextmanager
+async def _account_token_lock(
+    *, user_id: str, provider_account_email: str
+) -> AsyncIterator[None]:
+    """Per-Google-account lock so concurrent token refreshes don't race.
+
+    Guards `get_credentials_for_connection` against the rotating-refresh-token
+    invalidation case where two parallel requests both refresh and the second
+    refresh invalidates the first one's stored tokens. Fails open if Redis is
+    unavailable (acquire returns None) — same fail-open posture as
+    `_meeting_mutation_lock` in `app/api/planner_calendar.py`.
+    """
+    lock_key = f"calendar_account_token_lock:{user_id}:{provider_account_email}"
+    lock_value = uuid4().hex
+    acquired = await cache.acquire_lock(lock_key, lock_value, expire=30)
+    if acquired is False:
+        # Another request is currently refreshing tokens for this account.
+        # Raise 409 so the client can retry rather than racing.
+        raise HTTPException(
+            status_code=409,
+            detail="Calendar credentials are being refreshed by another request. Try again.",
+        )
+    try:
+        yield
+    finally:
+        if acquired:
+            await cache.release_lock(lock_key, lock_value)
+
+
 class GoogleCalendarService:
     """Handles Google Calendar OAuth, connection lifecycle, and event projection."""
 
@@ -49,7 +141,14 @@ class GoogleCalendarService:
         return bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET)
 
     def _is_production_environment(self) -> bool:
-        return settings.ENVIRONMENT.lower() == "production"
+        """Fail-closed environment check.
+
+        Returns False only for known dev/test/CI values. Anything unknown
+        (typos, misconfiguration, future env names) is treated as production
+        so security-critical env vars are required.
+        """
+        env = (settings.ENVIRONMENT or "").lower().strip()
+        return env not in _NON_PRODUCTION_ENVIRONMENTS
 
     def _validate_security_configuration(self) -> None:
         if not (
@@ -160,7 +259,9 @@ class GoogleCalendarService:
     def _classify_google_exception(self, exc: Exception) -> dict[str, Any]:
         status_code: Optional[int] = None
         error_reason: Optional[str] = None
-        message = str(exc)
+        # Redact at the source — `message` flows into `last_error` in the DB
+        # via `_apply_provider_error_to_connection`.
+        message = _redact_sensitive(exc)
 
         if isinstance(exc, HttpError):
             status_code = int(getattr(exc.resp, "status", 0) or 0)
@@ -387,7 +488,7 @@ class GoogleCalendarService:
 
     def _decode_state(self, state: str) -> Dict[str, Any]:
         try:
-            return jwt.decode(
+            payload = jwt.decode(
                 state,
                 self._get_state_signing_key(),
                 algorithms=["HS256"],
@@ -398,6 +499,15 @@ class GoogleCalendarService:
             ) from exc
         except jwt.InvalidTokenError as exc:
             raise HTTPException(status_code=400, detail="Invalid OAuth state") from exc
+
+        # Validate required structural fields so downstream code can safely
+        # use .get(). Missing fields = malformed state = treat as invalid.
+        required_fields = ("sub", "user_email", "owner_id", "owner_email")
+        if not all(payload.get(field) for field in required_fields):
+            raise HTTPException(
+                status_code=400, detail="OAuth state is missing required fields"
+            )
+        return payload
 
     async def get_authorization_url(
         self,
@@ -415,9 +525,14 @@ class GoogleCalendarService:
             redirect_uri=settings.GOOGLE_REDIRECT_URI,
         )
 
+        # Note: `prompt="consent"` is deliberate — Google only returns a
+        # refresh_token on the response when the user re-consents. Removing it
+        # would silently break offline access for re-connects.
+        # `include_granted_scopes` is intentionally NOT passed; it is for
+        # incremental authorization, which we do not use (our scope set is
+        # fixed at request time).
         auth_url, _ = flow.authorization_url(
             access_type="offline",
-            include_granted_scopes="true",
             prompt="consent",
             state=self._build_state(
                 user_id=user_id,
@@ -460,9 +575,13 @@ class GoogleCalendarService:
         )
 
         try:
-            flow.fetch_token(code=code)
+            # Blocking HTTP call — run off the event loop.
+            await asyncio.to_thread(flow.fetch_token, code=code)
         except Exception as exc:
-            logger.error("Failed to fetch Google OAuth token: %s", exc)
+            logger.error(
+                "Failed to fetch Google OAuth token: %s",
+                _redact_sensitive(exc),
+            )
             raise HTTPException(
                 status_code=400, detail="Failed to complete Google authorization"
             ) from exc
@@ -471,30 +590,60 @@ class GoogleCalendarService:
         calendar_service = build("calendar", "v3", credentials=credentials)
         oauth_service = build("oauth2", "v2", credentials=credentials)
 
+        # H-5: userinfo.email is in our scope set, so this MUST succeed. If it
+        # fails we cannot reliably bind tokens to a Google account; fall-back
+        # to the planner's app email could mis-bind an entirely different
+        # Google identity. Hard-fail instead.
         try:
-            account_info = oauth_service.userinfo().get().execute()
-            provider_account_email = (
-                account_info.get("email") or state_payload["user_email"]
+            account_info = await asyncio.to_thread(
+                lambda: oauth_service.userinfo().get().execute()
             )
-            provider_account_name = (
-                account_info.get("name")
-                or account_info.get("given_name")
-                or provider_account_email
+        except Exception as exc:
+            logger.error(
+                "Failed to fetch Google userinfo during OAuth callback: %s",
+                _redact_sensitive(exc),
             )
-        except Exception:
-            provider_account_email = state_payload["user_email"]
-            provider_account_name = provider_account_email
+            raise HTTPException(
+                status_code=502,
+                detail="Could not verify Google account identity. Please try again.",
+            ) from exc
 
-        calendars = []
-        page_token = None
-        while True:
-            response = (
-                calendar_service.calendarList().list(pageToken=page_token).execute()
+        provider_account_email = account_info.get("email")
+        if not provider_account_email:
+            raise HTTPException(
+                status_code=502,
+                detail="Google did not return an account email. Please try again.",
+            )
+        provider_account_name = (
+            account_info.get("name")
+            or account_info.get("given_name")
+            or provider_account_email
+        )
+
+        # C-5: capped calendarList pagination so a corporate account with
+        # thousands of subscribed calendars cannot run away with a worker.
+        calendars: list[dict[str, Any]] = []
+        page_token: Optional[str] = None
+        for _page_index in range(_CALENDAR_LIST_MAX_PAGES):
+            response = await asyncio.to_thread(
+                lambda token=page_token: (
+                    calendar_service.calendarList()
+                    .list(pageToken=token, maxResults=_CALENDAR_LIST_PAGE_SIZE)
+                    .execute()
+                )
             )
             calendars.extend(response.get("items", []))
             page_token = response.get("nextPageToken")
             if not page_token:
                 break
+        else:
+            logger.warning(
+                "calendarList pagination hit %d-page cap for account %s "
+                "(returning first %d calendars)",
+                _CALENDAR_LIST_MAX_PAGES,
+                provider_account_email,
+                len(calendars),
+            )
 
         if not calendars:
             raise HTTPException(
@@ -775,22 +924,56 @@ class GoogleCalendarService:
     async def get_credentials_for_connection(
         self, connection_id: str
     ) -> Optional[Credentials]:
-        """Load decrypted credentials for a connection, refreshing if needed."""
+        """Load decrypted credentials for a connection, refreshing if needed.
+
+        Refreshes are guarded by a per-account lock so concurrent requests for
+        the same Google account cannot race on a rotating refresh token. After
+        acquiring the lock we re-read the connection doc — if a sibling
+        request already refreshed, we use the freshly-stored tokens instead of
+        refreshing again.
+        """
         connection_doc = await self._get_connection_doc(connection_id)
-        credentials = Credentials(
-            token=self._decrypt_token(connection_doc.get("access_token_encrypted")),
-            refresh_token=self._decrypt_token(
-                connection_doc.get("refresh_token_encrypted")
-            ),
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=settings.GOOGLE_CLIENT_ID,
-            client_secret=settings.GOOGLE_CLIENT_SECRET,
-            scopes=settings.GOOGLE_CALENDAR_SCOPES,
-        )
+
+        def _build_credentials(doc: dict) -> Credentials:
+            return Credentials(
+                token=self._decrypt_token(doc.get("access_token_encrypted")),
+                refresh_token=self._decrypt_token(doc.get("refresh_token_encrypted")),
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=settings.GOOGLE_CLIENT_ID,
+                client_secret=settings.GOOGLE_CLIENT_SECRET,
+                scopes=settings.GOOGLE_CALENDAR_SCOPES,
+            )
+
+        credentials = _build_credentials(connection_doc)
+
+        # Fast path: token still valid, no refresh needed, no lock needed.
+        if not (credentials.expired and credentials.refresh_token):
+            return credentials
+
+        user_id = str(connection_doc.get("user_id") or "")
+        provider_account_email = str(connection_doc.get("provider_account_email") or "")
 
         try:
-            if credentials.expired and credentials.refresh_token:
-                credentials.refresh(Request())
+            async with _account_token_lock(
+                user_id=user_id,
+                provider_account_email=provider_account_email,
+            ):
+                # Re-read the doc inside the lock so we pick up any tokens a
+                # sibling request just persisted. This avoids double refresh
+                # under a rotating-refresh-token policy.
+                fresh_doc = await self.connections_collection.find_one(
+                    {"_id": connection_doc["_id"]}
+                )
+                if fresh_doc is None:
+                    return None
+                connection_doc = fresh_doc
+                credentials = _build_credentials(connection_doc)
+
+                if not (credentials.expired and credentials.refresh_token):
+                    return credentials
+
+                # Blocking HTTP — run off the event loop.
+                await asyncio.to_thread(credentials.refresh, Request())
                 if not credentials.token:
                     raise HTTPException(
                         status_code=400,
@@ -802,14 +985,17 @@ class GoogleCalendarService:
                     refresh_token=credentials.refresh_token,
                     token_expiry=credentials.expiry,
                 )
+        except HTTPException:
+            raise
         except Exception as exc:
-            logger.error("Failed to refresh Google credentials: %s", exc)
+            redacted = _redact_sensitive(exc)
+            logger.error("Failed to refresh Google credentials: %s", redacted)
             await self.connections_collection.update_one(
                 {"_id": connection_doc["_id"]},
                 {
                     "$set": {
                         "connection_status": CalendarConnectionStatus.ERROR.value,
-                        "last_error": str(exc),
+                        "last_error": redacted,
                         "last_healthcheck_at": datetime.now(UTC),
                         "updated_at": datetime.now(UTC),
                     }
@@ -1031,10 +1217,12 @@ class GoogleCalendarService:
 
         try:
             service = build("calendar", "v3", credentials=credentials)
-            calendar_entry = (
-                service.calendarList()
-                .get(calendarId=connection_doc["calendar_id"])
-                .execute()
+            calendar_entry = await asyncio.to_thread(
+                lambda: (
+                    service.calendarList()
+                    .get(calendarId=connection_doc["calendar_id"])
+                    .execute()
+                )
             )
             is_writable = calendar_entry.get("accessRole") in {"owner", "writer"}
             await self.connections_collection.update_one(
@@ -1097,21 +1285,62 @@ class GoogleCalendarService:
 
         return self._serialize_connection(await self._get_connection_doc(connection_id))
 
-    async def _revoke_provider_account(self, connection_doc: dict) -> None:
-        """Revoke Google access for a provider account."""
-        token = self._decrypt_token(connection_doc.get("access_token_encrypted"))
-        if not token:
-            return
-        try:
-            import requests  # type: ignore[import-untyped]
+    async def _revoke_provider_account(self, connection_doc: dict) -> bool:
+        """Revoke Google access for a provider account.
 
-            requests.post(
-                "https://oauth2.googleapis.com/revoke",
-                params={"token": token},
-                timeout=10,
+        Returns True on success (including 200 and 400 invalid_token responses
+        — Google returns 400 if the token has already been revoked, which we
+        treat as success since the desired end state matches). Returns False
+        on transient/unknown failures so the caller can decide whether to
+        proceed with the local delete.
+
+        Prefers the refresh token: revoking it invalidates the entire grant
+        (every access token derived from it), where revoking just an access
+        token leaves the refresh token live.
+        """
+        refresh_token = self._decrypt_token(
+            connection_doc.get("refresh_token_encrypted")
+        )
+        access_token = self._decrypt_token(connection_doc.get("access_token_encrypted"))
+        token = refresh_token or access_token
+        if not token:
+            # Nothing to revoke — treat as already disconnected.
+            return True
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    "https://oauth2.googleapis.com/revoke",
+                    params={"token": token},
+                )
+        except (httpx.RequestError, httpx.TimeoutException) as exc:
+            logger.warning(
+                "Network failure revoking Google token: %s",
+                _redact_sensitive(exc),
             )
-        except Exception as exc:
-            logger.warning("Failed to revoke Google token: %s", exc)
+            return False
+
+        # Google returns 200 on successful revoke. For an already-revoked or
+        # malformed token it returns 400 with `invalid_token` — semantically
+        # the same end state, so we treat it as success and let the local
+        # delete proceed.
+        if response.status_code == 200:
+            return True
+        if response.status_code == 400:
+            try:
+                payload = response.json()
+            except Exception:
+                payload = {}
+            if isinstance(payload, dict) and payload.get("error") in {
+                "invalid_token",
+                "invalid_grant",
+            }:
+                return True
+        logger.warning(
+            "Unexpected response revoking Google token: status=%s body=%s",
+            response.status_code,
+            _redact_sensitive(response.text),
+        )
+        return False
 
     async def disconnect_connection(
         self,
@@ -1120,13 +1349,42 @@ class GoogleCalendarService:
         actor_email: Optional[str] = None,
         actor_role: Optional[str] = None,
     ) -> dict:
-        """Delete one connection row, revoking access if it is the last row for that account."""
+        """Delete one connection row.
+
+        Order of operations is deliberate:
+        1. Determine if this is the last row for the provider account.
+        2. If yes, attempt revoke at Google FIRST. On retryable failure raise
+           503 and leave local state intact so the user can retry.
+        3. Only after revoke succeeds (or there are sibling rows still pinning
+           the grant), delete the local row + orphan its sync rows.
+
+        Revoke is treated as idempotent — Google returning `invalid_token`
+        (400) for an already-revoked grant is also success.
+        """
         connection_doc = await self._get_connection_doc(connection_id)
         account_query = {
             "user_id": connection_doc["user_id"],
             "provider_account_email": connection_doc["provider_account_email"],
         }
         sibling_count = await self.connections_collection.count_documents(account_query)
+        is_last_row_for_account = sibling_count <= 1
+
+        # H-4 / C-4: revoke BEFORE the local delete, always (idempotent at
+        # Google's end). If this is not the last row for the provider account
+        # we skip revoke because other rows still legitimately need the grant.
+        if is_last_row_for_account:
+            revoked = await self._revoke_provider_account(connection_doc)
+            if not revoked:
+                # Transient revoke failure — bubble up so the user retries
+                # rather than ending up with a stale grant at Google.
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "Could not revoke Google access right now. "
+                        "Please try disconnecting again in a moment."
+                    ),
+                )
+
         now = datetime.now(UTC)
         await self.syncs_collection.update_many(
             {"calendar_connection_id": connection_id},
@@ -1147,9 +1405,6 @@ class GoogleCalendarService:
         )
         await self.connections_collection.delete_one({"_id": connection_doc["_id"]})
         await self.invalidate_connection_events_cache(connection_id)
-
-        if sibling_count <= 1:
-            await self._revoke_provider_account(connection_doc)
 
         promoted = await self.connections_collection.find_one(
             {
@@ -1179,6 +1434,7 @@ class GoogleCalendarService:
                 "provider": connection_doc.get("provider", "google"),
                 "calendar_name": connection_doc.get("calendar_name"),
                 "provider_account_email": connection_doc.get("provider_account_email"),
+                "revoked_provider_grant": is_last_row_for_account,
             },
         )
 
@@ -1229,12 +1485,92 @@ class GoogleCalendarService:
         }
 
     async def disconnect(self, user_email: str) -> Dict[str, Any]:
-        """Compatibility helper to disconnect all connections for a user."""
+        """Compatibility helper to disconnect every connection for a user.
+
+        Performs revocation per *provider account* (not per row), then bulk
+        deletes the rows in a single statement. Avoids the partial-failure
+        and silent-truncation issues of the prior per-row loop.
+        """
         docs = await self.connections_collection.find(
             {"user_email": user_email}
-        ).to_list(length=200)
+        ).to_list(length=None)
+        if not docs:
+            return {
+                "disconnected": True,
+                "message": "Google Calendar was not connected",
+            }
+
+        # Group rows by (user_id, provider_account_email) — one revoke per
+        # Google account, regardless of how many calendars are connected.
+        by_account: Dict[tuple[str, str], list[dict[str, Any]]] = {}
         for doc in docs:
-            await self.disconnect_connection(str(doc["_id"]))
+            key = (
+                str(doc.get("user_id") or ""),
+                str(doc.get("provider_account_email") or ""),
+            )
+            by_account.setdefault(key, []).append(doc)
+
+        revoke_failures: list[str] = []
+        for (_user_id, provider_email), account_docs in by_account.items():
+            # Pick any row from the account — they share the provider grant.
+            sample = account_docs[0]
+            revoked = await self._revoke_provider_account(sample)
+            if not revoked:
+                revoke_failures.append(provider_email)
+
+        if revoke_failures:
+            # Don't delete locally if we couldn't revoke at Google — surface
+            # the failure so the user retries, matching disconnect_connection.
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Could not revoke Google access for "
+                    f"{', '.join(revoke_failures)}. Please try again in a moment."
+                ),
+            )
+
+        connection_ids = [str(doc["_id"]) for doc in docs]
+        now = datetime.now(UTC)
+
+        await self.syncs_collection.update_many(
+            {"calendar_connection_id": {"$in": connection_ids}},
+            {
+                "$set": {
+                    "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                    "last_error": "Calendar connection disconnected",
+                    "last_error_category": "connection_disconnected",
+                    "retryable_error": False,
+                    "next_retry_at": None,
+                    "updated_at": now,
+                },
+                "$unset": {
+                    "calendar_connection_id": "",
+                    "calendar_id": "",
+                },
+            },
+        )
+        await self.connections_collection.delete_many({"user_email": user_email})
+        for connection_id in connection_ids:
+            await self.invalidate_connection_events_cache(connection_id)
+
+        # One audit log per account, summarizing the bulk disconnect.
+        for (_user_id, provider_email), account_docs in by_account.items():
+            sample = account_docs[0]
+            await calendar_audit_service.log(
+                action="calendar_connection_disconnected",
+                message=f"Disconnected Google Calendar account {provider_email}",
+                owner_planner_email=sample.get("owner_planner_email"),
+                actor_email=sample.get("user_email"),
+                actor_role=None,
+                metadata={
+                    "connection_ids": [str(d["_id"]) for d in account_docs],
+                    "provider": "google",
+                    "provider_account_email": provider_email,
+                    "calendars_disconnected": len(account_docs),
+                    "revoked_provider_grant": True,
+                },
+            )
+
         return {"disconnected": True, "message": "Google Calendar disconnected"}
 
     def _coerce_datetime(self, value: Any, field_name: str) -> datetime:
@@ -1296,22 +1632,9 @@ class GoogleCalendarService:
         if attendee_emails:
             event_body["attendees"] = [{"email": email} for email in attendee_emails]
 
-        color_map = {
-            "#a4bdfc": "1",
-            "#7ae7bf": "2",
-            "#dbadff": "3",
-            "#ff887c": "4",
-            "#fbd75b": "5",
-            "#ffb878": "6",
-            "#46d6db": "7",
-            "#e1e1e1": "8",
-            "#5484ed": "9",
-            "#51b749": "10",
-            "#dc2127": "11",
-        }
         color = task.get("color")
-        if color and color.lower() in color_map:
-            event_body["colorId"] = color_map[color.lower()]
+        if color and color.lower() in _GOOGLE_EVENT_COLOR_MAP:
+            event_body["colorId"] = _GOOGLE_EVENT_COLOR_MAP[color.lower()]
 
         return event_body
 
@@ -1338,13 +1661,16 @@ class GoogleCalendarService:
         connection_doc = await self._get_connection_doc(connection_id)
         try:
             service = build("calendar", "v3", credentials=credentials)
-            event = (
-                service.events()
-                .insert(
-                    calendarId=connection_doc["calendar_id"],
-                    body=self._build_event_body(task, attendee_emails),
+            event_body = self._build_event_body(task, attendee_emails)
+            event = await asyncio.to_thread(
+                lambda: (
+                    service.events()
+                    .insert(
+                        calendarId=connection_doc["calendar_id"],
+                        body=event_body,
+                    )
+                    .execute()
                 )
-                .execute()
             )
             await self.connections_collection.update_one(
                 {"_id": connection_doc["_id"]},
@@ -1372,7 +1698,7 @@ class GoogleCalendarService:
             logger.error(
                 "Failed to create Google event for connection %s: %s",
                 connection_id,
-                exc,
+                _redact_sensitive(exc),
             )
             return self._build_provider_result(
                 success=False,
@@ -1404,14 +1730,17 @@ class GoogleCalendarService:
         connection_doc = await self._get_connection_doc(connection_id)
         try:
             service = build("calendar", "v3", credentials=credentials)
-            event = (
-                service.events()
-                .update(
-                    calendarId=connection_doc["calendar_id"],
-                    eventId=external_event_id,
-                    body=self._build_event_body(task, attendee_emails),
+            event_body = self._build_event_body(task, attendee_emails)
+            event = await asyncio.to_thread(
+                lambda: (
+                    service.events()
+                    .update(
+                        calendarId=connection_doc["calendar_id"],
+                        eventId=external_event_id,
+                        body=event_body,
+                    )
+                    .execute()
                 )
-                .execute()
             )
             await self.connections_collection.update_one(
                 {"_id": connection_doc["_id"]},
@@ -1435,7 +1764,11 @@ class GoogleCalendarService:
             await self._apply_provider_error_to_connection(
                 connection_doc, classification
             )
-            logger.error("Failed to update Google event %s: %s", external_event_id, exc)
+            logger.error(
+                "Failed to update Google event %s: %s",
+                external_event_id,
+                _redact_sensitive(exc),
+            )
             return self._build_provider_result(
                 success=False,
                 connection_doc=connection_doc,
@@ -1465,10 +1798,16 @@ class GoogleCalendarService:
         connection_doc = await self._get_connection_doc(connection_id)
         try:
             service = build("calendar", "v3", credentials=credentials)
-            service.events().delete(
-                calendarId=connection_doc["calendar_id"],
-                eventId=external_event_id,
-            ).execute()
+            await asyncio.to_thread(
+                lambda: (
+                    service.events()
+                    .delete(
+                        calendarId=connection_doc["calendar_id"],
+                        eventId=external_event_id,
+                    )
+                    .execute()
+                )
+            )
             await self.invalidate_connection_events_cache(connection_id)
             return self._build_provider_result(
                 success=True,
@@ -1488,7 +1827,11 @@ class GoogleCalendarService:
             await self._apply_provider_error_to_connection(
                 connection_doc, classification
             )
-            logger.error("Failed to delete Google event %s: %s", external_event_id, exc)
+            logger.error(
+                "Failed to delete Google event %s: %s",
+                external_event_id,
+                _redact_sensitive(exc),
+            )
             return self._build_provider_result(
                 success=False,
                 connection_doc=connection_doc,
@@ -1519,13 +1862,15 @@ class GoogleCalendarService:
         connection_doc = await self._get_connection_doc(connection_id)
         try:
             service = build("calendar", "v3", credentials=credentials)
-            event = (
-                service.events()
-                .get(
-                    calendarId=connection_doc["calendar_id"],
-                    eventId=external_event_id,
+            event = await asyncio.to_thread(
+                lambda: (
+                    service.events()
+                    .get(
+                        calendarId=connection_doc["calendar_id"],
+                        eventId=external_event_id,
+                    )
+                    .execute()
                 )
-                .execute()
             )
             return self._build_provider_result(
                 success=True,
@@ -1583,17 +1928,19 @@ class GoogleCalendarService:
 
         try:
             service = build("calendar", "v3", credentials=credentials)
-            events_result = (
-                service.events()
-                .list(
-                    calendarId=connection_doc["calendar_id"],
-                    timeMin=time_min.isoformat(),
-                    timeMax=time_max.isoformat(),
-                    maxResults=max_results,
-                    singleEvents=True,
-                    orderBy="startTime",
+            events_result = await asyncio.to_thread(
+                lambda: (
+                    service.events()
+                    .list(
+                        calendarId=connection_doc["calendar_id"],
+                        timeMin=time_min.isoformat(),
+                        timeMax=time_max.isoformat(),
+                        maxResults=max_results,
+                        singleEvents=True,
+                        orderBy="startTime",
+                    )
+                    .execute()
                 )
-                .execute()
             )
             events = events_result.get("items", [])
             await self.connections_collection.update_one(
@@ -1621,7 +1968,7 @@ class GoogleCalendarService:
             logger.error(
                 "Failed to fetch Google events for connection %s: %s",
                 connection_id,
-                exc,
+                _redact_sensitive(exc),
             )
             return []
 

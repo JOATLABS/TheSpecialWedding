@@ -108,28 +108,28 @@ export const blogPosts = {
           And you control what gets surfaced to your clients. Some planners use our proposal generator to impress clients with 48-hour turnaround. Others use AI pricing to confidently hold their rates. Some use timeline templates to onboard faster.
         </p>
 
-        <h3 className="text-xl font-semibold text-white mt-8">For teams and agencies</h3>
+        <h3 className="text-xl font-semibold text-white mt-8">For growing teams</h3>
 
         <p>
-          The Agency tier is built for planning firms managing multiple weddings with teams. Unlimited weddings, unlimited team members with role-based access, custom domain support, SSO integration, and a dedicated success architect. Your team can work in parallel on multiple events without duplicating setup.
+          Enterprise is built for planning firms managing multiple weddings with teams: unlimited weddings, unlimited guests, 10 staff seats, white-label branding, API access, dedicated support, custom integrations, and expanded AI usage.
         </p>
 
         <h3 className="text-xl font-semibold text-white mt-8">The three plans</h3>
 
         <p>
-          <strong>Starter ($99/month):</strong> One wedding at a time. Guest management, seating, day-of timelines, contracts, and basic cash flow. Perfect for solopreneurs.
+          <strong>Boutique ($29/month):</strong> Up to 3 active weddings, 150 guests per wedding, guest management, seating, day-of timelines, contracts, and 100 AI credits per month. Perfect for solo planners getting their operating system in place.
         </p>
 
         <p>
-          <strong>Signature ($299/month):</strong> Unlimited weddings, up to 3 team members, vendor collaboration, guest memory QR uploads, and AI features (pricing, contracts, forecasting). Perfect for established solo planners or small teams.
+          <strong>Signature ($59/month):</strong> Up to 10 active weddings, 350 guests per wedding, 3 staff seats, vendor collaboration, guest memory QR uploads, and 300 AI credits per month. Perfect for established solo planners or small teams.
         </p>
 
         <p>
-          <strong>Agency ($799/month):</strong> Unlimited everything. Unlimited weddings, unlimited team members with role-based access, custom domain, SSO, compliance reporting. A dedicated success architect helps you scale.
+          <strong>Enterprise ($149/month):</strong> Unlimited weddings and guests, 10 staff seats, priority support, advanced analytics, API access, and 1000 AI credits per month. Perfect for planning firms scaling across many events.
         </p>
 
         <p>
-          All plans include a 14-day free trial (no credit card required) and live support on business days.
+          All self-serve plans include a 30-day free trial with no credit card required, plus live support on business days.
         </p>
 
         <h3 className="text-xl font-semibold text-white mt-8">Why now?</h3>
@@ -143,7 +143,7 @@ export const blogPosts = {
         </p>
 
         <p>
-          If you're ready to stop jumping between tools, start your free trial today.
+          If you're ready to stop jumping between tools, start a 30-day free trial today.
         </p>
       </div>
     ),
@@ -1726,7 +1726,7 @@ export const blogPosts = {
         </p>
 
         <p>
-          This is operationally useful for teams: if you run an agency and three planners share a wedding, you can trace the work history without asking anyone. It's also useful for couples: the audit log is the canonical answer to "what happened this week?" without anyone having to draft a status update.
+          This is operationally useful for teams: if three planners share a wedding, you can trace the work history without asking anyone. It's also useful for couples: the audit log is the canonical answer to "what happened this week?" without anyone having to draft a status update.
         </p>
 
         <p>
@@ -1757,11 +1757,11 @@ export const blogPosts = {
   },
   'the-ops-layer-nobody-sees': {
     title: 'The Ops Layer Nobody Sees: Team Permissions, Audit Logs, and the Operational Backbone',
-    excerpt: "Team member permissions across 12+ scopes. Activity audit logs on every write. OTP guest access. The infrastructure nobody markets because it's boring — and the reason agencies scale on The Special Wedding.",
+    excerpt: "Team member permissions across 12+ scopes. Activity audit logs on every write. OTP guest access. The infrastructure nobody markets because it's boring — and the reason planning teams scale on The Special Wedding.",
     category: 'Product',
     date: '2026-06-01',
     readTime: 7,
-    ogDescription: 'Granular team permissions, activity audit logs, OTP guest access, CSV guest imports, and the unsexy backbone that agencies need to actually scale.',
+    ogDescription: 'Granular team permissions, activity audit logs, OTP guest access, CSV guest imports, and the operational backbone that planning teams need to actually scale.',
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
         <p>
@@ -1769,11 +1769,11 @@ export const blogPosts = {
         </p>
 
         <p>
-          But nobody scales an agency on glamorous features. Agencies scale on the boring ones: team permissions that don't leak data across weddings, audit logs that let you trace a change six months after the event, guest access controls that don't require creating accounts, CSV imports that don't lose data, support infrastructure that exists when you need it at 11pm the night before the wedding.
+          But nobody scales a planning team on glamorous features. Teams scale on the boring ones: permissions that don't leak data across weddings, audit logs that let you trace a change six months after the event, guest access controls that don't require creating accounts, CSV imports that don't lose data, support infrastructure that exists when you need it at 11pm the night before the wedding.
         </p>
 
         <p>
-          This is the ops layer. It's the reason planners who start solo on The Special Wedding can grow into a three- or five-person team without switching platforms. It's the reason an agency coordinator can share a wedding with a junior planner and a day-of assistant and give each of them exactly the access they should have — and nothing more.
+          This is the ops layer. It's the reason planners who start solo on The Special Wedding can grow into a three- or five-person team without switching platforms. It's the reason a lead planner can share a wedding with a junior planner and a day-of assistant and give each of them exactly the access they should have — and nothing more.
         </p>
 
         <h3 className="text-xl font-semibold text-white mt-8">Team permissions across 12+ scopes</h3>
@@ -1783,7 +1783,7 @@ export const blogPosts = {
         </p>
 
         <p>
-          This is how agencies actually work. You don't hand every team member the keys to every wedding — that's how data leaks happen. You scope access to the work each person is doing. The granularity matters: a platform that only has "admin" and "user" forces you to over-share or under-staff.
+          This is how planning teams actually work. You don't hand every team member the keys to every wedding — that's how data leaks happen. You scope access to the work each person is doing. The granularity matters: a platform that only has "admin" and "user" forces you to over-share or under-staff.
         </p>
 
         <h3 className="text-xl font-semibold text-white mt-8">Activity audit log</h3>
@@ -1826,14 +1826,14 @@ export const blogPosts = {
           This is also where the platform documents workflows the planner might not know exist. How to split access with a team member. How to set up the inbound email address. How to wire Stripe for milestone-based payments. The knowledge base is the self-serve layer that keeps the support team focused on real incidents, not how-to questions.
         </p>
 
-        <h3 className="text-xl font-semibold text-white mt-8">Why this is where agencies make the switch</h3>
+        <h3 className="text-xl font-semibold text-white mt-8">Why this is where teams make the switch</h3>
 
         <p>
           A solopreneur planner can run on almost anything. Their ops layer is their laptop, their phone, and their memory. They don't need granular permissions because there's only one of them. They don't need audit logs because they know what they did yesterday.
         </p>
 
         <p>
-          The moment a planner hires a second person, the ops layer starts to matter. By the time they're a three-person agency, it dominates everything else. The reason agencies switch from generalist tools to The Special Wedding isn't the glamorous features. It's that the ops layer was built for teams from day one, instead of bolted on later.
+          The moment a planner hires a second person, the ops layer starts to matter. By the time they're a three-person team, it dominates everything else. The reason teams switch from generalist tools to The Special Wedding isn't the glamorous features. It's that the ops layer was built for teams from day one, instead of bolted on later.
         </p>
 
         <p>
