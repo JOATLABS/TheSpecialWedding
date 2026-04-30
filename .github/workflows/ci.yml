@@ -77,6 +77,20 @@ jobs:
               - 'middleware.ts'
               - '.github/workflows/ci.yml'
 
+  # ── Repository hygiene ────────────────────────────────────────────────────
+  repo-hygiene:
+    name: Repository Hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Check for Finder copy artifacts
+        run: npm run repo:check-copy-artifacts
+
   # ── Frontend: Lint + Type Check ────────────────────────────────────────────
   frontend-lint:
     name: Frontend Checks
