@@ -264,11 +264,32 @@ export const BrandLockup: React.FC<BrandLockupProps> = ({
             }}
           >
             a{' '}
-            <a
-              href={parentLinkHref}
-              target="_blank"
-              rel="noopener noreferrer"
+            {/*
+              Rendered as a <button> rather than an <a> because BrandLockup is
+              commonly wrapped by a parent <Link> (sidebar brand mark, marketing
+              nav) — nesting <a> inside <a> is invalid HTML and triggers a React
+              hydration error. The button visually matches an underlined link
+              and stops propagation so it doesn't trigger the parent navigation.
+            */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (typeof window !== 'undefined') {
+                  window.open(parentLinkHref, '_blank', 'noopener,noreferrer');
+                }
+              }}
+              aria-label="Joatlabs.dev (opens in new tab)"
               style={{
+                background: 'none',
+                border: 0,
+                padding: 0,
+                margin: 0,
+                font: 'inherit',
+                letterSpacing: 'inherit',
+                textTransform: 'inherit',
+                cursor: 'pointer',
                 color: palette.taglineLink,
                 textDecoration: 'underline',
                 textUnderlineOffset: '2px',
@@ -276,7 +297,7 @@ export const BrandLockup: React.FC<BrandLockupProps> = ({
               }}
             >
               Joatlabs.dev
-            </a>{' '}
+            </button>{' '}
             platform
           </span>
         ) : null}

@@ -8,6 +8,7 @@ Sprint 1: Setup, login, verify, profile
 Sprint 3: Forgot password, password reset
 """
 
+import html
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -535,6 +536,9 @@ async def couple_forgot_password(data: CoupleForgotPasswordRequest):
         if couple.get("partner2_name"):
             couple_name = f"{couple['partner1_name']} & {couple['partner2_name']}"
 
+        safe_couple_name = html.escape(couple_name or "there", quote=True)
+        safe_reset_link = html.escape(str(reset_link), quote=True)
+
         html_content = f"""
         <div style="font-family: 'Georgia', serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
             <div style="text-align: center; margin-bottom: 30px;">
@@ -543,7 +547,7 @@ async def couple_forgot_password(data: CoupleForgotPasswordRequest):
             </div>
 
             <p style="color: #333; font-size: 16px; line-height: 1.6;">
-                Dear {couple_name or "there"},
+                Dear {safe_couple_name},
             </p>
 
             <p style="color: #333; font-size: 16px; line-height: 1.6;">
@@ -552,7 +556,7 @@ async def couple_forgot_password(data: CoupleForgotPasswordRequest):
             </p>
 
             <div style="text-align: center; margin: 30px 0;">
-                <a href="{reset_link}"
+                <a href="{safe_reset_link}"
                    style="background-color: #1e3a5f; color: white; padding: 14px 32px;
                           text-decoration: none; border-radius: 6px; font-size: 16px;
                           display: inline-block;">
@@ -568,7 +572,7 @@ async def couple_forgot_password(data: CoupleForgotPasswordRequest):
 
             <p style="color: #999; font-size: 12px; text-align: center;">
                 If you're having trouble with the button, copy and paste this URL into your browser:<br/>
-                <span style="color: #1e3a5f;">{reset_link}</span>
+                <span style="color: #1e3a5f;">{safe_reset_link}</span>
             </p>
         </div>
         """

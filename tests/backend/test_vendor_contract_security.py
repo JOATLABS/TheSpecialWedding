@@ -38,6 +38,12 @@ def _matches_query(document: dict, query: dict) -> bool:
                 if actual not in expected["$in"]:
                     return False
                 continue
+            if "$ne" in expected:
+                # ``{"$ne": True}`` filters used by the soft-delete retrofit
+                # accept missing fields (Mongo treats absent as not-equal).
+                if actual == expected["$ne"]:
+                    return False
+                continue
             return False
 
         if actual != expected:
@@ -204,6 +210,7 @@ def configured_vendor_service(monkeypatch: pytest.MonkeyPatch):
                 "address": "123 Main St",
                 "service_category": "photographer",
                 "total_revenue": 0,
+                "created_by": "planner@example.com",
             }
         ]
     )
@@ -214,6 +221,19 @@ def configured_vendor_service(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(vendor_service, "vendor_assignments", assignments)
     monkeypatch.setattr(vendor_service, "budget_categories", budget_categories)
     monkeypatch.setattr(vendor_service, "vendor_profiles", vendor_profiles)
+    monkeypatch.setattr(
+        vendor_service,
+        "_get_owned_wedding",
+        AsyncMock(
+            return_value={
+                "_id": "wedding-1",
+                "couple_names": "Alex & Jamie",
+                "date": "2026-06-12",
+                "venue": "Garden Venue",
+                "assigned_planner_email": "planner@example.com",
+            }
+        ),
+    )
     monkeypatch.setattr(vendor_service, "_log_communication", AsyncMock())
     monkeypatch.setattr(
         vendor_service,

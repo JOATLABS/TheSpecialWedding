@@ -1,6 +1,15 @@
+from datetime import datetime, timezone
+
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
+from app.models.vendor import (
+    ContractStatus,
+    ContractType,
+    VendorCategory,
+    VendorContract,
+)
 from app.services.vendor_service import VendorService
 
 
@@ -92,3 +101,83 @@ async def test_assign_vendor_to_wedding_returns_conflict_for_duplicates():
 
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail == "Vendor already assigned to this wedding"
+
+
+def _build_contract_payload(**overrides) -> dict:
+    """Minimal valid VendorContract payload for model-construction tests."""
+    payload = {
+        "wedding_id": "wedding_123",
+        "vendor_name": "Lens & Light",
+        "vendor_email": "vendor@example.com",
+        "service_category": VendorCategory.PHOTOGRAPHER,
+        "contract_title": "Photography Services Contract",
+        "contract_type": ContractType.TEMPLATE,
+        "total_amount": 1000.0,
+        "status": ContractStatus.DRAFT,
+        "created_by": "planner@example.com",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_vendor_contract_validator_rejects_deposit_exceeding_total():
+    """Deposit cannot exceed total — Pydantic must reject before persisting."""
+    payload = _build_contract_payload(total_amount=500.0, deposit_amount=600.0)
+    with pytest.raises(ValidationError) as exc_info:
+        VendorContract(**payload)
+    assert "deposit_amount cannot exceed total_amount" in str(exc_info.value)
+
+
+def test_vendor_contract_validator_accepts_deposit_equal_to_total():
+    """Deposit equal to total is legal (full pre-payment)."""
+    payload = _build_contract_payload(total_amount=500.0, deposit_amount=500.0)
+    contract = VendorContract(**payload)
+    assert contract.deposit_amount == 500.0
+
+
+def test_vendor_contract_validator_accepts_none_deposit():
+    """Existing data with no deposit must continue to validate."""
+    payload = _build_contract_payload(total_amount=500.0, deposit_amount=None)
+    contract = VendorContract(**payload)
+    assert contract.deposit_amount is None
+
+
+def test_vendor_contract_validator_accepts_zero_deposit():
+    """Zero-deposit contracts (the existing default for many flows) must pass."""
+    payload = _build_contract_payload(total_amount=500.0, deposit_amount=0.0)
+    contract = VendorContract(**payload)
+    assert contract.deposit_amount == 0.0
+
+
+@pytest.mark.asyncio
+async def test_ensure_contract_editable_rejects_locked_contract():
+    """Once contract_status_locked_at is set, edits must 409 even on DRAFT status."""
+    service = VendorService.__new__(VendorService)
+    locked_contract = {
+        "_id": "contract_locked",
+        "status": ContractStatus.DRAFT.value,
+        "is_current_version": True,
+        "contract_status_locked_at": datetime.now(timezone.utc),
+        "created_by": "planner@example.com",
+    }
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service._ensure_contract_editable(locked_contract)
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "Contract is locked after signing"
+
+
+@pytest.mark.asyncio
+async def test_ensure_contract_editable_allows_unlocked_draft():
+    """Without contract_status_locked_at, DRAFT contracts remain editable."""
+    service = VendorService.__new__(VendorService)
+    unlocked_contract = {
+        "_id": "contract_unlocked",
+        "status": ContractStatus.DRAFT.value,
+        "is_current_version": True,
+        "created_by": "planner@example.com",
+    }
+
+    # Should not raise.
+    await service._ensure_contract_editable(unlocked_contract)

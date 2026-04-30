@@ -788,6 +788,22 @@ async def create_vendor_contract_security_indexes():
         )
         logger.info("Created index: idx_vendor_contract_wedding_vendor")
 
+        # Compound index supporting the wedding-detail Vendors tab and
+        # contract-list filtering by wedding + current-version + status.
+        # Background creation; partial filter not needed because the live
+        # contract reads already constrain on is_soft_deleted: {$ne: True}
+        # at query time.
+        await contracts.create_index(
+            [
+                ("wedding_id", ASCENDING),
+                ("is_current_version", ASCENDING),
+                ("status", ASCENDING),
+            ],
+            name="idx_vendor_contract_wedding_current_status",
+            background=True,
+        )
+        logger.info("Created index: idx_vendor_contract_wedding_current_status")
+
         await milestones.create_index(
             [
                 ("contract_id", ASCENDING),
@@ -810,6 +826,51 @@ async def create_vendor_contract_security_indexes():
         return True
     except Exception as e:
         logger.error(f"Error creating vendor contract security indexes: {str(e)}")
+        return False
+
+
+async def create_vendor_assignment_indexes():
+    """
+    Create indexes for vendor_assignments collection.
+
+    Soft-deleted assignments coexist with fresh assignments for the same
+    vendor on the same wedding via a partial unique index that excludes
+    rows where ``is_deleted`` is True. The wedding-detail Vendors tab
+    queries are served by a compound (wedding_id, status, is_deleted)
+    index.
+    """
+    assignments = mongo.db["vendor_assignments"]
+    try:
+        # Partial unique index: enforce one live assignment per
+        # (wedding, vendor) pair while still allowing soft-deleted rows
+        # of the same pair to remain in the collection. Reads filter
+        # ``is_deleted: {$ne: True}`` at query time, and the partial
+        # filter expression here limits uniqueness to the same set.
+        await assignments.create_index(
+            [("wedding_id", ASCENDING), ("vendor_profile_id", ASCENDING)],
+            name="idx_vendor_assignment_wedding_vendor_unique",
+            unique=True,
+            partialFilterExpression={"is_deleted": False},
+            background=True,
+        )
+        logger.info("Created index: idx_vendor_assignment_wedding_vendor_unique")
+
+        # Compound index supporting the wedding-detail Vendors tab.
+        await assignments.create_index(
+            [
+                ("wedding_id", ASCENDING),
+                ("status", ASCENDING),
+                ("is_deleted", ASCENDING),
+            ],
+            name="idx_vendor_assignment_wedding_status_deleted",
+            background=True,
+        )
+        logger.info("Created index: idx_vendor_assignment_wedding_status_deleted")
+
+        logger.info("All vendor_assignments indexes created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating vendor_assignments indexes: {str(e)}")
         return False
 
 
@@ -2306,6 +2367,7 @@ async def create_all_indexes():
         await create_activity_logs_indexes()
         await create_vendor_contract_activity_indexes()
         await create_vendor_contract_security_indexes()
+        await create_vendor_assignment_indexes()
         await create_audit_logs_indexes()
         await create_security_audit_logs_indexes()
         await create_errors_indexes()

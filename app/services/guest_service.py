@@ -10,6 +10,11 @@ from fastapi import HTTPException
 from app.core.database import mongo
 from app.utils.contact_sanitizer import sanitize_phone
 from app.utils.id_utils import normalize_doc_id, to_object_id, to_str_id
+from app.utils.rsvp_status import (
+    RSVP_STATUS_CONFIRMED,
+    RSVP_STATUS_DECLINED,
+    get_rsvp_status,
+)
 from app.utils.token_generator import generate_token
 
 logger = logging.getLogger(__name__)
@@ -190,11 +195,6 @@ class GuestService:
         guest_ids_obj = [guest["_id"] for guest in guest_docs]
         guest_ids_str = [to_str_id(guest["_id"]) for guest in guest_docs]
 
-        # Pull `attending` along with `guest_id` so we can split responded
-        # guests into confirmed (attending at least one event) vs declined
-        # (responded with attending=[]). RsvpService creates the row with
-        # status='confirmed' if attending else 'declined' (rsvp_service.py
-        # ~line 170), so attending list length is the canonical signal.
         rsvp_docs = await self.rsvp_collection.find(
             {
                 "$or": [
@@ -204,11 +204,12 @@ class GuestService:
             },
             projection={"guest_id": 1, "attending": 1},
         ).to_list(length=None)
-        rsvp_attending_by_guest: dict[str, list] = {}
+        rsvp_status_by_guest: dict[str, str] = {}
         for doc in rsvp_docs:
             guest_id_key = str(doc.get("guest_id"))
-            rsvp_attending_by_guest[guest_id_key] = doc.get("attending") or []
-        responded_guest_ids = set(rsvp_attending_by_guest.keys())
+            if guest_id_key:
+                rsvp_status_by_guest[guest_id_key] = get_rsvp_status(doc)
+        responded_guest_ids = set(rsvp_status_by_guest.keys())
 
         plus_one_docs = await self.plus_one_collection.find(
             {"guest_id": {"$in": guest_ids_str}},
@@ -243,10 +244,10 @@ class GuestService:
             if has_rsvp:
                 responded_guests += 1
                 responded_plus_ones += plus_one_counts.get(guest_id, 0)
-                attending = rsvp_attending_by_guest.get(guest_id) or []
-                if attending:
+                status = rsvp_status_by_guest.get(guest_id)
+                if status == RSVP_STATUS_CONFIRMED:
                     confirmed_guests += 1
-                else:
+                elif status == RSVP_STATUS_DECLINED:
                     declined_guests += 1
                 continue
 

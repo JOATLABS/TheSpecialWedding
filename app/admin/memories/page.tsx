@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
-import { formatDate } from '@/utils/dateFormat';
+import { formatDate, getLocalDateString } from '@/utils/dateFormat';
 import { getWeddingEventLabel } from '@/utils/weddingEvents';
 import PageHeader from '../components/PageHeader';
 import SubscriptionUsageBanner from '../components/SubscriptionUsageBanner';
@@ -135,7 +135,7 @@ export default function AdminGuestMemoriesPage() {
       if (nextSettings.upload_closes_at) {
         const date = new Date(nextSettings.upload_closes_at);
         if (!Number.isNaN(date.getTime())) {
-          setCloseDate(date.toISOString().slice(0, 10));
+          setCloseDate(getLocalDateString(date));
         }
       }
     } catch (error) {

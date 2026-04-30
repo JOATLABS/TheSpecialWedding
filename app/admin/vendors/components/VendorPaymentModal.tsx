@@ -10,7 +10,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { Loader2, DollarSign, Send, Calendar, Mail, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { createPaymentLink, sendPaymentLink, type PayerType, type RecipientType } from '@/services/vendorManagementApi';
-import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
+import { formatAdminDate, DEFAULT_TIMEZONE, getLocalDateString } from '@/utils/dateFormat';
 
 interface VendorPaymentModalProps {
   open: boolean;
@@ -263,7 +263,7 @@ export function VendorPaymentModal({
                 type="date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
-                min={new Date().toISOString().split('T')[0]}
+                min={getLocalDateString()}
               />
             </div>
 

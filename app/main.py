@@ -687,6 +687,28 @@ if settings.enable_compression:
 # Log detailed Pydantic validation errors so 422s can be debugged from server logs
 
 
+def _sanitize_validation_errors(errors: list[dict]) -> list[dict]:
+    """Make Pydantic v2's exc.errors() JSON-serializable.
+
+    Pydantic v2 places the raw exception instance in ``ctx['error']`` (e.g.
+    a ``ValueError`` raised from a ``@model_validator``). ``JSONResponse``
+    can't serialize that, and the resulting ``TypeError`` was being caught
+    by the global error handler and turned into a 500 — masking the real
+    422. Convert any non-JSON-friendly values to strings.
+    """
+    sanitized: list[dict] = []
+    for err in errors:
+        clean = {k: v for k, v in err.items() if k != "ctx"}
+        ctx = err.get("ctx")
+        if isinstance(ctx, dict):
+            clean["ctx"] = {
+                k: (str(v) if isinstance(v, BaseException) else v)
+                for k, v in ctx.items()
+            }
+        sanitized.append(clean)
+    return sanitized
+
+
 @app.exception_handler(RequestValidationError)
 async def log_validation_errors(request: Request, exc: RequestValidationError):
     body: str = ""
@@ -697,13 +719,15 @@ async def log_validation_errors(request: Request, exc: RequestValidationError):
         logger.debug(f"Failed to read request body for logging: {e}")
         body = "<could not read body>"
 
+    sanitized = _sanitize_validation_errors(exc.errors())
+
     logger.warning(
         f"422 Validation Error on {request.method} {request.url.path} | "
-        f"body={body} | errors={exc.errors()}"
+        f"body={body} | errors={sanitized}"
     )
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors()},
+        content={"detail": sanitized},
     )
 
 

@@ -190,7 +190,10 @@ class VendorService:
     ) -> None:
         revoked_at = datetime.now(timezone.utc)
         await self.vendor_contracts.update_one(
-            {"_id": validate_object_id(contract_id, "contract ID")},
+            {
+                "_id": validate_object_id(contract_id, "contract ID"),
+                "is_soft_deleted": {"$ne": True},
+            },
             {
                 "$set": {
                     "token_revoked_at": revoked_at,
@@ -323,6 +326,17 @@ class VendorService:
 
     async def _ensure_contract_editable(self, contract: Dict[str, Any]) -> None:
         """Allow edits only for active drafts or draft revisions based on the live version."""
+        # Hard lock: once the contract has been signed (and we recorded
+        # ``contract_status_locked_at``), refuse all edits regardless of
+        # current ``status``. CANCELLED-after-sign should still surface as
+        # locked because the signed version is itself immutable; cancellation
+        # only revokes the live relationship.
+        if contract.get("contract_status_locked_at"):
+            raise HTTPException(
+                status_code=409,
+                detail="Contract is locked after signing",
+            )
+
         if contract["status"] not in [
             ContractStatus.DRAFT.value,
             ContractStatus.PENDING_REVIEW.value,
@@ -360,7 +374,10 @@ class VendorService:
             "$or": [
                 {"root_contract_id": root_contract_id},
                 {"_id": root_object_id},
-            ]
+            ],
+            # Lineage reads must skip soft-deleted contracts; archival is a
+            # forward-looking flag and the lineage view is a live read.
+            "is_soft_deleted": {"$ne": True},
         }
 
         if created_by:
@@ -510,7 +527,10 @@ class VendorService:
     ) -> None:
         """Mark a once-live contract as historical without changing its status."""
         await self.vendor_contracts.update_one(
-            {"_id": validate_object_id(contract_id, "contract ID")},
+            {
+                "_id": validate_object_id(contract_id, "contract ID"),
+                "is_soft_deleted": {"$ne": True},
+            },
             {
                 "$set": {
                     "is_current_version": False,
@@ -757,7 +777,7 @@ class VendorService:
         except (InvalidId, TypeError, ValueError):
             return None
 
-        query: Dict[str, Any] = {"_id": obj_id}
+        query: Dict[str, Any] = {"_id": obj_id, "is_deleted": {"$ne": True}}
         normalized_actor = normalize_planner_email(actor_email)
         if normalized_actor is not None:
             query["created_by"] = normalized_actor
@@ -789,7 +809,7 @@ class VendorService:
         except (InvalidId, TypeError, ValueError):
             return None
 
-        query: Dict[str, Any] = {"_id": obj_id}
+        query: Dict[str, Any] = {"_id": obj_id, "is_soft_deleted": {"$ne": True}}
         normalized_actor = normalize_planner_email(actor_email)
         if normalized_actor is not None:
             query["created_by"] = normalized_actor
@@ -802,6 +822,96 @@ class VendorService:
                 f"actor '{actor_email}': {e}"
             )
             return None
+
+    async def _get_owned_form(
+        self, form_id: str, actor_email: Optional[str]
+    ) -> Optional[dict]:
+        """Fetch a vendor_form, scoped by ``created_by == actor_email``.
+
+        ``vendor_forms.created_by`` is the planner's email — set when the
+        form is created via ``VendorFormService.create_vendor_form`` (see
+        ``app/api/vendor_forms.py``). Mutation/read paths that resolve a
+        form by ``_id`` must use this helper so a client-supplied
+        ``form_id`` cannot leak across tenants.
+
+        Returns None on bad ID, missing record, or wrong owner.
+        """
+        if not form_id:
+            return None
+        try:
+            obj_id = ObjectId(form_id)
+        except (InvalidId, TypeError, ValueError):
+            return None
+
+        query: Dict[str, Any] = {"_id": obj_id}
+        normalized_actor = normalize_planner_email(actor_email)
+        if normalized_actor is not None:
+            query["created_by"] = normalized_actor
+
+        try:
+            return await self.vendor_forms.find_one(query)
+        except Exception as e:
+            logger.warning(
+                f"Failed to look up vendor_form '{form_id}' for actor "
+                f"'{actor_email}': {e}"
+            )
+            return None
+
+    async def _get_owned_form_submission(
+        self, submission_id: str, actor_email: Optional[str]
+    ) -> Optional[dict]:
+        """Fetch a vendor form submission, scoped by planner ownership.
+
+        ``vendor_submissions`` documents do NOT carry a direct
+        ``created_by`` field — they are written by the public vendor-form
+        submission endpoint (see ``_submit_vendor_form_payload`` in
+        ``app/api/vendor_forms.py``) without any planner identity on the
+        record. Ownership is established transitively through the parent
+        ``vendor_forms`` row referenced by ``form_id``.
+
+        Resolution order:
+          1. Fetch the submission by ``_id``.
+          2. Resolve its parent ``vendor_form`` via ``_get_owned_form``;
+             if that returns None (bad/foreign form), the submission is
+             treated as not-owned.
+          3. Return the submission only when ownership passes.
+
+        Returns None on bad ID, missing record, or wrong owner. Mirrors
+        the 404-not-403 ambiguity convention used by ``get_contract``.
+        """
+        if not submission_id:
+            return None
+        try:
+            obj_id = ObjectId(submission_id)
+        except (InvalidId, TypeError, ValueError):
+            return None
+
+        try:
+            submission = await mongo.db["vendor_submissions"].find_one({"_id": obj_id})
+        except Exception as e:
+            logger.warning(
+                f"Failed to look up vendor_submission '{submission_id}' for "
+                f"actor '{actor_email}': {e}"
+            )
+            return None
+
+        if not submission:
+            return None
+
+        # Root-admin bypass — actor_email=None skips the ownership check.
+        if normalize_planner_email(actor_email) is None:
+            return submission
+
+        parent_form_id = submission.get("form_id")
+        if not parent_form_id:
+            # No parent form linked — cannot establish ownership safely.
+            return None
+
+        owned_form = await self._get_owned_form(str(parent_form_id), actor_email)
+        if owned_form is None:
+            return None
+
+        return submission
 
     async def _resolve_couple_contact(
         self,
@@ -836,7 +946,7 @@ class VendorService:
         wedding: Optional[dict] = None
         if normalized_actor_email is not None:
             try:
-                wedding = await self._get_wedding(wedding_id)
+                wedding = await self._get_owned_wedding(wedding_id, actor_email)
             except Exception as e:
                 logger.warning(
                     f"Failed to look up wedding for couple contact '{wedding_id}': {e}"
@@ -885,6 +995,7 @@ class VendorService:
         if not result["couple_email"] or not result["couple_names"]:
             if wedding is None and normalized_actor_email is None:
                 try:
+                    # root-admin: bypass owner scope intentional — see Task #47
                     wedding = await self._get_wedding(wedding_id)
                 except Exception as e:
                     logger.warning(
@@ -1465,23 +1576,39 @@ class VendorService:
             return []
 
     async def get_dashboard_counts(
-        self, created_by: str, wedding_id: Optional[str] = None
+        self,
+        created_by: Optional[str] = None,
+        wedding_id: Optional[str] = None,
     ) -> dict:
         """
         Get dashboard counts efficiently using MongoDB aggregation.
         Much faster than loading all documents just to count them.
+
+        Tenant scope: when ``created_by`` is provided, every vendor /
+        contract / milestone query is filtered by that planner's
+        ``created_by``. When ``created_by`` is ``None`` (root-admin
+        bypass), the filters are skipped and the counts span every
+        planner. The milestone aggregation pipeline ``$match``es on
+        ``created_by`` BEFORE any ``$group`` so we never accidentally
+        sum across other planners' milestones — that was the
+        cross-tenant leak fixed under VENDOR_CONTRACT_PREPROD #2.
         """
         try:
-            # Vendor counts
-            vendor_total = await self.vendor_profiles.count_documents(
-                {"created_by": created_by, "is_active": True}
-            )
+            # Vendor counts — scope to planner unless root-admin bypass.
+            vendor_query: Dict[str, Any] = {"is_active": True}
+            if created_by is not None:
+                vendor_query["created_by"] = created_by
+            vendor_total = await self.vendor_profiles.count_documents(vendor_query)
             vendor_preferred = await self.vendor_profiles.count_documents(
-                {"created_by": created_by, "is_active": True, "is_preferred": True}
+                {**vendor_query, "is_preferred": True}
             )
 
-            # Contract counts
-            contract_query = {"created_by": created_by}
+            # Contract counts — scope to planner unless root-admin bypass.
+            # Soft-deleted contracts are excluded so dashboard counts only
+            # reflect live records.
+            contract_query: Dict[str, Any] = {"is_soft_deleted": {"$ne": True}}
+            if created_by is not None:
+                contract_query["created_by"] = created_by
             if wedding_id:
                 contract_query["wedding_id"] = wedding_id
 
@@ -1493,8 +1620,13 @@ class VendorService:
                 {**contract_query, "status": "signed"}
             )
 
-            # Payment milestone counts and aggregation
-            milestone_query = {}
+            # Payment milestone counts and aggregation — scope to
+            # planner unless root-admin bypass. Pre-fix this filter was
+            # missing, so a planner saw totals summed across every
+            # other planner's milestones.
+            milestone_query: Dict[str, Any] = {}
+            if created_by is not None:
+                milestone_query["created_by"] = created_by
             if wedding_id:
                 milestone_query["wedding_id"] = wedding_id
 
@@ -1505,7 +1637,9 @@ class VendorService:
                 {**milestone_query, "status": "overdue"}
             )
 
-            # Get totals using aggregation
+            # Get totals using aggregation. ``$match`` lands EARLY
+            # (before the ``$group``) so cross-tenant rows never enter
+            # the sum.
             payment_pipeline = [
                 {"$match": milestone_query} if milestone_query else {"$match": {}},
                 {
@@ -1580,9 +1714,16 @@ class VendorService:
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
-            # Check if already assigned
+            # Check if already assigned. Soft-deleted assignments are
+            # ignored — a fresh assignment of the same vendor must succeed
+            # after archival, and the partial unique index in
+            # database_indexes.py enforces this at the storage layer.
             existing = await self.vendor_assignments.find_one(
-                {"vendor_profile_id": vendor_profile_id, "wedding_id": wedding_id}
+                {
+                    "vendor_profile_id": vendor_profile_id,
+                    "wedding_id": wedding_id,
+                    "is_deleted": {"$ne": True},
+                }
             )
             if existing:
                 raise HTTPException(
@@ -1632,7 +1773,9 @@ class VendorService:
     async def get_wedding_vendors(self, wedding_id: str, created_by: str) -> List[dict]:
         """Get all vendors assigned to a wedding"""
         try:
-            cursor = self.vendor_assignments.find({"wedding_id": wedding_id})
+            cursor = self.vendor_assignments.find(
+                {"wedding_id": wedding_id, "is_deleted": {"$ne": True}}
+            )
             assignments = await cursor.to_list(length=100)
 
             for a in assignments:
@@ -1673,7 +1816,14 @@ class VendorService:
             if not owned:
                 raise HTTPException(status_code=404, detail="Assignment not found")
 
-            update_query: Dict[str, Any] = {"_id": ObjectId(assignment_id)}
+            update_query: Dict[str, Any] = {
+                "_id": ObjectId(assignment_id),
+                # Defence-in-depth: the pre-flight check via
+                # ``_get_owned_assignment`` already excludes soft-deleted
+                # rows, but re-applying the filter on the write closes the
+                # TOCTOU window between check and update.
+                "is_deleted": {"$ne": True},
+            }
             normalized_actor = normalize_planner_email(created_by)
             if normalized_actor is not None:
                 update_query["created_by"] = normalized_actor
@@ -1819,11 +1969,35 @@ class VendorService:
         total_amount: float = 0,
         custom_sections: Optional[List[Dict]] = None,
         deposit_percentage: Optional[float] = None,
+        deposit_amount: Optional[float] = None,
         service_date: Optional[datetime] = None,
         service_location: Optional[str] = None,
     ) -> dict:
         """Create a new vendor contract"""
         try:
+            # Guard: deposit cannot exceed total. The DTO-layer check on
+            # ``UpdateVendorContractRequest`` mirrors this on the update path;
+            # the storage-model validator on ``VendorContract`` is a final
+            # backstop on the read path. Caught here at the service boundary
+            # so that any future caller (API DTO change, internal callsite,
+            # script) can't silently persist an inconsistent contract.
+            #
+            # NOTE: The current ``CreateVendorContractRequest`` DTO does not
+            # expose ``deposit_amount`` — only ``deposit_percentage`` (capped
+            # at 100). So the API path can't currently trip this; the guard
+            # is here for defense in depth and to catch any caller that does
+            # pass ``deposit_amount`` directly (internal scripts, tests, or
+            # a future DTO change). The local recomputation below shadows
+            # this input when ``deposit_percentage`` is also supplied.
+            if (
+                deposit_amount is not None
+                and total_amount is not None
+                and deposit_amount > total_amount
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Deposit amount cannot exceed total amount",
+                )
             contract_id = ObjectId()
             # Get planner's contract settings (with fallback to system defaults)
             planner_settings = await self._get_planner_contract_settings(created_by)
@@ -1934,6 +2108,7 @@ class VendorService:
                 {
                     "vendor_profile_id": vendor_profile_id,
                     "wedding_id": wedding_id,
+                    "is_deleted": {"$ne": True},
                 },
                 {"budget_category_id": 1, "contract_id": 1},
             )
@@ -2002,7 +2177,10 @@ class VendorService:
             # contract isn't signed.
             if existing_assignment and not existing_assignment.get("contract_id"):
                 await self.vendor_assignments.update_one(
-                    {"_id": existing_assignment["_id"]},
+                    {
+                        "_id": existing_assignment["_id"],
+                        "is_deleted": {"$ne": True},
+                    },
                     {
                         "$set": {
                             "contract_id": str(contract_id),
@@ -2071,6 +2249,7 @@ class VendorService:
                     {"is_current_version": {"$exists": False}},
                     {"is_current_version": True},
                 ],
+                "is_soft_deleted": {"$ne": True},
             }
 
             if wedding_id:
@@ -2124,7 +2303,10 @@ class VendorService:
         try:
             obj_id = validate_object_id(contract_id, "contract ID")
 
-            query: Dict[str, Any] = {"_id": obj_id}
+            query: Dict[str, Any] = {
+                "_id": obj_id,
+                "is_soft_deleted": {"$ne": True},
+            }
             if created_by:
                 query["created_by"] = created_by
 
@@ -2220,7 +2402,10 @@ class VendorService:
                     view_update["updated_at"] = viewed_at
 
             await self.vendor_contracts.update_one(
-                {"_id": ObjectId(contract_id)},
+                {
+                    "_id": ObjectId(contract_id),
+                    "is_soft_deleted": {"$ne": True},
+                },
                 {"$set": view_update},
             )
 
@@ -2459,8 +2644,10 @@ class VendorService:
                         detail="Revision lineage does not match the contract it supersedes",
                     )
 
-            # Get wedding info
-            wedding = await self._get_wedding(contract["wedding_id"])
+            # Get wedding info — contract ownership was already verified by
+            # ``get_contract`` above; tighten the wedding read to the same
+            # ``created_by`` so the lookup itself is owner-scoped.
+            wedding = await self._get_owned_wedding(contract["wedding_id"], created_by)
             couple_names = (
                 wedding.get("couple_names", "our clients") if wedding else "our clients"
             )
@@ -2571,7 +2758,10 @@ class VendorService:
                 **token_update,
             }
             await self.vendor_contracts.update_one(
-                {"_id": ObjectId(contract_id)},
+                {
+                    "_id": ObjectId(contract_id),
+                    "is_soft_deleted": {"$ne": True},
+                },
                 {"$set": send_update},
             )
 
@@ -2694,7 +2884,10 @@ class VendorService:
 
             async def _sign_in_transaction(session: Any) -> None:
                 await self.vendor_contracts.update_one(
-                    {"_id": ObjectId(contract_id)},
+                    {
+                        "_id": ObjectId(contract_id),
+                        "is_soft_deleted": {"$ne": True},
+                    },
                     {
                         "$set": {
                             "status": ContractStatus.SIGNED.value,
@@ -2702,6 +2895,12 @@ class VendorService:
                             "signed_by_name": signer_name,
                             "signed_by_email": signer_email,
                             "signature_ip": signature_ip,
+                            # Hard-lock the contract once signed so future
+                            # update_contract calls 409 even if the status
+                            # later flips (e.g. cancelled-after-sign). This
+                            # represents the immutability of the signed
+                            # version itself, not the live relationship.
+                            "contract_status_locked_at": signed_at,
                             "updated_at": signed_at,
                         }
                     },
@@ -2713,6 +2912,7 @@ class VendorService:
                         {
                             "vendor_profile_id": contract["vendor_profile_id"],
                             "wedding_id": contract["wedding_id"],
+                            "is_deleted": {"$ne": True},
                         },
                         {
                             "$set": {
@@ -2732,15 +2932,25 @@ class VendorService:
 
             planner_email = contract["created_by"]
             subject = f"Contract Signed: {contract['vendor_name']}"
+            # Escape every vendor/signer-supplied string before f-string
+            # interpolation. signed_at strftime output is fixed-format.
+            safe_vendor_name = html.escape(str(contract["vendor_name"]), quote=True)
+            safe_contract_title = html.escape(
+                str(contract["contract_title"]), quote=True
+            )
+            safe_signer_name = html.escape(str(signer_name), quote=True)
+            safe_signed_at = html.escape(
+                signed_at.strftime("%B %d, %Y at %H:%M UTC"), quote=True
+            )
             html_content = f"""
             <html>
             <body style="font-family: Arial, sans-serif;">
                 <h2>Contract Signed!</h2>
-                <p>Great news! {contract["vendor_name"]} has signed the contract.</p>
+                <p>Great news! {safe_vendor_name} has signed the contract.</p>
                 <div style="background: #f3f4f6; padding: 15px; border-radius: 6px;">
-                    <p><strong>Contract:</strong> {contract["contract_title"]}</p>
-                    <p><strong>Signed by:</strong> {signer_name}</p>
-                    <p><strong>Signed at:</strong> {signed_at.strftime("%B %d, %Y at %H:%M UTC")}</p>
+                    <p><strong>Contract:</strong> {safe_contract_title}</p>
+                    <p><strong>Signed by:</strong> {safe_signer_name}</p>
+                    <p><strong>Signed at:</strong> {safe_signed_at}</p>
                 </div>
                 <p>Log in to your dashboard to view the signed contract.</p>
             </body>
@@ -2817,10 +3027,39 @@ class VendorService:
             update_data = {
                 k: v for k, v in data.items() if k in allowed_fields and v is not None
             }
+
+            # Guard: deposit cannot exceed total. Use the EFFECTIVE values:
+            # whichever side isn't in the patch falls back to the persisted
+            # contract. Mirrors the storage-model validator on VendorContract
+            # and the service-layer guard in create_contract.
+            effective_total = (
+                update_data["total_amount"]
+                if "total_amount" in update_data
+                else contract.get("total_amount")
+            )
+            effective_deposit = (
+                update_data["deposit_amount"]
+                if "deposit_amount" in update_data
+                else contract.get("deposit_amount")
+            )
+            if (
+                effective_deposit is not None
+                and effective_total is not None
+                and effective_deposit > effective_total
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Deposit amount cannot exceed total amount",
+                )
+
             update_data["updated_at"] = datetime.now(timezone.utc)
 
             await self.vendor_contracts.update_one(
-                {"_id": ObjectId(contract_id)}, {"$set": update_data}
+                {
+                    "_id": ObjectId(contract_id),
+                    "is_soft_deleted": {"$ne": True},
+                },
+                {"$set": update_data},
             )
 
             changed_fields = sorted(
@@ -2894,7 +3133,10 @@ class VendorService:
                 update_data["custom_clauses"] = custom_clauses
 
             await self.vendor_contracts.update_one(
-                {"_id": ObjectId(contract_id)},
+                {
+                    "_id": ObjectId(contract_id),
+                    "is_soft_deleted": {"$ne": True},
+                },
                 {"$set": update_data},
             )
 
@@ -3099,7 +3341,16 @@ class VendorService:
         field_mappings: Optional[Dict[str, str]] = None,
         applied_by: Optional[str] = None,
     ) -> dict:
-        """Apply data from a vendor form submission to populate contract sections"""
+        """Apply data from a vendor form submission to populate contract sections.
+
+        Tenant scope: every ID resolved here goes through a planner-owned
+        helper. The contract is checked via ``get_contract`` (which
+        enforces ``created_by == applied_by``), and the form submission /
+        parent form lookups go through ``_get_owned_form_submission`` /
+        ``_get_owned_form`` so a client-supplied ``form_submission_id``
+        cannot leak across tenants. ``applied_by=None`` is the
+        root-admin bypass and skips both filters.
+        """
         try:
             # Authorization: verify contract belongs to this user
             contract = await self.get_contract(contract_id, created_by=applied_by)
@@ -3113,22 +3364,31 @@ class VendorService:
                     detail="Cannot apply form data to a contract that has been sent",
                 )
 
-            submission_object_id = validate_object_id(
-                form_submission_id, "form submission ID"
+            # validate_object_id raises HTTP 400 for malformed IDs.
+            validate_object_id(form_submission_id, "form submission ID")
+
+            # Tenant-scoped lookup: try as a vendor_submission first
+            # (the canonical post-form-submit storage), then fall back to
+            # a self-contained vendor_form row whose ``submission_data``
+            # is set when the form is filled out. Both paths enforce
+            # planner ownership; an ID owned by another planner returns
+            # None and surfaces as a generic 404 below.
+            submission = await self._get_owned_form_submission(
+                form_submission_id, applied_by
             )
 
-            # Try to find the submission in vendor_submissions first
-            submission = await mongo.db["vendor_submissions"].find_one(
-                {"_id": submission_object_id}
-            )
+            source_kind = "vendor_submission" if submission else None
 
             if not submission:
-                # Try vendor_forms
-                submission = await mongo.db["vendor_forms"].find_one(
-                    {"_id": submission_object_id}
-                )
+                submission = await self._get_owned_form(form_submission_id, applied_by)
+                if submission:
+                    source_kind = "vendor_form"
 
             if not submission:
+                # Generic 404 for both missing and foreign-tenant IDs so
+                # the planner UI cannot probe another tenant's existence
+                # (AGENTS.md "Authorization And Tenant Boundary Rule";
+                # ticket AR-7 generic-error criterion).
                 raise HTTPException(status_code=404, detail="Form submission not found")
 
             submission_data = submission.get("submission_data", {})
@@ -3175,7 +3435,10 @@ class VendorService:
 
             # Update contract
             await self.vendor_contracts.update_one(
-                {"_id": ObjectId(contract_id)},
+                {
+                    "_id": ObjectId(contract_id),
+                    "is_soft_deleted": {"$ne": True},
+                },
                 {
                     "$set": {
                         "sections": updated_sections,
@@ -3201,6 +3464,18 @@ class VendorService:
             )
 
             applied_at = datetime.now(timezone.utc)
+            # AR-final audit fields: capture the resolved (planner-owned)
+            # source IDs on the activity row so the audit trail records
+            # exactly which form submission and vendor profile were
+            # merged into this contract. ``source_vendor_id`` is best
+            # effort: the submission record links a vendor by email
+            # (vendor_email) rather than a vendor_profile_id, so we
+            # surface whichever vendor identifier the source row carries.
+            source_vendor_id = (
+                submission.get("vendor_profile_id")
+                or submission.get("vendor_id")
+                or submission.get("vendor_email")
+            )
             await self._log_contract_activity(
                 contract_id=contract_id,
                 root_contract_id=self._get_root_contract_id(contract),
@@ -3212,6 +3487,9 @@ class VendorService:
                 actor_display_name=applied_by,
                 metadata={
                     "form_submission_id": form_submission_id,
+                    "source_form_submission_id": form_submission_id,
+                    "source_vendor_id": source_vendor_id,
+                    "source_kind": source_kind,
                     "field_mappings": normalized_mappings,
                 },
                 created_at=applied_at,
@@ -3301,7 +3579,22 @@ class VendorService:
         status: Optional[str] = None,
         created_by: Optional[str] = None,
     ) -> List[dict]:
-        """Get payment milestones"""
+        """Get payment milestones.
+
+        Tenant scope: when ``created_by`` is provided, the find query is
+        filtered by that planner's ``created_by`` so the planner only
+        sees their own milestones. When ``contract_id`` is provided we
+        verify ownership via ``get_contract`` and let the contract_id
+        filter carry the scope (every milestone on a contract shares
+        its ``created_by``). When ``created_by`` is ``None`` (root-admin
+        bypass) the scope is skipped and the read spans every planner.
+
+        The ``update_many`` overdue-marking branch carries the same
+        ``created_by`` filter so a planner's overdue sweep cannot
+        accidentally flip another planner's milestone status — defending
+        the write at the Mongo layer matches the Authorization And
+        Tenant Boundary Rule.
+        """
         try:
             query: Dict[str, Any] = {}
 
@@ -3332,10 +3625,15 @@ class VendorService:
                         m["status"] = PaymentMilestoneStatus.OVERDUE.value
                         overdue_milestone_ids.append(ObjectId(m["_id"]))
 
-            # Persist overdue status changes to database
+            # Persist overdue status changes to database — re-apply the
+            # planner ``created_by`` filter so the write is scoped at
+            # the Mongo layer, not just by the in-memory ``$in`` set.
             if overdue_milestone_ids:
+                update_filter: Dict[str, Any] = {"_id": {"$in": overdue_milestone_ids}}
+                if created_by is not None:
+                    update_filter["created_by"] = created_by
                 await self.payment_milestones.update_many(
-                    {"_id": {"$in": overdue_milestone_ids}},
+                    update_filter,
                     {
                         "$set": {
                             "status": PaymentMilestoneStatus.OVERDUE.value,
@@ -3500,6 +3798,7 @@ class VendorService:
                         {
                             "vendor_profile_id": milestone["vendor_profile_id"],
                             "wedding_id": milestone["wedding_id"],
+                            "is_deleted": {"$ne": True},
                         },
                         {"$inc": {"paid_amount": amount}},
                         session=session,
@@ -3523,6 +3822,16 @@ class VendorService:
                 "Vendor milestone payment recording",
                 _record_in_transaction,
             )
+
+            # Best-effort alert refresh after the spend mutation commits.
+            # Lazy-imported to avoid a circular service-layer import; the
+            # public wrapper swallows internally so a failure here cannot
+            # bubble up and break payment recording.
+            milestone_wedding_id = milestone.get("wedding_id")
+            if milestone_wedding_id:
+                from app.services.budget_service import BudgetService
+
+                await BudgetService().evaluate_budget_alerts(milestone_wedding_id)
 
             updated = await self.payment_milestones.find_one(
                 {"_id": ObjectId(milestone_id)}
@@ -3665,7 +3974,10 @@ class VendorService:
             # to the owner so a TOCTOU swap between the ownership check
             # and the write cannot smuggle in a foreign contract.
             field = f"{document_type}_document_url"
-            update_query: Dict[str, Any] = {"_id": ObjectId(contract_id)}
+            update_query: Dict[str, Any] = {
+                "_id": ObjectId(contract_id),
+                "is_soft_deleted": {"$ne": True},
+            }
             normalized_actor = normalize_planner_email(created_by)
             if normalized_actor is not None:
                 update_query["created_by"] = normalized_actor
@@ -4013,9 +4325,33 @@ class VendorService:
             )
             payment_url = payment_link["stripe_payment_link_url"]
 
-            message = custom_message or payment_link.get("email_message") or ""
-            if message:
-                message = f"<p>{message}</p>"
+            raw_message = custom_message or payment_link.get("email_message") or ""
+            message_block = (
+                f"<p>{html.escape(str(raw_message), quote=True)}</p>"
+                if raw_message
+                else ""
+            )
+
+            # Escape every planner/payer/recipient-supplied string before
+            # interpolation. Numeric `amount` formatting is safe via :,.2f, but
+            # we still escape currency/payment_url/due_date defensively.
+            safe_payer_name = html.escape(str(payment_link["payer_name"]), quote=True)
+            safe_description = html.escape(str(payment_link["description"]), quote=True)
+            safe_currency = html.escape(str(payment_link["currency"]), quote=True)
+            safe_recipient_name = html.escape(
+                str(payment_link["recipient_name"]), quote=True
+            )
+            safe_planner_name = html.escape(str(planner_name), quote=True)
+            safe_payment_url = html.escape(str(payment_url), quote=True)
+            due_date_block = (
+                "<p><strong>Due Date:</strong> "
+                + html.escape(
+                    payment_link["due_date"].strftime("%B %d, %Y"), quote=True
+                )
+                + "</p>"
+                if payment_link.get("due_date")
+                else ""
+            )
 
             email_html = f"""
             <html>
@@ -4036,22 +4372,22 @@ class VendorService:
                         <h1>Payment Request</h1>
                     </div>
                     <div class="content">
-                        <p>Dear {payment_link["payer_name"]},</p>
-                        {message}
+                        <p>Dear {safe_payer_name},</p>
+                        {message_block}
                         <p>You have a payment request for:</p>
-                        <p><strong>{payment_link["description"]}</strong></p>
-                        <div class="amount">${payment_link["amount"]:,.2f} {payment_link["currency"]}</div>
-                        <p>Payment to: <strong>{payment_link["recipient_name"]}</strong></p>
-                        {"<p><strong>Due Date:</strong> " + payment_link["due_date"].strftime("%B %d, %Y") + "</p>" if payment_link.get("due_date") else ""}
+                        <p><strong>{safe_description}</strong></p>
+                        <div class="amount">${payment_link["amount"]:,.2f} {safe_currency}</div>
+                        <p>Payment to: <strong>{safe_recipient_name}</strong></p>
+                        {due_date_block}
                         <div style="text-align: center;">
-                            <a href="{payment_url}" class="button">Pay Now</a>
+                            <a href="{safe_payment_url}" class="button">Pay Now</a>
                         </div>
                         <p style="font-size: 12px; color: #6b7280;">
                             This is a secure payment link powered by Stripe. Your payment information is encrypted and secure.
                         </p>
                     </div>
                     <div class="footer">
-                        <p>Sent by {planner_name} via The Special Wedding</p>
+                        <p>Sent by {safe_planner_name} via The Special Wedding</p>
                     </div>
                 </div>
             </body>

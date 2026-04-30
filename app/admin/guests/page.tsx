@@ -17,6 +17,7 @@ import {
   type GuestListFilterOptions,
   type GuestListSummary,
 } from '@/admin/utils/guestListResponse';
+import { loadGuestActivityItems } from '@/admin/utils/guestActivityResponse';
 
 // ==================== INTERFACES ====================
 
@@ -227,6 +228,9 @@ export default function AdminGuestsPage() {
 
   // Guest activity log state
   const [guestActivity, setGuestActivity] = useState<Record<string, any[]>>({});
+  const [guestActivityErrors, setGuestActivityErrors] = useState<Record<string, string>>(
+    {}
+  );
   const [activityLoading, setActivityLoading] = useState<string | null>(null);
 
   // ==================== DATA FETCHING ====================
@@ -481,22 +485,26 @@ export default function AdminGuestsPage() {
 
   // Fetch guest activity when a guest is expanded
   const fetchGuestActivity = useCallback(async (guestId: string) => {
-    if (!token || !guestId || guestActivity[guestId]) return;
+    const hasCachedActivity = Object.prototype.hasOwnProperty.call(
+      guestActivity,
+      guestId
+    );
+    if (!token || !guestId || hasCachedActivity) return;
     setActivityLoading(guestId);
+    setGuestActivityErrors(prev => {
+      const next = { ...prev };
+      delete next[guestId];
+      return next;
+    });
     try {
-      const baseUrl = apiBaseUrl;
-      const response = await fetch(`${baseUrl}/admin/guests/${guestId}/activity`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setGuestActivity(prev => ({ ...prev, [guestId]: data.activities || [] }));
-      }
+      const activities = await loadGuestActivityItems({ apiBaseUrl, token, guestId });
+      setGuestActivity(prev => ({ ...prev, [guestId]: activities }));
     } catch (err) {
       console.error('Error fetching guest activity:', err);
+      setGuestActivityErrors(prev => ({
+        ...prev,
+        [guestId]: err instanceof Error ? err.message : 'Failed to load activity',
+      }));
     } finally {
       setActivityLoading(null);
     }
@@ -1152,6 +1160,7 @@ export default function AdminGuestsPage() {
 
   const renderActivityTimeline = (guestId: string) => {
     const activities = guestActivity[guestId];
+    const activityError = guestActivityErrors[guestId];
     const isLoading = activityLoading === guestId;
 
     return (
@@ -1162,6 +1171,8 @@ export default function AdminGuestsPage() {
             <div className="animate-spin h-4 w-4 border-2 border-gray-300 border-t-gray-600 rounded-full" />
             Loading activity...
           </div>
+        ) : activityError && !activities ? (
+          <p className="text-sm text-red-600 dark:text-red-400">Failed to load activity</p>
         ) : !activities || activities.length === 0 ? (
           <p className="text-sm text-gray-400 dark:text-gray-500 italic">No activity recorded yet</p>
         ) : (
