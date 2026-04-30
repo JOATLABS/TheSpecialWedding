@@ -32,6 +32,29 @@ from app.utils.planner_ownership import (
 
 logger = logging.getLogger(__name__)
 
+
+def _safe_external_url(url: Optional[str]) -> Optional[str]:
+    """Return ``url`` only if it uses an http(s) scheme, else None.
+
+    Defends against `javascript:` / `data:` URI XSS in email href
+    interpolations. Live verification (2026-04-29) caught
+    `invoice_pdf="javascript:alert(1)"` slipping past ``html.escape`` and
+    landing in an ``<a href>``. ``html.escape(quote=True)`` only escapes
+    ``"``/``'``; it does NOT validate the URL scheme. This helper closes
+    that gap. Stripe-supplied URLs always begin with ``https://``, so this
+    is a no-op for legitimate input.
+    """
+    if not url:
+        return None
+    s = str(url).strip()
+    if not s:
+        return None
+    lower = s.lower()
+    if lower.startswith("https://") or lower.startswith("http://"):
+        return s
+    return None
+
+
 # Initialize Stripe
 if settings.stripe_enabled and settings.stripe_secret_key:
     stripe.api_key = settings.stripe_secret_key
@@ -2869,19 +2892,24 @@ class StripeService:
                     f"Could not fetch invoice for checkout completion email (sub {subscription_id}): {inv_err}"
                 )
 
-        # Build invoice section for emails (reused across trial and paid paths)
+        # Build invoice section for emails (reused across trial and paid paths).
+        # _safe_external_url enforces an http(s) scheme allowlist so a malicious
+        # `javascript:` URL slipped into Stripe's invoice fields can't surface as
+        # an executable href.
         invoice_links_html = ""
-        if invoice_pdf_url or hosted_invoice_url:
+        safe_pdf_url_value = _safe_external_url(invoice_pdf_url)
+        safe_hosted_url_value = _safe_external_url(hosted_invoice_url)
+        if safe_pdf_url_value or safe_hosted_url_value:
             buttons = []
-            if invoice_pdf_url:
-                safe_invoice_pdf_url = html.escape(invoice_pdf_url, quote=True)
+            if safe_pdf_url_value:
+                safe_invoice_pdf_url = html.escape(safe_pdf_url_value, quote=True)
                 buttons.append(
                     f'<a href="{safe_invoice_pdf_url}" style="display: inline-block; background: #2563eb; color: #ffffff; '
                     f"text-decoration: none; padding: 10px 18px; border-radius: 8px; font-size: 14px; "
                     f'font-weight: 500; margin-right: 8px;">Download Invoice PDF</a>'
                 )
-            if hosted_invoice_url:
-                safe_hosted_invoice_url = html.escape(hosted_invoice_url, quote=True)
+            if safe_hosted_url_value:
+                safe_hosted_invoice_url = html.escape(safe_hosted_url_value, quote=True)
                 buttons.append(
                     f'<a href="{safe_hosted_invoice_url}" style="display: inline-block; background: #ffffff; color: #2563eb; '
                     f"text-decoration: none; padding: 10px 18px; border-radius: 8px; font-size: 14px; "
@@ -3149,9 +3177,12 @@ class StripeService:
         safe_currency = html.escape(currency, quote=True)
         safe_invoice_date = html.escape(invoice_date, quote=True)
 
+        # _safe_external_url drops any URL that doesn't start with http(s)
+        # — closes the `javascript:` href XSS path live-verify caught.
+        safe_pdf_value = _safe_external_url(invoice_pdf)
         download_section = ""
-        if invoice_pdf:
-            safe_invoice_pdf = html.escape(invoice_pdf, quote=True)
+        if safe_pdf_value:
+            safe_invoice_pdf = html.escape(safe_pdf_value, quote=True)
             download_section = f"""
                 <tr>
                   <td style="padding:20px 40px 0;">
