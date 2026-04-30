@@ -1120,11 +1120,19 @@ class SubscriptionService:
     async def get_subscription_analytics(self) -> dict:
         """Get platform-wide subscription analytics (ROOT_ADMIN only)"""
         try:
+            users = await self.users_collection.find({}, {"_id": 1}).to_list(
+                length=100000
+            )
+            live_subscription_match = {
+                "archived_at": {"$exists": False},
+                "user_id": {"$in": [str(user["_id"]) for user in users]},
+            }
+
             # Total subscriptions by status
             status_counts = {}
             for status in ["trial", "active", "cancelled", "expired", "suspended"]:
                 count = await self.subscriptions_collection.count_documents(
-                    {"status": status}
+                    {**live_subscription_match, "status": status}
                 )
                 status_counts[status] = count
 
@@ -1134,6 +1142,7 @@ class SubscriptionService:
             )
             # Total subscriptions by plan
             plan_pipeline = [
+                {"$match": live_subscription_match},
                 {"$group": {"_id": "$plan_id", "count": {"$sum": 1}}},
                 {"$sort": {"count": -1}},
             ]
@@ -1145,7 +1154,7 @@ class SubscriptionService:
             # Safety cap: process active subscriptions in batches to avoid memory overload
             MAX_ACTIVE_SUBS = 100000
             active_subs = await self.subscriptions_collection.find(
-                {"status": "active"}
+                {**live_subscription_match, "status": "active"}
             ).to_list(length=MAX_ACTIVE_SUBS)
 
             mrr = 0
@@ -1205,7 +1214,10 @@ class SubscriptionService:
                     # archived_at field marks them as archived
                     query["archived_at"] = {"$exists": True}
                 else:
+                    query["archived_at"] = {"$exists": False}
                     query["status"] = status_filter
+            else:
+                query["archived_at"] = {"$exists": False}
 
             # Fetch all subscriptions (safety cap: admin view limited to 50k subscriptions)
             MAX_LIST_SUBSCRIPTIONS = 50000
@@ -1226,7 +1238,14 @@ class SubscriptionService:
             formatted_subscriptions = []
             for sub in subscriptions:
                 user_id = sub.get("user_id", "")
-                user = users_map.get(user_id, {})
+                user = users_map.get(user_id)
+                if not user:
+                    logger.warning(
+                        "Skipping orphan subscription %s for missing user %s",
+                        sub.get("_id"),
+                        user_id,
+                    )
+                    continue
                 plan_id = sub.get("plan_id", "")
                 plan = plans_map.get(plan_id, {})
 

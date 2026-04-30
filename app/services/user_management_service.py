@@ -1,3 +1,4 @@
+import html as html_lib
 import logging
 import os
 import secrets
@@ -7,6 +8,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
 
+from app.core.cache import CacheKeys, cache
 from app.core.database import mongo
 from app.core.events import EventFactory, event_bus
 from app.services.email_service_resend import ResendEmailService
@@ -15,6 +17,54 @@ from app.services.planner_onboarding_email_service import (
 )
 from app.utils.auth_utils import get_password_hash, verify_password
 from app.utils.serializers import serialize_mongo_doc
+
+
+# Collections + fields where the planner's email is denormalized as a
+# foreign key. When a user verifies an email change, every matching row in
+# these (collection, field) pairs needs to update from old → new email so
+# downstream surfaces (couple portal, calendar, billing, audit) don't keep
+# resolving the stale value.
+#
+# Only fields that *refer to the user themselves* are listed here. Fields
+# like vendor_email, recipient_email, or invitation.email refer to other
+# people and must NOT be cascaded.
+_PLANNER_EMAIL_CASCADE_FIELDS: list[tuple[str, str]] = [
+    # Wedding doc — couple portal reads `assigned_planner_email` directly,
+    # which is why a stale value here showed the planner's old email under
+    # "Your planner" even after the user record updated.
+    ("weddings", "assigned_planner_email"),
+    # External calendar identity + sync state.
+    ("calendar_connections", "user_email"),
+    ("calendar_connections", "owner_planner_email"),
+    ("calendar_event_syncs", "owner_planner_email"),
+    ("calendar_event_syncs", "target_user_email"),
+    # Planner tasks / calendar events.
+    ("planner_tasks", "planner_email"),
+    ("planner_tasks", "owner_planner_email"),
+    ("planner_tasks", "created_by_email"),
+    # Meeting invites the planner authored (NOT recipient_email — that
+    # references the couple/guest, not the planner).
+    ("meeting_invites", "owner_planner_email"),
+    # Stripe-backed subscription rows. Note the collection name is
+    # `user_subscriptions`, not `subscriptions`.
+    ("user_subscriptions", "user_email"),
+    # AI feature usage tracking (saas billing).
+    ("ai_usage", "user_email"),
+    # Background calendar job queue.
+    ("calendar_jobs", "owner_planner_email"),
+    # Planner activity log — both the wedding-owner field and the actor
+    # field need to update so audit trails resolve to the new email going
+    # forward.
+    ("activity_logs", "planner_email"),
+    ("activity_logs", "actor_email"),
+]
+
+# Collections where the planner's email lives inside an array. Cascading
+# requires the positional-array operator; tracked separately so the cascade
+# helper can use the right update shape.
+_PLANNER_EMAIL_ARRAY_FIELDS: list[tuple[str, str]] = [
+    ("planner_tasks", "assigned_user_emails"),
+]
 
 
 class UserManagementService:
@@ -1484,8 +1534,25 @@ class UserManagementService:
     async def change_email(
         self, current_email: str, new_email: str, password: str
     ) -> dict:
-        """Change user email address after password verification"""
+        """Change user email address after password verification.
+
+        Stores `pending_email` + a one-time verification token on the user,
+        then sends a verification email to the *new* address. The change is
+        only realized when the user clicks that link and `verify_email_change`
+        runs.
+        """
         try:
+            # Normalize both emails to lower-case so duplicate-check and
+            # downstream lookups are consistent.
+            new_email = (new_email or "").strip().lower()
+            if not new_email:
+                raise HTTPException(status_code=400, detail="New email is required")
+            if new_email == (current_email or "").strip().lower():
+                raise HTTPException(
+                    status_code=400,
+                    detail="New email is the same as your current email",
+                )
+
             # Find the user
             user = await self.users_collection.find_one({"email": current_email})
             if not user:
@@ -1495,9 +1562,18 @@ class UserManagementService:
             if not verify_password(password, user["password_hash"]):
                 raise HTTPException(status_code=400, detail="Password is incorrect")
 
-            # Check if new email is already in use
-            existing_user = await self.users_collection.find_one({"email": new_email})
-            if existing_user:
+            # Check if new email is already in use (active OR another user's
+            # pending change). Either case = collision.
+            collision = await self.users_collection.find_one(
+                {
+                    "$or": [
+                        {"email": new_email},
+                        {"pending_email": new_email},
+                    ],
+                    "_id": {"$ne": user["_id"]},
+                }
+            )
+            if collision:
                 raise HTTPException(
                     status_code=400, detail="Email address is already in use"
                 )
@@ -1508,7 +1584,8 @@ class UserManagementService:
                 hours=24
             )  # 24 hours to verify
 
-            # Update user with new email (but keep it unverified until verification)
+            # Update user with pending_email + token. `email` itself is NOT
+            # changed yet — that only happens on verify.
             result = await self.users_collection.update_one(
                 {"email": current_email},
                 {
@@ -1526,7 +1603,17 @@ class UserManagementService:
                     status_code=500, detail="Failed to initiate email change"
                 )
 
-            # Publish email change requested event
+            # Send the verification email directly. Previously this only
+            # published an EMAIL_CHANGE_REQUESTED event with no listener — so
+            # users never received a verification link and could never
+            # complete the change.
+            email_sent = await self._send_email_change_verification(
+                user=user,
+                new_email=new_email,
+                token=verification_token,
+            )
+
+            # Best-effort event publish (other systems may subscribe later).
             try:
                 event = EventFactory.email_change_requested(
                     user_id=str(user["_id"]),
@@ -1535,12 +1622,23 @@ class UserManagementService:
                 )
                 await event_bus.publish(event)
             except Exception as e:
-                # Log but don't fail the email change if event publishing fails
-                print(f"Failed to publish email change requested event: {e}")
+                self.logger.warning(
+                    "Failed to publish email change requested event: %s", e
+                )
+
             return {
-                "message": "Email change requested. Please check your new email address to verify the change.",
+                "message": (
+                    "Email change requested. Check the new email address for a "
+                    "verification link."
+                    if email_sent
+                    else (
+                        "Email change requested, but the verification email "
+                        "could not be sent. Please try again or contact support."
+                    )
+                ),
                 "pending_email": new_email,
                 "verification_required": True,
+                "verification_email_sent": email_sent,
                 "expires_at": verification_expires.isoformat(),
             }
         except HTTPException:
@@ -1551,7 +1649,17 @@ class UserManagementService:
             )
 
     async def verify_email_change(self, token: str) -> dict:
-        """Verify email change using verification token"""
+        """Verify email change using verification token.
+
+        On success: flip `email` → `pending_email`, clear the pending fields,
+        cascade the new email to every denormalized FK across collections,
+        bust the couple portal cache so the change is visible immediately.
+
+        Returns `old_email` and `new_email` so the route layer can reissue
+        the auth cookie with a fresh JWT (otherwise the user gets force-logged-
+        out on the next API call because the JWT `sub` no longer matches a
+        users row).
+        """
         try:
             # Find user with matching email change token
             user = await self.users_collection.find_one({"email_change_token": token})
@@ -1570,10 +1678,26 @@ class UserManagementService:
                     detail="Verification token has expired. Please request a new email change.",
                 )
 
-            # Update user email to the new email
             old_email = user["email"]
             new_email = user["pending_email"]
 
+            # Re-check uniqueness at verify time. It's possible (rare) that
+            # between change_email and verify_email_change, another user
+            # claimed the new email. Fail loudly rather than silently merging.
+            collision = await self.users_collection.find_one(
+                {"email": new_email, "_id": {"$ne": user["_id"]}}
+            )
+            if collision:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "That email address was claimed by another account "
+                        "while your verification was pending. Start a new "
+                        "email change."
+                    ),
+                )
+
+            # Step 1: flip the user record itself.
             await self.users_collection.update_one(
                 {"_id": user["_id"]},
                 {
@@ -1589,19 +1713,36 @@ class UserManagementService:
                     },
                 },
             )
-            # Publish email changed event
+
+            # Step 2: cascade the email to every denormalized FK so couple
+            # portal, calendar, billing, audit, etc. all resolve the new
+            # value on next read.
+            cascade_summary = await self._cascade_planner_email_change(
+                old_email=old_email, new_email=new_email
+            )
+
+            # Step 3: bust caches that may be holding the stale email.
+            await self._invalidate_planner_email_caches(
+                user=user, old_email=old_email, new_email=new_email
+            )
+
+            # Best-effort event publish.
             try:
                 event = EventFactory.email_changed(
-                    user_id=str(user["_id"]), old_email=old_email, new_email=new_email
+                    user_id=str(user["_id"]),
+                    old_email=old_email,
+                    new_email=new_email,
                 )
                 await event_bus.publish(event)
             except Exception as e:
-                # Log but don't fail the email change if event publishing fails
-                print(f"Failed to publish email changed event: {e}")
+                self.logger.warning("Failed to publish email changed event: %s", e)
+
             return {
                 "message": "Email address changed successfully",
                 "old_email": old_email,
                 "new_email": new_email,
+                "user_role": user.get("role"),
+                "cascade": cascade_summary,
                 "changed_at": datetime.now(timezone.utc).isoformat(),
             }
         except HTTPException:
@@ -1610,6 +1751,191 @@ class UserManagementService:
             raise HTTPException(
                 status_code=500, detail=f"Error verifying email change: {str(e)}"
             )
+
+    async def cancel_pending_email_change(self, current_email: str) -> dict:
+        """Cancel an in-flight email change for the given user.
+
+        Clears `pending_email` and the verification token without touching
+        the active `email`. Safe to call when no change is pending — returns
+        a no-op response in that case.
+        """
+        user = await self.users_collection.find_one({"email": current_email})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if not user.get("pending_email"):
+            return {
+                "cancelled": False,
+                "message": "No pending email change to cancel",
+            }
+
+        await self.users_collection.update_one(
+            {"_id": user["_id"]},
+            {
+                "$unset": {
+                    "pending_email": "",
+                    "email_change_token": "",
+                    "email_change_token_expires": "",
+                    "email_change_requested_at": "",
+                }
+            },
+        )
+        return {
+            "cancelled": True,
+            "message": "Pending email change cancelled",
+        }
+
+    async def _send_email_change_verification(
+        self, *, user: dict, new_email: str, token: str
+    ) -> bool:
+        """Send the verification email for an email-change request.
+
+        Returns True if the send succeeded, False otherwise. Failure does NOT
+        roll back the DB-side pending change — the caller surfaces a soft
+        warning so the user can retry.
+        """
+        frontend_url = (os.getenv("FRONTEND_URL") or "").rstrip("/")
+        if not frontend_url:
+            self.logger.error(
+                "FRONTEND_URL not set; cannot build email-change verification link"
+            )
+            return False
+
+        verification_url = f"{frontend_url}/verify-email-change/{token}"
+        first_name = (user.get("first_name") or "").strip()
+        greeting_name = html_lib.escape(first_name) if first_name else "there"
+        old_email_safe = html_lib.escape(user.get("email", ""))
+        new_email_safe = html_lib.escape(new_email)
+        safe_url = html_lib.escape(verification_url)
+
+        subject = "Confirm your new email address"
+        html_content = f"""
+        <div style="font-family: -apple-system, system-ui, sans-serif; max-width: 560px; margin: 0 auto; color: #1f2937;">
+          <h1 style="font-size: 22px; margin: 0 0 16px;">Confirm your new email</h1>
+          <p>Hi {greeting_name},</p>
+          <p>
+            We received a request to change the email address on your
+            The Special Wedding account from
+            <strong>{old_email_safe}</strong> to <strong>{new_email_safe}</strong>.
+          </p>
+          <p>
+            To complete the change, click the button below within the next 24 hours:
+          </p>
+          <p style="text-align: center; margin: 24px 0;">
+            <a href="{safe_url}"
+               style="display: inline-block; padding: 12px 24px; background: #4f46e5;
+                      color: #ffffff; text-decoration: none; border-radius: 6px;
+                      font-weight: 600;">
+              Confirm new email
+            </a>
+          </p>
+          <p style="font-size: 13px; color: #6b7280;">
+            Or paste this link into your browser:<br>
+            <a href="{safe_url}" style="color: #4f46e5; word-break: break-all;">{safe_url}</a>
+          </p>
+          <p style="font-size: 13px; color: #6b7280; margin-top: 24px;">
+            If you didn't request this change, you can safely ignore this
+            email — your account is unchanged. The pending request will
+            expire automatically.
+          </p>
+        </div>
+        """.strip()
+
+        try:
+            result = await self.email_service.send_email(
+                to_email=new_email,
+                subject=subject,
+                html_content=html_content,
+                from_name="The Special Wedding",
+                email_type="email_change_verification",
+            )
+            return bool(result.get("success"))
+        except Exception as e:
+            self.logger.error("Failed to send email change verification: %s", e)
+            return False
+
+    async def _cascade_planner_email_change(
+        self, *, old_email: str, new_email: str
+    ) -> dict[str, Any]:
+        """Update every denormalized planner-email FK across collections.
+
+        Each (collection, field) pair gets a single `update_many` filtered by
+        `{field: old_email}` and setting `{field: new_email}`. Errors are
+        logged but do not abort the cascade — partial success is preferable
+        to total failure (the user record is already updated by the caller).
+        """
+        results: dict[str, dict[str, Any]] = {}
+
+        # Scalar fields
+        for collection_name, field in _PLANNER_EMAIL_CASCADE_FIELDS:
+            key = f"{collection_name}.{field}"
+            try:
+                collection = mongo.db[collection_name]
+                update_result = await collection.update_many(
+                    {field: old_email},
+                    {"$set": {field: new_email}},
+                )
+                results[key] = {
+                    "matched": getattr(update_result, "matched_count", 0),
+                    "modified": getattr(update_result, "modified_count", 0),
+                }
+            except Exception as e:
+                self.logger.error("Cascade update failed for %s: %s", key, e)
+                results[key] = {"error": str(e)}
+
+        # Array fields — match using the array operator and update all
+        # occurrences of the old email within the array via arrayFilters.
+        for collection_name, field in _PLANNER_EMAIL_ARRAY_FIELDS:
+            key = f"{collection_name}.{field}[]"
+            try:
+                collection = mongo.db[collection_name]
+                update_result = await collection.update_many(
+                    {field: old_email},
+                    {"$set": {f"{field}.$[el]": new_email}},
+                    array_filters=[{"el": old_email}],
+                )
+                results[key] = {
+                    "matched": getattr(update_result, "matched_count", 0),
+                    "modified": getattr(update_result, "modified_count", 0),
+                }
+            except Exception as e:
+                self.logger.error("Cascade array update failed for %s: %s", key, e)
+                results[key] = {"error": str(e)}
+
+        return results
+
+    async def _invalidate_planner_email_caches(
+        self, *, user: dict, old_email: str, new_email: str
+    ) -> None:
+        """Bust caches that might be holding the stale planner email.
+
+        Currently targets the couple-portal dashboard cache, which is keyed
+        per (wedding_id, couple_email) but contains the planner's email in
+        the rendered payload. The TTL is short (10s) so this is mostly a
+        UX nicety, but doing it explicitly makes the change feel instant.
+        """
+        try:
+            user_id = str(user.get("_id") or "")
+            wedding_query = {
+                "$or": [
+                    {"assigned_planner_id": user_id},
+                    {"assigned_planner_email": new_email},
+                    {"assigned_planner_email": old_email},
+                ]
+            }
+            wedding_ids: list[str] = []
+            async for wedding in self.weddings_collection.find(
+                wedding_query, {"_id": 1}
+            ):
+                wedding_ids.append(str(wedding["_id"]))
+
+            for wedding_id in wedding_ids:
+                # Wildcard the couple_email portion of the key.
+                await cache.clear_pattern(
+                    f"{CacheKeys.couple_portal_dashboard(wedding_id, '*')}"
+                )
+        except Exception as e:
+            self.logger.warning("Failed to invalidate planner email caches: %s", e)
 
     async def get_user_profile(self, user_email: str) -> dict:
         """Get user profile information"""

@@ -16,6 +16,7 @@ export interface SubscriptionPlan {
   description: string;
   price_monthly: number;
   price_yearly: number;
+  trial_days?: number;
   is_featured: boolean;
   is_active: boolean;
   display_order?: number;
@@ -177,6 +178,11 @@ function PlanToggle({
                     {plan.is_featured ? ' · Most popular' : ''}
                   </p>
                   <p className={`text-xs ${isSelected ? 'text-white/80' : 'text-slate-600'}`}>{plan.description}</p>
+                  {plan.trial_days ? (
+                    <p className={`text-[11px] font-medium uppercase tracking-[0.18em] ${isSelected ? 'text-emerald-100' : 'text-emerald-700'}`}>
+                      {plan.trial_days}-day free trial · no card required
+                    </p>
+                  ) : null}
                 </div>
                 <span className={`text-sm font-semibold ${isSelected ? 'text-white' : 'text-slate-900'}`}>{formatPrice(plan)}</span>
               </div>

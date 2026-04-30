@@ -6,12 +6,17 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException
 
 from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
+from app.models.subscription import SubscriptionStatus
 from app.services.trial_expiration_service import TrialExpirationService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 trial_service = TrialExpirationService()
+TRIAL_MAINTENANCE_STATUSES = [
+    SubscriptionStatus.TRIAL.value,
+    SubscriptionStatus.TRIAL_EXPIRING.value,
+]
 
 # Cron secret for securing internal endpoints (same as used by autopilot)
 CRON_SECRET = os.getenv("CRON_SECRET", "")
@@ -93,17 +98,21 @@ async def get_trial_status(
 
         # Count trials by status
         active_trials = await users_collection.count_documents(
-            {"subscription_status": "trial", "is_active": True, "email_verified": True}
+            {
+                "subscription_status": {"$in": TRIAL_MAINTENANCE_STATUSES},
+                "is_active": True,
+                "email_verified": True,
+            }
         )
 
         expired_trials = await users_collection.count_documents(
-            {"subscription_status": "expired"}
+            {"subscription_status": SubscriptionStatus.EXPIRED.value}
         )
 
         # Trials expiring in next 7 days
         expiring_soon = await users_collection.count_documents(
             {
-                "subscription_status": "trial",
+                "subscription_status": {"$in": TRIAL_MAINTENANCE_STATUSES},
                 "trial_end_date": {"$lte": now + timedelta(days=7), "$gt": now},
                 "is_active": True,
             }
@@ -111,7 +120,7 @@ async def get_trial_status(
         # Trials expiring today
         expiring_today = await users_collection.count_documents(
             {
-                "subscription_status": "trial",
+                "subscription_status": {"$in": TRIAL_MAINTENANCE_STATUSES},
                 "trial_end_date": {"$lte": now + timedelta(days=1), "$gt": now},
                 "is_active": True,
             }

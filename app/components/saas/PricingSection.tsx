@@ -19,6 +19,7 @@ interface SubscriptionPlan {
   ai_credits_monthly: number;
   storage_gb: number;
   staff_seats: number;
+  trial_days?: number;
   features: Record<string, boolean>;  // Backend format: {feature_name: true/false}
   features_list?: string[];  // Optional display list
   is_featured: boolean;
@@ -201,7 +202,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
             <h3 className="text-xl font-semibold text-white mb-2">Pricing Temporarily Unavailable</h3>
             <p className="text-slate-300 mb-6">{error}</p>
             <a
-              href="mailto:hello@thespecialwedding.com"
+              href="mailto:hello@thespecialwedding.io"
               className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-100 transition"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -274,8 +275,11 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
 
                   <div>
                     <div className="text-3xl font-semibold">{getPriceLabel(plan)}</div>
+                    {plan.trial_days ? (
+                      <p className="text-xs font-medium text-emerald-700">{plan.trial_days}-day free trial · no card required</p>
+                    ) : null}
                     {isYearly && plan.price_monthly > 0 && (
-                      <p className="text-xs text-slate-500">Billed annually. Equivalent to ${(plan.price_monthly * 12).toFixed(0)} per year.</p>
+                      <p className="text-xs text-slate-500">Billed annually. Save 2 months compared with monthly.</p>
                     )}
                   </div>
 
@@ -323,7 +327,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
               <span>{getPriceLabel(selectedPlan)}</span>
             </div>
             <p className="text-xs text-slate-500">
-              We&apos;ll carry this choice into onboarding so your free trial starts with the right usage limits.
+              We&apos;ll carry this choice into onboarding so your {selectedPlan.trial_days ? `${selectedPlan.trial_days}-day ` : ''}free trial starts with the right usage limits.
             </p>
           </GlassCard>
         )}

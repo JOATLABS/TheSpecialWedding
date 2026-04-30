@@ -2,10 +2,24 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 
+from app.constants.registration_sources import REGISTRATION_SOURCE_PUBLIC_SIGNUP
 from app.core.database import mongo
+from app.models.subscription import SubscriptionStatus
 from app.services.email_service_resend import ResendEmailService
 
 logger = logging.getLogger(__name__)
+
+TRIAL_MAINTENANCE_STATUSES = [
+    SubscriptionStatus.TRIAL.value,
+    SubscriptionStatus.TRIAL_EXPIRING.value,
+]
+
+TRIAL_WARNING_EMAIL_ELIGIBILITY_QUERY = {
+    "$or": [
+        {"email_verified": True},
+        {"registration_source": {"$ne": REGISTRATION_SOURCE_PUBLIC_SIGNUP}},
+    ]
+}
 
 
 class TrialExpirationService:
@@ -44,7 +58,7 @@ class TrialExpirationService:
             # Find users with expired trials using Motor async cursor
             cursor = self.users_collection.find(
                 {
-                    "subscription_status": "trial",
+                    "subscription_status": {"$in": TRIAL_MAINTENANCE_STATUSES},
                     "trial_end_date": {"$lt": now},
                     "is_active": True,
                 }
@@ -62,18 +76,27 @@ class TrialExpirationService:
                     {"_id": user["_id"]},
                     {
                         "$set": {
-                            "subscription_status": "expired",
+                            "subscription_status": SubscriptionStatus.EXPIRED.value,
                             "trial_expired_at": now,
                         }
                     },
                 )
 
                 # Also update the user_subscriptions collection to keep state consistent
-                await mongo.db["user_subscriptions"].update_one(
-                    {"user_id": user_id, "status": {"$in": ["trial", "active"]}},
+                await mongo.db["user_subscriptions"].update_many(
+                    {
+                        "user_id": user_id,
+                        "status": {
+                            "$in": [
+                                SubscriptionStatus.TRIAL.value,
+                                SubscriptionStatus.TRIAL_EXPIRING.value,
+                                SubscriptionStatus.ACTIVE.value,
+                            ]
+                        },
+                    },
                     {
                         "$set": {
-                            "status": "expired",
+                            "status": SubscriptionStatus.EXPIRED.value,
                             "updated_at": now,
                             "trial_expired_at": now,
                         }
@@ -124,14 +147,14 @@ class TrialExpirationService:
 
             cursor = self.users_collection.find(
                 {
-                    "subscription_status": "trial",
+                    "subscription_status": {"$in": TRIAL_MAINTENANCE_STATUSES},
                     "trial_end_date": {
                         "$lte": early_warning_date,
                         "$gt": now + timedelta(days=3),
                     },
                     "trial_warning_sent": {"$ne": True},
                     "is_active": True,
-                    "email_verified": True,
+                    **TRIAL_WARNING_EMAIL_ELIGIBILITY_QUERY,
                 }
             )
             early_users = await cursor.to_list(length=None)
@@ -151,10 +174,10 @@ class TrialExpirationService:
 
             cursor = self.users_collection.find(
                 {
-                    "subscription_status": "trial",
+                    "subscription_status": {"$in": TRIAL_MAINTENANCE_STATUSES},
                     "trial_end_date": {"$lte": countdown_date, "$gt": now},
                     "is_active": True,
-                    "email_verified": True,
+                    **TRIAL_WARNING_EMAIL_ELIGIBILITY_QUERY,
                 }
             )
             countdown_users = await cursor.to_list(length=None)

@@ -361,13 +361,21 @@ async def get_guest_activity(
         wedding_id = guest.get("wedding_id", "")
 
         # Build query: match by guest_id in metadata OR guest_name in metadata/message
-        # Scoped to the same wedding
-        or_conditions = [
+        # Scoped to the same wedding.
+        #
+        # IMPORTANT: only add `metadata.guest_email` to the OR if we actually
+        # have a non-empty email. Adding `{"metadata.guest_email": None}`
+        # would match every activity_log row that lacks that field — which is
+        # almost all of them — and bleed the entire wedding's activity into
+        # this guest's view.
+        or_conditions: list[dict[str, Any]] = [
             {"metadata.guest_id": guest_id},
         ]
         if guest_name:
             or_conditions.append({"metadata.guest_name": guest_name})
-            or_conditions.append({"metadata.guest_email": guest.get("email")})
+        guest_email = guest.get("email")
+        if guest_email:
+            or_conditions.append({"metadata.guest_email": guest_email})
 
         query = {
             "$and": [

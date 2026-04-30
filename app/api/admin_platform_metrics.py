@@ -779,26 +779,77 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
 
         # Subscription statistics (collection is "user_subscriptions", not "subscriptions")
         # Status values: "active", "trial", "cancelled", "expired", "suspended"
+        subscription_user_docs = (
+            await mongo.db["users"].find({}, {"_id": 1}).to_list(length=100000)
+        )
+        live_subscription_match = {
+            "archived_at": {"$exists": False},
+            "user_id": {"$in": [str(user["_id"]) for user in subscription_user_docs]},
+        }
         subscription_pipeline = [
             {
                 "$facet": {
-                    "active": [{"$match": {"status": "active"}}, {"$count": "count"}],
-                    "trial": [{"$match": {"status": "trial"}}, {"$count": "count"}],
-                    "cancelled": [
-                        {"$match": {"status": "cancelled"}},
+                    "active": [
+                        {
+                            "$match": {
+                                **live_subscription_match,
+                                "status": "active",
+                            }
+                        },
                         {"$count": "count"},
                     ],
-                    "expired": [{"$match": {"status": "expired"}}, {"$count": "count"}],
+                    "trial": [
+                        {
+                            "$match": {
+                                **live_subscription_match,
+                                "status": "trial",
+                            }
+                        },
+                        {"$count": "count"},
+                    ],
+                    "cancelled": [
+                        {
+                            "$match": {
+                                **live_subscription_match,
+                                "status": "cancelled",
+                            }
+                        },
+                        {"$count": "count"},
+                    ],
+                    "expired": [
+                        {
+                            "$match": {
+                                **live_subscription_match,
+                                "status": "expired",
+                            }
+                        },
+                        {"$count": "count"},
+                    ],
                     "suspended": [
-                        {"$match": {"status": "suspended"}},
+                        {
+                            "$match": {
+                                **live_subscription_match,
+                                "status": "suspended",
+                            }
+                        },
                         {"$count": "count"},
                     ],
                     "past_due": [
-                        {"$match": {"payment_status": "past_due"}},
+                        {
+                            "$match": {
+                                **live_subscription_match,
+                                "payment_status": "past_due",
+                            }
+                        },
                         {"$count": "count"},
                     ],
                     "by_plan": [
-                        {"$match": {"status": {"$in": ["active", "trial"]}}},
+                        {
+                            "$match": {
+                                **live_subscription_match,
+                                "status": {"$in": ["active", "trial"]},
+                            }
+                        },
                         {"$group": {"_id": "$plan_id", "count": {"$sum": 1}}},
                         {"$sort": {"count": -1}},
                     ],
@@ -842,7 +893,9 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
         )
 
         # Calculate MRR/ARR from plan_snapshot pricing
-        active_subs_cursor = mongo.db["user_subscriptions"].find({"status": "active"})
+        active_subs_cursor = mongo.db["user_subscriptions"].find(
+            {**live_subscription_match, "status": "active"}
+        )
         active_subs = await active_subs_cursor.to_list(length=None)
 
         mrr = 0
@@ -862,10 +915,17 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
 
         # Trial conversion rate
         total_trials = await mongo.db["user_subscriptions"].count_documents(
-            {"trial_end_date": {"$exists": True, "$ne": None}}
+            {
+                **live_subscription_match,
+                "trial_end_date": {"$exists": True, "$ne": None},
+            }
         )
         converted_trials = await mongo.db["user_subscriptions"].count_documents(
-            {"trial_end_date": {"$exists": True, "$ne": None}, "status": "active"}
+            {
+                **live_subscription_match,
+                "trial_end_date": {"$exists": True, "$ne": None},
+                "status": "active",
+            }
         )
         conversion_rate = (
             (converted_trials / total_trials * 100) if total_trials > 0 else 0

@@ -549,11 +549,13 @@ class StripeService:
                 }
             }
 
-            if trial_days > 0:
+            has_trial = trial_days > 0
+            if has_trial:
                 subscription_data["trial_period_days"] = trial_days
                 subscription_data["trial_settings"] = {
                     "end_behavior": {
-                        # We collect cards up front, so cancel if a payment method is missing at the end of trial
+                        # No-card trials are allowed; cancel if the customer does
+                        # not add a payment method before the trial ends.
                         "missing_payment_method": "cancel"
                     }
                 }
@@ -583,7 +585,7 @@ class StripeService:
                 },
                 allow_promotion_codes=True,
                 billing_address_collection="auto",
-                payment_method_collection="always",
+                payment_method_collection="if_required" if has_trial else "always",
                 customer_update={"address": "auto", "name": "auto"},
             )
 

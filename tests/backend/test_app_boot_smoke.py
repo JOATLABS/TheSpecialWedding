@@ -10,4 +10,5 @@ def test_main_app_imports_under_python_311():
     }
 
     assert "/health/livez" in route_paths
+    assert "/health" in route_paths
     assert "/admin/form-templates" in route_paths

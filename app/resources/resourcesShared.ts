@@ -123,7 +123,7 @@ export const faqs: FAQ[] = [
   {
     question: 'Can I manage multiple weddings at once?',
     answer:
-      'Yes. Each wedding gets its own workspace with separate guest lists, budgets, seating, and branding — all managed from a single dashboard. The Agency tier supports unlimited weddings with team member assignments.',
+      'Yes. Each wedding gets its own workspace with separate guest lists, budgets, seating, and branding — all managed from a single dashboard. Enterprise supports unlimited weddings with team member assignments.',
     category: 'Getting Started',
   },
   {
@@ -135,7 +135,7 @@ export const faqs: FAQ[] = [
   {
     question: 'Is there support on the wedding day?',
     answer:
-      'Signature and Agency plans include live chat with our success team plus on-call escalation for critical day-of moments.',
+      'Signature and Enterprise plans include live chat with our success team plus on-call escalation for critical day-of moments.',
     category: 'Day-of Support',
   },
   {
@@ -159,7 +159,7 @@ export const faqs: FAQ[] = [
   {
     question: 'Do you offer a free trial?',
     answer:
-      'Yes. All plans come with a 14-day free trial — no credit card required. You get full access to every feature in your chosen tier.',
+      'Yes. All self-serve plans come with a 30-day free trial — no credit card required. You get full access to every feature in your chosen tier.',
     category: 'Pricing & Billing',
   },
   {
@@ -187,9 +187,9 @@ export const faqs: FAQ[] = [
     category: 'Pricing & Billing',
   },
   {
-    question: "What's included in the Agency tier?",
+    question: "What's included in the Enterprise tier?",
     answer:
-      'The Agency tier is built for planning firms managing multiple weddings with teams. It includes unlimited weddings, SSO, custom domains, role provisioning, a dedicated success architect, and compliance reporting.',
+      'Enterprise is built for firms that need unlimited weddings, unlimited guests, higher AI usage, team seats, white-label branding, API access, dedicated support, and custom integrations.',
     category: 'Pricing & Billing',
   },
 ];
