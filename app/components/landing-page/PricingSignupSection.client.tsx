@@ -89,37 +89,37 @@ export function PricingSignupSection({ pricing, theme }: Props) {
   };
 
   return (
-    <section id="pricing" className="bg-slate-950 px-6 py-16 sm:px-8 lg:px-12">
+    <section id="pricing" className="scroll-mt-28 bg-slate-950 px-5 py-10 sm:px-8 sm:py-16 lg:px-12">
       <div className="mx-auto max-w-7xl">
-        <div className="mx-auto mb-10 max-w-3xl text-center">
+        <div className="mx-auto mb-7 max-w-3xl text-center sm:mb-10">
           <p className="text-sm font-semibold uppercase tracking-[0.28em] text-rose-200">Plans</p>
-          <h2 className="mt-4 text-4xl font-semibold tracking-normal text-white sm:text-5xl">
+          <h2 className="mt-3 text-3xl font-semibold tracking-normal text-white sm:mt-4 sm:text-5xl">
             Start small, then scale the studio.
           </h2>
         </div>
-        <div className="grid gap-5 lg:grid-cols-3">
+        <div className="grid gap-3 sm:gap-5 lg:grid-cols-3">
           {displayPricing.map((tier) => (
             <article
               key={tier.id}
-              className={`relative rounded-2xl border p-6 ${
+              className={`relative rounded-xl border p-4 sm:rounded-2xl sm:p-6 ${
                 tier.popular ? "border-rose-300/60 bg-white/[0.08]" : "border-white/10 bg-white/[0.04]"
               }`}
             >
               {tier.savings ? (
-                <span className="absolute right-5 top-5 rounded-full bg-rose-300 px-3 py-1 text-xs font-semibold text-slate-950">
+                <span className="absolute right-4 top-4 rounded-full bg-rose-300 px-3 py-1 text-xs font-semibold text-slate-950 sm:right-5 sm:top-5">
                   {tier.savings}
                 </span>
               ) : null}
-              <h3 className="text-2xl font-semibold text-white">{tier.name}</h3>
-              <p className="mt-3 min-h-14 text-sm leading-6 text-slate-300">{tier.tagline}</p>
-              <div className="mt-6 flex items-end gap-1">
-                <span className="text-4xl font-semibold text-white">{tier.price}</span>
+              <h3 className="pr-32 text-2xl font-semibold text-white">{tier.name}</h3>
+              <p className="mt-2 text-sm leading-5 text-slate-300 sm:mt-3 sm:min-h-14 sm:leading-6">{tier.tagline}</p>
+              <div className="mt-4 flex items-end gap-1 sm:mt-6">
+                <span className="text-3xl font-semibold text-white sm:text-4xl">{tier.price}</span>
                 <span className="pb-1 text-sm text-slate-400">{tier.period}</span>
               </div>
-              <ul className="mt-6 space-y-3 text-sm text-slate-200">
+              <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-[13px] leading-5 text-slate-200 sm:mt-6 sm:block sm:space-y-3 sm:text-sm sm:leading-normal">
                 {tier.features.map((feature) => (
-                  <li key={feature} className="flex gap-3">
-                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-emerald-300" aria-hidden="true" />
+                  <li key={feature} className="flex gap-2 sm:gap-3">
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-300" aria-hidden="true" />
                     <span>{feature}</span>
                   </li>
                 ))}
@@ -127,7 +127,7 @@ export function PricingSignupSection({ pricing, theme }: Props) {
               <button
                 type="button"
                 onClick={() => openSignup(tier.id)}
-                className={`mt-8 w-full rounded-full px-5 py-3 text-sm font-semibold transition ${
+                className={`mt-5 w-full rounded-full px-5 py-2.5 text-sm font-semibold transition sm:mt-8 sm:py-3 ${
                   tier.popular
                     ? "bg-white text-slate-950 hover:bg-rose-50"
                     : "border border-white/20 text-white hover:bg-white/10"

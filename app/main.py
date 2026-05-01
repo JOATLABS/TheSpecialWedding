@@ -105,7 +105,7 @@ from app.core.database_indexes import create_all_indexes
 
 # Import settings and core components
 from app.core.settings import settings
-from app.middleware.audit_logging import AuditLoggingMiddleware
+from app.middleware.audit_logging import AuditLoggingMiddleware, audit_buffer
 
 # Import middleware
 from app.middleware.error_handler import ErrorHandlerMiddleware
@@ -430,6 +430,17 @@ async def lifespan(app: FastAPI):
         await init_database()
         logger.info("Database initialized")
 
+        # Start the audit-log batch buffer.  Once running, the
+        # AuditLoggingMiddleware enqueues entries here instead of doing
+        # one ``insert_one`` per request, removing a Mongo round trip
+        # from every authenticated request.  See AuditLogBuffer in
+        # app/middleware/audit_logging.py for durability semantics.
+        if settings.audit_log_to_db:
+            from app.core.database import mongo
+
+            await audit_buffer.start(mongo.db["audit_logs"])
+            logger.info("Audit log buffer started")
+
         # Initialize cache if enabled
         if settings.redis_enabled:
             await init_cache()
@@ -554,9 +565,25 @@ async def lifespan(app: FastAPI):
         # Stop SSE Redis listener
         await sse_manager.stop_redis_listener()
 
+        # Drain the audit-log buffer before the DB connection closes.
+        # ``shutdown()`` is idempotent — the ``finally`` block below
+        # will no-op if we already drained here.
+        if settings.audit_log_to_db:
+            await audit_buffer.shutdown()
+            logger.info("Audit log buffer drained")
+
     finally:
         # Shutdown
         logger.info("Shutting down application")
+
+        # Defensive: if startup raised before the post-yield drain
+        # could run, flush whatever is in the buffer before we close
+        # the DB connection.  ``shutdown()`` is idempotent.
+        if settings.audit_log_to_db:
+            try:
+                await audit_buffer.shutdown()
+            except Exception as e:
+                logger.error(f"Audit buffer shutdown raised in finally: {e}")
 
         # Close database connection
         await close_database()

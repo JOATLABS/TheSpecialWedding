@@ -165,7 +165,7 @@ def make_contract_doc(
         "status": status,
         "access_token_hash": vendor_service._hash_contract_access_token(access_token),
         "token_expires_at": token_expires_at
-        or datetime(2026, 5, 1, tzinfo=timezone.utc),
+        or (datetime.now(timezone.utc) + timedelta(days=30)),
         "token_revoked_at": token_revoked_at,
         "token_last_sent_at": None,
         "token_last_viewed_at": None,
