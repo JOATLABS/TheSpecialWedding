@@ -54,6 +54,7 @@ const nextConfig = {
   },
 
   images: {
+    formats: ['image/avif', 'image/webp'],
     remotePatterns,
   },
   transpilePackages: ['@hello-pangea/dnd'],

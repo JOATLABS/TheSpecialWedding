@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useSSE } from '@/hooks/useSSE';
@@ -58,6 +58,31 @@ interface AIInsight {
   icon: string;
 }
 
+function scheduleIdleWork(callback: () => void, timeout = 2500) {
+  const win = window as Window & {
+    requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+    cancelIdleCallback?: (handle: number) => void;
+  };
+
+  let idleHandle: number | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  if (win.requestIdleCallback) {
+    idleHandle = win.requestIdleCallback(callback, { timeout });
+  } else {
+    timer = setTimeout(callback, Math.min(timeout, 1200));
+  }
+
+  return () => {
+    if (idleHandle !== null && win.cancelIdleCallback) {
+      win.cancelIdleCallback(idleHandle);
+    }
+    if (timer !== null) {
+      clearTimeout(timer);
+    }
+  };
+}
+
 export default function WeddingPlannerDashboard() {
  const { token, userProfile, fetchUserProfile, expireSession } = useAdmin();
  const router = useRouter();
@@ -80,6 +105,10 @@ export default function WeddingPlannerDashboard() {
 
  // Engagement signals state
  const [engagementSignals, setEngagementSignals] = useState<WeddingEngagementSignal[]>([]);
+ const metricsInFlightRef = useRef(false);
+ const metricsAbortRef = useRef<AbortController | null>(null);
+ const engagementLoadedRef = useRef(false);
+ const sseRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
  const engagementMap = React.useMemo(() => {
    const map = new Map<string, WeddingEngagementSignal>();
    engagementSignals.forEach((s) => map.set(s.wedding_id, s));
@@ -91,14 +120,20 @@ export default function WeddingPlannerDashboard() {
  setLoading(false);
  return;
  }
+ if (metricsInFlightRef.current) {
+ return;
+ }
+ metricsInFlightRef.current = true;
+ const controller = new AbortController();
+ metricsAbortRef.current = controller;
  try {
  const baseUrl = getApiBaseUrl();
- // Use the new optimized metrics API
- const response = await fetch(`${baseUrl}/admin/planner/metrics`, {
+ const response = await fetch(`${baseUrl}/admin/planner/metrics?include_revenue=false`, {
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json',
  },
+ signal: controller.signal,
  });
 
  if (response.ok) {
@@ -123,11 +158,32 @@ export default function WeddingPlannerDashboard() {
  setError('Failed to fetch dashboard data');
  }
  } catch (error) {
+ if (error instanceof DOMException && error.name === 'AbortError') {
+ return;
+ }
  setError('Failed to fetch dashboard data');
  } finally {
+ if (metricsAbortRef.current === controller) {
+ metricsAbortRef.current = null;
+ }
+ metricsInFlightRef.current = false;
  setLoading(false);
  }
  }, [expireSession, token]);
+
+ const loadEngagementSignals = useCallback(async () => {
+   if (!token || engagementLoadedRef.current) {
+     return;
+   }
+
+   try {
+     const data = await fetchEngagementSignals(token);
+     engagementLoadedRef.current = true;
+     setEngagementSignals(data.signals);
+   } catch (err) {
+     console.error('[Planner] Failed to load engagement signals:', err);
+   }
+ }, [token]);
 
  // Fetch AI insights for selected wedding
  const fetchAIInsights = useCallback(async (weddingId: string, forceRefresh = false) => {
@@ -187,12 +243,11 @@ export default function WeddingPlannerDashboard() {
    }
  }, [weddings, selectedInsightWedding]);
 
- // Fetch insights when selected wedding changes
- useEffect(() => {
-   if (selectedInsightWedding) {
-     fetchAIInsights(selectedInsightWedding);
-   }
- }, [selectedInsightWedding, fetchAIInsights]);
+ const handleInsightWeddingChange = useCallback((weddingId: string) => {
+   setSelectedInsightWedding(weddingId);
+   setAiInsights([]);
+   setInsightsError('');
+ }, []);
 
  // Role-gate effect. Deps are narrowed to stable primitives instead of the
  // full `userProfile` object so this effect doesn't re-fire — and re-push
@@ -239,22 +294,40 @@ export default function WeddingPlannerDashboard() {
  }
 
  fetchMyWeddings();
+ const cancelEngagementSignals = scheduleIdleWork(loadEngagementSignals, 3000);
 
- // Fetch engagement signals (non-blocking)
- if (token) {
-   fetchEngagementSignals(token)
-     .then((data) => setEngagementSignals(data.signals))
-     .catch((err) => console.error('[Planner] Failed to load engagement signals:', err));
- }
- }, [fetchMyWeddings, fetchUserProfile, router, token, plannerPageHasProfile, plannerPageCanAccess, plannerPageIsRootAdmin]);
+ return () => {
+   cancelEngagementSignals();
+ };
+ }, [fetchMyWeddings, fetchUserProfile, loadEngagementSignals, router, token, plannerPageHasProfile, plannerPageCanAccess, plannerPageIsRootAdmin]);
+
+ const handleRealtimeDashboardChange = useCallback(() => {
+   if (sseRefreshTimerRef.current) {
+     clearTimeout(sseRefreshTimerRef.current);
+   }
+
+   sseRefreshTimerRef.current = setTimeout(() => {
+     sseRefreshTimerRef.current = null;
+     fetchMyWeddings();
+   }, 1200);
+ }, [fetchMyWeddings]);
 
  // Real-time updates via SSE — refetch wedding list when the server
  // signals any wedding, guest, or RSVP change.
  useSSE({
    resources: ['wedding', 'guest', 'rsvp'],
-   onDataChange: fetchMyWeddings,
+   onDataChange: handleRealtimeDashboardChange,
    enabled: !!token,
  });
+
+ useEffect(() => {
+   return () => {
+     metricsAbortRef.current?.abort();
+     if (sseRefreshTimerRef.current) {
+       clearTimeout(sseRefreshTimerRef.current);
+     }
+   };
+ }, []);
 
  // Check if onboarding should be shown (one-time only for new planners)
  useEffect(() => {
@@ -523,16 +596,15 @@ export default function WeddingPlannerDashboard() {
                 <WeddingPicker
                   options={weddings.map((w) => ({ id: w.id, label: w.couple_names }))}
                   value={selectedInsightWedding}
-                  onChange={setSelectedInsightWedding}
+                  onChange={handleInsightWeddingChange}
                 />
               )}
 
-              {/* Refresh Button */}
               <button
-                onClick={() => fetchAIInsights(selectedInsightWedding, true)}
-                disabled={insightsLoading}
+                onClick={() => fetchAIInsights(selectedInsightWedding, aiInsights.length > 0)}
+                disabled={insightsLoading || !selectedInsightWedding}
                 className="p-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"
-                title="Refresh insights (uses 2 credits)"
+                title={aiInsights.length > 0 ? 'Refresh insights (uses 2 credits)' : 'Load insights'}
               >
                 <svg className={`w-5 h-5 ${insightsLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -580,7 +652,15 @@ export default function WeddingPlannerDashboard() {
               <svg className="w-10 h-10 mx-auto mb-2 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
               </svg>
-              <p className="text-sm">No insights available yet</p>
+              <p className="text-sm">Insights are ready when you need them.</p>
+              <button
+                type="button"
+                onClick={() => fetchAIInsights(selectedInsightWedding)}
+                disabled={!selectedInsightWedding}
+                className="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              >
+                Load insights
+              </button>
             </div>
           )}
 
@@ -662,7 +742,7 @@ export default function WeddingPlannerDashboard() {
           )}
 
           <p className="text-xs text-slate-400 dark:text-slate-500 mt-4 text-center">
-            Insights refresh on page load • 2 credits per refresh
+            Insights load when requested • 2 credits per refresh
           </p>
         </div>
       )}

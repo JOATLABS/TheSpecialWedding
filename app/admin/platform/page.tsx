@@ -111,8 +111,13 @@ interface PerformanceMetrics {
     total_errors_24h: number;
     overall_error_rate: number;
     overall_avg_response_time_ms: number;
+    overall_avg_response_time_seconds?: number;
+    overall_p95_response_time_seconds?: number;
     slow_endpoint_count: number;
     monitored_endpoint_count: number;
+    monthly_infra_cost_usd?: number | null;
+    daily_infra_cost_usd?: number | null;
+    requests_per_dollar_24h?: number | null;
   };
   endpoints?: EndpointPerformance[];
   slow_endpoints: EndpointPerformance[];
@@ -1441,7 +1446,7 @@ export default function PlatformInfrastructurePage() {
       {activeTab === 'performance' && (
         <div className="space-y-6">
           {/* Performance Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4">
             <Card className="p-4">
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Requests (24h)</p>
               <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
@@ -1455,6 +1460,12 @@ export default function PlatformInfrastructurePage() {
               </p>
             </Card>
             <Card className="p-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">P95 Response</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                {((metrics.performance?.summary?.overall_p95_response_time_seconds ?? 0) * 1000).toFixed(0)}ms
+              </p>
+            </Card>
+            <Card className="p-4">
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Error Rate</p>
               <p className={`text-2xl font-bold ${(metrics.performance?.summary?.overall_error_rate ?? 0) > 5 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                 {(metrics.performance?.summary?.overall_error_rate ?? 0).toFixed(2)}%
@@ -1465,6 +1476,15 @@ export default function PlatformInfrastructurePage() {
               <p className={`text-2xl font-bold ${(metrics.performance?.summary?.slow_endpoint_count ?? 0) > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'}`}>
                 {metrics.performance?.summary?.slow_endpoint_count ?? 0}
               </p>
+            </Card>
+            <Card className="p-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Requests / $</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                {metrics.performance?.summary?.requests_per_dollar_24h != null
+                  ? metrics.performance.summary.requests_per_dollar_24h.toLocaleString(undefined, { maximumFractionDigits: 0 })
+                  : 'Set cost'}
+              </p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">24h normalized by daily infra cost</p>
             </Card>
           </div>
 

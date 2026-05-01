@@ -18,9 +18,8 @@ export type MarketingFeature = {
 // Brand anchor: "Run every wedding from one record."
 // Every entry tells a story, not a capability bullet: open with a recognizable
 // planner moment, name the tools TSW replaces, and ladder back to one record,
-// five surfaces (planner, couple, guest, vendor, team) — synced live.
-// Guests, config, calendar, and knowledge are NOT standalone entries; they're
-// infrastructure folded into the stories they power.
+// five surfaces (planner, couple, guest, vendor, team) synced live. Keep each
+// screenshot aligned with the exact product surface being described.
 export const MARKETING_FEATURES: MarketingFeature[] = [
   {
     id: 'dashboard',
@@ -35,14 +34,13 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
   },
   {
     id: 'real-time',
-    icon: '⚡',
-    title: 'Live, Not Synced',
+    icon: '🗓️',
+    title: 'Wedding Timeline & Event Days',
     category: 'Operations',
-    // TODO: replace with /realtime_updates.png once captured; using planner inbox as proxy
-    image: '/planner_inbox.png',
-    tagline: "The platform doesn't sync — it streams. Every change lands on every surface the moment you save.",
+    image: '/calendar_management.png',
+    tagline: "Build each event day once — ceremony, reception, brunch, cultural events — and keep the planner, couple, team, and slug aligned.",
     description:
-      "You update the timeline Tuesday night at 10pm. Before HoneyBook, the couple would've seen it at their 9am 'refresh the shared doc' ritual. Here, server-sent events push it to the couple portal, the microsite, and the team member's phone the second you hit save. Guests forwarding questions to your wedding email auto-thread into the right couple's inbox. The activity log captures every write so your assistant can trace who changed what. Planning stops being a sync-every-morning operation and becomes a single nervous system.",
+      "A wedding is rarely one block on one calendar. Configure the rehearsal, ceremony, reception, brunch, and cultural events with dates, venues, times, attire, and order-of-events. The planner timeline, couple portal, reminders, and public slug all read from the same event-day record, so a time change updates the guest-facing schedule instead of becoming another PDF you have to resend.",
     ai: false,
     blogSlug: 'real-time-planning-not-email-tag',
   },
@@ -50,7 +48,7 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     id: 'couple-portal',
     icon: '💍',
     title: 'The Couple Sees What You See',
-    category: 'Client Experience',
+    category: 'Planner Portal',
     image: '/couple_portal_dashboard.png',
     tagline: 'Stop being the human API between the couple and every planning tool.',
     description:
@@ -62,9 +60,8 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     id: 'wedding-website',
     icon: '🌐',
     title: 'The Microsite Auto-Publishes',
-    category: 'Client Experience',
-    // TODO: replace with /wedding_microsite.png once captured from staging
-    image: '/couple_portal_dashboard.png',
+    category: 'Wedding Website',
+    image: '/wedding_microsite.png',
     tagline: 'Every wedding ships with a branded microsite — no Squarespace, no extra login, never out of date.',
     description:
       "Booking a couple used to mean another $200/yr Squarespace site, another login, another place the schedule can go stale. Not here. The second a wedding exists in your dashboard, its public microsite is live: theme colors, fonts, the couple's story, wedding party, event schedule, gallery, RSVP flow, and guest memory uploads. Every surface reads the same record you write to — so the website can never drift from the plan. The wedding-website builder category, for this couple, ceases to exist.",
@@ -72,48 +69,80 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     blogSlug: 'the-built-in-wedding-website',
   },
   {
-    id: 'rsvp-seating',
+    id: 'wedding-configuration',
+    icon: '⚙️',
+    title: 'Wedding Configuration',
+    category: 'Planner Setup',
+    image: '/wedding_config1.png',
+    tagline: 'Set the wedding details once: event days, RSVP rules, privacy, registry, FAQ, theme, story, and slug content.',
+    description:
+      "The Configure screen is the easy setup layer for what appears on the public wedding slug. Add event days with venue, time, location, and attire; choose RSVP and privacy rules; maintain registry and FAQ content; set theme and story details; then save once and let the public microsite, couple portal, RSVP flow, and guest schedule read the same source. No rebuilding the wedding website every time a planner edits a detail.",
+    ai: false,
+  },
+  {
+    id: 'gallery-management',
+    icon: '🖼️',
+    title: 'Gallery Management',
+    category: 'Planner Media',
+    image: '/gallery_management.png',
+    tagline: 'Manage public galleries, story images, wedding-party photos, and guest-list-to-slug publishing from one place.',
+    description:
+      "Gallery Management is more than uploading pretty photos. The planner can organize public gallery assets, assign story and wedding-party images, and sync wedding-party members from the guest list so bridesmaids, groomsmen, maid of honor, and best man details can appear on the slug without double entry. The same media library feeds the microsite gallery and the couple-facing story, while Guest Memories stays the upload-and-review flow for photos guests capture at the wedding.",
+    ai: false,
+  },
+  {
+    id: 'guest-management',
+    icon: '👥',
+    title: 'Guest Management',
+    category: 'Guest Pipeline',
+    image: '/guest_management_view.png',
+    tagline: 'Manage the wedding guest list, RSVP status, plus-ones, groups, and guest details from one planner page.',
+    description:
+      "This is the planner's guest operating table, not a generic spreadsheet. Import the list, clean up households, manage RSVP status, track plus-ones, capture meal and accessibility notes, and open the full guest profile when something changes. Every guest record feeds the RSVP flow, reminder sends, seating chart, catering counts, couple portal, and day-of exports, so the same person is never patched in five places.",
+    ai: false,
+  },
+  {
+    id: 'seating-orchestrator',
     icon: '🪑',
-    title: 'RSVP → Reminders → Seating, One Guest List',
+    title: 'Seating Chart Orchestrator',
     category: 'Guest Pipeline',
     image: '/seating.png',
-    tagline: "Import the guest list once. Every downstream surface writes back to it — so seating never goes stale.",
+    tagline: 'Turn the confirmed guest list into tables, meal counts, and seating assignments without rebuilding from a spreadsheet.',
     description:
-      "Twelve days before the wedding, six guests cancel. On the old stack, that's an afternoon: update the Google Sheet, re-export to the seating tool, re-send the meal count to the caterer, re-tell the partner. Here, one edit on the guest record ripples everywhere: RSVP page, microsite schedule, seating chart, reminder sends, caterer export. Households, plus-one rules, dietary notes, and multi-event RSVP status stay coherent across surfaces. AI proposes seating solutions when family and group constraints collide — and reaches guests via Twilio SMS, Telnyx fallback, or Resend email with tone-aware AI drafts (formal / friendly / casual) and a full delivery log per guest. Mailchimp audience, Zola RSVP, AllSeated — one record, one flow.",
+      "This is the seating surface. Confirmed guests, plus-ones, meal notes, households, VIPs, and group constraints flow in from Guest Management, then the planner arranges tables from the same record. When six guests cancel twelve days before the wedding, the chart, meal counts, and export data update without another CSV round trip. AI can flag awkward placements or propose table groupings when family rules collide, but the planner stays in control.",
     ai: true,
   },
   {
     id: 'guest-memories',
     icon: '📷',
     title: 'Guest Memories',
-    category: 'Guest Pipeline',
-    // TODO: replace with /guest_memories.png once captured; using gallery screenshot as closest proxy
-    image: '/gallery_management.png',
+    category: 'Planner Media',
+    image: '/guest_memories.png',
     tagline: 'QR on the table → guests upload → couple reviews in the portal → export as a ZIP.',
     description:
-      "Wedding day: 180 guests with phones, zero app downloads. Generate a QR sign from the planner dashboard, set it on the tables. Guests scan and upload photos and videos to a public link — no account, no app, up to 25 files per batch, tagged by event. If the link leaks, you rotate it from the portal mid-reception. Over the next week, the couple reviews each asset as kept / rejected / pending from their portal, filters by event or uploader, and exports any subset (kept-only, all, up to 5,000 assets) as a ZIP. Every asset lands on the same wedding record as the RSVPs, the gallery, and the seating chart. That's the entire WedShoots and Guest-a-Pic category, collapsed.",
+      "This is the guest-facing upload flow. The planner generates a QR sign, guests scan it from the reception, enter their name, choose the part of the celebration, and upload photos or videos from their phone with no account and no app install. The couple reviews every memory privately in their portal before anything becomes part of the gallery, then exports kept memories as a ZIP. The planner controls the link, QR rotation, and close date; the couple owns review and downloads.",
     ai: false,
   },
   {
     id: 'inbox',
     icon: '📨',
-    title: 'One Thread Per Couple',
-    category: 'Communication',
-    image: '/planner_inbox.png',
-    tagline: 'Every couple conversation — DM, email, forwarded guest question — threaded against the right wedding.',
+    title: 'Planner Communications',
+    category: 'Planner Operations',
+    image: '/reminders.png',
+    tagline: 'Message couples, guests, vendors, families, and RSVP groups from one planner-owned workspace.',
     description:
-      "Today your couple-conversation history is scattered: iMessage on your phone, Gmail in your inbox, venue coordinator in Slack, a text from the mother-of-the-bride you can barely find. The Planner Inbox threads all of it against the wedding record. Inbound emails forwarded to your wedding address (via Resend with Svix signature verification) auto-thread into the right couple with full delivery tracking — sent, delivered, opened, clicked, bounced. The couple portal reads the same thread live. Web-push notifications fire when anything new lands. No more 'can you resend that message so I have it on record.'",
+      "This is a planner communications workspace, not a couple-only inbox. The planner can answer couple messages, guest questions, family requests, vendor follow-ups, and support conversations from the same wedding record. The workspace includes Inbox, Reminders & Invites, RSVP messaging, individual messages, and message history. The composer can insert platform data such as the wedding URL, couple names, wedding details, RSVP links, and reminder context, then send to one person, a filtered guest group, a vendor, a family contact, or a mass audience without copying data out of the platform.",
     ai: false,
   },
   {
     id: 'book-the-client',
     icon: '📝',
-    title: 'Shop Window → Signed Contract → Saved Card',
+    title: 'Contract Canvas → Sign → Pay',
     category: 'Business Engine',
     image: '/contract_canvas.png',
-    tagline: 'Packages, contracts, and payment method capture — the entire booking funnel on one record.',
+    tagline: 'Build a contract from the vendor or package record, send it for signature, and collect payment into the planner account.',
     description:
-      "A lead comes in Tuesday. You need to quote, contract, and lock a card down by Friday so they don't drift to the next planner. Old stack: Squarespace for the package page, DocuSign for the contract, Stripe Checkout for the deposit, HoneyBook to tie it together. Here it's one arc. Publish tiered service packages with AI pricing guidance; preview exactly what the client sees before publishing. Draft contracts with AI-assisted clause generation and pull pricing from the package they chose. Send for e-signature via secure token links. On signature, a Stripe SetupIntent captures the payment method and the milestone schedule slots into the record. Every write — package, clause, signature, saved card — stays on the same couple record as the inbox thread and the dashboard.",
+      "A planner should not have to leave the vendor directory to turn a quote into an agreement. Open the contract canvas, pull in vendor details, package pricing, clauses, deliverables, and payment terms, then send a secure signature link to the couple. The couple signs and pays through Stripe; funds land in the planner's connected account so the planner can pay the vendor from the same operational record. Contract, payment, vendor notes, and couple communication stay together instead of splitting across DocuSign, Stripe, and a side spreadsheet.",
     ai: true,
   },
   {
@@ -141,36 +170,35 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
   {
     id: 'vendor-network',
     icon: '🏛️',
-    title: 'Vendor Network',
+    title: 'Vendor Directory & CRM',
     category: 'Business Engine',
-    // TODO: replace with /vendor_network.png once captured; reusing vendor management screenshot
     image: '/vendor_management.png',
-    tagline: "Discover vendors in the public directory; run contract vendors in token-gated workspaces from your rolodex.",
+    tagline: 'Keep vendor discovery, private vendor records, notes, files, contracts, and payout history tied to the wedding.',
     description:
-      "Two separate vendor problems, one network. Public directory: browse photographers, venues, caterers, and florists inside the platform — no bouncing to The Knot or WeddingWire for discovery. Contract vendors: invite a photographer into a token-gated workspace for signatures, Stripe payouts, deliverables kanban with inline contract notes, and AI-assisted quote comparison — so the coordination happens against the same wedding record as the couple portal, not in a side thread of emails. Your private Vendor CRM keeps a rolodex of every vendor you've ever worked with: shared records, inline notes, payment history, file exchange, full collaboration log. Discovery, contracting, and recordkeeping stop being three separate universes.",
+      "The vendor directory is the planner's source record for the people and companies behind each wedding. Browse public vendor listings, save private contacts to your studio rolodex, attach documents, record notes, compare quotes, and launch the contract canvas when a vendor agreement needs to become a couple-facing signature and payment flow. The directory is not just a list of names; it is the vendor memory that keeps contracts, files, payouts, and collaboration history from disappearing into email.",
     ai: true,
     blogSlug: 'your-vendor-network-inside-the-platform',
   },
   {
-    id: 'ai-intelligence',
-    icon: '🧠',
-    title: 'The Intelligence Layer',
-    category: 'Intelligence',
-    image: '/dashboard.png',
-    tagline: "AI isn't a sprinkle — it's a metered product woven through every surface, with credits and usage tracking.",
+    id: 'knowledge-base',
+    icon: '📚',
+    title: 'Knowledge Base',
+    category: 'Operations',
+    image: '/knowledgebase.png',
+    tagline: 'Searchable SOPs, platform guides, and planner playbooks live inside the workspace your team already uses.',
     description:
-      "Most planning tools bolt 'AI' onto one feature as a demo. Here it's a first-class product with over twenty endpoints and a credit meter: budget insights, seating optimization, communication drafting (tone-aware), progress reports, pricing suggestions, contract clause generation, vendor recommendations, task prioritization, timeline generation, payment forecasting, vendor quote analysis, chat, message and form-question generation. Every call tracks credits used, with structured error handling for rate limits, quota exhaustion, and service outages — so you know exactly what the AI costs before you run it. The intelligence is threaded into the workflows that need it, not pinned to a sidebar as a chatbot you have to open.",
-    ai: true,
+      "When a new assistant joins or a planner forgets the exact Stripe, seating, inbox, or guest-memory flow, they should not learn by Slack archaeology. The Knowledge Base gives the studio searchable operating procedures, support articles, and platform guides in the admin workspace. Root admins can publish and maintain articles, planners can search by category, and the team has one living source for how the studio runs each wedding.",
+    ai: false,
   },
   {
     id: 'forms',
     icon: '📋',
     title: 'Forms Canvas',
-    category: 'Client Experience',
+    category: 'Planner Intake',
     image: '/forms_canvas.png',
-    tagline: "Build intake, preference, and follow-up forms that land responses straight on the couple record.",
+    tagline: 'Send wedding checklists, onboarding questionnaires, vendor intake, and approval forms that write back to the record.',
     description:
-      "Onboarding a new couple used to mean a Typeform link, a CSV export, and an hour copying answers into your CRM. Drag-and-drop a form here — intake, design preferences, final approvals, post-event follow-up. AI suggests fields when you tell it the form's purpose. The couple fills it in from their portal; the response lands on the same record as their contract, inbox, and timeline. Built-in analytics show completion rates per wedding and per field. No Typeform bill, no Jotform export, no stale copies.",
+      "Forms are not just contact forms. A planner can build a wedding checklist, onboarding questionnaire, design-preference form, vendor intake, final-approval checklist, or post-event follow-up and send it to the couple, a vendor, or anyone who needs to provide information. The form canvas works like the contract canvas: drag fields, group sections, reuse templates, and collect structured answers directly on the wedding record. No Typeform bill, no Jotform export, no stale copies.",
     ai: true,
   },
   {
