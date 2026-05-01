@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { getApiBaseUrl } from '@/utils/env';
 import { isBlockedSubscriptionStatus, normalizeSubscriptionStatus } from '@/utils/subscriptionStatus';
@@ -83,6 +83,14 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
     const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
     const sessionCheckRef = useRef<Promise<'success' | 'unauthenticated' | 'error'> | null>(null);
     const lastSessionCheckAtRef = useRef(0);
+    // In-flight guard for /admin/profile (+ /admin/team/permissions
+    // for team members).  Without this, the bootstrap useEffect, the
+    // token-change useEffect, the token-refresh callback, and React
+    // StrictMode's double-effect all overlap and fire 3-4 redundant
+    // /admin/profile requests on every dashboard mount — a measurable
+    // friction we observed live with one planner.  When set, callers
+    // share the existing promise instead of spawning another round trip.
+    const profileFetchRef = useRef<Promise<void> | null>(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -179,76 +187,99 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         return sessionCheckRef.current;
     }, [token]);
 
-    const fetchUserProfile = useCallback(async () => {
+    const fetchUserProfile = useCallback(async (): Promise<void> => {
         if (!token) return;
 
-        try {
-            const baseUrl = getApiBaseUrl();
-            const response = await fetch(`${baseUrl}/admin/profile?t=${Date.now()}`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                    'Cache-Control': 'no-cache, no-store, must-revalidate',
-                    'Pragma': 'no-cache'
-                },
-                cache: 'no-store', // Force fresh request, no caching
-                credentials: 'include',
-            });
-
-            if (response.ok) {
-                const profile = await response.json();
-
-                // If user is a team member, fetch their team permissions
-                if (profile.role === 'team_member' || profile.is_team_member === true) {
-                    try {
-                        const permissionsResponse = await fetch(`${baseUrl}/admin/team/permissions`, {
-                            method: 'GET',
-                            headers: {
-                                'Authorization': `Bearer ${token}`,
-                                'Content-Type': 'application/json',
-                                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                                'Pragma': 'no-cache'
-                            },
-                            cache: 'no-store',
-                            credentials: 'include',
-                        });
-
-                        if (permissionsResponse.ok) {
-                            const permJson = await permissionsResponse.json();
-                            // Endpoint uses dict_response() → {success, data: {...}}
-                            const permData = permJson.data ?? permJson;
-                            profile.is_team_member = true;
-                            profile.team_permissions = permData.permissions;
-                            profile.team_wedding_access = permData.wedding_access;
-                            profile.team_assigned_wedding_ids = permData.assigned_wedding_ids;
-                            profile.team_owner_email = permData.owner_email;
-                        } else {
-                            console.warn('Failed to fetch team permissions for team member');
-                        }
-                    } catch (error) {
-                        console.warn('Error fetching team permissions:', error);
-                    }
-                }
-
-                setUserProfile(profile);
-                setAuthStatus('authenticated');
-            } else if (response.status === 402) {
-                // Subscription blocked — user is authenticated but expired/cancelled.
-                // This shouldn't happen anymore since backend tags instead of 402s on profile,
-                // but handle it gracefully as a safety net.
-                console.warn('Subscription blocked (402) — redirecting to billing');
-            } else if (response.status === 401) {
-                // Token expired or invalid — session is dead
-                expireSession();
-            }
-        } catch (error) {
-            // Log error without exposing sensitive information
-            // Only log if we have a token, to avoid noisy logs during login flow
-            if (token) {
-                console.error('Failed to fetch user profile');
-            }
+        // In-flight guard: when the bootstrap effect, token-change
+        // effect, and token-refresh callback all fire in quick
+        // succession (which is the normal pattern on dashboard mount,
+        // amplified by React StrictMode's double-effect in dev), share
+        // the in-flight promise instead of spawning another round trip.
+        // Same pattern as ``revalidateSession`` above.
+        if (profileFetchRef.current) {
+            return profileFetchRef.current;
         }
+
+        profileFetchRef.current = (async () => {
+            try {
+                const baseUrl = getApiBaseUrl();
+                // Browser cache is allowed to honor the response's
+                // Cache-Control header (set by the backend `add_cache_headers`
+                // middleware).  The auth-extended Redis cache has a 10 s
+                // TTL with explicit invalidation on Stripe webhooks, trial
+                // expiry, and team-permission changes, so a stale profile
+                // is bounded to 10 s.  The 2-minute subscription poll is a
+                // third-line backstop.  The previous `?t=${Date.now()}` +
+                // `cache: 'no-store'` combo bypassed every cache layer on
+                // every request and was the dominant reason the dashboard
+                // felt cold on every navigation.
+                const response = await fetch(`${baseUrl}/admin/profile`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'include',
+                });
+
+                if (response.ok) {
+                    const profile = await response.json();
+
+                    // If user is a team member, fetch their team permissions
+                    if (profile.role === 'team_member' || profile.is_team_member === true) {
+                        try {
+                            // Same cache rationale as `/admin/profile` above —
+                            // permissions changes invalidate the auth cache via
+                            // the team-management mutation hooks.
+                            const permissionsResponse = await fetch(`${baseUrl}/admin/team/permissions`, {
+                                method: 'GET',
+                                headers: {
+                                    'Authorization': `Bearer ${token}`,
+                                    'Content-Type': 'application/json',
+                                },
+                                credentials: 'include',
+                            });
+
+                            if (permissionsResponse.ok) {
+                                const permJson = await permissionsResponse.json();
+                                // Endpoint uses dict_response() → {success, data: {...}}
+                                const permData = permJson.data ?? permJson;
+                                profile.is_team_member = true;
+                                profile.team_permissions = permData.permissions;
+                                profile.team_wedding_access = permData.wedding_access;
+                                profile.team_assigned_wedding_ids = permData.assigned_wedding_ids;
+                                profile.team_owner_email = permData.owner_email;
+                            } else {
+                                console.warn('Failed to fetch team permissions for team member');
+                            }
+                        } catch (error) {
+                            console.warn('Error fetching team permissions:', error);
+                        }
+                    }
+
+                    setUserProfile(profile);
+                    setAuthStatus('authenticated');
+                } else if (response.status === 402) {
+                    // Subscription blocked — user is authenticated but expired/cancelled.
+                    // This shouldn't happen anymore since backend tags instead of 402s on profile,
+                    // but handle it gracefully as a safety net.
+                    console.warn('Subscription blocked (402) — redirecting to billing');
+                } else if (response.status === 401) {
+                    // Token expired or invalid — session is dead
+                    expireSession();
+                }
+            } catch (error) {
+                // Log error without exposing sensitive information
+                // Only log if we have a token, to avoid noisy logs during login flow
+                if (token) {
+                    console.error('Failed to fetch user profile');
+                }
+            } finally {
+                profileFetchRef.current = null;
+            }
+        })();
+
+        return profileFetchRef.current;
     }, [token, expireSession]);
 
     // Always refresh the profile when the active token changes so role-sensitive
@@ -367,11 +398,13 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         const checkSubscriptionStatus = async () => {
             try {
                 const baseUrl = getApiBaseUrl();
+                // The 2-minute interval below is the freshness
+                // mechanism.  No need to additionally bypass browser
+                // cache — the backend's short TTL on `/admin/profile`
+                // ensures each poll hits a fresh assembly.
                 const res = await fetch(`${baseUrl}/admin/profile`, {
                     headers: {
                         'Authorization': `Bearer ${token}`,
-                        'Cache-Control': 'no-cache',
-                        'Pragma': 'no-cache',
                     },
                     credentials: 'include',
                 });
@@ -396,7 +429,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         return () => clearInterval(intervalId);
     }, [token, userProfile?.is_wedding_planner, userProfile?.subscription_status, fetchUserProfile]);
 
-    const login = async (email: string, password: string, rememberMe = true) => {
+    const login = useCallback(async (email: string, password: string, rememberMe = true) => {
         try {
         // SECURITY: Clear any existing sessions first to prevent session mixing
         clearAdminAuthStorage();
@@ -664,14 +697,22 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             toast.error(err.message || 'Login failed due to a network error');
             throw err;
         }
-    };
+    }, [router]);
 
-    const apiRequest = async <T = any>(path: string, method = 'GET', body?: unknown): Promise<T | undefined> => {
+    const apiRequest = useCallback(async <T = any>(path: string, method = 'GET', body?: unknown): Promise<T | undefined> => {
         if (!token) {
             throw new Error('Authentication required');
         }
 
         const baseUrl = getApiBaseUrl();
+        // Only force ``no-store`` on mutating methods — GETs are allowed
+        // to honor the response's Cache-Control header (set by
+        // ``add_cache_headers`` middleware).  Forcing ``no-store`` on
+        // every GET defeated browser caching across the entire admin
+        // app, which was the dominant cause of every navigation feeling
+        // like a cold start.  Mutations stay uncached because their
+        // responses must never be served from cache.
+        const isMutation = method !== 'GET' && method !== 'HEAD';
         const response = await fetch(`${baseUrl}${path}`, {
             method,
             headers: {
@@ -679,7 +720,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 'Content-Type': 'application/json',
             },
             body: body !== undefined ? JSON.stringify(body) : undefined,
-            cache: 'no-store',
+            cache: isMutation ? 'no-store' : 'default',
             credentials: 'include',
         });
 
@@ -757,26 +798,46 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         }
 
         return rawBody as unknown as T;
-    };
+    }, [token, userProfile, expireSession, logout]);
+
+    // Memoize the provider value so consumers (Sidebar, TopHeader,
+    // AdminRouteGuard, every admin page reading `useAdmin()`) only
+    // re-render when something they actually depend on changes.
+    // Without this, the value object is rebuilt every render and every
+    // consumer is forced through React's reconciliation on each state
+    // tick — which is the core reason a single click felt sluggish
+    // even with one planner and one wedding.  The deps list here is
+    // the union of every primitive/object that contributes to the
+    // exposed shape; the memoized callbacks (login/logout/etc.) carry
+    // their own deps so they only change identity when meaningful.
+    const value = useMemo<AdminContextType>(() => ({
+        // Auth properties
+        isAuthenticated: authStatus === 'authenticated' && !!token,
+        isLoading,
+        authStatus,
+        token,
+        userProfile,
+        // Auth methods
+        login,
+        logout,
+        expireSession,
+        fetchUserProfile,
+        // API methods
+        apiRequest,
+    }), [
+        authStatus,
+        token,
+        isLoading,
+        userProfile,
+        login,
+        logout,
+        expireSession,
+        fetchUserProfile,
+        apiRequest,
+    ]);
 
     return (
-        <AdminContext.Provider
-            value={{
-                // Auth properties
-                isAuthenticated: authStatus === 'authenticated' && !!token,
-                isLoading,
-                authStatus,
-                token,
-                userProfile,
-                // Auth methods
-                login,
-                logout,
-                expireSession,
-                fetchUserProfile,
-                // API methods
-                apiRequest,
-            }}
-        >
+        <AdminContext.Provider value={value}>
             {children}
         </AdminContext.Provider>
     );

@@ -180,7 +180,7 @@ export default function HomePage() {
               </div>
               <div className="relative aspect-[16/10] rounded-b-xl bg-[#071020]">
                 <Image
-                  src="/dashboard.png"
+                  src="/dashboard.webp"
                   alt="The Special Wedding planner dashboard showing live wedding metrics, workflow insights, and planning tools"
                   fill
                   sizes="(min-width: 1280px) 604px, (min-width: 1024px) 46vw, calc(100vw - 48px)"

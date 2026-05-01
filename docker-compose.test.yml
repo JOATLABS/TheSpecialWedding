@@ -74,7 +74,7 @@ services:
       LOG_LEVEL: WARNING
 
       # Admin user for seeding
-      ROOT_ADMIN_EMAIL: testadmin@thespecialwedding.com
+      ROOT_ADMIN_EMAIL: testadmin@thespecialwedding.io
       ROOT_ADMIN_PASSWORD: TestAdmin123!SecurePassword
 
       # Disable external services in tests

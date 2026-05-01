@@ -9,7 +9,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.vendor import ContractKind, ContractStatus, VendorCategory
 
@@ -94,9 +94,23 @@ class UpdateVendorContractSectionsRequest(BaseModel):
 
 
 class VendorContractFormSubmissionSummary(BaseModel):
-    """Stable summary of a vendor form submission available to contract tooling."""
+    """Stable summary of a vendor form submission available to contract tooling.
 
-    _id: str
+    Note on the ``_id`` field: Pydantic treats attribute names beginning
+    with an underscore as private and excludes them from validation and
+    serialization. Declaring ``_id: str`` directly is a no-op — the field
+    is silently dropped from the response JSON. To keep the wire shape
+    ``{"_id": "..."}`` (which the contract-detail UI reads at
+    ``ContractDetailPageClient.tsx:620``), we declare the field as
+    ``id`` with an ``_id`` alias and tell FastAPI to serialize via the
+    alias on the route (``response_model_by_alias=True``).
+    ``populate_by_name=True`` lets the helper dict use either ``_id`` or
+    ``id`` as the source key.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str = Field(alias="_id")
     form_name: str
     submitted_at: Optional[datetime] = None
     source: str

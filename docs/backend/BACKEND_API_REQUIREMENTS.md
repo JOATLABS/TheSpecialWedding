@@ -93,7 +93,7 @@ def get_notification_count(...)
 - Frontend successfully displays notification history
 
 **Important Note: Email Notifications**
-🚨 **The notification system currently stores notifications in MongoDB for in-app display only. NO emails are automatically sent to `thedeveloper@thespecialwedding.com` or any other email addresses when notifications are created.**
+🚨 **The notification system currently stores notifications in MongoDB for in-app display only. NO emails are automatically sent to `thedeveloper@thespecialwedding.io` or any other email addresses when notifications are created.**
 
 The `send_notification` function in `/app/services/notification_service.py` (lines 187-215) is currently a placeholder that only marks notifications as "sent" in the database. To enable actual email notifications, you would need to:
 1. Integrate with the existing Resend email service

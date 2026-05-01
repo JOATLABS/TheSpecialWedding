@@ -70,8 +70,8 @@ class ResendEmailService:
 
         # Sanitize email address — strip whitespace, lowercase
         original_email = to_email
-        to_email = sanitize_email(to_email)
-        if not to_email or not validate_email_format(to_email):
+        sanitized = sanitize_email(to_email)
+        if not sanitized or not validate_email_format(sanitized):
             return {
                 "success": False,
                 "error": f"Invalid recipient email: {original_email!r}",
@@ -81,7 +81,7 @@ class ResendEmailService:
             # Use provided from_email or default
             if not from_email:
                 from_email = os.getenv(
-                    "RESEND_FROM_EMAIL", "noreply@thespecialwedding.com"
+                    "RESEND_FROM_EMAIL", "noreply@thespecialwedding.io"
                 )
 
             # Format from address
@@ -174,7 +174,7 @@ class ResendEmailService:
 
         # Get custom from_email or use wedding-specific or default
         from_email = wedding.get("reminder_from_email") or os.getenv(
-            "RESEND_FROM_EMAIL", "noreply@thespecialwedding.com"
+            "RESEND_FROM_EMAIL", "noreply@thespecialwedding.io"
         )
         from_name = wedding.get("couple_names", "TheSpecialWedding")
 
@@ -315,7 +315,7 @@ class ResendEmailService:
 
         # Get custom from_email or use wedding-specific or default
         from_email = wedding.get("reminder_from_email") or os.getenv(
-            "RESEND_FROM_EMAIL", "noreply@thespecialwedding.com"
+            "RESEND_FROM_EMAIL", "noreply@thespecialwedding.io"
         )
         from_name = wedding.get("couple_names", "TheSpecialWedding")
 
@@ -753,7 +753,7 @@ class ResendEmailService:
             subject = "Your Special Wedding subscription has been cancelled"
 
             from_email = os.getenv("RESEND_BILLING_EMAIL") or os.getenv(
-                "RESEND_FROM_EMAIL", "noreply@thespecialwedding.com"
+                "RESEND_FROM_EMAIL", "noreply@thespecialwedding.io"
             )
             from_name = "The Special Wedding"
 
@@ -816,7 +816,7 @@ class ResendEmailService:
             subject = "Important update about your wedding planning service"
 
             from_email = os.getenv("RESEND_BILLING_EMAIL") or os.getenv(
-                "RESEND_FROM_EMAIL", "noreply@thespecialwedding.com"
+                "RESEND_FROM_EMAIL", "noreply@thespecialwedding.io"
             )
             from_name = "The Special Wedding"
 
@@ -839,7 +839,7 @@ class ResendEmailService:
 
     def _generate_subscription_cancelled_email_html(self, user_name: str) -> str:
         """Generate subscription cancellation confirmation email HTML"""
-        frontend_url = os.getenv("FRONTEND_URL", "https://thespecialwedding.com")
+        frontend_url = os.getenv("FRONTEND_URL", "https://thespecialwedding.io")
         resubscribe_url = f"{frontend_url}/admin/planner/billing"
 
         return f"""
@@ -892,7 +892,7 @@ class ResendEmailService:
                     <p>Thank you for being part of The Special Wedding community.</p>
                 </div>
                 <div class="footer">
-                    <p>Have questions? Contact us at support@thespecialwedding.com</p>
+                    <p>Have questions? Contact us at support@thespecialwedding.io</p>
                     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
                     <p>&copy; The Special Wedding. All rights reserved.</p>
                 </div>
@@ -952,7 +952,7 @@ class ResendEmailService:
                     <p>Your wedding details remain safely preserved by The Special Wedding even while portal access is paused.</p>
                 </div>
                 <div class="footer">
-                    <p>Questions? Contact support@thespecialwedding.com</p>
+                    <p>Questions? Contact support@thespecialwedding.io</p>
                     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
                     <p>&copy; The Special Wedding. All rights reserved.</p>
                 </div>

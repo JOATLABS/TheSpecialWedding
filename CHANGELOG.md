@@ -2031,7 +2031,7 @@ Phase 1 (v2.13.1) laid the data model foundation. Phase 2 builds the full servic
 
 ## [2.0.0] - 2026-03-01 — 1st Release: The Special Wedding SaaS Platform
 
-The first production release of The Special Wedding as a full multi-tenant SaaS platform. This release transforms the original single-wedding website (v1.x at `thespecialwedding.com`) into a scalable platform for wedding planners at `thespecialwedding.io`. Built over 8+ months across 463 commits, consolidating all work from v1.3.0 through v1.7.0-rc.1.
+The first production release of The Special Wedding as a full multi-tenant SaaS platform. This release transforms the original single-wedding website (v1.x at `thespecialwedding.io`) into a scalable platform for wedding planners at `thespecialwedding.io`. Built over 8+ months across 463 commits, consolidating all work from v1.3.0 through v1.7.0-rc.1.
 
 **Key feature pillars:**
 
@@ -2578,7 +2578,7 @@ The first production release of The Special Wedding as a full multi-tenant SaaS 
     - Previously support tickets used `"normal"` while notifications used `"medium"`
   - **ROOT_ADMIN_EMAIL Fallback** (`app/services/support_service.py`):
     - Updated fallback email domain from `.com` to `.io` to match SAAS platform domain
-    - Changed from `thedeveloper@thespecialwedding.com` to `admin@thespecialwedding.io`
+    - Changed from `thedeveloper@thespecialwedding.io` to `admin@thespecialwedding.io`
   - **Impact**: Full schema alignment between database models, API validation, and frontend TypeScript interfaces
 - **Notification Recipient Dropdown Misaligned with Schema** (`app/admin/notifications/page.tsx`):
 

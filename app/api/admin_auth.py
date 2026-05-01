@@ -110,6 +110,17 @@ async def get_current_user_profile(
         "_subscription_blocked": serialized_user_data.get(
             "_subscription_blocked", False
         ),
+        # Email-change verification state. Surfaced at the top level so the
+        # Account Settings modal can render the "Verification pending" banner
+        # without having to dig through user_data. Returned regardless of
+        # role — every authenticated user can change their email.
+        "pending_email": serialized_user_data.get("pending_email"),
+        "email_change_requested_at": serialized_user_data.get(
+            "email_change_requested_at"
+        ),
+        "email_change_token_expires": serialized_user_data.get(
+            "email_change_token_expires"
+        ),
         "user_data": serialized_user_data,
     }
     # Add team member context if applicable

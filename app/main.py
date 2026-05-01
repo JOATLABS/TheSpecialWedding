@@ -1032,8 +1032,22 @@ async def add_cache_headers(request: Request, call_next):
             or path.startswith("/admin/")
             or path.startswith("/vendor-contract/")
         ):
-            # All dynamic API/portal endpoints — no caching
-            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            # Dynamic API/portal endpoints.  When SAFE_GET_CACHE_ENABLED
+            # is set, idempotent GET/HEAD responses get a short private
+            # cache window instead of ``no-store``.  This is safe because
+            # the auth-extended Redis cache invalidates on every state
+            # flip (Stripe webhooks, trial expiry, team-permission
+            # changes), so a 5-second browser cache cannot serve stale
+            # billing/role state.  Mutations and the default branch keep
+            # the previous ``no-store`` behavior.
+            if settings.safe_get_cache_enabled and request.method in ("GET", "HEAD"):
+                response.headers["Cache-Control"] = (
+                    f"private, max-age={settings.safe_get_cache_max_age}"
+                )
+            else:
+                response.headers["Cache-Control"] = (
+                    "no-cache, no-store, must-revalidate"
+                )
         else:
             response.headers["Cache-Control"] = (
                 "public, max-age=300"  # 5 minutes for other content

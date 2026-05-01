@@ -100,6 +100,14 @@ WEDDING_DATE_OFFSET_DAYS = 180
 PLAN_ID = os.getenv("FORMAPPLY_PLAN_ID", "plan_signature")
 
 SENTINEL_FROM_B = "SENTINEL_FROM_B_lead_singer_should_not_appear"
+# Sentinel used for the read-side picker leak scenario (Case 4): planner B
+# seeds a vendor_form + vendor_submission whose vendor_email COLLIDES with
+# planner A's vendor email. Pre-fix, get_form_data_for_contract filtered
+# only by vendor_email, so A's contract-detail picker would surface B's
+# submission. Post-fix, the query is also scoped by created_by → owned forms.
+SENTINEL_FROM_B_SHARED = (
+    "SENTINEL_FROM_B_SHARED_EMAIL_picker_should_not_show"  # pragma: allowlist secret
+)
 LEGITIMATE_A_VALUE = "Anna Lyric (legit A submission)"
 
 PLACEHOLDER_KEY = "lead_singer_name"
@@ -298,6 +306,21 @@ async def main() -> int:
         sentinel_value=SENTINEL_FROM_B,
     )
 
+    # Email-collision seed for Case 4 (read-side picker leak):
+    # planner B owns a vendor_form + vendor_submission whose vendor_email
+    # is VENDOR_A_EMAIL. Pre-fix, planner A's contract-detail picker would
+    # query vendor_submissions by vendor_email only and surface this one
+    # alongside A's. Post-fix, owner-scoping by parent vendor_forms.created_by
+    # filters it out.
+    _form_b_shared_id, submission_b_shared_id = _seed_vendor_form_and_submission(
+        h,
+        planner_email=PLANNER_B_EMAIL,
+        wedding_id=wedding_b_id,
+        vendor_email=VENDOR_A_EMAIL,  # COLLISION with planner A's vendor
+        vendor_name="Planner B's Shadow Entry (collides with A's vendor email)",
+        sentinel_value=SENTINEL_FROM_B_SHARED,
+    )
+
     h.log.info("")
     h.log.info("Seed summary:")
     h.log.info(f"  planner A: {PLANNER_A_EMAIL}")
@@ -309,6 +332,11 @@ async def main() -> int:
     h.log.info(f"    wedding_b:    {wedding_b_id}")
     h.log.info(f"    vendor_b:     {vendor_b_id}")
     h.log.info(f"    submission_b: {submission_b_id} (sentinel={SENTINEL_FROM_B!r})")
+    h.log.info(
+        f"    submission_b_shared: {submission_b_shared_id} "
+        f"(vendor_email={VENDOR_A_EMAIL!r} COLLISION, "
+        f"sentinel={SENTINEL_FROM_B_SHARED!r})"
+    )
     h.log.info("")
 
     # Pre-state snapshot: capture the seeded section content so we can
@@ -458,6 +486,136 @@ async def main() -> int:
         )
         h.log.error(f"  ❌ forged ID: expected 400/404, got {resp.status_code}")
 
+    # Case 4 — Read-side picker isolation: planner A fetches form-data
+    # for C_A. Pre-fix: payload would include B's shared-email submission.
+    # Post-fix: owner-scoping via parent vendor_forms.created_by filters
+    # it out; only A's own submissions surface.
+    resp = h.api_get(
+        f"/admin/contracts/{contract_a_id}/form-data",
+        token=token_a,
+    )
+    if resp.status_code != 200:
+        failures.append(
+            f"read-side picker: expected 200, got {resp.status_code} "
+            f"body={resp.text[:200]}"
+        )
+        h.log.error(f"  ❌ read-side picker: expected 200, got {resp.status_code}")
+    else:
+        payload = resp.json()
+        payload_text = repr(payload)
+        submissions = payload.get("vendor_submissions", []) or []
+        available_fields = payload.get("available_fields", {}) or {}
+
+        # Sentinel must not surface anywhere in the payload (submissions OR
+        # available_fields OR suggested_contract_fields).
+        if SENTINEL_FROM_B_SHARED in payload_text:
+            failures.append(
+                "read-side picker leaked B's shared-email sentinel "
+                "(SENTINEL_FROM_B_SHARED present in form-data response)"
+            )
+            h.log.error("  ❌ B's shared-email sentinel appeared in form-data payload")
+        else:
+            h.log.info(
+                "  ✅ B's shared-email sentinel never appeared in form-data response"
+            )
+
+        # The UI auto-applies vendor_submissions[0] (per
+        # ContractDetailPageClient.tsx). That index must be A's own
+        # submission, not B's shadow entry — even though both share the
+        # same vendor_email, only A's parent form has created_by == A.
+        if not submissions:
+            failures.append(
+                "read-side picker: vendor_submissions[] is empty; "
+                "expected at least A's own submission"
+            )
+            h.log.error("  ❌ vendor_submissions[] is empty")
+        else:
+            head = submissions[0]
+            head_data = head.get("data") if isinstance(head, dict) else {}
+            head_value = (
+                head_data.get(PLACEHOLDER_KEY) if isinstance(head_data, dict) else None
+            )
+            if head_value == LEGITIMATE_A_VALUE:
+                h.log.info(
+                    "  ✅ vendor_submissions[0] is A's value "
+                    "(UI auto-apply is safe: it would apply A's own data)"
+                )
+            elif head_value == SENTINEL_FROM_B_SHARED:
+                failures.append(
+                    "vendor_submissions[0] is B's shadow entry — UI "
+                    "auto-apply would silently mis-fire across tenants"
+                )
+                h.log.error("  ❌ vendor_submissions[0] is B's value — auto-apply leak")
+            else:
+                # Could be a different shape; flag as PARTIAL — the picker
+                # didn't leak the sentinel, but the head doesn't match A's
+                # known value either.
+                h.log.warning(
+                    f"  ⚠️  vendor_submissions[0] {PLACEHOLDER_KEY}="
+                    f"{head_value!r}; not A's value and not B's shadow — "
+                    "manual confirmation required"
+                )
+
+            # Tighter check: at least one entry must be sourced from the
+            # vendor_submissions collection (not just the vendor_forms
+            # fallback) AND must carry a non-empty source_id. Without
+            # this, a too-restrictive filter can silently drop
+            # vendor_submissions and leave only vendor_form-shaped
+            # entries — which the UI auto-apply can't extract a
+            # form_submission_id from, breaking the same-tenant happy
+            # path. Caught the type-mismatch regression where
+            # vendor_submissions.form_id is stored as str(ObjectId) but
+            # the filter was passing raw ObjectIds.
+            sub_kinds = {
+                (s.get("source") if isinstance(s, dict) else None) for s in submissions
+            }
+            if "vendor_submission" not in sub_kinds:
+                failures.append(
+                    "read-side picker returned no rows from "
+                    "vendor_submissions collection (only vendor_forms "
+                    "fallback). UI auto-apply will fire without a "
+                    "form_submission_id and 422 the request."
+                )
+                h.log.error(
+                    "  ❌ no vendor_submission-sourced rows in picker — "
+                    "UI auto-apply will break"
+                )
+            else:
+                # The UI extracts form_submission_id from each picker entry's
+                # `_id` field (see ContractDetailPageClient.tsx:620). The
+                # summary helper writes that as `_id` (not `source_id`) — see
+                # _summarize_contract_form_submission. Assert the field is
+                # present and non-empty for every vendor_submission entry.
+                vs_entries = [
+                    s
+                    for s in submissions
+                    if isinstance(s, dict) and s.get("source") == "vendor_submission"
+                ]
+                missing_id = [s for s in vs_entries if not s.get("_id")]
+                if missing_id:
+                    failures.append(
+                        f"{len(missing_id)} vendor_submission entries "
+                        f"missing _id — UI auto-apply would 422 without "
+                        f"form_submission_id"
+                    )
+                    h.log.error(
+                        f"  ❌ {len(missing_id)} vendor_submission entries lack _id"
+                    )
+                else:
+                    h.log.info(
+                        f"  ✅ {len(vs_entries)} vendor_submission "
+                        f"entries present, all with _id "
+                        f"(UI auto-apply has the field it needs)"
+                    )
+
+        # available_fields source_id must never reference B's shadow.
+        for key, field in available_fields.items():
+            if not isinstance(field, dict):
+                continue
+            if field.get("value") == SENTINEL_FROM_B_SHARED:
+                failures.append(f"available_fields[{key!r}] leaked B's shadow value")
+                h.log.error(f"  ❌ available_fields[{key!r}] leaked B's shadow value")
+
     # ---- CHECKPOINTS ----------------------------------------------------
     h.checkpoint(
         "1 — Same-tenant happy path (planner A logged in)",
@@ -499,6 +657,25 @@ async def main() -> int:
         ],
     )
 
+    h.checkpoint(
+        "4 — Read-side picker isolation under email collision (planner A logged in)",
+        [
+            f"On /admin/vendors/contracts/{contract_a_id}, open DevTools → Network",
+            "Reload the page; watch GET /admin/contracts/<id>/form-data fire",
+            "Inspect the JSON response. Verify:",
+            "  → vendor_submissions[] contains ONLY A's own submission(s)",
+            f"  → response payload contains NO occurrence of {SENTINEL_FROM_B_SHARED!r}",
+            "  → vendor_submissions[0] (the index the UI auto-applies) is A's value",
+            f"      (lead_singer_name == {LEGITIMATE_A_VALUE!r} OR matches the placeholder)",
+            "  → available_fields and suggested_contract_fields contain no B-attributed values",
+            "Now exercise the auto-apply behavior:",
+            "  → trigger the 'Apply Form Data' flow as the UI normally would",
+            "  → the section content reflects A's value, NOT the shadow B sentinel",
+            "  → activity tab: form_data_applied row references A's submission_id, not B's shadow",
+            "Console: no errors, no warnings",
+        ],
+    )
+
     h.log.info("")
     if failures:
         h.log.error(f"verify FAILED with {len(failures)} issue(s):")
@@ -511,7 +688,8 @@ async def main() -> int:
         "✅ verify_form_data_apply_isolation: cross-tenant apply rejected "
         "(404, no contract drift, no sentinel leak), same-tenant apply "
         "succeeded (placeholder replaced, audit row recorded), forged-id "
-        "rejected"
+        "rejected, read-side picker isolated under email collision "
+        "(B's shadow submission filtered, auto-apply head is A's value)"
     )
     h.log.info("Run testbed/cleanup_form_data_apply_isolation_state.py to reset.")
     return 0

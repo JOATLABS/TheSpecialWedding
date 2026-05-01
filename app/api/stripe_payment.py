@@ -30,6 +30,43 @@ PAYABLE_PAYMENT_INTENT_STATUSES = {
 }
 
 
+def _stripe_metadata_to_dict(parent: object) -> dict:
+    """Safely coerce a Stripe object's ``metadata`` field to a plain dict.
+
+    The naive ``dict(stripe_object)`` pattern blows up in modern Stripe
+    Python SDK versions because ``StripeObject`` no longer subclasses
+    ``dict`` — its iteration yields integer indices that, when fed back
+    through ``__getitem__``, raise ``KeyError(0)``.  This helper handles
+    every shape we've seen: ``None``, a plain ``dict``, a ``StripeObject``
+    that exposes ``.to_dict()``, or anything iterable via ``.items()``.
+
+    Returns ``{}`` on any failure rather than raising — metadata is
+    optional enrichment, not load-bearing for the response.
+    """
+    metadata = getattr(parent, "metadata", None)
+    if metadata is None:
+        return {}
+    if isinstance(metadata, dict):
+        return metadata
+    # Modern Stripe SDK exposes .to_dict() on StripeObject.
+    to_dict = getattr(metadata, "to_dict", None)
+    if callable(to_dict):
+        try:
+            converted = to_dict()
+            if isinstance(converted, dict):
+                return converted
+        except Exception:
+            pass
+    # Fallback: any mapping-like object that supports .items().
+    items = getattr(metadata, "items", None)
+    if callable(items):
+        try:
+            return {str(k): v for k, v in items()}
+        except Exception:
+            pass
+    return {}
+
+
 # ==================== REQUEST MODELS ====================
 
 
@@ -258,11 +295,9 @@ async def get_checkout_session(
             try:
                 sub = stripe.Subscription.retrieve(session.subscription)
                 result["subscription_status"] = sub.status
-                sub_metadata = getattr(sub, "metadata", {}) or {}
-                result["billing_interval"] = (
-                    sub_metadata.get("billing_interval", "monthly")
-                    if isinstance(sub_metadata, dict)
-                    else dict(sub_metadata).get("billing_interval", "monthly")
+                sub_metadata = _stripe_metadata_to_dict(sub)
+                result["billing_interval"] = sub_metadata.get(
+                    "billing_interval", "monthly"
                 )
 
                 if sub.current_period_end:
@@ -276,16 +311,12 @@ async def get_checkout_session(
                 )
 
         # ── Enrich with plan details from local DB ──
-        session_metadata = getattr(session, "metadata", None) or {}
-        plan_id = (
-            (
-                session_metadata.get("plan_id")
-                if isinstance(session_metadata, dict)
-                else dict(session_metadata).get("plan_id")
-            )
-            if session_metadata
-            else None
-        )
+        # ``session.metadata`` is a Stripe StripeObject in modern SDK
+        # versions; ``dict(stripe_object)`` raises ``KeyError(0)`` because
+        # the object iterates over integer indices instead of (k,v) pairs.
+        # Use ``_stripe_metadata_to_dict`` for safe dict coercion.
+        session_metadata = _stripe_metadata_to_dict(session)
+        plan_id = session_metadata.get("plan_id") or None
         if plan_id:
             try:
                 plan = await mongo.db["subscription_plans"].find_one({"_id": plan_id})
@@ -335,9 +366,19 @@ async def get_checkout_session(
         }
 
     except Exception as e:
-        logger.error(f"Error retrieving checkout session: {str(e)}")
+        # Full traceback + exception type so debugging doesn't depend on
+        # ``str(e)`` (which on some Stripe SDK exceptions is just the
+        # error code, e.g. ``"0"``, with no human-readable message).
+        logger.error(
+            f"Error retrieving checkout session {session_id}: "
+            f"type={type(e).__name__} repr={e!r}",
+            exc_info=True,
+        )
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve session: {str(e)}"
+            status_code=500,
+            detail=(
+                f"Failed to retrieve session: {type(e).__name__}: {str(e) or repr(e)}"
+            ),
         )
 
 

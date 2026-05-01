@@ -45,11 +45,11 @@ REDIS_DB=0
 
 # Email Configuration
 RESEND_API_KEY=your_resend_api_key
-RESEND_FROM_EMAIL=noreply@thespecialwedding.com
-ROOT_ADMIN_EMAIL=thedeveloper@thespecialwedding.com
+RESEND_FROM_EMAIL=noreply@thespecialwedding.io
+ROOT_ADMIN_EMAIL=thedeveloper@thespecialwedding.io
 
 # Application URLs
-FRONTEND_URL=https://www.thespecialwedding.com
+FRONTEND_URL=https://www.thespecialwedding.io
 ```
 
 ### Dependencies
@@ -153,7 +153,7 @@ All sent emails are logged to the `email_logs` collection:
 
 ```javascript
 {
-  "to": "thedeveloper@thespecialwedding.com",
+  "to": "thedeveloper@thespecialwedding.io",
   "subject": "New Contact Form Submission",
   "email_type": "admin_contact_form",
   "status": "success",
@@ -168,7 +168,7 @@ Failed emails after max retries are logged to `email_failures`:
 
 ```javascript
 {
-  "to_email": "thedeveloper@thespecialwedding.com",
+  "to_email": "thedeveloper@thespecialwedding.io",
   "subject": "Failed Email Subject",
   "status": "max_retries_exceeded",
   "retries": 3,

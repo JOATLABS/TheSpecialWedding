@@ -39,7 +39,7 @@ The following sensitive credentials are exposed in your `.env` file and need IMM
   4. Update `.env` with new key
 
 ### 5. **Primary Admin Credentials** (CRITICAL)
-- Email: `thedeveloper@thespecialwedding.com`
+- Email: `thedeveloper@thespecialwedding.io`
 - Password: `j89x8G&8SM8^m` (plaintext!)
 - **Action Required**:
   1. Change this password IMMEDIATELY in the database

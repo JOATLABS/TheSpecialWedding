@@ -380,6 +380,11 @@ async def update_contract_sections(
     "/contracts/{contract_id}/form-data",
     tags=["Contracts"],
     response_model=VendorContractFormDataResponse,
+    # Each VendorContractFormSubmissionSummary uses Field(alias="_id"). Without
+    # response_model_by_alias=True, FastAPI serializes the field as `id` and
+    # the contract-detail UI (which reads `selectedSubmission._id`) gets
+    # undefined → 422 from the apply endpoint.
+    response_model_by_alias=True,
 )
 async def get_vendor_form_data_for_contract(
     contract_id: str, current_user: ExtendedAuthUser = Depends(require_vendor_feature)
