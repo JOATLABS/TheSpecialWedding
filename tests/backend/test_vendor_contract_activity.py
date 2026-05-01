@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -155,7 +155,7 @@ def make_contract_doc(
         "deposit_amount": 2500,
         "status": status,
         "access_token_hash": vendor_service._hash_contract_access_token(access_token),
-        "token_expires_at": datetime(2026, 5, 1, tzinfo=timezone.utc),
+        "token_expires_at": datetime.now(timezone.utc) + timedelta(days=30),
         "token_revoked_at": None,
         "token_last_sent_at": None,
         "token_last_viewed_at": None,
