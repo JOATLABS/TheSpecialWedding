@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -24,6 +25,21 @@ from app.utils.auth_utils import verify_token
 audit_logger = logging.getLogger("audit")
 audit_logger.setLevel(logging.INFO)
 audit_logger.propagate = False
+
+_OBJECT_ID_SEGMENT_RE = re.compile(r"/[a-f0-9]{24}(?=/|$)", re.IGNORECASE)
+_UUID_SEGMENT_RE = re.compile(
+    r"/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?=/|$)",
+    re.IGNORECASE,
+)
+_NUMERIC_SEGMENT_RE = re.compile(r"/\d+(?=/|$)")
+
+
+def _normalize_route_template(path: str) -> str:
+    """Group high-cardinality REST paths into stable performance buckets."""
+    normalized = _UUID_SEGMENT_RE.sub("/{id}", path)
+    normalized = _OBJECT_ID_SEGMENT_RE.sub("/{id}", normalized)
+    normalized = _NUMERIC_SEGMENT_RE.sub("/{id}", normalized)
+    return normalized
 
 
 def _ensure_audit_file_handler(log_file_path: str) -> None:
@@ -198,6 +214,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             "user_agent": request_info["user_agent"],
             "method": request_info["method"],
             "path": request_info["path"],
+            "route_template": _normalize_route_template(request_info["path"]),
             "host": request_info.get("host"),
             "referer": request_info.get("referer"),
             "origin": request_info.get("origin"),
