@@ -6,6 +6,7 @@ Provides comprehensive metrics for the ROOT_ADMIN dashboard.
 """
 
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -708,7 +709,12 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
         # Top endpoints are based on the same selected error window.
         error_pipeline = [
             {"$match": _build_audit_logs_query(error_window_start, "all")},
-            {"$group": {"_id": "$path", "count": {"$sum": 1}}},
+            {
+                "$project": {
+                    "route_key": {"$ifNull": ["$route_template", "$path"]},
+                }
+            },
+            {"$group": {"_id": "$route_key", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}},
             {"$limit": 5},
         ]
@@ -943,8 +949,15 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
                 }
             },
             {
+                "$project": {
+                    "route_key": {"$ifNull": ["$route_template", "$path"]},
+                    "response_time_ms": 1,
+                    "response_status": 1,
+                }
+            },
+            {
                 "$group": {
-                    "_id": "$path",
+                    "_id": "$route_key",
                     "avg_response_time_ms": {"$avg": "$response_time_ms"},
                     "min_response_time_ms": {"$min": "$response_time_ms"},
                     "max_response_time_ms": {"$max": "$response_time_ms"},
@@ -1020,19 +1033,8 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
             if avg_ms > 500 or max_ms > 1000:
                 slow_endpoints.append(perf_entry)
 
-        # Get overall performance summary
-        total_requests_24h = sum(
-            ep.get("request_count", 0) for ep in endpoint_performance
-        )
-        total_errors_24h = sum(ep.get("error_count", 0) for ep in endpoint_performance)
-        overall_error_rate = (
-            (total_errors_24h / total_requests_24h * 100)
-            if total_requests_24h > 0
-            else 0
-        )
-
-        # Calculate overall average response time
-        overall_avg_pipeline = [
+        # Get overall performance summary across all audit-log entries, not just top 20.
+        overall_performance_pipeline = [
             {
                 "$match": {
                     "timestamp": {"$gte": day_ago},
@@ -1043,14 +1045,43 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
                 "$group": {
                     "_id": None,
                     "avg_response_time_ms": {"$avg": "$response_time_ms"},
+                    "total_requests": {"$sum": 1},
+                    "total_errors": {
+                        "$sum": {"$cond": [{"$gte": ["$response_status", 400]}, 1, 0]}
+                    },
+                    "response_times": {"$push": "$response_time_ms"},
                 }
             },
         ]
-        overall_cursor = mongo.db["audit_logs"].aggregate(overall_avg_pipeline)
+        overall_cursor = mongo.db["audit_logs"].aggregate(overall_performance_pipeline)
         overall_result = await overall_cursor.to_list(length=1)
-        overall_avg_ms = (
-            overall_result[0].get("avg_response_time_ms", 0) if overall_result else 0
+        overall_doc = overall_result[0] if overall_result else {}
+        total_requests_24h = int(overall_doc.get("total_requests", 0) or 0)
+        total_errors_24h = int(overall_doc.get("total_errors", 0) or 0)
+        overall_error_rate = (
+            (total_errors_24h / total_requests_24h * 100)
+            if total_requests_24h > 0
+            else 0
         )
+        overall_avg_ms = overall_doc.get("avg_response_time_ms", 0) or 0
+        overall_response_times = sorted(overall_doc.get("response_times", []))
+        overall_p95_ms = (
+            overall_response_times[int(len(overall_response_times) * 0.95)]
+            if overall_response_times
+            else 0
+        )
+        monthly_infra_cost = None
+        daily_infra_cost = None
+        requests_per_dollar_24h = None
+        try:
+            configured_cost = os.getenv("PLATFORM_MONTHLY_INFRA_COST_USD")
+            if configured_cost:
+                monthly_infra_cost = float(configured_cost)
+                if monthly_infra_cost > 0:
+                    daily_infra_cost = monthly_infra_cost / 30
+                    requests_per_dollar_24h = total_requests_24h / daily_infra_cost
+        except (TypeError, ValueError):
+            logger.debug("Ignoring invalid PLATFORM_MONTHLY_INFRA_COST_USD value")
 
         # ==================== WEDDING METRICS ====================
 
@@ -1150,8 +1181,29 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
                     "total_errors_24h": total_errors_24h,
                     "overall_error_rate": round(overall_error_rate, 2),
                     "overall_avg_response_time_ms": round(overall_avg_ms, 1),
+                    "overall_avg_response_time_seconds": round(
+                        overall_avg_ms / 1000, 3
+                    ),
+                    "overall_p95_response_time_seconds": round(
+                        overall_p95_ms / 1000, 3
+                    ),
                     "slow_endpoint_count": len(slow_endpoints),
                     "monitored_endpoint_count": len(endpoint_performance),
+                    "monthly_infra_cost_usd": (
+                        round(monthly_infra_cost, 2)
+                        if monthly_infra_cost is not None
+                        else None
+                    ),
+                    "daily_infra_cost_usd": (
+                        round(daily_infra_cost, 2)
+                        if daily_infra_cost is not None
+                        else None
+                    ),
+                    "requests_per_dollar_24h": (
+                        round(requests_per_dollar_24h, 2)
+                        if requests_per_dollar_24h is not None
+                        else None
+                    ),
                 },
                 "endpoints": endpoint_performance,
                 "slow_endpoints": slow_endpoints,

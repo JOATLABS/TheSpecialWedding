@@ -105,7 +105,7 @@ successful_requests_per_second_per_dollar =
 ## Recommendations
 
 1. Treat the current one-planner slowness as a performance incident until the baseline proves otherwise.
-2. Run `testbed/verify_performance_baseline.py` before changing dashboard code, then rerun it after every optimization.
+2. Use `testbed/verify_performance_baseline.py` to prove app-level fixes after the dashboard code changes land; do not treat testbed work as a substitute for fixing the app.
 3. Make `/admin/planner/metrics` the only blocking planner-dashboard data request before useful content renders.
 4. Defer engagement signals and AI insights until after the dashboard is usable, unless the baseline proves they are already non-blocking.
 5. Collapse duplicate auth/profile checks during first navigation; `/admin/profile` should not be called repeatedly to render one page.
@@ -113,6 +113,7 @@ successful_requests_per_second_per_dollar =
 7. Record infrastructure cost with the baseline, but exclude SMS, email, AI, Stripe processing, and storage egress unless the report explicitly opts in.
 8. Add root-admin cards for average seconds, p95 seconds, slowest blocking endpoint, monthly infrastructure cost, and successful requests/sec/$.
 9. Keep public homepage PageSpeed work in its own lane: the April 30 reports show mobile Performance 61 with 15.8s LCP and 4,925 KiB transfer, plus desktop Performance 57 with 11,150ms TBT and 22.7s main-thread work. Optimize public image/LCP and public main-thread work separately from planner dashboard API latency.
+10. Confirm desktop TBT is animation-driven before doing desktop image work. Record a 10-second Chrome Performance trace on the desktop homepage and attach it to the baseline report; if long-task labels point to canvas, aurora, petal, or infinite-scroll code, defer or remove those effects before touching desktop images.
 
 ## Google PageSpeed Public Homepage Baseline
 
@@ -131,6 +132,7 @@ Do these only after the one-planner baseline identifies the bottleneck:
 3. Collapse duplicate profile/session checks on first planner navigation.
 4. Cache planner dashboard aggregates briefly for the same actor and same wedding set.
 5. Separate frontend boot/hydration timing from API timing so bundle work is not blamed on Mongo.
+6. Confirm desktop TBT is animation-driven with a 10-second Chrome trace before doing desktop image work. If long-task labels point to canvas, aurora, petal, or infinite-scroll code, defer or remove those effects first.
 
 ## Implementation Plan
 

@@ -1,6 +1,3 @@
-/* Import elegant fonts for wedding theme */
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Cormorant+Garamond:wght@300;400;500;600&family=Lora:wght@400;500&family=Inter:wght@300;400;500;600;700&family=Pacifico&family=Open+Sans:wght@400;500;600&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -20,8 +17,8 @@
   --theme-primary-light: #a8bdd4;
   --theme-secondary-light: #e8d5a0;
   --theme-accent-light: #e0b8b3;
-  --theme-font-heading: 'Playfair Display', serif;
-  --theme-font-body: 'Cormorant Garamond', serif;
+  --theme-font-heading: var(--font-playfair-display), Georgia, serif;
+  --theme-font-body: var(--font-inter), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 @layer base {

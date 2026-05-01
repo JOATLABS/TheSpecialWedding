@@ -1,5 +1,6 @@
 import hashlib
 import logging
+from collections import defaultdict
 from datetime import datetime, timezone
 from math import ceil
 from typing import Any, List, Optional
@@ -167,6 +168,10 @@ def _enforce_weddings_directory_access(current_user: ExtendedAuthUser) -> None:
     "/planner/metrics", tags=["Wedding Planner"], response_model=PlannerMetricsResponse
 )
 async def get_planner_metrics(
+    include_revenue: bool = Query(
+        default=True,
+        description="Include subscription revenue metrics. Dashboard first load can set false.",
+    ),
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ) -> PlannerMetricsResponse:
     """
@@ -190,30 +195,23 @@ async def get_planner_metrics(
         weddings = await weddings_collection.find(query).to_list(length=MAX_WEDDINGS)
         current_date = datetime.now(timezone.utc)
 
+        wedding_by_id: dict[str, dict[str, Any]] = {}
+        wedding_id_values: list[Any] = []
+        wedding_id_strs: list[str] = []
+        for wedding in weddings:
+            wedding_id = wedding.get("_id")
+            if wedding_id is None:
+                continue
+            wedding_id_str = str(wedding_id)
+            wedding_by_id[wedding_id_str] = wedding
+            wedding_id_values.append(wedding_id)
+            wedding_id_values.append(wedding_id_str)
+            wedding_id_strs.append(wedding_id_str)
+
         # Activity query used for both recent activity and /planner/activity-log
         if current_user.is_root_admin:
             activity_query: dict[str, Any] = {}
         else:
-            assigned_weddings = await weddings_collection.find(
-                combine_mongo_filters(
-                    build_wedding_owner_query(planner_email=owner_email),
-                    (
-                        {"_id": {"$in": [wedding["_id"] for wedding in weddings]}}
-                        if weddings
-                        else None
-                    ),
-                ),
-                {"_id": 1},
-            ).to_list(length=MAX_WEDDINGS)
-
-            wedding_id_values: list[Any] = []
-            for wedding in assigned_weddings:
-                wedding_id = wedding.get("_id")
-                if wedding_id is None:
-                    continue
-                wedding_id_values.append(wedding_id)
-                wedding_id_values.append(str(wedding_id))
-
             activity_query = {
                 "$or": [
                     {"planner_email": owner_email},
@@ -251,6 +249,81 @@ async def get_planner_metrics(
             },
         }
 
+        guests_by_wedding: dict[str, list[str]] = defaultdict(list)
+        guest_plus_ones_map: dict[str, int] = {}
+        guest_invite_sent: dict[str, bool] = {}
+        guest_to_wedding: dict[str, str] = {}
+
+        if wedding_id_values:
+            MAX_TOTAL_GUESTS = min(max(len(wedding_id_strs) * 5000, 5000), 250000)
+            guest_docs = await guests_collection.find(
+                {"wedding_id": {"$in": wedding_id_values}},
+                {
+                    "_id": 1,
+                    "wedding_id": 1,
+                    "number_of_plus_ones_allowed": 1,
+                    "invite_sent": 1,
+                },
+            ).to_list(length=MAX_TOTAL_GUESTS)
+
+            for guest in guest_docs:
+                wedding_id_str = str(guest.get("wedding_id", ""))
+                if wedding_id_str not in wedding_by_id:
+                    continue
+                guest_id = str(guest.get("_id"))
+                guests_by_wedding[wedding_id_str].append(guest_id)
+                guest_to_wedding[guest_id] = wedding_id_str
+                guest_plus_ones_map[guest_id] = (
+                    guest.get("number_of_plus_ones_allowed") or 0
+                )
+                guest_invite_sent[guest_id] = bool(guest.get("invite_sent"))
+
+        plus_one_counts_by_guest: dict[str, int] = defaultdict(int)
+        guest_id_strs = list(guest_to_wedding.keys())
+        if guest_id_strs:
+            plus_one_pipeline = [
+                {"$match": {"guest_id": {"$in": guest_id_strs}}},
+                {"$group": {"_id": "$guest_id", "count": {"$sum": 1}}},
+            ]
+            plus_one_docs = await plus_ones_collection.aggregate(
+                plus_one_pipeline
+            ).to_list(length=len(guest_id_strs))
+            for doc in plus_one_docs:
+                plus_one_counts_by_guest[str(doc.get("_id"))] = int(
+                    doc.get("count", 0) or 0
+                )
+
+        rsvp_stats_by_wedding: dict[str, dict[str, Any]] = defaultdict(
+            lambda: {
+                "confirmed": 0,
+                "declined": 0,
+                "total_responses": 0,
+                "rsvp_guest_ids": set(),
+                "confirmed_guest_ids": set(),
+            }
+        )
+        if wedding_id_values:
+            MAX_TOTAL_RSVPS = min(max(len(wedding_id_strs) * 5000, 5000), 250000)
+            rsvps = await rsvps_collection.find(
+                {"wedding_id": {"$in": wedding_id_values}}
+            ).to_list(length=MAX_TOTAL_RSVPS)
+
+            for rsvp in rsvps:
+                wedding_id_str = str(rsvp.get("wedding_id", ""))
+                if wedding_id_str not in wedding_by_id:
+                    continue
+                rsvp_guest_id = str(rsvp.get("guest_id", ""))
+                stats_for_wedding = rsvp_stats_by_wedding[wedding_id_str]
+                stats_for_wedding["total_responses"] += 1
+                stats_for_wedding["rsvp_guest_ids"].add(rsvp_guest_id)
+
+                status = get_rsvp_status(rsvp)
+                if status == RSVP_STATUS_CONFIRMED:
+                    stats_for_wedding["confirmed"] += 1
+                    stats_for_wedding["confirmed_guest_ids"].add(rsvp_guest_id)
+                elif status == RSVP_STATUS_DECLINED:
+                    stats_for_wedding["declined"] += 1
+
         # Process each wedding
         for wedding in weddings:
             wedding_id = wedding["_id"]
@@ -271,82 +344,43 @@ async def get_planner_metrics(
             if wedding_status == "active":
                 metrics["summary"]["active_weddings"] += 1
 
-            # Get all guests for this wedding (need plus-one and invite_sent data)
-            # Safety cap: large weddings may have up to 5000 guests
-            MAX_WEDDING_GUESTS = 5000
-            guest_docs = await guests_collection.find(
-                {"wedding_id": wedding_id_str},
-                {"_id": 1, "number_of_plus_ones_allowed": 1, "invite_sent": 1},
-            ).to_list(length=MAX_WEDDING_GUESTS)
-            guest_count = len(guest_docs)
+            guest_ids_for_wedding = guests_by_wedding.get(wedding_id_str, [])
+            guest_count = len(guest_ids_for_wedding)
             metrics["summary"]["total_guests"] += guest_count
 
-            # Build guest lookup: guest_id -> {plus_ones_allowed, invite_sent}
-            guest_plus_ones_map: dict[str, int] = {}
-            guest_invite_sent: dict[str, bool] = {}
-            total_plus_ones_allowed = 0
-            for g in guest_docs:
-                gid = str(g["_id"])
-                allowed = g.get("number_of_plus_ones_allowed") or 0
-                guest_plus_ones_map[gid] = allowed
-                guest_invite_sent[gid] = bool(g.get("invite_sent"))
-                total_plus_ones_allowed += allowed
+            total_plus_ones_allowed = sum(
+                guest_plus_ones_map.get(gid, 0) for gid in guest_ids_for_wedding
+            )
             metrics["summary"]["total_plus_ones_allowed"] += total_plus_ones_allowed
 
-            # Count actual submitted plus-ones for this wedding's guests
-            guest_id_strs = list(guest_plus_ones_map.keys())
-            submitted_plus_ones = 0
-            confirmed_plus_ones_submitted = 0
-            if guest_id_strs:
-                submitted_plus_ones = await plus_ones_collection.count_documents(
-                    {"guest_id": {"$in": guest_id_strs}}
-                )
+            submitted_plus_ones = sum(
+                plus_one_counts_by_guest.get(gid, 0) for gid in guest_ids_for_wedding
+            )
             metrics["summary"]["total_plus_ones_submitted"] += submitted_plus_ones
 
-            # Get RSVP statistics - handle both ObjectId and string formats for wedding_id
-            # Safety cap: max guest RSVPs (same as guest cap)
-            rsvps = await rsvps_collection.find(
-                {"$or": [{"wedding_id": wedding_id}, {"wedding_id": wedding_id_str}]}
-            ).to_list(length=MAX_WEDDING_GUESTS)
-
-            confirmed = 0
-            declined = 0
-            confirmed_plus_allowed = 0
-            rsvp_guest_ids: set[str] = set()
-
-            for rsvp in rsvps:
-                rsvp_guest_id = str(rsvp.get("guest_id", ""))
-                rsvp_guest_ids.add(rsvp_guest_id)
-                status = get_rsvp_status(rsvp)
-                if status == RSVP_STATUS_CONFIRMED:
-                    confirmed += 1
-                    confirmed_plus_allowed += guest_plus_ones_map.get(rsvp_guest_id, 0)
-                elif status == RSVP_STATUS_DECLINED:
-                    declined += 1
-
-            # Count submitted plus-ones for confirmed guests
-            confirmed_guest_ids = [
-                str(rsvp.get("guest_id", ""))
-                for rsvp in rsvps
-                if get_rsvp_status(rsvp) == RSVP_STATUS_CONFIRMED
-            ]
-            if confirmed_guest_ids:
-                confirmed_plus_ones_submitted = (
-                    await plus_ones_collection.count_documents(
-                        {"guest_id": {"$in": confirmed_guest_ids}}
-                    )
-                )
+            rsvp_stats = rsvp_stats_by_wedding[wedding_id_str]
+            confirmed = int(rsvp_stats["confirmed"])
+            declined = int(rsvp_stats["declined"])
+            total_responses = int(rsvp_stats["total_responses"])
+            rsvp_guest_ids: set[str] = rsvp_stats["rsvp_guest_ids"]
+            confirmed_guest_ids: set[str] = rsvp_stats["confirmed_guest_ids"]
+            confirmed_plus_allowed = sum(
+                guest_plus_ones_map.get(gid, 0) for gid in confirmed_guest_ids
+            )
+            confirmed_plus_ones_submitted = sum(
+                plus_one_counts_by_guest.get(gid, 0) for gid in confirmed_guest_ids
+            )
 
             # Pending = guests who were INVITED but haven't submitted an RSVP
             # This matches the guests page "Awaiting Response" calculation
             pending = sum(
                 1
-                for gid in guest_plus_ones_map
+                for gid in guest_ids_for_wedding
                 if gid not in rsvp_guest_ids and guest_invite_sent.get(gid, False)
             )
             pending_plus_allowed = sum(
                 guest_plus_ones_map.get(gid, 0)
-                for gid in guest_plus_ones_map
+                for gid in guest_ids_for_wedding
                 if gid not in rsvp_guest_ids and guest_invite_sent.get(gid, False)
             )
 
@@ -362,7 +396,7 @@ async def get_planner_metrics(
             # Calculate progress percentage
             progress_score = 0.0
             if guest_count > 0:
-                response_rate = len(rsvps) / guest_count
+                response_rate = total_responses / guest_count
                 progress_score += min(40, response_rate * 40)  # Up to 40% for RSVPs
                 progress_score += 20  # 20% for having guests
             if wedding.get("events"):
@@ -381,9 +415,10 @@ async def get_planner_metrics(
                     "confirmed": confirmed,
                     "declined": declined,
                     "pending": pending,
-                    "total_responses": len(rsvps),
+                    "total_responses": total_responses,
                     "response_rate": round(
-                        (len(rsvps) / guest_count * 100) if guest_count > 0 else 0, 1
+                        (total_responses / guest_count * 100) if guest_count > 0 else 0,
+                        1,
                     ),
                 },
                 "progress_percentage": min(100, round(progress_score)),
@@ -398,7 +433,7 @@ async def get_planner_metrics(
         metrics["weddings"].sort(key=lambda x: x["date"] or "9999-12-31")
 
         # Calculate revenue metrics from subscription data
-        if metrics["weddings"]:
+        if include_revenue and metrics["weddings"]:
             current_month = current_date.month
             current_year = current_date.year
 

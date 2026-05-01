@@ -94,10 +94,10 @@ export default function FeaturesPage() {
             Why The Special Wedding
           </p>
           <h1 className="text-3xl font-semibold text-white sm:text-4xl md:text-5xl leading-tight">
-            {features.length} tools. One platform.<br />Zero tool juggling.
+            Every planning surface.<br />One platform.
           </h1>
           <p className="mt-5 text-base text-slate-300 max-w-2xl mx-auto">
-            AI, the Couple Portal, and SMS reminders sit at the center, with the planner dashboard, inbox, forms, payments, and every operational layer around them designed to work together instead of fighting each other.
+            The planner dashboard, wedding configuration, microsite publishing, gallery management, event timelines, guest pipeline, planner communications, vendor directory, contract canvas, forms, payments, knowledge base, and team controls are designed to work together instead of fighting each other.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <a
