@@ -260,7 +260,7 @@ class Settings(BaseSettings):
     # Email Service (Resend)
     resend_api_key: Optional[str] = Field(default=None, alias="RESEND_API_KEY")
     resend_from_email: str = Field(
-        default="noreply@thespecialwedding.com", alias="RESEND_FROM_EMAIL"
+        default="noreply@thespecialwedding.io", alias="RESEND_FROM_EMAIL"
     )
     resend_billing_email: Optional[str] = Field(
         default=None, alias="RESEND_BILLING_EMAIL"
@@ -329,6 +329,16 @@ class Settings(BaseSettings):
     enable_compression: bool = Field(default=True, alias="ENABLE_COMPRESSION")
     enable_cache_headers: bool = Field(default=True, alias="ENABLE_CACHE_HEADERS")
     static_cache_max_age: int = Field(default=86400, alias="STATIC_CACHE_MAX_AGE")
+    # Allows safe (idempotent) GETs on /admin/, /api/, /couple/, etc. to
+    # be cached briefly by the browser instead of being marked
+    # ``no-store``.  Default off: existing behavior is preserved unless
+    # explicitly enabled.  When set, the response Cache-Control becomes
+    # ``private, max-age=<safe_get_cache_max_age>`` for safe-method
+    # responses; mutations remain ``no-store`` regardless.  The
+    # auth-extended Redis cache invalidates on every state-flipping
+    # mutation, so a short browser cache window is safe.
+    safe_get_cache_enabled: bool = Field(default=False, alias="SAFE_GET_CACHE_ENABLED")
+    safe_get_cache_max_age: int = Field(default=5, alias="SAFE_GET_CACHE_MAX_AGE")
 
     # Monitoring
     enable_metrics: bool = Field(default=False, alias="ENABLE_METRICS")

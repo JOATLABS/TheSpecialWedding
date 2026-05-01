@@ -75,11 +75,30 @@ export function FeatureShowcase() {
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let idleId: number | null = null;
 
+    // CONTRACT (preload):
+    //   - ``nextFeature.image`` is a static path under ``/public`` ending
+    //     in ``.webp`` (or any browser-renderable format).
+    //   - The browser fetches this exact byte-for-byte URL — no Next.js
+    //     image-optimizer transform.  When the slide rotates and the
+    //     ``<picture>`` below requests this same URL, it comes from the
+    //     HTTP cache instead of the network.
+    //   - ``decoding=async`` and ``fetchPriority=low`` keep this from
+    //     contending with above-the-fold work.
+    //   - We deliberately do NOT preload the AVIF variant.  The browser
+    //     selects the format from ``<picture>`` based on ``Accept``; the
+    //     URL fetched here is the same as what the ``<img>`` fallback
+    //     requests, which is the WebP — a safe, universal choice.
+    //
+    // Replaces the prior hand-built ``/_next/image?url=...&w=...&q=75``
+    // URL, which was brittle to Next.js internals.
     const preloadNextImage = () => {
       const preload = new window.Image();
-      const targetWidth = window.innerWidth < 768 ? 750 : 1200;
       preload.decoding = "async";
-      preload.src = `/_next/image?url=${encodeURIComponent(nextFeature.image)}&w=${targetWidth}&q=75`;
+      // Some browsers expose ``fetchPriority`` on HTMLImageElement;
+      // guarded write keeps strict TS checks happy without losing the
+      // hint where supported.
+      (preload as unknown as { fetchPriority?: string }).fetchPriority = "low";
+      preload.src = nextFeature.image;
     };
 
     if (win.requestIdleCallback) {
@@ -108,15 +127,33 @@ export function FeatureShowcase() {
             <span className="h-2.5 w-2.5 rounded-full bg-green-400/70" />
           </div>
           <div className="relative aspect-[16/9] rounded-lg bg-[#071020] sm:rounded-b-xl sm:rounded-t-none">
-            <Image
-              key={activeFeature.id}
-              src={activeFeature.image}
-              alt={`${activeFeature.title}: ${activeFeature.tagline}`}
-              fill
-              sizes="(min-width: 1280px) 790px, (min-width: 1024px) calc(100vw - 520px), calc(100vw - 48px)"
-              className="object-contain object-top"
-              loading="lazy"
-            />
+            {/*
+              Raw <picture> instead of <Image> here so browsers that
+              support AVIF (Chrome 85+, Firefox 93+, Safari 16+) get the
+              smallest pre-generated file directly from /public, with no
+              Next.js image-optimizer transform on the request path.
+              The thumbnail grid below stays on <Image> because each
+              thumb is 96 px and the cumulative bandwidth is small.
+
+              CONTRACT: every entry in MARKETING_FEATURES has both
+              ``<name>.webp`` and ``<name>.avif`` siblings under
+              /public.  The .avif source is derived by suffix swap.
+            */}
+            <picture>
+              <source
+                srcSet={activeFeature.image.replace(/\.webp$/, ".avif")}
+                type="image/avif"
+              />
+              <source srcSet={activeFeature.image} type="image/webp" />
+              <img
+                key={activeFeature.id}
+                src={activeFeature.image}
+                alt={`${activeFeature.title}: ${activeFeature.tagline}`}
+                loading="lazy"
+                decoding="async"
+                className="absolute inset-0 h-full w-full object-contain object-top"
+              />
+            </picture>
           </div>
         </div>
 

@@ -13,15 +13,12 @@ Tests the full planner registration and Stripe checkout flow:
 
 Usage:
   python test_stripe_signup.py --api-url http://localhost:8000
-  python test_stripe_signup.py --api-url https://api.thespecialwedding.com
+  python test_stripe_signup.py --api-url https://api.thespecialwedding.io
 """
 
 import argparse
 import asyncio
-import json
 import os
-import sys
-import time
 from datetime import datetime, timezone
 
 import httpx
@@ -243,7 +240,7 @@ async def run_tests(api_url: str):
                             f"Expected subscription_status='pending_payment', got '{user_data.get('subscription_status')}'"
                         )
                         errors.append("Incorrect initial subscription_status")
-                    if user_data.get("is_active") != False:
+                    if user_data.get("is_active") is not False:
                         fail(
                             f"Expected is_active=False, got {user_data.get('is_active')}"
                         )
@@ -381,8 +378,6 @@ async def run_tests(api_url: str):
                 ok(f"Payment status: {session.payment_status}")
                 ok(f"Status: {session.status}")
 
-                # Validate metadata
-                metadata = session.subscription_data or {}
                 # The metadata is on subscription_data level in the session
                 # Let's check the session-level metadata
                 info(f"Session customer: {session.customer}")
@@ -473,7 +468,7 @@ async def run_tests(api_url: str):
                 elif r.status_code == 404:
                     warn("Alias webhook endpoint /api/stripe/webhook not found")
                     warnings.append("Missing alias webhook path /api/stripe/webhook")
-            except Exception as e:
+            except Exception:
                 pass
         else:
             warn("Skipping webhook simulation (no checkout session)")
@@ -587,12 +582,12 @@ async def run_tests(api_url: str):
                 print(f"    {YELLOW}{i}. {w}{RESET}")
 
     print(f"\n  {CYAN}Next Steps:{RESET}")
-    print(f"    1. Complete payment at the Stripe checkout URL above")
+    print("    1. Complete payment at the Stripe checkout URL above")
     print(
         f"    2. Or use Stripe CLI: stripe listen --forward-to {api_url}/stripe/webhook"
     )
-    print(f"    3. Then: stripe trigger checkout.session.completed")
-    print(f"    4. Verify user status changes from 'pending_payment' to 'active'\n")
+    print("    3. Then: stripe trigger checkout.session.completed")
+    print("    4. Verify user status changes from 'pending_payment' to 'active'\n")
 
 
 if __name__ == "__main__":

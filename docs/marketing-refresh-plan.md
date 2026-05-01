@@ -29,7 +29,7 @@ category: 'Experience'
 image: '/wedding_microsite.png'
 tagline: 'Every wedding gets a branded public site with gallery, RSVP, and QR memory uploads — no Squarespace, no The Knot.'
 description:
-  'Each wedding slug (yourname.thespecialwedding.com/couple) ships as a public microsite with
+  'Each wedding slug (yourname.thespecialwedding.io/couple) ships as a public microsite with
    the couple's branding, event schedule, gallery, RSVP flow, and guest memory uploads via QR.
    You stop paying for a separate wedding website builder and your couples stop maintaining
    one. All of it is wired to the same guest list, gallery, and RSVP data you already work in.'
@@ -167,7 +167,7 @@ Existing 17 rows are untouched.
 
 > If you're a professional wedding planner, the painful part isn't software cost — it's **surface sprawl.** The wedding website lives on Squarespace. The couple channel lives in text threads and email. The vendor directory is a pinterest board and three browser bookmarks. The contract portal is DocuSign. The ad budget goes to The Knot. Your actual planning tool is tool number six.
 >
-> The Special Wedding is built on a single idea: **every surface a wedding needs already lives in one workspace.** The couple has a branded public microsite at your-couple.thespecialwedding.com. They have a private portal for messages, registry, FAQs, payments, and forms. Your vendors live in a public directory and — when contracted — in token-based portals that handle signatures and payments. Advertising vendors pay you for leads. Your team operates from one planner dashboard wired to all of it.
+> The Special Wedding is built on a single idea: **every surface a wedding needs already lives in one workspace.** The couple has a branded public microsite at your-couple.thespecialwedding.io. They have a private portal for messages, registry, FAQs, payments, and forms. Your vendors live in a public directory and — when contracted — in token-based portals that handle signatures and payments. Advertising vendors pay you for leads. Your team operates from one planner dashboard wired to all of it.
 >
 > Most platforms you're familiar with rebuilt the planner dashboard. We rebuilt everything the planner used to stitch together.
 >

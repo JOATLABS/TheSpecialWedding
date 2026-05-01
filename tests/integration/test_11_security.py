@@ -62,7 +62,7 @@ class TestSecurityBoundaries:
 
         token = pyjwt.encode(
             {
-                "sub": "testadmin@thespecialwedding.com",
+                "sub": "testadmin@thespecialwedding.io",
                 "role": "ROOT_ADMIN",
                 "exp": datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc),
             },

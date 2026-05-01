@@ -482,7 +482,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             error_html = self._build_error_email_html(error, exc, request, client_ip)
             exc_type = type(exc).__name__ if exc else "UNKNOWN"
             params = {
-                "from": os.getenv("RESEND_FROM_EMAIL", "alerts@thespecialwedding.com"),
+                "from": os.getenv("RESEND_FROM_EMAIL", "alerts@thespecialwedding.io"),
                 "to": [self.root_admin_email],
                 "subject": f"[{self._get_error_severity(exc).upper() if exc else 'ERROR'}] {exc_type}: {str(request.url.path) if request else 'unknown path'}",
                 "html": error_html,

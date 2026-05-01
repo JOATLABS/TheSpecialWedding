@@ -26,11 +26,10 @@ from fastapi import HTTPException, UploadFile
 from app.core.database import mongo
 from app.core.settings import settings
 from app.utils.planner_ownership import (
-    build_wedding_owner_query,
-    combine_mongo_filters,
     normalize_planner_email,
     wedding_belongs_to_owner,
 )
+from app.utils import vendor_owner_scope
 from app.models.vendor import (
     ContractKind,
     ContractStatus,
@@ -51,7 +50,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # CONFIGURATION CONSTANTS
 # =============================================================================
-SYSTEM_CREATED_BY = "system@thespecialwedding.com"
+SYSTEM_CREATED_BY = "system@thespecialwedding.io"
 TOKEN_EXPIRY_DAYS = int(os.getenv("CONTRACT_TOKEN_EXPIRY_DAYS", "30"))
 DEPOSIT_DUE_DAYS = int(os.getenv("DEPOSIT_DUE_DAYS", "7"))
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_CONTRACT_FILE_SIZE_MB", "10"))
@@ -683,235 +682,43 @@ class VendorService:
     async def _get_owned_vendor_profile(
         self, vendor_id: str, actor_email: Optional[str]
     ) -> Optional[dict]:
-        """Fetch a vendor profile, scoped by planner ownership.
-
-        ``vendor_profiles.created_by`` is the planner's email — the same
-        scope the existing ``get_vendor_profile`` (vendor_service.py
-        ~line 1199) enforces. Mutation paths must use this helper so the
-        client-supplied ``vendor_profile_id`` cannot leak across
-        tenants.
-
-        Returns None on bad ID, missing record, or wrong owner.
-        """
-        if not vendor_id:
-            return None
-        try:
-            obj_id = ObjectId(vendor_id)
-        except (InvalidId, TypeError, ValueError):
-            return None
-
-        query: Dict[str, Any] = {"_id": obj_id}
-        normalized_actor = normalize_planner_email(actor_email)
-        if normalized_actor is not None:
-            query["created_by"] = normalized_actor
-
-        try:
-            return await self.vendor_profiles.find_one(query)
-        except Exception as e:
-            logger.warning(
-                f"Failed to look up vendor profile '{vendor_id}' for actor "
-                f"'{actor_email}': {e}"
-            )
-            return None
+        """Delegates to :mod:`app.utils.vendor_owner_scope` — kept as a
+        thin wrapper so existing in-class callsites keep working. New
+        code outside ``VendorService`` should call the module function
+        directly."""
+        return await vendor_owner_scope.get_owned_vendor_profile(vendor_id, actor_email)
 
     async def _get_owned_wedding(
         self, wedding_id: str, actor_email: Optional[str]
     ) -> Optional[dict]:
-        """Fetch a wedding, scoped via the canonical planner-ownership query.
-
-        Weddings carry ownership via ``assigned_planner_id`` /
-        ``assigned_planner_email`` (NOT ``created_by``). We delegate to
-        ``planner_ownership.build_wedding_owner_query`` so the rule lives
-        in one place. Tries the string ID first, then ObjectId — matching
-        the legacy ``_get_wedding`` shape so wedding IDs stored as
-        ``wedding_<hex>`` strings still resolve.
-
-        Returns None on missing record or wrong owner.
-        """
-        if not wedding_id:
-            return None
-
-        normalized_actor = normalize_planner_email(actor_email)
-        owner_query = (
-            build_wedding_owner_query(planner_email=normalized_actor)
-            if normalized_actor is not None
-            else None
-        )
-
-        async def _find(id_value: Any) -> Optional[dict]:
-            id_filter = {"_id": id_value}
-            query = combine_mongo_filters(id_filter, owner_query)
-            try:
-                return await self.weddings.find_one(query)
-            except Exception as e:
-                logger.debug(
-                    f"Wedding lookup failed for id={id_value!r} "
-                    f"(actor={actor_email!r}): {e}"
-                )
-                return None
-
-        # First try the string ID form (most weddings use ``wedding_<hex>``).
-        wedding = await _find(wedding_id)
-        if wedding:
-            return wedding
-
-        # Fall back to ObjectId form.
-        try:
-            obj_id = ObjectId(wedding_id)
-        except (InvalidId, TypeError, ValueError):
-            return None
-
-        return await _find(obj_id)
+        """Delegates to :mod:`app.utils.vendor_owner_scope`."""
+        return await vendor_owner_scope.get_owned_wedding(wedding_id, actor_email)
 
     async def _get_owned_assignment(
         self, assignment_id: str, actor_email: Optional[str]
     ) -> Optional[dict]:
-        """Fetch a vendor_assignment, scoped by ``created_by == actor_email``.
-
-        Returns None on bad ID, missing record, or wrong owner.
-        """
-        if not assignment_id:
-            return None
-        try:
-            obj_id = ObjectId(assignment_id)
-        except (InvalidId, TypeError, ValueError):
-            return None
-
-        query: Dict[str, Any] = {"_id": obj_id, "is_deleted": {"$ne": True}}
-        normalized_actor = normalize_planner_email(actor_email)
-        if normalized_actor is not None:
-            query["created_by"] = normalized_actor
-
-        try:
-            return await self.vendor_assignments.find_one(query)
-        except Exception as e:
-            logger.warning(
-                f"Failed to look up vendor_assignment '{assignment_id}' for "
-                f"actor '{actor_email}': {e}"
-            )
-            return None
+        """Delegates to :mod:`app.utils.vendor_owner_scope`."""
+        return await vendor_owner_scope.get_owned_assignment(assignment_id, actor_email)
 
     async def _get_owned_contract(
         self, contract_id: str, actor_email: Optional[str]
     ) -> Optional[dict]:
-        """Fetch a vendor_contract, scoped by ``created_by == actor_email``.
-
-        ``get_contract`` already enforces this boundary for the
-        contract-detail GET path; this helper is for mutation paths
-        (currently ``upload_contract_document``) that fetch by ID
-        without the ownership filter. Returns None on bad ID, missing
-        record, or wrong owner.
-        """
-        if not contract_id:
-            return None
-        try:
-            obj_id = ObjectId(contract_id)
-        except (InvalidId, TypeError, ValueError):
-            return None
-
-        query: Dict[str, Any] = {"_id": obj_id, "is_soft_deleted": {"$ne": True}}
-        normalized_actor = normalize_planner_email(actor_email)
-        if normalized_actor is not None:
-            query["created_by"] = normalized_actor
-
-        try:
-            return await self.vendor_contracts.find_one(query)
-        except Exception as e:
-            logger.warning(
-                f"Failed to look up vendor_contract '{contract_id}' for "
-                f"actor '{actor_email}': {e}"
-            )
-            return None
+        """Delegates to :mod:`app.utils.vendor_owner_scope`."""
+        return await vendor_owner_scope.get_owned_contract(contract_id, actor_email)
 
     async def _get_owned_form(
         self, form_id: str, actor_email: Optional[str]
     ) -> Optional[dict]:
-        """Fetch a vendor_form, scoped by ``created_by == actor_email``.
-
-        ``vendor_forms.created_by`` is the planner's email — set when the
-        form is created via ``VendorFormService.create_vendor_form`` (see
-        ``app/api/vendor_forms.py``). Mutation/read paths that resolve a
-        form by ``_id`` must use this helper so a client-supplied
-        ``form_id`` cannot leak across tenants.
-
-        Returns None on bad ID, missing record, or wrong owner.
-        """
-        if not form_id:
-            return None
-        try:
-            obj_id = ObjectId(form_id)
-        except (InvalidId, TypeError, ValueError):
-            return None
-
-        query: Dict[str, Any] = {"_id": obj_id}
-        normalized_actor = normalize_planner_email(actor_email)
-        if normalized_actor is not None:
-            query["created_by"] = normalized_actor
-
-        try:
-            return await self.vendor_forms.find_one(query)
-        except Exception as e:
-            logger.warning(
-                f"Failed to look up vendor_form '{form_id}' for actor "
-                f"'{actor_email}': {e}"
-            )
-            return None
+        """Delegates to :mod:`app.utils.vendor_owner_scope`."""
+        return await vendor_owner_scope.get_owned_form(form_id, actor_email)
 
     async def _get_owned_form_submission(
         self, submission_id: str, actor_email: Optional[str]
     ) -> Optional[dict]:
-        """Fetch a vendor form submission, scoped by planner ownership.
-
-        ``vendor_submissions`` documents do NOT carry a direct
-        ``created_by`` field — they are written by the public vendor-form
-        submission endpoint (see ``_submit_vendor_form_payload`` in
-        ``app/api/vendor_forms.py``) without any planner identity on the
-        record. Ownership is established transitively through the parent
-        ``vendor_forms`` row referenced by ``form_id``.
-
-        Resolution order:
-          1. Fetch the submission by ``_id``.
-          2. Resolve its parent ``vendor_form`` via ``_get_owned_form``;
-             if that returns None (bad/foreign form), the submission is
-             treated as not-owned.
-          3. Return the submission only when ownership passes.
-
-        Returns None on bad ID, missing record, or wrong owner. Mirrors
-        the 404-not-403 ambiguity convention used by ``get_contract``.
-        """
-        if not submission_id:
-            return None
-        try:
-            obj_id = ObjectId(submission_id)
-        except (InvalidId, TypeError, ValueError):
-            return None
-
-        try:
-            submission = await mongo.db["vendor_submissions"].find_one({"_id": obj_id})
-        except Exception as e:
-            logger.warning(
-                f"Failed to look up vendor_submission '{submission_id}' for "
-                f"actor '{actor_email}': {e}"
-            )
-            return None
-
-        if not submission:
-            return None
-
-        # Root-admin bypass — actor_email=None skips the ownership check.
-        if normalize_planner_email(actor_email) is None:
-            return submission
-
-        parent_form_id = submission.get("form_id")
-        if not parent_form_id:
-            # No parent form linked — cannot establish ownership safely.
-            return None
-
-        owned_form = await self._get_owned_form(str(parent_form_id), actor_email)
-        if owned_form is None:
-            return None
-
-        return submission
+        """Delegates to :mod:`app.utils.vendor_owner_scope`."""
+        return await vendor_owner_scope.get_owned_form_submission(
+            submission_id, actor_email
+        )
 
     async def _resolve_couple_contact(
         self,
@@ -3197,17 +3004,44 @@ class VendorService:
                     "suggested_contract_fields": {},
                 }
 
-            # Find vendor form submissions for this vendor
-            vendor_submissions = (
-                await mongo.db["vendor_submissions"]
-                .find({"vendor_email": vendor_email})
-                .to_list(length=20)
+            # Owner-scoping (parallels _get_owned_form / _get_owned_form_submission):
+            #   - vendor_forms.created_by is the planner's email — filter directly.
+            #   - vendor_submissions has no created_by; scope it transitively
+            #     through the parent vendor_forms it references via form_id.
+            # When created_by is None we're acting as root-admin and skip scoping,
+            # matching the convention used by every _get_owned_* helper above.
+            normalized_actor = normalize_planner_email(created_by)
+
+            forms_filter: Dict[str, Any] = {"vendor_email": vendor_email}
+            if normalized_actor is not None:
+                forms_filter["created_by"] = normalized_actor
+
+            owned_forms_for_scope = await (
+                mongo.db["vendor_forms"].find(forms_filter).to_list(length=200)
             )
 
-            # Also check vendor_forms that have been submitted
-            vendor_forms = (
-                await mongo.db["vendor_forms"]
-                .find({"vendor_email": vendor_email, "status": "submitted"})
+            # Submitted forms get surfaced as form-data sources (cap 20).
+            vendor_forms = [
+                f for f in owned_forms_for_scope if f.get("status") == "submitted"
+            ][:20]
+
+            submissions_filter: Dict[str, Any] = {"vendor_email": vendor_email}
+            if normalized_actor is not None:
+                # vendor_submissions.form_id storage is inconsistent across the
+                # codebase: the public-vendor-form submit path writes it as a
+                # str(ObjectId), but other writers may persist a raw ObjectId.
+                # Match both forms so the owner-scope filter doesn't silently
+                # drop legitimate submissions just because of a type mismatch.
+                owned_form_ids_mixed: list[Any] = []
+                for f in owned_forms_for_scope:
+                    fid = f["_id"]
+                    owned_form_ids_mixed.append(fid)
+                    owned_form_ids_mixed.append(str(fid))
+                submissions_filter["form_id"] = {"$in": owned_form_ids_mixed}
+
+            vendor_submissions = (
+                await mongo.db["vendor_submissions"]
+                .find(submissions_filter)
                 .to_list(length=20)
             )
 

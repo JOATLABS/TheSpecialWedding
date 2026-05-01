@@ -25,7 +25,7 @@ import requests
 BASE_URL = os.getenv("TEST_API_URL", "http://localhost:8000")
 
 # Admin credentials — must match docker-compose.test.yml
-ADMIN_EMAIL = os.getenv("TEST_ADMIN_EMAIL", "testadmin@thespecialwedding.com")
+ADMIN_EMAIL = os.getenv("TEST_ADMIN_EMAIL", "testadmin@thespecialwedding.io")
 ADMIN_PASSWORD = os.getenv("TEST_ADMIN_PASSWORD", "TestAdmin123!SecurePassword")
 
 

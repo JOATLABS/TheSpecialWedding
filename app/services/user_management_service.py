@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from app.core.cache import CacheKeys, cache
 from app.core.database import mongo
 from app.core.events import EventFactory, event_bus
+from app.dependencies.auth_extended import invalidate_auth_cache
 from app.services.email_service_resend import ResendEmailService
 from app.services.planner_onboarding_email_service import (
     planner_onboarding_email_service,
@@ -1603,6 +1604,16 @@ class UserManagementService:
                     status_code=500, detail="Failed to initiate email change"
                 )
 
+            # Bust the auth cache so the next /admin/profile read sees the
+            # freshly-set pending_email. The cache key is per-email, and
+            # because the active email field hasn't changed yet, we
+            # invalidate the CURRENT email's snapshot.
+            #
+            # See `invalidate_auth_cache` docstring at
+            # app/dependencies/auth_extended.py:217 — pending_email is
+            # exposed via /admin/profile, so it belongs in that field list.
+            await invalidate_auth_cache(current_email)
+
             # Send the verification email directly. Previously this only
             # published an EMAIL_CHANGE_REQUESTED event with no listener — so
             # users never received a verification link and could never
@@ -1726,6 +1737,14 @@ class UserManagementService:
                 user=user, old_email=old_email, new_email=new_email
             )
 
+            # Step 3a: bust the per-email auth cache for BOTH addresses.
+            # The cache is keyed by lowercased email; the OLD address now
+            # has no user (the field flipped) so any cached snapshot under
+            # it is dead weight, and the NEW address may have stale state
+            # if a previous request happened to look it up.
+            await invalidate_auth_cache(old_email)
+            await invalidate_auth_cache(new_email)
+
             # Best-effort event publish.
             try:
                 event = EventFactory.email_changed(
@@ -1780,6 +1799,10 @@ class UserManagementService:
                 }
             },
         )
+        # Bust the auth cache so the next /admin/profile read sees that
+        # pending_email has been cleared. Without this, the modal banner
+        # would keep rendering for up to 10s after a cancel.
+        await invalidate_auth_cache(current_email)
         return {
             "cancelled": True,
             "message": "Pending email change cancelled",

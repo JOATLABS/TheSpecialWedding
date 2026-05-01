@@ -82,7 +82,7 @@ def _get_default_saas_config():
         "hero_cta_primary": "Explore pricing",
         "hero_cta_secondary": "Launch console",
         "contact_cta_label": "Contact Sales",
-        "contact_url": "mailto:sales@thespecialwedding.com",
+        "contact_url": "mailto:sales@thespecialwedding.io",
         # Product showcase
         "hero_screenshot_primary": None,
         "hero_screenshot_secondary": None,

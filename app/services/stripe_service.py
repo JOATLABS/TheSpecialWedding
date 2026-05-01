@@ -1117,6 +1117,25 @@ class StripeService:
                 )
                 raise
 
+        # ── Auth cache invalidation ─────────────────────────────────
+        # Subscription state just changed in Mongo.  Bust the cached
+        # ExtendedAuthUser snapshot for this user so the next request
+        # rebuilds from the fresh subscription record instead of
+        # serving the stale "blocked / not blocked" flag from the cache.
+        # The 10-second TTL would catch up eventually; this makes the
+        # transition immediate from the user's perspective.
+        if user_id:
+            try:
+                from app.dependencies.auth_extended import (
+                    invalidate_auth_cache_by_user_id,
+                )
+
+                await invalidate_auth_cache_by_user_id(user_id)
+            except Exception as cache_err:
+                logger.debug(
+                    f"Auth cache invalidation skipped for user {user_id}: {cache_err}"
+                )
+
         # ── Reactivation detection ──────────────────────────────────
         # If the subscription transitioned FROM a cancelled/blocked state
         # TO active or trial, trigger reactivation cleanup to undo the
@@ -1518,12 +1537,31 @@ class StripeService:
         event_type = "unknown"
         try:
             # Verify webhook signature
-            event = stripe.Webhook.construct_event(
+            event_obj = stripe.Webhook.construct_event(
                 payload, signature, settings.stripe_webhook_secret
             )
 
+            # `stripe.Webhook.construct_event` returns a `stripe.Event`
+            # (a StripeObject), not a plain dict. Recent versions of the
+            # Stripe Python SDK override `__getattr__` to look up attribute
+            # access as dict keys on the underlying event payload — which
+            # means calling `event.get("id", "")` tries to read a "get" KEY
+            # from the event and raises `AttributeError: get` when there
+            # isn't one. Every downstream `.get(...)` call on the
+            # subscription / customer / invoice payload hits the same trap.
+            #
+            # Convert to a plain dict at the boundary so every handler in
+            # this service can use dict semantics safely. `to_dict()` is
+            # recursive — nested StripeObjects in `event["data"]["object"]`
+            # become plain dicts too.
+            if hasattr(event_obj, "to_dict"):
+                event = event_obj.to_dict()
+            else:
+                # Already a dict in older SDK versions.
+                event = dict(event_obj)
+
             event_type = event["type"]
-            event_id = event.get("id", "")
+            event_id = str(event.get("id") or "")
             data = event["data"]["object"]
 
             # ── Idempotency check with status tracking ──────────────────

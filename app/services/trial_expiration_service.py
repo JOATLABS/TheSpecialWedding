@@ -103,6 +103,23 @@ class TrialExpirationService:
                     },
                 )
 
+                # Invalidate the auth cache so the next request from this
+                # user sees the new "expired" subscription state instead of
+                # the cached pre-expiry snapshot.  The 10-second TTL would
+                # catch up eventually; this makes the transition immediate.
+                try:
+                    from app.dependencies.auth_extended import (
+                        invalidate_auth_cache,
+                    )
+
+                    user_email = user.get("email")
+                    if user_email:
+                        await invalidate_auth_cache(user_email)
+                except Exception as cache_err:
+                    logger.debug(
+                        f"Auth cache invalidation skipped for {user.get('email')}: {cache_err}"
+                    )
+
                 # Send trial expired email — wrapped in try/except so a single
                 # email failure doesn't break the loop for remaining users
                 try:

@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 _PORTAL_URL = (
     f"{app_settings.frontend_url}/portal/ads"
     if app_settings.frontend_url
-    else "https://thespecialwedding.com/portal/ads"
+    else "https://thespecialwedding.io/portal/ads"
 )
 
 

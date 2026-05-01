@@ -198,14 +198,14 @@ async function sendFailureAlert(env, jobName, errorMessage) {
   }
 
   try {
-    await fetch('https://api.resend.com/emails', {
+    await fetch('https://api.resend.io/emails', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${env.RESEND_API_KEY}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        from: 'alerts@thespecialwedding.com',
+        from: 'alerts@thespecialwedding.io',
         to: [env.ALERT_EMAIL],
         subject: `Trial Cron Job Failed: ${jobName}`,
         html: `
@@ -284,14 +284,14 @@ async function sendSuccessNotification(env, result) {
   }
 
   try {
-    await fetch('https://api.resend.com/emails', {
+    await fetch('https://api.resend.io/emails', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${env.RESEND_API_KEY}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        from: 'alerts@thespecialwedding.com',
+        from: 'alerts@thespecialwedding.io',
         to: [env.ALERT_EMAIL],
         subject: `Trial Maintenance Complete: ${warningsCount} warnings, ${expiredCount} expired`,
         html: `

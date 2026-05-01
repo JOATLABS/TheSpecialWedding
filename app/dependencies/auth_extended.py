@@ -10,6 +10,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from typing_extensions import TypedDict
 
+from app.core.cache import cache
 from app.core.database import mongo
 from app.models.subscription import (
     PLANNER_BLOCKED_SUBSCRIPTION_STATUSES,
@@ -104,6 +105,190 @@ def invalidate_team_cache_by_owner(owner_id: str) -> None:
     ]
     for k in keys_to_remove:
         _team_cache.pop(k, None)
+
+
+# ── Auth user cache (Redis-backed, short TTL) ────────────────────────────
+# Caches the assembled ``ExtendedAuthUser`` shape so that successive
+# requests within the cache window do not pay 2-4 Mongo reads each.
+#
+# Design notes:
+#   * Key shape: ``auth:user:{email}``.  Email is the primary lookup key
+#     used by ``get_current_user_extended`` and is already normalized by
+#     the JWT signing flow.
+#   * 10-second TTL.  Short enough that subscription state mutations
+#     (Stripe webhooks, trial expiry) propagate to live sessions within
+#     a single visible blink, without needing invalidation at every
+#     mutation site.  Long enough that a single user click (which fires
+#     5-10 XHRs in ~1 s) hits cache for everything past the first.
+#   * What is cached: the assembled ``ExtendedAuthUser`` snapshot, not
+#     the raw Mongo docs.  This means a cache hit also avoids the
+#     ``compute_owner_subscription_block`` work for team members.
+#   * What is NOT cached: ROOT_ADMIN (low frequency, sensitive enough
+#     to read fresh every time), the per-request 402 subscription gate
+#     (depends on ``request.url.path`` — re-evaluated each request),
+#     the ``last_active_at`` write for team members (already throttled).
+#   * Failure mode: if Redis is disabled or unreachable, ``CacheManager``
+#     returns ``None`` from ``get`` and ``False`` from ``set``.  The
+#     dependency falls through to the existing Mongo path.  No regression.
+#
+# Explicit invalidation is only required at the highest-impact mutation
+# sites: Stripe webhook handlers that flip subscription status, and the
+# inline trial-auto-expire branch in ``get_current_user_extended``.
+# Other mutations are tolerated as "eventually consistent within 10 s."
+
+_AUTH_USER_CACHE_TTL_SECONDS = 10
+
+
+def _auth_user_cache_key(email: str) -> str:
+    return f"auth:user:{email.lower()}"
+
+
+def _serialize_auth_user(auth_user: "ExtendedAuthUser") -> dict:
+    """Convert ``ExtendedAuthUser`` to a JSON-serializable snapshot.
+
+    ``user_data`` is already JSON-safe at this point: ``_id`` has been
+    converted to ``str`` (see line ~247) and datetimes are handled by
+    the cache layer's ``_json_default`` hook.
+    """
+    return {
+        "email": auth_user.email,
+        "role": auth_user.role,
+        "user_data": auth_user.user_data,
+        "team_permissions": auth_user.team_permissions,
+        "team_role": auth_user.team_role,
+        "team_wedding_access": auth_user.team_wedding_access,
+        "team_assigned_wedding_ids": list(auth_user.team_assigned_wedding_ids or []),
+        "team_owner_email": auth_user.team_owner_email,
+        "parent_planner_id": auth_user.parent_planner_id,
+    }
+
+
+def _deserialize_auth_user(snapshot: dict) -> "ExtendedAuthUser":
+    """Rehydrate a cached snapshot back into ``ExtendedAuthUser``."""
+    auth_user = ExtendedAuthUser(
+        email=snapshot["email"],
+        role=snapshot["role"],
+        user_data=snapshot.get("user_data") or {},
+    )
+    auth_user.team_permissions = snapshot.get("team_permissions")
+    auth_user.team_role = snapshot.get("team_role")
+    auth_user.team_wedding_access = snapshot.get("team_wedding_access")
+    auth_user.team_assigned_wedding_ids = (
+        snapshot.get("team_assigned_wedding_ids") or []
+    )
+    auth_user.team_owner_email = snapshot.get("team_owner_email")
+    auth_user.parent_planner_id = snapshot.get("parent_planner_id")
+    return auth_user
+
+
+async def _get_cached_auth_user(email: str) -> Optional["ExtendedAuthUser"]:
+    """Return the cached auth user for ``email``, or ``None`` on miss.
+
+    Fail-open: any cache exception (Redis down, deserialize failure)
+    returns ``None`` so the caller falls through to the Mongo path.
+    """
+    if not email:
+        return None
+    try:
+        snapshot = await cache.get(_auth_user_cache_key(email))
+        if not snapshot or not isinstance(snapshot, dict):
+            return None
+        return _deserialize_auth_user(snapshot)
+    except Exception as e:
+        logger.debug(f"Auth cache get failed for {email}: {e}")
+        return None
+
+
+async def _set_cached_auth_user(auth_user: "ExtendedAuthUser") -> None:
+    """Cache the assembled auth user. Best-effort, fail-open."""
+    if not auth_user or not auth_user.email:
+        return
+    try:
+        snapshot = _serialize_auth_user(auth_user)
+        await cache.set(
+            _auth_user_cache_key(auth_user.email),
+            snapshot,
+            expire=_AUTH_USER_CACHE_TTL_SECONDS,
+        )
+    except Exception as e:
+        logger.debug(f"Auth cache set failed for {auth_user.email}: {e}")
+
+
+async def invalidate_auth_cache(email: str) -> None:
+    """Bust the cached auth user for ``email``.
+
+    Call this from any mutation site that changes a field the cache
+    depends on: ``users.subscription_status``, ``users.is_active``,
+    ``users.role``, ``users.email_verified``, ``users.team_member_id``,
+    ``user_subscriptions.status``, or ``team_members.{role,
+    custom_permissions, status, wedding_access, assigned_wedding_ids}``
+    for a known team member's email.
+    """
+    if not email:
+        return
+    try:
+        await cache.delete(_auth_user_cache_key(email))
+    except Exception as e:
+        logger.debug(f"Auth cache invalidate failed for {email}: {e}")
+
+
+async def invalidate_auth_cache_by_user_id(user_id: Optional[str]) -> None:
+    """Bust the auth cache for a user identified by Mongo ``_id``.
+
+    Useful for callers that have ``user_id`` but not email — most
+    notably Stripe webhook handlers that key off
+    ``subscription.metadata.user_id``.  Performs a single email lookup
+    and delegates to :func:`invalidate_auth_cache`.
+
+    Fail-open: any error during lookup or invalidation is logged at
+    debug level and swallowed; the cache will expire naturally within
+    the TTL window.
+    """
+    if not user_id:
+        return
+    try:
+        user_doc = await mongo.get_users_collection().find_one(
+            {"_id": ObjectId(user_id)}, {"email": 1}
+        )
+        if user_doc and user_doc.get("email"):
+            await invalidate_auth_cache(user_doc["email"])
+    except Exception as e:
+        logger.debug(f"Auth cache invalidate-by-user-id failed for {user_id}: {e}")
+
+
+def _apply_subscription_gate(
+    auth_user: "ExtendedAuthUser", request: Optional[Request]
+) -> None:
+    """Re-evaluate the 402 subscription gate against ``request.url.path``.
+
+    Runs on every request — must NOT be cached, because the whitelist
+    decision depends on the request path.  Raises HTTPException(402) if
+    the user is blocked and the path is not whitelisted.
+    """
+    if not auth_user.user_data.get("_subscription_blocked") or request is None:
+        return
+    path = request.url.path
+    _SUB_WHITELIST = (
+        "/admin/profile",
+        "/admin/token",
+        "/admin/logout",  # blocked team members must be able to sign out
+        "/admin/team/permissions",  # blocked-page UX reads its own permission metadata
+        "/stripe/",
+        "/api/stripe/",
+        "/public/",
+        "/users/",  # subscription management self-view
+        "/subscription-plans",  # view available plans
+    )
+    if any(path.startswith(p) or f"/{p.lstrip('/')}" in path for p in _SUB_WHITELIST):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+        detail=auth_user.user_data.get(
+            "_subscription_block_reason",
+            "Subscription issue. Please upgrade your plan.",
+        ),
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 async def compute_owner_subscription_block(
@@ -212,10 +397,22 @@ async def get_current_user_extended(
 
         user_data = {}
 
-        # Check if this is the ROOT_ADMIN
+        # ── Auth user cache check ────────────────────────────────────
+        # Skip the cache for ROOT_ADMIN (low frequency, sensitive).
+        # For all other identities, try Redis first; on hit, re-run the
+        # request-scoped 402 gate against the current path and return.
+        # On miss, fall through to the full Mongo path below and write
+        # the assembled snapshot before returning.
         root_admin_email = os.getenv(
             "ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io"
         )
+        if email != root_admin_email:
+            cached_auth_user = await _get_cached_auth_user(email)
+            if cached_auth_user is not None:
+                _apply_subscription_gate(cached_auth_user, request)
+                return cached_auth_user
+
+        # Check if this is the ROOT_ADMIN
         if email == root_admin_email:
             # ROOT_ADMIN must exist in the users collection
             user = await mongo.get_users_collection().find_one({"email": email})
@@ -490,36 +687,24 @@ async def get_current_user_extended(
                 # Non-fatal: allow login but without team permissions
                 pass
 
+        # ── Cache the assembled auth user ────────────────────────────
+        # ROOT_ADMIN is never cached (low frequency, sensitive).  For
+        # everyone else, write the assembled snapshot to Redis so the
+        # next request within the TTL window short-circuits at the top
+        # of this function.  Writing AFTER the team-member hydration
+        # and the subscription/trial computation captures all derived
+        # state (``_subscription_blocked``, team_permissions, etc.).
+        if email != root_admin_email:
+            await _set_cached_auth_user(auth_user)
+
         # ── Subscription gate ─────────────────────────────────────
         # Block expired/cancelled/suspended planners on feature endpoints.
         # Root admins are never tagged so they always pass through.
         # Whitelisted paths (profile, billing, stripe, public) are allowed
-        # so expired planners can still log in and upgrade.
-        if auth_user.user_data.get("_subscription_blocked") and request:
-            path = request.url.path
-            _SUB_WHITELIST = (
-                "/admin/profile",
-                "/admin/token",
-                "/admin/logout",  # blocked team members must be able to sign out
-                "/admin/team/permissions",  # blocked-page UX reads its own permission metadata
-                "/stripe/",
-                "/api/stripe/",
-                "/public/",
-                "/users/",  # subscription management self-view
-                "/subscription-plans",  # view available plans
-            )
-            if not any(
-                path.startswith(p) or f"/{p.lstrip('/')}" in path
-                for p in _SUB_WHITELIST
-            ):
-                raise HTTPException(
-                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                    detail=auth_user.user_data.get(
-                        "_subscription_block_reason",
-                        "Subscription issue. Please upgrade your plan.",
-                    ),
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
+        # so expired planners can still log in and upgrade.  This gate
+        # is shared with the cache-hit path via ``_apply_subscription_gate``
+        # so the whitelist policy lives in exactly one place.
+        _apply_subscription_gate(auth_user, request)
 
         return auth_user
 

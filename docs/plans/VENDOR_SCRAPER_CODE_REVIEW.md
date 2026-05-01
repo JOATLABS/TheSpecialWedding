@@ -33,7 +33,7 @@
 `_states_cache` is set once and never cleared. If states.json is edited while the scraper process is still running (unlikely for CLI, but possible in a long-running FastAPI context), stale data is served. Not a real problem today since the CLI is short-lived, but worth noting for future use.
 
 **[LOW] `SYSTEM_CREATED_BY` defined here but also hardcoded in vendor_service.py** (line 133 config, line 400 vendor_service)
-`config.py` has `SYSTEM_CREATED_BY = "system@thespecialwedding.com"` but `vendor_service.py` line 400 hardcodes `"created_by": "system@thespecialwedding.com"` directly. If the email ever changes, one will be missed.
+`config.py` has `SYSTEM_CREATED_BY = "system@thespecialwedding.io"` but `vendor_service.py` line 400 hardcodes `"created_by": "system@thespecialwedding.io"` directly. If the email ever changes, one will be missed.
 - **Recommendation**: Import `SYSTEM_CREATED_BY` in vendor_service.py instead of hardcoding.
 
 ---
