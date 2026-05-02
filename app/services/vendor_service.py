@@ -26,6 +26,8 @@ from fastapi import HTTPException, UploadFile
 from app.core.database import mongo
 from app.core.settings import settings
 from app.utils.planner_ownership import (
+    build_wedding_owner_query,
+    combine_mongo_filters,
     normalize_planner_email,
     wedding_belongs_to_owner,
 )
@@ -682,17 +684,79 @@ class VendorService:
     async def _get_owned_vendor_profile(
         self, vendor_id: str, actor_email: Optional[str]
     ) -> Optional[dict]:
-        """Delegates to :mod:`app.utils.vendor_owner_scope` — kept as a
-        thin wrapper so existing in-class callsites keep working. New
-        code outside ``VendorService`` should call the module function
-        directly."""
-        return await vendor_owner_scope.get_owned_vendor_profile(vendor_id, actor_email)
+        """Fetch a vendor profile scoped by ``created_by == actor_email``.
+
+        Uses ``self.vendor_profiles`` so the instance-level collection is
+        honoured in both production (real Mongo) and tests (injected fake).
+        ``actor_email=None`` is the root-admin bypass: no ownership filter
+        is applied.  Returns ``None`` on bad ID, missing record, or wrong
+        owner — callers raise 404 so foreign IDs are indistinguishable from
+        missing ones (AGENTS.md §"Authorization And Tenant Boundary Rule").
+        """
+        if not vendor_id:
+            return None
+        try:
+            obj_id = ObjectId(vendor_id)
+        except (InvalidId, TypeError, ValueError):
+            return None
+
+        query: dict = {"_id": obj_id}
+        normalized_actor = normalize_planner_email(actor_email)
+        if normalized_actor is not None:
+            query["created_by"] = normalized_actor
+
+        try:
+            return await self.vendor_profiles.find_one(query)
+        except Exception as e:
+            logger.warning(
+                f"Failed to look up vendor profile '{vendor_id}' for actor "
+                f"'{actor_email}': {e}"
+            )
+            return None
 
     async def _get_owned_wedding(
         self, wedding_id: str, actor_email: Optional[str]
     ) -> Optional[dict]:
-        """Delegates to :mod:`app.utils.vendor_owner_scope`."""
-        return await vendor_owner_scope.get_owned_wedding(wedding_id, actor_email)
+        """Fetch a wedding scoped by planner ownership via ``self.weddings``.
+
+        Uses ``self.weddings`` so the instance-level collection is honoured
+        in both production (real Mongo) and tests (injected fake).
+        ``actor_email=None`` is the root-admin bypass.  Tries the string ID
+        first, then ObjectId — matching the legacy ``_get_wedding`` shape so
+        wedding IDs stored as ``wedding_<hex>`` strings still resolve.
+        """
+        if not wedding_id:
+            return None
+
+        normalized_actor = normalize_planner_email(actor_email)
+        owner_query = (
+            build_wedding_owner_query(planner_email=normalized_actor)
+            if normalized_actor is not None
+            else None
+        )
+
+        async def _find(id_value) -> Optional[dict]:
+            id_filter = {"_id": id_value}
+            query = combine_mongo_filters(id_filter, owner_query)
+            try:
+                return await self.weddings.find_one(query)
+            except Exception as e:
+                logger.debug(
+                    f"Wedding lookup failed for id={id_value!r} "
+                    f"(actor={actor_email!r}): {e}"
+                )
+                return None
+
+        wedding = await _find(wedding_id)
+        if wedding:
+            return wedding
+
+        try:
+            obj_id = ObjectId(wedding_id)
+        except (InvalidId, TypeError, ValueError):
+            return None
+
+        return await _find(obj_id)
 
     async def _get_owned_assignment(
         self, assignment_id: str, actor_email: Optional[str]
@@ -1509,6 +1573,11 @@ class VendorService:
     ) -> dict:
         """Assign a vendor from directory to a wedding"""
         try:
+            # Normalize actor email once so all owner-scoped lookups and the
+            # stored ``created_by`` field use a consistent canonical form.
+            # ``normalize_planner_email(None)`` returns ``None``, preserving
+            # the root-admin bypass (no ownership filter).
+            created_by = normalize_planner_email(created_by)
             # Get vendor profile (scoped by planner ownership — prevents
             # cross-tenant assignment via a client-supplied vendor_profile_id).
             vendor = await self._get_owned_vendor_profile(vendor_profile_id, created_by)
@@ -1806,6 +1875,12 @@ class VendorService:
                     detail="Deposit amount cannot exceed total amount",
                 )
             contract_id = ObjectId()
+            # Normalize actor email once so all owner-scoped lookups, the
+            # planner user lookup, and the stored ``created_by`` field use a
+            # consistent canonical form.  ``normalize_planner_email(None)``
+            # returns ``None``, which preserves the root-admin bypass
+            # semantics (no ownership filter applied).
+            created_by = normalize_planner_email(created_by)
             # Get planner's contract settings (with fallback to system defaults)
             planner_settings = await self._get_planner_contract_settings(created_by)
 
