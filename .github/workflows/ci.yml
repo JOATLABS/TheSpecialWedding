@@ -257,7 +257,7 @@ jobs:
             2>&1 | tee test-results/integration.log
         env:
           TEST_API_URL: http://localhost:8000
-          TEST_ADMIN_EMAIL: testadmin@thespecialwedding.com
+          TEST_ADMIN_EMAIL: testadmin@thespecialwedding.io
           TEST_ADMIN_PASSWORD: TestAdmin123!SecurePassword
           PYTHONPATH: .
 
