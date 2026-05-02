@@ -26,6 +26,8 @@ from fastapi import HTTPException, UploadFile
 from app.core.database import mongo
 from app.core.settings import settings
 from app.utils.planner_ownership import (
+    build_wedding_owner_query,
+    combine_mongo_filters,
     normalize_planner_email,
     wedding_belongs_to_owner,
 )
@@ -682,17 +684,74 @@ class VendorService:
     async def _get_owned_vendor_profile(
         self, vendor_id: str, actor_email: Optional[str]
     ) -> Optional[dict]:
-        """Delegates to :mod:`app.utils.vendor_owner_scope` — kept as a
-        thin wrapper so existing in-class callsites keep working. New
-        code outside ``VendorService`` should call the module function
-        directly."""
-        return await vendor_owner_scope.get_owned_vendor_profile(vendor_id, actor_email)
+        """Fetch a vendor profile owned by *actor_email* using this service's
+        ``vendor_profiles`` collection so the method stays testable without a
+        live Mongo connection.  Applies the same ownership filter as
+        :func:`app.utils.vendor_owner_scope.get_owned_vendor_profile`.
+        """
+        if not vendor_id:
+            return None
+        try:
+            obj_id = ObjectId(vendor_id)
+        except (InvalidId, TypeError, ValueError):
+            return None
+
+        query: Dict[str, Any] = {"_id": obj_id}
+        normalized_actor = normalize_planner_email(actor_email)
+        if normalized_actor is not None:
+            query["created_by"] = normalized_actor
+
+        try:
+            return await self.vendor_profiles.find_one(query)
+        except Exception as e:
+            logger.warning(
+                f"Failed to look up vendor profile '{vendor_id}' for actor "
+                f"'{actor_email}': {e}"
+            )
+            return None
 
     async def _get_owned_wedding(
         self, wedding_id: str, actor_email: Optional[str]
     ) -> Optional[dict]:
-        """Delegates to :mod:`app.utils.vendor_owner_scope`."""
-        return await vendor_owner_scope.get_owned_wedding(wedding_id, actor_email)
+        """Fetch a wedding owned by *actor_email* using this service's
+        ``weddings`` collection so the method stays testable without a live
+        Mongo connection.  Applies the same ownership filter as
+        :func:`app.utils.vendor_owner_scope.get_owned_wedding`.
+        """
+        if not wedding_id:
+            return None
+
+        normalized_actor = normalize_planner_email(actor_email)
+        owner_query = (
+            build_wedding_owner_query(planner_email=normalized_actor)
+            if normalized_actor is not None
+            else None
+        )
+
+        async def _find(id_value: Any) -> Optional[dict]:
+            id_filter = {"_id": id_value}
+            query = combine_mongo_filters(id_filter, owner_query)
+            try:
+                return await self.weddings.find_one(query)
+            except Exception as e:
+                logger.debug(
+                    f"Wedding lookup failed for id={id_value!r} "
+                    f"(actor={actor_email!r}): {e}"
+                )
+                return None
+
+        # Try the string ID form first (most weddings use ``wedding_<hex>``).
+        wedding = await _find(wedding_id)
+        if wedding:
+            return wedding
+
+        # Fall back to ObjectId form.
+        try:
+            obj_id = ObjectId(wedding_id)
+        except (InvalidId, TypeError, ValueError):
+            return None
+
+        return await _find(obj_id)
 
     async def _get_owned_assignment(
         self, assignment_id: str, actor_email: Optional[str]
