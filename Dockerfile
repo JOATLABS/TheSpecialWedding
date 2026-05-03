@@ -5,6 +5,18 @@ WORKDIR /app
 # Apply latest OS security fixes in base image
 RUN apt-get update && apt-get -y upgrade && apt-get -y autoremove && rm -rf /var/lib/apt/lists/*
 
+# MongoDB database tools (mongodump/mongorestore for /admin/backup/trigger).
+# Pinned .deb from MongoDB CDN — not available in default Debian repos.
+ARG MONGODB_TOOLS_VERSION=100.10.0
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl ca-certificates && \
+    curl -fsSL -o /tmp/mdb-tools.deb \
+      "https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian12-x86_64-${MONGODB_TOOLS_VERSION}.deb" && \
+    apt-get install -y --no-install-recommends /tmp/mdb-tools.deb && \
+    rm /tmp/mdb-tools.deb && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PIP_NO_CACHE_DIR=1
 

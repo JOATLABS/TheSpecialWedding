@@ -45,13 +45,16 @@ const worker = {
 			// production path is therefore `/admin/backup/trigger`. Hitting
 			// the un-prefixed `/backup/trigger` returns 404 and was the
 			// reason every cron run errored out.
+			// 15 minute timeout aligns with the server-side BACKUP_MAX_SECONDS
+			// ceiling in app/api/admin_backup.py. A real mongodump of any
+			// non-trivial database easily exceeds the previous 60 s window.
 			const response = await fetchWithTimeout(`${env.NEXT_PUBLIC_API_BASE_URL}/admin/backup/trigger`, {
 				method: 'POST',
 				headers: {
 					'Authorization': `Bearer ${env.BACKUP_SECRET}`,
 					'Content-Type': 'application/json'
 				}
-			}, 60000); // 60 second timeout for backups
+			}, 900000);
 
 			if (!response.ok) {
 				const errorText = await response.text();
