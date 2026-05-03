@@ -11,8 +11,10 @@ Zero-cost backup solution:
 """
 
 import asyncio
+import hmac
 import logging
 import os
+import shutil
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
@@ -29,6 +31,15 @@ media_storage = MediaStorage()
 
 # Backup secret for Cloudflare Workers authentication
 BACKUP_SECRET = os.getenv("BACKUP_SECRET")
+
+# Resolve mongodump at import time so a missing binary surfaces as an
+# explicit 503 rather than a generic FileNotFoundError mid-request.
+MONGODUMP_BIN = shutil.which("mongodump")
+
+# Hard ceiling for the mongodump subprocess. Without this, a stalled dump
+# would pin a uvicorn worker forever. Aligns with the Cloudflare Worker
+# cron timeout in cloudflare-workers/backup-cron.js.
+BACKUP_MAX_SECONDS = int(os.getenv("BACKUP_MAX_SECONDS", "900"))
 
 
 @router.post("/trigger")
@@ -53,15 +64,25 @@ async def trigger_backup(
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing authorization header")
 
-    token = authorization.split("Bearer ")[1].strip()
+    token = authorization.split("Bearer ", 1)[1].strip()
 
     if not BACKUP_SECRET:
         logger.error("BACKUP_SECRET not set in environment")
         raise HTTPException(status_code=500, detail="Backup system not configured")
 
-    if token != BACKUP_SECRET:
+    if not hmac.compare_digest(token, BACKUP_SECRET):
         logger.warning("Invalid backup secret attempt")
         raise HTTPException(status_code=401, detail="Invalid backup secret")
+
+    if MONGODUMP_BIN is None:
+        logger.error(
+            "mongodump binary not found on PATH; "
+            "image is missing mongodb-database-tools"
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Backup tooling unavailable: mongodump not installed",
+        )
 
     try:
         logger.info("Starting database backup...")
@@ -80,7 +101,7 @@ async def trigger_backup(
         logger.info(f"Running mongodump to {backup_path}...")
 
         dump_command = [
-            "mongodump",
+            MONGODUMP_BIN,
             "--uri",
             mongo_uri,
             "--gzip",
@@ -94,7 +115,22 @@ async def trigger_backup(
             stderr=asyncio.subprocess.PIPE,
         )
 
-        stdout, stderr = await process.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=BACKUP_MAX_SECONDS
+            )
+        except asyncio.TimeoutError:
+            logger.error(
+                f"mongodump exceeded {BACKUP_MAX_SECONDS}s timeout; killing process"
+            )
+            process.kill()
+            await process.wait()
+            if os.path.exists(backup_path):
+                os.remove(backup_path)
+            raise HTTPException(
+                status_code=504,
+                detail=f"Backup timed out after {BACKUP_MAX_SECONDS} seconds",
+            )
 
         if process.returncode != 0:
             error_message = stderr.decode() if stderr else "Unknown error"
@@ -176,6 +212,20 @@ async def trigger_backup(
             "storage_location": "R2",
             "storage_key": s3_key,
         }
+
+    except HTTPException as http_exc:
+        # Preserve original status (e.g. 504 timeout) but still record the failure.
+        try:
+            await mongo.db["backup_history"].insert_one(
+                {
+                    "backup_date": datetime.now(timezone.utc),
+                    "status": "failed",
+                    "error": str(http_exc.detail),
+                }
+            )
+        except Exception:
+            pass
+        raise
 
     except Exception as e:
         logger.error(f"Backup failed: {str(e)}", exc_info=True)
