@@ -608,6 +608,6 @@ For questions or issues with the Stripe integration:
 4. Contact development team
 
 **Emergency Contacts:**
-- Backend: backend-team@thespecialwedding.com
-- DevOps: devops@thespecialwedding.com
+- Backend: backend-team@thespecialwedding.io
+- DevOps: devops@thespecialwedding.io
 - Stripe Support: https://support.stripe.com

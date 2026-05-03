@@ -18,6 +18,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
+import { BrandLockup } from '@/components/brand/BrandLockup';
 
 export type CoupleSection =
   | 'dashboard'
@@ -104,23 +105,24 @@ export default function CoupleSidebar({
         aria-label="Wedding portal navigation"
       >
         {/* Logo Section */}
-        <div className="flex items-center justify-between h-16 px-3 border-b border-slate-200/50 dark:border-slate-700/50">
-          <Link href="/couple/dashboard" className="flex items-center flex-1 min-w-0 mr-2">
+        <div className="flex items-center justify-between h-24 px-3 border-b border-slate-200/50 dark:border-slate-700/50">
+          <Link href="/couple/dashboard" className="flex items-center flex-1 min-w-0 mr-2" aria-label="The Special Wedding home">
             {isOpen ? (
-              <img
-                src="/logo.svg"
-                alt="The Special Wedding"
-                width={144}
-                height={36}
-                className="block shrink-0"
-              />
+              <>
+                <span className="block dark:hidden">
+                  <BrandLockup variant="full" surface="light" size="md" />
+                </span>
+                <span className="hidden dark:block">
+                  <BrandLockup variant="full" surface="dark" size="md" />
+                </span>
+              </>
             ) : (
               <NextImage
                 src="/favicon.svg"
                 alt="The Special Wedding"
-                width={32}
-                height={32}
-                className="h-8 w-8"
+                width={44}
+                height={44}
+                className="h-11 w-11"
                 priority
               />
             )}

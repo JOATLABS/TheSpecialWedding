@@ -32,7 +32,16 @@ jobs:
   prepare:
     name: Prepare staging deploy
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'main'
+        )
+      }}
     outputs:
       image-tag: ${{ steps.tag.outputs.tag }}
       service: ${{ steps.service.outputs.value }}
@@ -76,6 +85,12 @@ jobs:
       verify_couple: true
       verify_sse: true
       allow_insecure_tls: true
+      # Auto-deploy after CI: if the requested SHA tag is missing in GHCR
+      # (almost always means a CI build job cascade-skipped — see
+      # ci.yml's build-backend if-clause comment), fall back to the
+      # `:latest` tag and emit a warning so the issue still gets eyes.
+      # Production promotion does NOT enable this — explicit SHA only.
+      allow_image_fallback: true
     secrets:
       COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
       COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}

@@ -101,3 +101,10 @@ async def health_check():
             "checks": checks,
         },
     )
+
+
+@router.get("", tags=["Health"], include_in_schema=False)
+async def health_check_no_slash():
+    """Alias for platform probes that call /health without following redirects."""
+
+    return await health_check()

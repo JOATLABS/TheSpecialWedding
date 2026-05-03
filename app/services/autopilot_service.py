@@ -5,6 +5,7 @@ Handles automatic payment processing, scheduling, retries, and notifications.
 This is the core engine for the Wedding Finance Autopilot feature.
 """
 
+import html
 import logging
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -540,6 +541,11 @@ class AutopilotService:
                 payment_method="card",
             )
 
+            # Best-effort alert refresh after the spend mutation lands. The
+            # public wrapper swallows internally so a failure here cannot
+            # bubble up and break the autopilot payment flow.
+            await budget_service.evaluate_budget_alerts(wedding_id)
+
             logger.info(f"Synced payment to budget for wedding {wedding_id}")
 
         except Exception as e:
@@ -634,17 +640,25 @@ class AutopilotService:
 
             formatted_date = due_date.strftime("%B %d, %Y") if due_date else "soon"
 
+            safe_couple_name = html.escape(
+                self._resolve_couple_display_name(couple), quote=True
+            )
+            safe_payment_name = html.escape(
+                payment.get("name", "Scheduled Payment"), quote=True
+            )
+            safe_formatted_date = html.escape(formatted_date, quote=True)
+
             html_content = f"""
             <!DOCTYPE html>
             <html>
             <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <h2 style="color: #6366f1;">Payment Reminder</h2>
-                <p>Hi {self._resolve_couple_display_name(couple)},</p>
+                <p>Hi {safe_couple_name},</p>
                 <p>This is a friendly reminder that your scheduled payment is coming up:</p>
                 <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                    <p style="margin: 0;"><strong>Payment:</strong> {payment.get("name", "Scheduled Payment")}</p>
+                    <p style="margin: 0;"><strong>Payment:</strong> {safe_payment_name}</p>
                     <p style="margin: 10px 0 0;"><strong>Amount:</strong> ${amount:,.2f}</p>
-                    <p style="margin: 10px 0 0;"><strong>Due Date:</strong> {formatted_date}</p>
+                    <p style="margin: 10px 0 0;"><strong>Due Date:</strong> {safe_formatted_date}</p>
                 </div>
                 <p>Your payment will be automatically processed on the due date using your saved payment method.</p>
                 <p>If you have any questions, please contact your wedding planner.</p>
@@ -832,6 +846,18 @@ class AutopilotService:
             couple = contract.get("couple", {})
             amount = payment.get("amount", 0)
 
+            couple_display_name = self._resolve_couple_display_name(couple)
+            safe_couple_name = html.escape(couple_display_name, quote=True)
+            safe_payment_name = html.escape(
+                payment.get("name", "Scheduled Payment"), quote=True
+            )
+            safe_failure_reason = html.escape(
+                payment.get("failure_reason", "Unknown"), quote=True
+            )
+            safe_admin_url = html.escape(
+                f"{settings.frontend_url}/admin/contracts", quote=True
+            )
+
             html_content = f"""
             <!DOCTYPE html>
             <html>
@@ -839,13 +865,13 @@ class AutopilotService:
                 <h2 style="color: #ef4444;">⚠️ Payment Requires Attention</h2>
                 <p>A scheduled payment has failed after multiple retry attempts and requires manual intervention.</p>
                 <div style="background: #fef2f2; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ef4444;">
-                    <p style="margin: 0;"><strong>Couple:</strong> {self._resolve_couple_display_name(couple)}</p>
-                    <p style="margin: 10px 0 0;"><strong>Payment:</strong> {payment.get("name", "Scheduled Payment")}</p>
+                    <p style="margin: 0;"><strong>Couple:</strong> {safe_couple_name}</p>
+                    <p style="margin: 10px 0 0;"><strong>Payment:</strong> {safe_payment_name}</p>
                     <p style="margin: 10px 0 0;"><strong>Amount:</strong> ${amount:,.2f}</p>
-                    <p style="margin: 10px 0 0;"><strong>Failure Reason:</strong> {payment.get("failure_reason", "Unknown")}</p>
+                    <p style="margin: 10px 0 0;"><strong>Failure Reason:</strong> {safe_failure_reason}</p>
                 </div>
                 <p>Please contact the couple to resolve the payment issue.</p>
-                <a href="{settings.frontend_url}/admin/contracts" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 10px;">
+                <a href="{safe_admin_url}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 10px;">
                     View Contract
                 </a>
             </body>
@@ -856,7 +882,7 @@ class AutopilotService:
                 {
                     "from": f"{settings.resend_from_name} <{settings.resend_from_email}>",
                     "to": [planner.get("email")],
-                    "subject": f"⚠️ Payment Failed - {self._resolve_couple_display_name(couple)}",
+                    "subject": f"⚠️ Payment Failed - {couple_display_name}",
                     "html": html_content,
                 }
             )
@@ -963,17 +989,25 @@ class AutopilotService:
 
             amount = payment.get("amount", 0)
 
+            safe_couple_name = html.escape(
+                self._resolve_couple_display_name(couple), quote=True
+            )
+            safe_payment_name = html.escape(
+                payment.get("name", "Scheduled Payment"), quote=True
+            )
+            safe_error_message = html.escape(error_message or "", quote=True)
+
             html_content = f"""
             <!DOCTYPE html>
             <html>
             <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <h2 style="color: #ef4444;">Payment Issue</h2>
-                <p>Hi {self._resolve_couple_display_name(couple)},</p>
+                <p>Hi {safe_couple_name},</p>
                 <p>We were unable to process your scheduled payment.</p>
                 <div style="background: #fef2f2; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                    <p style="margin: 0;"><strong>Payment:</strong> {payment.get("name", "Scheduled Payment")}</p>
+                    <p style="margin: 0;"><strong>Payment:</strong> {safe_payment_name}</p>
                     <p style="margin: 10px 0 0;"><strong>Amount:</strong> ${amount:,.2f}</p>
-                    <p style="margin: 10px 0 0;"><strong>Reason:</strong> {error_message}</p>
+                    <p style="margin: 10px 0 0;"><strong>Reason:</strong> {safe_error_message}</p>
                 </div>
                 <p>We'll automatically retry this payment. If the issue persists, please update your payment method or contact your wedding planner.</p>
             </body>
@@ -1100,17 +1134,23 @@ class AutopilotService:
 
             couple = contract.get("couple", {})
 
+            couple_display_name = self._resolve_couple_display_name(couple)
+            safe_couple_name = html.escape(couple_display_name, quote=True)
+            safe_admin_url = html.escape(
+                f"{settings.frontend_url}/admin/contracts", quote=True
+            )
+
             html_content = f"""
             <!DOCTYPE html>
             <html>
             <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <h2 style="color: #f59e0b;">⚠️ Payment Schedule Updated</h2>
-                <p>The wedding date for {self._resolve_couple_display_name(couple)} has been changed, and the payment schedule has been recalculated.</p>
+                <p>The wedding date for {safe_couple_name} has been changed, and the payment schedule has been recalculated.</p>
                 <div style="background: #fffbeb; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f59e0b;">
                     <p style="margin: 0;"><strong>Attention:</strong> {past_due_count} payment(s) now have due dates in the past.</p>
                     <p style="margin: 10px 0 0;">Please review the payment schedule and take appropriate action.</p>
                 </div>
-                <a href="{settings.frontend_url}/admin/contracts" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 10px;">
+                <a href="{safe_admin_url}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 10px;">
                     View Contract
                 </a>
             </body>
@@ -1121,7 +1161,7 @@ class AutopilotService:
                 {
                     "from": f"{settings.resend_from_name} <{settings.resend_from_email}>",
                     "to": [planner.get("email")],
-                    "subject": f"⚠️ Payment Schedule Updated - {self._resolve_couple_display_name(couple)}",
+                    "subject": f"⚠️ Payment Schedule Updated - {couple_display_name}",
                     "html": html_content,
                 }
             )

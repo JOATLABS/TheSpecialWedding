@@ -4,6 +4,7 @@ Couple Invitation API (Planner-side)
 Endpoints for planners to invite couples to the portal.
 """
 
+import html
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -252,6 +253,16 @@ async def invite_couple(
     if data.partner2_name:
         couple_name = f"{data.partner1_name} & {data.partner2_name}"
 
+    safe_couple_name = html.escape(str(couple_name or ""), quote=True)
+    safe_planner_name = html.escape(str(planner_name or ""), quote=True)
+    safe_setup_link = html.escape(str(setup_link), quote=True)
+    safe_wedding_label = html.escape(
+        str(wedding.get("couple_names", "Your Wedding")), quote=True
+    )
+    safe_planner_email = html.escape(
+        str(planner_email or current_user.email or ""), quote=True
+    )
+
     html_content = f"""
     <div style="font-family: 'Georgia', serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
         <div style="text-align: center; margin-bottom: 30px;">
@@ -260,17 +271,17 @@ async def invite_couple(
         </div>
 
         <p style="color: #333; font-size: 16px; line-height: 1.6;">
-            Dear {couple_name},
+            Dear {safe_couple_name},
         </p>
 
         <p style="color: #333; font-size: 16px; line-height: 1.6;">
-            Your wedding planner <strong>{planner_name}</strong> has invited you to your
+            Your wedding planner <strong>{safe_planner_name}</strong> has invited you to your
             personal wedding portal. Here you can view your wedding details, track payments,
             review contracts, and stay connected with your planner.
         </p>
 
         <div style="text-align: center; margin: 30px 0;">
-            <a href="{setup_link}"
+            <a href="{safe_setup_link}"
                style="background-color: #1e3a5f; color: white; padding: 14px 32px;
                       text-decoration: none; border-radius: 6px; font-size: 16px;
                       display: inline-block;">
@@ -285,8 +296,8 @@ async def invite_couple(
         <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;" />
 
         <p style="color: #999; font-size: 12px; text-align: center;">
-            Wedding: {wedding.get("couple_names", "Your Wedding")}<br/>
-            Planner: {planner_name} ({planner_email or current_user.email})
+            Wedding: {safe_wedding_label}<br/>
+            Planner: {safe_planner_name} ({safe_planner_email})
         </p>
     </div>
     """
@@ -375,18 +386,21 @@ async def resend_invite(
         if couple.get("partner2_name"):
             couple_name = f"{couple['partner1_name']} & {couple['partner2_name']}"
 
+        safe_couple_name = html.escape(str(couple_name or ""), quote=True)
+        safe_setup_link = html.escape(str(setup_link), quote=True)
+
         html_content = f"""
         <div style="font-family: 'Georgia', serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
             <div style="text-align: center; margin-bottom: 30px;">
                 <h1 style="color: #1e3a5f; font-size: 28px; margin-bottom: 8px;">Your Wedding Portal</h1>
                 <p style="color: #d4af37; font-size: 16px; letter-spacing: 2px;">THE SPECIAL WEDDING</p>
             </div>
-            <p style="color: #333; font-size: 16px; line-height: 1.6;">Dear {couple_name},</p>
+            <p style="color: #333; font-size: 16px; line-height: 1.6;">Dear {safe_couple_name},</p>
             <p style="color: #333; font-size: 16px; line-height: 1.6;">
                 Here's a new invitation link to set up your wedding portal account.
             </p>
             <div style="text-align: center; margin: 30px 0;">
-                <a href="{setup_link}"
+                <a href="{safe_setup_link}"
                    style="background-color: #1e3a5f; color: white; padding: 14px 32px;
                           text-decoration: none; border-radius: 6px; font-size: 16px;
                           display: inline-block;">

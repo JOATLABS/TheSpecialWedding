@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -142,8 +142,8 @@ class UserModel(BaseModel):
     # System fields
     is_active: bool = Field(default=True, description="Whether account is active")
     email_verified: bool = Field(default=False, description="Whether email is verified")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_login: Optional[datetime] = Field(None, description="Last login timestamp")
 
     class Config:
@@ -173,7 +173,9 @@ class AdminUserModel(BaseModel):
     role: str = Field(
         ..., description="User role: ROOT_ADMIN, wedding_planner, or vendor"
     )
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[datetime] = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
 
     class Config:
         json_schema_extra = {

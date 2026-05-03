@@ -1,6 +1,7 @@
 # app/api/email_reminders.py
 
 import base64
+import html
 import logging
 from typing import Optional
 
@@ -222,24 +223,33 @@ async def send_individual_email_reminder(
         subject = payload.custom_subject or f"Reminder: {couple_names}'s Wedding"
 
         # Build HTML email with the custom message
+        safe_couple_names = html.escape(str(couple_names), quote=True)
+        safe_guest_name = html.escape(str(payload.guest_name), quote=True)
+        custom_message_text = (
+            payload.custom_message
+            or f"This is a friendly reminder about {couple_names}'s upcoming wedding. We would love for you to join us!"
+        )
+        safe_custom_message = html.escape(str(custom_message_text), quote=True)
+        safe_rsvp_url = html.escape(str(rsvp_url), quote=True)
+
         html_content = f"""
         <div style="font-family: Georgia, 'Times New Roman', serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
             <div style="text-align: center; margin-bottom: 30px;">
                 <h1 style="color: #2c3e50; font-size: 24px; margin: 0;">Wedding Reminder</h1>
-                <p style="color: #7f8c8d; font-size: 14px;">{couple_names}</p>
+                <p style="color: #7f8c8d; font-size: 14px;">{safe_couple_names}</p>
             </div>
 
             <div style="background-color: #faf9f7; padding: 30px; border-radius: 8px; margin: 20px 0;">
                 <p style="color: #2c3e50; font-size: 16px; line-height: 1.6;">
-                    Dear {payload.guest_name},
+                    Dear {safe_guest_name},
                 </p>
                 <p style="color: #2c3e50; font-size: 16px; line-height: 1.6;">
-                    {payload.custom_message or f"This is a friendly reminder about {couple_names}'s upcoming wedding. We would love for you to join us!"}
+                    {safe_custom_message}
                 </p>
             </div>
 
             <div style="text-align: center; margin: 30px 0;">
-                <a href="{rsvp_url}"
+                <a href="{safe_rsvp_url}"
                    style="background-color: #D4A5A5; color: white; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-size: 16px; display: inline-block;">
                     RSVP Now
                 </a>
@@ -248,7 +258,7 @@ async def send_individual_email_reminder(
             <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
 
             <p style="color: #999; font-size: 12px; text-align: center;">
-                This reminder was sent on behalf of {couple_names}.<br>
+                This reminder was sent on behalf of {safe_couple_names}.<br>
                 Powered by The Special Wedding
             </p>
         </div>

@@ -6,6 +6,7 @@ Provides comprehensive metrics for the ROOT_ADMIN dashboard.
 """
 
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -401,10 +402,10 @@ async def _compute_error_scope_summary(
 def _generate_troubleshooting_hints(error_detail: Dict[str, Any]) -> List[str]:
     """Generate contextual troubleshooting hints based on error details."""
     hints: List[str] = []
-    error_type = error_detail.get("exception_type", "")
+    error_type = str(error_detail.get("exception_type") or "")
     status_code = error_detail.get("status_code")
-    endpoint = error_detail.get("endpoint", "")
-    stack_trace = error_detail.get("stack_trace", "")
+    endpoint = str(error_detail.get("endpoint") or "")
+    stack_trace = str(error_detail.get("stack_trace") or "")
 
     # Status code based hints
     if status_code == 401:
@@ -708,7 +709,12 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
         # Top endpoints are based on the same selected error window.
         error_pipeline = [
             {"$match": _build_audit_logs_query(error_window_start, "all")},
-            {"$group": {"_id": "$path", "count": {"$sum": 1}}},
+            {
+                "$project": {
+                    "route_key": {"$ifNull": ["$route_template", "$path"]},
+                }
+            },
+            {"$group": {"_id": "$route_key", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}},
             {"$limit": 5},
         ]
@@ -779,26 +785,77 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
 
         # Subscription statistics (collection is "user_subscriptions", not "subscriptions")
         # Status values: "active", "trial", "cancelled", "expired", "suspended"
+        subscription_user_docs = (
+            await mongo.db["users"].find({}, {"_id": 1}).to_list(length=100000)
+        )
+        live_subscription_match = {
+            "archived_at": {"$exists": False},
+            "user_id": {"$in": [str(user["_id"]) for user in subscription_user_docs]},
+        }
         subscription_pipeline = [
             {
                 "$facet": {
-                    "active": [{"$match": {"status": "active"}}, {"$count": "count"}],
-                    "trial": [{"$match": {"status": "trial"}}, {"$count": "count"}],
-                    "cancelled": [
-                        {"$match": {"status": "cancelled"}},
+                    "active": [
+                        {
+                            "$match": {
+                                **live_subscription_match,
+                                "status": "active",
+                            }
+                        },
                         {"$count": "count"},
                     ],
-                    "expired": [{"$match": {"status": "expired"}}, {"$count": "count"}],
+                    "trial": [
+                        {
+                            "$match": {
+                                **live_subscription_match,
+                                "status": "trial",
+                            }
+                        },
+                        {"$count": "count"},
+                    ],
+                    "cancelled": [
+                        {
+                            "$match": {
+                                **live_subscription_match,
+                                "status": "cancelled",
+                            }
+                        },
+                        {"$count": "count"},
+                    ],
+                    "expired": [
+                        {
+                            "$match": {
+                                **live_subscription_match,
+                                "status": "expired",
+                            }
+                        },
+                        {"$count": "count"},
+                    ],
                     "suspended": [
-                        {"$match": {"status": "suspended"}},
+                        {
+                            "$match": {
+                                **live_subscription_match,
+                                "status": "suspended",
+                            }
+                        },
                         {"$count": "count"},
                     ],
                     "past_due": [
-                        {"$match": {"payment_status": "past_due"}},
+                        {
+                            "$match": {
+                                **live_subscription_match,
+                                "payment_status": "past_due",
+                            }
+                        },
                         {"$count": "count"},
                     ],
                     "by_plan": [
-                        {"$match": {"status": {"$in": ["active", "trial"]}}},
+                        {
+                            "$match": {
+                                **live_subscription_match,
+                                "status": {"$in": ["active", "trial"]},
+                            }
+                        },
                         {"$group": {"_id": "$plan_id", "count": {"$sum": 1}}},
                         {"$sort": {"count": -1}},
                     ],
@@ -842,7 +899,9 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
         )
 
         # Calculate MRR/ARR from plan_snapshot pricing
-        active_subs_cursor = mongo.db["user_subscriptions"].find({"status": "active"})
+        active_subs_cursor = mongo.db["user_subscriptions"].find(
+            {**live_subscription_match, "status": "active"}
+        )
         active_subs = await active_subs_cursor.to_list(length=None)
 
         mrr = 0
@@ -862,10 +921,17 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
 
         # Trial conversion rate
         total_trials = await mongo.db["user_subscriptions"].count_documents(
-            {"trial_end_date": {"$exists": True, "$ne": None}}
+            {
+                **live_subscription_match,
+                "trial_end_date": {"$exists": True, "$ne": None},
+            }
         )
         converted_trials = await mongo.db["user_subscriptions"].count_documents(
-            {"trial_end_date": {"$exists": True, "$ne": None}, "status": "active"}
+            {
+                **live_subscription_match,
+                "trial_end_date": {"$exists": True, "$ne": None},
+                "status": "active",
+            }
         )
         conversion_rate = (
             (converted_trials / total_trials * 100) if total_trials > 0 else 0
@@ -883,8 +949,15 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
                 }
             },
             {
+                "$project": {
+                    "route_key": {"$ifNull": ["$route_template", "$path"]},
+                    "response_time_ms": 1,
+                    "response_status": 1,
+                }
+            },
+            {
                 "$group": {
-                    "_id": "$path",
+                    "_id": "$route_key",
                     "avg_response_time_ms": {"$avg": "$response_time_ms"},
                     "min_response_time_ms": {"$min": "$response_time_ms"},
                     "max_response_time_ms": {"$max": "$response_time_ms"},
@@ -960,19 +1033,8 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
             if avg_ms > 500 or max_ms > 1000:
                 slow_endpoints.append(perf_entry)
 
-        # Get overall performance summary
-        total_requests_24h = sum(
-            ep.get("request_count", 0) for ep in endpoint_performance
-        )
-        total_errors_24h = sum(ep.get("error_count", 0) for ep in endpoint_performance)
-        overall_error_rate = (
-            (total_errors_24h / total_requests_24h * 100)
-            if total_requests_24h > 0
-            else 0
-        )
-
-        # Calculate overall average response time
-        overall_avg_pipeline = [
+        # Get overall performance summary across all audit-log entries, not just top 20.
+        overall_performance_pipeline = [
             {
                 "$match": {
                     "timestamp": {"$gte": day_ago},
@@ -983,14 +1045,43 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
                 "$group": {
                     "_id": None,
                     "avg_response_time_ms": {"$avg": "$response_time_ms"},
+                    "total_requests": {"$sum": 1},
+                    "total_errors": {
+                        "$sum": {"$cond": [{"$gte": ["$response_status", 400]}, 1, 0]}
+                    },
+                    "response_times": {"$push": "$response_time_ms"},
                 }
             },
         ]
-        overall_cursor = mongo.db["audit_logs"].aggregate(overall_avg_pipeline)
+        overall_cursor = mongo.db["audit_logs"].aggregate(overall_performance_pipeline)
         overall_result = await overall_cursor.to_list(length=1)
-        overall_avg_ms = (
-            overall_result[0].get("avg_response_time_ms", 0) if overall_result else 0
+        overall_doc = overall_result[0] if overall_result else {}
+        total_requests_24h = int(overall_doc.get("total_requests", 0) or 0)
+        total_errors_24h = int(overall_doc.get("total_errors", 0) or 0)
+        overall_error_rate = (
+            (total_errors_24h / total_requests_24h * 100)
+            if total_requests_24h > 0
+            else 0
         )
+        overall_avg_ms = overall_doc.get("avg_response_time_ms", 0) or 0
+        overall_response_times = sorted(overall_doc.get("response_times", []))
+        overall_p95_ms = (
+            overall_response_times[int(len(overall_response_times) * 0.95)]
+            if overall_response_times
+            else 0
+        )
+        monthly_infra_cost = None
+        daily_infra_cost = None
+        requests_per_dollar_24h = None
+        try:
+            configured_cost = os.getenv("PLATFORM_MONTHLY_INFRA_COST_USD")
+            if configured_cost:
+                monthly_infra_cost = float(configured_cost)
+                if monthly_infra_cost > 0:
+                    daily_infra_cost = monthly_infra_cost / 30
+                    requests_per_dollar_24h = total_requests_24h / daily_infra_cost
+        except (TypeError, ValueError):
+            logger.debug("Ignoring invalid PLATFORM_MONTHLY_INFRA_COST_USD value")
 
         # ==================== WEDDING METRICS ====================
 
@@ -1090,8 +1181,29 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
                     "total_errors_24h": total_errors_24h,
                     "overall_error_rate": round(overall_error_rate, 2),
                     "overall_avg_response_time_ms": round(overall_avg_ms, 1),
+                    "overall_avg_response_time_seconds": round(
+                        overall_avg_ms / 1000, 3
+                    ),
+                    "overall_p95_response_time_seconds": round(
+                        overall_p95_ms / 1000, 3
+                    ),
                     "slow_endpoint_count": len(slow_endpoints),
                     "monitored_endpoint_count": len(endpoint_performance),
+                    "monthly_infra_cost_usd": (
+                        round(monthly_infra_cost, 2)
+                        if monthly_infra_cost is not None
+                        else None
+                    ),
+                    "daily_infra_cost_usd": (
+                        round(daily_infra_cost, 2)
+                        if daily_infra_cost is not None
+                        else None
+                    ),
+                    "requests_per_dollar_24h": (
+                        round(requests_per_dollar_24h, 2)
+                        if requests_per_dollar_24h is not None
+                        else None
+                    ),
                 },
                 "endpoints": endpoint_performance,
                 "slow_endpoints": slow_endpoints,
@@ -1454,6 +1566,8 @@ async def get_error_details(
 
         return _extract_error_detail(error)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to get error details: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

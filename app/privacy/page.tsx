@@ -46,6 +46,29 @@ export default function PrivacyPage() {
             applicable, revokes Google access for that connected account. Additional Google
             data deletion details are documented on the data deletion page.
           </p>
+          <p className="rounded-2xl border border-slate-300 bg-stone-50 p-5 text-slate-800">
+            <strong>Google API Services User Data Policy.</strong> The Special Wedding's use
+            and transfer to any other app of information received from Google APIs will
+            adhere to the{' '}
+            <a
+              className="underline"
+              href="https://developers.google.com/terms/api-services-user-data-policy"
+              rel="noreferrer"
+              target="_blank"
+            >
+              Google API Services User Data Policy
+            </a>
+            , including the Limited Use requirements. Specifically, data obtained through
+            Google Calendar scopes is used only to provide and improve the user-facing
+            calendar features described above. We do not transfer this data to third parties
+            except as necessary to provide or improve those features, comply with applicable
+            law, or as part of a merger, acquisition, or sale of assets with notice to users.
+            We do not use this data for serving advertisements. We do not allow humans to
+            read this data unless we have the user's affirmative agreement for specific
+            messages, are doing so for security purposes (such as investigating abuse),
+            comply with applicable law, or the data has been aggregated and anonymized for
+            internal operations.
+          </p>
           <p>
             If a connection becomes expired or unhealthy, the app may stop projecting events
             until the user reconnects or refreshes the connection.

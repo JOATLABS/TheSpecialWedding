@@ -1,6 +1,3 @@
-/* Import elegant fonts for wedding theme */
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Cormorant+Garamond:wght@300;400;500;600&family=Lora:wght@400;500&family=Inter:wght@300;400;500;600;700&family=Pacifico&family=Open+Sans:wght@400;500;600&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -20,12 +17,20 @@
   --theme-primary-light: #a8bdd4;
   --theme-secondary-light: #e8d5a0;
   --theme-accent-light: #e0b8b3;
-  --theme-font-heading: 'Playfair Display', serif;
-  --theme-font-body: 'Cormorant Garamond', serif;
+  --theme-font-heading: var(--font-playfair-display), Georgia, serif;
+  --theme-font-body: var(--font-inter), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 @layer base {
-  html { font-family: var(--theme-font-body); }
+  /* Root font-size reduction (16px → 14px = 87.5%) shrinks every rem-based
+     Tailwind utility platform-wide: text sizes, paddings, margins, gaps.
+     Inputs/buttons inherit from this. Closer to what the user kept getting
+     by manually zooming to 80%. Per-px utilities (border widths, breakpoints)
+     are unaffected. Tweak this single value to retune density globally. */
+  html {
+    font-family: var(--theme-font-body);
+    font-size: 14px;
+  }
   h1, h2, h3, h4, h5, h6 { font-family: var(--theme-font-heading); }
 
   /* Light mode: use original theme colors */
@@ -58,33 +63,6 @@
   .wedding-input { @apply border border-wedding-sage/30 rounded-lg px-4 py-2 focus:ring-2 focus:ring-wedding-rose/50 focus:border-wedding-rose transition-all duration-200; }
   .admin-header { @apply bg-gradient-to-r from-wedding-navy to-wedding-sage text-white shadow-lg; }
   .glass-effect { @apply bg-white/10 backdrop-blur-md border border-white/20 rounded-xl; }
-}
-
-/* Rose petal animations */
-@keyframes petal-fall {
-  0% { transform: translateY(-10vh) rotate(0deg); opacity: 0; }
-  10% { opacity: 1; }
-  100% { transform: translateY(110vh) rotate(360deg); opacity: 0.9; }
-}
-
-@keyframes petal-sway {
-  0% { transform: translateX(0); }
-  50% { transform: translateX(var(--drift, 24px)); }
-  100% { transform: translateX(0); }
-}
-
-.petal { position: absolute; top: -10vh; animation-name: petal-sway; animation-timing-function: ease-in-out; animation-iteration-count: infinite; will-change: transform; }
-.petal-inner {
-  display: block;
-  background: radial-gradient(ellipse at 30% 30%, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.1) 35%, rgba(216,112,147,0.9) 36%, rgba(200,80,120,0.95) 100%);
-  border-radius: 60% 60% 60% 60% / 75% 75% 25% 25%;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-  transform-origin: 50% -20%;
-  animation-name: petal-fall;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
-  filter: blur(0.2px);
-  will-change: transform;
 }
 
 /* Aurora ribbons */
@@ -125,11 +103,8 @@
 .hero-canvas { will-change: transform, opacity; }
 
 @media (prefers-reduced-motion: reduce) {
-  .petal,
-  .petal-inner,
   .hero-aurora__ribbon,
-  .hero-canvas,
-  .petal-canvas {
+  .hero-canvas {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     animation-play-state: paused !important;

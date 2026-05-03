@@ -930,6 +930,8 @@ function ContractDetailPageContent({
                 contractId={contractId}
                 vendorName={contract.vendor_name}
                 vendorEmail={contract.vendor_email}
+                coupleEmail={contract.couple_email ?? undefined}
+                coupleNames={contract.couple_names ?? undefined}
                 totalAmount={contract.total_amount}
                 readOnly={paymentsReadOnly}
                 onMilestoneUpdated={() => {

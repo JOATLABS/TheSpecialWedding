@@ -2,12 +2,15 @@
 
 export interface GuestListSummary {
   totalGuests: number;
-  totalPlusOneSlots: number;
-  respondedGuests: number;
-  respondedPlusOnes: number;
-  pendingGuests: number;
-  pendingPlusOneSlots: number;
+  invitedGuests: number;
   notInvitedGuests: number;
+  respondedGuests: number;
+  confirmedGuests: number;
+  declinedGuests: number;
+  pendingGuests: number;
+  totalPlusOneSlots: number;
+  respondedPlusOnes: number;
+  pendingPlusOneSlots: number;
   submittedPlusOnes: number;
 }
 
@@ -28,12 +31,15 @@ export interface GuestListResponse<T> {
 
 export const EMPTY_GUEST_LIST_SUMMARY: GuestListSummary = {
   totalGuests: 0,
-  totalPlusOneSlots: 0,
-  respondedGuests: 0,
-  respondedPlusOnes: 0,
-  pendingGuests: 0,
-  pendingPlusOneSlots: 0,
+  invitedGuests: 0,
   notInvitedGuests: 0,
+  respondedGuests: 0,
+  confirmedGuests: 0,
+  declinedGuests: 0,
+  pendingGuests: 0,
+  totalPlusOneSlots: 0,
+  respondedPlusOnes: 0,
+  pendingPlusOneSlots: 0,
   submittedPlusOnes: 0,
 };
 

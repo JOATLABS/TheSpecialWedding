@@ -11,9 +11,11 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
+from fastapi import HTTPException
 
 from app.core.database import mongo
 from app.models.autopilot import ContractSignature, ScheduledPayment
+from app.utils import vendor_owner_scope
 from app.utils.mongo_dates import to_mongo_datetime
 from app.utils.payment_schedule import build_effective_payment_schedule
 
@@ -1405,6 +1407,7 @@ class ContractService:
         service_date: Optional[str] = None,
         service_location: Optional[str] = None,
         custom_sections: Optional[List[Dict]] = None,
+        actor_email: Optional[str] = None,
     ) -> Dict:
         """
         Create a new vendor contract (C3).
@@ -1419,6 +1422,16 @@ class ContractService:
             service_date: Optional service date
             service_location: Optional service location
             custom_sections: Optional custom contract sections
+            actor_email: Email of the planner making the request. Used to
+                scope the vendor_profile and wedding lookups by ownership
+                so a client-supplied ID cannot be used to create a
+                contract that references another tenant's vendor or
+                wedding (AGENTS.md §"Authorization And Tenant Boundary
+                Rule"; same-class hole as VENDOR_CONTRACT_PREPROD ticket
+                #1, this is the parallel surface for client-contracts).
+                When None, root-admin bypass is in effect (no ownership
+                filter applied) — the route layer is responsible for
+                only passing None for verified root-admin actors.
 
         Returns:
             Created contract dict
@@ -1426,17 +1439,21 @@ class ContractService:
         import secrets
 
         try:
-            # Look up vendor profile
-            vendor_profiles = mongo.db["vendor_profiles"]
-            vendor = await vendor_profiles.find_one(
-                {"_id": ObjectId(vendor_profile_id)}
+            # Owner-scoped lookups: the helpers return None when the ID is
+            # missing, malformed, or owned by another planner. We surface
+            # 404 (not 403) so a planner cannot probe another tenant's
+            # IDs (AGENTS.md AR-7 generic-error criterion).
+            vendor = await vendor_owner_scope.get_owned_vendor_profile(
+                vendor_profile_id, actor_email
             )
             if not vendor:
-                raise ValueError("Vendor profile not found")
+                raise HTTPException(status_code=404, detail="Vendor profile not found")
 
-            # Look up wedding for context
-            weddings = mongo.db["weddings"]
-            wedding = await weddings.find_one({"_id": ObjectId(wedding_id)})
+            wedding = await vendor_owner_scope.get_owned_wedding(
+                wedding_id, actor_email
+            )
+            if not wedding:
+                raise HTTPException(status_code=404, detail="Wedding not found")
 
             # Auto-generate contract number (C5)
             contract_number = await self._generate_contract_number()

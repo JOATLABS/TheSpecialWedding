@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 from bson import ObjectId
+from fastapi import HTTPException
+from pydantic import ValidationError
 
 import app.services.vendor_service as vendor_service_module
 from app.api import vendor_management as vendor_management_api
@@ -238,7 +240,11 @@ async def test_get_contract_endpoint_forwards_owner_scope(
         current_user=planner_user,
     )
 
-    get_mock.assert_awaited_once_with("contract-1", created_by="planner@example.com")
+    get_mock.assert_awaited_once_with(
+        "contract-1",
+        created_by="planner@example.com",
+        include_couple_contact=True,
+    )
 
 
 @pytest.mark.asyncio
@@ -719,29 +725,36 @@ async def test_vendor_service_apply_form_data_returns_updated_contract(
             captured_update["query"] = query
             captured_update["update"] = update
 
-    class FakeSubmissionCollection:
-        async def find_one(self, query):
-            return {
-                "_id": query["_id"],
+    monkeypatch.setattr(
+        vendor_service, "vendor_contracts", FakeVendorContractsCollection()
+    )
+    # Stub the tenant-scoped form-lookup helpers introduced in the
+    # cross-tenant form-data apply fix. Their underlying Motor reads on
+    # ``vendor_submissions`` / ``vendor_forms`` (and ``self.vendor_forms``)
+    # would otherwise try to hit real Mongo.
+    monkeypatch.setattr(
+        vendor_service,
+        "_get_owned_form_submission",
+        AsyncMock(
+            return_value={
+                "_id": ObjectId(submission_id),
+                "form_id": ObjectId("507f1f77bcf86cd799439013"),
+                "vendor_email": "vendor@example.com",
                 "submission_data": {
                     "portfolio_link": "https://example.com/portfolio",
                 },
             }
-
-    class FakeEmptyCollection:
-        async def find_one(self, query):
-            return None
-
-    monkeypatch.setattr(
-        vendor_service, "vendor_contracts", FakeVendorContractsCollection()
+        ),
     )
     monkeypatch.setattr(
-        vendor_service_module,
-        "mongo",
-        SimpleNamespace(
-            db={
-                "vendor_submissions": FakeSubmissionCollection(),
-                "vendor_forms": FakeEmptyCollection(),
+        vendor_service,
+        "_get_owned_form",
+        AsyncMock(
+            return_value={
+                "_id": ObjectId("507f1f77bcf86cd799439013"),
+                "created_by": "planner@example.com",
+                "vendor_email": "vendor@example.com",
+                "fields": [],
             }
         ),
     )
@@ -771,3 +784,134 @@ async def test_vendor_service_apply_form_data_returns_updated_contract(
     assert update_payload["form_data_mappings"] == {
         "portfolio_link": "{{vendor_portfolio}}"
     }
+
+
+# =============================================================================
+# DEPOSIT-EXCEEDS-TOTAL GUARDS
+#
+# Live verification on POST /admin/contracts and PUT /admin/contracts/{id}
+# revealed that the storage-model ``@model_validator`` on ``VendorContract``
+# was inert at the API boundary because the request body is a different
+# Pydantic DTO. These tests pin the boundary-level enforcement.
+# =============================================================================
+
+
+def test_update_request_dto_rejects_deposit_greater_than_total() -> None:
+    """The PUT body DTO must reject deposit > total when both are present."""
+    with pytest.raises(ValidationError) as excinfo:
+        UpdateVendorContractRequest(total_amount=1000, deposit_amount=1500)
+    assert "Deposit amount cannot exceed total amount" in str(excinfo.value)
+
+
+def test_update_request_dto_accepts_deposit_equal_to_total() -> None:
+    """Equal deposit and total is valid (full prepayment)."""
+    request = UpdateVendorContractRequest(total_amount=1000, deposit_amount=1000)
+    assert request.deposit_amount == 1000
+    assert request.total_amount == 1000
+
+
+def test_update_request_dto_accepts_partial_payload_with_only_deposit() -> None:
+    """Only deposit in the patch is fine — cross-field check defers to service."""
+    request = UpdateVendorContractRequest(deposit_amount=500)
+    assert request.deposit_amount == 500
+    assert request.total_amount is None
+
+
+@pytest.mark.asyncio
+async def test_create_contract_service_rejects_deposit_greater_than_total(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Service-layer guard fires when deposit_amount > total_amount on create.
+
+    Defense in depth: even though ``CreateVendorContractRequest`` does not
+    currently expose ``deposit_amount``, internal callers (scripts, future
+    DTO changes) could pass it. The guard runs before any persistence.
+    """
+    # Patch the lookup helpers so the guard is reached before any Mongo I/O.
+    monkeypatch.setattr(
+        vendor_service,
+        "_get_planner_contract_settings",
+        AsyncMock(return_value={"deposit_due_days": 30}),
+    )
+    monkeypatch.setattr(
+        vendor_service,
+        "_get_owned_vendor_profile",
+        AsyncMock(return_value={"_id": "vendor-1", "business_name": "Vendor"}),
+    )
+    monkeypatch.setattr(
+        vendor_service,
+        "_get_owned_wedding",
+        AsyncMock(return_value={"_id": "wedding-1"}),
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await vendor_service.create_contract(
+            wedding_id="wedding-1",
+            vendor_profile_id="vendor-1",
+            created_by="planner@example.com",
+            total_amount=1000,
+            deposit_amount=1500,
+        )
+    assert excinfo.value.status_code == 422
+    assert "Deposit" in excinfo.value.detail
+
+
+@pytest.mark.asyncio
+async def test_update_contract_service_rejects_when_existing_total_below_new_deposit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The service guard merges the patch with the persisted contract.
+
+    Scenario: existing contract has total=1000; patch sets deposit=1500
+    without touching total. The effective values are {total: 1000,
+    deposit: 1500}, which violates the invariant.
+    """
+    persisted = {
+        "_id": "contract-1",
+        "status": "draft",
+        "total_amount": 1000,
+        "deposit_amount": 100,
+    }
+    monkeypatch.setattr(
+        vendor_service, "get_contract", AsyncMock(return_value=persisted)
+    )
+    monkeypatch.setattr(
+        vendor_service, "_ensure_contract_editable", AsyncMock(return_value=None)
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await vendor_service.update_contract(
+            contract_id="contract-1",
+            data={"deposit_amount": 1500},
+            updated_by="planner@example.com",
+        )
+    assert excinfo.value.status_code == 422
+    assert "Deposit" in excinfo.value.detail
+
+
+@pytest.mark.asyncio
+async def test_update_contract_service_rejects_when_new_total_below_existing_deposit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mirror case: existing deposit=500, patch lowers total to 100."""
+    persisted = {
+        "_id": "contract-1",
+        "status": "draft",
+        "total_amount": 1000,
+        "deposit_amount": 500,
+    }
+    monkeypatch.setattr(
+        vendor_service, "get_contract", AsyncMock(return_value=persisted)
+    )
+    monkeypatch.setattr(
+        vendor_service, "_ensure_contract_editable", AsyncMock(return_value=None)
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await vendor_service.update_contract(
+            contract_id="contract-1",
+            data={"total_amount": 100},
+            updated_by="planner@example.com",
+        )
+    assert excinfo.value.status_code == 422
+    assert "Deposit" in excinfo.value.detail

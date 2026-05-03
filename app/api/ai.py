@@ -36,6 +36,11 @@ from app.services.ai_service import (
     InsufficientCreditsError,
     ai_service,
 )
+from app.utils.rsvp_status import (
+    RSVP_STATUS_CONFIRMED,
+    RSVP_STATUS_DECLINED,
+    get_rsvp_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -402,29 +407,6 @@ def detect_cultural_style_from_events(events: List[Dict]) -> Optional[str]:
     return None
 
 
-def _calculate_rsvp_status(rsvp: dict) -> str:
-    """
-    Determine RSVP status based on attending field.
-
-    The 'attending' field is a List[str] of event names the guest is attending.
-    - If list has items: guest is confirmed (attending at least one event)
-    - If list is empty: guest declined all events
-    - If field is missing/None: should not happen for submitted RSVPs
-    """
-    attending = rsvp.get("attending")
-
-    if attending is None:
-        return "pending"
-
-    if isinstance(attending, list):
-        return "confirmed" if len(attending) > 0 else "declined"
-
-    if isinstance(attending, dict):
-        return "confirmed" if any(attending.values()) else "declined"
-
-    return "pending"
-
-
 async def get_wedding_by_id(wedding_id: str) -> Optional[Dict]:
     """Get wedding data by ID. Handles both ObjectId and string IDs."""
     try:
@@ -508,10 +490,10 @@ async def get_rsvp_data(wedding_id: str) -> Dict[str, Any]:
         declined = 0
 
         for rsvp in rsvps:
-            status = _calculate_rsvp_status(rsvp)
-            if status == "confirmed":
+            status = get_rsvp_status(rsvp)
+            if status == RSVP_STATUS_CONFIRMED:
                 accepted += 1
-            elif status == "declined":
+            elif status == RSVP_STATUS_DECLINED:
                 declined += 1
 
         pending = guest_count - len(rsvps)
@@ -2200,7 +2182,10 @@ async def check_ai_credits(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
     else:
-        # Return general credit info
+        # Return general credit info. AI credits are now soft-capped with
+        # metered overage billing — pass the overage fields through so the
+        # planner billing UI can render the overage banner and running cost.
+        # See SubscriptionService.check_usage_limits() ai_credits branch.
         from app.services.subscription_service import SubscriptionService
 
         sub_service = SubscriptionService()
@@ -2210,6 +2195,17 @@ async def check_ai_credits(
         return {
             "credits_remaining": result.get("remaining", 0),
             "credits_limit": result.get("limit", 0),
+            # The ai_credits branch in check_usage_limits returns
+            # ``current_usage``; ``used`` is a legacy alias other branches
+            # don't emit. Fall back to ``used`` only if ``current_usage`` is
+            # missing so we stay forward-compatible.
+            "credits_used": result.get("current_usage", result.get("used", 0)),
+            "overage": result.get("overage", False),
+            "overage_credits": result.get("overage_credits", 0),
+            "overage_price_per_credit_usd": result.get(
+                "overage_price_per_credit_usd", 0.0
+            ),
+            "overage_cost_cents": result.get("overage_cost_cents", 0),
         }
 
 

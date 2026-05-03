@@ -13,6 +13,7 @@ import { formatDateTime } from '@/utils/dateFormat';
 import { MultiSelect } from '@/components/ui/MultiSelect';
 import { MessageEnrichment } from '@/components/ui/MessageEnrichment';
 import { extractGuestList } from '@/admin/utils/guestListResponse';
+import WeddingPicker from '@/admin/components/WeddingPicker';
 import { Sparkles, X } from 'lucide-react';
 import { BUILT_IN_WEDDING_EVENT_OPTIONS, getWeddingEventLabel, getWeddingEventOptions } from '@/utils/weddingEvents';
 import PageHeader from '../../components/PageHeader';
@@ -1014,28 +1015,23 @@ export default function CommunicationsRemindersView({
    description="Send invitations, reminders, and one-off messages while monitoring delivery history"
  />
 
- {/* Wedding Selection and Channel */}
- <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
- <div className="flex flex-col sm:flex-row gap-4 items-center">
- <label htmlFor="wedding" className="font-medium text-slate-700 dark:text-gray-200 whitespace-nowrap">
- Select Wedding:
- </label>
- <select
- id="wedding"
+ {/* Wedding picker + channel — shared inline pill (see WeddingPicker.tsx) */}
+ <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+ <div className="flex items-center gap-3">
+ <span className="text-sm text-slate-500 dark:text-gray-400">Wedding:</span>
+ <WeddingPicker
+ options={weddings.map((w) => ({
+ id: (w.id || w._id) as string,
+ label: `${w.couple_names} — ${w.date}`,
+ }))}
  value={selectedWedding}
- onChange={(e) => setSelectedWedding(e.target.value)}
- className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
- >
- <option value="">Choose a wedding...</option>
- {weddings.map((wedding) => (
- <option key={wedding.id || wedding._id} value={wedding.id || wedding._id}>
- {wedding.couple_names} - {wedding.date}
- </option>
- ))}
- </select>
+ onChange={setSelectedWedding}
+ placeholder="Choose a wedding…"
+ />
+ </div>
 
  <div className="flex items-center gap-1 whitespace-nowrap">
- <span className="font-medium text-slate-700 dark:text-gray-200 mr-2">Channel:</span>
+ <span className="text-sm font-medium text-slate-700 dark:text-gray-200 mr-2">Channel:</span>
  <label className="flex items-center">
  <input
  type="radio"
@@ -1066,7 +1062,6 @@ export default function CommunicationsRemindersView({
  />
  <span className="text-sm">Both</span>
  </label>
- </div>
  </div>
  </div>
 

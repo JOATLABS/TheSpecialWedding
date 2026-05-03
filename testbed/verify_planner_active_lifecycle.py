@@ -78,14 +78,13 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import stripe
-from bson import ObjectId
 
 from testbed.harness import (
     PM_TOKEN_GOOD,
@@ -124,16 +123,17 @@ BOUTIQUE_AI_CREDITS_MONTHLY = 100
 SIGNATURE_MAX_WEDDINGS = 10
 SIGNATURE_AI_CREDITS_MONTHLY = 300
 
-# Verbatim gate messages from app/services/subscription_service.py:687 and :699.
-# Frontend regex matching breaks if either of these strings is edited.
+# Verbatim gate message from app/services/subscription_service.py (weddings
+# branch). Frontend regex matching breaks if this string is edited.
 EXPECTED_WEDDING_CAP_MSG = (
     f"Wedding limit exceeded. Plan allows {BOUTIQUE_MAX_WEDDINGS} weddings, "
     f"you have {BOUTIQUE_MAX_WEDDINGS}"
 )
-EXPECTED_AI_CREDITS_MSG = (
-    f"AI credits limit exceeded. Plan allows {BOUTIQUE_AI_CREDITS_MONTHLY} "
-    f"credits per month, you have used {BOUTIQUE_AI_CREDITS_MONTHLY}"
-)
+# AI credits are now soft-capped with metered overage — there is no hard-stop
+# message. Going over plan returns allowed=True with an `overage` flag and the
+# accrued `overage_credits`/`overage_cost_cents`. See the check_usage_limits()
+# ai_credits branch for the response shape. Assertions below pin the new
+# contract.
 
 # Monthly plans renew every 30 days on Stripe's default billing cycle. We add
 # one extra day of headroom on every advance so the renewal webhook has
@@ -163,9 +163,20 @@ def _create_wedding(
 
 def _wedding_ids_for(h: Harness, user_id: str) -> list[str]:
     """Mongo-side list of wedding ids owned by this planner — used for targeted
-    delete assertions so we don't nuke test fixtures from another driver."""
+    delete assertions so we don't nuke test fixtures from another driver.
+
+    The wedding doc stores ownership under ``assigned_planner_id`` (set by
+    ``app/api/wedding.py:create_wedding``), not ``user_id`` / ``owner_id``.
+    Keep the legacy fields in the OR so this also works against older fixtures
+    that might still have those keys."""
     cur = h.mongo["weddings"].find(
-        {"$or": [{"user_id": user_id}, {"owner_id": user_id}]},
+        {
+            "$or": [
+                {"assigned_planner_id": user_id},
+                {"user_id": user_id},
+                {"owner_id": user_id},
+            ]
+        },
         {"_id": 1},
     )
     return [str(doc["_id"]) for doc in cur]
@@ -270,7 +281,15 @@ def phase_seed_active(h: Harness, admin_token: str, clock_id: str) -> PlannerSee
 
 def phase_active_zero_weddings(h: Harness, seed: PlannerSeed, clock_id: str) -> None:
     """B0.1 / B0.2 — Never create a wedding. Confirm renewal tick preserves
-    weddings_count=0 and resets ai_credits_used_month."""
+    weddings_count=0 and the AI credits live-query window cleanly resets to
+    the new month (i.e. ``/admin/ai/credits`` returns 0 used).
+
+    The legacy ``usage_tracking.ai_credits_used_month`` counter is no longer
+    load-bearing — it was the source of the drift bug we replaced with the
+    ``ai_usage_log`` live-query. We seed a stale value into it here to prove
+    the live-query does not read from it; only ``ai_usage_log`` rows in the
+    new month's window matter.
+    """
     h.phase("ACTIVE_ZERO_WEDDINGS", "B0.1/B0.2 — empty-state, renewal preserves state")
 
     usage_before = _current_usage_row(h, seed.user_id) or {}
@@ -281,7 +300,8 @@ def phase_active_zero_weddings(h: Harness, seed: PlannerSeed, clock_id: str) -> 
         f"{usage_before.get('ai_credits_used_month', 0)!r}"
     )
 
-    # Pre-seed non-zero credit usage so we can observe the reset side.
+    # Pre-seed a non-zero stale counter. The new contract: this value must
+    # NOT leak into the live-query result post-renewal.
     current_month = datetime.now(timezone.utc).strftime("%Y-%m")
     usage_id = f"usage_{seed.user_id}_{current_month}"
     h.mongo["usage_tracking"].update_one(
@@ -306,17 +326,28 @@ def phase_active_zero_weddings(h: Harness, seed: PlannerSeed, clock_id: str) -> 
         f"  after renewal:  weddings_count="
         f"{usage_after.get('weddings_count', 0)!r} "
         f"ai_credits_used_month="
-        f"{usage_after.get('ai_credits_used_month', 0)!r}"
+        f"{usage_after.get('ai_credits_used_month', 0)!r} "
+        f"(legacy counter — informational only)"
     )
 
-    # `ai_credits_used_month` is reset by the monthly reset job keyed on
-    # `current_month`. If the reset ran via webhook, the row either has a new
-    # current_month (new doc) or 0 on the existing row. Both satisfy the
-    # invariant; we just assert the effective "this month" read.
-    effective_credits = usage_after.get("ai_credits_used_month", 0)
+    # The new live-query window is the source of truth. After renewal, the
+    # post-renewal month has no ai_usage_log rows seeded, so credits_used
+    # must read 0 even with the legacy counter still showing 25.
+    planner_token = h.login(seed.email, PLANNER_PASSWORD)
+    r = h.api_get("/admin/ai/credits", token=planner_token)
+    body = r.json() if r.status_code == 200 else {}
+    h.log.info(f"  /admin/ai/credits post-renewal body = {body}")
+    assert r.status_code == 200, (
+        f"B0.2: /admin/ai/credits should be 200 post-renewal, got {r.status_code}"
+    )
+    effective_credits = body.get("credits_used", -1)
     assert effective_credits == 0, (
-        f"B0.2 failed: ai_credits_used_month should reset to 0 on renewal, "
-        f"got {effective_credits!r}"
+        f"B0.2 failed: live-query credits_used should be 0 in fresh month, "
+        f"got {effective_credits!r} (legacy counter at "
+        f"{usage_after.get('ai_credits_used_month')!r} is intentionally ignored)"
+    )
+    assert body.get("overage") is False, (
+        f"B0.2: post-renewal overage flag should be clear, got {body!r}"
     )
     assert usage_after.get("weddings_count", 0) == 0, (
         f"B0.2 failed: weddings_count should stay 0 on renewal, "
@@ -329,13 +360,19 @@ def phase_active_zero_weddings(h: Harness, seed: PlannerSeed, clock_id: str) -> 
             "Chrome: /admin/planner empty-state renders without any 'get",
             "  started' errors. No toast, no console red.",
             "Backend: weddings_count preserved at 0 across renewal ✅",
-            "Backend: ai_credits_used_month reset to 0 on renewal ✅",
+            "Backend: live-query AI credits reads 0 in new month window ✅",
+            "Backend: legacy usage_tracking.ai_credits_used_month is ignored",
+            "  (live-query is the source of truth) ✅",
         ],
     )
 
 
 def phase_active_one_wedding(
-    h: Harness, seed: PlannerSeed, planner_token: str, clock_id: str
+    h: Harness,
+    seed: PlannerSeed,
+    planner_token: str,
+    admin_token: str,
+    clock_id: str,
 ) -> None:
     """B1.1 / B1.2 / B1.3 — Create wedding #1, renewal preserves it, delete
     decrements the counter."""
@@ -359,7 +396,9 @@ def phase_active_one_wedding(
     # METERING_AUDIT.md §2). Absence of the flag is the sentinel.
     wed_ids = _wedding_ids_for(h, seed.user_id)
     assert wed_ids, "B1.1: wedding document missing after successful create"
-    wedding_doc = h.mongo["weddings"].find_one({"_id": ObjectId(wed_ids[0])}) or {}
+    # This codebase uses prefixed string ids (e.g. ``wedding_94ffd917733a``),
+    # not Mongo ObjectIds — query by the raw string id.
+    wedding_doc = h.mongo["weddings"].find_one({"_id": wed_ids[0]}) or {}
     assert not wedding_doc.get("meter_pending"), (
         f"B1.1: meter_pending should NOT be set on a flat Boutique plan — "
         f"got {wedding_doc.get('meter_pending')!r}. Metering is leaking into "
@@ -379,22 +418,19 @@ def phase_active_one_wedding(
         f"'preserve lifetime count' invariant, see subscription_service.py:798"
     )
 
-    # B1.3 — delete the wedding, counter decrements (or stays at 0 floor).
+    # B1.3 — delete the wedding via the root-admin endpoint
+    # (DELETE /admin/weddings/{id}). Planners cannot self-service delete by
+    # design — see app/api/wedding.py:306. We use admin_token here so the
+    # phase still exercises counter-decrement on delete.
     target_id = wed_ids[0]
-    del_resp = h.api_post(
-        f"/admin/weddings/{target_id}/delete",
-        token=planner_token,
-    )
-    # Not every codebase uses POST /delete; fall back to DELETE if the first shape 404s.
-    if del_resp.status_code == 404:
-        import requests  # lazy — only needed for the fallback shape
+    import requests  # lazy import — only needed for the DELETE shape
 
-        url = f"{h.cfg.backend_url}/admin/weddings/{target_id}"
-        del_resp = requests.delete(
-            url,
-            headers={"Authorization": f"Bearer {planner_token}"},
-            timeout=15,
-        )
+    url = f"{h.config.backend_url}/admin/weddings/{target_id}"
+    del_resp = requests.delete(
+        url,
+        headers={"Authorization": f"Bearer {admin_token}"},
+        timeout=15,
+    )
     h.log.info(f"  DELETE wedding {target_id} -> {del_resp.status_code}")
     assert del_resp.status_code in (200, 202, 204), (
         f"B1.3: wedding delete expected 2xx, got {del_resp.status_code}: "
@@ -472,30 +508,51 @@ def phase_active_wedding_cap(h: Harness, seed: PlannerSeed, planner_token: str) 
 def phase_active_ai_credit_cap(
     h: Harness, seed: PlannerSeed, planner_token: str, clock_id: str
 ) -> None:
-    """C1–C4 — Use up credits, hit 402, confirm renewal resets.
+    """C1–C4 — Confirm AI credits are soft-capped with metered overage.
 
-    Seeds usage_tracking directly rather than looping /admin/chat, for the
-    same reason the trial driver does: GEMINI_API_KEY may not be provisioned
-    in local dev, so we pin the gate, not the AI service.
+    Seeds ``ai_usage_log`` directly (the canonical source of truth for the
+    live-query in ``SubscriptionService._live_ai_credits_used``) rather than
+    driving real AI calls — GEMINI_API_KEY may not be provisioned in local
+    dev, and seeding pins the gate behavior, not the AI service.
+
+    Contract under test (new soft-cap model):
+      C1: below cap       → allowed=True, overage=False
+      C3: at/past cap     → allowed=True, overage=True, overage_credits >= 1,
+                            overage_cost_cents matches overage_credits × price
+      C4: after renewal   → allowed=True, overage=False (new monthly window)
     """
-    h.phase("ACTIVE_AI_CREDIT_CAP", "C1-C4 — credit gate + renewal reset")
+    h.phase("ACTIVE_AI_CREDIT_CAP", "C1-C4 — soft-cap + metered overage")
 
     current_month = datetime.now(timezone.utc).strftime("%Y-%m")
-    usage_id = f"usage_{seed.user_id}_{current_month}"
+    year, month_str = current_month.split("-")
+    period_start = datetime(int(year), int(month_str), 1, tzinfo=timezone.utc)
 
-    # C1 — seed to cap - 1. /admin/ai/credits must report allowed=True.
-    h.mongo["usage_tracking"].update_one(
-        {"_id": usage_id},
-        {
-            "$set": {
+    def _seed_ai_log(total_credits: int) -> None:
+        """Replace the user's ai_usage_log entries for this month with a
+        single row summing to ``total_credits``. Matches the field names
+        read by ``_live_ai_credits_used``."""
+        h.mongo["ai_usage_log"].delete_many(
+            {
                 "user_id": seed.user_id,
-                "current_month": current_month,
-                "ai_credits_used_month": BOUTIQUE_AI_CREDITS_MONTHLY - 1,
-                "last_updated": datetime.now(timezone.utc),
+                "created_at": {
+                    "$gte": period_start,
+                    "$lt": period_start + timedelta(days=31),
+                },
             }
-        },
-        upsert=True,
-    )
+        )
+        if total_credits > 0:
+            h.mongo["ai_usage_log"].insert_one(
+                {
+                    "user_id": seed.user_id,
+                    "credits_used": total_credits,
+                    "created_at": period_start + timedelta(hours=1),
+                    "feature": "testbed_seed",
+                }
+            )
+
+    # C1 — seed to cap - 1. /admin/ai/credits must report allowed=True with no
+    # overage signal.
+    _seed_ai_log(BOUTIQUE_AI_CREDITS_MONTHLY - 1)
     r = h.api_get("/admin/ai/credits?feature=chat", token=planner_token)
     body = r.json()
     h.log.info(f"  C1: credits body = {body}")
@@ -504,42 +561,54 @@ def phase_active_ai_credit_cap(
         f"got status={r.status_code} body={body!r}"
     )
 
-    # C3 — push to cap, next check must be blocked with canonical message.
-    h.mongo["usage_tracking"].update_one(
-        {"_id": usage_id},
-        {"$set": {"ai_credits_used_month": BOUTIQUE_AI_CREDITS_MONTHLY}},
-    )
-    r = h.api_get("/admin/ai/credits?feature=chat", token=planner_token)
+    # C3 — push past cap. Soft-cap contract: allowed=True with overage flag
+    # set and a non-zero overage_cost. The planner billing UI's AI credit
+    # card reads these fields directly from /admin/ai/credits.
+    _seed_ai_log(BOUTIQUE_AI_CREDITS_MONTHLY + 5)
+    r = h.api_get("/admin/ai/credits", token=planner_token)
     body = r.json()
-    h.log.info(f"  C3: credits body = {body}")
-    assert r.status_code == 200 and body.get("allowed") is False, (
-        f"C3: at cap credits, /admin/ai/credits should report allowed=False, "
-        f"got status={r.status_code} body={body!r}"
+    h.log.info(f"  C3: /admin/ai/credits body = {body}")
+    assert r.status_code == 200, f"C3: /admin/ai/credits failed with {r.status_code}"
+    assert body.get("overage") is True, (
+        f"C3: past-cap /admin/ai/credits should report overage=True, "
+        f"got overage={body.get('overage')!r} body={body!r}"
     )
-    assert body.get("message") == EXPECTED_AI_CREDITS_MSG, (
-        f"C3: AI credits message drift: expected\n  {EXPECTED_AI_CREDITS_MSG!r}\n"
-        f"got\n  {body.get('message')!r}\n"
-        "(subscription_service.py:699 — keep frontend matchers in sync.)"
+    assert (body.get("overage_credits") or 0) >= 5, (
+        f"C3: overage_credits should be >= 5 when 5 credits past cap, "
+        f"got {body.get('overage_credits')!r} body={body!r}"
+    )
+    assert (body.get("overage_cost_cents") or 0) > 0, (
+        f"C3: overage_cost_cents should be > 0 when in overage, "
+        f"got {body.get('overage_cost_cents')!r} body={body!r}"
     )
 
-    # C4 — clock forward one cycle, credits should reset, chat allowed again.
+    # C4 — clock forward one cycle, credits should reset (new monthly window),
+    # overage flag should clear.
     h.advance_clock_days(clock_id, DAYS_PER_MONTH)
     h.wait_for_webhooks()
-    r = h.api_get("/admin/ai/credits?feature=chat", token=planner_token)
+    # Clear the prior month's seeded log so the live-query returns 0 for the
+    # new window. (The live-query reads by created_at window, so old rows are
+    # out-of-range anyway, but clear for determinism.)
+    _seed_ai_log(0)
+    r = h.api_get("/admin/ai/credits", token=planner_token)
     body = r.json()
-    h.log.info(f"  C4 post-renewal: credits body = {body}")
-    assert body.get("allowed") is True, (
-        f"C4: credits should be allowed again after monthly reset, got {body!r}"
+    h.log.info(f"  C4 post-renewal: /admin/ai/credits body = {body}")
+    assert body.get("overage") is False, (
+        f"C4: after renewal, overage flag should clear, got {body!r}"
+    )
+    assert (body.get("credits_used") or 0) == 0, (
+        f"C4: credits_used should reset to 0 on new month, got {body!r}"
     )
 
     h.checkpoint(
         "C",
         [
-            "Chrome: /admin/ai-assistant shows the 'credits exhausted' message",
-            "  at C3 — not a raw 402 dump.",
-            "Chrome: after C4 renewal, the UI refreshes to allow chat again.",
-            "Backend: allowed=False message matches the canonical string ✅",
-            "Backend: credits reset to 0 on renewal tick ✅",
+            "Chrome: /admin/planner/billing AI card shows the orange overage",
+            "  callout at C3 with the cycle-to-date cost.",
+            "Chrome: after C4 renewal, the overage callout disappears and",
+            "  the credits bar returns to blue.",
+            "Backend: /admin/ai/credits returns overage=True with nonzero cost ✅",
+            "Backend: renewal resets live-query window (no stale overage) ✅",
         ],
     )
 
@@ -901,6 +970,10 @@ def phase_subscription_resubscribe(
     """D5 — Resubscribe from canceled state. New sub row, new plan_snapshot."""
     h.phase("SUBSCRIPTION_RESUBSCRIBE", "D5 — new subscription on canceled customer")
 
+    # Long-running interactive runs blow past the admin JWT TTL between
+    # checkpoints — refresh before any API call that requires admin auth.
+    admin_token = h.get_admin_token()
+
     new_sub = h.subscribe_planner(
         admin_token=admin_token,
         customer_id=seed.customer_id,
@@ -941,6 +1014,10 @@ def phase_subscription_past_due(h: Harness, admin_token: str, clock_id: str) -> 
     driver but exercises the planner's own login path.
     """
     h.phase("SUBSCRIPTION_PAST_DUE", "D6 — planner past-due → recovery")
+
+    # Long-running interactive runs blow past the admin JWT TTL between
+    # checkpoints — refresh before any API call that requires admin auth.
+    admin_token = h.get_admin_token()
 
     email = "test_planner+pastdue@thespecialwedding.io"
     password = "PastDuePlanner2026!"  # pragma: allowlist secret
@@ -1034,9 +1111,9 @@ def main() -> int:
         f"{SIGNATURE_AI_CREDITS_MONTHLY} credits"
     )
     h.log.info(
-        f"  Canonical gate msgs:\n"
+        f"  Canonical gate msg:\n"
         f"    weddings   → {EXPECTED_WEDDING_CAP_MSG}\n"
-        f"    ai_credits → {EXPECTED_AI_CREDITS_MSG}"
+        f"    ai_credits → (soft-cap, metered overage; no hard-stop message)"
     )
 
     h.preflight()
@@ -1050,7 +1127,7 @@ def main() -> int:
     planner_token = h.login(PLANNER_EMAIL, PLANNER_PASSWORD)
 
     phase_active_zero_weddings(h, seed, clock_id)
-    phase_active_one_wedding(h, seed, planner_token, clock_id)
+    phase_active_one_wedding(h, seed, planner_token, admin_token, clock_id)
     phase_active_wedding_cap(h, seed, planner_token)
 
     # Scenario C — AI credits.

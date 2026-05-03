@@ -111,6 +111,8 @@ export interface VendorContract {
   contract_kind?: ContractKind;
   amendment_reason?: string;
   superseded_at?: string;
+  couple_email?: string | null;
+  couple_names?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -753,6 +755,18 @@ export async function getPaymentMilestones(
   return response.json();
 }
 
+export interface RecordPaymentApiError extends Error {
+  status: number;
+  detail?: unknown;
+}
+
+function makeRecordPaymentError(message: string, status: number, detail?: unknown): RecordPaymentApiError {
+  const err = new Error(message) as RecordPaymentApiError;
+  err.status = status;
+  err.detail = detail;
+  return err;
+}
+
 export async function recordPayment(
   token: string,
   milestoneId: string,
@@ -769,7 +783,11 @@ export async function recordPayment(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(error, 'Failed to record payment'));
+    throw makeRecordPaymentError(
+      extractErrorMessage(error, 'Failed to record payment'),
+      response.status,
+      error?.detail,
+    );
   }
 
   return response.json();

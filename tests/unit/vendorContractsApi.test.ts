@@ -259,6 +259,32 @@ describe('vendorContractsApi request normalization', () => {
     assert.equal(result.status, 'paid');
   });
 
+  it('recordPayment surfaces a 409 status on the thrown error so callers can branch', async () => {
+    const fetchMock = mock.fn(async () => {
+      return new Response(
+        JSON.stringify({ detail: 'Milestone is already fully paid' }),
+        { status: 409, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    let caught: unknown = null;
+    try {
+      await vendorContractsApi.recordPayment('secret-token', 'milestone_1', {
+        amount: 1200,
+        payment_method: 'card',
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    assert.ok(caught instanceof Error, 'recordPayment should throw an Error on 409');
+    const apiErr = caught as Error & { status?: number };
+    assert.equal(apiErr.status, 409);
+    assert.match(apiErr.message, /already fully paid/i);
+  });
+
   it('createPaymentMilestones sends the normalized milestone request body', async () => {
     const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       assert.equal(

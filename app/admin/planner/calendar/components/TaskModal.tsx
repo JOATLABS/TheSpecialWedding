@@ -27,6 +27,7 @@ import {
   VisibilityMode,
 } from '@/services/calendarApi';
 import { useAdmin } from '@/contexts/AdminContext';
+import { getLocalDateString } from '@/utils/dateFormat';
 
 interface StaffOption {
   id: string;
@@ -233,7 +234,7 @@ export default function TaskModal({
   useEffect(() => {
     if (!open) return;
 
-    const initialDate = defaultDate ? defaultDate.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const initialDate = defaultDate ? getLocalDateString(defaultDate) : getLocalDateString();
     const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
     if (task) {

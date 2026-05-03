@@ -2,16 +2,29 @@
 import './styles/globals.css'
 import Script from 'next/script'
 import type { Metadata } from 'next'
+import { Inter, Playfair_Display } from 'next/font/google'
 import { MARKETING_FEATURES } from './data/marketingFeatures';
 
 const TOOL_COUNT = MARKETING_FEATURES.length;
+const inter = Inter({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  display: 'swap',
+  variable: '--font-inter',
+})
+const playfairDisplay = Playfair_Display({
+  subsets: ['latin'],
+  weight: ['500', '600', '700'],
+  display: 'swap',
+  variable: '--font-playfair-display',
+})
 
 export const metadata: Metadata = {
   title: {
-    default: 'The Special Wedding — Wedding Planner Software for Professionals | Guests, Vendors & More',
+    default: 'Wedding Planner Software & CRM for Pros — The Special Wedding',
     template: '%s | The Special Wedding',
   },
-  description: 'Wedding planning software built for professional planners. Manage guests, RSVPs, seating, vendor contracts, budgets, and day-of timelines — all from one dashboard. Start at $29/mo.',
+  description: 'Wedding planning software & CRM built for professional planners. Manage guests, RSVPs, seating, vendor contracts, budgets, day-of timelines, and a live couple portal — replacing HoneyBook, Aisle Planner, and Squarespace. Starts at $29/mo.',
   keywords: ['wedding planner software', 'wedding planning business software', 'event planner CRM', 'wedding vendor management', 'guest management for planners', 'wedding seating chart tool', 'HoneyBook alternative', 'Aisle Planner alternative'],
   authors: [{ name: 'The Special Wedding' }],
   creator: 'The Special Wedding',
@@ -76,7 +89,7 @@ export default function RootLayout({
   const cloudflareToken = process.env.NEXT_PUBLIC_CLOUDFLARE_ANALYTICS_TOKEN;
 
   return (
-    <html lang="en">
+    <html lang="en" className={`${inter.variable} ${playfairDisplay.variable}`}>
       <head>
         <script
           type="application/ld+json"

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -29,6 +29,12 @@ def _matches_query(document: dict, query: dict) -> bool:
                 continue
             if "$in" in expected:
                 if actual not in expected["$in"]:
+                    return False
+                continue
+            if "$ne" in expected:
+                # ``{"$ne": True}`` filters used by the soft-delete retrofit
+                # accept missing fields (Mongo treats absent as not-equal).
+                if actual == expected["$ne"]:
                     return False
                 continue
             return False
@@ -149,7 +155,7 @@ def make_contract_doc(
         "deposit_amount": 2500,
         "status": status,
         "access_token_hash": vendor_service._hash_contract_access_token(access_token),
-        "token_expires_at": datetime(2026, 5, 1, tzinfo=timezone.utc),
+        "token_expires_at": datetime.now(timezone.utc) + timedelta(days=30),
         "token_revoked_at": None,
         "token_last_sent_at": None,
         "token_last_viewed_at": None,
@@ -194,6 +200,7 @@ def configured_vendor_service(monkeypatch: pytest.MonkeyPatch):
                 "address": "123 Main St",
                 "service_category": "photographer",
                 "total_revenue": 0,
+                "created_by": "planner@example.com",
             }
         ]
     )
@@ -204,6 +211,19 @@ def configured_vendor_service(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(vendor_service, "vendor_assignments", assignments)
     monkeypatch.setattr(vendor_service, "budget_categories", budget_categories)
     monkeypatch.setattr(vendor_service, "vendor_profiles", vendor_profiles)
+    monkeypatch.setattr(
+        vendor_service,
+        "_get_owned_wedding",
+        AsyncMock(
+            return_value={
+                "_id": "wedding-1",
+                "couple_names": "Alex & Jamie",
+                "date": "2026-06-12",
+                "venue": "Garden Venue",
+                "assigned_planner_email": "planner@example.com",
+            }
+        ),
+    )
     monkeypatch.setattr(vendor_service, "_log_communication", AsyncMock())
 
     async def run_required_transaction(_operation_name, operation):
@@ -316,22 +336,36 @@ async def test_apply_form_data_logs_activity(
     contract = make_contract_doc(status=ContractStatus.DRAFT.value)
     contracts.documents.append(deepcopy(contract))
 
-    monkeypatch_mongo = SimpleNamespace(
-        db={
-            "vendor_submissions": FakeCollection(
-                [
-                    {
-                        "_id": ObjectId("507f1f77bcf86cd799439012"),
-                        "submission_data": {
-                            "portfolio_link": "https://example.com/work"
-                        },
-                    }
-                ]
-            ),
-            "vendor_forms": FakeCollection([]),
-        }
+    # Stub the tenant-scoped form-lookup helpers introduced in the
+    # cross-tenant form-data apply fix. Their underlying Motor reads on
+    # ``vendor_submissions`` / ``vendor_forms`` (and ``self.vendor_forms``)
+    # would otherwise try to hit real Mongo.
+    monkeypatch.setattr(
+        vendor_service,
+        "_get_owned_form_submission",
+        AsyncMock(
+            return_value={
+                "_id": ObjectId("507f1f77bcf86cd799439012"),
+                "form_id": ObjectId("507f1f77bcf86cd799439013"),
+                "vendor_email": "vendor@example.com",
+                "submission_data": {
+                    "portfolio_link": "https://example.com/work",
+                },
+            }
+        ),
     )
-    monkeypatch.setattr(vendor_service_module, "mongo", monkeypatch_mongo)
+    monkeypatch.setattr(
+        vendor_service,
+        "_get_owned_form",
+        AsyncMock(
+            return_value={
+                "_id": ObjectId("507f1f77bcf86cd799439013"),
+                "created_by": "planner@example.com",
+                "vendor_email": "vendor@example.com",
+                "fields": [],
+            }
+        ),
+    )
 
     await service.apply_form_data_to_contract(
         contract_id=str(contract["_id"]),

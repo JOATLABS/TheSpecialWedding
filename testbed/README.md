@@ -1,13 +1,13 @@
 # testbed/
 
-Live end-to-end **subscription lifecycle drivers** for The Special Wedding.
+Live end-to-end verification drivers for The Special Wedding.
 
-These are not pytest tests. They are scripted lifecycle walkers that exercise
-real Stripe test clocks, real Mongo documents, and real webhook delivery
-against a locally running backend (or a deployed environment with write
-credentials). They exist because subscription state machines — trial entry,
-trial expiry, renewal, dunning, metering, cancellation, plan changes — are too
-tedious and error-prone to click through by hand on every change.
+These are not pytest tests. They are scripted lifecycle and performance walkers
+that exercise real Stripe test clocks, real Mongo documents, real webhook
+delivery, and locally running services (or a deployed environment with write
+credentials). They exist because subscription state machines and production-like
+performance baselines are too tedious and error-prone to click through by hand
+on every change.
 
 ## When to use this directory
 
@@ -30,6 +30,8 @@ A verification is complete **only when both layers agree.**
 - Scripts that drive `stripe.test_helpers.TestClock.advance`
 - Scripts that seed Stripe customers + Mongo users + subscriptions with
   `+tag@` email isolation
+- Scripts that record live performance baselines against isolated testbed
+  accounts and write durable artifacts
 - Paired cleanup scripts for each driver
 - Phase-gated (`input("Press ENTER…")`) runners that pause for Chrome
   verification between checkpoints
@@ -53,9 +55,11 @@ not be deleted by cleanup — that's what lets the seed phase stay cheap.
 | Driver | Purpose | Cleanup |
 | --- | --- | --- |
 | `verify_team_member_gate_via_test_clock.py` | PR1 — team-member login is blocked when the planner's subscription is `past_due` / `unpaid` and cleared when the planner recovers. Template for phase-gated runners. | `cleanup_team_member_gate_verify_state.py` |
+| `verify_metrics_snapshot_no_body.py` | Metrics cron contract - proves `POST /metrics/snapshot` works with auth headers and no request body, then confirms latest/history reads expose the inserted snapshot. | `cleanup_metrics_snapshot_no_body_state.py` |
 | `verify_planner_trial_lifecycle.py` | Scenario A — 30-day planner trial: trial-end webhook, usage-limit flip, `subscription_status` transitions, with fresh clock per run. | `cleanup_planner_trial_verify_state.py` |
 | `verify_planner_active_lifecycle.py` | Scenarios B/C/D — active subscription UX, wedding + AI-credit caps, plan upgrade/downgrade (incl. plan_snapshot grandfather), cancel/resubscribe, and past-due recovery. Reusable clock. | `cleanup_planner_active_verify_state.py` |
 | `verify_planner_metered_lifecycle.py` | Scenario E — wedding create/delete reports Stripe meter events, `/metering/retry-pending` clears pending rows. Exits 0 with a skip banner when no plan is `is_metered=True`. Reusable clock. | `cleanup_planner_metered_verify_state.py` |
+| `verify_performance_baseline.py` | One-planner / one-wedding performance baseline - seeds an isolated paid planner, measures blocking planner-dashboard backend endpoints, calculates load-per-dollar fields, and writes a JSON artifact under `docs/performance/baselines/`. | `cleanup_performance_baseline_state.py` |
 | `test_trial_with_test_clock.py` | Early trial repro snippet predating the Scenario A driver. Kept for ad-hoc debugging; prefer `verify_planner_trial_lifecycle.py`. | _(inline reset section at end of file)_ |
 
 All scenarios from `docs/plans/SUBSCRIPTION_LIFECYCLE_TEST_PLAN.md` (A–E)

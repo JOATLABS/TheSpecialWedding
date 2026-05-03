@@ -130,96 +130,114 @@ export function PaymentHistoryPanel({
     };
   }, [payments, resolvedPayments]);
 
+  const hasAnyFilter =
+    categoryFilter !== 'all' ||
+    methodFilter !== 'all' ||
+    statusFilter !== 'all' ||
+    searchTerm.trim().length > 0;
+
+  const resetFilters = () => {
+    setCategoryFilter('all');
+    setMethodFilter('all');
+    setStatusFilter('all');
+    setSearchTerm('');
+  };
+
+  const hasPayments = payments.length > 0;
+
   return (
     <Card className="p-0 overflow-hidden">
-      <div className="bg-gradient-to-br from-white/80 via-white/70 to-white/50 dark:from-slate-800/80 dark:via-slate-800/70 dark:to-slate-800/50 backdrop-blur-xl p-6 space-y-6">
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="bg-gradient-to-br from-white/80 via-white/70 to-white/50 dark:from-slate-800/80 dark:via-slate-800/70 dark:to-slate-800/50 backdrop-blur-xl p-4 space-y-3">
+        <header className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h2 className="text-xl font-semibold text-wedding-navy dark:text-white">Payment history</h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Audit every vendor transaction and monitor outstanding balances.</p>
+            <h2 className="text-base font-semibold text-wedding-navy dark:text-white">Payment history</h2>
+            <p className="text-xs text-gray-600 dark:text-gray-400">Audit vendor transactions and outstanding balances.</p>
           </div>
           {onRefresh && (
-            <Button type="button" onClick={onRefresh} className="self-start sm:self-auto">
+            <Button type="button" onClick={onRefresh} className="self-start text-sm">
               Refresh
             </Button>
           )}
         </header>
 
-        <section className="grid grid-cols-1 gap-4 rounded-2xl border border-white/40 dark:border-slate-600 bg-white/60 dark:bg-slate-700/60 p-4 text-sm text-gray-700 dark:text-gray-300 shadow-inner">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Recorded</span>
-            <span className="text-base font-semibold text-wedding-navy dark:text-blue-400">{formatCurrency(summary.totalRecorded)}</span>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Cleared</span>
-            <span className="text-base font-semibold text-emerald-600 dark:text-emerald-400">{formatCurrency(summary.totalCompleted)}</span>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Pending</span>
-            <span className="text-base font-semibold text-amber-600 dark:text-amber-400">{formatCurrency(summary.totalPending)}</span>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Last payment</span>
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{summary.lastPaymentLabel}</span>
-          </div>
+        {/* Filter bar — top, inline, single row on wide viewports */}
+        <section className="flex flex-wrap items-center gap-2">
+          <input
+            type="search"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder="Search vendor, notes, or category"
+            className="flex-1 min-w-[180px] rounded-lg border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+          />
+          <select
+            value={categoryFilter}
+            onChange={(event) => setCategoryFilter(event.target.value)}
+            className="rounded-lg border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+          >
+            <option value="all">All categories</option>
+            {categories.map((category) => {
+              const optionValue = category.id;
+              if (!optionValue) return null;
+              return (
+                <option key={optionValue} value={optionValue}>
+                  {category.name}
+                </option>
+              );
+            })}
+          </select>
+          <select
+            value={methodFilter}
+            onChange={(event) => setMethodFilter(event.target.value as PaymentMethodFilter)}
+            className="rounded-lg border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+          >
+            <option value="all">All methods</option>
+            {Object.entries(methodLabels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as PaymentStatusFilter)}
+            className="rounded-lg border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+          >
+            <option value="all">All statuses</option>
+            {Object.entries(statusLabels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
         </section>
 
-        <section className="space-y-4">
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-1">
-            <input
-              type="search"
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Search vendor, notes, or category"
-              className="w-full rounded-xl border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
-            />
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-1">
-              <select
-                value={categoryFilter}
-                onChange={(event) => setCategoryFilter(event.target.value)}
-                className="w-full rounded-xl border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
-              >
-                <option value="all">All categories</option>
-                {categories.map((category) => {
-                  const optionValue = category.id;
-                  if (!optionValue) {
-                    return null;
-                  }
-                  return (
-                    <option key={optionValue} value={optionValue}>
-                      {category.name}
-                    </option>
-                  );
-                })}
-              </select>
+        {/* Totals — single inline row of color-coded dots; only show
+            "Last payment" when there's actually one. */}
+        <section className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-white/40 dark:border-slate-600 bg-white/60 dark:bg-slate-700/60 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 shadow-inner">
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-2 h-2 rounded-full bg-wedding-navy dark:bg-blue-400" aria-hidden />
+            <span className="text-xs text-gray-600 dark:text-gray-400">Recorded</span>
+            <span className="font-semibold text-wedding-navy dark:text-blue-400">{formatCurrency(summary.totalRecorded)}</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" aria-hidden />
+            <span className="text-xs text-gray-600 dark:text-gray-400">Cleared</span>
+            <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatCurrency(summary.totalCompleted)}</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-2 h-2 rounded-full bg-amber-500" aria-hidden />
+            <span className="text-xs text-gray-600 dark:text-gray-400">Pending</span>
+            <span className="font-semibold text-amber-600 dark:text-amber-400">{formatCurrency(summary.totalPending)}</span>
+          </span>
+          {hasPayments && (
+            <span className="flex items-center gap-1.5 ml-auto">
+              <span className="text-xs text-gray-600 dark:text-gray-400">Last payment</span>
+              <span className="font-medium text-gray-700 dark:text-gray-300">{summary.lastPaymentLabel}</span>
+            </span>
+          )}
+        </section>
 
-              <select
-                value={methodFilter}
-                onChange={(event) => setMethodFilter(event.target.value as PaymentMethodFilter)}
-                className="w-full rounded-xl border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
-              >
-                <option value="all">All methods</option>
-                {Object.entries(methodLabels).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as PaymentStatusFilter)}
-                className="w-full rounded-xl border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
-              >
-                <option value="all">All statuses</option>
-                {Object.entries(statusLabels).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+        <section className="space-y-3">
 
           <div className="max-h-[420px] space-y-3 overflow-y-auto pr-2">
             {isLoading && (
@@ -241,9 +259,21 @@ export function PaymentHistoryPanel({
             )}
 
             {!isLoading && !error && filteredPayments.length === 0 && (
-              <div className="rounded-2xl border border-white/40 dark:border-slate-600 bg-white/60 dark:bg-slate-700/60 p-6 text-center text-sm text-gray-600 dark:text-gray-400">
-                <p>No payments match the current filters.</p>
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-500">Try resetting your filters or log a new payment to get started.</p>
+              <div className="rounded-2xl border border-white/40 dark:border-slate-600 bg-white/60 dark:bg-slate-700/60 px-4 py-3 text-center text-sm text-gray-600 dark:text-gray-400">
+                {hasAnyFilter ? (
+                  <>
+                    No payments match these filters.{' '}
+                    <button
+                      type="button"
+                      onClick={resetFilters}
+                      className="font-medium text-wedding-rose hover:text-wedding-gold underline underline-offset-2"
+                    >
+                      Reset
+                    </button>
+                  </>
+                ) : (
+                  <>No payments logged yet.</>
+                )}
               </div>
             )}
 

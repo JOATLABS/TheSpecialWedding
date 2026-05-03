@@ -18,7 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
 os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
-os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
 
 # --- Async Wrappers for mongomock ---
@@ -70,6 +70,9 @@ class AsyncMockCollection:
 
     async def update_one(self, *args, **kwargs):
         return self.collection.update_one(*args, **kwargs)
+
+    async def update_many(self, *args, **kwargs):
+        return self.collection.update_many(*args, **kwargs)
 
     async def delete_one(self, *args, **kwargs):
         return self.collection.delete_one(*args, **kwargs)
@@ -135,9 +138,7 @@ def budget_api_client(monkeypatch):
         async def _override():
             return user
 
-        app.dependency_overrides[budget_api_module.get_current_user_extended] = (
-            _override
-        )
+        app.dependency_overrides[budget_api_module.require_admin_or_planner] = _override
 
     yield client, database, budget_api_module, override_user
 

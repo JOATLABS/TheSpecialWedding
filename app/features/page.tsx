@@ -55,7 +55,7 @@ const comparison: ComparisonRow[] = [
   { feature: 'OTP Guest Access', you: true, honeybook: false, aislePlanner: false, planningPod: false },
   { feature: 'Team Management & Permissions', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: false },
   { feature: 'Invoicing & Online Payments', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: true },
-  { feature: 'Multi-Tenant Agency Tier', you: true, honeybook: 'adjacent', aislePlanner: false, planningPod: false },
+  { feature: 'Enterprise Scaling', you: true, honeybook: 'adjacent', aislePlanner: false, planningPod: false },
   { feature: 'In-App Support & Knowledge Base', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: 'adjacent' },
   { feature: 'Day-of / Onsite Check-In', you: true, honeybook: false, aislePlanner: false, planningPod: true },
 ];
@@ -94,17 +94,17 @@ export default function FeaturesPage() {
             Why The Special Wedding
           </p>
           <h1 className="text-3xl font-semibold text-white sm:text-4xl md:text-5xl leading-tight">
-            {features.length} tools. One platform.<br />Zero tool juggling.
+            Every planning surface.<br />One platform.
           </h1>
           <p className="mt-5 text-base text-slate-300 max-w-2xl mx-auto">
-            AI, the Couple Portal, and SMS reminders sit at the center, with the planner dashboard, inbox, forms, payments, and every operational layer around them designed to work together instead of fighting each other.
+            The planner dashboard, wedding configuration, microsite publishing, gallery management, event timelines, guest pipeline, planner communications, vendor directory, contract canvas, forms, payments, knowledge base, and team controls are designed to work together instead of fighting each other.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <a
               href="#pricing"
               className="rounded-full bg-wedding-rose px-6 py-3 text-base font-semibold text-slate-900 shadow-lg shadow-wedding-rose/30 transition hover:bg-wedding-blush"
             >
-              Start your free trial
+              Start 30-day trial
             </a>
             <Link
               href="/resources"
@@ -127,7 +127,7 @@ export default function FeaturesPage() {
               <div className="relative mb-5 aspect-[16/10] overflow-hidden rounded-2xl border border-white/10 bg-slate-900/70">
                 <Image
                   src={f.image}
-                  alt={`${f.title} screenshot`}
+                  alt={`${f.title} — ${f.tagline}`}
                   fill
                   sizes="(min-width: 1024px) 30vw, (min-width: 640px) 45vw, 90vw"
                   className="object-cover object-top transition duration-500 group-hover:scale-[1.02]"
@@ -219,7 +219,7 @@ export default function FeaturesPage() {
             Replace 10+ subscriptions with one platform.
           </h2>
           <p className="mt-4 text-base text-slate-300">
-            Start free today — no credit card required.
+            Start a 30-day free trial today — no credit card required.
           </p>
           <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
             <Link

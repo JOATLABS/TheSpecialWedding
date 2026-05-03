@@ -163,12 +163,14 @@ async def assign_vendor_to_wedding(
     """
     Assign a vendor from the directory to a wedding.
     Optionally link to a budget category.
+    Root admins bypass the planner-ownership filter (pass ``None``).
     """
     enforce_team_permission(current_user, "manage_vendors")
+    owner_email = None if current_user.is_root_admin else current_user.email
     return await vendor_service.assign_vendor_to_wedding(
         vendor_profile_id=data.vendor_profile_id,
         wedding_id=data.wedding_id,
-        created_by=current_user.email,
+        created_by=owner_email,
         budget_category_id=data.budget_category_id,
         service_notes=data.service_notes,
     )
@@ -192,10 +194,14 @@ async def update_vendor_assignment_status(
     ),
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
-    """Update the status of a vendor assignment"""
+    """Update the status of a vendor assignment.
+
+    Root admins bypass the planner-ownership filter (pass ``None``).
+    """
     enforce_team_permission(current_user, "manage_vendors")
+    owner_email = None if current_user.is_root_admin else current_user.email
     return await vendor_service.update_assignment_status(
-        assignment_id=assignment_id, status=status, created_by=current_user.email
+        assignment_id=assignment_id, status=status, created_by=owner_email
     )
 
 
@@ -250,11 +256,13 @@ async def create_contract(
     Create a new vendor contract.
     Can be created from a template or from scratch.
     Placeholders in templates are auto-populated with vendor/wedding data.
+    Root admins bypass the planner-ownership filter (pass ``None``).
     """
     enforce_team_permission(current_user, "manage_vendors")
     payload = data.model_dump(exclude_none=True)
+    owner_email = None if current_user.is_root_admin else current_user.email
     return await vendor_service.create_contract(
-        created_by=current_user.email,
+        created_by=owner_email,
         **payload,
     )
 
@@ -284,7 +292,11 @@ async def get_contract(
     contract_id: str, current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """Get a specific contract (only contracts created by the current user)"""
-    return await vendor_service.get_contract(contract_id, created_by=current_user.email)
+    return await vendor_service.get_contract(
+        contract_id,
+        created_by=current_user.email,
+        include_couple_contact=True,
+    )
 
 
 @router.post("/contracts/{contract_id}/revisions", tags=["Contracts"])
@@ -396,6 +408,11 @@ async def update_contract_sections(
     "/contracts/{contract_id}/form-data",
     tags=["Contracts"],
     response_model=VendorContractFormDataResponse,
+    # Each VendorContractFormSubmissionSummary uses Field(alias="_id"). Without
+    # response_model_by_alias=True, FastAPI serializes the field as `id` and
+    # the contract-detail UI (which reads `selectedSubmission._id`) gets
+    # undefined → 422 from the apply endpoint.
+    response_model_by_alias=True,
 )
 async def get_vendor_form_data_for_contract(
     contract_id: str, current_user: ExtendedAuthUser = Depends(require_vendor_feature)
@@ -418,13 +435,18 @@ async def apply_form_data_to_contract(
     """
     Apply data from a vendor's form submission to the contract.
     Optionally specify which form fields map to which contract placeholders.
+
+    Scoped to the actor planner unless they are root-admin (root admins
+    pass ``None`` to skip the planner-ownership filter on both the
+    contract and the source form submission).
     """
     enforce_team_permission(current_user, "manage_vendors")
+    owner_email = None if current_user.is_root_admin else current_user.email
     return await vendor_service.apply_form_data_to_contract(
         contract_id=contract_id,
         form_submission_id=data.form_submission_id,
         field_mappings=data.field_mappings,
-        applied_by=current_user.email,
+        applied_by=owner_email,
     )
 
 
@@ -454,10 +476,19 @@ async def upload_contract_document(
     document_type: str = Query("signed", description="Type: draft, signed, attachment"),
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
-    """Upload a contract document (PDF, etc.)"""
+    """Upload a contract document (PDF, etc.).
+
+    Scoped to the actor planner unless they are root-admin (root admins pass
+    ``None`` to skip the ownership filter). Mirrors the pattern used by
+    /admin/directory and other planner-scoped routes in this module.
+    """
     enforce_team_permission(current_user, "manage_vendors")
+    owner_email = None if current_user.is_root_admin else current_user.email
     return await vendor_service.upload_contract_document(
-        contract_id=contract_id, file=file, document_type=document_type
+        contract_id=contract_id,
+        file=file,
+        document_type=document_type,
+        created_by=owner_email,
     )
 
 
@@ -494,13 +525,18 @@ async def list_payment_milestones(
     ),
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
-    """List payment milestones with optional filters"""
+    """List payment milestones with optional filters.
+
+    Root admins bypass the planner-ownership filter (pass ``None``);
+    every other caller is scoped to milestones they own.
+    """
     enforce_team_permission(current_user, "manage_vendors")
+    owner_email = None if current_user.is_root_admin else current_user.email
     return await vendor_service.get_payment_milestones(
         contract_id=contract_id,
         wedding_id=wedding_id,
         status=status,
-        created_by=current_user.email,
+        created_by=owner_email,
     )
 
 
@@ -575,13 +611,26 @@ async def get_vendor_management_dashboard(
     Get vendor management dashboard summary.
     Returns counts, pending items, and recent activity.
     Uses efficient count queries instead of loading all documents.
+
+    Root admins bypass the planner-ownership filter (pass ``None`` so
+    the aggregation spans every planner); planners see only their own
+    counts. Pre-fix the milestone aggregation skipped this scope and
+    summed across every other planner's milestones.
     """
+    # Root admin sees every planner's counts; planners see only their own.
+    owner_email = None if current_user.is_root_admin else current_user.email
+
     # Get counts efficiently using aggregation
     counts = await vendor_service.get_dashboard_counts(
-        created_by=current_user.email, wedding_id=wedding_id
+        created_by=owner_email, wedding_id=wedding_id
     )
 
-    # Only fetch limited recent items for display
+    # Only fetch limited recent items for display. ``get_contracts``
+    # still requires a concrete email (root-admin bypass on that
+    # service method is a separate Ticket #1-shape change, out of
+    # scope here), so root admins get their own (typically empty)
+    # recent-contracts list — the leak we're fixing here is the
+    # aggregation totals, not the recent list.
     recent_contracts = await vendor_service.get_contracts(
         created_by=current_user.email, wedding_id=wedding_id, limit=5
     )
@@ -589,7 +638,7 @@ async def get_vendor_management_dashboard(
     upcoming_milestones = await vendor_service.get_payment_milestones(
         wedding_id=wedding_id,
         status="pending",
-        created_by=current_user.email,
+        created_by=owner_email,
     )
 
     return {
@@ -623,6 +672,7 @@ async def upload_contract_pdf(
     """
     Upload an existing PDF contract instead of using templates.
     The planner can upload their own attorney-drafted contract.
+    Root admins bypass the planner-ownership filter (pass ``None``).
     """
     enforce_team_permission(current_user, "manage_vendors")
     service_date_parsed = None
@@ -634,13 +684,14 @@ async def upload_contract_pdf(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid service_date format")
 
+    owner_email = None if current_user.is_root_admin else current_user.email
     return await vendor_service.upload_contract_pdf(
         file=file,
         wedding_id=wedding_id,
         vendor_profile_id=vendor_profile_id,
         contract_title=contract_title,
         total_amount=total_amount,
-        created_by=current_user.email,
+        created_by=owner_email,
         deposit_amount=deposit_amount,
         service_date=service_date_parsed,
         service_location=service_location,

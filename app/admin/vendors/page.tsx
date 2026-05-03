@@ -459,51 +459,24 @@ export default function VendorManagementPage() {
         {/* Overview Tab */}
         {activeTab === 'overview' && dashboard && (
           <div className="space-y-6">
-            {/* Stats Grid */}
+            {/* Stats Grid — compact cards: number → label → optional sub-line.
+                Icon chips intentionally omitted; matches the Money page pattern. */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white dark:bg-slate-800/95 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                    <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                    </svg>
-                  </div>
-                </div>
+              <div className="bg-white dark:bg-slate-800/95 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
                 <div className="text-2xl font-bold text-slate-900 dark:text-white">{dashboard.vendors.total}</div>
                 <div className="text-sm text-slate-500 dark:text-slate-400">Total Vendors</div>
                 <div className="text-xs text-blue-600 mt-1">{dashboard.vendors.preferred} preferred</div>
               </div>
-              <div className="bg-white dark:bg-slate-800/95 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-                    <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </div>
-                </div>
+              <div className="bg-white dark:bg-slate-800/95 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
                 <div className="text-2xl font-bold text-slate-900 dark:text-white">{dashboard.contracts.total}</div>
                 <div className="text-sm text-slate-500 dark:text-slate-400">Contracts</div>
                 <div className="text-xs text-purple-600 mt-1">{dashboard.contracts.signed} signed</div>
               </div>
-              <div className="bg-white dark:bg-slate-800/95 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                    <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                </div>
+              <div className="bg-white dark:bg-slate-800/95 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
                 <div className="text-2xl font-bold text-slate-900 dark:text-white">${dashboard.payments.total_paid.toLocaleString()}</div>
                 <div className="text-sm text-slate-500 dark:text-slate-400">Total Paid</div>
               </div>
-              <div className="bg-white dark:bg-slate-800/95 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
-                    <svg className="w-5 h-5 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                </div>
+              <div className="bg-white dark:bg-slate-800/95 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
                 <div className="text-2xl font-bold text-slate-900 dark:text-white">${dashboard.payments.total_due.toLocaleString()}</div>
                 <div className="text-sm text-slate-500 dark:text-slate-400">Outstanding</div>
                 <div className="text-xs text-orange-600 mt-1">{dashboard.payments.overdue_count} overdue</div>
@@ -720,26 +693,26 @@ export default function VendorManagementPage() {
                     key={vendor._id}
                     className="border border-gray-200 dark:border-gray-700 rounded-xl p-4 hover:shadow-lg transition-shadow"
                   >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-gradient-to-br from-wedding-rose to-wedding-gold rounded-lg flex items-center justify-center text-white font-bold">
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="w-12 h-12 bg-gradient-to-br from-wedding-rose to-wedding-gold rounded-lg flex items-center justify-center text-white font-bold shrink-0">
                           {vendor.business_name.charAt(0)}
                         </div>
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <div className="font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                            {vendor.business_name}
+                            <span className="truncate" title={vendor.business_name}>{vendor.business_name}</span>
                             {vendor.is_preferred && (
-                              <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+                              <svg className="w-4 h-4 text-yellow-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                                 <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                               </svg>
                             )}
                           </div>
-                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                          <div className="text-sm text-gray-500 dark:text-gray-400 truncate">
                             {getCategoryLabel(vendor.service_category, vendor.custom_service_category)}
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 shrink-0">
                          <button
                            onClick={() => {
                              setSelectedVendorForPayment({

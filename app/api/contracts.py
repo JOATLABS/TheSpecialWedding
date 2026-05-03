@@ -1073,6 +1073,23 @@ async def get_public_contract(token: str, request: Request):
         if contract is None:
             raise HTTPException(status_code=404, detail="Contract not found")
 
+        scheduled_payments = []
+        contract_id = contract.get("id")
+        if contract_id is not None:
+            payments = await contract_service.get_contract_payments(str(contract_id))
+            scheduled_payments = [
+                {
+                    "id": p.get("id"),
+                    "name": p.get("name"),
+                    "amount": p.get("amount"),
+                    "currency": p.get("currency"),
+                    "due_date": p.get("due_date"),
+                    "status": p.get("status"),
+                    "paid_at": p.get("paid_at"),
+                }
+                for p in payments
+            ]
+
         # Remove sensitive planner data for public view
         public_contract = {
             "id": contract.get("id"),
@@ -1100,6 +1117,7 @@ async def get_public_contract(token: str, request: Request):
             "planner_logo": contract.get("planner_logo"),
             "payment_method_last4": contract.get("payment_method_last4"),
             "payment_method_brand": contract.get("payment_method_brand"),
+            "scheduled_payments": scheduled_payments,
         }
 
         return {"contract": public_contract}

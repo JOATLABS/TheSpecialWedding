@@ -70,7 +70,7 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({
       return;
     }
 
-    const fallbackContact = process.env.NEXT_PUBLIC_CONTACT_URL || 'mailto:sales@specialwedding.com';
+    const fallbackContact = process.env.NEXT_PUBLIC_CONTACT_URL || 'mailto:sales@thespecialwedding.io';
     const target = config.contact_url || fallbackContact;
 
     if (!target) {
@@ -179,7 +179,7 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({
           <p>
             Prefer to talk first?{' '}
             <Link
-              href={config.contact_url || process.env.NEXT_PUBLIC_CONTACT_URL || 'mailto:sales@specialwedding.com'}
+              href={config.contact_url || process.env.NEXT_PUBLIC_CONTACT_URL || 'mailto:sales@thespecialwedding.io'}
               className="font-semibold text-slate-900 underline decoration-slate-300 underline-offset-4 hover:decoration-slate-500"
             >
               Connect with our team

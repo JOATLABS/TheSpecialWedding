@@ -30,6 +30,43 @@ PAYABLE_PAYMENT_INTENT_STATUSES = {
 }
 
 
+def _stripe_metadata_to_dict(parent: object) -> dict:
+    """Safely coerce a Stripe object's ``metadata`` field to a plain dict.
+
+    The naive ``dict(stripe_object)`` pattern blows up in modern Stripe
+    Python SDK versions because ``StripeObject`` no longer subclasses
+    ``dict`` — its iteration yields integer indices that, when fed back
+    through ``__getitem__``, raise ``KeyError(0)``.  This helper handles
+    every shape we've seen: ``None``, a plain ``dict``, a ``StripeObject``
+    that exposes ``.to_dict()``, or anything iterable via ``.items()``.
+
+    Returns ``{}`` on any failure rather than raising — metadata is
+    optional enrichment, not load-bearing for the response.
+    """
+    metadata = getattr(parent, "metadata", None)
+    if metadata is None:
+        return {}
+    if isinstance(metadata, dict):
+        return metadata
+    # Modern Stripe SDK exposes .to_dict() on StripeObject.
+    to_dict = getattr(metadata, "to_dict", None)
+    if callable(to_dict):
+        try:
+            converted = to_dict()
+            if isinstance(converted, dict):
+                return converted
+        except Exception:
+            pass
+    # Fallback: any mapping-like object that supports .items().
+    items = getattr(metadata, "items", None)
+    if callable(items):
+        try:
+            return {str(k): v for k, v in items()}
+        except Exception:
+            pass
+    return {}
+
+
 # ==================== REQUEST MODELS ====================
 
 
@@ -129,15 +166,6 @@ class ConnectOnboardRequest(BaseModel):
     country: str = Field(default="US", description="Two-letter country code")
     return_url: str = Field(..., description="Return URL after onboarding")
     refresh_url: str = Field(..., description="Refresh URL if onboarding fails")
-
-
-class VendorPaymentRequest(BaseModel):
-    """Request model for paying a vendor"""
-
-    vendor_user_id: str = Field(..., description="User ID of the vendor to pay")
-    amount: float = Field(..., description="Payment amount in dollars", gt=0)
-    currency: str = Field(default="usd", description="Currency code")
-    description: Optional[str] = Field(None, description="Payment description")
 
 
 # ==================== CHECKOUT SESSION ENDPOINTS ====================
@@ -267,11 +295,9 @@ async def get_checkout_session(
             try:
                 sub = stripe.Subscription.retrieve(session.subscription)
                 result["subscription_status"] = sub.status
-                sub_metadata = getattr(sub, "metadata", {}) or {}
-                result["billing_interval"] = (
-                    sub_metadata.get("billing_interval", "monthly")
-                    if isinstance(sub_metadata, dict)
-                    else dict(sub_metadata).get("billing_interval", "monthly")
+                sub_metadata = _stripe_metadata_to_dict(sub)
+                result["billing_interval"] = sub_metadata.get(
+                    "billing_interval", "monthly"
                 )
 
                 if sub.current_period_end:
@@ -285,16 +311,12 @@ async def get_checkout_session(
                 )
 
         # ── Enrich with plan details from local DB ──
-        session_metadata = getattr(session, "metadata", None) or {}
-        plan_id = (
-            (
-                session_metadata.get("plan_id")
-                if isinstance(session_metadata, dict)
-                else dict(session_metadata).get("plan_id")
-            )
-            if session_metadata
-            else None
-        )
+        # ``session.metadata`` is a Stripe StripeObject in modern SDK
+        # versions; ``dict(stripe_object)`` raises ``KeyError(0)`` because
+        # the object iterates over integer indices instead of (k,v) pairs.
+        # Use ``_stripe_metadata_to_dict`` for safe dict coercion.
+        session_metadata = _stripe_metadata_to_dict(session)
+        plan_id = session_metadata.get("plan_id") or None
         if plan_id:
             try:
                 plan = await mongo.db["subscription_plans"].find_one({"_id": plan_id})
@@ -344,9 +366,19 @@ async def get_checkout_session(
         }
 
     except Exception as e:
-        logger.error(f"Error retrieving checkout session: {str(e)}")
+        # Full traceback + exception type so debugging doesn't depend on
+        # ``str(e)`` (which on some Stripe SDK exceptions is just the
+        # error code, e.g. ``"0"``, with no human-readable message).
+        logger.error(
+            f"Error retrieving checkout session {session_id}: "
+            f"type={type(e).__name__} repr={e!r}",
+            exc_info=True,
+        )
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve session: {str(e)}"
+            status_code=500,
+            detail=(
+                f"Failed to retrieve session: {type(e).__name__}: {str(e) or repr(e)}"
+            ),
         )
 
 
@@ -614,80 +646,6 @@ async def get_connect_status(
     except Exception as e:
         logger.error(f"Error checking connect status: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to check status: {str(e)}")
-
-
-@router.post("/pay-vendor")
-async def pay_vendor(
-    request: VendorPaymentRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
-):
-    """
-    Create a payment intent for a Planner to pay a Vendor.
-    This handles resolving the vendor from either a User ID or a VendorProfile ID.
-    """
-    try:
-        sender_id = str(current_user.user_data.get("_id"))
-
-        from app.core.database import mongo
-
-        # 1. Try finding as User first (direct ID match)
-        vendor_user = await mongo.db["users"].find_one(
-            {"_id": ObjectId(request.vendor_user_id)}
-        )
-
-        # 2. If not found, try finding as VendorProfile and look up associated user by email
-        if not vendor_user:
-            # Assuming vendors collection name is 'vendor_directory' or 'vendors'.
-            # In vendor.py, it's VendorProfile.
-            # Based on services/vendorManagementApi.ts, endpoint is /admin/directory, so collection likely 'vendor_directory' or similar.
-            # I will check mongo collection name via introspection or common convention.
-            # Given vendor.py doesn't specify collection, I'll assume 'vendor_directory' or 'vendors'.
-            # Let's try 'vendor_directory' first as per API path.
-
-            vendor_profile = await mongo.db["vendor_directory"].find_one(
-                {"_id": ObjectId(request.vendor_user_id)}
-            )
-
-            if vendor_profile:
-                vendor_email = vendor_profile.get("email")
-                if vendor_email:
-                    vendor_user = await mongo.db["users"].find_one(
-                        {"email": vendor_email}
-                    )
-
-        if not vendor_user:
-            raise HTTPException(
-                status_code=404,
-                detail="Vendor user account not found. The vendor must be a registered user to receive payments.",
-            )
-
-        vendor_connect_id = vendor_user.get("stripe_connect_id")
-        if not vendor_connect_id:
-            raise HTTPException(
-                status_code=400,
-                detail="Vendor has not connected their Stripe account to receive payments.",
-            )
-
-        # Verify sender permission (if needed, e.g. checking budget)
-        # For now, we assume if they pay, they pay.
-
-        result = await stripe_service.create_vendor_payment_intent(
-            sender_user_id=sender_id,
-            vendor_connect_id=vendor_connect_id,
-            amount=request.amount,
-            currency=request.currency,
-            description=request.description or "",
-        )
-
-        return {"status": "success", "payment_intent": result}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating vendor payment: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to create payment: {str(e)}"
-        )
 
 
 # ==================== PAYMENT COLLECTION FOR COUPLES ====================

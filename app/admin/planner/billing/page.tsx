@@ -34,10 +34,9 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
-import StripeConnectCard from './connect';
-import { CollectPaymentModal } from '@/components/payments/CollectPaymentModal';
 import { usePagination } from '@/admin/hooks/usePagination';
 import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
+import PayoutsCard from './PayoutsCard';
 
 interface SubscriptionPlan {
   _id: string;
@@ -78,6 +77,15 @@ interface UsageStats {
   storage_used_gb: number;
   ai_credits_used: number;
   ai_credits_remaining: number;
+  // AI credits are soft-capped with metered overage billing. When `overage`
+  // is true, `overage_credits` is the count past the included allotment and
+  // `overage_cost_cents` is the running charge for the current cycle at
+  // `overage_price_per_credit_usd`. The backend computes all three via
+  // SubscriptionService.check_usage_limits("ai_credits"); see /admin/ai/credits.
+  ai_overage?: boolean;
+  ai_overage_credits?: number;
+  ai_overage_cost_cents?: number;
+  ai_overage_price_per_credit_usd?: number;
 }
 
 interface Invoice {
@@ -97,16 +105,6 @@ interface BillingAlert {
   actionLabel?: string;
 }
 
-interface PaymentRequest {
-  _id: string;
-  amount: number;
-  currency: string;
-  status: string;
-  description: string;
-  created_at: string;
-  wedding_title?: string;
-}
-
 const normalizeSubscription = (subscription: UserSubscription): UserSubscription => ({
   ...subscription,
   status: normalizeSubscriptionStatus(subscription.status),
@@ -119,7 +117,6 @@ export default function PlannerBillingPage() {
   const portalRetryCountRef = useRef(0);
   const { userProfile, token, fetchUserProfile } = useAdmin();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'subscription' | 'client_payments'>('subscription');
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [currentSubscription, setCurrentSubscription] = useState<UserSubscription | null>(null);
   const [currentPlan, setCurrentPlan] = useState<SubscriptionPlan | null>(null);
@@ -128,13 +125,15 @@ export default function PlannerBillingPage() {
     total_guests: 0,
     storage_used_gb: 0,
     ai_credits_used: 0,
-    ai_credits_remaining: 100
+    ai_credits_remaining: 100,
+    ai_overage: false,
+    ai_overage_credits: 0,
+    ai_overage_cost_cents: 0,
+    ai_overage_price_per_credit_usd: 0,
   });
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
-  const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
   const [billingAlerts, setBillingAlerts] = useState<BillingAlert[]>([]);
-  const [showCreatePaymentModal, setShowCreatePaymentModal] = useState(false);
   const paginationInvoices = usePagination({ initialItemsPerPage: 50 });
   const requestedPlanId = searchParams.get('plan');
   const requestedInterval = searchParams.get('interval') === 'yearly' ? 'yearly' : 'monthly';
@@ -321,7 +320,7 @@ export default function PlannerBillingPage() {
       // S6: Load AI credit usage from dedicated endpoint
       try {
         const creditsResponse = await fetch(
-          `${baseUrl}/ai/credits`,
+          `${baseUrl}/admin/ai/credits`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -333,10 +332,24 @@ export default function PlannerBillingPage() {
 
         if (creditsResponse.ok) {
           const creditsData = await creditsResponse.json();
+          // The `/admin/ai/credits` endpoint now passes through the soft-cap
+          // overage shape from SubscriptionService.check_usage_limits().
+          // `credits_used` is preferred over the computed diff because the
+          // backend resolves it via live aggregation on `ai_usage_log`,
+          // which is the canonical source; the counter can drift.
+          const used =
+            typeof creditsData.credits_used === 'number'
+              ? creditsData.credits_used
+              : (creditsData.credits_limit || 0) - (creditsData.credits_remaining || 0);
           setUsageStats(prev => ({
             ...prev,
-            ai_credits_used: (creditsData.credits_limit || 0) - (creditsData.credits_remaining || 0),
-            ai_credits_remaining: creditsData.credits_remaining || 0
+            ai_credits_used: used,
+            ai_credits_remaining: creditsData.credits_remaining || 0,
+            ai_overage: Boolean(creditsData.overage),
+            ai_overage_credits: creditsData.overage_credits || 0,
+            ai_overage_cost_cents: creditsData.overage_cost_cents || 0,
+            ai_overage_price_per_credit_usd:
+              creditsData.overage_price_per_credit_usd || 0,
           }));
         }
       } catch (error) {
@@ -368,27 +381,6 @@ export default function PlannerBillingPage() {
         }
       } catch (error) {
         console.warn('Invoices not available:', error);
-      }
-
-      // Load client payment requests
-      try {
-        const requestsResponse = await fetch(
-          `${baseUrl}/stripe/payment-requests`,
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            },
-            credentials: 'include'
-          }
-        );
-
-        if (requestsResponse.ok) {
-          const requestsData = await requestsResponse.json();
-          setPaymentRequests(requestsData);
-        }
-      } catch (error) {
-        console.warn('Payment requests fetch failed:', error);
       }
 
     } catch (error) {
@@ -641,11 +633,6 @@ export default function PlannerBillingPage() {
   const handleUpdatePayment = () => openBillingPortal('payment_method_update', 'Opening payment settings...');
   const handleCancelSubscription = () => openBillingPortal('subscription_cancel', 'Opening cancellation page...');
   const handleManageBilling = () => openBillingPortal(undefined, 'Opening billing portal...');
-
-  const handlePaymentCreated = (newPayment: any) => {
-    // Refresh list
-    loadData();
-  };
 
   const handleSubscribe = async (planId: string, interval: 'monthly' | 'yearly' = 'monthly') => {
     try {
@@ -993,32 +980,8 @@ export default function PlannerBillingPage() {
         description="Manage your subscription, payment methods, and billing history"
       />
 
-      {/* Tabs */}
-      <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6">
-        <button
-          className={`px-4 py-2 font-medium text-sm transition-colors ${
-            activeTab === 'subscription'
-              ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
-              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-          }`}
-          onClick={() => setActiveTab('subscription')}
-        >
-          My Subscription
-        </button>
-        <button
-          className={`px-4 py-2 font-medium text-sm transition-colors ${
-            activeTab === 'client_payments'
-              ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
-              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-          }`}
-          onClick={() => setActiveTab('client_payments')}
-        >
-          Client Payments
-        </button>
-      </div>
-
       {/* Billing Alerts */}
-      {activeTab === 'subscription' && billingAlerts.length > 0 && (
+      {billingAlerts.length > 0 && (
         <div className="space-y-3">
           {billingAlerts.map((alert, index) => (
             <div
@@ -1081,8 +1044,11 @@ export default function PlannerBillingPage() {
         {/* Left Column - Subscription & Payment */}
         <div className="lg:col-span-2 space-y-6 min-w-0">
 
-          {activeTab === 'subscription' ? (
-            <>
+          {/* Payouts (Stripe Connect) — gates the planner's ability to
+              collect from couples; sits above subscription because without
+              payouts set up, there's no point in the rest. */}
+          <PayoutsCard />
+
           {/* Current Subscription */}
           <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
             <CardHeader className="pb-4">
@@ -1282,65 +1248,10 @@ export default function PlannerBillingPage() {
               )}
             </CardContent>
           </Card>
-          </>
-          ) : (
-            // Client Payments Tab Content
-            <>
-              {/* Hide Connect card for root admin - they don't collect client payments */}
-              {!userProfile?.is_root_admin && <StripeConnectCard />}
-
-              <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
-                <CardHeader className="pb-4 flex flex-row items-center justify-between">
-                  <CardTitle className="text-gray-900 dark:text-gray-100">Payment Requests</CardTitle>
-                  <Button onClick={() => setShowCreatePaymentModal(true)}>
-                    <CreditCard className="w-4 h-4 mr-2" />
-                    New Request
-                  </Button>
-                </CardHeader>
-                <CardContent>
-                  {paymentRequests.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                      <p>No payment requests created yet.</p>
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                      {paymentRequests.map((req) => (
-                        <div key={req._id} className="flex items-center justify-between py-3">
-                          <div>
-                            <p className="font-medium text-gray-900 dark:text-gray-100">
-                              {req.description || 'Payment Request'}
-                            </p>
-                            <p className="text-sm text-gray-500">
-                              {formatDate(req.created_at)}
-                              {req.wedding_title && ` • ${req.wedding_title}`}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-medium text-gray-900 dark:text-gray-100">
-                              ${req.amount.toFixed(2)} {req.currency.toUpperCase()}
-                            </p>
-                            <Badge className={
-                              req.status === 'succeeded' ? 'bg-green-100 text-green-700' :
-                              req.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                              'bg-gray-100 text-gray-700'
-                            }>
-                              {req.status}
-                            </Badge>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </>
-          )}
         </div>
 
         {/* Right Column - Usage & Quick Actions */}
         <div className="space-y-6 min-w-0 overflow-hidden">
-          {activeTab === 'subscription' && (
-            <>
           {/* Usage This Period */}
           <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
             <CardHeader className="pb-4">
@@ -1404,7 +1315,11 @@ export default function PlannerBillingPage() {
                 </div>
               </div>
 
-              {/* AI Credits */}
+              {/* AI Credits — soft-capped with metered overage.
+                  When usage exceeds the monthly allotment, `ai_overage` is
+                  true and the running overage cost is surfaced inline. The
+                  bar shows 100% filled in that case, with a distinct color
+                  so the planner can tell they're billing past plan. */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -1412,15 +1327,47 @@ export default function PlannerBillingPage() {
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">AI Credits</span>
                   </div>
                   <span className="text-sm text-gray-600 dark:text-gray-400">
-                    {usageStats.ai_credits_remaining} / {currentPlan.ai_credits_monthly}
+                    {/* Display "used / limit". In overage we cap the
+                        numerator at the included allotment so the
+                        included-credits ratio reads cleanly; the extra
+                        credits are surfaced in the orange callout below. */}
+                    {usageStats.ai_overage
+                      ? `${currentPlan.ai_credits_monthly} / ${currentPlan.ai_credits_monthly}`
+                      : `${usageStats.ai_credits_used} / ${currentPlan.ai_credits_monthly}`}
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                   <div
-                    className="h-2 rounded-full transition-all bg-blue-500"
-                    style={{ width: `${(usageStats.ai_credits_remaining / currentPlan.ai_credits_monthly) * 100}%` }}
+                    className={`h-2 rounded-full transition-all ${
+                      usageStats.ai_overage ? 'bg-orange-500' : 'bg-blue-500'
+                    }`}
+                    style={{
+                      width: usageStats.ai_overage
+                        ? '100%'
+                        : `${Math.min(
+                            100,
+                            (usageStats.ai_credits_used /
+                              (currentPlan.ai_credits_monthly || 1)) *
+                              100,
+                          )}%`,
+                    }}
                   />
                 </div>
+                {usageStats.ai_overage && (
+                  <div className="mt-2 rounded-lg border border-orange-300 bg-orange-50 px-3 py-2 text-xs text-orange-800 dark:border-orange-900/40 dark:bg-orange-950/30 dark:text-orange-200">
+                    <p className="font-semibold">Overage billing active</p>
+                    <p className="mt-0.5">
+                      {(usageStats.ai_overage_credits ?? 0).toLocaleString()} extra credit
+                      {(usageStats.ai_overage_credits ?? 0) === 1 ? '' : 's'} this cycle ·{' '}
+                      <span className="font-semibold">
+                        ${((usageStats.ai_overage_cost_cents ?? 0) / 100).toFixed(2)}
+                      </span>{' '}
+                      at $
+                      {(usageStats.ai_overage_price_per_credit_usd ?? 0).toFixed(3)} per
+                      credit. Charged on next invoice.
+                    </p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1469,16 +1416,8 @@ export default function PlannerBillingPage() {
               </div>
             </CardContent>
           </Card>
-          </>
-          )}
         </div>
       </div>
-
-      <CollectPaymentModal
-        open={showCreatePaymentModal}
-        onClose={() => setShowCreatePaymentModal(false)}
-        onPaymentCreated={handlePaymentCreated}
-      />
     </div>
   );
 }

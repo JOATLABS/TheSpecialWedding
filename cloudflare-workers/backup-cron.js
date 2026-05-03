@@ -37,8 +37,15 @@ const worker = {
 		console.log('Starting daily backup cron job...');
 
 		try {
-			// Trigger backup endpoint on your VPS (longer timeout for backups)
-			const response = await fetchWithTimeout(`${env.NEXT_PUBLIC_API_BASE_URL}/backup/trigger`, {
+			// Trigger backup endpoint on your VPS (longer timeout for backups).
+			//
+			// The backup router (app/api/admin_backup.py) declares
+			// `prefix="/backup"`, but is mounted under `/admin/` in
+			// app/main.py:882 along with every other admin router. The full
+			// production path is therefore `/admin/backup/trigger`. Hitting
+			// the un-prefixed `/backup/trigger` returns 404 and was the
+			// reason every cron run errored out.
+			const response = await fetchWithTimeout(`${env.NEXT_PUBLIC_API_BASE_URL}/admin/backup/trigger`, {
 				method: 'POST',
 				headers: {
 					'Authorization': `Bearer ${env.BACKUP_SECRET}`,

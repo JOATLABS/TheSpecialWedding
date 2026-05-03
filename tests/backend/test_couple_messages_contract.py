@@ -136,6 +136,17 @@ class _FakeMessagesCollection:
         return True
 
 
+class _FakeUpdatesCollection:
+    """Fake for `mongo.db['couple_updates']`."""
+
+    def __init__(self) -> None:
+        self.insert_calls: list[dict] = []
+
+    async def insert_one(self, doc: dict) -> SimpleNamespace:
+        self.insert_calls.append(copy.deepcopy(doc))
+        return SimpleNamespace(inserted_id=ObjectId())
+
+
 class _FakeAggregateCursor:
     async def to_list(self, length: int | None = None) -> list[dict]:
         return []
@@ -178,16 +189,32 @@ class _FakeDB:
         self,
         messages: _FakeMessagesCollection,
         couples: _FakeCouplesCollection | None = None,
+        updates: _FakeUpdatesCollection | None = None,
     ) -> None:
         self._messages = messages
         self._couples = couples or _FakeCouplesCollection()
+        self._updates = updates or _FakeUpdatesCollection()
 
     def __getitem__(self, name: str) -> Any:
         if name == "couple_messages":
             return self._messages
         if name == "couple_users":
             return self._couples
+        if name == "couple_updates":
+            return self._updates
         raise KeyError(name)
+
+
+class _ImmediateBestEffort:
+    async def run(self, coro_factory):
+        try:
+            return await coro_factory()
+        except Exception:
+            return None
+
+
+def _immediate_best_effort(**_kwargs) -> _ImmediateBestEffort:
+    return _ImmediateBestEffort()
 
 
 # ---------------------------------------------------------------------------
@@ -568,6 +595,228 @@ async def test_planner_send_stamps_planner_role_and_email(
     assert inserted["sender_role"] == SENDER_ROLE_PLANNER
     assert inserted["sender_email"] == "planner@example.com"
     assert inserted["sender_name"] == "Pat Planner"
+
+
+@pytest.mark.asyncio
+async def test_planner_send_sends_best_effort_push_to_couple_principal(
+    planner_user: ExtendedAuthUser,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    messages = _FakeMessagesCollection()
+    couples = _FakeCouplesCollection(
+        [
+            {
+                "_id": "couple-1",
+                "email": "couple@example.com",
+                "wedding_id": "wedding-1",
+                "is_active": True,
+                "setup_completed": True,
+                "wedding_archived": False,
+            }
+        ]
+    )
+    monkeypatch.setattr(
+        couple_portal_api,
+        "mongo",
+        SimpleNamespace(db=_FakeDB(messages, couples)),
+    )
+    monkeypatch.setattr(
+        couple_portal_api,
+        "check_wedding_access",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        couple_portal_api,
+        "_broadcast_couple_message_change",
+        AsyncMock(return_value=None),
+    )
+    send_notification = AsyncMock(return_value={"success": True, "sent": 1})
+    monkeypatch.setattr(
+        couple_portal_api,
+        "web_push_service",
+        SimpleNamespace(enabled=True, send_notification=send_notification),
+    )
+
+    data = couple_portal_api.PlannerSendMessageRequest(
+        wedding_id="wedding-1",
+        content="Planner reply for the couple",
+    )
+
+    response = await couple_portal_api.planner_send_message(
+        data=data,
+        current_user=planner_user,
+    )
+
+    assert response["message"] == "Message sent"
+    send_notification.assert_awaited_once()
+    assert send_notification.await_args.kwargs["user_id"] == "couple::couple-1"
+    assert (
+        send_notification.await_args.kwargs["title"] == "New message from Pat Planner"
+    )
+    assert (
+        send_notification.await_args.kwargs["url"] == "/couple/dashboard?section=inbox"
+    )
+    assert send_notification.await_args.kwargs["tag"] == "couple_message"
+
+
+@pytest.mark.asyncio
+async def test_planner_send_still_succeeds_when_couple_push_fails(
+    planner_user: ExtendedAuthUser,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    messages = _FakeMessagesCollection()
+    couples = _FakeCouplesCollection(
+        [
+            {
+                "_id": "couple-1",
+                "email": "couple@example.com",
+                "wedding_id": "wedding-1",
+                "is_active": True,
+                "setup_completed": True,
+                "wedding_archived": False,
+            }
+        ]
+    )
+    monkeypatch.setattr(
+        couple_portal_api,
+        "mongo",
+        SimpleNamespace(db=_FakeDB(messages, couples)),
+    )
+    monkeypatch.setattr(
+        couple_portal_api,
+        "check_wedding_access",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        couple_portal_api,
+        "_broadcast_couple_message_change",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(couple_portal_api, "best_effort", _immediate_best_effort)
+    monkeypatch.setattr(
+        couple_portal_api,
+        "web_push_service",
+        SimpleNamespace(
+            enabled=True,
+            send_notification=AsyncMock(side_effect=RuntimeError("push provider down")),
+        ),
+    )
+
+    data = couple_portal_api.PlannerSendMessageRequest(
+        wedding_id="wedding-1",
+        content="This message must still persist",
+    )
+
+    response = await couple_portal_api.planner_send_message(
+        data=data,
+        current_user=planner_user,
+    )
+
+    assert response["message"] == "Message sent"
+    assert len(messages.insert_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_planner_update_sends_best_effort_push_to_couple_principal(
+    planner_user: ExtendedAuthUser,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    updates = _FakeUpdatesCollection()
+    couples = _FakeCouplesCollection(
+        [
+            {
+                "_id": "couple-1",
+                "email": "couple@example.com",
+                "wedding_id": "wedding-1",
+                "is_active": True,
+                "setup_completed": True,
+                "wedding_archived": False,
+            }
+        ]
+    )
+    monkeypatch.setattr(
+        couple_portal_api,
+        "mongo",
+        SimpleNamespace(db=_FakeDB(_FakeMessagesCollection(), couples, updates)),
+    )
+    monkeypatch.setattr(
+        couple_portal_api,
+        "check_wedding_access",
+        AsyncMock(return_value=True),
+    )
+    send_notification = AsyncMock(return_value={"success": True, "sent": 1})
+    monkeypatch.setattr(
+        couple_portal_api,
+        "web_push_service",
+        SimpleNamespace(enabled=True, send_notification=send_notification),
+    )
+
+    data = couple_portal_api.CreateUpdateRequest(
+        wedding_id="wedding-1",
+        title="Timeline updated",
+        content="The ceremony arrival time moved to 4:30 PM.",
+    )
+
+    response = await couple_portal_api.create_update(
+        data=data,
+        current_user=planner_user,
+    )
+
+    assert "update_id" in response
+    assert len(updates.insert_calls) == 1
+    send_notification.assert_awaited_once()
+    assert send_notification.await_args.kwargs["user_id"] == "couple::couple-1"
+    assert send_notification.await_args.kwargs["title"] == "Timeline updated"
+    assert send_notification.await_args.kwargs["body"] == (
+        "The ceremony arrival time moved to 4:30 PM."
+    )
+    assert (
+        send_notification.await_args.kwargs["url"] == "/couple/dashboard?section=inbox"
+    )
+    assert send_notification.await_args.kwargs["tag"] == "couple_update"
+
+
+@pytest.mark.asyncio
+async def test_planner_update_still_succeeds_when_couple_push_lookup_fails(
+    planner_user: ExtendedAuthUser,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    updates = _FakeUpdatesCollection()
+    failing_couples = SimpleNamespace(
+        find_one=AsyncMock(side_effect=RuntimeError("couple lookup unavailable"))
+    )
+    monkeypatch.setattr(
+        couple_portal_api,
+        "mongo",
+        SimpleNamespace(
+            db=_FakeDB(_FakeMessagesCollection(), failing_couples, updates)
+        ),
+    )
+    monkeypatch.setattr(
+        couple_portal_api,
+        "check_wedding_access",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(couple_portal_api, "best_effort", _immediate_best_effort)
+    monkeypatch.setattr(
+        couple_portal_api,
+        "web_push_service",
+        SimpleNamespace(enabled=True, send_notification=AsyncMock()),
+    )
+
+    data = couple_portal_api.CreateUpdateRequest(
+        wedding_id="wedding-1",
+        title="Timeline updated",
+        content="This update must still persist",
+    )
+
+    response = await couple_portal_api.create_update(
+        data=data,
+        current_user=planner_user,
+    )
+
+    assert "update_id" in response
+    assert len(updates.insert_calls) == 1
 
 
 @pytest.mark.asyncio

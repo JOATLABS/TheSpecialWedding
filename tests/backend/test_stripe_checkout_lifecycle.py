@@ -12,8 +12,8 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-import app.services.stripe_service as stripe_service_module
-import app.services.subscription_service as subscription_service_module
+import app.services.stripe_service as stripe_service_module  # noqa: E402
+import app.services.subscription_service as subscription_service_module  # noqa: E402
 
 
 def _matches(document, query):
@@ -240,6 +240,7 @@ def test_create_checkout_session_respects_explicit_zero_trial(
 
     assert captured["subscription_data"]["metadata"]["trial_days"] == 0
     assert "trial_period_days" not in captured["subscription_data"]
+    assert captured["payment_method_collection"] == "always"
 
 
 def test_create_checkout_session_uses_plan_trial_when_unspecified(
@@ -288,6 +289,10 @@ def test_create_checkout_session_uses_plan_trial_when_unspecified(
 
     assert captured["subscription_data"]["metadata"]["trial_days"] == 30
     assert captured["subscription_data"]["trial_period_days"] == 30
+    assert captured["subscription_data"]["trial_settings"] == {
+        "end_behavior": {"missing_payment_method": "cancel"}
+    }
+    assert captured["payment_method_collection"] == "if_required"
 
 
 def test_checkout_completed_sends_activation_notification(monkeypatch, stripe_service):

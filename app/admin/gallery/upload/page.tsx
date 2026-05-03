@@ -8,6 +8,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import PageHeader from '../../components/PageHeader';
+import WeddingPicker from '../../components/WeddingPicker';
 import { toast } from 'sonner';
 import { Upload, Images, ChevronDown, Heart, FolderOpen } from 'lucide-react';
 
@@ -200,26 +201,20 @@ export default function AdminGalleryUploadPage() {
         description="Upload and manage wedding photos"
       />
 
-        {/* Wedding Selection */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-          <div className="flex flex-col sm:flex-row gap-4 items-center">
-            <label className="font-medium text-slate-700 dark:text-gray-200 whitespace-nowrap">
-              Select Wedding:
-            </label>
-            <select
-              value={selectedWedding}
-              onChange={(e) => handleWeddingChange(e.target.value)}
-              className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
-              required
-            >
-              <option value="">Choose a wedding...</option>
-              {weddings.map((wedding) => (
-                <option key={wedding.id || wedding._id} value={wedding.id || wedding._id}>
-                  {wedding.couple_names} - {wedding.date}
-                </option>
-              ))}
-            </select>
-          </div>
+        {/* Wedding picker — shared compact pill (see WeddingPicker.tsx).
+            handleWeddingChange wires the slug + featured-image side effects;
+            picker just feeds the wedding id through. */}
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-slate-500 dark:text-gray-400">Wedding:</span>
+          <WeddingPicker
+            options={weddings.map((w) => ({
+              id: (w.id || w._id) as string,
+              label: `${w.couple_names} — ${w.date}`,
+            }))}
+            value={selectedWedding}
+            onChange={handleWeddingChange}
+            placeholder="Choose a wedding…"
+          />
         </div>
 
         {selectedWedding && (

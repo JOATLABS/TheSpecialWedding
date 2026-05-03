@@ -1,6 +1,6 @@
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
@@ -259,10 +259,12 @@ class FormModel(BaseModel):
     )
     is_active: bool = Field(default=True, description="Whether form is active")
     created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Creation timestamp"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Creation timestamp",
     )
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Last update timestamp"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Last update timestamp",
     )
     submission_count: int = Field(default=0, description="Total submissions received")
 
@@ -312,7 +314,8 @@ class FormResponse(BaseModel):
     ip_address: Optional[str] = Field(None, description="Submitter IP address")
     user_agent: Optional[str] = Field(None, description="Submitter user agent")
     submitted_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Submission timestamp"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Submission timestamp",
     )
     metadata: Dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata"
@@ -341,7 +344,8 @@ class FormDistribution(BaseModel):
     recipient_name: Optional[str] = Field(None, description="Recipient name")
     wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
     sent_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Email sent timestamp"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Email sent timestamp",
     )
     opened_at: Optional[datetime] = Field(None, description="Email opened timestamp")
     clicked_at: Optional[datetime] = Field(

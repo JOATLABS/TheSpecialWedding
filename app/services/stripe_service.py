@@ -1,5 +1,6 @@
 """Stripe payment utilities used to manage subscription checkout and lifecycle."""
 
+import html
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
@@ -30,6 +31,29 @@ from app.utils.planner_ownership import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_external_url(url: Optional[str]) -> Optional[str]:
+    """Return ``url`` only if it uses an http(s) scheme, else None.
+
+    Defends against `javascript:` / `data:` URI XSS in email href
+    interpolations. Live verification (2026-04-29) caught
+    `invoice_pdf="javascript:alert(1)"` slipping past ``html.escape`` and
+    landing in an ``<a href>``. ``html.escape(quote=True)`` only escapes
+    ``"``/``'``; it does NOT validate the URL scheme. This helper closes
+    that gap. Stripe-supplied URLs always begin with ``https://``, so this
+    is a no-op for legitimate input.
+    """
+    if not url:
+        return None
+    s = str(url).strip()
+    if not s:
+        return None
+    lower = s.lower()
+    if lower.startswith("https://") or lower.startswith("http://"):
+        return s
+    return None
+
 
 # Initialize Stripe
 if settings.stripe_enabled and settings.stripe_secret_key:
@@ -525,11 +549,13 @@ class StripeService:
                 }
             }
 
-            if trial_days > 0:
+            has_trial = trial_days > 0
+            if has_trial:
                 subscription_data["trial_period_days"] = trial_days
                 subscription_data["trial_settings"] = {
                     "end_behavior": {
-                        # We collect cards up front, so cancel if a payment method is missing at the end of trial
+                        # No-card trials are allowed; cancel if the customer does
+                        # not add a payment method before the trial ends.
                         "missing_payment_method": "cancel"
                     }
                 }
@@ -559,7 +585,7 @@ class StripeService:
                 },
                 allow_promotion_codes=True,
                 billing_address_collection="auto",
-                payment_method_collection="always",
+                payment_method_collection="if_required" if has_trial else "always",
                 customer_update={"address": "auto", "name": "auto"},
             )
 
@@ -800,6 +826,16 @@ class StripeService:
         if not current_period_end:
             current_period_end = now
 
+        # Cancel-at-period-end is a top-level Stripe sub field set by the
+        # planner via the billing portal or our cancel endpoint. Without
+        # syncing it, Mongo never learns the sub is scheduled to cancel —
+        # the cancellation banner stays hidden, the renewal cron has no way
+        # to skip the about-to-die sub, and the planner experience drifts
+        # from Stripe's source of truth.
+        cancel_at_period_end = bool(subscription.get("cancel_at_period_end"))
+        canceled_at = self._parse_timestamp(subscription.get("canceled_at"))
+        cancel_at = self._parse_timestamp(subscription.get("cancel_at"))
+
         subscription_updates: Dict[str, Any] = {
             "stripe_subscription_id": stripe_subscription_id,
             "stripe_customer_id": customer_id,
@@ -809,6 +845,9 @@ class StripeService:
             "trial_start_date": trial_start,
             "current_period_start": current_period_start,
             "current_period_end": current_period_end,
+            "cancel_at_period_end": cancel_at_period_end,
+            "canceled_at": canceled_at,
+            "cancel_at": cancel_at,
             "updated_at": now,
         }
 
@@ -842,11 +881,29 @@ class StripeService:
             existing_snapshot_doc = None
             if snapshot_lookup_query:
                 existing_snapshot_doc = await self.subscriptions_collection.find_one(
-                    snapshot_lookup_query, {"plan_snapshot": 1}
+                    snapshot_lookup_query, {"plan_snapshot": 1, "plan_id": 1}
                 )
 
-            if not existing_snapshot_doc or not existing_snapshot_doc.get(
-                "plan_snapshot"
+            # User-initiated plan change refresh: if the incoming plan_id
+            # differs from what the subscription doc currently records, the
+            # planner upgraded or downgraded their plan in Stripe — the
+            # snapshot MUST refresh to the new plan's limits, otherwise the
+            # cap-enforcement code would keep reading old values forever
+            # (e.g., upgrade Boutique→Signature would still cap weddings at 3).
+            #
+            # The grandfather rule only protects against admin-initiated plan
+            # *limit* changes (admin edits Boutique's max_weddings in the
+            # plans collection): the plan_id stays the same, so the snapshot
+            # is preserved. A plan_id change is a different event entirely.
+            existing_plan_id = (
+                existing_snapshot_doc.get("plan_id") if existing_snapshot_doc else None
+            )
+            plan_changed = existing_plan_id is not None and existing_plan_id != plan_id
+
+            if (
+                not existing_snapshot_doc
+                or not existing_snapshot_doc.get("plan_snapshot")
+                or plan_changed
             ):
                 try:
                     plan = await self.plans_collection.find_one({"_id": plan_id})
@@ -871,10 +928,15 @@ class StripeService:
                             ),
                             "snapshot_date": now,
                         }
+                        reason = (
+                            f"plan changed from {existing_plan_id} → {plan_id}"
+                            if plan_changed
+                            else "no existing snapshot found"
+                        )
                         logger.info(
                             f"Built plan_snapshot for subscription "
                             f"{stripe_subscription_id or user_id} from plan "
-                            f"{plan_id} (no existing snapshot found)"
+                            f"{plan_id} ({reason})"
                         )
                 except Exception as e:
                     # Do not fail the webhook sync if plan lookup errors —
@@ -1054,6 +1116,25 @@ class StripeService:
                     f"Unexpected error in subscription sync transaction: {str(txn_err)}"
                 )
                 raise
+
+        # ── Auth cache invalidation ─────────────────────────────────
+        # Subscription state just changed in Mongo.  Bust the cached
+        # ExtendedAuthUser snapshot for this user so the next request
+        # rebuilds from the fresh subscription record instead of
+        # serving the stale "blocked / not blocked" flag from the cache.
+        # The 10-second TTL would catch up eventually; this makes the
+        # transition immediate from the user's perspective.
+        if user_id:
+            try:
+                from app.dependencies.auth_extended import (
+                    invalidate_auth_cache_by_user_id,
+                )
+
+                await invalidate_auth_cache_by_user_id(user_id)
+            except Exception as cache_err:
+                logger.debug(
+                    f"Auth cache invalidation skipped for user {user_id}: {cache_err}"
+                )
 
         # ── Reactivation detection ──────────────────────────────────
         # If the subscription transitioned FROM a cancelled/blocked state
@@ -1456,12 +1537,31 @@ class StripeService:
         event_type = "unknown"
         try:
             # Verify webhook signature
-            event = stripe.Webhook.construct_event(
+            event_obj = stripe.Webhook.construct_event(
                 payload, signature, settings.stripe_webhook_secret
             )
 
+            # `stripe.Webhook.construct_event` returns a `stripe.Event`
+            # (a StripeObject), not a plain dict. Recent versions of the
+            # Stripe Python SDK override `__getattr__` to look up attribute
+            # access as dict keys on the underlying event payload — which
+            # means calling `event.get("id", "")` tries to read a "get" KEY
+            # from the event and raises `AttributeError: get` when there
+            # isn't one. Every downstream `.get(...)` call on the
+            # subscription / customer / invoice payload hits the same trap.
+            #
+            # Convert to a plain dict at the boundary so every handler in
+            # this service can use dict semantics safely. `to_dict()` is
+            # recursive — nested StripeObjects in `event["data"]["object"]`
+            # become plain dicts too.
+            if hasattr(event_obj, "to_dict"):
+                event = event_obj.to_dict()
+            else:
+                # Already a dict in older SDK versions.
+                event = dict(event_obj)
+
             event_type = event["type"]
-            event_id = event.get("id", "")
+            event_id = str(event.get("id") or "")
             data = event["data"]["object"]
 
             # ── Idempotency check with status tracking ──────────────────
@@ -2832,19 +2932,26 @@ class StripeService:
                     f"Could not fetch invoice for checkout completion email (sub {subscription_id}): {inv_err}"
                 )
 
-        # Build invoice section for emails (reused across trial and paid paths)
+        # Build invoice section for emails (reused across trial and paid paths).
+        # _safe_external_url enforces an http(s) scheme allowlist so a malicious
+        # `javascript:` URL slipped into Stripe's invoice fields can't surface as
+        # an executable href.
         invoice_links_html = ""
-        if invoice_pdf_url or hosted_invoice_url:
+        safe_pdf_url_value = _safe_external_url(invoice_pdf_url)
+        safe_hosted_url_value = _safe_external_url(hosted_invoice_url)
+        if safe_pdf_url_value or safe_hosted_url_value:
             buttons = []
-            if invoice_pdf_url:
+            if safe_pdf_url_value:
+                safe_invoice_pdf_url = html.escape(safe_pdf_url_value, quote=True)
                 buttons.append(
-                    f'<a href="{invoice_pdf_url}" style="display: inline-block; background: #2563eb; color: #ffffff; '
+                    f'<a href="{safe_invoice_pdf_url}" style="display: inline-block; background: #2563eb; color: #ffffff; '
                     f"text-decoration: none; padding: 10px 18px; border-radius: 8px; font-size: 14px; "
                     f'font-weight: 500; margin-right: 8px;">Download Invoice PDF</a>'
                 )
-            if hosted_invoice_url:
+            if safe_hosted_url_value:
+                safe_hosted_invoice_url = html.escape(safe_hosted_url_value, quote=True)
                 buttons.append(
-                    f'<a href="{hosted_invoice_url}" style="display: inline-block; background: #ffffff; color: #2563eb; '
+                    f'<a href="{safe_hosted_invoice_url}" style="display: inline-block; background: #ffffff; color: #2563eb; '
                     f"text-decoration: none; padding: 10px 18px; border-radius: 8px; font-size: 14px; "
                     f'font-weight: 500; border: 1px solid #2563eb;">View Invoice Online</a>'
                 )
@@ -2854,24 +2961,32 @@ class StripeService:
 
         invoice_number_line = ""
         if invoice_number:
-            invoice_number_line = f'<p style="margin: 0 0 8px;"><strong>Invoice:</strong> {invoice_number}</p>'
+            safe_invoice_number = html.escape(str(invoice_number), quote=True)
+            invoice_number_line = f'<p style="margin: 0 0 8px;"><strong>Invoice:</strong> {safe_invoice_number}</p>'
+
+        safe_plan_name = html.escape(str(plan_name), quote=True)
+        safe_user_name = html.escape(str(user_name), quote=True)
+        safe_currency = html.escape(str(currency), quote=True)
+        safe_invoice_date = html.escape(str(invoice_date), quote=True)
+        safe_billing_url = html.escape(str(billing_url), quote=True)
 
         if stripe_status == "trialing" and trial_end:
             trial_end_label = trial_end.strftime("%B %d, %Y")
+            safe_trial_end_label = html.escape(trial_end_label, quote=True)
             subject = f"{plan_name} Trial Activated"
             html_content = f"""
             <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; color: #0f172a;">
-              <h1 style="margin-bottom: 12px;">Your {plan_name} trial is active</h1>
-              <p>Hi {user_name},</p>
-              <p>Your subscription checkout is complete and your <strong>{plan_name}</strong> trial is now active.</p>
+              <h1 style="margin-bottom: 12px;">Your {safe_plan_name} trial is active</h1>
+              <p>Hi {safe_user_name},</p>
+              <p>Your subscription checkout is complete and your <strong>{safe_plan_name}</strong> trial is now active.</p>
               <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0;">
                 {invoice_number_line}
-                <p style="margin: 0 0 8px;"><strong>Trial end date:</strong> {trial_end_label}</p>
-                <p style="margin: 0;"><strong>Billing begins after:</strong> {trial_end_label}</p>
+                <p style="margin: 0 0 8px;"><strong>Trial end date:</strong> {safe_trial_end_label}</p>
+                <p style="margin: 0;"><strong>Billing begins after:</strong> {safe_trial_end_label}</p>
               </div>
               {invoice_links_html}
               <p>Your saved payment method will be used automatically when the trial ends unless you change or cancel the subscription first.</p>
-              <p><a href="{billing_url}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 18px; border-radius: 999px;">Manage billing</a></p>
+              <p><a href="{safe_billing_url}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 18px; border-radius: 999px;">Manage billing</a></p>
             </div>
             """
             notification_title = "Free Trial Active"
@@ -2882,17 +2997,17 @@ class StripeService:
             subject = f"{plan_name} Subscription Activated"
             html_content = f"""
             <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; color: #0f172a;">
-              <h1 style="margin-bottom: 12px;">Your {plan_name} subscription is active</h1>
-              <p>Hi {user_name},</p>
+              <h1 style="margin-bottom: 12px;">Your {safe_plan_name} subscription is active</h1>
+              <p>Hi {safe_user_name},</p>
               <p>Your checkout completed successfully and your subscription is ready to use.</p>
               <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0;">
                 {invoice_number_line}
-                <p style="margin: 0 0 8px;"><strong>Amount received:</strong> ${amount:.2f} {currency}</p>
-                <p style="margin: 0;"><strong>Processed on:</strong> {invoice_date}</p>
+                <p style="margin: 0 0 8px;"><strong>Amount received:</strong> ${amount:.2f} {safe_currency}</p>
+                <p style="margin: 0;"><strong>Processed on:</strong> {safe_invoice_date}</p>
               </div>
               {invoice_links_html}
               <p>You can manage your payment method, billing history, and plan from your billing page any time.</p>
-              <p><a href="{billing_url}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 18px; border-radius: 999px;">Open billing</a></p>
+              <p><a href="{safe_billing_url}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 18px; border-radius: 999px;">Open billing</a></p>
             </div>
             """
             notification_title = "Subscription Active"
@@ -3097,12 +3212,21 @@ class StripeService:
         invoice_pdf: Optional[str] = None,
     ) -> str:
         """Render payment success email HTML"""
+        safe_user_name = html.escape(user_name, quote=True)
+        safe_plan_name = html.escape(plan_name, quote=True)
+        safe_currency = html.escape(currency, quote=True)
+        safe_invoice_date = html.escape(invoice_date, quote=True)
+
+        # _safe_external_url drops any URL that doesn't start with http(s)
+        # — closes the `javascript:` href XSS path live-verify caught.
+        safe_pdf_value = _safe_external_url(invoice_pdf)
         download_section = ""
-        if invoice_pdf:
+        if safe_pdf_value:
+            safe_invoice_pdf = html.escape(safe_pdf_value, quote=True)
             download_section = f"""
                 <tr>
                   <td style="padding:20px 40px 0;">
-                    <a href="{invoice_pdf}" style="display:inline-block;padding:12px 24px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:500;">Download Invoice PDF</a>
+                    <a href="{safe_invoice_pdf}" style="display:inline-block;padding:12px 24px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:500;">Download Invoice PDF</a>
                   </td>
                 </tr>
             """
@@ -3123,26 +3247,26 @@ class StripeService:
                 </tr>
                 <tr>
                   <td style="padding:32px 40px;font-family:'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif;color:#0f172a;">
-                    <p style="margin:0 0 24px;font-size:16px;line-height:1.6;">Hi {user_name},</p>
+                    <p style="margin:0 0 24px;font-size:16px;line-height:1.6;">Hi {safe_user_name},</p>
                     <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#475569;">We've received your payment. Here are the details:</p>
 
                     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border-radius:12px;padding:20px;margin-bottom:24px;">
                       <tr>
                         <td style="padding:8px 16px;">
                           <p style="margin:0;font-size:14px;color:#64748b;">Plan</p>
-                          <p style="margin:4px 0 0;font-size:16px;font-weight:500;color:#0f172a;">{plan_name}</p>
+                          <p style="margin:4px 0 0;font-size:16px;font-weight:500;color:#0f172a;">{safe_plan_name}</p>
                         </td>
                       </tr>
                       <tr>
                         <td style="padding:8px 16px;">
                           <p style="margin:0;font-size:14px;color:#64748b;">Amount</p>
-                          <p style="margin:4px 0 0;font-size:16px;font-weight:500;color:#0f172a;">${amount:.2f} {currency}</p>
+                          <p style="margin:4px 0 0;font-size:16px;font-weight:500;color:#0f172a;">${amount:.2f} {safe_currency}</p>
                         </td>
                       </tr>
                       <tr>
                         <td style="padding:8px 16px;">
                           <p style="margin:0;font-size:14px;color:#64748b;">Date</p>
-                          <p style="margin:4px 0 0;font-size:16px;font-weight:500;color:#0f172a;">{invoice_date}</p>
+                          <p style="margin:4px 0 0;font-size:16px;font-weight:500;color:#0f172a;">{safe_invoice_date}</p>
                         </td>
                       </tr>
                     </table>
@@ -3167,6 +3291,13 @@ class StripeService:
         self, user_name: str, plan_name: str, amount: float, currency: str
     ) -> str:
         """Render payment failed email HTML"""
+        safe_user_name = html.escape(user_name, quote=True)
+        safe_plan_name = html.escape(plan_name, quote=True)
+        safe_currency = html.escape(currency, quote=True)
+        safe_billing_url = html.escape(
+            f"{settings.frontend_url or ''}/admin/planner/billing", quote=True
+        )
+
         return f"""
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8fafc;padding:40px 0;">
           <tr>
@@ -3183,8 +3314,8 @@ class StripeService:
                 </tr>
                 <tr>
                   <td style="padding:32px 40px;font-family:'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif;color:#0f172a;">
-                    <p style="margin:0 0 24px;font-size:16px;line-height:1.6;">Hi {user_name},</p>
-                    <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#475569;">We were unable to process your payment of <strong>${amount:.2f} {currency}</strong> for your <strong>{plan_name}</strong> subscription.</p>
+                    <p style="margin:0 0 24px;font-size:16px;line-height:1.6;">Hi {safe_user_name},</p>
+                    <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#475569;">We were unable to process your payment of <strong>${amount:.2f} {safe_currency}</strong> for your <strong>{safe_plan_name}</strong> subscription.</p>
 
                     <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:20px;margin-bottom:24px;">
                       <p style="margin:0;font-size:14px;color:#991b1b;line-height:1.6;"><strong>What you need to do:</strong></p>
@@ -3198,7 +3329,7 @@ class StripeService:
                     <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
                       <tr>
                         <td style="background:#2563eb;border-radius:8px;">
-                          <a href="{settings.frontend_url or ""}/admin/planner/billing" style="display:inline-block;padding:14px 28px;color:#ffffff;text-decoration:none;font-size:14px;font-weight:500;">Update Payment Method</a>
+                          <a href="{safe_billing_url}" style="display:inline-block;padding:14px 28px;color:#ffffff;text-decoration:none;font-size:14px;font-weight:500;">Update Payment Method</a>
                         </td>
                       </tr>
                     </table>
@@ -3375,59 +3506,6 @@ class StripeService:
             logger.error(f"Error creating payment intent: {str(e)}")
             raise HTTPException(
                 status_code=500, detail=f"Error creating payment intent: {str(e)}"
-            )
-
-    async def create_vendor_payment_intent(
-        self,
-        sender_user_id: str,
-        vendor_connect_id: str,
-        amount: float,
-        currency: str = "usd",
-        description: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """
-        Create a payment intent for a Planner to pay a Vendor.
-        The Planner pays (as a customer) and funds go to Vendor (connected account).
-        """
-        self._ensure_stripe_enabled()
-
-        try:
-            # Ensure sender has a customer ID
-            user = await self.users_collection.find_one(
-                {"_id": ObjectId(sender_user_id)}
-            )
-            if not user:
-                raise HTTPException(status_code=404, detail="User not found")
-
-            customer_id = await self.get_or_create_customer(
-                sender_user_id, user["email"], user.get("full_name")
-            )
-
-            payment_intent = stripe.PaymentIntent.create(
-                amount=int(amount * 100),
-                currency=currency.lower(),
-                customer=customer_id,
-                description=description or "Payment to vendor",
-                transfer_data={"destination": vendor_connect_id},
-                metadata={
-                    "sender_user_id": sender_user_id,
-                    "vendor_connect_id": vendor_connect_id,
-                },
-                automatic_payment_methods={"enabled": True},
-            )
-
-            return {
-                "payment_intent_id": payment_intent.id,
-                "client_secret": payment_intent.client_secret,
-                "amount": amount,
-                "currency": currency,
-                "status": payment_intent.status,
-            }
-
-        except StripeError as e:
-            logger.error(f"Stripe error creating vendor payment: {str(e)}")
-            raise HTTPException(
-                status_code=500, detail=f"Payment service error: {str(e)}"
             )
 
 

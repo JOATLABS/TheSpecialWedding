@@ -26,8 +26,8 @@ export const SaasLogoTitle: React.FC<SaasLogoTitleProps> = ({ theme }) => {
           }}
         >
           <Image
-            src="/Logo.svg"
-            alt="Special Wedding Logo"
+            src="/logo-icon.svg"
+            alt="The Special Wedding"
             fill
             className="object-contain"
             sizes="(max-width: 768px) 160px, 192px"

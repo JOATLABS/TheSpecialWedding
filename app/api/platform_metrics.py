@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
 
 from app.core.config import settings
 from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
@@ -55,6 +55,14 @@ def _serialize_snapshot_response(document: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+async def build_live_platform_metrics_payload() -> Dict[str, Any]:
+    """Build the current platform metrics payload for scheduled snapshots."""
+
+    from app.api.admin_platform_metrics import build_platform_health_payload
+
+    return await build_platform_health_payload()
+
+
 @router.get(
     "/metrics/snapshot",
     tags=["Metrics"],
@@ -72,7 +80,17 @@ async def get_metrics_snapshot():
     tags=["Metrics"],
     dependencies=[Depends(_require_metrics_token)],
 )
-async def ingest_metrics_snapshot(payload: Dict[str, Any]):
+async def ingest_metrics_snapshot(
+    payload: Optional[Dict[str, Any]] = Body(default=None),
+):
+    if payload is None:
+        live_metrics = await build_live_platform_metrics_payload()
+        payload = {
+            "snapshot_time": live_metrics.get("generated_at")
+            or datetime.now(timezone.utc).isoformat(),
+            "metrics": live_metrics,
+        }
+
     document = await metrics_service.save_snapshot(payload)
     return _serialize_snapshot_response(document)
 

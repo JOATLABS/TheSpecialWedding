@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -24,6 +25,222 @@ from app.utils.auth_utils import verify_token
 audit_logger = logging.getLogger("audit")
 audit_logger.setLevel(logging.INFO)
 audit_logger.propagate = False
+
+
+# ── Audit log batch buffer ─────────────────────────────────────────────
+# Replaces per-request ``audit_logs.insert_one`` with an in-memory queue
+# flushed every ``flush_interval_s`` seconds (or eagerly when the queue
+# hits ``batch_size``).  This removes one Mongo round trip from every
+# authenticated request while preserving durability via two layers:
+#
+#   1. The synchronous file appender (``_log_to_file``) still runs on
+#      every request, so a hard crash never silently loses audit data —
+#      the file is the recovery source of truth.
+#   2. ``shutdown()`` is wired into the FastAPI lifespan so a graceful
+#      stop drains the buffer before the database connection closes.
+#
+# If a flush fails three times in a row we drop the oldest 50% of the
+# batch to prevent unbounded memory growth, surface an ``audit_logger``
+# error, and continue.  The file appender still has the dropped entries
+# for offline replay if needed.
+class AuditLogBuffer:
+    """Async in-memory buffer for batched audit-log writes."""
+
+    def __init__(
+        self,
+        flush_interval_s: float = 1.0,
+        batch_size: int = 100,
+        max_buffer: int = 10000,
+    ) -> None:
+        self._queue: list[Dict[str, Any]] = []
+        self._collection: Optional[Any] = None
+        self._flush_task: Optional[asyncio.Task] = None
+        self._stopped = asyncio.Event()
+        self._flush_interval_s = flush_interval_s
+        self._batch_size = batch_size
+        self._max_buffer = max_buffer
+        self._consecutive_failures = 0
+        self._dropped_total = 0
+        self._batch_event = asyncio.Event()
+
+    def append(self, entry: Dict[str, Any]) -> None:
+        """Append an audit entry. Sync, lock-free, safe to call from middleware.
+
+        CPython list operations are GIL-protected, and the flush loop's
+        snapshot-and-clear sequence runs without an intervening ``await``,
+        so we can avoid an asyncio.Lock on the hot path.
+        """
+        if self._collection is None:
+            # Buffer not started — happens during very early startup and
+            # in unit tests.  The file appender still captures the entry,
+            # so this is degraded-not-lost.
+            return
+        if len(self._queue) >= self._max_buffer:
+            # Hard cap — drop oldest to make room.  Soft race here is
+            # harmless (only affects warning frequency).
+            try:
+                self._queue.pop(0)
+                self._dropped_total += 1
+            except IndexError:
+                pass
+            if self._dropped_total % 100 == 1:
+                audit_logger.warning(
+                    f"Audit buffer at hard cap ({self._max_buffer}); "
+                    f"dropped {self._dropped_total} entries total"
+                )
+        self._queue.append(entry)
+        # Eager flush trigger when batch threshold is reached.  The loop
+        # picks this up via wait_for(_batch_event) and flushes immediately
+        # instead of waiting for the next interval tick.
+        if len(self._queue) >= self._batch_size:
+            self._batch_event.set()
+
+    async def start(self, collection: Any) -> None:
+        """Start the flush loop. Idempotent.
+
+        Must be called *after* ``init_database()`` so ``mongo.db`` is
+        available, and the collection passed in is alive.
+        """
+        if self._flush_task is not None and not self._flush_task.done():
+            return
+        self._collection = collection
+        self._stopped.clear()
+        self._batch_event.clear()
+        self._flush_task = asyncio.create_task(self._flush_loop())
+        audit_logger.info(
+            f"Audit log buffer started "
+            f"(interval={self._flush_interval_s}s, batch={self._batch_size}, "
+            f"max={self._max_buffer})"
+        )
+
+    async def shutdown(self) -> None:
+        """Stop the flush loop and drain remaining entries.
+
+        Called from the FastAPI lifespan shutdown.  Idempotent — safe to
+        call from both the post-yield block and the ``finally`` block.
+        """
+        if self._flush_task is None or self._flush_task.done():
+            self._flush_task = None
+            self._collection = None
+            return
+
+        # Signal the loop to exit cleanly
+        self._stopped.set()
+        self._batch_event.set()
+        try:
+            await asyncio.wait_for(self._flush_task, timeout=5.0)
+        except asyncio.TimeoutError:
+            # Loop didn't exit in time — cancel and move on
+            self._flush_task.cancel()
+            try:
+                await self._flush_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+        # Final drain of anything that arrived after the loop's last tick
+        if self._queue and self._collection is not None:
+            try:
+                await self._flush_once(final=True)
+            except Exception as e:
+                audit_logger.error(
+                    f"Final audit drain failed; "
+                    f"{len(self._queue)} entries remain in memory only: {e}"
+                )
+
+        self._flush_task = None
+        self._collection = None
+        audit_logger.info("Audit log buffer shut down")
+
+    async def _flush_loop(self) -> None:
+        """Background loop: flush every ``flush_interval_s`` or on batch event."""
+        try:
+            while not self._stopped.is_set():
+                # Wait for either the interval to elapse OR the batch
+                # threshold to fire — whichever comes first.
+                try:
+                    await asyncio.wait_for(
+                        self._batch_event.wait(),
+                        timeout=self._flush_interval_s,
+                    )
+                except asyncio.TimeoutError:
+                    pass
+                self._batch_event.clear()
+                if self._stopped.is_set():
+                    break
+                if self._queue:
+                    try:
+                        await self._flush_once()
+                    except Exception as e:
+                        audit_logger.error(f"Audit flush iteration failed: {e}")
+        except asyncio.CancelledError:
+            audit_logger.info("Audit flush loop cancelled")
+            raise
+        except Exception as e:
+            audit_logger.error(f"Audit flush loop crashed: {e}", exc_info=True)
+
+    async def _flush_once(self, final: bool = False) -> None:
+        """Drain the queue and ``insert_many`` to Mongo.
+
+        Snapshot-and-clear is two bytecode ops with no intervening await,
+        so it is atomic against ``append()`` in CPython.
+        """
+        if not self._queue or self._collection is None:
+            return
+
+        # Atomic snapshot in CPython (no await between these two lines)
+        batch = self._queue
+        self._queue = []
+
+        try:
+            # ordered=False so a single bad doc doesn't abort the batch
+            await self._collection.insert_many(batch, ordered=False)
+            self._consecutive_failures = 0
+        except Exception as e:
+            self._consecutive_failures += 1
+            audit_logger.error(
+                f"Audit batch flush failed "
+                f"(attempt {self._consecutive_failures}, batch={len(batch)}): {e}"
+            )
+            if self._consecutive_failures >= 3:
+                # Three strikes — drop the oldest half of the failed batch
+                # to keep memory bounded.  File appender retains the
+                # dropped entries for offline replay.
+                drop_count = len(batch) // 2
+                kept = batch[drop_count:]
+                self._queue = kept + self._queue
+                self._dropped_total += drop_count
+                self._consecutive_failures = 0
+                audit_logger.error(
+                    f"Audit flush failed 3x consecutively; "
+                    f"dropped {drop_count} oldest entries from batch "
+                    f"({self._dropped_total} dropped total)"
+                )
+            else:
+                # Retry on next tick: re-prepend the failed batch
+                self._queue = batch + self._queue
+            if final:
+                # Surface the failure on shutdown so it isn't silent
+                raise
+
+
+# Module-level singleton.  Constructed at import time; ``start()`` is
+# called from the FastAPI lifespan after ``init_database()``.
+audit_buffer = AuditLogBuffer()
+
+_OBJECT_ID_SEGMENT_RE = re.compile(r"/[a-f0-9]{24}(?=/|$)", re.IGNORECASE)
+_UUID_SEGMENT_RE = re.compile(
+    r"/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?=/|$)",
+    re.IGNORECASE,
+)
+_NUMERIC_SEGMENT_RE = re.compile(r"/\d+(?=/|$)")
+
+
+def _normalize_route_template(path: str) -> str:
+    """Group high-cardinality REST paths into stable performance buckets."""
+    normalized = _UUID_SEGMENT_RE.sub("/{id}", path)
+    normalized = _OBJECT_ID_SEGMENT_RE.sub("/{id}", normalized)
+    normalized = _NUMERIC_SEGMENT_RE.sub("/{id}", normalized)
+    return normalized
 
 
 def _ensure_audit_file_handler(log_file_path: str) -> None:
@@ -84,8 +301,9 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             "/sitemap.xml",
         ]
 
-        # Audit collection in database
-        self.audit_collection = mongo.db["audit_logs"] if self.log_to_db else None
+        # Database writes flow through the module-level ``audit_buffer``
+        # singleton (started/stopped in the FastAPI lifespan).  The
+        # middleware no longer holds a direct collection handle.
 
         if self.log_to_file:
             _ensure_audit_file_handler(settings.audit_log_file)
@@ -198,6 +416,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             "user_agent": request_info["user_agent"],
             "method": request_info["method"],
             "path": request_info["path"],
+            "route_template": _normalize_route_template(request_info["path"]),
             "host": request_info.get("host"),
             "referer": request_info.get("referer"),
             "origin": request_info.get("origin"),
@@ -235,25 +454,16 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         session_data = f"{request_info['ip_address']}:{request_info['user_agent']}"
         return hashlib.sha256(session_data.encode()).hexdigest()[:16]
 
-    async def _log_to_database(self, audit_entry: Dict[str, Any]):
-        """Log audit entry to database"""
-        try:
-            if self.audit_collection is None:
-                return
-            await self.audit_collection.insert_one(audit_entry)
-        except Exception as e:
-            audit_logger.error(f"Failed to log to database: {str(e)}")
-
-    def _track_background_task(self, task: asyncio.Task) -> None:
-        """Surface async logging failures instead of silently swallowing them."""
-        try:
-            task.result()
-        except Exception as exc:  # pragma: no cover - defensive logging path
-            audit_logger.error(f"Background audit logging task failed: {exc}")
-
     def _schedule_database_log(self, audit_entry: Dict[str, Any]) -> None:
-        task = asyncio.create_task(self._log_to_database(audit_entry))
-        task.add_done_callback(self._track_background_task)
+        """Queue the audit entry for batched flush to Mongo.
+
+        Replaces the previous ``asyncio.create_task(insert_one(...))`` per
+        request.  The shared :data:`audit_buffer` flushes every 1 s or
+        when 100 entries accumulate, removing one Mongo round trip from
+        every authenticated request while preserving durability via the
+        synchronous file appender (``_log_to_file``).
+        """
+        audit_buffer.append(audit_entry)
 
     def _log_to_file(self, audit_entry: Dict[str, Any]):
         """Log audit entry to file"""

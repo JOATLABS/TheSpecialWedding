@@ -14,7 +14,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from app.utils.pydantic_objectid import PyObjectId, generate_object_id
 
@@ -518,6 +518,25 @@ class VendorContract(BaseModel):
     cancelled_at: Optional[datetime] = Field(None, description="When cancelled")
     cancellation_reason: Optional[str] = Field(None, description="Why cancelled")
 
+    # Lock & Soft-Delete
+    contract_status_locked_at: Optional[datetime] = Field(
+        None,
+        description=(
+            "Set when the contract is signed; once set the contract is "
+            "immutable to edits via update_contract. Cancellation does not "
+            "clear this field — it represents the immutability of the signed "
+            "version itself."
+        ),
+    )
+    is_soft_deleted: bool = Field(
+        False,
+        description=(
+            "Forward-looking soft-delete flag. CANCELLED status remains the "
+            "user-visible cancellation; this flag is for true archival. Read "
+            "queries must filter is_soft_deleted: {$ne: True}."
+        ),
+    )
+
     # Version Lineage
     version_number: int = Field(1, ge=1, description="Revision number within lineage")
     root_contract_id: Optional[str] = Field(
@@ -588,6 +607,12 @@ class VendorContract(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True, arbitrary_types_allowed=True, str_strip_whitespace=True
     )
+
+    @model_validator(mode="after")
+    def _validate_deposit_within_total(self) -> "VendorContract":
+        if self.deposit_amount is not None and self.deposit_amount > self.total_amount:
+            raise ValueError("deposit_amount cannot exceed total_amount")
+        return self
 
     @field_serializer("id", when_used="json")
     def serialize_id(self, value) -> str | None:
@@ -736,6 +761,16 @@ class VendorAssignment(BaseModel):
     # Communication
     last_contacted_at: Optional[datetime] = Field(None, description="Last contact")
     next_followup_at: Optional[datetime] = Field(None, description="Next followup date")
+
+    # Soft-Delete
+    is_deleted: bool = Field(
+        False,
+        description=(
+            "Forward-looking soft-delete flag. CANCELLED status remains the "
+            "user-visible cancellation; this flag is for true archival. Read "
+            "queries must filter is_deleted: {$ne: True}."
+        ),
+    )
 
     # System
     created_by: str = Field(..., description="Planner email")

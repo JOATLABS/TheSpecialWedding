@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -23,6 +23,16 @@ def _matches_query(document: dict, query: dict) -> bool:
             if "$exists" in expected:
                 exists = key in document
                 if exists != expected["$exists"]:
+                    return False
+                continue
+            if "$in" in expected:
+                if actual not in expected["$in"]:
+                    return False
+                continue
+            if "$ne" in expected:
+                # ``{"$ne": True}`` filters used by the soft-delete retrofit
+                # accept missing fields (Mongo treats absent as not-equal).
+                if actual == expected["$ne"]:
                     return False
                 continue
             return False
@@ -126,7 +136,7 @@ def make_contract_doc(
         "deposit_amount": 2500,
         "status": status,
         "access_token_hash": vendor_service._hash_contract_access_token(access_token),
-        "token_expires_at": datetime(2026, 5, 1, tzinfo=timezone.utc),
+        "token_expires_at": datetime.now(timezone.utc) + timedelta(days=30),
         "token_revoked_at": None,
         "token_last_sent_at": None,
         "token_last_viewed_at": None,
@@ -179,8 +189,22 @@ def configured_vendor_service(monkeypatch: pytest.MonkeyPatch):
                     "phone": "555-1234",
                     "address": "123 Main St",
                     "service_category": "photographer",
+                    "created_by": "planner@example.com",
                 }
             ]
+        ),
+    )
+    monkeypatch.setattr(
+        vendor_service,
+        "_get_owned_wedding",
+        AsyncMock(
+            return_value={
+                "_id": "wedding-1",
+                "couple_names": "Alex & Jamie",
+                "date": "2026-06-12",
+                "venue": "Garden Venue",
+                "assigned_planner_email": "planner@example.com",
+            }
         ),
     )
     monkeypatch.setattr(
@@ -249,6 +273,46 @@ async def test_create_contract_initializes_version_metadata(
     assert stored["root_contract_id"] == str(stored["_id"])
     assert stored["parent_contract_id"] is None
     assert stored["supersedes_contract_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_contract_links_assignment_and_returns_serialized_ids(
+    configured_vendor_service,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _, assignments, vendor_profile_id = configured_vendor_service
+    assignment_id = ObjectId()
+    assignments.documents.append(
+        {
+            "_id": assignment_id,
+            "vendor_profile_id": vendor_profile_id,
+            "wedding_id": "wedding-1",
+            "budget_category_id": "budget-1",
+            "contract_id": None,
+        }
+    )
+    monkeypatch.setattr(
+        service,
+        "_resolve_couple_contact",
+        AsyncMock(return_value={"couple_email": None, "couple_names": None}),
+    )
+
+    created = await service.create_contract(
+        wedding_id="wedding-1",
+        vendor_profile_id=vendor_profile_id,
+        created_by="planner@example.com",
+        total_amount=5000,
+        deposit_percentage=50,
+    )
+    fetched = await service.get_contract(
+        created["_id"], created_by="planner@example.com"
+    )
+
+    assert created["id"] == created["_id"]
+    assert fetched["id"] == created["_id"]
+    assert fetched["_id"] == created["_id"]
+    assert assignments.documents[0]["contract_id"] == created["_id"]
+    assert assignments.documents[0]["contracted_amount"] == 5000
 
 
 @pytest.mark.asyncio

@@ -105,7 +105,7 @@ from app.core.database_indexes import create_all_indexes
 
 # Import settings and core components
 from app.core.settings import settings
-from app.middleware.audit_logging import AuditLoggingMiddleware
+from app.middleware.audit_logging import AuditLoggingMiddleware, audit_buffer
 
 # Import middleware
 from app.middleware.error_handler import ErrorHandlerMiddleware
@@ -430,6 +430,17 @@ async def lifespan(app: FastAPI):
         await init_database()
         logger.info("Database initialized")
 
+        # Start the audit-log batch buffer.  Once running, the
+        # AuditLoggingMiddleware enqueues entries here instead of doing
+        # one ``insert_one`` per request, removing a Mongo round trip
+        # from every authenticated request.  See AuditLogBuffer in
+        # app/middleware/audit_logging.py for durability semantics.
+        if settings.audit_log_to_db:
+            from app.core.database import mongo
+
+            await audit_buffer.start(mongo.db["audit_logs"])
+            logger.info("Audit log buffer started")
+
         # Initialize cache if enabled
         if settings.redis_enabled:
             await init_cache()
@@ -554,9 +565,25 @@ async def lifespan(app: FastAPI):
         # Stop SSE Redis listener
         await sse_manager.stop_redis_listener()
 
+        # Drain the audit-log buffer before the DB connection closes.
+        # ``shutdown()`` is idempotent — the ``finally`` block below
+        # will no-op if we already drained here.
+        if settings.audit_log_to_db:
+            await audit_buffer.shutdown()
+            logger.info("Audit log buffer drained")
+
     finally:
         # Shutdown
         logger.info("Shutting down application")
+
+        # Defensive: if startup raised before the post-yield drain
+        # could run, flush whatever is in the buffer before we close
+        # the DB connection.  ``shutdown()`` is idempotent.
+        if settings.audit_log_to_db:
+            try:
+                await audit_buffer.shutdown()
+            except Exception as e:
+                logger.error(f"Audit buffer shutdown raised in finally: {e}")
 
         # Close database connection
         await close_database()
@@ -687,6 +714,28 @@ if settings.enable_compression:
 # Log detailed Pydantic validation errors so 422s can be debugged from server logs
 
 
+def _sanitize_validation_errors(errors: list[dict]) -> list[dict]:
+    """Make Pydantic v2's exc.errors() JSON-serializable.
+
+    Pydantic v2 places the raw exception instance in ``ctx['error']`` (e.g.
+    a ``ValueError`` raised from a ``@model_validator``). ``JSONResponse``
+    can't serialize that, and the resulting ``TypeError`` was being caught
+    by the global error handler and turned into a 500 — masking the real
+    422. Convert any non-JSON-friendly values to strings.
+    """
+    sanitized: list[dict] = []
+    for err in errors:
+        clean = {k: v for k, v in err.items() if k != "ctx"}
+        ctx = err.get("ctx")
+        if isinstance(ctx, dict):
+            clean["ctx"] = {
+                k: (str(v) if isinstance(v, BaseException) else v)
+                for k, v in ctx.items()
+            }
+        sanitized.append(clean)
+    return sanitized
+
+
 @app.exception_handler(RequestValidationError)
 async def log_validation_errors(request: Request, exc: RequestValidationError):
     body: str = ""
@@ -697,13 +746,15 @@ async def log_validation_errors(request: Request, exc: RequestValidationError):
         logger.debug(f"Failed to read request body for logging: {e}")
         body = "<could not read body>"
 
+    sanitized = _sanitize_validation_errors(exc.errors())
+
     logger.warning(
         f"422 Validation Error on {request.method} {request.url.path} | "
-        f"body={body} | errors={exc.errors()}"
+        f"body={body} | errors={sanitized}"
     )
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors()},
+        content={"detail": sanitized},
     )
 
 
@@ -981,8 +1032,22 @@ async def add_cache_headers(request: Request, call_next):
             or path.startswith("/admin/")
             or path.startswith("/vendor-contract/")
         ):
-            # All dynamic API/portal endpoints — no caching
-            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            # Dynamic API/portal endpoints.  When SAFE_GET_CACHE_ENABLED
+            # is set, idempotent GET/HEAD responses get a short private
+            # cache window instead of ``no-store``.  This is safe because
+            # the auth-extended Redis cache invalidates on every state
+            # flip (Stripe webhooks, trial expiry, team-permission
+            # changes), so a 5-second browser cache cannot serve stale
+            # billing/role state.  Mutations and the default branch keep
+            # the previous ``no-store`` behavior.
+            if settings.safe_get_cache_enabled and request.method in ("GET", "HEAD"):
+                response.headers["Cache-Control"] = (
+                    f"private, max-age={settings.safe_get_cache_max_age}"
+                )
+            else:
+                response.headers["Cache-Control"] = (
+                    "no-cache, no-store, must-revalidate"
+                )
         else:
             response.headers["Cache-Control"] = (
                 "public, max-age=300"  # 5 minutes for other content

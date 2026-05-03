@@ -110,7 +110,7 @@ export default worker;
 async function runTrialMaintenance(env) {
   console.log('Running trial maintenance...');
 
-  const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/cron/trials/run-maintenance`, {
+  const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/admin/cron/trials/run-maintenance`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${env.CRON_SECRET}`,
@@ -138,7 +138,7 @@ async function runTrialMaintenance(env) {
 async function sendTrialWarnings(env) {
   console.log('Sending trial warnings...');
 
-  const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/cron/trials/send-warnings`, {
+  const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/admin/cron/trials/send-warnings`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${env.CRON_SECRET}`,
@@ -166,7 +166,7 @@ async function sendTrialWarnings(env) {
 async function checkExpiredTrials(env) {
   console.log('Checking expired trials...');
 
-  const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/cron/trials/check-expired`, {
+  const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/admin/cron/trials/check-expired`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${env.CRON_SECRET}`,
@@ -198,14 +198,14 @@ async function sendFailureAlert(env, jobName, errorMessage) {
   }
 
   try {
-    await fetch('https://api.resend.com/emails', {
+    await fetch('https://api.resend.io/emails', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${env.RESEND_API_KEY}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        from: 'alerts@thespecialwedding.com',
+        from: 'alerts@thespecialwedding.io',
         to: [env.ALERT_EMAIL],
         subject: `Trial Cron Job Failed: ${jobName}`,
         html: `
@@ -284,14 +284,14 @@ async function sendSuccessNotification(env, result) {
   }
 
   try {
-    await fetch('https://api.resend.com/emails', {
+    await fetch('https://api.resend.io/emails', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${env.RESEND_API_KEY}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        from: 'alerts@thespecialwedding.com',
+        from: 'alerts@thespecialwedding.io',
         to: [env.ALERT_EMAIL],
         subject: `Trial Maintenance Complete: ${warningsCount} warnings, ${expiredCount} expired`,
         html: `

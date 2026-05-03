@@ -51,7 +51,7 @@ export const CallToActionSection: React.FC<CallToActionSectionProps> = ({ config
       ></div>
 
       <p className="text-lg text-gray-600 mb-8 max-w-2xl mx-auto">
-        Join thousands of wedding planners who have already transformed their businesses with our comprehensive platform. Start your free trial today and see the difference.
+        Join thousands of wedding planners who have already transformed their businesses with our comprehensive platform. Start your 30-day free trial today and see the difference.
       </p>
 
       {/* CTA Buttons */}
@@ -65,7 +65,7 @@ export const CallToActionSection: React.FC<CallToActionSectionProps> = ({ config
             backgroundColor: theme?.primary_color || '#1e3a5f'
           }}
         >
-          Start Free Trial
+          Start 30-Day Trial
         </button>
 
         <button
@@ -101,7 +101,7 @@ export const CallToActionSection: React.FC<CallToActionSectionProps> = ({ config
       {/* Additional assurance text */}
       <div className="mt-8 pt-6 border-t border-gray-200">
         <p className="text-sm text-gray-500">
-          No credit card required • Cancel anytime • 24/7 support
+          30-day trial • no credit card required • Cancel anytime • 24/7 support
         </p>
       </div>
     </GlassCard>

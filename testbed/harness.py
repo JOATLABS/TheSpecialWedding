@@ -50,7 +50,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -120,19 +120,20 @@ class TestbedConfig:
 
 @dataclass
 class PlannerSeed:
-    """Return value of `Harness.seed_planner_on_clock`.
+    """Return value of `Harness.seed_planner` and `Harness.seed_planner_on_clock`.
 
     Carries everything a driver needs to drive subsequent phases — the
     Stripe customer + subscription ids, the Mongo user_id, and the clock id
-    the customer is pinned to (for future advances).
+    the customer is pinned to (or None when the customer was created
+    clockless via `seed_planner`).
     """
 
-    clock_id: str
     customer_id: str
     subscription_id: str
     user_id: str
     email: str
     plan_id: str
+    clock_id: Optional[str] = None
     has_trial: bool = False
 
 
@@ -480,6 +481,17 @@ class Harness:
                     f"  ✅ {coll_name}: removed {result.deleted_count} doc(s)"
                 )
 
+        # Packages are per-planner data — cascade them with the user so test
+        # artifacts created outside the verifier's name prefix (e.g. ad-hoc
+        # packages from manual gate tests in the live UI) don't pile up
+        # across re-runs.
+        result = self.mongo["packages"].delete_many({"planner_id": user_id})
+        if result.deleted_count:
+            collections_affected += 1
+            self.log.info(
+                f"  ✅ packages (by planner_id): removed {result.deleted_count} doc(s)"
+            )
+
         # team_members also keys by invitee email for incoming invites.
         result = self.mongo["team_members"].delete_many({"email": email})
         if result.deleted_count:
@@ -805,11 +817,10 @@ class Harness:
         )
         return subscription
 
-    def seed_planner_on_clock(
+    def seed_planner(
         self,
         *,
         admin_token: str,
-        clock_id: str,
         email: str,
         password: str,
         plan_id: str,
@@ -819,34 +830,63 @@ class Harness:
         pm_token: Optional[str] = PM_TOKEN_GOOD,
         trial_days: Optional[int] = None,
         customer_metadata: Optional[dict] = None,
+        clock_id: Optional[str] = None,
     ) -> PlannerSeed:
-        """End-to-end planner bootstrap on a test clock.
+        """End-to-end planner bootstrap. **No clock by default.**
 
-        The 6-step arc that every planner-lifecycle driver shares:
+        Use this for tests that don't need to advance Stripe time —
+        contract / package / vendor flows, anything verified at the moment
+        of the action. For tests that need to drive subscription state
+        through time (renewals, trial expiry, past_due transitions, the
+        autopilot installment cron), use `seed_planner_on_clock` which
+        delegates here with `clock_id` set.
 
-          1. Create Stripe customer on clock
-          2. /public/register
-          3. Activate (is_active + email_verified)
-          4. Link Stripe customer ↔ user_id
+        The 6-step arc every planner-lifecycle driver shares:
+
+          1. Create Stripe customer (clock-pinned if `clock_id`, else plain)
+          2. POST /public/register
+          3. Activate (is_active + email_verified harness bypass)
+          4. Link Stripe customer ↔ user_id (so webhooks resolve)
           5. Attach payment method (unless pm_token=None, e.g. trial-only)
-          6. Create subscription (with or without trial)
+          6. Create real Stripe subscription → webhook flips
+             users.subscription_status=active
 
         Returns a PlannerSeed with every id the driver needs.
 
         pm_token=None is allowed for scenarios that want to exercise the
         "no PM on file" path — e.g. test that a trial without PM expires to
         `expired` rather than trying to charge. Default is PM_TOKEN_GOOD.
-        """
-        self.log.info(f"Seeding planner {email} on clock {clock_id}…")
 
-        # 1. Stripe customer on clock.
-        customer = self.create_customer_on_clock(
-            clock_id,
-            email=email,
-            name=f"{first_name} {last_name}",
-            plan_id=plan_id,
-            **(customer_metadata or {}),
+        Adding a clock just for the customer when no time advancement is
+        required is overhead with no benefit — use the clockless default.
+        """
+        self.log.info(
+            f"Seeding planner {email}"
+            + (f" on clock {clock_id}" if clock_id else " (clockless)")
+            + "…"
         )
+
+        # 1. Stripe customer.
+        if clock_id:
+            customer = self.create_customer_on_clock(
+                clock_id,
+                email=email,
+                name=f"{first_name} {last_name}",
+                plan_id=plan_id,
+                **(customer_metadata or {}),
+            )
+        else:
+            meta = {
+                "driver": self.driver_name,
+                "plan_id": plan_id,
+                **(customer_metadata or {}),
+            }
+            customer = stripe.Customer.create(
+                email=email,
+                name=f"{first_name} {last_name}",
+                metadata=meta,
+            )
+            self.log.info(f"  ✅ Stripe customer: {customer.id}")
 
         # 2. Register.
         self.register_planner(
@@ -871,7 +911,7 @@ class Harness:
             self.attach_payment_method(customer.id, pm_token)
             self.log.info(f"  ✅ Payment method attached ({pm_token})")
 
-        # 6. Subscribe.
+        # 6. Subscribe (real Stripe Subscription; webhook flips Mongo state).
         subscription = self.subscribe_planner(
             admin_token=admin_token,
             customer_id=customer.id,
@@ -882,13 +922,52 @@ class Harness:
         self.wait_for_webhooks()
 
         return PlannerSeed(
-            clock_id=clock_id,
             customer_id=customer.id,
             subscription_id=subscription.id,
             user_id=user_id,
             email=email,
             plan_id=plan_id,
+            clock_id=clock_id,
             has_trial=trial_days is not None,
+        )
+
+    def seed_planner_on_clock(
+        self,
+        *,
+        admin_token: str,
+        clock_id: str,
+        email: str,
+        password: str,
+        plan_id: str,
+        first_name: str = "Testbed",
+        last_name: str = "Planner",
+        company_name: str = "Testbed QA Co",
+        pm_token: Optional[str] = PM_TOKEN_GOOD,
+        trial_days: Optional[int] = None,
+        customer_metadata: Optional[dict] = None,
+    ) -> PlannerSeed:
+        """Same as `seed_planner` but pins the Stripe customer to a test clock.
+
+        Use when the test needs to advance time (subscription renewals,
+        trial expiry, past_due transitions, autopilot installment cron).
+        For one-shot tests that don't drive subscription state through
+        time, use `seed_planner` directly — adding a clock costs you a
+        cleanup obligation for no gain.
+
+        Thin delegating wrapper — all logic lives in `seed_planner`.
+        """
+        return self.seed_planner(
+            admin_token=admin_token,
+            email=email,
+            password=password,
+            plan_id=plan_id,
+            first_name=first_name,
+            last_name=last_name,
+            company_name=company_name,
+            pm_token=pm_token,
+            trial_days=trial_days,
+            customer_metadata=customer_metadata,
+            clock_id=clock_id,
         )
 
     # ------------------------------------------------------------------
@@ -946,3 +1025,898 @@ class Harness:
         secs = seconds if seconds is not None else self.config.webhook_settle_seconds
         self.log.info(f"  ⏳ Waiting {secs}s for Stripe webhooks to settle…")
         time.sleep(secs)
+
+    # ------------------------------------------------------------------
+    # Scheduled-payment / autopilot helpers
+    # ------------------------------------------------------------------
+    #
+    # The contract-sign flow charges the deposit immediately at sign time
+    # (`auto_charge_first_payment`), but milestones with
+    # `trigger=days_after_signing` aren't charged until the daily
+    # `POST /admin/process-due-payments` cron picks them up. To exercise
+    # the full lifecycle in a single verifier run — without waiting 7
+    # actual days — drivers backdate the milestone's `due_date` in Mongo
+    # and then call the cron endpoint directly. This is verifier-only
+    # time travel; production code paths (PaymentIntent creation, webhook
+    # reconciliation, Connect destination routing) all run identically to
+    # how they would on the real cron tick.
+
+    def backdate_scheduled_payment(
+        self,
+        *,
+        payment_id: str,
+        days_back: int = 8,
+    ) -> None:
+        """Move a scheduled_payment's due_date into the past for testing.
+
+        Verifier-only shim. Used to simulate the passage of time so the
+        autopilot cron picks up a milestone that would otherwise sit
+        scheduled for days. Logs explicitly that this is a test mutation
+        of state.
+        """
+        new_due = datetime.now(timezone.utc) - timedelta(days=days_back)
+        result = self.mongo["scheduled_payments"].update_one(
+            {"_id": ObjectId(payment_id)},
+            {"$set": {"due_date": new_due}},
+        )
+        if result.modified_count != 1:
+            raise AssertionError(
+                f"Expected to backdate exactly 1 scheduled_payment row "
+                f"(id={payment_id}); modified={result.modified_count}"
+            )
+        self.log.info(
+            f"  🕒 Backdated scheduled_payment {payment_id} by {days_back} "
+            f"days (due_date={new_due.isoformat()}) — verifier time-travel"
+        )
+
+    def process_due_payments_now(self) -> dict:
+        """Trigger the autopilot cron synchronously and return the summary.
+
+        Calls `POST /admin/process-due-payments` with the configured
+        CRON_SECRET. The cron runs `autopilot_service.process_due_payments`,
+        which finds every scheduled_payment with `due_date <= today` and
+        creates a PaymentIntent (off_session, transfer_data.destination =
+        planner.stripe_connect_id) for each. Returns the cron summary
+        body — `{"status": "success", "results": {processed, succeeded,
+        failed, ...}}`.
+
+        Raises if CRON_SECRET isn't configured or the call fails.
+        """
+        cron_secret = os.getenv("CRON_SECRET", "").strip()
+        if not cron_secret:
+            raise RuntimeError(
+                "CRON_SECRET is not set in the environment — required to "
+                "trigger /admin/process-due-payments. Add it to .env or "
+                "export it before running the verifier."
+            )
+        url = f"{self.config.backend_url}/admin/process-due-payments"
+        self.log.info(f"  🔁 Triggering autopilot: POST {url}")
+        resp = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {cron_secret}"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        results = body.get("results", {})
+        self.log.info(
+            f"  ✅ Autopilot summary: processed={results.get('processed', 0)}, "
+            f"succeeded={results.get('succeeded', 0)}, "
+            f"failed={results.get('failed', 0)}"
+        )
+        return body
+
+    def wait_for_scheduled_payment_status(
+        self,
+        *,
+        payment_id: str,
+        expected_status: str,
+        timeout_seconds: int = 30,
+        poll_interval_seconds: float = 1.0,
+    ) -> dict:
+        """Poll Mongo until a scheduled_payment row reaches the expected status.
+
+        Use this after triggering the cron endpoint to wait for the
+        payment_intent.succeeded webhook to land and flip the row from
+        `processing → succeeded`. Returns the final row dict; raises if
+        the timeout elapses without the status flipping.
+        """
+        deadline = time.time() + timeout_seconds
+        last_status = None
+        while time.time() < deadline:
+            row = self.mongo["scheduled_payments"].find_one(
+                {"_id": ObjectId(payment_id)}
+            )
+            if not row:
+                raise AssertionError(
+                    f"scheduled_payment {payment_id} disappeared while polling"
+                )
+            last_status = row.get("status")
+            if last_status == expected_status:
+                self.log.info(
+                    f"  ✅ scheduled_payment {payment_id} reached status="
+                    f"{expected_status!r}"
+                )
+                return row
+            time.sleep(poll_interval_seconds)
+        raise AssertionError(
+            f"Timed out after {timeout_seconds}s waiting for scheduled_payment "
+            f"{payment_id} to reach status={expected_status!r}; "
+            f"last seen status={last_status!r}"
+        )
+
+    # ------------------------------------------------------------------
+    # Stripe Connect (Express) helpers
+    # ------------------------------------------------------------------
+
+    def ensure_connect_account(
+        self,
+        *,
+        user_id: str,
+        email: str,
+        country: str = "US",
+    ) -> str:
+        """Ensure the planner has a Stripe Connect Express account, idempotent.
+
+        Returns the connect account id. If the user already has
+        `stripe_connect_id` on their Mongo doc, returns it as-is. Otherwise
+        creates a fresh Express account via Stripe and persists the id on
+        the user document. Does NOT complete onboarding —
+        `charges_enabled=False` is the expected post-create state until the
+        planner walks the hosted onboarding flow.
+
+        Use `wait_for_connect_charges_enabled` after onboarding to poll the
+        ready state.
+
+        Raises SystemExit with a clear message if the platform Stripe
+        account hasn't signed up for Connect at all (one-time setup at
+        https://dashboard.stripe.com/test/connect).
+        """
+        user = self.get_user_doc(user_id)
+        if user and user.get("stripe_connect_id"):
+            self.log.info(
+                f"  ✅ Stripe Connect account already attached: {user['stripe_connect_id']}"
+            )
+            return user["stripe_connect_id"]
+
+        try:
+            account = stripe.Account.create(
+                type="express",
+                country=country,
+                email=email,
+                capabilities={
+                    "card_payments": {"requested": True},
+                    "transfers": {"requested": True},
+                },
+                business_type="individual",
+                business_profile={
+                    "url": "https://thespecialwedding.io",
+                    "mcc": "7299",
+                    "product_description": "Wedding planning services (test)",
+                },
+            )
+        except stripe.error.InvalidRequestError as exc:
+            if "signed up for Connect" in str(exc):
+                raise SystemExit(
+                    "Stripe Connect is not enabled for this test account.\n"
+                    "Visit https://dashboard.stripe.com/test/connect and click "
+                    "'Get started' (one-time, free)."
+                )
+            raise
+
+        self.mongo["users"].update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"stripe_connect_id": account.id}},
+        )
+        self.log.info(
+            f"  ✅ Stripe Connect account: {account.id} (charges_enabled=False until onboarding)"
+        )
+        return account.id
+
+    def create_account_link(self, account_id: str, return_url: str) -> str:
+        """Generate a Stripe AccountLink URL for hosted onboarding.
+
+        Use the returned URL with checkpoint() — the planner clicks through
+        Stripe's hosted form (using "Use test data" buttons) and gets
+        redirected back to return_url.
+        """
+        link = stripe.AccountLink.create(
+            account=account_id,
+            refresh_url=return_url,
+            return_url=return_url,
+            type="account_onboarding",
+        )
+        return link.url
+
+    def wait_for_connect_charges_enabled(
+        self,
+        account_id: str,
+        max_polls: int = 24,
+        poll_interval: int = 5,
+    ) -> None:
+        """Poll Stripe until the connected account flips charges_enabled=True.
+
+        Raises RuntimeError if it never flips (typically means onboarding
+        wasn't completed or capability requirements remain).
+        """
+        for attempt in range(1, max_polls + 1):
+            account = stripe.Account.retrieve(account_id)
+            if account.charges_enabled:
+                self.log.info(f"  ✅ charges_enabled=True (poll {attempt}/{max_polls})")
+                return
+            self.log.info(f"  ⏳ charges_enabled=False (poll {attempt}/{max_polls})")
+            time.sleep(poll_interval)
+        raise RuntimeError(
+            f"Stripe Connect account {account_id} never flipped charges_enabled=True"
+        )
+
+    def delete_connect_account(self, account_id: str) -> None:
+        """Delete a Stripe Express account. Cleanup helper — swallows
+        already-deleted errors with a warning so cleanup scripts stay
+        idempotent."""
+        try:
+            stripe.Account.delete(account_id)
+            self.log.info(f"  ✅ Deleted Stripe Express account {account_id}")
+        except stripe.error.StripeError as exc:
+            self.log.warning(f"  ⚠️ Could not delete Stripe account {account_id}: {exc}")
+
+    def ensure_connect_ready(
+        self,
+        *,
+        user_id: str,
+        email: str,
+        return_url: str,
+        checkpoint_name: str = "CONNECT_ONBOARDING",
+    ) -> str:
+        """Ensure the planner has a Stripe Connect Express account that is
+        `charges_enabled=True`. End-to-end: create-if-missing, check
+        charges_enabled, run the hosted-onboarding flow with a checkpoint
+        if not, poll until ready.
+
+        Returns the connect account id. Use this in any driver that needs
+        a Connect-ready planner — saves the 5-line ritual.
+
+        The checkpoint copy is intentionally generic ("Stripe Connect
+        onboarding required …"). Drivers can override `checkpoint_name`
+        to differentiate in the run log if they want.
+        """
+        connect_id = self.ensure_connect_account(user_id=user_id, email=email)
+        account = stripe.Account.retrieve(connect_id)
+        if account.charges_enabled:
+            return connect_id
+
+        link = self.create_account_link(connect_id, return_url=return_url)
+        self.checkpoint(
+            checkpoint_name,
+            [
+                "Stripe Connect onboarding required (one-time per planner).",
+                "Open the URL below in Chrome and click 'Use test data' on each step:",
+                link,
+                f"When Stripe redirects you back to {return_url}, return here.",
+            ],
+        )
+        self.wait_for_connect_charges_enabled(connect_id)
+        return connect_id
+
+    # ------------------------------------------------------------------
+    # Wedding + Couple helpers (planner-side)
+    # ------------------------------------------------------------------
+
+    def create_wedding(
+        self,
+        *,
+        planner_token: str,
+        couple_names: str,
+        date_iso: str,
+        guest_count: Optional[int] = None,
+        venue: Optional[str] = None,
+        status: str = "active",
+    ) -> str:
+        """POST /admin/weddings — create a real wedding row through the
+        production code path.
+
+        `couple_names` is a string only (e.g. "Alex & Jamie"). It is NOT a
+        link to a couple user — that link is established later via
+        `invite_couple_to_wedding`. Until invited, the couple has no portal
+        account.
+
+        Returns the wedding id (typically `wedding_<hex>`).
+        """
+        payload: dict = {
+            "couple_names": couple_names,
+            "date": date_iso,
+            "status": status,
+        }
+        if guest_count is not None:
+            payload["guest_count"] = guest_count
+        if venue is not None:
+            payload["venue"] = venue
+
+        resp = self.api_post("/admin/weddings", token=planner_token, json=payload)
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(f"wedding create failed: {resp.status_code} {resp.text}")
+        body = resp.json()
+        wedding_id = (
+            body.get("id")
+            or body.get("_id")
+            or (body.get("wedding") or {}).get("id")
+            or (body.get("wedding") or {}).get("_id")
+        )
+        if not wedding_id:
+            raise RuntimeError(f"wedding create: no id in response {body!r}")
+        self.log.info(
+            f"  ✅ Created wedding: {wedding_id} ({couple_names}, {date_iso})"
+        )
+        return str(wedding_id)
+
+    def invite_couple_to_wedding(
+        self,
+        *,
+        planner_token: str,
+        wedding_id: str,
+        email: str,
+        partner1_name: str,
+        partner2_name: Optional[str] = None,
+    ) -> dict:
+        """POST /admin/couple-portal/invite — invite a couple to the wedding's
+        couple portal.
+
+        Returns the response payload, which includes `setup_link` — the
+        couple-side URL where the couple sets up their own credentials.
+        Production planners share this link via email; tests can either
+        complete the setup programmatically (TODO: add helper) or pause
+        for manual setup at a checkpoint.
+
+        Without this step, the couple is just a `couple_names` string on
+        the wedding — they have no portal account, no login, no
+        `/couple/dashboard` access.
+        """
+        payload: dict = {
+            "email": email,
+            "partner1_name": partner1_name,
+            "wedding_id": wedding_id,
+        }
+        if partner2_name:
+            payload["partner2_name"] = partner2_name
+        resp = self.api_post(
+            "/admin/couple-portal/invite", token=planner_token, json=payload
+        )
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(f"couple invite failed: {resp.status_code} {resp.text}")
+        body = resp.json()
+        self.log.info(
+            f"  ✅ Couple invited: {email} → setup_link={body.get('setup_link', '(not in response)')[:60]}…"
+        )
+        return body
+
+    # ------------------------------------------------------------------
+    # Package helpers (planner-side)
+    # ------------------------------------------------------------------
+
+    def create_package(
+        self,
+        *,
+        planner_token: str,
+        name: str,
+        total_amount: float,
+        services: Optional[list[dict]] = None,
+        payment_schedule: Optional[list[dict]] = None,
+        description: str = "",
+        currency: str = "usd",
+        cancellation_policy: str = "",
+        status: str = "active",
+    ) -> str:
+        """POST /admin/packages — create a real package through the
+        production code path.
+
+        `payment_schedule` items shape (validated by ScheduleItemRequest):
+          - name: str (required)
+          - trigger: "on_signing" | "days_after_signing" | "days_before_wedding" | "fixed_date"
+          - days_after / days_before / fixed_date as appropriate
+          - amount XOR percentage (production UI uses percentage; backend
+            accepts either)
+
+        Status defaults to "active" so the package is immediately
+        sendable. "draft" status blocks send_to_couple.
+
+        Returns the package id (24-char hex ObjectId stringified).
+        """
+        payload: dict = {
+            "name": name,
+            "description": description,
+            "services": services or [],
+            "total_amount": total_amount,
+            "currency": currency,
+            "payment_schedule": payment_schedule or [],
+            "cancellation_policy": cancellation_policy,
+            "status": status,
+        }
+        resp = self.api_post("/admin/packages", token=planner_token, json=payload)
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(f"package create failed: {resp.status_code} {resp.text}")
+        body = resp.json()
+        package = body.get("package") or body
+        package_id = package.get("id") or package.get("_id")
+        if not package_id:
+            raise RuntimeError(f"package create: no id in response {body!r}")
+        self.log.info(
+            f"  ✅ Created package: {package_id} "
+            f"(${total_amount:.2f} {currency.upper()}, status={status})"
+        )
+        return str(package_id)
+
+    def send_package_to_couple(
+        self,
+        *,
+        planner_token: str,
+        package_id: str,
+        wedding_id: str,
+        couple_email: str,
+        partner1_name: str,
+        partner2_name: Optional[str] = None,
+    ) -> str:
+        """POST /admin/packages/{id}/send — send a package to a couple,
+        producing a public-token contract row through `package_service.send_to_couple`.
+
+        Returns the public contract token. The couple uses the token to
+        open `/contracts/{token}` (no auth required) and sign +
+        capture-card via SetupIntent.
+
+        Hard requirement: `RESEND_API_KEY` must be set. The
+        `send_to_couple` service unconditionally emails the couple after
+        creating the contract row, and ROLLS BACK the row (then raises
+        RuntimeError) if the email service returns falsy. Without the key,
+        the API would 500 and this method would fail with a confusing
+        "no token in response" because the row would be gone. The harness
+        already loaded .env at construction time, so we just check the
+        var here and fail fast with a clear message if it's missing.
+        """
+        if not os.getenv("RESEND_API_KEY"):
+            raise RuntimeError(
+                "RESEND_API_KEY is not set. send_package_to_couple emails the "
+                "couple after creating the contract row, and rolls back the "
+                "row if the email send fails. Set RESEND_API_KEY in .env "
+                "(any valid Resend test key works) and re-run."
+            )
+
+        payload: dict = {
+            "couple": {
+                "partner1_name": partner1_name,
+                "email": couple_email,
+            },
+            "wedding_id": wedding_id,
+        }
+        if partner2_name:
+            payload["couple"]["partner2_name"] = partner2_name
+        resp = self.api_post(
+            f"/admin/packages/{package_id}/send",
+            token=planner_token,
+            json=payload,
+        )
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(f"package send failed: {resp.status_code} {resp.text}")
+        body = resp.json()
+        contract = body.get("contract") or body
+        token = contract.get("token") or contract.get("public_token")
+        if not token:
+            raise RuntimeError(f"package send: no token in response {body!r}")
+        self.log.info(f"  ✅ Sent package — contract token: {token}")
+        return token
+
+    # ------------------------------------------------------------------
+    # Contract sign helpers (couple-side, public-token)
+    # ------------------------------------------------------------------
+
+    def init_contract_setup_intent(self, contract_token: str) -> dict:
+        """POST /public/contracts/{token}/setup-intent — initialize the
+        SetupIntent for capturing the couple's payment method.
+
+        No auth required; the contract token is the gate. Returns
+        {customer_id, client_secret, setup_intent_id} — `setup_intent_id`
+        is parsed from the client_secret since Stripe's secret format is
+        always `<si_id>_secret_<random>`.
+        """
+        resp = requests.post(
+            f"{self.config.backend_url}/public/contracts/{contract_token}/setup-intent",
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        client_secret = data["client_secret"]
+        setup_intent_id = client_secret.split("_secret_")[0]
+        self.log.info(
+            f"  ✅ SetupIntent initialized: customer={data['customer_id']} "
+            f"setup_intent={setup_intent_id}"
+        )
+        return {
+            "customer_id": data["customer_id"],
+            "client_secret": client_secret,
+            "setup_intent_id": setup_intent_id,
+        }
+
+    def confirm_setup_intent_with_test_pm(
+        self, setup_intent_id: str, pm_token: str = PM_TOKEN_GOOD
+    ) -> dict:
+        """Confirm a Stripe SetupIntent server-side using a pre-built test
+        PaymentMethod token (default: pm_card_visa).
+
+        In test mode this completes without 3DS step-up. Returns
+        {payment_method_id, last4, brand} for use with sign_contract.
+        Raises if the SetupIntent doesn't reach `succeeded`.
+        """
+        intent = stripe.SetupIntent.confirm(setup_intent_id, payment_method=pm_token)
+        if intent.status != "succeeded":
+            raise RuntimeError(
+                f"SetupIntent confirm did not succeed: status={intent.status}"
+            )
+        pm = stripe.PaymentMethod.retrieve(intent.payment_method)
+        last4 = pm.card.last4 if pm.card else None
+        brand = pm.card.brand if pm.card else None
+        self.log.info(
+            f"  ✅ SetupIntent confirmed: pm={intent.payment_method} ({brand} •••• {last4})"
+        )
+        return {
+            "payment_method_id": intent.payment_method,
+            "last4": last4,
+            "brand": brand,
+        }
+
+    def sign_contract(
+        self,
+        *,
+        contract_token: str,
+        signature_name: str,
+        customer_id: str,
+        payment_method_id: str,
+        setup_intent_id: str,
+        last4: Optional[str] = None,
+        brand: Optional[str] = None,
+    ) -> dict:
+        """POST /public/contracts/{token}/sign — sign the contract.
+
+        Triggers `contract_service.sign_contract` server-side which:
+          1. Marks the contract `signed`
+          2. Creates `scheduled_payments` rows from the package schedule
+          3. Auto-charges the on_signing deposit through Stripe with
+             transfer_data.destination = the planner's stripe_connect_id
+
+        Returns the response body (includes `contract` with
+        `scheduled_payments`, `deposit_processed`, etc.).
+        """
+        resp = requests.post(
+            f"{self.config.backend_url}/public/contracts/{contract_token}/sign",
+            json={
+                "signature_name": signature_name,
+                "accept_terms": True,
+                "stripe_customer_id": customer_id,
+                "stripe_payment_method_id": payment_method_id,
+                "setup_intent_id": setup_intent_id,
+                "payment_method_last4": last4,
+                "payment_method_brand": brand,
+            },
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(f"sign failed: {resp.status_code} {resp.text}")
+        body = resp.json()
+        contract = body.get("contract") or {}
+        self.log.info(
+            f"  ✅ Contract signed. deposit_processed={contract.get('deposit_processed')} "
+            f"scheduled_payments={len(contract.get('scheduled_payments') or [])}"
+        )
+        return body
+
+    # ------------------------------------------------------------------
+    # Budget helpers (planner-side)
+    # ------------------------------------------------------------------
+    #
+    # All budget helpers below go through the real planner endpoints so
+    # the verification mirrors what a planner would actually trigger
+    # from the admin UI. No direct Mongo writes for product state.
+
+    def create_budget_category(
+        self,
+        *,
+        planner_token: str,
+        wedding_id: str,
+        name: str,
+        budgeted_amount: float,
+        description: str = "",
+        priority: int = 3,
+    ) -> str:
+        """POST /admin/weddings/{wedding_id}/budget/category — create a
+        budget category through the production code path.
+
+        Returns the category id (24-char hex ObjectId stringified).
+        """
+        payload = {
+            "name": name,
+            "description": description,
+            "budgeted_amount": budgeted_amount,
+            "priority": priority,
+        }
+        resp = self.api_post(
+            f"/admin/weddings/{wedding_id}/budget/category",
+            token=planner_token,
+            json=payload,
+        )
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(
+                f"budget category create failed: {resp.status_code} {resp.text}"
+            )
+        body = resp.json()
+        # Response is wrapped via dict_response: {"data": {"category": {...}}, "message": ...}
+        category = (
+            (body.get("data") or {}).get("category") or body.get("category") or body
+        )
+        category_id = category.get("id") or category.get("_id")
+        if not category_id:
+            raise RuntimeError(f"budget category create: no id in response {body!r}")
+        self.log.info(
+            f"  ✅ Created budget category: {category_id} "
+            f"({name}, ${budgeted_amount:.2f})"
+        )
+        return str(category_id)
+
+    def get_wedding_budget(
+        self,
+        *,
+        planner_token: str,
+        wedding_id: str,
+    ) -> dict:
+        """GET /admin/weddings/{wedding_id}/budget — fetch the wedding's
+        complete budget snapshot (categories with actual_spent, summary,
+        recent alerts).
+
+        Returns the response body. Use to assert that
+        actual_spent has incremented after a milestone payment.
+        """
+        resp = self.api_get(f"/admin/weddings/{wedding_id}/budget", token=planner_token)
+        if resp.status_code != 200:
+            raise RuntimeError(f"budget read failed: {resp.status_code} {resp.text}")
+        return resp.json()
+
+    # ------------------------------------------------------------------
+    # Vendor directory + assignment helpers (planner-side)
+    # ------------------------------------------------------------------
+
+    def create_vendor_profile(
+        self,
+        *,
+        planner_token: str,
+        business_name: str,
+        email: str,
+        service_category: str,
+        phone: Optional[str] = None,
+        address: Optional[str] = None,
+    ) -> str:
+        """POST /admin/directory — add a vendor to the planner's
+        directory through the production code path.
+
+        Returns the vendor profile id.
+        """
+        payload: dict = {
+            "business_name": business_name,
+            "email": email,
+            "service_category": service_category,
+        }
+        if phone is not None:
+            payload["phone"] = phone
+        if address is not None:
+            payload["address"] = address
+
+        resp = self.api_post("/admin/directory", token=planner_token, json=payload)
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(
+                f"vendor profile create failed: {resp.status_code} {resp.text}"
+            )
+        body = resp.json()
+        vendor = body.get("vendor") or body
+        vendor_id = vendor.get("id") or vendor.get("_id")
+        if not vendor_id:
+            raise RuntimeError(f"vendor profile create: no id in response {body!r}")
+        self.log.info(
+            f"  ✅ Created vendor profile: {vendor_id} "
+            f"({business_name}, {service_category})"
+        )
+        return str(vendor_id)
+
+    def assign_vendor_to_wedding(
+        self,
+        *,
+        planner_token: str,
+        vendor_profile_id: str,
+        wedding_id: str,
+        budget_category_id: Optional[str] = None,
+        service_notes: Optional[str] = None,
+    ) -> str:
+        """POST /admin/assign — link a vendor to a wedding (and,
+        optionally, to a budget category) through the production code
+        path.
+
+        Returns the assignment id. The budget_category_id parameter is
+        what the budget-propagation fix relies on — every contract
+        created from this assignment should now inherit it.
+        """
+        payload: dict = {
+            "vendor_profile_id": vendor_profile_id,
+            "wedding_id": wedding_id,
+        }
+        if budget_category_id is not None:
+            payload["budget_category_id"] = budget_category_id
+        if service_notes is not None:
+            payload["service_notes"] = service_notes
+
+        resp = self.api_post("/admin/assign", token=planner_token, json=payload)
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(f"vendor assign failed: {resp.status_code} {resp.text}")
+        body = resp.json()
+        assignment = body.get("assignment") or body
+        assignment_id = assignment.get("id") or assignment.get("_id")
+        if not assignment_id:
+            raise RuntimeError(f"vendor assign: no id in response {body!r}")
+        self.log.info(
+            f"  ✅ Assigned vendor {vendor_profile_id} to wedding "
+            f"{wedding_id} (category={budget_category_id or 'none'})"
+        )
+        return str(assignment_id)
+
+    # ------------------------------------------------------------------
+    # Vendor contract + milestone helpers (planner-side)
+    # ------------------------------------------------------------------
+
+    def create_vendor_contract(
+        self,
+        *,
+        planner_token: str,
+        wedding_id: str,
+        vendor_profile_id: str,
+        total_amount: float,
+        deposit_percentage: Optional[float] = None,
+        service_date: Optional[str] = None,
+        service_location: Optional[str] = None,
+    ) -> str:
+        """POST /admin/contracts — create a vendor contract through the
+        production code path.
+
+        Notes:
+          - The route requires a prior `assign_vendor_to_wedding` if
+            you want budget_category_id to propagate (fix shipped at
+            vendor_service.create_contract).
+          - service_date is an ISO date string; the backend parses it.
+
+        Returns the contract id.
+        """
+        payload: dict = {
+            "wedding_id": wedding_id,
+            "vendor_profile_id": vendor_profile_id,
+            "total_amount": total_amount,
+        }
+        if deposit_percentage is not None:
+            payload["deposit_percentage"] = deposit_percentage
+        if service_date is not None:
+            payload["service_date"] = service_date
+        if service_location is not None:
+            payload["service_location"] = service_location
+
+        resp = self.api_post("/admin/contracts", token=planner_token, json=payload)
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(
+                f"vendor contract create failed: {resp.status_code} {resp.text}"
+            )
+        body = resp.json()
+        contract = body.get("contract") or body
+        contract_id = contract.get("id") or contract.get("_id")
+        if not contract_id:
+            raise RuntimeError(f"vendor contract create: no id in response {body!r}")
+        self.log.info(
+            f"  ✅ Created vendor contract: {contract_id} (${total_amount:.2f})"
+        )
+        return str(contract_id)
+
+    def get_vendor_contract(
+        self,
+        *,
+        planner_token: str,
+        contract_id: str,
+    ) -> dict:
+        """GET /admin/contracts/{contract_id} — fetch the contract.
+
+        Used to assert that budget_category_id was propagated from the
+        prior assignment (the central assertion of the fix).
+        """
+        resp = self.api_get(f"/admin/contracts/{contract_id}", token=planner_token)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"vendor contract read failed: {resp.status_code} {resp.text}"
+            )
+        body = resp.json()
+        return body.get("contract") or body
+
+    def create_payment_milestones(
+        self,
+        *,
+        planner_token: str,
+        contract_id: str,
+        milestones: list[dict],
+    ) -> list[dict]:
+        """POST /admin/contracts/{contract_id}/milestones — create one
+        or more payment milestones for a contract.
+
+        Each milestone item shape (per CreateVendorPaymentMilestonesRequest):
+          - description: str (required)
+          - amount: float (required, > 0)
+          - due_date: ISO datetime string (required)
+          - percentage_of_total: float (optional, 0-100)
+          - days_before_event: int (optional)
+
+        Returns the list of created milestone documents.
+        """
+        payload = {"milestones": milestones}
+        resp = self.api_post(
+            f"/admin/contracts/{contract_id}/milestones",
+            token=planner_token,
+            json=payload,
+        )
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(
+                f"milestone create failed: {resp.status_code} {resp.text}"
+            )
+        body = resp.json()
+        created = body if isinstance(body, list) else body.get("milestones") or []
+        self.log.info(
+            f"  ✅ Created {len(created)} milestone(s) for contract {contract_id}"
+        )
+        return created
+
+    def record_milestone_payment(
+        self,
+        *,
+        planner_token: str,
+        milestone_id: str,
+        amount: float,
+        payment_method: str = "bank_transfer",
+        payment_date: Optional[str] = None,
+        notes: Optional[str] = None,
+        receipt_url: Optional[str] = None,
+    ) -> dict:
+        """POST /admin/milestones/{milestone_id}/pay — record a payment
+        against a milestone (manual / offline path).
+
+        Per the fix shipped at vendor_service.record_payment, this path
+        runs three guards (idempotency / status lock / clamp) before
+        the transactional write. The transactional write rolls up into
+        budget_categories.actual_spent IF the milestone has a
+        budget_category_id — which it now does post-fix.
+
+        payment_method valid values per the model docstring:
+        cash, check, card, bank_transfer, stripe.
+
+        Returns the updated milestone document.
+        """
+        payload: dict = {
+            "amount": amount,
+            "payment_method": payment_method,
+        }
+        if payment_date is not None:
+            payload["payment_date"] = payment_date
+        if notes is not None:
+            payload["notes"] = notes
+        if receipt_url is not None:
+            payload["receipt_url"] = receipt_url
+
+        resp = self.api_post(
+            f"/admin/milestones/{milestone_id}/pay",
+            token=planner_token,
+            json=payload,
+        )
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(
+                f"record milestone payment failed: {resp.status_code} {resp.text}"
+            )
+        body = resp.json()
+        self.log.info(
+            f"  ✅ Recorded payment of ${amount:.2f} via {payment_method} "
+            f"on milestone {milestone_id}"
+        )
+        return body

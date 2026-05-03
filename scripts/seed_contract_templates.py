@@ -673,7 +673,7 @@ async def seed_contract_templates():
             "is_public": True,
             "is_active": True,
             "usage_count": 0,
-            "created_by": "system@thespecialwedding.com",
+            "created_by": "system@thespecialwedding.io",
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
         }

@@ -85,6 +85,31 @@ export function CollectPaymentModal({
     }
   }, [apiBaseUrl, token, weddingId, open]);
 
+  // Reset transient state every time the modal opens. Previously we only
+  // reset on close, which left stale paymentLink / createdPaymentRequest /
+  // selectedWeddingId visible if `open` toggled false→true via the parent
+  // without going through handleClose.
+  React.useEffect(() => {
+    if (open) {
+      setAmount('');
+      setDescription('');
+      setPaymentLink('');
+      setCreatedPaymentRequest(null);
+      setSelectedWeddingId(weddingId || '');
+    }
+  }, [open, weddingId]);
+
+  // Resolve the wedding title to display in copy. Prefer the explicit prop;
+  // otherwise look up the row the user picked. Without this fallback,
+  // copy/markup like "Create a payment request for {weddingTitle}" renders
+  // as a half-finished sentence when the modal is opened from the billing
+  // page (no preselected wedding).
+  const resolvedWeddingId = weddingId || selectedWeddingId;
+  const resolvedWeddingTitle =
+    weddingTitle ||
+    weddings.find((w) => w._id === resolvedWeddingId)?.title ||
+    '';
+
   const handleCreatePayment = async () => {
     if (!amount || parseFloat(amount) <= 0) {
       toast.error('Please enter a valid amount');
@@ -149,6 +174,11 @@ export function CollectPaymentModal({
       toast.success('Payment request created successfully!');
 
       setCreatedPaymentRequest(paymentIntent);
+      // Notify the parent exactly once, on successful creation. We used to
+      // call this from handleClose, which fired on every close (including
+      // cancel) and could fire with a stale createdPaymentRequest if the
+      // open prop toggled outside the dialog's own flow.
+      onPaymentCreated?.(paymentIntent);
 
       const copiedToClipboard = await copyPaymentLink(link);
       if (copiedToClipboard) {
@@ -165,13 +195,9 @@ export function CollectPaymentModal({
   };
 
   const handleClose = () => {
-    if (createdPaymentRequest && onPaymentCreated) {
-      onPaymentCreated(createdPaymentRequest);
-    }
-    setAmount('');
-    setDescription('');
-    setPaymentLink('');
-    setCreatedPaymentRequest(null);
+    // State reset happens in the open-transition effect; handleClose just
+    // delegates to the parent. (Reset-on-close was unsafe because parents
+    // can flip `open` back to false without calling this handler.)
     onClose();
   };
 
@@ -179,9 +205,11 @@ export function CollectPaymentModal({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Collect Payment from Couple</DialogTitle>
+          <DialogTitle>Request a payment</DialogTitle>
           <DialogDescription>
-            Create a payment request for {weddingTitle}
+            {resolvedWeddingTitle
+              ? `Create a payment request for ${resolvedWeddingTitle}.`
+              : 'Create a payment request for one of your couples.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -198,7 +226,7 @@ export function CollectPaymentModal({
                     onChange={(e) => setSelectedWeddingId(e.target.value)}
                     disabled={fetchingWeddings}
                   >
-                    <option value="">-- Select Wedding --</option>
+                    <option value="">Choose a wedding…</option>
                     {weddings.map((w) => (
                       <option key={w._id} value={w._id}>
                         {w.title}
@@ -206,7 +234,7 @@ export function CollectPaymentModal({
                     ))}
                   </select>
                   <p className="text-sm text-gray-500">
-                    Payment requests must be tied to a specific wedding so the planner and couple see the right record.
+                    Tied to one wedding so the couple sees the right invoice.
                   </p>
                 </div>
               )}
@@ -227,7 +255,7 @@ export function CollectPaymentModal({
                   />
                 </div>
                 <p className="text-sm text-gray-500">
-                  Enter the amount you want to collect from the couple
+                  Couples see this on their payment page.
                 </p>
               </div>
 
@@ -235,7 +263,7 @@ export function CollectPaymentModal({
                 <Label htmlFor="description">Description (Optional)</Label>
                 <Textarea
                   id="description"
-                  placeholder="e.g., Final payment for wedding services, Deposit for venue..."
+                  placeholder="e.g., Final balance — Davis wedding"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={3}
@@ -246,10 +274,10 @@ export function CollectPaymentModal({
             <div className="space-y-4">
               <div className="rounded-lg bg-green-50 dark:bg-green-900/20 p-4 border border-green-200 dark:border-green-800">
                 <h4 className="font-semibold text-green-900 dark:text-green-100 mb-2">
-                  Payment Link Created!
+                  Link ready to share
                 </h4>
                 <p className="text-sm text-green-700 dark:text-green-300 mb-3">
-                  Share this link with your couple to collect ${parseFloat(amount).toFixed(2)}
+                  Send it to your couple to collect ${parseFloat(amount).toFixed(2)}.
                 </p>
                 <div className="bg-white dark:bg-gray-800 p-3 rounded border break-all text-sm font-mono">
                   {paymentLink}
@@ -275,7 +303,17 @@ export function CollectPaymentModal({
                   variant="outline"
                   className="flex-1"
                   onClick={() => {
-                    window.open(`mailto:?subject=Payment Request for ${weddingTitle}&body=Please complete your payment using this link: ${paymentLink}`, '_blank');
+                    // Fall back to a generic subject when no wedding has
+                    // been resolved — prevents "Payment Request for "
+                    // with a trailing space landing in the recipient's
+                    // inbox.
+                    const subject = resolvedWeddingTitle
+                      ? `Payment Request for ${resolvedWeddingTitle}`
+                      : 'Payment Request';
+                    window.open(
+                      `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(`Please complete your payment using this link: ${paymentLink}`)}`,
+                      '_blank',
+                    );
                   }}
                 >
                   Email Link

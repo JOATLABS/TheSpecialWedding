@@ -130,7 +130,7 @@ SEARCH_QUERIES = [
 
 
 # ─── Scraper constants ────────────────────────────────────────────────────────
-SYSTEM_CREATED_BY = "system@thespecialwedding.com"
+SYSTEM_CREATED_BY = "system@thespecialwedding.io"
 MAX_RESULTS_PER_QUERY = 20  # Google Places returns up to 20 per text search
 REQUEST_DELAY_SECONDS = 0.5  # Polite delay between API calls
 LOGO_MAX_WIDTH = 400  # Max width for downloaded logo images (px)

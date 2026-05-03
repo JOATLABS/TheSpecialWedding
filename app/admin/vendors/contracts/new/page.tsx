@@ -182,6 +182,18 @@ export default function ContractCanvasPage() {
 
   // Handle vendor selection
   const handleSelectVendor = (vendor: VendorProfile) => {
+    // Validate wedding is selected BEFORE advancing — the wedding selector
+    // lives on this step but is visually disconnected from the vendor
+    // grid. Without this check, planners could pick a vendor without a
+    // wedding, sail through Template / Customize / Review, and only
+    // discover the missing wedding when the final create button rejects
+    // with "Please select a vendor and wedding" (handleCreateContract:506).
+    // By that point the wedding selector is no longer visible and the
+    // error reads as a vendor problem.
+    if (!draft.weddingId) {
+      toast.error('Pick a wedding first — the dropdown is at the top of this step.');
+      return;
+    }
     setDraft((prev) => ({
       ...prev,
       vendorId: vendor._id,
@@ -560,30 +572,31 @@ Contract Reference: {{contract_number}}`,
       {/* Header */}
       <div className="bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between gap-4 min-h-16 py-3">
+            <div className="flex items-center gap-4 min-w-0 flex-1">
               <button
                 onClick={() => router.back()}
-                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 shrink-0"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
               </button>
-              <div>
-                <h1 className="text-xl sm:text-2xl font-semibold leading-tight text-slate-900 dark:text-white">Contract Canvas</h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
+              <div className="min-w-0">
+                <h1 className="text-xl sm:text-2xl font-semibold leading-tight text-slate-900 dark:text-white truncate">Contract Canvas</h1>
+                <p className="text-sm text-gray-500 dark:text-gray-400 truncate hidden sm:block">
                   Create professional vendor contracts with ease
                 </p>
               </div>
             </div>
 
-            {/* Step indicator */}
-            <div className="hidden md:flex items-center gap-2">
+            {/* Step indicator — hidden until xl so it never crowds the title.
+                Compact icons-only variant from md→xl, full labels at xl+. */}
+            <div className="hidden md:flex items-center gap-2 shrink-0">
               {steps.map((step, index) => (
                 <React.Fragment key={step.id}>
                   <div
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
                       currentStep === step.id
                         ? 'bg-wedding-rose text-white'
                         : getStepNumber(currentStep) > getStepNumber(step.id)
@@ -591,13 +604,13 @@ Contract Reference: {{contract_number}}`,
                         : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
                     }`}
                   >
-                    <span className="w-5 h-5 rounded-full bg-current/20 flex items-center justify-center text-xs">
+                    <span className="w-5 h-5 rounded-full bg-current/20 flex items-center justify-center text-xs shrink-0">
                       {getStepNumber(currentStep) > getStepNumber(step.id) ? '✓' : index + 1}
                     </span>
-                    <span className="hidden lg:inline">{step.label}</span>
+                    <span className="hidden xl:inline">{step.label}</span>
                   </div>
                   {index < steps.length - 1 && (
-                    <div className="w-8 h-px bg-gray-300 dark:bg-gray-600" />
+                    <div className="w-6 h-px bg-gray-300 dark:bg-gray-600 shrink-0" />
                   )}
                 </React.Fragment>
               ))}
@@ -1147,10 +1160,14 @@ Contract Reference: {{contract_number}}`,
         {currentStep === 'review' && (
           <div className="space-y-6">
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden">
-              {/* Header */}
-              <div className="bg-gradient-to-r from-wedding-navy via-purple-900 to-wedding-gold p-6 text-white">
+              {/* Header — brand palette only. Previously used a
+                  wedding-navy → purple-900 → wedding-gold gradient that
+                  wasn't a platform token combination. Switched to the
+                  wedding-rose → wedding-gold gradient used elsewhere in
+                  planner CTAs. */}
+              <div className="bg-gradient-to-r from-wedding-rose to-wedding-gold p-6 text-white">
                 <h2 className="text-2xl font-bold mb-1">Review Your Contract</h2>
-                <p className="text-blue-100">
+                <p className="text-white/80">
                   Please review all details before creating the contract
                 </p>
               </div>
@@ -1223,7 +1240,7 @@ Contract Reference: {{contract_number}}`,
                 <button
                   onClick={handleCreateContract}
                   disabled={loading || draft.totalAmount <= 0}
-                  className="px-8 py-2 bg-gradient-to-r from-purple-600 to-wedding-rose text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="px-8 py-2 bg-wedding-rose hover:bg-wedding-gold text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                 >
                   {loading ? (
                     <>

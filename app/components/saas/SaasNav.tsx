@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Menu, X } from 'lucide-react';
+import { BrandLockup } from '@/components/brand/BrandLockup';
 
 const NAV_LINKS = [
   { href: '/', label: 'Home' },
@@ -42,17 +42,10 @@ export default function SaasNav() {
       }`}
     >
       <div className="w-full px-4 sm:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-20">
           {/* Logo / Brand — left-aligned */}
-          <Link href="/" className="flex items-center group flex-shrink-0">
-            <Image
-              src="/logo.svg"
-              alt="The Special Wedding"
-              width={160}
-              height={40}
-              className="block shrink-0"
-              priority
-            />
+          <Link href="/" className="flex items-center group flex-shrink-0" aria-label="The Special Wedding home">
+            <BrandLockup variant="full" surface="dark" size="md" />
           </Link>
 
           {/* Nav + CTA — all right-aligned */}
@@ -91,7 +84,7 @@ export default function SaasNav() {
               href="/#pricing"
               className="hidden md:inline-flex items-center rounded-full bg-wedding-rose px-4 py-2 text-sm font-semibold text-slate-900 shadow-md shadow-wedding-rose/30 transition hover:bg-wedding-blush"
             >
-              Start Free Trial
+              Start 30-Day Trial
             </Link>
 
             {/* Mobile hamburger */}
@@ -141,7 +134,7 @@ export default function SaasNav() {
                 href="/#pricing"
                 className="flex items-center justify-center rounded-full bg-wedding-rose px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-md shadow-wedding-rose/30 transition hover:bg-wedding-blush"
               >
-                Start Free Trial
+                Start 30-Day Trial
               </Link>
             </div>
           </div>

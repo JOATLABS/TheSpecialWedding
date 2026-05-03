@@ -90,8 +90,17 @@ class PyObjectId(ObjectId):
         return field_schema
 
     def __str__(self) -> str:
-        """String representation for serialization."""
-        return str(super())
+        """24-char hex representation of the ObjectId.
+
+        We must call the parent's ``__str__`` directly. ``str(super())``
+        evaluates ``str()`` on the ``super`` proxy object itself, which
+        returns ``"<super: <class 'PyObjectId'>, <PyObjectId object>>"``
+        instead of the underlying ObjectId hex. That broken repr leaked
+        into JSON responses through Pydantic's ``to_string_ser_schema``
+        (declared in ``__get_pydantic_core_schema__`` above) and through
+        any caller that relied on ``str(value)``.
+        """
+        return ObjectId.__str__(self)
 
     def __repr__(self) -> str:
         """Developer-friendly representation."""

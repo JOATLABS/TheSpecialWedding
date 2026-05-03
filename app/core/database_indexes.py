@@ -339,9 +339,60 @@ async def create_rsvp_indexes():
         await collection.create_index([("guest_id", ASCENDING)], name="idx_guest_id")
         logger.info("Created index: idx_guest_id")
 
+        # 2. Wedding-scoped dashboard aggregations
+        await collection.create_index(
+            [("wedding_id", ASCENDING)], name="idx_rsvp_wedding_id"
+        )
+        logger.info("Created index: idx_rsvp_wedding_id")
+
+        # 3. Wedding + guest lookups for response parity checks
+        await collection.create_index(
+            [("wedding_id", ASCENDING), ("guest_id", ASCENDING)],
+            name="idx_rsvp_wedding_guest",
+        )
+        logger.info("Created index: idx_rsvp_wedding_guest")
+
         return True
     except Exception as e:
         logger.error(f"Error creating rsvp indexes: {str(e)}")
+        return False
+
+
+async def create_form_indexes():
+    """
+    Create indexes for form dashboard and engagement signal queries.
+    """
+    forms_collection = mongo.get_forms_collection()
+    responses_collection = mongo.get_form_responses_collection()
+
+    try:
+        await forms_collection.create_index(
+            [("wedding_id", ASCENDING), ("is_active", ASCENDING)],
+            name="idx_forms_wedding_active",
+        )
+        logger.info("Created index: idx_forms_wedding_active")
+
+        await forms_collection.create_index(
+            [("created_by", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_forms_created_by_created",
+        )
+        logger.info("Created index: idx_forms_created_by_created")
+
+        await responses_collection.create_index(
+            [("wedding_id", ASCENDING), ("submitted_at", DESCENDING)],
+            name="idx_form_responses_wedding_submitted",
+        )
+        logger.info("Created index: idx_form_responses_wedding_submitted")
+
+        await responses_collection.create_index(
+            [("form_id", ASCENDING), ("submitted_at", DESCENDING)],
+            name="idx_form_responses_form_submitted",
+        )
+        logger.info("Created index: idx_form_responses_form_submitted")
+
+        return True
+    except Exception as e:
+        logger.error(f"Error creating form indexes: {str(e)}")
         return False
 
 
@@ -685,7 +736,18 @@ async def create_activity_logs_indexes():
         )
         logger.info("Created index: idx_wedding_guest_timestamp")
 
-        # 8. TTL index - Auto-delete after 90 days
+        # 8. Wedding + activity type for dashboard activity filters
+        await collection.create_index(
+            [
+                ("wedding_id", ASCENDING),
+                ("type", ASCENDING),
+                ("timestamp", DESCENDING),
+            ],
+            name="idx_wedding_type_timestamp",
+        )
+        logger.info("Created index: idx_wedding_type_timestamp")
+
+        # 9. TTL index - Auto-delete after 90 days
         await collection.create_index(
             [("timestamp", ASCENDING)],
             name="idx_activity_logs_ttl",
@@ -788,6 +850,22 @@ async def create_vendor_contract_security_indexes():
         )
         logger.info("Created index: idx_vendor_contract_wedding_vendor")
 
+        # Compound index supporting the wedding-detail Vendors tab and
+        # contract-list filtering by wedding + current-version + status.
+        # Background creation; partial filter not needed because the live
+        # contract reads already constrain on is_soft_deleted: {$ne: True}
+        # at query time.
+        await contracts.create_index(
+            [
+                ("wedding_id", ASCENDING),
+                ("is_current_version", ASCENDING),
+                ("status", ASCENDING),
+            ],
+            name="idx_vendor_contract_wedding_current_status",
+            background=True,
+        )
+        logger.info("Created index: idx_vendor_contract_wedding_current_status")
+
         await milestones.create_index(
             [
                 ("contract_id", ASCENDING),
@@ -810,6 +888,51 @@ async def create_vendor_contract_security_indexes():
         return True
     except Exception as e:
         logger.error(f"Error creating vendor contract security indexes: {str(e)}")
+        return False
+
+
+async def create_vendor_assignment_indexes():
+    """
+    Create indexes for vendor_assignments collection.
+
+    Soft-deleted assignments coexist with fresh assignments for the same
+    vendor on the same wedding via a partial unique index that excludes
+    rows where ``is_deleted`` is True. The wedding-detail Vendors tab
+    queries are served by a compound (wedding_id, status, is_deleted)
+    index.
+    """
+    assignments = mongo.db["vendor_assignments"]
+    try:
+        # Partial unique index: enforce one live assignment per
+        # (wedding, vendor) pair while still allowing soft-deleted rows
+        # of the same pair to remain in the collection. Reads filter
+        # ``is_deleted: {$ne: True}`` at query time, and the partial
+        # filter expression here limits uniqueness to the same set.
+        await assignments.create_index(
+            [("wedding_id", ASCENDING), ("vendor_profile_id", ASCENDING)],
+            name="idx_vendor_assignment_wedding_vendor_unique",
+            unique=True,
+            partialFilterExpression={"is_deleted": False},
+            background=True,
+        )
+        logger.info("Created index: idx_vendor_assignment_wedding_vendor_unique")
+
+        # Compound index supporting the wedding-detail Vendors tab.
+        await assignments.create_index(
+            [
+                ("wedding_id", ASCENDING),
+                ("status", ASCENDING),
+                ("is_deleted", ASCENDING),
+            ],
+            name="idx_vendor_assignment_wedding_status_deleted",
+            background=True,
+        )
+        logger.info("Created index: idx_vendor_assignment_wedding_status_deleted")
+
+        logger.info("All vendor_assignments indexes created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating vendor_assignments indexes: {str(e)}")
         return False
 
 
@@ -845,7 +968,14 @@ async def create_audit_logs_indexes():
         )
         logger.info("Created index: idx_path_timestamp")
 
-        # 4. TTL index - Auto-delete after 30 days (high volume collection)
+        # 4. Normalized route template + timestamp (aggregates /admin/weddings/{id})
+        await collection.create_index(
+            [("route_template", ASCENDING), ("timestamp", DESCENDING)],
+            name="idx_route_template_timestamp",
+        )
+        logger.info("Created index: idx_route_template_timestamp")
+
+        # 5. TTL index - Auto-delete after 30 days (high volume collection)
         await collection.create_index(
             [("timestamp", ASCENDING)],
             name="idx_audit_logs_ttl",
@@ -2296,6 +2426,7 @@ async def create_all_indexes():
         await create_guest_indexes()
         await create_plus_one_indexes()
         await create_rsvp_indexes()
+        await create_form_indexes()
         await create_subscription_indexes()
         await create_user_indexes()
         await create_reminders_sent_indexes()  # SMS delivery tracking
@@ -2306,6 +2437,7 @@ async def create_all_indexes():
         await create_activity_logs_indexes()
         await create_vendor_contract_activity_indexes()
         await create_vendor_contract_security_indexes()
+        await create_vendor_assignment_indexes()
         await create_audit_logs_indexes()
         await create_security_audit_logs_indexes()
         await create_errors_indexes()

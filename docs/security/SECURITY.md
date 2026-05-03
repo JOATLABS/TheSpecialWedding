@@ -179,7 +179,7 @@ RESEND_API_KEY=your-resend-api-key
 
 - **Security Team**: security@specialwedding.com
 - **General Support**: support@specialwedding.com
-- **Developer**: developer@thespecialwedding.com
+- **Developer**: developer@thespecialwedding.io
 
 ## Acknowledgments
 

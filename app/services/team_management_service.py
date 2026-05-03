@@ -19,6 +19,7 @@ from fastapi import HTTPException, status
 from app.core.config import settings
 from app.core.database import mongo
 from app.dependencies.auth_extended import (
+    invalidate_auth_cache,
     invalidate_team_cache,
     invalidate_team_cache_by_owner,
 )
@@ -38,6 +39,21 @@ logger = logging.getLogger(__name__)
 
 # How long an invite token stays valid
 INVITE_TOKEN_EXPIRY_DAYS = 7
+
+
+async def _invalidate_auth_cache_safe(email: Optional[str]) -> None:
+    """Best-effort auth-cache invalidation that never raises.
+
+    Used after team-member mutations so a Redis hiccup does not break
+    the mutation path.  The 10-second TTL guarantees eventual
+    consistency even if invalidation fails.
+    """
+    if not email:
+        return
+    try:
+        await invalidate_auth_cache(email)
+    except Exception as e:
+        logger.debug(f"Auth cache invalidate failed for {email}: {e}")
 
 
 # ── P2-26: Timezone helper ──
@@ -1008,9 +1024,13 @@ class TeamManagementService:
             {"$set": set_fields},
         )
 
-        # Invalidate cached permissions so changes take effect immediately
+        # Invalidate cached permissions so changes take effect immediately.
+        # Bust both the in-process team-doc cache (read by auth_extended)
+        # and the Redis-backed auth-user cache (which holds resolved
+        # team_permissions / team_role / wedding_access).
         if doc.get("user_id"):
             invalidate_team_cache(str(doc["_id"]))
+            await _invalidate_auth_cache_safe(doc.get("email"))
 
         updated = await self.team_collection.find_one({"_id": doc["_id"]})
         logger.info(f"Team member {team_member_id} updated by owner {owner_id}")
@@ -1089,9 +1109,11 @@ class TeamManagementService:
                     detail="Failed to fully deactivate team member. Please try again.",
                 )
 
-        # Invalidate cached permissions so changes take effect immediately
+        # Invalidate cached permissions so changes take effect immediately.
+        # Bust both the in-process team-doc cache and the Redis auth cache.
         if doc.get("user_id"):
             invalidate_team_cache(str(doc["_id"]))
+            await _invalidate_auth_cache_safe(doc.get("email"))
 
         logger.info(f"Team member {team_member_id} deactivated by owner {owner_id}")
 
@@ -1206,8 +1228,10 @@ class TeamManagementService:
                     detail="Failed to fully reactivate team member. Please try again.",
                 )
 
-        # Invalidate cached permissions so changes take effect immediately
+        # Invalidate cached permissions so changes take effect immediately.
+        # Bust both the in-process team-doc cache and the Redis auth cache.
         invalidate_team_cache(str(doc["_id"]))
+        await _invalidate_auth_cache_safe(doc.get("email"))
 
         logger.info(f"Team member {team_member_id} reactivated by owner {owner_id}")
 
@@ -1290,8 +1314,10 @@ class TeamManagementService:
                 detail="Failed to fully remove team member. Please try again.",
             )
 
-        # Invalidate cached permissions so changes take effect immediately
+        # Invalidate cached permissions so changes take effect immediately.
+        # Bust both the in-process team-doc cache and the Redis auth cache.
         invalidate_team_cache(str(doc["_id"]))
+        await _invalidate_auth_cache_safe(doc.get("email"))
 
         logger.info(
             f"Team member {team_member_id} ({doc['email']}) removed by owner {owner_id}"

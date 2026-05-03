@@ -141,7 +141,7 @@ export const ContactSalesModal: React.FC<ContactSalesModalProps> = ({ isOpen, on
                   onChange={handleChange}
                   required
                   className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-2 text-sm text-slate-900 shadow-sm transition focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                  placeholder="you@agency.com"
+                  placeholder="you@studio.com"
                 />
               </label>
               <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">

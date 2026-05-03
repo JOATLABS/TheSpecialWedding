@@ -7,6 +7,7 @@ Handles all business logic for the vendor management feature.
 
 import hashlib
 import hmac
+import html
 import logging
 import os
 import re
@@ -24,6 +25,13 @@ from fastapi import HTTPException, UploadFile
 
 from app.core.database import mongo
 from app.core.settings import settings
+from app.utils.planner_ownership import (
+    build_wedding_owner_query,
+    combine_mongo_filters,
+    normalize_planner_email,
+    wedding_belongs_to_owner,
+)
+from app.utils import vendor_owner_scope
 from app.models.vendor import (
     ContractKind,
     ContractStatus,
@@ -44,7 +52,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # CONFIGURATION CONSTANTS
 # =============================================================================
-SYSTEM_CREATED_BY = "system@thespecialwedding.com"
+SYSTEM_CREATED_BY = "system@thespecialwedding.io"
 TOKEN_EXPIRY_DAYS = int(os.getenv("CONTRACT_TOKEN_EXPIRY_DAYS", "30"))
 DEPOSIT_DUE_DAYS = int(os.getenv("DEPOSIT_DUE_DAYS", "7"))
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_CONTRACT_FILE_SIZE_MB", "10"))
@@ -92,6 +100,7 @@ class VendorService:
         self.vendor_quotes = mongo.db["vendor_quotes"]
         self.budget_categories = mongo.db["budget_categories"]
         self.weddings = mongo.db["weddings"]
+        self.couple_users = mongo.db["couple_users"]
         self.users = mongo.get_users_collection()
         self.payment_links = mongo.db["payment_links"]
         self.vendor_forms = mongo.db["vendor_forms"]
@@ -133,8 +142,14 @@ class VendorService:
 
     @staticmethod
     def _build_inactive_contract_token_fields() -> Dict[str, Any]:
+        # Deliberately OMITS `access_token_hash` rather than setting it to
+        # None, because the unique-sparse index on access_token_hash treats
+        # an explicit null as a value (sparse only excludes documents
+        # MISSING the field). Two contracts inserted with
+        # access_token_hash=None would therefore collide on the index.
+        # send_contract sets the field to a real hash at issuance time;
+        # until then the field is genuinely absent.
         return {
-            "access_token_hash": None,
             "token_expires_at": None,
             "token_revoked_at": None,
             "token_last_sent_at": None,
@@ -176,7 +191,10 @@ class VendorService:
     ) -> None:
         revoked_at = datetime.now(timezone.utc)
         await self.vendor_contracts.update_one(
-            {"_id": validate_object_id(contract_id, "contract ID")},
+            {
+                "_id": validate_object_id(contract_id, "contract ID"),
+                "is_soft_deleted": {"$ne": True},
+            },
             {
                 "$set": {
                     "token_revoked_at": revoked_at,
@@ -309,6 +327,17 @@ class VendorService:
 
     async def _ensure_contract_editable(self, contract: Dict[str, Any]) -> None:
         """Allow edits only for active drafts or draft revisions based on the live version."""
+        # Hard lock: once the contract has been signed (and we recorded
+        # ``contract_status_locked_at``), refuse all edits regardless of
+        # current ``status``. CANCELLED-after-sign should still surface as
+        # locked because the signed version is itself immutable; cancellation
+        # only revokes the live relationship.
+        if contract.get("contract_status_locked_at"):
+            raise HTTPException(
+                status_code=409,
+                detail="Contract is locked after signing",
+            )
+
         if contract["status"] not in [
             ContractStatus.DRAFT.value,
             ContractStatus.PENDING_REVIEW.value,
@@ -346,7 +375,10 @@ class VendorService:
             "$or": [
                 {"root_contract_id": root_contract_id},
                 {"_id": root_object_id},
-            ]
+            ],
+            # Lineage reads must skip soft-deleted contracts; archival is a
+            # forward-looking flag and the lineage view is a live read.
+            "is_soft_deleted": {"$ne": True},
         }
 
         if created_by:
@@ -496,7 +528,10 @@ class VendorService:
     ) -> None:
         """Mark a once-live contract as historical without changing its status."""
         await self.vendor_contracts.update_one(
-            {"_id": validate_object_id(contract_id, "contract ID")},
+            {
+                "_id": validate_object_id(contract_id, "contract ID"),
+                "is_soft_deleted": {"$ne": True},
+            },
             {
                 "$set": {
                     "is_current_version": False,
@@ -616,25 +651,242 @@ class VendorService:
         return defaults
 
     async def _get_wedding(self, wedding_id: str) -> Optional[dict]:
-        """Get wedding by ID, trying both string and ObjectId formats"""
-        wedding = None
+        """Get wedding by ID, trying both string and ObjectId formats.
 
-        # First try with string ID
+        Backwards-compatible shim. Existing callers that pre-date the
+        cross-tenant boundary fix should be migrated to
+        ``_get_owned_wedding`` so the planner-ownership check runs at the
+        Mongo query layer. This shim delegates to the owned helper with
+        ``actor_email=None`` (root-admin bypass) so legacy callers retain
+        their previous semantics until they are migrated.
+        """
+        return await self._get_owned_wedding(wedding_id, actor_email=None)
+
+    # ------------------------------------------------------------------
+    # Tenant-scoped lookup helpers
+    #
+    # These centralize the planner-ownership boundary at the Mongo query
+    # layer so vendor mutation paths cannot trust an `_id` from the
+    # client. They follow the established pattern documented in
+    # AGENTS.md "Authorization And Tenant Boundary Rule" and the
+    # 404-not-403 ambiguity convention used by ``get_contract`` (see
+    # vendor_service.py ~line 1928).
+    #
+    # Contract:
+    #   - actor_email=None → root-admin bypass (no ownership filter).
+    #   - actor_email=str  → require ownership match.
+    #   - returns None when not found OR owned by another planner.
+    #     The caller raises 404 with a generic "not found" detail so
+    #     foreign IDs and missing IDs are indistinguishable from the
+    #     outside.
+    # ------------------------------------------------------------------
+
+    async def _get_owned_vendor_profile(
+        self, vendor_id: str, actor_email: Optional[str]
+    ) -> Optional[dict]:
+        """Fetch a vendor profile scoped by ``created_by == actor_email``.
+
+        Uses ``self.vendor_profiles`` so the instance-level collection is
+        honoured in both production (real Mongo) and tests (injected fake).
+        ``actor_email=None`` is the root-admin bypass: no ownership filter
+        is applied.  Returns ``None`` on bad ID, missing record, or wrong
+        owner — callers raise 404 so foreign IDs are indistinguishable from
+        missing ones (AGENTS.md §"Authorization And Tenant Boundary Rule").
+        """
+        if not vendor_id:
+            return None
         try:
-            wedding = await self.weddings.find_one({"_id": wedding_id})
+            obj_id = ObjectId(vendor_id)
+        except (InvalidId, TypeError, ValueError):
+            return None
+
+        query: dict = {"_id": obj_id}
+        normalized_actor = normalize_planner_email(actor_email)
+        if normalized_actor is not None:
+            query["created_by"] = normalized_actor
+
+        try:
+            return await self.vendor_profiles.find_one(query)
         except Exception as e:
-            logger.debug(f"Failed to find wedding with string ID '{wedding_id}': {e}")
+            logger.warning(
+                f"Failed to look up vendor profile '{vendor_id}' for actor "
+                f"'{actor_email}': {e}"
+            )
+            return None
 
-        # If not found, try with ObjectId
-        if not wedding:
+    async def _get_owned_wedding(
+        self, wedding_id: str, actor_email: Optional[str]
+    ) -> Optional[dict]:
+        """Fetch a wedding scoped by planner ownership via ``self.weddings``.
+
+        Uses ``self.weddings`` so the instance-level collection is honoured
+        in both production (real Mongo) and tests (injected fake).
+        ``actor_email=None`` is the root-admin bypass.  Tries the string ID
+        first, then ObjectId — matching the legacy ``_get_wedding`` shape so
+        wedding IDs stored as ``wedding_<hex>`` strings still resolve.
+        """
+        if not wedding_id:
+            return None
+
+        normalized_actor = normalize_planner_email(actor_email)
+        owner_query = (
+            build_wedding_owner_query(planner_email=normalized_actor)
+            if normalized_actor is not None
+            else None
+        )
+
+        async def _find(id_value) -> Optional[dict]:
+            id_filter = {"_id": id_value}
+            query = combine_mongo_filters(id_filter, owner_query)
             try:
-                wedding = await self.weddings.find_one({"_id": ObjectId(wedding_id)})
-            except InvalidId:
-                logger.debug(f"Invalid ObjectId format for wedding_id: {wedding_id}")
+                return await self.weddings.find_one(query)
             except Exception as e:
-                logger.warning(f"Error finding wedding by ObjectId '{wedding_id}': {e}")
+                logger.debug(
+                    f"Wedding lookup failed for id={id_value!r} "
+                    f"(actor={actor_email!r}): {e}"
+                )
+                return None
 
-        return wedding
+        wedding = await _find(wedding_id)
+        if wedding:
+            return wedding
+
+        try:
+            obj_id = ObjectId(wedding_id)
+        except (InvalidId, TypeError, ValueError):
+            return None
+
+        return await _find(obj_id)
+
+    async def _get_owned_assignment(
+        self, assignment_id: str, actor_email: Optional[str]
+    ) -> Optional[dict]:
+        """Delegates to :mod:`app.utils.vendor_owner_scope`."""
+        return await vendor_owner_scope.get_owned_assignment(assignment_id, actor_email)
+
+    async def _get_owned_contract(
+        self, contract_id: str, actor_email: Optional[str]
+    ) -> Optional[dict]:
+        """Delegates to :mod:`app.utils.vendor_owner_scope`."""
+        return await vendor_owner_scope.get_owned_contract(contract_id, actor_email)
+
+    async def _get_owned_form(
+        self, form_id: str, actor_email: Optional[str]
+    ) -> Optional[dict]:
+        """Delegates to :mod:`app.utils.vendor_owner_scope`."""
+        return await vendor_owner_scope.get_owned_form(form_id, actor_email)
+
+    async def _get_owned_form_submission(
+        self, submission_id: str, actor_email: Optional[str]
+    ) -> Optional[dict]:
+        """Delegates to :mod:`app.utils.vendor_owner_scope`."""
+        return await vendor_owner_scope.get_owned_form_submission(
+            submission_id, actor_email
+        )
+
+    async def _resolve_couple_contact(
+        self,
+        wedding_id: Optional[str],
+        actor_email: Optional[str],
+    ) -> Dict[str, Optional[str]]:
+        """
+        Resolve the couple's email + display name for a given wedding_id.
+
+        Tries the authoritative `couple_users` collection first; falls back to
+        the embedded fields on the `weddings` doc. Both reads are scoped to
+        the actor planner's ownership (per AGENTS.md "Authorization And Tenant
+        Boundary Rule") to defend against ownership drift surfaced by
+        `app/scripts/report_planner_ownership_drift.py`. When `actor_email` is
+        None we treat the call as root-admin and skip scoping. Always returns a
+        dict with `couple_email` and `couple_names` keys — both may be None.
+        Never raises.
+        """
+        result: Dict[str, Optional[str]] = {
+            "couple_email": None,
+            "couple_names": None,
+        }
+
+        if not wedding_id:
+            return result
+
+        normalized_actor_email = normalize_planner_email(actor_email)
+
+        # Defense-in-depth: confirm the wedding belongs to the actor planner
+        # before trusting any couple lookups keyed by wedding_id. Skip the
+        # check entirely for the root-admin case (actor_email is None).
+        wedding: Optional[dict] = None
+        if normalized_actor_email is not None:
+            try:
+                wedding = await self._get_owned_wedding(wedding_id, actor_email)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to look up wedding for couple contact '{wedding_id}': {e}"
+                )
+                wedding = None
+
+            if not wedding_belongs_to_owner(
+                wedding, planner_email=normalized_actor_email
+            ):
+                # Wedding is missing or owned by a different planner — refuse
+                # to leak couple contact info. Return the empty result.
+                return result
+
+        # Authoritative source: couple_users collection (keyed by wedding_id).
+        # Scope by planner_email when we have an actor identity.
+        couple_query: Dict[str, Any] = {"wedding_id": wedding_id}
+        if normalized_actor_email is not None:
+            couple_query["planner_email"] = normalized_actor_email
+
+        try:
+            couple_doc = await self.couple_users.find_one(
+                couple_query,
+                {"email": 1, "partner1_name": 1, "partner2_name": 1},
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to look up couple_users for wedding_id '{wedding_id}': {e}"
+            )
+            couple_doc = None
+
+        if couple_doc:
+            email = (couple_doc.get("email") or "").strip() or None
+            result["couple_email"] = email
+            partner1 = (couple_doc.get("partner1_name") or "").strip()
+            partner2 = (couple_doc.get("partner2_name") or "").strip()
+            if partner1 and partner2:
+                result["couple_names"] = f"{partner1} & {partner2}"
+            elif partner1:
+                result["couple_names"] = partner1
+            elif partner2:
+                result["couple_names"] = partner2
+
+        # Fallback to wedding doc for any field still missing. The wedding doc
+        # was already loaded + ownership-checked above when actor_email is set;
+        # for the root-admin case we load it now without scoping.
+        if not result["couple_email"] or not result["couple_names"]:
+            if wedding is None and normalized_actor_email is None:
+                try:
+                    # root-admin: bypass owner scope intentional — see Task #47
+                    wedding = await self._get_wedding(wedding_id)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to look up wedding for couple contact '{wedding_id}': {e}"
+                    )
+                    wedding = None
+
+            if wedding:
+                if not result["couple_email"]:
+                    embedded_couple = wedding.get("couple") or {}
+                    if isinstance(embedded_couple, dict):
+                        embedded_email = (
+                            embedded_couple.get("email") or ""
+                        ).strip() or None
+                        result["couple_email"] = embedded_email
+                if not result["couple_names"]:
+                    fallback_names = (wedding.get("couple_names") or "").strip() or None
+                    result["couple_names"] = fallback_names
+
+        return result
 
     async def _log_communication(
         self,
@@ -1195,23 +1447,39 @@ class VendorService:
             return []
 
     async def get_dashboard_counts(
-        self, created_by: str, wedding_id: Optional[str] = None
+        self,
+        created_by: Optional[str] = None,
+        wedding_id: Optional[str] = None,
     ) -> dict:
         """
         Get dashboard counts efficiently using MongoDB aggregation.
         Much faster than loading all documents just to count them.
+
+        Tenant scope: when ``created_by`` is provided, every vendor /
+        contract / milestone query is filtered by that planner's
+        ``created_by``. When ``created_by`` is ``None`` (root-admin
+        bypass), the filters are skipped and the counts span every
+        planner. The milestone aggregation pipeline ``$match``es on
+        ``created_by`` BEFORE any ``$group`` so we never accidentally
+        sum across other planners' milestones — that was the
+        cross-tenant leak fixed under VENDOR_CONTRACT_PREPROD #2.
         """
         try:
-            # Vendor counts
-            vendor_total = await self.vendor_profiles.count_documents(
-                {"created_by": created_by, "is_active": True}
-            )
+            # Vendor counts — scope to planner unless root-admin bypass.
+            vendor_query: Dict[str, Any] = {"is_active": True}
+            if created_by is not None:
+                vendor_query["created_by"] = created_by
+            vendor_total = await self.vendor_profiles.count_documents(vendor_query)
             vendor_preferred = await self.vendor_profiles.count_documents(
-                {"created_by": created_by, "is_active": True, "is_preferred": True}
+                {**vendor_query, "is_preferred": True}
             )
 
-            # Contract counts
-            contract_query = {"created_by": created_by}
+            # Contract counts — scope to planner unless root-admin bypass.
+            # Soft-deleted contracts are excluded so dashboard counts only
+            # reflect live records.
+            contract_query: Dict[str, Any] = {"is_soft_deleted": {"$ne": True}}
+            if created_by is not None:
+                contract_query["created_by"] = created_by
             if wedding_id:
                 contract_query["wedding_id"] = wedding_id
 
@@ -1223,8 +1491,13 @@ class VendorService:
                 {**contract_query, "status": "signed"}
             )
 
-            # Payment milestone counts and aggregation
-            milestone_query = {}
+            # Payment milestone counts and aggregation — scope to
+            # planner unless root-admin bypass. Pre-fix this filter was
+            # missing, so a planner saw totals summed across every
+            # other planner's milestones.
+            milestone_query: Dict[str, Any] = {}
+            if created_by is not None:
+                milestone_query["created_by"] = created_by
             if wedding_id:
                 milestone_query["wedding_id"] = wedding_id
 
@@ -1235,7 +1508,9 @@ class VendorService:
                 {**milestone_query, "status": "overdue"}
             )
 
-            # Get totals using aggregation
+            # Get totals using aggregation. ``$match`` lands EARLY
+            # (before the ``$group``) so cross-tenant rows never enter
+            # the sum.
             payment_pipeline = [
                 {"$match": milestone_query} if milestone_query else {"$match": {}},
                 {
@@ -1292,22 +1567,39 @@ class VendorService:
         self,
         vendor_profile_id: str,
         wedding_id: str,
-        created_by: str,
+        created_by: Optional[str] = None,
         budget_category_id: Optional[str] = None,
         service_notes: Optional[str] = None,
     ) -> dict:
         """Assign a vendor from directory to a wedding"""
         try:
-            # Get vendor profile
-            vendor = await self.vendor_profiles.find_one(
-                {"_id": ObjectId(vendor_profile_id)}
-            )
+            # Normalize actor email once so all owner-scoped lookups and the
+            # stored ``created_by`` field use a consistent canonical form.
+            # ``normalize_planner_email(None)`` returns ``None``, preserving
+            # the root-admin bypass (no ownership filter).
+            created_by = normalize_planner_email(created_by)
+            # Get vendor profile (scoped by planner ownership — prevents
+            # cross-tenant assignment via a client-supplied vendor_profile_id).
+            vendor = await self._get_owned_vendor_profile(vendor_profile_id, created_by)
             if not vendor:
                 raise HTTPException(status_code=404, detail="Vendor not found")
 
-            # Check if already assigned
+            # Verify the wedding belongs to the actor planner (was previously
+            # not fetched at all, so any wedding_id was trusted).
+            wedding = await self._get_owned_wedding(wedding_id, created_by)
+            if not wedding:
+                raise HTTPException(status_code=404, detail="Wedding not found")
+
+            # Check if already assigned. Soft-deleted assignments are
+            # ignored — a fresh assignment of the same vendor must succeed
+            # after archival, and the partial unique index in
+            # database_indexes.py enforces this at the storage layer.
             existing = await self.vendor_assignments.find_one(
-                {"vendor_profile_id": vendor_profile_id, "wedding_id": wedding_id}
+                {
+                    "vendor_profile_id": vendor_profile_id,
+                    "wedding_id": wedding_id,
+                    "is_deleted": {"$ne": True},
+                }
             )
             if existing:
                 raise HTTPException(
@@ -1357,7 +1649,9 @@ class VendorService:
     async def get_wedding_vendors(self, wedding_id: str, created_by: str) -> List[dict]:
         """Get all vendors assigned to a wedding"""
         try:
-            cursor = self.vendor_assignments.find({"wedding_id": wedding_id})
+            cursor = self.vendor_assignments.find(
+                {"wedding_id": wedding_id, "is_deleted": {"$ne": True}}
+            )
             assignments = await cursor.to_list(length=100)
 
             for a in assignments:
@@ -1372,7 +1666,10 @@ class VendorService:
             )
 
     async def update_assignment_status(
-        self, assignment_id: str, status: str, created_by: str
+        self,
+        assignment_id: str,
+        status: str,
+        created_by: Optional[str] = None,
     ) -> dict:
         """Update vendor assignment status"""
         from app.models.vendor import VendorAssignmentStatus
@@ -1386,8 +1683,29 @@ class VendorService:
             )
 
         try:
+            # Pre-flight ownership check — keeps the planner-scoped query
+            # in the helper module and raises 404 if the assignment is
+            # missing or owned by another planner. The subsequent
+            # find_one_and_update is then re-scoped on _id + created_by
+            # so a TOCTOU swap between check and update cannot succeed.
+            owned = await self._get_owned_assignment(assignment_id, created_by)
+            if not owned:
+                raise HTTPException(status_code=404, detail="Assignment not found")
+
+            update_query: Dict[str, Any] = {
+                "_id": ObjectId(assignment_id),
+                # Defence-in-depth: the pre-flight check via
+                # ``_get_owned_assignment`` already excludes soft-deleted
+                # rows, but re-applying the filter on the write closes the
+                # TOCTOU window between check and update.
+                "is_deleted": {"$ne": True},
+            }
+            normalized_actor = normalize_planner_email(created_by)
+            if normalized_actor is not None:
+                update_query["created_by"] = normalized_actor
+
             result = await self.vendor_assignments.find_one_and_update(
-                {"_id": ObjectId(assignment_id)},
+                update_query,
                 {"$set": {"status": status, "updated_at": datetime.now(timezone.utc)}},
                 return_document=True,
             )
@@ -1533,30 +1851,60 @@ class VendorService:
         self,
         wedding_id: str,
         vendor_profile_id: str,
-        created_by: str,
+        created_by: Optional[str] = None,
         template_id: Optional[str] = None,
         quote_id: Optional[str] = None,
         total_amount: float = 0,
         custom_sections: Optional[List[Dict]] = None,
         deposit_percentage: Optional[float] = None,
+        deposit_amount: Optional[float] = None,
         service_date: Optional[datetime] = None,
         service_location: Optional[str] = None,
     ) -> dict:
         """Create a new vendor contract"""
         try:
+            # Guard: deposit cannot exceed total. The DTO-layer check on
+            # ``UpdateVendorContractRequest`` mirrors this on the update path;
+            # the storage-model validator on ``VendorContract`` is a final
+            # backstop on the read path. Caught here at the service boundary
+            # so that any future caller (API DTO change, internal callsite,
+            # script) can't silently persist an inconsistent contract.
+            #
+            # NOTE: The current ``CreateVendorContractRequest`` DTO does not
+            # expose ``deposit_amount`` — only ``deposit_percentage`` (capped
+            # at 100). So the API path can't currently trip this; the guard
+            # is here for defense in depth and to catch any caller that does
+            # pass ``deposit_amount`` directly (internal scripts, tests, or
+            # a future DTO change). The local recomputation below shadows
+            # this input when ``deposit_percentage`` is also supplied.
+            if (
+                deposit_amount is not None
+                and total_amount is not None
+                and deposit_amount > total_amount
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Deposit amount cannot exceed total amount",
+                )
             contract_id = ObjectId()
+            # Normalize actor email once so all owner-scoped lookups, the
+            # planner user lookup, and the stored ``created_by`` field use a
+            # consistent canonical form.  ``normalize_planner_email(None)``
+            # returns ``None``, which preserves the root-admin bypass
+            # semantics (no ownership filter applied).
+            created_by = normalize_planner_email(created_by)
             # Get planner's contract settings (with fallback to system defaults)
             planner_settings = await self._get_planner_contract_settings(created_by)
 
-            # Get vendor profile
-            vendor = await self.vendor_profiles.find_one(
-                {"_id": ObjectId(vendor_profile_id)}
-            )
+            # Get vendor profile (scoped by planner ownership — prevents
+            # cross-tenant write via a client-supplied vendor_profile_id).
+            vendor = await self._get_owned_vendor_profile(vendor_profile_id, created_by)
             if not vendor:
                 raise HTTPException(status_code=404, detail="Vendor not found")
 
-            # Get wedding
-            wedding = await self._get_wedding(wedding_id)
+            # Get wedding (scoped by planner ownership — prevents
+            # cross-tenant write via a client-supplied wedding_id).
+            wedding = await self._get_owned_wedding(wedding_id, created_by)
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
@@ -1645,12 +1993,36 @@ class VendorService:
                     days=planner_settings["deposit_due_days"]
                 )
 
+            # Inherit budget_category_id from the vendor's assignment for this
+            # wedding so milestone payments can roll up into the budget
+            # tracker. Without this lookup the field stayed None forever and
+            # the $inc against budget_categories.actual_spent in record_payment
+            # was unreachable in practice.
+            existing_assignment = await self.vendor_assignments.find_one(
+                {
+                    "vendor_profile_id": vendor_profile_id,
+                    "wedding_id": wedding_id,
+                    "is_deleted": {"$ne": True},
+                },
+                {"budget_category_id": 1, "contract_id": 1},
+            )
+            assigned_category_id = (existing_assignment or {}).get("budget_category_id")
+            if assigned_category_id is None:
+                logger.warning(
+                    "Creating contract with no budget_category_id: "
+                    "no assignment-with-category found for vendor %s on wedding %s. "
+                    "Milestone payments will not roll up into budget tracking until "
+                    "the contract is linked to a category.",
+                    vendor_profile_id,
+                    wedding_id,
+                )
+
             contract = {
                 "_id": contract_id,
                 "wedding_id": wedding_id,
                 "vendor_profile_id": vendor_profile_id,
                 "vendor_quote_id": quote_id,
-                "budget_category_id": None,
+                "budget_category_id": assigned_category_id,
                 "template_id": template_id,
                 "vendor_name": vendor["business_name"],
                 "vendor_email": vendor["email"],
@@ -1688,6 +2060,29 @@ class VendorService:
             await self.vendor_contracts.insert_one(contract)
             self._serialize_doc(contract)
             self._attach_contract_version_metadata(contract)
+
+            # Link the new contract back to the assignment so the wedding-detail
+            # Vendors tab (and any other surface that reads from the assignment)
+            # can show the contract immediately, not only after sign. We only
+            # set contract_id when it's currently null — first-contract-wins
+            # semantics, matching the prior behavior that sign_contract did at
+            # sign time. Status is intentionally NOT changed: the documented
+            # state machine reserves "contracted" for SIGNED, and a draft
+            # contract isn't signed.
+            if existing_assignment and not existing_assignment.get("contract_id"):
+                await self.vendor_assignments.update_one(
+                    {
+                        "_id": existing_assignment["_id"],
+                        "is_deleted": {"$ne": True},
+                    },
+                    {
+                        "$set": {
+                            "contract_id": str(contract_id),
+                            "contracted_amount": total_amount,
+                            "updated_at": datetime.now(timezone.utc),
+                        }
+                    },
+                )
 
             # Update quote if converting from quote
             if quote_id:
@@ -1748,6 +2143,7 @@ class VendorService:
                     {"is_current_version": {"$exists": False}},
                     {"is_current_version": True},
                 ],
+                "is_soft_deleted": {"$ne": True},
             }
 
             if wedding_id:
@@ -1781,7 +2177,10 @@ class VendorService:
             raise HTTPException(status_code=500, detail="Failed to fetch contracts")
 
     async def get_contract(
-        self, contract_id: str, created_by: Optional[str] = None
+        self,
+        contract_id: str,
+        created_by: Optional[str] = None,
+        include_couple_contact: bool = False,
     ) -> dict:
         """
         Get a specific contract.
@@ -1789,11 +2188,19 @@ class VendorService:
         Args:
             contract_id: The contract ID to fetch
             created_by: If provided, verifies the contract belongs to this planner (authorization check)
+            include_couple_contact: If True, enrich the response with the
+                couple's email and display name (1-2 extra Mongo reads). Only
+                the admin contract-detail endpoint needs this; internal
+                callers (revisions, signing, payment recording, lineage, etc.)
+                leave it False to avoid the per-call lookup cost.
         """
         try:
             obj_id = validate_object_id(contract_id, "contract ID")
 
-            query: Dict[str, Any] = {"_id": obj_id}
+            query: Dict[str, Any] = {
+                "_id": obj_id,
+                "is_soft_deleted": {"$ne": True},
+            }
             if created_by:
                 query["created_by"] = created_by
 
@@ -1810,6 +2217,25 @@ class VendorService:
 
             self._serialize_doc(contract)
             self._attach_contract_version_metadata(contract)
+
+            if include_couple_contact:
+                # Defensive enrichment: surface couple contact info for the
+                # detail view (used by the "Send Payment Link to Couple" UI).
+                # Never let a missing/failed lookup 500 the contract response.
+                try:
+                    couple_contact = await self._resolve_couple_contact(
+                        contract.get("wedding_id"),
+                        contract.get("created_by"),
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to resolve couple contact for contract {contract_id}: {e}"
+                    )
+                    couple_contact = {"couple_email": None, "couple_names": None}
+
+                contract["couple_email"] = couple_contact.get("couple_email")
+                contract["couple_names"] = couple_contact.get("couple_names")
+
             return contract
 
         except HTTPException:
@@ -1870,7 +2296,10 @@ class VendorService:
                     view_update["updated_at"] = viewed_at
 
             await self.vendor_contracts.update_one(
-                {"_id": ObjectId(contract_id)},
+                {
+                    "_id": ObjectId(contract_id),
+                    "is_soft_deleted": {"$ne": True},
+                },
                 {"$set": view_update},
             )
 
@@ -2328,8 +2757,10 @@ class VendorService:
                         detail="Revision lineage does not match the contract it supersedes",
                     )
 
-            # Get wedding info
-            wedding = await self._get_wedding(contract["wedding_id"])
+            # Get wedding info — contract ownership was already verified by
+            # ``get_contract`` above; tighten the wedding read to the same
+            # ``created_by`` so the lookup itself is owner-scoped.
+            wedding = await self._get_owned_wedding(contract["wedding_id"], created_by)
             couple_names = (
                 wedding.get("couple_names", "our clients") if wedding else "our clients"
             )
@@ -2346,7 +2777,31 @@ class VendorService:
                 base_url, contract_id, raw_token
             )
 
-            # Build email
+            # Build email — escape every planner/vendor-supplied string before
+            # interpolating into the HTML body. Numeric amounts are formatted
+            # via :,.2f and contract_link is a server-built URL, but we still
+            # escape it defensively in case a future change lets user input
+            # leak into the URL.
+            safe_vendor_name = html.escape(str(contract["vendor_name"]), quote=True)
+            safe_couple_names = html.escape(str(couple_names), quote=True)
+            safe_contract_title = html.escape(
+                str(contract["contract_title"]), quote=True
+            )
+            safe_contract_number = html.escape(
+                str(contract.get("contract_number", "N/A")), quote=True
+            )
+            safe_service_label = html.escape(
+                str(
+                    self._get_vendor_service_label(
+                        contract["service_category"],
+                        contract.get("custom_service_category"),
+                    )
+                ),
+                quote=True,
+            )
+            safe_message = html.escape(str(message), quote=True) if message else ""
+            safe_contract_link = html.escape(str(contract_link), quote=True)
+
             subject = f"Contract for Review: {contract['contract_title']}"
             html_content = f"""
             <html>
@@ -2366,17 +2821,17 @@ class VendorService:
                         <h1>Contract Ready for Review</h1>
                     </div>
                     <div class="content">
-                        <p>Dear {contract["vendor_name"]},</p>
+                        <p>Dear {safe_vendor_name},</p>
 
-                        <p>A contract has been prepared for your services for the wedding of <strong>{couple_names}</strong>.</p>
+                        <p>A contract has been prepared for your services for the wedding of <strong>{safe_couple_names}</strong>.</p>
 
-                        {f"<p>{message}</p>" if message else ""}
+                        {f"<p>{safe_message}</p>" if message else ""}
 
                         <div class="details">
                             <h3>Contract Details:</h3>
-                            <p><strong>Contract:</strong> {contract["contract_title"]}</p>
-                            <p><strong>Contract #:</strong> {contract.get("contract_number", "N/A")}</p>
-                            <p><strong>Service:</strong> {self._get_vendor_service_label(contract["service_category"], contract.get("custom_service_category"))}</p>
+                            <p><strong>Contract:</strong> {safe_contract_title}</p>
+                            <p><strong>Contract #:</strong> {safe_contract_number}</p>
+                            <p><strong>Service:</strong> {safe_service_label}</p>
                             <p><strong>Total Amount:</strong> ${contract["total_amount"]:,.2f}</p>
                             {f"<p><strong>Deposit Required:</strong> ${contract['deposit_amount']:,.2f}</p>" if contract.get("deposit_amount") else ""}
                         </div>
@@ -2384,7 +2839,7 @@ class VendorService:
                         <p>Please review the contract and sign electronically by clicking the button below:</p>
 
                         <div style="text-align: center;">
-                            <a href="{contract_link}" class="button">Review & Sign Contract</a>
+                            <a href="{safe_contract_link}" class="button">Review &amp; Sign Contract</a>
                         </div>
 
                         <p>If you have any questions or need to discuss any terms, please don't hesitate to contact us.</p>
@@ -2416,7 +2871,10 @@ class VendorService:
                 **token_update,
             }
             await self.vendor_contracts.update_one(
-                {"_id": ObjectId(contract_id)},
+                {
+                    "_id": ObjectId(contract_id),
+                    "is_soft_deleted": {"$ne": True},
+                },
                 {"$set": send_update},
             )
 
@@ -2539,7 +2997,10 @@ class VendorService:
 
             async def _sign_in_transaction(session: Any) -> None:
                 await self.vendor_contracts.update_one(
-                    {"_id": ObjectId(contract_id)},
+                    {
+                        "_id": ObjectId(contract_id),
+                        "is_soft_deleted": {"$ne": True},
+                    },
                     {
                         "$set": {
                             "status": ContractStatus.SIGNED.value,
@@ -2547,6 +3008,12 @@ class VendorService:
                             "signed_by_name": signer_name,
                             "signed_by_email": signer_email,
                             "signature_ip": signature_ip,
+                            # Hard-lock the contract once signed so future
+                            # update_contract calls 409 even if the status
+                            # later flips (e.g. cancelled-after-sign). This
+                            # represents the immutability of the signed
+                            # version itself, not the live relationship.
+                            "contract_status_locked_at": signed_at,
                             "updated_at": signed_at,
                         }
                     },
@@ -2558,6 +3025,7 @@ class VendorService:
                         {
                             "vendor_profile_id": contract["vendor_profile_id"],
                             "wedding_id": contract["wedding_id"],
+                            "is_deleted": {"$ne": True},
                         },
                         {
                             "$set": {
@@ -2577,15 +3045,25 @@ class VendorService:
 
             planner_email = contract["created_by"]
             subject = f"Contract Signed: {contract['vendor_name']}"
+            # Escape every vendor/signer-supplied string before f-string
+            # interpolation. signed_at strftime output is fixed-format.
+            safe_vendor_name = html.escape(str(contract["vendor_name"]), quote=True)
+            safe_contract_title = html.escape(
+                str(contract["contract_title"]), quote=True
+            )
+            safe_signer_name = html.escape(str(signer_name), quote=True)
+            safe_signed_at = html.escape(
+                signed_at.strftime("%B %d, %Y at %H:%M UTC"), quote=True
+            )
             html_content = f"""
             <html>
             <body style="font-family: Arial, sans-serif;">
                 <h2>Contract Signed!</h2>
-                <p>Great news! {contract["vendor_name"]} has signed the contract.</p>
+                <p>Great news! {safe_vendor_name} has signed the contract.</p>
                 <div style="background: #f3f4f6; padding: 15px; border-radius: 6px;">
-                    <p><strong>Contract:</strong> {contract["contract_title"]}</p>
-                    <p><strong>Signed by:</strong> {signer_name}</p>
-                    <p><strong>Signed at:</strong> {signed_at.strftime("%B %d, %Y at %H:%M UTC")}</p>
+                    <p><strong>Contract:</strong> {safe_contract_title}</p>
+                    <p><strong>Signed by:</strong> {safe_signer_name}</p>
+                    <p><strong>Signed at:</strong> {safe_signed_at}</p>
                 </div>
                 <p>Log in to your dashboard to view the signed contract.</p>
             </body>
@@ -2662,10 +3140,39 @@ class VendorService:
             update_data = {
                 k: v for k, v in data.items() if k in allowed_fields and v is not None
             }
+
+            # Guard: deposit cannot exceed total. Use the EFFECTIVE values:
+            # whichever side isn't in the patch falls back to the persisted
+            # contract. Mirrors the storage-model validator on VendorContract
+            # and the service-layer guard in create_contract.
+            effective_total = (
+                update_data["total_amount"]
+                if "total_amount" in update_data
+                else contract.get("total_amount")
+            )
+            effective_deposit = (
+                update_data["deposit_amount"]
+                if "deposit_amount" in update_data
+                else contract.get("deposit_amount")
+            )
+            if (
+                effective_deposit is not None
+                and effective_total is not None
+                and effective_deposit > effective_total
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Deposit amount cannot exceed total amount",
+                )
+
             update_data["updated_at"] = datetime.now(timezone.utc)
 
             await self.vendor_contracts.update_one(
-                {"_id": ObjectId(contract_id)}, {"$set": update_data}
+                {
+                    "_id": ObjectId(contract_id),
+                    "is_soft_deleted": {"$ne": True},
+                },
+                {"$set": update_data},
             )
 
             changed_fields = sorted(
@@ -2739,7 +3246,10 @@ class VendorService:
                 update_data["custom_clauses"] = custom_clauses
 
             await self.vendor_contracts.update_one(
-                {"_id": ObjectId(contract_id)},
+                {
+                    "_id": ObjectId(contract_id),
+                    "is_soft_deleted": {"$ne": True},
+                },
                 {"$set": update_data},
             )
 
@@ -2800,17 +3310,44 @@ class VendorService:
                     "suggested_contract_fields": {},
                 }
 
-            # Find vendor form submissions for this vendor
-            vendor_submissions = (
-                await mongo.db["vendor_submissions"]
-                .find({"vendor_email": vendor_email})
-                .to_list(length=20)
+            # Owner-scoping (parallels _get_owned_form / _get_owned_form_submission):
+            #   - vendor_forms.created_by is the planner's email — filter directly.
+            #   - vendor_submissions has no created_by; scope it transitively
+            #     through the parent vendor_forms it references via form_id.
+            # When created_by is None we're acting as root-admin and skip scoping,
+            # matching the convention used by every _get_owned_* helper above.
+            normalized_actor = normalize_planner_email(created_by)
+
+            forms_filter: Dict[str, Any] = {"vendor_email": vendor_email}
+            if normalized_actor is not None:
+                forms_filter["created_by"] = normalized_actor
+
+            owned_forms_for_scope = await (
+                mongo.db["vendor_forms"].find(forms_filter).to_list(length=200)
             )
 
-            # Also check vendor_forms that have been submitted
-            vendor_forms = (
-                await mongo.db["vendor_forms"]
-                .find({"vendor_email": vendor_email, "status": "submitted"})
+            # Submitted forms get surfaced as form-data sources (cap 20).
+            vendor_forms = [
+                f for f in owned_forms_for_scope if f.get("status") == "submitted"
+            ][:20]
+
+            submissions_filter: Dict[str, Any] = {"vendor_email": vendor_email}
+            if normalized_actor is not None:
+                # vendor_submissions.form_id storage is inconsistent across the
+                # codebase: the public-vendor-form submit path writes it as a
+                # str(ObjectId), but other writers may persist a raw ObjectId.
+                # Match both forms so the owner-scope filter doesn't silently
+                # drop legitimate submissions just because of a type mismatch.
+                owned_form_ids_mixed: list[Any] = []
+                for f in owned_forms_for_scope:
+                    fid = f["_id"]
+                    owned_form_ids_mixed.append(fid)
+                    owned_form_ids_mixed.append(str(fid))
+                submissions_filter["form_id"] = {"$in": owned_form_ids_mixed}
+
+            vendor_submissions = (
+                await mongo.db["vendor_submissions"]
+                .find(submissions_filter)
                 .to_list(length=20)
             )
 
@@ -2944,7 +3481,16 @@ class VendorService:
         field_mappings: Optional[Dict[str, str]] = None,
         applied_by: Optional[str] = None,
     ) -> dict:
-        """Apply data from a vendor form submission to populate contract sections"""
+        """Apply data from a vendor form submission to populate contract sections.
+
+        Tenant scope: every ID resolved here goes through a planner-owned
+        helper. The contract is checked via ``get_contract`` (which
+        enforces ``created_by == applied_by``), and the form submission /
+        parent form lookups go through ``_get_owned_form_submission`` /
+        ``_get_owned_form`` so a client-supplied ``form_submission_id``
+        cannot leak across tenants. ``applied_by=None`` is the
+        root-admin bypass and skips both filters.
+        """
         try:
             # Authorization: verify contract belongs to this user
             contract = await self.get_contract(contract_id, created_by=applied_by)
@@ -2958,22 +3504,31 @@ class VendorService:
                     detail="Cannot apply form data to a contract that has been sent",
                 )
 
-            submission_object_id = validate_object_id(
-                form_submission_id, "form submission ID"
+            # validate_object_id raises HTTP 400 for malformed IDs.
+            validate_object_id(form_submission_id, "form submission ID")
+
+            # Tenant-scoped lookup: try as a vendor_submission first
+            # (the canonical post-form-submit storage), then fall back to
+            # a self-contained vendor_form row whose ``submission_data``
+            # is set when the form is filled out. Both paths enforce
+            # planner ownership; an ID owned by another planner returns
+            # None and surfaces as a generic 404 below.
+            submission = await self._get_owned_form_submission(
+                form_submission_id, applied_by
             )
 
-            # Try to find the submission in vendor_submissions first
-            submission = await mongo.db["vendor_submissions"].find_one(
-                {"_id": submission_object_id}
-            )
+            source_kind = "vendor_submission" if submission else None
 
             if not submission:
-                # Try vendor_forms
-                submission = await mongo.db["vendor_forms"].find_one(
-                    {"_id": submission_object_id}
-                )
+                submission = await self._get_owned_form(form_submission_id, applied_by)
+                if submission:
+                    source_kind = "vendor_form"
 
             if not submission:
+                # Generic 404 for both missing and foreign-tenant IDs so
+                # the planner UI cannot probe another tenant's existence
+                # (AGENTS.md "Authorization And Tenant Boundary Rule";
+                # ticket AR-7 generic-error criterion).
                 raise HTTPException(status_code=404, detail="Form submission not found")
 
             submission_data = submission.get("submission_data", {})
@@ -3020,7 +3575,10 @@ class VendorService:
 
             # Update contract
             await self.vendor_contracts.update_one(
-                {"_id": ObjectId(contract_id)},
+                {
+                    "_id": ObjectId(contract_id),
+                    "is_soft_deleted": {"$ne": True},
+                },
                 {
                     "$set": {
                         "sections": updated_sections,
@@ -3046,6 +3604,18 @@ class VendorService:
             )
 
             applied_at = datetime.now(timezone.utc)
+            # AR-final audit fields: capture the resolved (planner-owned)
+            # source IDs on the activity row so the audit trail records
+            # exactly which form submission and vendor profile were
+            # merged into this contract. ``source_vendor_id`` is best
+            # effort: the submission record links a vendor by email
+            # (vendor_email) rather than a vendor_profile_id, so we
+            # surface whichever vendor identifier the source row carries.
+            source_vendor_id = (
+                submission.get("vendor_profile_id")
+                or submission.get("vendor_id")
+                or submission.get("vendor_email")
+            )
             await self._log_contract_activity(
                 contract_id=contract_id,
                 root_contract_id=self._get_root_contract_id(contract),
@@ -3057,6 +3627,9 @@ class VendorService:
                 actor_display_name=applied_by,
                 metadata={
                     "form_submission_id": form_submission_id,
+                    "source_form_submission_id": form_submission_id,
+                    "source_vendor_id": source_vendor_id,
+                    "source_kind": source_kind,
                     "field_mappings": normalized_mappings,
                 },
                 created_at=applied_at,
@@ -3146,7 +3719,22 @@ class VendorService:
         status: Optional[str] = None,
         created_by: Optional[str] = None,
     ) -> List[dict]:
-        """Get payment milestones"""
+        """Get payment milestones.
+
+        Tenant scope: when ``created_by`` is provided, the find query is
+        filtered by that planner's ``created_by`` so the planner only
+        sees their own milestones. When ``contract_id`` is provided we
+        verify ownership via ``get_contract`` and let the contract_id
+        filter carry the scope (every milestone on a contract shares
+        its ``created_by``). When ``created_by`` is ``None`` (root-admin
+        bypass) the scope is skipped and the read spans every planner.
+
+        The ``update_many`` overdue-marking branch carries the same
+        ``created_by`` filter so a planner's overdue sweep cannot
+        accidentally flip another planner's milestone status — defending
+        the write at the Mongo layer matches the Authorization And
+        Tenant Boundary Rule.
+        """
         try:
             query: Dict[str, Any] = {}
 
@@ -3177,10 +3765,15 @@ class VendorService:
                         m["status"] = PaymentMilestoneStatus.OVERDUE.value
                         overdue_milestone_ids.append(ObjectId(m["_id"]))
 
-            # Persist overdue status changes to database
+            # Persist overdue status changes to database — re-apply the
+            # planner ``created_by`` filter so the write is scoped at
+            # the Mongo layer, not just by the in-memory ``$in`` set.
             if overdue_milestone_ids:
+                update_filter: Dict[str, Any] = {"_id": {"$in": overdue_milestone_ids}}
+                if created_by is not None:
+                    update_filter["created_by"] = created_by
                 await self.payment_milestones.update_many(
-                    {"_id": {"$in": overdue_milestone_ids}},
+                    update_filter,
                     {
                         "$set": {
                             "status": PaymentMilestoneStatus.OVERDUE.value,
@@ -3237,13 +3830,80 @@ class VendorService:
                 milestone_id=milestone_id,
                 created_by=created_by,
             )
+
+            # Guard 1: Stripe intent idempotency.
+            # Stripe retries webhooks and the planner UI can double-submit a
+            # record. Without this check, the same PaymentIntent could be
+            # recorded twice and the rollups inflated. This guard runs first
+            # so a same-milestone retry returns an idempotent ack rather than
+            # falling through to the status / clamp guards (which would 409
+            # / 400 a legitimate retry).
+            #   - Same milestone + same intent => idempotent ack (200).
+            #   - Different milestone + same intent => 409 (Stripe intents are
+            #     globally unique per charge; a re-use is a routing bug).
+            # Note: this guard only catches manual+manual races. The webhook
+            # path at handle_payment_link_webhook does not currently set
+            # stripe_payment_intent_id on the milestone, so manual+webhook
+            # races are still open. Tracked as a follow-up fix.
+            if stripe_payment_intent_id:
+                if (
+                    milestone.get("stripe_payment_intent_id")
+                    == stripe_payment_intent_id
+                ):
+                    logger.info(
+                        "Idempotent record_payment: intent %s already on milestone %s",
+                        stripe_payment_intent_id,
+                        milestone_id,
+                    )
+                    return {**milestone, "_id": str(milestone["_id"])}
+                duplicate = await self.payment_milestones.find_one(
+                    {"stripe_payment_intent_id": stripe_payment_intent_id}
+                )
+                if duplicate is not None:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "This Stripe payment is already recorded against "
+                            "another milestone"
+                        ),
+                    )
+
+            # Guard 2: status lock.
+            # Once a milestone reaches PAID (and we have NOT already returned
+            # the idempotent ack above), additional record_payment calls would
+            # silently inflate paid_amount past the milestone amount and
+            # double-credit the assignment / vendor / budget rollups. Reject
+            # explicitly with 409 so the caller can surface the conflict.
+            if milestone.get("status") == PaymentMilestoneStatus.PAID.value:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Milestone is already fully paid",
+                )
+
+            # Guard 3: amount clamp.
+            # Without this, amount > remaining over-credits paid_amount and
+            # the rollup $inc on vendor_assignments / vendor_profiles. The
+            # 0.005 tolerance absorbs float-rounding on cent boundaries
+            # (e.g. 33.33 + 33.33 + 33.34 vs. 100.00).
+            current_paid = float(milestone.get("paid_amount", 0) or 0)
+            milestone_amount = float(milestone["amount"])
+            remaining = milestone_amount - current_paid
+            if amount > remaining + 0.005:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Payment amount ${amount:.2f} exceeds remaining "
+                        f"balance ${remaining:.2f} on this milestone"
+                    ),
+                )
+
             contract = None
             if milestone.get("contract_id"):
                 contract = await self.get_contract(
                     milestone["contract_id"], created_by=created_by
                 )
 
-            new_paid_amount = milestone.get("paid_amount", 0) + amount
+            new_paid_amount = current_paid + amount
 
             # Determine new status
             if new_paid_amount >= milestone["amount"]:
@@ -3278,6 +3938,7 @@ class VendorService:
                         {
                             "vendor_profile_id": milestone["vendor_profile_id"],
                             "wedding_id": milestone["wedding_id"],
+                            "is_deleted": {"$ne": True},
                         },
                         {"$inc": {"paid_amount": amount}},
                         session=session,
@@ -3301,6 +3962,16 @@ class VendorService:
                 "Vendor milestone payment recording",
                 _record_in_transaction,
             )
+
+            # Best-effort alert refresh after the spend mutation commits.
+            # Lazy-imported to avoid a circular service-layer import; the
+            # public wrapper swallows internally so a failure here cannot
+            # bubble up and break payment recording.
+            milestone_wedding_id = milestone.get("wedding_id")
+            if milestone_wedding_id:
+                from app.services.budget_service import BudgetService
+
+                await BudgetService().evaluate_budget_alerts(milestone_wedding_id)
 
             updated = await self.payment_milestones.find_one(
                 {"_id": ObjectId(milestone_id)}
@@ -3395,9 +4066,19 @@ class VendorService:
     # =========================================================================
 
     async def upload_contract_document(
-        self, contract_id: str, file: UploadFile, document_type: str = "signed"
+        self,
+        contract_id: str,
+        file: UploadFile,
+        document_type: str = "signed",
+        created_by: Optional[str] = None,
     ) -> dict:
-        """Upload a contract document to S3"""
+        """Upload a contract document to S3.
+
+        ``created_by`` is the actor's planner email. When provided, the
+        contract lookup is scoped to that owner so a planner cannot
+        overwrite another tenant's ``document_url``. Pass ``None`` for
+        the root-admin bypass case.
+        """
         try:
             # Validate MIME type
             if file.content_type not in ALLOWED_CONTRACT_TYPES:
@@ -3405,6 +4086,12 @@ class VendorService:
                     status_code=400,
                     detail=f"File type '{file.content_type}' not allowed. Allowed types: {', '.join(sorted(ALLOWED_CONTRACT_TYPES))}",
                 )
+
+            # Verify the contract exists and belongs to this planner BEFORE
+            # we burn an S3 object on a foreign-tenant write attempt.
+            owned_contract = await self._get_owned_contract(contract_id, created_by)
+            if not owned_contract:
+                raise HTTPException(status_code=404, detail="Contract not found")
 
             # Generate unique key
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -3423,10 +4110,19 @@ class VendorService:
 
             file_url = f"{self.media_domain}/{filename}"
 
-            # Update contract with document URL
+            # Update contract with document URL — re-scope the update query
+            # to the owner so a TOCTOU swap between the ownership check
+            # and the write cannot smuggle in a foreign contract.
             field = f"{document_type}_document_url"
+            update_query: Dict[str, Any] = {
+                "_id": ObjectId(contract_id),
+                "is_soft_deleted": {"$ne": True},
+            }
+            normalized_actor = normalize_planner_email(created_by)
+            if normalized_actor is not None:
+                update_query["created_by"] = normalized_actor
             await self.vendor_contracts.update_one(
-                {"_id": ObjectId(contract_id)},
+                update_query,
                 {"$set": {field: file_url, "updated_at": datetime.now(timezone.utc)}},
             )
 
@@ -3483,7 +4179,7 @@ class VendorService:
         vendor_profile_id: str,
         contract_title: str,
         total_amount: float,
-        created_by: str,
+        created_by: Optional[str] = None,
         deposit_amount: Optional[float] = None,
         service_date: Optional[datetime] = None,
         service_location: Optional[str] = None,
@@ -3492,15 +4188,23 @@ class VendorService:
         """
         Create a contract by uploading an existing PDF.
         The planner uploads their own contract PDF instead of using templates.
+
+        ``created_by`` is the actor's planner email. Pass ``None`` for the
+        root-admin bypass case (skips the planner-ownership filter).
         """
         try:
-            # Get vendor profile
-            vendor = await self.get_vendor_profile(vendor_profile_id, created_by)
+            # Get vendor profile (scoped by planner ownership — prevents a
+            # cross-tenant write via a client-supplied vendor_profile_id).
+            # Use the helper so root-admin (created_by=None) skips the
+            # ownership filter cleanly; the prior call to get_vendor_profile
+            # would have run {"_id": ..., "created_by": None} and 404'd.
+            vendor = await self._get_owned_vendor_profile(vendor_profile_id, created_by)
             if not vendor:
                 raise HTTPException(status_code=404, detail="Vendor not found")
 
-            # Get wedding
-            wedding = await self._get_wedding(wedding_id)
+            # Get wedding (scoped by planner ownership — prevents a planner
+            # from uploading a PDF against another tenant's wedding).
+            wedding = await self._get_owned_wedding(wedding_id, created_by)
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
@@ -3761,9 +4465,33 @@ class VendorService:
             )
             payment_url = payment_link["stripe_payment_link_url"]
 
-            message = custom_message or payment_link.get("email_message") or ""
-            if message:
-                message = f"<p>{message}</p>"
+            raw_message = custom_message or payment_link.get("email_message") or ""
+            message_block = (
+                f"<p>{html.escape(str(raw_message), quote=True)}</p>"
+                if raw_message
+                else ""
+            )
+
+            # Escape every planner/payer/recipient-supplied string before
+            # interpolation. Numeric `amount` formatting is safe via :,.2f, but
+            # we still escape currency/payment_url/due_date defensively.
+            safe_payer_name = html.escape(str(payment_link["payer_name"]), quote=True)
+            safe_description = html.escape(str(payment_link["description"]), quote=True)
+            safe_currency = html.escape(str(payment_link["currency"]), quote=True)
+            safe_recipient_name = html.escape(
+                str(payment_link["recipient_name"]), quote=True
+            )
+            safe_planner_name = html.escape(str(planner_name), quote=True)
+            safe_payment_url = html.escape(str(payment_url), quote=True)
+            due_date_block = (
+                "<p><strong>Due Date:</strong> "
+                + html.escape(
+                    payment_link["due_date"].strftime("%B %d, %Y"), quote=True
+                )
+                + "</p>"
+                if payment_link.get("due_date")
+                else ""
+            )
 
             email_html = f"""
             <html>
@@ -3784,22 +4512,22 @@ class VendorService:
                         <h1>Payment Request</h1>
                     </div>
                     <div class="content">
-                        <p>Dear {payment_link["payer_name"]},</p>
-                        {message}
+                        <p>Dear {safe_payer_name},</p>
+                        {message_block}
                         <p>You have a payment request for:</p>
-                        <p><strong>{payment_link["description"]}</strong></p>
-                        <div class="amount">${payment_link["amount"]:,.2f} {payment_link["currency"]}</div>
-                        <p>Payment to: <strong>{payment_link["recipient_name"]}</strong></p>
-                        {"<p><strong>Due Date:</strong> " + payment_link["due_date"].strftime("%B %d, %Y") + "</p>" if payment_link.get("due_date") else ""}
+                        <p><strong>{safe_description}</strong></p>
+                        <div class="amount">${payment_link["amount"]:,.2f} {safe_currency}</div>
+                        <p>Payment to: <strong>{safe_recipient_name}</strong></p>
+                        {due_date_block}
                         <div style="text-align: center;">
-                            <a href="{payment_url}" class="button">Pay Now</a>
+                            <a href="{safe_payment_url}" class="button">Pay Now</a>
                         </div>
                         <p style="font-size: 12px; color: #6b7280;">
                             This is a secure payment link powered by Stripe. Your payment information is encrypted and secure.
                         </p>
                     </div>
                     <div class="footer">
-                        <p>Sent by {planner_name} via The Special Wedding</p>
+                        <p>Sent by {safe_planner_name} via The Special Wedding</p>
                     </div>
                 </div>
             </body>
@@ -3877,11 +4605,54 @@ class VendorService:
     async def handle_payment_link_webhook(self, stripe_event: dict) -> dict:
         """
         Handle Stripe webhook for payment link completion.
-        Updates payment link status and records payment.
+
+        On `checkout.session.completed`:
+          1. Route the milestone credit through `record_payment` — the canonical
+             primitive — so the three guards (intent idempotency, status lock,
+             amount clamp) and the transactional rollup to vendor_assignments,
+             vendor_profiles, and budget_categories all run.
+          2. ONLY on record_payment success (or its translated idempotent acks)
+             do we mark the payment_link row PAID. If record_payment raises
+             non-idempotently, the link stays in its prior status and Stripe
+             will retry — on retry record_payment can complete cleanly.
+
+        The legacy inline milestone update bypassed `record_payment`, so:
+          - Stripe webhook retries → milestone double-credited (paid_amount inflated).
+          - A milestone already PAID via another path silently re-credited.
+          - vendor_assignments.paid_amount, vendor_profiles.total_revenue, and
+            budget_categories.actual_spent never moved on payment-link-paid milestones.
+
+        Guard rejections are translated into idempotent 200-style returns so
+        Stripe stops retrying — re-driving the same intent through this path
+        is benign now.
+
+        Stale-state protection on the payment_link doc update:
+          - CANCELLED links: do NOT credit, do NOT overwrite status; log WARNING
+            and return processed=True so Stripe stops retrying.
+          - Already-PAID links (replay): do NOT clobber paid_at; only fill in
+            stripe_checkout_session_id / stripe_payment_intent_id if missing.
+          - Missing milestone (deleted between link creation and webhook fire):
+            translate the inner 404 into an ERROR log + processed=True so
+            Stripe stops retrying. Ops finds the orphan via the log.
         """
+        # Pull these out early so the outer except can reference them.
+        payment_link_id: Optional[str] = None
+        event_id = stripe_event.get("id") if isinstance(stripe_event, dict) else None
         try:
             event_type = stripe_event.get("type")
             data = stripe_event.get("data", {}).get("object", {})
+
+            # Authoritative settlement time from Stripe — falls back to None
+            # (record_payment defaults to now) if absent.
+            event_created = stripe_event.get("created")
+            event_payment_date: Optional[datetime] = None
+            if event_created is not None:
+                try:
+                    event_payment_date = datetime.fromtimestamp(
+                        int(event_created), tz=timezone.utc
+                    )
+                except (TypeError, ValueError, OSError):
+                    event_payment_date = None
 
             if event_type == "checkout.session.completed":
                 # Find payment link by checkout session
@@ -3897,43 +4668,291 @@ class VendorService:
                             payment_link_id = str(payment_link["_id"])
 
                 if payment_link_id:
-                    await self.payment_links.update_one(
-                        {"_id": ObjectId(payment_link_id)},
-                        {
-                            "$set": {
-                                "status": PaymentLinkStatus.PAID.value,
-                                "paid_at": datetime.now(timezone.utc),
-                                "stripe_checkout_session_id": data.get("id"),
-                                "stripe_payment_intent_id": data.get("payment_intent"),
-                                "updated_at": datetime.now(timezone.utc),
-                            }
-                        },
-                    )
-
-                    # Update related milestone if exists
+                    # Re-read the payment_link doc up front so we can route the
+                    # milestone credit through the canonical primitive BEFORE
+                    # we touch the link doc itself.
                     payment_link = await self.payment_links.find_one(
                         {"_id": ObjectId(payment_link_id)}
                     )
+
+                    # CANCELLED short-circuit: link was explicitly killed by
+                    # the planner. A late Stripe webhook should not credit and
+                    # should not overwrite the audit trail. Acknowledge so
+                    # Stripe stops retrying.
+                    if (
+                        payment_link
+                        and payment_link.get("status")
+                        == PaymentLinkStatus.CANCELLED.value
+                    ):
+                        logger.warning(
+                            "payment_link_webhook: late webhook for CANCELLED "
+                            "link; skipping credit and preserving audit",
+                            extra={
+                                "payment_link_id": payment_link_id,
+                                "event_id": event_id,
+                                "stripe_payment_intent_id": data.get("payment_intent"),
+                            },
+                        )
+                        return {"processed": True}
+
+                    record_payment_succeeded = False
+
                     if payment_link and payment_link.get("milestone_id"):
-                        await self.payment_milestones.update_one(
-                            {"_id": ObjectId(payment_link["milestone_id"])},
+                        milestone_id = str(payment_link["milestone_id"])
+                        created_by = payment_link.get("created_by")
+                        amount = float(payment_link.get("amount") or 0)
+                        payment_intent_id = data.get("payment_intent")
+
+                        # Best-effort receipt URL: Stripe gives us the PI id on
+                        # the checkout.session payload, but not the charge's
+                        # receipt URL. Fetch the PI and pull `latest_charge`.
+                        # This is best-effort — failures here must NOT prevent
+                        # the milestone credit from being recorded.
+                        receipt_url: Optional[str] = None
+                        if payment_intent_id:
+                            try:
+                                pi = stripe.PaymentIntent.retrieve(
+                                    payment_intent_id,
+                                    expand=["latest_charge"],
+                                )
+                                latest_charge = getattr(pi, "latest_charge", None)
+                                if latest_charge and not isinstance(latest_charge, str):
+                                    receipt_url = getattr(
+                                        latest_charge, "receipt_url", None
+                                    )
+                            except stripe.StripeError as exc:
+                                logger.warning(
+                                    "payment_link_webhook: could not fetch "
+                                    "receipt_url for intent %s: %s",
+                                    payment_intent_id,
+                                    exc,
+                                )
+
+                        if not created_by:
+                            # Without a created_by we can't look up the
+                            # milestone (record_payment scopes by ownership).
+                            # Log and bail on the milestone credit. The
+                            # payment_link doc still gets the PAID update
+                            # below — the planner needs the doc to reflect
+                            # what Stripe collected, even though the rollup
+                            # never ran. Ops finds these via the ERROR log.
+                            logger.error(
+                                "payment_link_webhook: missing created_by; "
+                                "cannot route to record_payment, milestone "
+                                "NOT credited",
+                                extra={
+                                    "payment_link_id": payment_link_id,
+                                    "milestone_id": milestone_id,
+                                    "stripe_payment_intent_id": payment_intent_id,
+                                    "event_id": event_id,
+                                    "amount": amount,
+                                },
+                            )
+                            # Allow the link doc update below to run; without
+                            # it the Stripe-provided session/PI ids never
+                            # land on the doc.
+                            record_payment_succeeded = True
+                        else:
+                            try:
+                                await self.record_payment(
+                                    milestone_id=milestone_id,
+                                    amount=amount,
+                                    payment_method="stripe",
+                                    created_by=created_by,
+                                    payment_date=event_payment_date,
+                                    stripe_payment_intent_id=payment_intent_id,
+                                    receipt_url=receipt_url,
+                                )
+                                record_payment_succeeded = True
+                            except HTTPException as exc:
+                                # Translate guard rejections into idempotent
+                                # 200-style returns so Stripe stops retrying.
+                                #   404 milestone-not-found → milestone was
+                                #     deleted between link creation and
+                                #     webhook fire. Don't mark the link PAID
+                                #     (record_payment did NOT run); log ERROR
+                                #     so ops finds the orphan, return
+                                #     processed=True to stop Stripe retries.
+                                #   409 with "already recorded" / status PAID →
+                                #     benign retry; the milestone is in the
+                                #     intended end state already.
+                                #   400 amount clamp → log + swallow; should be
+                                #     impossible if the link's amount matches
+                                #     the milestone, but a stale link against
+                                #     a partially-paid milestone could trip it.
+                                detail = str(exc.detail or "").lower()
+                                if exc.status_code == 404:
+                                    logger.error(
+                                        "payment_link_webhook: milestone not "
+                                        "found (likely deleted between link "
+                                        "creation and webhook fire); skipping "
+                                        "credit and link update",
+                                        extra={
+                                            "payment_link_id": payment_link_id,
+                                            "milestone_id": milestone_id,
+                                            "stripe_payment_intent_id": (
+                                                payment_intent_id
+                                            ),
+                                            "event_id": event_id,
+                                            "amount": amount,
+                                            "detail": exc.detail,
+                                        },
+                                    )
+                                    return {"processed": True}
+                                if exc.status_code == 409 and ("already" in detail):
+                                    logger.info(
+                                        "payment_link_webhook: idempotent "
+                                        "replay (record_payment 409)",
+                                        extra={
+                                            "payment_link_id": payment_link_id,
+                                            "milestone_id": milestone_id,
+                                            "stripe_payment_intent_id": (
+                                                payment_intent_id
+                                            ),
+                                            "event_id": event_id,
+                                            "detail": exc.detail,
+                                        },
+                                    )
+                                    record_payment_succeeded = True
+                                elif exc.status_code == 400 and (
+                                    "exceeds remaining" in detail
+                                ):
+                                    logger.warning(
+                                        "payment_link_webhook: amount clamp "
+                                        "rejected by record_payment; "
+                                        "swallowing so Stripe does not "
+                                        "infinite-retry",
+                                        extra={
+                                            "payment_link_id": payment_link_id,
+                                            "milestone_id": milestone_id,
+                                            "stripe_payment_intent_id": (
+                                                payment_intent_id
+                                            ),
+                                            "event_id": event_id,
+                                            "amount": amount,
+                                            "detail": exc.detail,
+                                        },
+                                    )
+                                    record_payment_succeeded = True
+                                else:
+                                    raise
+                    else:
+                        # No milestone bound — link doc update is the only
+                        # action this webhook performs. Treat as success so
+                        # the doc update below runs.
+                        record_payment_succeeded = True
+
+                    # Only mark the link doc PAID if record_payment succeeded
+                    # (or returned an idempotent ack). On non-idempotent
+                    # failure we want Stripe's retry to find the link still
+                    # in its prior status so the credit can be re-attempted.
+                    if record_payment_succeeded:
+                        # Stale-state guard: only DRAFT/SENT/CLICKED links
+                        # may transition to PAID via this fast path. The
+                        # filter is the source of truth — it prevents
+                        # CANCELLED audit overwrite (defence-in-depth on top
+                        # of the early-return above) and prevents replay
+                        # from clobbering the original paid_at on already-
+                        # PAID docs.
+                        update_result = await self.payment_links.update_one(
+                            {
+                                "_id": ObjectId(payment_link_id),
+                                "status": {
+                                    "$in": [
+                                        PaymentLinkStatus.DRAFT.value,
+                                        PaymentLinkStatus.SENT.value,
+                                        PaymentLinkStatus.CLICKED.value,
+                                    ]
+                                },
+                            },
                             {
                                 "$set": {
-                                    "status": PaymentMilestoneStatus.PAID.value,
-                                    "paid_amount": payment_link["amount"],
+                                    "status": PaymentLinkStatus.PAID.value,
                                     "paid_at": datetime.now(timezone.utc),
-                                    "payment_method": "stripe",
+                                    "stripe_checkout_session_id": data.get("id"),
+                                    "stripe_payment_intent_id": data.get(
+                                        "payment_intent"
+                                    ),
                                     "updated_at": datetime.now(timezone.utc),
                                 }
                             },
                         )
 
-                    logger.info(f"Payment link {payment_link_id} marked as paid")
+                        if update_result.matched_count == 0:
+                            # Either the link is already PAID (replay) or in
+                            # some other terminal state. For replay, fill in
+                            # missing session/intent ids defensively but do
+                            # NOT touch paid_at.
+                            await self.payment_links.update_one(
+                                {
+                                    "_id": ObjectId(payment_link_id),
+                                    "status": PaymentLinkStatus.PAID.value,
+                                    "$or": [
+                                        {
+                                            "stripe_checkout_session_id": {
+                                                "$in": [None, ""]
+                                            }
+                                        },
+                                        {
+                                            "stripe_checkout_session_id": {
+                                                "$exists": False
+                                            }
+                                        },
+                                        {
+                                            "stripe_payment_intent_id": {
+                                                "$in": [None, ""]
+                                            }
+                                        },
+                                        {
+                                            "stripe_payment_intent_id": {
+                                                "$exists": False
+                                            }
+                                        },
+                                    ],
+                                },
+                                {
+                                    "$set": {
+                                        "stripe_checkout_session_id": data.get("id"),
+                                        "stripe_payment_intent_id": data.get(
+                                            "payment_intent"
+                                        ),
+                                        "updated_at": datetime.now(timezone.utc),
+                                    }
+                                },
+                            )
+
+                        # Structured success log so dashboards / alerts can
+                        # filter on stable keys.
+                        milestone_log_id: Optional[str] = None
+                        amount_log: Optional[float] = None
+                        if payment_link and payment_link.get("milestone_id"):
+                            milestone_log_id = str(payment_link["milestone_id"])
+                            amount_log = float(payment_link.get("amount") or 0)
+                        logger.info(
+                            "payment_link_webhook: payment_link marked PAID",
+                            extra={
+                                "payment_link_id": payment_link_id,
+                                "milestone_id": milestone_log_id,
+                                "stripe_payment_intent_id": data.get("payment_intent"),
+                                "stripe_checkout_session_id": data.get("id"),
+                                "amount": amount_log,
+                                "event_id": event_id,
+                            },
+                        )
 
             return {"processed": True}
 
         except Exception as e:
-            logger.error(f"Error handling payment webhook: {str(e)}")
+            logger.exception(
+                "payment_link_webhook failed",
+                extra={
+                    "payment_link_id": payment_link_id,
+                    "event_id": event_id,
+                    "event_type": stripe_event.get("type")
+                    if isinstance(stripe_event, dict)
+                    else None,
+                },
+            )
             return {"processed": False, "error": str(e)}
 
 

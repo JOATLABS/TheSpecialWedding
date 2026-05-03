@@ -102,6 +102,7 @@ export interface VendorAssignment {
   quoted_amount?: number;
   contracted_amount?: number;
   paid_amount: number;
+  contract_id?: string;
 }
 
 export interface VendorDashboard {

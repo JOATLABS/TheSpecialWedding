@@ -33,6 +33,62 @@ export default function GoogleCalendarHelpPage() {
             configured instead of guessing a different calendar.
           </p>
         </section>
+
+        <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-8 text-sm leading-7 text-slate-700 shadow-sm">
+          <h2 className="text-xl font-semibold tracking-tight text-slate-900">
+            How we use Google data (per scope)
+          </h2>
+          <p>
+            We request the minimum scopes necessary to operate the planner calendar features
+            described above. Data obtained through these scopes is used only inside the
+            connected planner&rsquo;s workspace to power calendar features and is never sold,
+            shared with third parties for unrelated purposes, or used to serve advertisements.
+          </p>
+          <dl className="space-y-4">
+            <div>
+              <dt className="font-mono text-xs text-slate-600">
+                https://www.googleapis.com/auth/calendar.events
+              </dt>
+              <dd className="mt-1">
+                Used to create, read, update and delete calendar events on the calendar(s)
+                the user has explicitly connected, so the planner can sync internal meetings
+                (consultations, vendor reviews, day-of timeline events) and detect conflicts
+                with existing events before writing. Read access is required for conflict
+                detection and free/busy projection; write access is required to create the
+                events the planner has authored inside our product.
+              </dd>
+            </div>
+            <div>
+              <dt className="font-mono text-xs text-slate-600">
+                https://www.googleapis.com/auth/calendar.calendarlist.readonly
+              </dt>
+              <dd className="mt-1">
+                Used to list the calendars on the connected user&rsquo;s Google account so the
+                planner can choose which calendar(s) to read availability from and write
+                events to. Read-only &mdash; we never modify the calendar list itself.
+              </dd>
+            </div>
+            <div>
+              <dt className="font-mono text-xs text-slate-600">
+                https://www.googleapis.com/auth/userinfo.email
+              </dt>
+              <dd className="mt-1">
+                Used to confirm the email address of the connected Google account matches
+                the planner&rsquo;s account in our product, preventing connection mix-ups
+                when a user is signed into multiple Google accounts.
+              </dd>
+            </div>
+          </dl>
+          <p>
+            Disconnect at any time from your workspace settings; we revoke the OAuth grant
+            with Google and remove the connection record. Full data deletion instructions
+            are at{' '}
+            <a className="underline" href="/google-data-deletion">
+              /google-data-deletion
+            </a>
+            .
+          </p>
+        </section>
       </div>
     </main>
   );

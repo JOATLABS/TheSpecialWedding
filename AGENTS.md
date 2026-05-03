@@ -236,7 +236,22 @@ No multi-module feature is done until coverage exists for:
 
 For shared planner calendar work, the E2E runbook is the minimum scenario list, not a nice-to-have.
 
-Live end-to-end subscription lifecycle drivers (Stripe test-clock + real Mongo + real webhooks) live under `testbed/` — not `scripts/`. See `testbed/README.md` for the directory contract and driver list. `scripts/` is reserved for deploy, bootstrap, and seed utilities.
+Live end-to-end lifecycle and contract drivers (real Mongo plus Stripe test clocks / webhooks when applicable) live under `testbed/` — not `scripts/`. See `testbed/README.md` for the directory contract and driver list. `scripts/` is reserved for deploy, bootstrap, and seed utilities.
+
+## Repo Command Canon
+
+Prefer the repo's documented commands over ad-hoc equivalents.
+
+- Frontend dependency workflow is `npm`-only. `package-lock.json` is the canonical lockfile.
+- Fresh or repaired frontend installs use `npm ci` and then `npm run deps:doctor`.
+- If `scripts/ensure-deps.mjs` reports dependency drift or missing local binaries, recover with `rm -rf node_modules`, `npm ci`, then `npm run deps:doctor`.
+- If you intentionally change frontend dependencies, use `npm install` and commit the updated `package-lock.json`.
+- CI-aligned frontend verification is `npm run lint`, `npm run type-check`, `npm test`, and `npm run build`.
+- CI-aligned backend verification is `ruff check app/`, `ruff format --check app/`, `pytest tests/backend/test_app_boot_smoke.py -v --tb=short`, and `pytest tests/backend/ tests/test_id_utils.py -v --tb=short`.
+- Full-stack integration verification uses `docker compose -f docker-compose.test.yml up -d --build --wait`, then `pytest tests/integration/ -v --tb=short -x`, then `docker compose -f docker-compose.test.yml down -v`.
+- For manual browser runbooks without the harness, local start commands are `uvicorn app.main:app --reload --port 8000` and `npm run dev`.
+- For live lifecycle or contract verification, prefer the tmux-backed harness: `python testbed/testbed.py up`, `python testbed/testbed.py up --with-frontend`, `python testbed/testbed.py seed`, `python testbed/testbed.py status`, `python testbed/testbed.py attach`, `python testbed/testbed.py doctor`, and `python testbed/testbed.py down`.
+- Drivers in `testbed/` stay paired with cleanup scripts, and unattended runs use `TESTBED_NON_INTERACTIVE=1` when the driver supports it.
 
 ## Required Adversarial Review Before Completion
 
@@ -279,10 +294,10 @@ Claim completion only when:
 
 This cluster is load-bearing context for any work on `app/services/auth_service.py`, `app/dependencies/auth_extended.py`, `app/utils/auth_utils.py`, `proxy.ts`, `app/contexts/AdminContext.tsx`, or anything that throws or catches 402. Update this list when you close items or discover new ones.
 
-As of 2026-04-21, the following are open:
+As of 2026-04-26, the following are open:
 
 1. **Middleware converts 422 to 500.** The security error handler crashes with `TypeError: Object of type bytes is not JSON serializable` when serializing the raw request body during a FastAPI `RequestValidationError`. Any legitimate validation error is returned to callers as a 500, masking the real feedback.
-2. **`AdminContext.login` throws raw `Error` on 402.** `app/contexts/AdminContext.tsx:382` rethrows the 402 `detail` as a generic `Error`, which is caught by the network-failure branch at `AdminContext.tsx:624` — a branch whose inline comment literally says "Network-level failure (CORS, DNS, backend down, etc.) lands here." Every blocked-team-member login prints a red `Login flow threw: ...` to the console as if the backend crashed.
+2. ~~**`AdminContext.login` throws raw `Error` on 402.**~~ **CLOSED 2026-04-26.** Fix expanded the original 402-only special case to cover all non-2xx login responses. Any HTTP-level failure (401, 402, 403, 429, etc.) now sets `isExpectedHttpError=true`; the catch block keys off either `isExpectedHttpError` or the legacy `isAuthBlock` flag and skips the `console.error("Login flow threw: ...")` + duplicate toast. Only true `fetch` rejections (CORS, DNS, backend down) still land in the diagnostic branch. Live-verified — 3× 401 returned, 0× console noise.
 3. **Two frontend services bypass `AdminContext.apiRequest` on 402.**
    - `app/services/behavioralAnalyticsApi.ts:186` — `throw new Error(body?.detail || 'Failed to fetch engagement signals')`
    - `app/services/campaignAdvertisingApi.ts:477` — `throw new Error(error.detail?.message || error.detail || errorPrefix)`

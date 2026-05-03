@@ -25,11 +25,11 @@ import {
   MessageCircle,
   MessageSquare,
   Heart,
-  ChevronDown,
   Smartphone,
   AlertCircle,
 } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
+import WeddingPicker from '../../components/WeddingPicker';
 import InboxListItem from '@/components/ui/InboxListItem';
 import MessageBubble from '@/components/ui/MessageBubble';
 import ChatInput from '@/components/ui/ChatInput';
@@ -278,8 +278,8 @@ export default function CommunicationsInboxView() {
 
   const [weddings, setWeddings] = useState<Wedding[]>([]);
   const [selectedWeddingId, setSelectedWeddingId] = useState<string>(() => requestedWeddingId);
-  const [showWeddingDropdown, setShowWeddingDropdown] = useState(false);
-  const weddingDropdownRef = useRef<HTMLDivElement>(null);
+  // Wedding dropdown state and click-outside handling now live inside
+  // the shared `<WeddingPicker>` component.
 
   const [emails, setEmails] = useState<InboundEmail[]>([]);
   const [emailLoading, setEmailLoading] = useState(true);
@@ -315,16 +315,6 @@ export default function CommunicationsInboxView() {
   const isDragging = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const handledQueryRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (weddingDropdownRef.current && !weddingDropdownRef.current.contains(e.target as Node)) {
-        setShowWeddingDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
 
   useEffect(() => {
     setSelectedWeddingId((current) => (current === requestedWeddingId ? current : requestedWeddingId));
@@ -781,9 +771,6 @@ export default function CommunicationsInboxView() {
     0
   );
   const hasAnyInboxAccess = canAccessGuestInbox || canAccessCoupleMessages || canAccessSupportThreads;
-  const selectedWeddingLabel = selectedWeddingId === 'all'
-    ? 'All Weddings'
-    : getWeddingLabel(selectedWeddingId) || selectedWeddingId;
 
   useSSE({
     resources: ['couple_message'],
@@ -1580,45 +1567,20 @@ export default function CommunicationsInboxView() {
           </div>
 
           <div className="flex items-center gap-2">
-            <div ref={weddingDropdownRef} className="relative">
-              <button
-                onClick={() => setShowWeddingDropdown(!showWeddingDropdown)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-white text-gray-600 hover:bg-gray-100 dark:bg-slate-800 dark:text-gray-400 transition border border-gray-200 dark:border-slate-700"
-              >
-                <Heart size={14} />
-                <span className="max-w-[150px] truncate">{selectedWeddingLabel}</span>
-                <ChevronDown size={14} />
-              </button>
-
-              {showWeddingDropdown && (
-                <div className="absolute right-0 top-full mt-1 w-64 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 z-50 max-h-64 overflow-y-auto">
-                  <button
-                    onClick={() => { setSelectedWeddingId('all'); setShowWeddingDropdown(false); }}
-                    className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-700 transition ${
-                      selectedWeddingId === 'all' ? 'bg-rose-50 dark:bg-rose-900/10 text-rose-600 dark:text-rose-400 font-medium' : 'text-gray-700 dark:text-gray-300'
-                    }`}
-                  >
-                    All Weddings
-                  </button>
-                  {weddings.map((wedding) => {
-                    const partner1 = [wedding.partner1_first_name, wedding.partner1_last_name].filter(Boolean).join(' ');
-                    const partner2 = [wedding.partner2_first_name, wedding.partner2_last_name].filter(Boolean).join(' ');
-                    const label = (partner1 && partner2) ? `${partner1} & ${partner2}` : partner1 || partner2 || wedding.slug || wedding._id;
-                    return (
-                      <button
-                        key={wedding._id}
-                        onClick={() => { setSelectedWeddingId(wedding._id); setShowWeddingDropdown(false); }}
-                        className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-700 transition ${
-                          selectedWeddingId === wedding._id ? 'bg-rose-50 dark:bg-rose-900/10 text-rose-600 dark:text-rose-400 font-medium' : 'text-gray-700 dark:text-gray-300'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            {/* Wedding picker — shared component (see WeddingPicker.tsx).
+                The Inbox was the original of this pattern; now everyone
+                uses the same primitive. */}
+            <WeddingPicker
+              options={weddings.map((wedding) => ({
+                id: wedding._id,
+                label: getWeddingLabel(wedding._id) || wedding._id,
+              }))}
+              value={selectedWeddingId}
+              onChange={setSelectedWeddingId}
+              allowAll
+              allValue="all"
+              allLabel="All Weddings"
+            />
 
             <button
               onClick={() => setFilterUnread(!filterUnread)}
