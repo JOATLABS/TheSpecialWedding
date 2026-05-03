@@ -2451,7 +2451,7 @@ class VendorService:
             )
 
             effective_wedding_id = target_wedding_id or source_contract["wedding_id"]
-            wedding = await self._get_wedding(effective_wedding_id)
+            wedding = await self._get_owned_wedding(effective_wedding_id, created_by)
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
@@ -2466,8 +2466,8 @@ class VendorService:
             )
 
             if vendor_changed:
-                new_vendor = await self.vendor_profiles.find_one(
-                    {"_id": ObjectId(target_vendor_profile_id)}
+                new_vendor = await self._get_owned_vendor_profile(
+                    target_vendor_profile_id, created_by
                 )
                 if not new_vendor:
                     raise HTTPException(status_code=404, detail="Vendor not found")

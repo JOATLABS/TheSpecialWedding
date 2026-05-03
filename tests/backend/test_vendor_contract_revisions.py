@@ -835,6 +835,7 @@ async def test_duplicate_contract_swaps_vendor_when_target_provided(
         "address": "55 Stage Ave",
         "service_category": "mc",
         "custom_service_category": None,
+        "created_by": "planner@example.com",
     }
     service.vendor_profiles.documents.append(new_vendor_doc)
 
