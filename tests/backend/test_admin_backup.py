@@ -65,3 +65,17 @@ def test_trigger_returns_401_when_authorization_header_missing(backup_client):
     response = client.post("/admin/backup/trigger")
 
     assert response.status_code == 401
+
+
+def test_parse_backup_max_seconds_falls_back_for_non_integer(monkeypatch):
+    # A misconfigured BACKUP_MAX_SECONDS (e.g. "15m") must not crash startup.
+    import app.api.admin_backup as admin_backup_module
+
+    monkeypatch.setenv("BACKUP_MAX_SECONDS", "15m")
+    assert admin_backup_module._parse_backup_max_seconds(default=900) == 900
+
+    monkeypatch.setenv("BACKUP_MAX_SECONDS", "1200")
+    assert admin_backup_module._parse_backup_max_seconds(default=900) == 1200
+
+    monkeypatch.delenv("BACKUP_MAX_SECONDS", raising=False)
+    assert admin_backup_module._parse_backup_max_seconds(default=900) == 900

@@ -36,10 +36,27 @@ BACKUP_SECRET = os.getenv("BACKUP_SECRET")
 # explicit 503 rather than a generic FileNotFoundError mid-request.
 MONGODUMP_BIN = shutil.which("mongodump")
 
+
 # Hard ceiling for the mongodump subprocess. Without this, a stalled dump
 # would pin a uvicorn worker forever. Aligns with the Cloudflare Worker
 # cron timeout in cloudflare-workers/backup-cron.js.
-BACKUP_MAX_SECONDS = int(os.getenv("BACKUP_MAX_SECONDS", "900"))
+def _parse_backup_max_seconds(default: int = 900) -> int:
+    raw = os.getenv("BACKUP_MAX_SECONDS")
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        # A misconfigured env var (e.g. "15m") must not crash app startup.
+        logger.warning(
+            "BACKUP_MAX_SECONDS=%r is not a valid integer; falling back to %d",
+            raw,
+            default,
+        )
+        return default
+
+
+BACKUP_MAX_SECONDS = _parse_backup_max_seconds()
 
 
 @router.post("/trigger")
