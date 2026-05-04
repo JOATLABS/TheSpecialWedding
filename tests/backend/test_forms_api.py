@@ -210,7 +210,8 @@ def test_planner_blank_form_creation_sanitises_payload(api_client):
     assert stored["created_by"] == "planner@example.com"
     assert stored["submission_count"] == 0
 
-    planner_state_key = "planner@example.com".replace(".", "_")
+    from app.services.form_service import FormService
+    planner_state_key = FormService._planner_state_key("planner@example.com")
     planner_state = stored["planner_state"][planner_state_key]
     assert planner_state["last_viewed_submission_count"] == 0
     assert planner_state["last_viewed_responses_at"] is None
@@ -225,7 +226,8 @@ def test_planner_cannot_update_view_state_for_other_form(api_client):
 
     owner_email = "owner@example.com"
     intruder_email = "intruder@example.com"
-    planner_state_key = owner_email.replace(".", "_")
+    from app.services.form_service import FormService
+    planner_state_key = FormService._planner_state_key(owner_email)
 
     database["forms"].insert_one(
         _form_document(
@@ -267,7 +269,8 @@ def test_planner_updates_own_view_state(api_client):
     client, database, forms_module, override_user = api_client
 
     planner_email = "planner@example.com"
-    planner_state_key = planner_email.replace(".", "_")
+    from app.services.form_service import FormService
+    planner_state_key = FormService._planner_state_key(planner_email)
 
     database["forms"].insert_one(
         _form_document(
@@ -309,7 +312,8 @@ def test_root_admin_can_mark_form_viewed(api_client):
     client, database, forms_module, override_user = api_client
 
     owner_email = "owner@example.com"
-    planner_state_key = owner_email.replace(".", "_")
+    from app.services.form_service import FormService
+    planner_state_key = FormService._planner_state_key(owner_email)
 
     database["forms"].insert_one(
         _form_document(
@@ -346,5 +350,6 @@ def test_root_admin_can_mark_form_viewed(api_client):
     assert (
         stored["planner_state"][planner_state_key]["last_viewed_submission_count"] == 0
     )
-    admin_key = os.environ["ROOT_ADMIN_EMAIL"].lower().replace(".", "_")
+    from app.services.form_service import FormService
+    admin_key = FormService._planner_state_key(os.environ["ROOT_ADMIN_EMAIL"])
     assert stored["planner_state"][admin_key]["last_viewed_analytics_at"] is not None

@@ -78,7 +78,55 @@ class FormService:
 
     @staticmethod
     def _planner_state_key(email: str) -> str:
+        """Deterministic, collision-safe key for ``planner_state`` field paths.
+
+        The previous implementation was ``email.replace(".", "_")``, which
+        collided ``alice.smith@x`` with ``alice_smith@x`` and lost view
+        state across distinct planners. We replace it with a SHA256 hex
+        digest of the lowercased email so the keyspace is dot-free
+        (Mongo nested-path requirement), case-insensitive, and
+        collision-free.
+
+        ``_legacy_planner_state_key`` is the old format and is consulted
+        as a fallback in read paths so existing documents keep working
+        across deploys; the next write under the new key tombstones the
+        legacy entry via a ``$unset`` so the migration is incremental.
+        """
+        if not email:
+            return "anonymous"
+        normalized = email.strip().lower()
+        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        return f"u_{digest}"
+
+    @staticmethod
+    def _legacy_planner_state_key(email: str) -> str:
         return email.replace(".", "_")
+
+    def _read_planner_state(
+        self, planner_state: Dict[str, Any], email: str
+    ) -> Dict[str, Any]:
+        """Read a planner's state entry, transparently falling back to
+        legacy key shapes for un-migrated docs.
+
+        Lookup order: new SHA256 key, legacy ``email.replace('.', '_')``,
+        bare email (used by some seed paths). The first match wins; any
+        write path will tombstone the legacy entry on next save.
+        """
+        if not isinstance(planner_state, dict):
+            return {}
+        new_key = self._planner_state_key(email)
+        if new_key in planner_state:
+            return planner_state[new_key] or {}
+        legacy_key = self._legacy_planner_state_key(email)
+        if legacy_key in planner_state:
+            return planner_state[legacy_key] or {}
+        # Bare-email fallback: some pre-existing seed data and integration
+        # paths used the raw email (with dots intact) as the field name —
+        # which Mongo only accepts at the top level of a planner_state
+        # subdocument. Honoring it here keeps in-flight data readable.
+        if email and email in planner_state:
+            return planner_state[email] or {}
+        return {}
 
     @staticmethod
     def _normalize_owner_alias_emails(
@@ -283,14 +331,13 @@ class FormService:
                 unread = 0
 
                 if viewer_key:
+                    # Read via the dual-key helper (new SHA256 key first,
+                    # legacy email-replace key as fallback) so existing
+                    # docs keep their state across the migration.
                     state = (
-                        planner_state.get(viewer_key)
-                        or (
-                            planner_state.get(raw_viewer_email)
-                            if raw_viewer_email
-                            else {}
-                        )
-                        or {}
+                        self._read_planner_state(planner_state, raw_viewer_email or "")
+                        if raw_viewer_email
+                        else (planner_state.get(viewer_key) or {})
                     )
                     last_seen = int(state.get("last_viewed_submission_count", 0) or 0)
                     unread = max(submission_total - last_seen, 0)
@@ -1330,9 +1377,7 @@ class FormService:
 
         total_submissions = int(form.get("submission_count", 0) or 0)
         planner_state = form.get("planner_state", {}) or {}
-        existing_state = (
-            planner_state.get(state_key) or planner_state.get(normalized_email) or {}
-        )
+        existing_state = self._read_planner_state(planner_state, normalized_email)
         unread_after_update = max(
             total_submissions
             - int(existing_state.get("last_viewed_submission_count", 0) or 0),
@@ -1354,8 +1399,16 @@ class FormService:
         if scope == "analytics":
             update_fields[f"planner_state.{state_key}.last_viewed_analytics_at"] = now
 
+        # Tombstone the legacy key if we read state from it. We avoid
+        # repeated $unset for already-migrated docs by guarding on the
+        # presence of the legacy key in the loaded planner_state.
+        update_payload: Dict[str, Any] = {"$set": update_fields}
+        legacy_key = self._legacy_planner_state_key(normalized_email)
+        if legacy_key != state_key and legacy_key in planner_state:
+            update_payload["$unset"] = {f"planner_state.{legacy_key}": ""}
+
         await self.forms_collection.update_one(
-            {"_id": sanitized_form_id}, {"$set": update_fields}, upsert=False
+            {"_id": sanitized_form_id}, update_payload, upsert=False
         )
 
         return {

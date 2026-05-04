@@ -552,10 +552,16 @@ class SecurityHeaders:
 
     @staticmethod
     def get_form_security_headers() -> Dict[str, str]:
-        """
-        Get security headers for form responses
-        Returns:
-            Dictionary of security headers
+        """Get hardening headers for public form responses.
+
+        Notable: ``script-src 'self'`` (no ``'unsafe-inline'``). This API
+        endpoint returns JSON, so inline scripts have no business in the
+        response anyway, and removing the directive closes the main
+        browser-side XSS guard. ``style-src 'self' 'unsafe-inline'`` is
+        retained because a few first-party styles still ship inline; that
+        narrow allowance is much lower-risk than inline scripts.
+        ``object-src 'none'`` and ``base-uri 'self'`` block the two
+        legacy script-injection pivots that aren't covered by script-src.
         """
         return {
             "X-Content-Type-Options": "nosniff",
@@ -564,11 +570,13 @@ class SecurityHeaders:
             "Referrer-Policy": "strict-origin-when-cross-origin",
             "Content-Security-Policy": (
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline'; "
+                "script-src 'self'; "
                 "style-src 'self' 'unsafe-inline'; "
                 "img-src 'self' data: https:; "
                 "font-src 'self'; "
                 "connect-src 'self'; "
+                "object-src 'none'; "
+                "base-uri 'self'; "
                 "frame-ancestors 'none'"
             ),
         }

@@ -20,20 +20,56 @@ class AICacheService:
     """
     Manages AI response caching with smart invalidation.
     Uses MongoDB for persistence with TTL index support.
+
+    Cache keys are discriminated by ``subscription_plan`` so a free-plan
+    user cannot read a paid-tier user's cached output for the same
+    wedding. The plan label is bucketed (e.g. ``free`` / ``trial`` /
+    ``active`` / ``metered``) — not per-user — so legitimate sharing
+    across team members on the same plan still yields cache hits.
     """
+
+    # Sentinel used when the caller can't resolve a plan; callers should
+    # avoid this in production but it's safer than a hard failure for
+    # internal scripts and root-admin tooling.
+    UNKNOWN_PLAN = "unknown"
 
     def __init__(self):
         self.cache = mongo.db["ai_cache"]
 
-    def _generate_cache_key(self, feature: str, tenant_id: str, context: Dict) -> str:
-        """Generate content-addressed cache key from input data."""
-        # Create stable hash from context
+    @staticmethod
+    def _normalize_plan(plan: Optional[str]) -> str:
+        if not plan:
+            return AICacheService.UNKNOWN_PLAN
+        normalized = plan.strip().lower()
+        return normalized or AICacheService.UNKNOWN_PLAN
+
+    def _generate_cache_key(
+        self,
+        feature: str,
+        tenant_id: str,
+        context: Dict,
+        *,
+        subscription_plan: Optional[str] = None,
+    ) -> str:
+        """Generate content-addressed cache key from input data.
+
+        ``subscription_plan`` is mixed into the key so a downgrade does
+        not let the planner keep reading paid-tier outputs from the
+        previous plan, and an upgrade does not let two users on
+        different plans accidentally share a tenant-scoped entry.
+        """
+        plan = self._normalize_plan(subscription_plan)
         context_str = json.dumps(context, sort_keys=True, default=str)
         context_hash = hashlib.sha256(context_str.encode()).hexdigest()[:16]
-        return f"ai:{feature}:{tenant_id}:{context_hash}"
+        return f"ai:{feature}:{tenant_id}:{plan}:{context_hash}"
 
     async def get_cached_response(
-        self, feature: str, tenant_id: str, context: Dict
+        self,
+        feature: str,
+        tenant_id: str,
+        context: Dict,
+        *,
+        subscription_plan: Optional[str] = None,
     ) -> Optional[Dict]:
         """
         Get cached AI response if valid.
@@ -47,7 +83,9 @@ class AICacheService:
             Cached response dict or None if not found/expired
         """
         try:
-            cache_key = self._generate_cache_key(feature, tenant_id, context)
+            cache_key = self._generate_cache_key(
+                feature, tenant_id, context, subscription_plan=subscription_plan
+            )
 
             cached = await self.cache.find_one(
                 {"_id": cache_key, "expires_at": {"$gt": datetime.now(timezone.utc)}}
@@ -74,6 +112,8 @@ class AICacheService:
         context: Dict,
         response: Dict,
         ttl_hours: int,
+        *,
+        subscription_plan: Optional[str] = None,
     ) -> bool:
         """
         Cache AI response with TTL.
@@ -89,12 +129,16 @@ class AICacheService:
             True if cached successfully
         """
         try:
-            cache_key = self._generate_cache_key(feature, tenant_id, context)
+            plan = self._normalize_plan(subscription_plan)
+            cache_key = self._generate_cache_key(
+                feature, tenant_id, context, subscription_plan=plan
+            )
 
             cache_entry = {
                 "_id": cache_key,
                 "feature": feature,
                 "tenant_id": tenant_id,
+                "subscription_plan": plan,
                 "context_hash": hashlib.sha256(
                     json.dumps(context, sort_keys=True, default=str).encode()
                 ).hexdigest(),
@@ -160,7 +204,11 @@ class AICacheService:
             return 0
 
     async def get_latest_cached_response(
-        self, feature: str, tenant_id: str
+        self,
+        feature: str,
+        tenant_id: str,
+        *,
+        subscription_plan: Optional[str] = None,
     ) -> Optional[Dict]:
         """
         Get the most recent cached response for a feature+tenant regardless of context hash.
@@ -177,29 +225,33 @@ class AICacheService:
             Most recent cached response dict or None if nothing cached
         """
         try:
-            # Find the most recent non-expired entry for this feature+tenant
+            # Plan-scoped fallback so a downgraded user can't read a
+            # paid-tier response that's still in the cache. When the
+            # caller can't resolve a plan we narrow as far as possible.
+            plan = self._normalize_plan(subscription_plan)
+            base_query: Dict[str, Any] = {
+                "feature": feature,
+                "tenant_id": tenant_id,
+                "subscription_plan": plan,
+            }
             cached = await self.cache.find_one(
-                {
-                    "feature": feature,
-                    "tenant_id": tenant_id,
-                    "expires_at": {"$gt": datetime.now(timezone.utc)},
-                },
-                sort=[("created_at", -1)],  # Most recent first
+                {**base_query, "expires_at": {"$gt": datetime.now(timezone.utc)}},
+                sort=[("created_at", -1)],
             )
 
             if cached:
-                logger.debug(f"Fallback cache hit for {feature}/{tenant_id}")
+                logger.debug(f"Fallback cache hit for {feature}/{tenant_id}/{plan}")
                 return cached
 
-            # If no non-expired entry, try the most recent entry regardless of expiration
-            # (better to show stale insights than nothing)
+            # Fall back to expired entries (stale insights > no insights)
+            # but still scoped to the plan to preserve isolation.
             cached = await self.cache.find_one(
-                {"feature": feature, "tenant_id": tenant_id}, sort=[("created_at", -1)]
+                base_query, sort=[("created_at", -1)]
             )
 
             if cached:
                 logger.info(
-                    f"Returning expired fallback cache for {feature}/{tenant_id}"
+                    f"Returning expired fallback cache for {feature}/{tenant_id}/{plan}"
                 )
                 return cached
 

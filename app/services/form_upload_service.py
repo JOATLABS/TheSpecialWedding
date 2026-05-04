@@ -33,6 +33,16 @@ logger = logging.getLogger(__name__)
 # keeps memory pressure on the API process bounded.
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
+# Per-distribution aggregate upload cap. Stops a single recipient from
+# DoS'ing the bucket by hammering the 10 MB-per-file limit thirty times
+# an hour. 50 MB total comfortably accommodates legitimate vendor doc
+# packets while bounding worst-case abuse.
+MAX_UPLOAD_BYTES_PER_DISTRIBUTION = 50 * 1024 * 1024
+
+# Hard cap on the number of upload rows per distribution so a recipient
+# can't flood the form_uploads collection with 1KB files.
+MAX_UPLOADS_PER_DISTRIBUTION = 25
+
 ALLOWED_MIME_TYPES: frozenset[str] = frozenset(
     {
         # Images
@@ -138,6 +148,31 @@ class FormUploadService:
                 ),
             )
 
+        # Per-distribution aggregate quota. Counted from existing
+        # form_uploads rows for this distribution; rejecting up-front
+        # avoids partial writes (we'd otherwise put_object into S3 and
+        # discover the quota miss only after spending bandwidth).
+        existing = await self.uploads_collection.find(
+            {"form_id": form["_id"], "distribution_id": distribution["_id"]}
+        ).to_list(length=MAX_UPLOADS_PER_DISTRIBUTION + 1)
+        if len(existing) >= MAX_UPLOADS_PER_DISTRIBUTION:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"Upload limit reached "
+                    f"({MAX_UPLOADS_PER_DISTRIBUTION} files per recipient)."
+                ),
+            )
+        existing_bytes = sum(int(row.get("size_bytes") or 0) for row in existing)
+        if existing_bytes + len(contents) > MAX_UPLOAD_BYTES_PER_DISTRIBUTION:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"Upload would exceed per-recipient quota "
+                    f"({MAX_UPLOAD_BYTES_PER_DISTRIBUTION // (1024 * 1024)} MB total)."
+                ),
+            )
+
         target = self.storage.require_target(StorageTarget.FORM_UPLOADS)
         if not target.bucket_name:
             raise HTTPException(
@@ -226,5 +261,7 @@ __all__ = [
     "ALLOWED_MIME_TYPES",
     "FormUploadService",
     "MAX_UPLOAD_BYTES",
+    "MAX_UPLOAD_BYTES_PER_DISTRIBUTION",
+    "MAX_UPLOADS_PER_DISTRIBUTION",
     "sanitize_filename",
 ]

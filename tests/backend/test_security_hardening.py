@@ -195,3 +195,401 @@ async def test_internal_feature_quota_only_counts_today():
     assert captured_query["created_at"] == {"$gte": today_start}
     assert captured_query["feature"] == "payment_retry_timing"
     assert captured_query["tenant_id"] == "tenant-1"
+
+
+# =============================================================================
+# F3 — CSP no longer permits script-src unsafe-inline
+# =============================================================================
+
+
+def test_form_csp_disallows_inline_scripts():
+    from app.utils.security_utils import SecurityHeaders
+
+    headers = SecurityHeaders.get_form_security_headers()
+    csp = headers["Content-Security-Policy"]
+    assert "script-src 'self'" in csp
+    # The directive must NOT contain the unsafe-inline keyword for
+    # script-src; allowing inline scripts is the main browser-side XSS
+    # gap and removing it is the whole point of this hardening pass.
+    script_directive = next(
+        (part for part in csp.split(";") if "script-src" in part), ""
+    )
+    assert "'unsafe-inline'" not in script_directive
+    # And we should have explicit object-src + base-uri locks (legacy
+    # script-injection pivots).
+    assert "object-src 'none'" in csp
+    assert "base-uri 'self'" in csp
+
+
+# =============================================================================
+# F5 — conditional_logic schema validation at save time
+# =============================================================================
+
+
+def test_conditional_logic_validator_accepts_simple_show_when_all():
+    from app.models.form import FormField
+
+    field = FormField(
+        id="diet_kind",
+        label="Vegetarian sub-type",
+        type="select",
+        conditional_logic={
+            "show_when": {
+                "all": [{"field_id": "diet", "operator": "equals", "value": "veg"}]
+            }
+        },
+    )
+    assert field.conditional_logic is not None
+
+
+@pytest.mark.parametrize(
+    "bad_logic",
+    [
+        # Wrong top-level shape
+        {"hide_when": {"all": []}},
+        {"show_when": "yes"},
+        # Both all and any mixed
+        {
+            "show_when": {
+                "all": [{"field_id": "x", "operator": "equals", "value": 1}],
+                "any": [{"field_id": "y", "operator": "equals", "value": 2}],
+            }
+        },
+        # Empty conditions
+        {"show_when": {"all": []}},
+        # Bad field_id
+        {
+            "show_when": {
+                "all": [{"field_id": "", "operator": "equals", "value": 1}]
+            }
+        },
+        # Unknown operator
+        {
+            "show_when": {
+                "all": [{"field_id": "x", "operator": "wat", "value": 1}]
+            }
+        },
+        # 'in' operator missing list value
+        {
+            "show_when": {
+                "all": [{"field_id": "x", "operator": "in", "value": "veg"}]
+            }
+        },
+    ],
+)
+def test_conditional_logic_validator_rejects_malformed(bad_logic):
+    from app.models.form import FormField
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        FormField(
+            id="bad",
+            label="Bad",
+            type="text",
+            conditional_logic=bad_logic,
+        )
+
+
+def test_conditional_logic_validator_treats_none_and_empty_dict_as_no_rule():
+    from app.models.form import FormField
+
+    f1 = FormField(id="a", label="A", type="text", conditional_logic=None)
+    f2 = FormField(id="b", label="B", type="text", conditional_logic={})
+    assert f1.conditional_logic is None
+    assert f2.conditional_logic is None
+
+
+# =============================================================================
+# F6 — planner_state key migration
+# =============================================================================
+
+
+def test_planner_state_key_is_collision_safe():
+    from app.services.form_service import FormService
+
+    s = FormService.__new__(FormService)
+    a = FormService._planner_state_key("alice.smith@example.com")
+    b = FormService._planner_state_key("alice_smith@example.com")
+    assert a != b
+
+
+def test_planner_state_key_is_case_insensitive():
+    from app.services.form_service import FormService
+
+    a = FormService._planner_state_key("Alice@Example.COM")
+    b = FormService._planner_state_key("alice@example.com")
+    assert a == b
+
+
+def test_planner_state_key_has_no_dots():
+    """Mongo nested-path syntax requires dot-free field names."""
+    from app.services.form_service import FormService
+
+    key = FormService._planner_state_key("foo.bar.baz@example.com")
+    assert "." not in key
+
+
+def test_read_planner_state_falls_back_to_legacy_key():
+    from app.services.form_service import FormService
+
+    s = FormService.__new__(FormService)
+    legacy_key = FormService._legacy_planner_state_key("alice.smith@example.com")
+    planner_state = {legacy_key: {"last_viewed_submission_count": 7}}
+    state = s._read_planner_state(planner_state, "alice.smith@example.com")
+    assert state == {"last_viewed_submission_count": 7}
+
+
+def test_read_planner_state_prefers_new_key_over_legacy():
+    from app.services.form_service import FormService
+
+    s = FormService.__new__(FormService)
+    email = "alice.smith@example.com"
+    new_key = FormService._planner_state_key(email)
+    legacy_key = FormService._legacy_planner_state_key(email)
+    planner_state = {
+        new_key: {"last_viewed_submission_count": 12},
+        legacy_key: {"last_viewed_submission_count": 7},
+    }
+    state = s._read_planner_state(planner_state, email)
+    assert state == {"last_viewed_submission_count": 12}
+
+
+# =============================================================================
+# F7 — per-distribution upload quotas
+# =============================================================================
+
+
+def _stub_form():
+    return {
+        "_id": "form_1",
+        "fields": [
+            {"id": "doc", "type": "file_upload", "required": False, "label": "Doc"}
+        ],
+    }
+
+
+def _stub_distribution():
+    return {"_id": "dist_1", "form_id": "form_1"}
+
+
+def _stub_storage():
+    from types import SimpleNamespace
+
+    target = SimpleNamespace(
+        bucket_name="form-uploads-test",
+        target=None,
+        public_domain="https://uploads.test.example.com",
+    )
+
+    class _S3:
+        def put_object(self, **_kwargs):
+            return {"ETag": "x"}
+
+    storage = SimpleNamespace(
+        client=_S3(),
+        require_target=lambda _t: target,
+        build_public_url=lambda _t, key: f"https://uploads.test.example.com/{key}",
+    )
+    return storage
+
+
+@pytest.mark.asyncio
+async def test_upload_rejected_when_aggregate_quota_exceeded(monkeypatch):
+    from app.services.form_upload_service import (
+        FormUploadService,
+        MAX_UPLOAD_BYTES_PER_DISTRIBUTION,
+    )
+
+    service = FormUploadService(storage=_stub_storage())
+
+    cap_bytes = MAX_UPLOAD_BYTES_PER_DISTRIBUTION
+
+    class FakeCursor:
+        def __init__(self, docs):
+            self.docs = docs
+
+        async def to_list(self, length=None):
+            return self.docs
+
+    class FakeUploads:
+        def __init__(self):
+            self.docs = [
+                {
+                    "_id": f"prev-{i}",
+                    "form_id": "form_1",
+                    "distribution_id": "dist_1",
+                    "size_bytes": cap_bytes // 2,
+                }
+                for i in range(2)
+            ]
+
+        def find(self, _q):
+            return FakeCursor(self.docs)
+
+        async def insert_one(self, doc):
+            self.docs.append(doc)
+
+    monkeypatch.setattr(service, "uploads_collection", FakeUploads())
+
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc:
+        await service.store_upload(
+            form=_stub_form(),
+            distribution=_stub_distribution(),
+            field_id="doc",
+            filename="more.pdf",
+            content_type="application/pdf",
+            contents=b"x" * 1024,
+        )
+    assert exc.value.status_code == 413
+    assert "quota" in exc.value.detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_upload_rejected_when_count_exceeded(monkeypatch):
+    from app.services.form_upload_service import (
+        FormUploadService,
+        MAX_UPLOADS_PER_DISTRIBUTION,
+    )
+
+    service = FormUploadService(storage=_stub_storage())
+
+    class FakeCursor:
+        def __init__(self, docs):
+            self.docs = docs
+
+        async def to_list(self, length=None):
+            return self.docs
+
+    class FakeUploads:
+        def __init__(self):
+            self.docs = [
+                {
+                    "_id": f"prev-{i}",
+                    "form_id": "form_1",
+                    "distribution_id": "dist_1",
+                    "size_bytes": 100,
+                }
+                for i in range(MAX_UPLOADS_PER_DISTRIBUTION)
+            ]
+
+        def find(self, _q):
+            return FakeCursor(self.docs)
+
+        async def insert_one(self, doc):
+            self.docs.append(doc)
+
+    monkeypatch.setattr(service, "uploads_collection", FakeUploads())
+
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc:
+        await service.store_upload(
+            form=_stub_form(),
+            distribution=_stub_distribution(),
+            field_id="doc",
+            filename="more.pdf",
+            content_type="application/pdf",
+            contents=b"hello",
+        )
+    assert exc.value.status_code == 429
+
+
+# =============================================================================
+# A1 — AI cache key isolates by subscription plan
+# =============================================================================
+
+
+def test_ai_cache_key_differs_across_plans():
+    from app.services.ai_cache_service import AICacheService
+
+    svc = AICacheService()
+    free_key = svc._generate_cache_key(
+        "budget_insights", "tenant-1", {"x": 1}, subscription_plan="free"
+    )
+    paid_key = svc._generate_cache_key(
+        "budget_insights", "tenant-1", {"x": 1}, subscription_plan="active"
+    )
+    assert free_key != paid_key
+    # And same plan + same context = same key (idempotency)
+    again = svc._generate_cache_key(
+        "budget_insights", "tenant-1", {"x": 1}, subscription_plan="free"
+    )
+    assert free_key == again
+
+
+def test_ai_cache_key_normalizes_plan_label():
+    from app.services.ai_cache_service import AICacheService
+
+    svc = AICacheService()
+    a = svc._generate_cache_key(
+        "budget_insights", "tenant-1", {"x": 1}, subscription_plan=" Active "
+    )
+    b = svc._generate_cache_key(
+        "budget_insights", "tenant-1", {"x": 1}, subscription_plan="active"
+    )
+    assert a == b
+
+
+def test_ai_cache_key_handles_missing_plan_safely():
+    from app.services.ai_cache_service import AICacheService
+
+    svc = AICacheService()
+    a = svc._generate_cache_key(
+        "budget_insights", "tenant-1", {"x": 1}, subscription_plan=None
+    )
+    b = svc._generate_cache_key(
+        "budget_insights", "tenant-1", {"x": 1}, subscription_plan=""
+    )
+    assert a == b
+    assert "unknown" in a
+
+
+# =============================================================================
+# A2 — AI output sanitization
+# =============================================================================
+
+
+def test_ai_sanitizer_escapes_string_leaves():
+    from app.services.ai_service import AIService
+
+    out = AIService._sanitize_ai_output(
+        {
+            "summary": "<script>alert(1)</script>",
+            "items": ["safe", "<img src=x onerror=alert(1)>"],
+            "nested": {"text": "5 < 10 & friendly"},
+            "score": 7,
+            "ok": True,
+            "missing": None,
+        }
+    )
+
+    assert "<script>" not in out["summary"]
+    assert "&lt;script&gt;" in out["summary"]
+    assert "<img" not in out["items"][1]
+    assert "&lt;img" in out["items"][1]
+    # Numbers / bools / None preserved
+    assert out["score"] == 7
+    assert out["ok"] is True
+    assert out["missing"] is None
+    # Nested structure preserved
+    assert "5 &lt; 10" in out["nested"]["text"]
+
+
+def test_ai_sanitizer_preserves_keys():
+    from app.services.ai_service import AIService
+
+    out = AIService._sanitize_ai_output({"<key>": "<value>"})
+    # Keys are not sanitized (they shouldn't contain user content from
+    # AI output) but values must be.
+    assert list(out.keys()) == ["<key>"]
+    assert out["<key>"] == "&lt;value&gt;"
+
+
+def test_ai_sanitizer_handles_deeply_nested_structures():
+    from app.services.ai_service import AIService
+
+    inp = {"a": [{"b": [{"c": "<x>"}]}]}
+    out = AIService._sanitize_ai_output(inp)
+    assert out["a"][0]["b"][0]["c"] == "&lt;x&gt;"

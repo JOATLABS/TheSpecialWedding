@@ -103,7 +103,7 @@ def form_service(monkeypatch):
 
 def _sample_form_doc(created_by: str, **overrides):
     now = _utc_now()
-    planner_key = created_by.replace(".", "_")
+    planner_key = form_service_module.FormService._planner_state_key(created_by)
     return {
         "_id": overrides.get("_id", "form_original"),
         "name": overrides.get("name", "Vendor Intake"),
@@ -175,7 +175,7 @@ async def test_duplicate_form_copies_structure_and_resets_submission_state(
     assert duplicated is not None
     assert duplicated["name"] == "Vendor Intake Copy"
     assert duplicated["submission_count"] == 0
-    planner_key = planner_email.replace(".", "_")
+    planner_key = form_service_module.FormService._planner_state_key(planner_email)
     assert duplicated["planner_state"][planner_key]["last_viewed_submission_count"] == 0
     assert duplicated["fields"][0]["id"] == "company_name"
     assert duplicated["created_by"] == planner_email
@@ -209,7 +209,7 @@ async def test_mark_form_viewed_updates_planner_state_and_unread_counter(form_se
     assert result["unread_responses"] == 0
 
     stored = database["forms"].find_one({"_id": "form_original"})
-    planner_key = planner_email.replace(".", "_")
+    planner_key = form_service_module.FormService._planner_state_key(planner_email)
     assert stored["planner_state"][planner_key]["last_viewed_submission_count"] == 5
     assert stored["planner_state"][planner_key]["last_viewed_responses_at"] is not None
 

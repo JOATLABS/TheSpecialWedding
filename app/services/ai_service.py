@@ -15,6 +15,7 @@ Model Strategy:
 - Low credits (<10%): gemini-2.0-flash (faster, more economical)
 """
 
+import html
 import json
 import logging
 from datetime import datetime, timezone
@@ -976,6 +977,7 @@ class AIService:
         context: Dict[str, Any],
         force_refresh: bool = False,
         cache_context: Optional[Dict[str, Any]] = None,
+        subscription_plan: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Generate AI response with caching and credit tracking.
@@ -1006,10 +1008,20 @@ class AIService:
         # Use cache_context for key generation if provided, otherwise use full context
         key_context = cache_context if cache_context is not None else context
 
+        # Resolve the planner's subscription plan once for the duration
+        # of this call. The plan is mixed into every cache key so a free
+        # user cannot read a paid-tier cached response on the same
+        # wedding (and vice versa across upgrades / downgrades).
+        if subscription_plan is None:
+            subscription_plan = await self._resolve_subscription_plan(user_id)
+
         # Check cache first if feature is cacheable
         if feature_config["cacheable"] and not force_refresh:
             cached = await ai_cache_service.get_cached_response(
-                feature=feature, tenant_id=tenant_id, context=key_context
+                feature=feature,
+                tenant_id=tenant_id,
+                context=key_context,
+                subscription_plan=subscription_plan,
             )
             if cached:
                 # Log cache hit (no credits charged)
@@ -1032,7 +1044,9 @@ class AIService:
             # If exact cache miss, try the stable fallback lookup before making API call
             # This prevents unnecessary Gemini calls when only volatile context changed
             fallback = await ai_cache_service.get_latest_cached_response(
-                feature=feature, tenant_id=tenant_id
+                feature=feature,
+                tenant_id=tenant_id,
+                subscription_plan=subscription_plan,
             )
             if fallback:
                 logger.info(
@@ -1095,6 +1109,12 @@ class AIService:
         # Make AI API call
         try:
             response = await self._call_gemini(feature, prompt, context, model)
+            # Treat the raw model output as untrusted HTML — escape every
+            # string leaf before it leaves the service boundary so a
+            # prompt-injection-induced ``<script>`` in the response can
+            # never become stored XSS, regardless of how the frontend
+            # renders the field.
+            response = self._sanitize_ai_output(response)
             latency_ms = (
                 datetime.now(timezone.utc) - start_time
             ).total_seconds() * 1000
@@ -1115,6 +1135,7 @@ class AIService:
                     context=key_context,
                     response=response,
                     ttl_hours=feature_config["ttl_hours"],
+                    subscription_plan=subscription_plan,
                 )
 
             # Log successful usage
@@ -1454,6 +1475,71 @@ class AIService:
                 message="AI service encountered an unexpected error. Please try again.",
                 error_code="unknown_error",
             )
+
+    @staticmethod
+    def _sanitize_ai_output(value: Any) -> Any:
+        """Recursively HTML-escape string leaves in an AI response.
+
+        Gemini output is treated as untrusted: the model can be coaxed
+        into emitting ``<script>`` payloads via prompt injection or
+        simple confusion, and our frontend renders portions of it as
+        HTML (markdown -> rendered, copy/paste into rich-text editors,
+        etc.). Escaping here gives every renderer the same safe baseline
+        and means a future careless ``dangerouslySetInnerHTML`` can't
+        introduce a stored XSS pivot. Applied after model decoding,
+        before persistence and before returning to the client.
+        """
+        if isinstance(value, str):
+            # html.escape with quote=True covers <, >, &, ", '
+            return html.escape(value, quote=True)
+        if isinstance(value, list):
+            return [AIService._sanitize_ai_output(v) for v in value]
+        if isinstance(value, dict):
+            return {k: AIService._sanitize_ai_output(v) for k, v in value.items()}
+        return value
+
+    async def _resolve_subscription_plan(self, user_id: str) -> str:
+        """Resolve the planner's plan label for AI cache scoping.
+
+        Returns a normalized tier label so a downgrade or upgrade
+        invalidates that planner's cached AI responses on the next call,
+        eliminating the cross-tier read documented in concern A1. We
+        join the subscription -> plan one level deep and prefer
+        ``plan.tier`` if present, falling back to ``status`` (trial /
+        active / etc) and finally the sentinel ``free``.
+        """
+        try:
+            subscriptions = mongo.db["user_subscriptions"]
+            plans = mongo.db["subscription_plans"]
+            subscription = await subscriptions.find_one(
+                {"user_id": user_id, "status": {"$in": ["active", "trial"]}}
+            )
+            if not subscription:
+                return "free"
+
+            plan_id = subscription.get("plan_id")
+            tier = (subscription.get("status") or "").strip().lower() or "free"
+            if plan_id:
+                plan_doc = await plans.find_one({"_id": plan_id})
+                if plan_doc:
+                    explicit_tier = (
+                        plan_doc.get("tier")
+                        or plan_doc.get("plan_tier")
+                        or plan_doc.get("name")
+                    )
+                    if explicit_tier:
+                        tier = str(explicit_tier).strip().lower() or tier
+            return tier or "free"
+        except Exception as exc:
+            # Resolution failures shouldn't take down AI requests — but
+            # we MUST scope the cache to something pessimistic so a
+            # transient Mongo issue doesn't leak the wrong tier's data.
+            logger.warning(
+                "Subscription plan resolution failed for user %s (using sentinel): %s",
+                user_id,
+                exc,
+            )
+            return "unresolved"
 
     # Per-tenant daily cap on zero-credit internal features. Set in
     # settings; falls back to a generous default that still bounds

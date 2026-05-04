@@ -48,6 +48,79 @@ class ValidationRule(BaseModel):
     message: Optional[str] = Field(None, description="Custom validation error message")
 
 
+_VALID_CONDITION_OPERATORS = frozenset(
+    {"equals", "not_equals", "in", "not_in", "contains", "is_empty", "is_not_empty"}
+)
+_FIELD_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+
+
+def _validate_conditional_logic(value: Any) -> Optional[Dict[str, Any]]:
+    """Pydantic field validator for ``FormField.conditional_logic``.
+
+    Accepts ``None`` / empty dicts (= no rule). When a rule is present we
+    require it to be well-formed: ``{show_when: {all|any: [conditions...]}}``
+    where each condition has a valid ``field_id`` and a known
+    ``operator``. Anything else raises so a planner sees the typo at
+    save-time instead of silently shipping a form with a non-functional
+    hide rule.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("conditional_logic must be an object")
+    if not value:
+        return None
+
+    show_when = value.get("show_when")
+    if show_when is None:
+        # Currently we only support show_when; anything else is unknown.
+        raise ValueError(
+            "conditional_logic must be of the form {show_when: {all|any: [...]}}"
+        )
+    if not isinstance(show_when, dict):
+        raise ValueError("conditional_logic.show_when must be an object")
+
+    if "all" in show_when and "any" in show_when:
+        raise ValueError(
+            "conditional_logic.show_when cannot use both 'all' and 'any'"
+        )
+    combinator = "all" if "all" in show_when else "any" if "any" in show_when else None
+    if combinator is None:
+        raise ValueError(
+            "conditional_logic.show_when must specify either 'all' or 'any'"
+        )
+
+    conditions = show_when[combinator]
+    if not isinstance(conditions, list) or not conditions:
+        raise ValueError(
+            f"conditional_logic.show_when.{combinator} must be a non-empty list"
+        )
+
+    for idx, cond in enumerate(conditions):
+        if not isinstance(cond, dict):
+            raise ValueError(f"conditional_logic condition {idx} must be an object")
+        field_id = cond.get("field_id")
+        operator = cond.get("operator")
+        if not isinstance(field_id, str) or not _FIELD_ID_PATTERN.match(field_id):
+            raise ValueError(
+                f"conditional_logic condition {idx} has invalid field_id"
+            )
+        if operator not in _VALID_CONDITION_OPERATORS:
+            raise ValueError(
+                f"conditional_logic condition {idx} has unknown operator "
+                f"'{operator}' — allowed: {sorted(_VALID_CONDITION_OPERATORS)}"
+            )
+        # ``in`` / ``not_in`` need a list value; the runtime evaluator
+        # also tolerates this, but failing fast at save-time is friendlier.
+        if operator in ("in", "not_in") and not isinstance(cond.get("value"), list):
+            raise ValueError(
+                f"conditional_logic condition {idx} operator '{operator}' "
+                "requires a list value"
+            )
+
+    return value
+
+
 class FormField(BaseModel):
     id: str = Field(..., description="Unique field identifier")
     label: str = Field(..., description="Field label")
@@ -65,6 +138,11 @@ class FormField(BaseModel):
         None, description="Show/hide conditions"
     )
     order: int = Field(default=0, description="Field display order")
+
+    @field_validator("conditional_logic")
+    @classmethod
+    def validate_conditional_logic(cls, v):
+        return _validate_conditional_logic(v)
 
     @field_validator("id")
     @classmethod
