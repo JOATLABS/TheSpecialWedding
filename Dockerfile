@@ -7,11 +7,20 @@ RUN apt-get update && apt-get -y upgrade && apt-get -y autoremove && rm -rf /var
 
 # MongoDB database tools (mongodump/mongorestore for /admin/backup/trigger).
 # Pinned .deb from MongoDB CDN — not available in default Debian repos.
+# TARGETARCH is set automatically by BuildKit; default to amd64 for legacy
+# `docker build` invocations without buildx.
+ARG TARGETARCH
 ARG MONGODB_TOOLS_VERSION=100.10.0
-RUN apt-get update && \
+RUN set -eu; \
+    case "${TARGETARCH:-amd64}" in \
+        amd64) MDB_ARCH=x86_64 ;; \
+        arm64) MDB_ARCH=arm64 ;; \
+        *) echo "Unsupported TARGETARCH for mongodb-database-tools: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    apt-get update && \
     apt-get install -y --no-install-recommends curl ca-certificates && \
     curl -fsSL -o /tmp/mdb-tools.deb \
-      "https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian12-x86_64-${MONGODB_TOOLS_VERSION}.deb" && \
+      "https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian12-${MDB_ARCH}-${MONGODB_TOOLS_VERSION}.deb" && \
     apt-get install -y --no-install-recommends /tmp/mdb-tools.deb && \
     rm /tmp/mdb-tools.deb && \
     apt-get clean && \
