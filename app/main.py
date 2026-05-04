@@ -380,6 +380,48 @@ async def _monthly_billing_scheduler():
             await asyncio.sleep(3600)
 
 
+async def _form_reminder_scheduler():
+    """
+    Background task that sends single-shot reminder emails for unsubmitted
+    form distributions whose ``reminder_days`` window has elapsed. Runs
+    daily at 9:00 AM UTC and is leader-elected like the other schedulers
+    so multiple replicas don't double-send.
+    """
+    from app.services.form_service import FormService
+
+    while True:
+        try:
+            # Calculate seconds until next 9:00 AM UTC.
+            now = datetime.now(timezone.utc)
+            next_run = now.replace(hour=9, minute=0, second=0, microsecond=0)
+            if now >= next_run:
+                next_run += timedelta(days=1)
+            wait_seconds = (next_run - now).total_seconds()
+            logger.info(
+                f"Form reminder scheduler: next run at {next_run.isoformat()} "
+                f"({wait_seconds / 3600:.1f}h from now)"
+            )
+            await asyncio.sleep(wait_seconds)
+
+            form_service = FormService()
+            result = await form_service.send_form_reminders()
+            if result.get("sent") or result.get("failed"):
+                logger.info(
+                    "Form reminder pass: sent=%s skipped=%s failed=%s",
+                    result.get("sent"),
+                    result.get("skipped"),
+                    result.get("failed"),
+                )
+
+        except asyncio.CancelledError:
+            logger.info("Form reminder scheduler shutting down")
+            raise
+        except Exception as e:
+            logger.error(f"Form reminder scheduler error: {e}", exc_info=True)
+            # Wait an hour and retry on transient failures.
+            await asyncio.sleep(3600)
+
+
 async def _guest_media_maintenance_scheduler():
     """
     Background task that drains durable guest media work:
@@ -422,6 +464,7 @@ async def lifespan(app: FastAPI):
     rollup_task: asyncio.Task | None = None
     billing_task: asyncio.Task | None = None
     guest_media_task: asyncio.Task | None = None
+    form_reminder_task: asyncio.Task | None = None
     scheduler_heartbeat_task: asyncio.Task | None = None
     scheduler_holder_id: str | None = None
 
@@ -523,9 +566,11 @@ async def lifespan(app: FastAPI):
             rollup_task = asyncio.create_task(_nightly_rollup_scheduler())
             billing_task = asyncio.create_task(_monthly_billing_scheduler())
             guest_media_task = asyncio.create_task(_guest_media_maintenance_scheduler())
+            form_reminder_task = asyncio.create_task(_form_reminder_scheduler())
             scheduler_heartbeat_task = asyncio.create_task(
                 _scheduler_leadership_heartbeat(
-                    scheduler_holder_id, [rollup_task, billing_task, guest_media_task]
+                    scheduler_holder_id,
+                    [rollup_task, billing_task, guest_media_task, form_reminder_task],
                 )
             )
             logger.info(
@@ -544,6 +589,7 @@ async def lifespan(app: FastAPI):
             rollup_task,
             billing_task,
             guest_media_task,
+            form_reminder_task,
         ]:
             if task and not task.done():
                 task.cancel()
@@ -552,6 +598,7 @@ async def lifespan(app: FastAPI):
             rollup_task,
             billing_task,
             guest_media_task,
+            form_reminder_task,
         ]:
             if not task:
                 continue

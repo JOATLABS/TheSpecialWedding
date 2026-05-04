@@ -579,6 +579,22 @@ class FormService:
                         "status": "sending",
                         "access_token_hash": token_hash,
                         "token_expires_at": token_expires_at,
+                        # Snapshot reminder context so the scheduler can
+                        # re-send without re-reading the form doc, and so
+                        # later edits to the form's email settings don't
+                        # retroactively change reminder behaviour for
+                        # already-sent distributions.
+                        "send_reminder": bool(
+                            send_data.email_settings.send_reminder
+                        ),
+                        "reminder_days": int(
+                            send_data.email_settings.reminder_days
+                        ),
+                        "reminder_subject": send_data.email_settings.subject,
+                        "reminder_message": send_data.email_settings.message,
+                        "reminder_sender_name": send_data.email_settings.sender_name,
+                        "reminder_sent_at": None,
+                        "reminder_count": 0,
                     }
 
                     # Per-recipient URL carries the distribution_id (join key)
@@ -641,6 +657,146 @@ class FormService:
             raise HTTPException(
                 status_code=500, detail=f"Failed to send form: {str(e)}"
             )
+
+    async def send_form_reminders(self, *, now: Optional[datetime] = None) -> Dict[str, int]:
+        """Send a one-shot reminder email per overdue, unsubmitted distribution.
+
+        A distribution is eligible iff its snapshot at send-time enabled
+        reminders, no response has been submitted yet, no reminder has
+        previously been sent, the access token is still within its TTL,
+        and (now - sent_at) >= reminder_days. Each reminder rotates the
+        access token so the new email link is fresh and the prior link
+        is invalidated — same security model as the original send.
+
+        Designed to be called by a daily scheduler. Returns a small
+        ``{sent, skipped, failed}`` summary for logging.
+        """
+        if now is None:
+            now = datetime.now(timezone.utc)
+
+        frontend_url = os.getenv("FRONTEND_URL")
+        if not frontend_url:
+            logger.warning(
+                "FRONTEND_URL not set — skipping form reminder pass"
+            )
+            return {"sent": 0, "skipped": 0, "failed": 0}
+
+        eligible_cursor = self.distributions_collection.find(
+            {
+                "send_reminder": True,
+                "submitted_at": None,
+                "reminder_sent_at": None,
+                "status": {"$in": ["sent", "opened", "clicked"]},
+            }
+        )
+        candidates = await eligible_cursor.to_list(length=None)
+
+        sent = 0
+        skipped = 0
+        failed = 0
+
+        for distribution in candidates:
+            distribution_id = distribution.get("_id")
+            try:
+                # Skip if reminder window not yet reached.
+                sent_at = distribution.get("sent_at")
+                if not sent_at:
+                    skipped += 1
+                    continue
+                if sent_at.tzinfo is None:
+                    sent_at = sent_at.replace(tzinfo=timezone.utc)
+                reminder_days = int(distribution.get("reminder_days", 7))
+                if (now - sent_at) < timedelta(days=reminder_days):
+                    skipped += 1
+                    continue
+
+                # Skip if the access token has already expired — a stale
+                # link in a reminder helps no one.
+                token_expires_at = distribution.get("token_expires_at")
+                if token_expires_at:
+                    if token_expires_at.tzinfo is None:
+                        token_expires_at = token_expires_at.replace(tzinfo=timezone.utc)
+                    if token_expires_at < now:
+                        skipped += 1
+                        continue
+
+                form = await self.forms_collection.find_one(
+                    {"_id": distribution.get("form_id")}
+                )
+                if not form or not form.get("is_active", True):
+                    skipped += 1
+                    continue
+
+                # Rotate the token so the new email link is fresh and the
+                # original link stops working (prevents stale-link
+                # confusion if the recipient kept it open).
+                raw_token, token_hash, new_expires_at = (
+                    self._issue_form_access_token()
+                )
+                reminder_form_url = (
+                    f"{frontend_url}/forms/{distribution['form_id']}"
+                    f"?dist={distribution_id}&t={raw_token}"
+                )
+
+                subject_base = (
+                    distribution.get("reminder_subject")
+                    or form.get("settings", {}).get("title", "Form")
+                )
+                reminder_subject = f"Reminder: {subject_base}"
+                custom_message = (
+                    distribution.get("reminder_message") or ""
+                )
+                sender_name = distribution.get("reminder_sender_name") or ""
+
+                email_html = self._generate_form_email_html(
+                    form_title=form["settings"]["title"],
+                    form_description=form["settings"].get("description", ""),
+                    form_url=reminder_form_url,
+                    sender_name=sender_name,
+                    custom_message=custom_message,
+                )
+
+                if self.email_service.configured:
+                    email_result = await self.email_service.send_email(
+                        to_email=distribution["recipient_email"],
+                        subject=reminder_subject,
+                        html_content=email_html,
+                        from_name=sender_name,
+                    )
+                else:
+                    email_result = {"success": False}
+
+                if email_result.get("success"):
+                    await self.distributions_collection.update_one(
+                        {"_id": distribution_id},
+                        {
+                            "$set": {
+                                "access_token_hash": token_hash,
+                                "token_expires_at": new_expires_at,
+                                "reminder_sent_at": now,
+                            },
+                            "$inc": {"reminder_count": 1},
+                        },
+                    )
+                    sent += 1
+                else:
+                    failed += 1
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.error(
+                    "Reminder send failed for distribution %s: %s",
+                    distribution_id,
+                    exc,
+                )
+                failed += 1
+
+        if sent or failed:
+            logger.info(
+                "Form reminder pass complete: sent=%d skipped=%d failed=%d",
+                sent,
+                skipped,
+                failed,
+            )
+        return {"sent": sent, "skipped": skipped, "failed": failed}
 
     async def submit_form_response(
         self,

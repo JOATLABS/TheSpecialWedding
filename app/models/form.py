@@ -378,6 +378,29 @@ class FormDistribution(BaseModel):
     token_expires_at: Optional[datetime] = Field(
         None, description="When the access token expires (default 30 days from send)."
     )
+    send_reminder: bool = Field(
+        default=False,
+        description="Whether to send a single reminder email N days after send if unsubmitted.",
+    )
+    reminder_days: int = Field(
+        default=7,
+        description="Days after sent_at to wait before sending a reminder.",
+    )
+    reminder_subject: Optional[str] = Field(
+        None, description="Subject line snapshot for the reminder email."
+    )
+    reminder_message: Optional[str] = Field(
+        None, description="Body message snapshot for the reminder email."
+    )
+    reminder_sender_name: Optional[str] = Field(
+        None, description="From-name snapshot for the reminder email."
+    )
+    reminder_sent_at: Optional[datetime] = Field(
+        None, description="When the reminder was last sent."
+    )
+    reminder_count: int = Field(
+        default=0, description="How many reminders have been sent for this distribution."
+    )
 
     class Config:
         populate_by_name = True
