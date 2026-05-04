@@ -1,341 +1,516 @@
 #!/usr/bin/env python3
 """
-Vendor Contract → Budget Category Propagation — Live Verification
-==================================================================
+Vendor Contract → Budget Rollup Verifier — P2.2 Architecture (pm-substrate)
+===========================================================================
 
-Verifies the fix at app/services/vendor_service.py:create_contract that
-populates `vendor_contracts.budget_category_id` from the vendor's prior
-assignment, so milestone payments can roll up into
-`budget_categories.actual_spent`.
+Verifies the P2.2 refactor of app/services/vendor_service.py which routes
+contract creation and payment recording through the pm-substrate service,
+eliminating `vendor_contracts.budget_category_id` entirely.
 
-Before the fix: contract.budget_category_id was hardcoded `None` at
-create. The conditional rollup at vendor_service.record_payment :3129
-(`if milestone.get("budget_category_id"):`) was unreachable in practice,
-so manual milestone payments never updated the budget tracker.
+## Architecture change (P2.2)
 
-After the fix: contract create now reads the assignment for
-(vendor_profile_id, wedding_id) and copies budget_category_id from it.
-Milestones inherit the value at create. record_payment's $inc on
-budget_categories.actual_spent now fires as designed.
+Before P2.2:
+  - `vendor_contracts.budget_category_id` was hardcoded `None` at contract
+    creation. The conditional `$inc` at `vendor_service.record_payment:3129`
+    was unreachable in practice — manual milestone payments silently never
+    updated `budget_categories.actual_spent`.
 
-Flow (every step through the real planner endpoint):
+After P2.2:
+  - `budget_category_id` is removed from `vendor_contracts` entirely.
+  - Contract creation calls `pm_substrate.create_contract()` which registers a
+    Contract node and wires a `wedding/contract_vendor` edge in the substrate graph.
+  - Vendor assignment with a budget_category calls
+    `pm_substrate.assign_vendor_to_budget_category()` which wires a
+    `wedding/vendor_budget_category` edge in the substrate graph.
+  - Payment recording calls `pm_substrate.record_payment()` which emits
+    `wedding.contract.payment_recorded` to the substrate event bus.
+  - `@pm/capability-wedding-budget` subscribes, walks the graph
+    (contract → vendor → budgetCategory), and increments `actualSpentMinor`
+    transactionally in Postgres.
 
-  1. Planner subscribes (real Stripe Subscription, no clock).
-  2. Planner creates a wedding.
-  3. Planner creates a budget category for the wedding.
-  4. Planner adds a vendor to the directory.
-  5. Planner assigns the vendor to the wedding WITH the budget category.
-  6. Planner creates a vendor contract.
-  7. ASSERT: contract.budget_category_id == the category id from step 3.
-     This is the fix's primary assertion. Pre-fix: would be None.
-  8. Planner creates a payment milestone on the contract.
-  9. Planner records a manual payment against the milestone.
- 10. ASSERT: budget.categories[that_category].actual_spent reflects
-     the payment. Pre-fix: would still be 0 because the rollup was
-     unreachable.
- 11. UI checkpoints in Chrome with the user watching.
+## What this verifier tests
 
-No direct Mongo writes for product state. Every state change goes
-through an endpoint a real planner would hit.
+1. **Stub substrate flow**: runs the full Python service stack against the
+   in-process stub (no live substrate or Postgres required). Verifies:
+   - The stub receives `wedding.contract.payment_recorded`.
+   - The payload contains `contractId`, `amount`, `paymentId`, `recordedAt`.
+   - `budget_category_id` is absent from the payload (architectural assertion).
 
-Accounts (plus-variant; base accounts never touched)
-----------------------------------------------------
-  Planner : test_planner+budgetprop@thespecialwedding.io
+2. **Negative test**: injects `budget_category_id` directly onto the local
+   MongoDB milestone document (simulating a legacy or manually-injected field).
+   Verifies:
+   - The system ignores it: no `budget_categories.$inc` runs.
+   - The substrate event is still emitted.
+   - `budget_category_id` is absent from the event payload.
+   This confirms the old code path is definitively gone.
 
-Pre-conditions
---------------
-  - `STRIPE_SECRET_KEY`, `MONGO_URI`, `ROOT_ADMIN_PASSWORD` in .env
-  - Backend on localhost:8000, frontend on localhost:3000
-  - Stripe webhook listener forwarding:
-      `stripe listen --forward-to localhost:8000/stripe/webhook`
+3. **Schema assertion**: verifies that new contract documents do NOT contain
+   `budget_category_id`. The `pm_contract_id` field is present instead.
 
-Cleanup pair: cleanup_vendor_contract_budget_propagation_state.py
+## Live end-to-end (deferred to P2.3)
+The full flow (Python ↔ live substrate ↔ Postgres) is P2.3 work. When
+PM_SUBSTRATE_URL is set and the substrate is running, the actual budget rollup
+in Postgres will be testable. The live verifier will extend this file.
 
-Usage
------
+## Usage (P2.2 stub mode, no live substrate required)
+
     python testbed/verify_vendor_contract_budget_propagation.py
-"""
 
+Or run via pytest for CI integration:
+
+    pytest testbed/verify_vendor_contract_budget_propagation.py -v
+
+## Prerequisites (P2.3 live mode)
+When PM_SUBSTRATE_URL is configured:
+  - Backend on localhost:8000, substrate on $PM_SUBSTRATE_URL
+  - STRIPE_SECRET_KEY, MONGO_URI, ROOT_ADMIN_PASSWORD in .env
+  - `stripe listen --forward-to localhost:8000/stripe/webhook`
+"""
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from testbed.harness import Harness, PM_TOKEN_GOOD
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
+log = logging.getLogger("verify_vendor_contract_budget_propagation")
 
 # ---------------------------------------------------------------------------
-# Driver constants — grep-visible so reruns are deterministic
+# Constants
 # ---------------------------------------------------------------------------
 
-PLANNER_EMAIL = "test_planner+budgetprop@thespecialwedding.io"
-PLANNER_PASSWORD = "BudgetPropPlanner2026!"  # pragma: allowlist secret
-PLANNER_FIRST = "Budget"
-PLANNER_LAST = "PropPlanner"
-PLANNER_COMPANY = "Budget Propagation QA Co"
-
-COUPLE_DISPLAY = "Avery & Morgan (BudgetProp)"
-
-VENDOR_BUSINESS_NAME = "Snap Studios — BudgetProp Verifier"
-VENDOR_EMAIL = "vendor+budgetprop@thespecialwedding.io"
-VENDOR_CATEGORY = "photographer"
-
-# Budget shape the planner sets up.
-BUDGET_CATEGORY_NAME = "Photography (BudgetProp Verifier)"
-BUDGET_CATEGORY_ALLOCATED = 5000.00
-
-# Contract financials.
-CONTRACT_TOTAL_AMOUNT = 3000.00
-DEPOSIT_PERCENTAGE = 50.0
-
-# Payment to record manually.
-DEPOSIT_MILESTONE_DESCRIPTION = "Deposit (BudgetProp Verifier)"
-DEPOSIT_MILESTONE_AMOUNT = 1500.00
-PAYMENT_METHOD = "bank_transfer"
-
-WEDDING_DATE_OFFSET_DAYS = 180
-PLAN_ID = os.getenv("BUDGETPROP_PLAN_ID", "plan_signature")
-
+TENANT_ID = "test_planner+budgetprop@thespecialwedding.io"
+VENDOR_PROFILE_ID = "507f1f77bcf86cd799439011"
+BUDGET_CATEGORY_ID = "507f1f77bcf86cd799439022"
+WEDDING_ID = "wedding_budgetprop_verifier"
+PM_CONTRACT_ID = str(uuid.uuid4())
+PAYMENT_AMOUNT = 1500.0  # dollars
+PAYMENT_AMOUNT_MINOR = int(PAYMENT_AMOUNT * 100)  # cents
 
 # ---------------------------------------------------------------------------
-# Phases
+# Helpers: build test fixtures
 # ---------------------------------------------------------------------------
 
 
-def main() -> int:
-    h = Harness(driver_name="verify_vendor_contract_budget_propagation")
-    h.preflight()
-    admin_token = h.get_admin_token()
+def _make_vendor() -> dict:
+    return {
+        "_id": VENDOR_PROFILE_ID,
+        "business_name": "Snap Studios — BudgetProp Verifier",
+        "email": "vendor+budgetprop@thespecialwedding.io",
+        "phone": None,
+        "service_category": "photographer",
+        "custom_service_category": None,
+        "address": None,
+        "created_by": TENANT_ID,
+    }
 
-    # ---- SEED ---------------------------------------------------------------
-    h.phase(
-        "SEED",
-        "subscribe planner via real Stripe; build wedding + budget + vendor + assignment",
-    )
 
-    h.seed_planner(
-        admin_token=admin_token,
-        email=PLANNER_EMAIL,
-        password=PLANNER_PASSWORD,
-        plan_id=PLAN_ID,
-        first_name=PLANNER_FIRST,
-        last_name=PLANNER_LAST,
-        company_name=PLANNER_COMPANY,
-        pm_token=PM_TOKEN_GOOD,
-    )
+def _make_wedding() -> dict:
+    return {
+        "_id": WEDDING_ID,
+        "couple_names": "Avery & Morgan (BudgetProp)",
+        "date": "2026-09-15",
+        "venue": "Test Venue",
+        "assigned_planner_email": TENANT_ID,
+    }
 
-    planner_token = h.login(PLANNER_EMAIL, PLANNER_PASSWORD)
 
-    wedding_date = (
-        (datetime.now(timezone.utc) + timedelta(days=WEDDING_DATE_OFFSET_DAYS))
-        .date()
-        .isoformat()
-    )
-    wedding_id = h.create_wedding(
-        planner_token=planner_token,
-        couple_names=COUPLE_DISPLAY,
-        date_iso=wedding_date,
-        guest_count=80,
-        venue="Test Venue (BudgetProp Verifier)",
-    )
+def _make_contract(pm_contract_id: str | None = PM_CONTRACT_ID) -> dict:
+    return {
+        "_id": "507f1f77bcf86cd799439099",
+        "id": "507f1f77bcf86cd799439099",
+        "root_contract_id": "507f1f77bcf86cd799439099",
+        "wedding_id": WEDDING_ID,
+        "vendor_profile_id": VENDOR_PROFILE_ID,
+        "pm_contract_id": pm_contract_id,
+        # budget_category_id intentionally absent — removed in P2.2
+        "vendor_name": "Snap Studios — BudgetProp Verifier",
+        "vendor_email": "vendor+budgetprop@thespecialwedding.io",
+        "service_category": "photographer",
+        "total_amount": 3000.0,
+        "currency": "USD",
+        "status": "draft",
+        "is_current_version": True,
+        "is_soft_deleted": None,
+        "created_by": TENANT_ID,
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+        "version_number": 1,
+    }
 
-    # The budget category — what the contract should inherit through the fix.
-    budget_category_id = h.create_budget_category(
-        planner_token=planner_token,
-        wedding_id=wedding_id,
-        name=BUDGET_CATEGORY_NAME,
-        budgeted_amount=BUDGET_CATEGORY_ALLOCATED,
-        description="Verifier-seeded category. Cleanup removes by name suffix.",
-    )
 
-    vendor_profile_id = h.create_vendor_profile(
-        planner_token=planner_token,
-        business_name=VENDOR_BUSINESS_NAME,
-        email=VENDOR_EMAIL,
-        service_category=VENDOR_CATEGORY,
-    )
+def _make_milestone(contract_id: str = "507f1f77bcf86cd799439099") -> dict:
+    from bson import ObjectId
+    return {
+        "_id": ObjectId("507f1f77bcf86cd799439088"),
+        "contract_id": contract_id,
+        "wedding_id": WEDDING_ID,
+        "vendor_profile_id": VENDOR_PROFILE_ID,
+        "pm_contract_id": PM_CONTRACT_ID,
+        # budget_category_id intentionally absent — removed in P2.2
+        "description": "Deposit (BudgetProp Verifier)",
+        "amount": PAYMENT_AMOUNT,
+        "paid_amount": 0.0,
+        "currency": "USD",
+        "status": "pending",
+        "created_by": TENANT_ID,
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }
 
-    h.assign_vendor_to_wedding(
-        planner_token=planner_token,
-        vendor_profile_id=vendor_profile_id,
-        wedding_id=wedding_id,
-        budget_category_id=budget_category_id,
-        service_notes="BudgetProp verifier seed. Real assignment row.",
-    )
 
-    # ---- UI-1: pre-contract world-state check -------------------------------
-    h.checkpoint(
-        "UI-1 (pre-contract — wedding, budget category, and assignment exist)",
-        [
-            f"Open {h.config.frontend_url}/admin/login as planner:",
-            f"     {PLANNER_EMAIL} / {PLANNER_PASSWORD}",
-            f"/admin/weddings should list {COUPLE_DISPLAY} (date {wedding_date}).",
-            f"/admin/budget?wedding_id={wedding_id} should show:",
-            f"     '{BUDGET_CATEGORY_NAME}' allocated ${BUDGET_CATEGORY_ALLOCATED:,.2f}",
-            "     actual_spent: $0.00 (no payments recorded yet).",
-            f"/admin/vendors should list {VENDOR_BUSINESS_NAME}.",
-            f"/admin/weddings/{wedding_id} → Vendors tab should show",
-            f"     {VENDOR_BUSINESS_NAME} assigned, linked to '{BUDGET_CATEGORY_NAME}'.",
-        ],
-    )
+# ---------------------------------------------------------------------------
+# Test 1: stub flow — payment → substrate event → no budget_category_id
+# ---------------------------------------------------------------------------
 
-    # ---- CREATE CONTRACT ----------------------------------------------------
-    h.phase(
-        "CREATE_CONTRACT",
-        "create vendor contract; assert it inherited budget_category_id from assignment",
-    )
-    contract_id = h.create_vendor_contract(
-        planner_token=planner_token,
-        wedding_id=wedding_id,
-        vendor_profile_id=vendor_profile_id,
-        total_amount=CONTRACT_TOTAL_AMOUNT,
-        deposit_percentage=DEPOSIT_PERCENTAGE,
-        service_date=wedding_date,
-        service_location="Test Venue (BudgetProp Verifier)",
-    )
 
-    contract_doc = h.get_vendor_contract(
-        planner_token=planner_token, contract_id=contract_id
-    )
-    contract_category = contract_doc.get("budget_category_id")
-    if contract_category != budget_category_id:
-        raise AssertionError(
-            "FIX REGRESSION: contract.budget_category_id did not inherit "
-            "from the assignment.\n"
-            f"  expected: {budget_category_id!r} (the assignment's category)\n"
-            f"  got:      {contract_category!r}\n"
-            "Pre-fix this would always be None. Post-fix it should match "
-            "the budget_category_id passed into assign_vendor_to_wedding "
-            "earlier in this same driver run."
+async def test_payment_recorded_event_reaches_substrate_without_budget_category_id() -> None:
+    """
+    ARCHITECTURAL ASSERTION:
+    The payment_recorded event emitted by record_payment() must:
+      1. Reach the substrate (stub records the call).
+      2. Contain contractId, amount, paymentId, recordedAt in the payload.
+      3. NOT contain budget_category_id anywhere in the event (not top-level,
+         not inside payload). This is the field that caused the production bug
+         and its absence is the architectural invariant of P2.2.
+    """
+    log.info("TEST 1: payment_recorded event reaches substrate, no budget_category_id")
+
+    from app.integrations.pm_substrate._test_stub import SubstrateStub
+
+    stub = SubstrateStub()
+    substrate_client = stub.build_client()
+
+    with patch("app.services.vendor_service._get_substrate_client", return_value=substrate_client):
+        from app.services.vendor_service import VendorService
+
+        svc = VendorService.__new__(VendorService)
+        milestone = _make_milestone()
+        milestone_id = str(milestone["_id"])
+        contract = _make_contract(pm_contract_id=PM_CONTRACT_ID)
+        updated_milestone = {**milestone, "_id": str(milestone["_id"]), "paid_amount": PAYMENT_AMOUNT, "status": "paid"}
+
+        budget_categories_mock = AsyncMock()
+        svc.payment_milestones = AsyncMock()
+        svc.payment_milestones.find_one = AsyncMock(side_effect=[milestone, updated_milestone])
+        svc.payment_milestones.update_one = AsyncMock()
+        svc.vendor_assignments = AsyncMock()
+        svc.vendor_assignments.update_one = AsyncMock()
+        svc.vendor_profiles = AsyncMock()
+        svc.vendor_profiles.update_one = AsyncMock()
+        svc.budget_categories = budget_categories_mock
+        svc.vendor_contract_activities = AsyncMock()
+        svc._get_owned_payment_milestone = AsyncMock(return_value=milestone)
+        svc._ensure_contract_current_for_payments = MagicMock()
+        svc.get_contract = AsyncMock(return_value=contract)
+        svc._get_root_contract_id = VendorService._get_root_contract_id.__func__
+        svc._log_contract_activity = AsyncMock()
+
+        async def _fake_transaction(name, op):
+            await op(None)
+
+        svc._run_required_transaction = _fake_transaction
+
+        await svc.record_payment(
+            milestone_id=milestone_id,
+            amount=PAYMENT_AMOUNT,
+            payment_method="bank_transfer",
+            created_by=TENANT_ID,
         )
-    h.log.info(
-        "  ✅ contract.budget_category_id inherited from assignment "
-        f"({contract_category}) — primary fix assertion passes"
-    )
 
-    # ---- CREATE MILESTONE + RECORD PAYMENT ----------------------------------
-    h.phase(
-        "RECORD_PAYMENT",
-        "create a milestone and record an offline payment; expect budget rollup",
+    # Assert the substrate received the event.
+    payment_events = stub.get_payment_events()
+    assert payment_events, "FAIL: substrate did not receive wedding.contract.payment_recorded"
+    event = payment_events[0]
+    payload = event["payload"]
+
+    assert payload.get("contractId") == PM_CONTRACT_ID, (
+        f"FAIL: contractId mismatch: {payload.get('contractId')!r} != {PM_CONTRACT_ID!r}"
     )
-    due_date_iso = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
-    created_milestones = h.create_payment_milestones(
-        planner_token=planner_token,
-        contract_id=contract_id,
-        milestones=[
-            {
-                "description": DEPOSIT_MILESTONE_DESCRIPTION,
-                "amount": DEPOSIT_MILESTONE_AMOUNT,
-                "due_date": due_date_iso,
+    assert payload.get("amount") == PAYMENT_AMOUNT_MINOR, (
+        f"FAIL: amount must be {PAYMENT_AMOUNT_MINOR} cents (not {payload.get('amount')!r} dollars)"
+    )
+    assert "paymentId" in payload, "FAIL: paymentId missing from event payload"
+    assert "recordedAt" in payload, "FAIL: recordedAt missing from event payload"
+
+    # THE KEY ARCHITECTURAL ASSERTION.
+    stub.assert_no_field_in_events("budget_category_id")
+    stub.assert_no_field_in_events("budget_category")
+
+    # The old local rollup must be gone.
+    budget_categories_mock.update_one.assert_not_called()
+
+    log.info("  ✅ substrate received payment_recorded event")
+    log.info("  ✅ budget_category_id absent from payload (architectural assertion)")
+    log.info("  ✅ budget_categories.$inc not called (dead code path removed)")
+
+
+# ---------------------------------------------------------------------------
+# Test 2: negative test — injected budget_category_id is ignored
+# ---------------------------------------------------------------------------
+
+
+async def test_injected_budget_category_id_is_ignored() -> None:
+    """
+    NEGATIVE TEST:
+    Inject budget_category_id manually onto the milestone doc (simulating
+    a legacy or externally-modified document). Verify:
+      1. No budget_categories.$inc runs (old code path is gone).
+      2. Substrate event is still emitted.
+      3. budget_category_id does NOT appear in the event payload.
+
+    This test proves the architectural guarantee holds even against legacy data:
+    the substrate path is the ONLY path for budget rollup.
+    """
+    log.info("TEST 2: injected budget_category_id is ignored by the system")
+
+    from app.integrations.pm_substrate._test_stub import SubstrateStub
+
+    stub = SubstrateStub()
+    substrate_client = stub.build_client()
+
+    with patch("app.services.vendor_service._get_substrate_client", return_value=substrate_client):
+        from app.services.vendor_service import VendorService
+
+        svc = VendorService.__new__(VendorService)
+        milestone = _make_milestone()
+        # Inject the field manually.
+        milestone["budget_category_id"] = BUDGET_CATEGORY_ID
+        milestone_id = str(milestone["_id"])
+        contract = _make_contract(pm_contract_id=PM_CONTRACT_ID)
+        updated_milestone = {**milestone, "_id": str(milestone["_id"]), "paid_amount": PAYMENT_AMOUNT, "status": "paid"}
+
+        budget_categories_mock = AsyncMock()
+        svc.payment_milestones = AsyncMock()
+        svc.payment_milestones.find_one = AsyncMock(side_effect=[milestone, updated_milestone])
+        svc.payment_milestones.update_one = AsyncMock()
+        svc.vendor_assignments = AsyncMock()
+        svc.vendor_assignments.update_one = AsyncMock()
+        svc.vendor_profiles = AsyncMock()
+        svc.vendor_profiles.update_one = AsyncMock()
+        svc.budget_categories = budget_categories_mock
+        svc.vendor_contract_activities = AsyncMock()
+        svc._get_owned_payment_milestone = AsyncMock(return_value=milestone)
+        svc._ensure_contract_current_for_payments = MagicMock()
+        svc.get_contract = AsyncMock(return_value=contract)
+        svc._get_root_contract_id = VendorService._get_root_contract_id.__func__
+        svc._log_contract_activity = AsyncMock()
+
+        async def _fake_transaction(name, op):
+            await op(None)
+
+        svc._run_required_transaction = _fake_transaction
+
+        await svc.record_payment(
+            milestone_id=milestone_id,
+            amount=PAYMENT_AMOUNT,
+            payment_method="bank_transfer",
+            created_by=TENANT_ID,
+        )
+
+    # Old rollup: must not run.
+    budget_categories_mock.update_one.assert_not_called()
+
+    # Substrate path: must still fire.
+    payment_events = stub.get_payment_events()
+    assert payment_events, "FAIL: substrate must still receive event even with injected budget_category_id"
+
+    # Payload must not leak the injected field.
+    stub.assert_no_field_in_events("budget_category_id")
+    stub.assert_no_field_in_events("budget_category")
+
+    log.info("  ✅ budget_categories.$inc not called despite injected budget_category_id")
+    log.info("  ✅ substrate event still emitted (substrate path is the only path)")
+    log.info("  ✅ budget_category_id absent from event payload")
+
+
+# ---------------------------------------------------------------------------
+# Test 3: schema assertion — new contracts have no budget_category_id
+# ---------------------------------------------------------------------------
+
+
+async def test_new_contract_has_no_budget_category_id_field() -> None:
+    """
+    Schema assertion: vendor_service.create_contract() must NOT write
+    budget_category_id to the vendor_contracts document. The pm_contract_id
+    field must be present instead.
+    """
+    log.info("TEST 3: new contract docs have no budget_category_id, have pm_contract_id")
+
+    from app.integrations.pm_substrate._test_stub import SubstrateStub
+
+    stub = SubstrateStub()
+    substrate_client = stub.build_client()
+
+    captured_docs: list[dict] = []
+
+    async def _capture_insert(doc, **kwargs):
+        captured_docs.append(dict(doc))
+        result = MagicMock()
+        result.inserted_id = "507f1f77bcf86cd799439099"
+        return result
+
+    async def _capture_update(query, update, **kwargs):
+        pass
+
+    with patch("app.services.vendor_service._get_substrate_client", return_value=substrate_client):
+        from app.services.vendor_service import VendorService
+
+        svc = VendorService.__new__(VendorService)
+        svc.vendor_contracts = AsyncMock()
+        svc.vendor_contracts.insert_one = AsyncMock(side_effect=_capture_insert)
+        svc.vendor_contracts.update_one = AsyncMock(side_effect=_capture_update)
+        svc.vendor_profiles = AsyncMock()
+        svc.contract_templates = AsyncMock()
+        svc.vendor_assignments = AsyncMock()
+        svc.vendor_assignments.find_one = AsyncMock(return_value=None)
+        svc.vendor_quotes = AsyncMock()
+        svc.vendor_contract_activities = AsyncMock()
+        svc.users = AsyncMock()
+        svc.users.find_one = AsyncMock(return_value=None)
+        svc.weddings = AsyncMock()
+        svc.email_service = AsyncMock()
+        svc.storage = MagicMock()
+        svc.payment_links = AsyncMock()
+        svc.vendor_forms = AsyncMock()
+        svc.form_responses = AsyncMock()
+
+        svc._generate_contract_number = lambda: "CON-20260101-0001"
+        svc._get_vendor_service_label = VendorService._get_vendor_service_label.__func__
+        svc._get_planner_contract_settings = AsyncMock(
+            return_value={
+                "token_expiry_days": 30, "deposit_due_days": 7,
+                "payment_reminder_days": [], "auto_followup_days": 3, "default_currency": "USD",
             }
-        ],
-    )
-    if not created_milestones:
-        raise AssertionError("milestone create returned no documents")
-    milestone = created_milestones[0]
-    milestone_id = milestone.get("id") or milestone.get("_id")
-    if not milestone_id:
-        raise AssertionError(f"created milestone has no id field: {milestone!r}")
-
-    # Read budget BEFORE payment so we can show the delta.
-    budget_before = h.get_wedding_budget(
-        planner_token=planner_token, wedding_id=wedding_id
-    )
-    spent_before = _category_actual_spent(budget_before, budget_category_id)
-    h.log.info(f"  budget.actual_spent BEFORE payment: ${spent_before:.2f}")
-
-    h.record_milestone_payment(
-        planner_token=planner_token,
-        milestone_id=str(milestone_id),
-        amount=DEPOSIT_MILESTONE_AMOUNT,
-        payment_method=PAYMENT_METHOD,
-        notes="BudgetProp verifier — manual offline payment",
-    )
-
-    # ---- ASSERT BUDGET ROLLUP -----------------------------------------------
-    h.phase("ASSERT_BUDGET_ROLLUP")
-    budget_after = h.get_wedding_budget(
-        planner_token=planner_token, wedding_id=wedding_id
-    )
-    spent_after = _category_actual_spent(budget_after, budget_category_id)
-    h.log.info(f"  budget.actual_spent AFTER payment: ${spent_after:.2f}")
-
-    expected_spent = spent_before + DEPOSIT_MILESTONE_AMOUNT
-    # 0.5-cent tolerance for float rounding (matches record_payment guard).
-    if abs(spent_after - expected_spent) > 0.005:
-        raise AssertionError(
-            "FIX REGRESSION: budget.actual_spent did not increment.\n"
-            f"  before:   ${spent_before:.2f}\n"
-            f"  payment:  ${DEPOSIT_MILESTONE_AMOUNT:.2f}\n"
-            f"  expected: ${expected_spent:.2f}\n"
-            f"  got:      ${spent_after:.2f}\n"
-            "Pre-fix the rollup at vendor_service.record_payment :3129 was "
-            "unreachable because the milestone inherited budget_category_id "
-            "from a contract that always had None. Post-fix the rollup fires."
         )
-    h.log.info(
-        "  ✅ budget.actual_spent rose by the milestone payment amount "
-        "— downstream fix assertion passes"
+        svc._get_owned_vendor_profile = AsyncMock(return_value=_make_vendor())
+        svc._get_owned_wedding = AsyncMock(return_value=_make_wedding())
+        svc._serialize_doc = VendorService._serialize_doc.__func__
+        svc._attach_contract_version_metadata = VendorService._attach_contract_version_metadata.__func__
+        svc._stringify_id = VendorService._stringify_id.__func__
+        svc._get_root_contract_id = VendorService._get_root_contract_id.__func__
+        svc._log_contract_activity = AsyncMock()
+        svc._build_inactive_contract_token_fields = (
+            VendorService._build_inactive_contract_token_fields.__func__
+        )
+
+        await svc.create_contract(
+            wedding_id=WEDDING_ID,
+            vendor_profile_id=VENDOR_PROFILE_ID,
+            created_by=TENANT_ID,
+            total_amount=3000.0,
+        )
+
+    assert captured_docs, "Expected insert_one to be called"
+    doc = captured_docs[0]
+
+    # The field must be gone.
+    assert "budget_category_id" not in doc, (
+        f"FAIL: budget_category_id must not appear in new contract docs. Got: {doc.get('budget_category_id')!r}"
     )
 
-    # ---- UI-2: budget tracker reflects the payment --------------------------
-    h.checkpoint(
-        "UI-2 (post-payment — budget page reflects the milestone payment)",
-        [
-            f"Open {h.config.frontend_url}/admin/budget?wedding_id={wedding_id}",
-            f"     '{BUDGET_CATEGORY_NAME}' should now show:",
-            f"     allocated ${BUDGET_CATEGORY_ALLOCATED:,.2f}",
-            f"     spent     ${spent_after:,.2f}",
-            f"     remaining ${BUDGET_CATEGORY_ALLOCATED - spent_after:,.2f}",
-            "  Pre-fix this number stayed at $0.00 even after recording the payment.",
-            f"On /admin/vendors/contracts/{contract_id} → Payments tab,",
-            f"     the milestone '{DEPOSIT_MILESTONE_DESCRIPTION}' should show as",
-            f"     paid (${DEPOSIT_MILESTONE_AMOUNT:.2f} via {PAYMENT_METHOD}).",
-        ],
+    # pm_contract_id must be present (even if None initially, before substrate call fills it).
+    assert "pm_contract_id" in doc, (
+        "FAIL: pm_contract_id must be present in new contract docs"
     )
 
-    h.log.info("")
-    h.log.info("✅ verify_vendor_contract_budget_propagation: all assertions pass")
-    h.log.info(
-        "Run testbed/cleanup_vendor_contract_budget_propagation_state.py to reset."
-    )
+    # Substrate must have received Contract + Vendor node creation calls.
+    contract_nodes = [n for n in stub.nodes if n.get("profile", {}).get("concrete") == "Contract"]
+    assert contract_nodes, "FAIL: substrate must receive Contract node creation"
+
+    log.info("  ✅ budget_category_id absent from new contract document")
+    log.info("  ✅ pm_contract_id present in new contract document")
+    log.info("  ✅ substrate received Contract node creation")
+
+
+# ---------------------------------------------------------------------------
+# Main runner
+# ---------------------------------------------------------------------------
+
+
+async def main() -> int:
+    log.info("")
+    log.info("=" * 60)
+    log.info("verify_vendor_contract_budget_propagation — P2.2")
+    log.info("Verifying pm-substrate budget rollup architecture")
+    log.info("=" * 60)
+    log.info("")
+
+    failures: list[str] = []
+
+    for test_fn in [
+        test_payment_recorded_event_reaches_substrate_without_budget_category_id,
+        test_injected_budget_category_id_is_ignored,
+        test_new_contract_has_no_budget_category_id_field,
+    ]:
+        test_name = test_fn.__name__
+        try:
+            await test_fn()
+            log.info("PASS: %s", test_name)
+        except AssertionError as exc:
+            log.error("FAIL: %s — %s", test_name, exc)
+            failures.append(test_name)
+        except Exception as exc:
+            log.exception("ERROR: %s — %s", test_name, exc)
+            failures.append(test_name)
+        log.info("")
+
+    log.info("=" * 60)
+    if failures:
+        log.error("FAILED: %d test(s)", len(failures))
+        for name in failures:
+            log.error("  - %s", name)
+        return 1
+
+    log.info("✅ All P2.2 assertions pass.")
+    log.info("")
+    log.info("P2.3 TODO:")
+    log.info("  - Real end-to-end test: Python ↔ live substrate ↔ Postgres.")
+    log.info("  - Set PM_SUBSTRATE_URL and run with the substrate online.")
+    log.info("  - Verify BudgetCategory.actualSpentMinor increments in Postgres.")
+    log.info("=" * 60)
     return 0
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Pytest integration
 # ---------------------------------------------------------------------------
 
 
-def _category_actual_spent(wedding_budget_response: dict, category_id: str) -> float:
-    """Pull `actual_spent` for a specific category out of the GET wedding
-    budget response shape.
+def test_payment_recorded_no_budget_category_id():
+    """pytest entry point for test 1."""
+    asyncio.run(test_payment_recorded_event_reaches_substrate_without_budget_category_id())
 
-    The endpoint returns
-        {wedding_id, summary, categories: [...], alerts: [...], last_updated}
-    where each category has both `_id` and `id` (stringified).
-    """
-    categories = wedding_budget_response.get("categories") or []
-    for cat in categories:
-        cat_id = cat.get("id") or cat.get("_id")
-        if str(cat_id) == str(category_id):
-            return float(cat.get("actual_spent") or 0)
-    raise AssertionError(
-        f"category {category_id!r} not present in wedding budget response. "
-        f"got: {[c.get('id') or c.get('_id') for c in categories]!r}"
-    )
+
+def test_injected_field_is_ignored():
+    """pytest entry point for test 2."""
+    asyncio.run(test_injected_budget_category_id_is_ignored())
+
+
+def test_new_contract_schema():
+    """pytest entry point for test 3."""
+    asyncio.run(test_new_contract_has_no_budget_category_id_field())
+
+
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
 
 
 if __name__ == "__main__":
     try:
-        raise SystemExit(main())
+        raise SystemExit(asyncio.run(main()))
     except Exception as exc:
-        import logging
-
-        logging.getLogger("verify_vendor_contract_budget_propagation").error(
-            f"Verification aborted: {exc}", exc_info=True
-        )
+        log.exception("Verification aborted: %s", exc)
         raise SystemExit(1)
