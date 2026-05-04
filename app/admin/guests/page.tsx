@@ -8,6 +8,7 @@ import { BUILT_IN_WEDDING_EVENT_OPTIONS, getWeddingEventLabel, getWeddingEventOp
 import { getApiBaseUrl } from '@/utils/env';
 import PageHeader from '../components/PageHeader';
 import WeddingPicker from '../components/WeddingPicker';
+import { MessageEnrichment } from '@/components/ui/MessageEnrichment';
 import { usePagination } from '@/admin/hooks/usePagination';
 import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
 import {
@@ -217,6 +218,13 @@ export default function AdminGuestsPage() {
   const [qrModalGuest, setQrModalGuest] = useState<Guest | null>(null);
   const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
   const [qrImageLoading, setQrImageLoading] = useState(false);
+
+  // Quick Remind modal state — sends a one-off message to a single guest
+  // without leaving the Guests page.
+  const [reminderGuest, setReminderGuest] = useState<Guest | null>(null);
+  const [reminderChannel, setReminderChannel] = useState<'sms' | 'email' | 'both'>('both');
+  const [reminderMessage, setReminderMessage] = useState('');
+  const [reminderSending, setReminderSending] = useState(false);
 
   // Export dropdown state
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
@@ -888,16 +896,156 @@ export default function AdminGuestsPage() {
     [buildCommunicationsRoute, router]
   );
 
-  const handleOpenGuestReminder = (guestId: string) => {
-    const guest = guests.find((candidate) => (candidate.id || candidate._id) === guestId);
-    if (!guest) return;
-
+  const openReminderModal = (guest: Guest) => {
     if (!guest.phone && !guest.email) {
-      setError('This guest needs a phone number or email before you can message them from Communications.');
+      setError('This guest needs a phone number or email before you can send a reminder.');
       return;
     }
 
-    openGuestMessaging([guest.token], 'rsvp_link');
+    const hasPhone = Boolean(guest.phone && guest.phone.trim() !== '');
+    const hasEmail = Boolean(guest.email && guest.email.trim() !== '');
+    const defaultChannel: 'sms' | 'email' | 'both' = hasPhone && hasEmail
+      ? 'both'
+      : hasPhone
+        ? 'sms'
+        : 'email';
+
+    const wedding = weddings.find((w) => (w.id || w._id) === selectedWedding);
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const prefill = wedding?.slug
+      ? `Hi ${guest.name}, you're invited to our wedding! Please RSVP at: ${origin}/${wedding.slug}/invite/${guest.token}`
+      : `Hi ${guest.name}, just a friendly reminder to RSVP for our wedding.`;
+
+    setReminderChannel(defaultChannel);
+    setReminderMessage(prefill);
+    setReminderGuest(guest);
+  };
+
+  const closeReminderModal = () => {
+    setReminderGuest(null);
+    setReminderMessage('');
+    setReminderSending(false);
+  };
+
+  const handleSendReminder = async () => {
+    if (!reminderGuest) return;
+    const message = reminderMessage.trim();
+    if (!message) {
+      setError('Please enter a message before sending.');
+      return;
+    }
+
+    const wedding = weddings.find((w) => (w.id || w._id) === selectedWedding);
+    const hasPhone = Boolean(reminderGuest.phone && reminderGuest.phone.trim() !== '');
+    const hasEmail = Boolean(reminderGuest.email && reminderGuest.email.trim() !== '');
+    const wantsSms = reminderChannel !== 'email' && hasPhone;
+    const wantsEmail = reminderChannel !== 'sms' && hasEmail;
+
+    if (!wantsSms && !wantsEmail) {
+      setError('This guest cannot be reached on the selected channel.');
+      return;
+    }
+
+    if (reminderChannel === 'email' && !wedding?.slug) {
+      setError('Email reminders require a wedding to be selected.');
+      return;
+    }
+
+    setReminderSending(true);
+
+    const baseUrl = apiBaseUrl;
+    const tasks: Array<Promise<{ ok: boolean; reason?: string }>> = [];
+
+    if (wantsSms) {
+      tasks.push(
+        (async () => {
+          try {
+            const response = await fetch(`${baseUrl}/admin/reminders/send-to-guests`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                guest_tokens: [reminderGuest.token],
+                message,
+              }),
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              return { ok: false, reason: errorData.detail || 'Failed to send SMS' };
+            }
+
+            const result = await response.json().catch(() => ({}));
+            if ((result.sent ?? 0) > 0) {
+              return { ok: true };
+            }
+            const reason = Array.isArray(result.failure_reasons) && result.failure_reasons.length > 0
+              ? result.failure_reasons[0]
+              : 'SMS was not delivered';
+            return { ok: false, reason };
+          } catch {
+            return { ok: false, reason: 'Network error sending SMS' };
+          }
+        })()
+      );
+    }
+
+    if (wantsEmail && wedding?.slug) {
+      tasks.push(
+        (async () => {
+          try {
+            const response = await fetch(`${baseUrl}/admin/email/send-reminder-individual`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                wedding_slug: wedding.slug,
+                guest_email: reminderGuest.email,
+                guest_name: reminderGuest.name,
+                guest_token: reminderGuest.token,
+                custom_message: message,
+              }),
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              return { ok: false, reason: errorData.detail || 'Failed to send email' };
+            }
+
+            const body = await response.json().catch(() => ({}));
+            if (body.sent || body.success) {
+              return { ok: true };
+            }
+            return { ok: false, reason: body.error || 'Email was not delivered' };
+          } catch {
+            return { ok: false, reason: 'Network error sending email' };
+          }
+        })()
+      );
+    }
+
+    const results = await Promise.all(tasks);
+    const okCount = results.filter((r) => r.ok).length;
+    const failures = results.filter((r) => !r.ok);
+
+    if (okCount > 0 && failures.length === 0) {
+      showSuccess(`Reminder sent to ${reminderGuest.name}.`);
+      closeReminderModal();
+    } else if (okCount > 0) {
+      showSuccess(
+        `Reminder partially sent to ${reminderGuest.name}. Issues: ${failures.map((f) => f.reason).join('; ')}`
+      );
+      closeReminderModal();
+    } else {
+      setError(
+        `Failed to send reminder to ${reminderGuest.name}. ${failures.map((f) => f.reason).filter(Boolean).join('; ')}`
+      );
+      setReminderSending(false);
+    }
   };
 
   // ==================== EXPORT FUNCTIONS ====================
@@ -1711,7 +1859,7 @@ export default function AdminGuestsPage() {
                                     </button>
                                     {!rsvp && (
                                       <button
-                                        onClick={() => handleOpenGuestReminder(guestId)}
+                                        onClick={() => openReminderModal(guest)}
                                         className="px-2 py-1 text-xs bg-wedding-sage text-white rounded hover:bg-opacity-90"
                                       >
                                         Remind
@@ -1903,7 +2051,7 @@ export default function AdminGuestsPage() {
                                 </button>
                                 {!rsvp && (
                                   <button
-                                    onClick={() => handleOpenGuestReminder(guestId)}
+                                    onClick={() => openReminderModal(guest)}
                                     className="px-3 py-1 text-sm bg-wedding-sage text-white rounded-lg hover:bg-opacity-90"
                                   >
                                     Remind
@@ -2446,6 +2594,117 @@ export default function AdminGuestsPage() {
             </div>
           </div>
         )}
+
+        {/* Quick Remind Modal */}
+        {reminderGuest && (() => {
+          const hasPhone = Boolean(reminderGuest.phone && reminderGuest.phone.trim() !== '');
+          const hasEmail = Boolean(reminderGuest.email && reminderGuest.email.trim() !== '');
+          const channelOptions: Array<{ value: 'sms' | 'email' | 'both'; label: string; disabled: boolean; hint?: string }> = [
+            { value: 'sms', label: 'SMS', disabled: !hasPhone, hint: hasPhone ? undefined : 'No phone' },
+            { value: 'email', label: 'Email', disabled: !hasEmail, hint: hasEmail ? undefined : 'No email' },
+            { value: 'both', label: 'Both', disabled: !(hasPhone && hasEmail), hint: hasPhone && hasEmail ? undefined : 'Needs phone & email' },
+          ];
+
+          return (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-lg w-full p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-wedding-navy dark:text-white">
+                      Send Reminder
+                    </h2>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                      To {reminderGuest.name}
+                      {reminderGuest.phone && <span className="ml-2 text-xs">· {reminderGuest.phone}</span>}
+                      {reminderGuest.email && <span className="ml-2 text-xs">· {reminderGuest.email}</span>}
+                    </p>
+                  </div>
+                  <button
+                    onClick={closeReminderModal}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                    aria-label="Close"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Channel
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {channelOptions.map((opt) => (
+                      <label
+                        key={opt.value}
+                        className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm ${
+                          reminderChannel === opt.value
+                            ? 'border-wedding-rose bg-wedding-rose/10 text-wedding-rose dark:text-wedding-rose-light'
+                            : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'
+                        } ${opt.disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-wedding-rose/5'}`}
+                      >
+                        <input
+                          type="radio"
+                          name="reminder-channel"
+                          value={opt.value}
+                          checked={reminderChannel === opt.value}
+                          disabled={opt.disabled}
+                          onChange={() => setReminderChannel(opt.value)}
+                          className="text-wedding-rose focus:ring-wedding-rose"
+                        />
+                        <span>{opt.label}</span>
+                        {opt.hint && (
+                          <span className="text-xs text-gray-400">({opt.hint})</span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Add to Message
+                  </label>
+                  <MessageEnrichment
+                    onInsert={(text) =>
+                      setReminderMessage((prev) => (prev ? `${prev}\n${text}` : text))
+                    }
+                  />
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Message
+                  </label>
+                  <textarea
+                    value={reminderMessage}
+                    onChange={(e) => setReminderMessage(e.target.value)}
+                    rows={5}
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent resize-none"
+                  />
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleSendReminder}
+                    disabled={reminderSending || !reminderMessage.trim()}
+                    className="flex-1 bg-gradient-to-r from-wedding-navy to-wedding-sage text-white px-4 py-2 rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  >
+                    {reminderSending ? 'Sending...' : 'Send Reminder'}
+                  </button>
+                  <button
+                    onClick={closeReminderModal}
+                    disabled={reminderSending}
+                    className="flex-1 bg-gray-200 dark:bg-slate-600 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-500 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
     </div>
   );
 }
