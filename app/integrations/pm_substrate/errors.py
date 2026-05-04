@@ -8,12 +8,15 @@ Hierarchy:
     EdgeCreationFailed      — substrate rejected an edge creation request.
     NodeCreationFailed      — substrate rejected a graph node creation.
 """
+from __future__ import annotations
+
+from typing import Optional
 
 
 class PMSubstrateError(Exception):
     """Base exception for all PM Substrate client failures."""
 
-    def __init__(self, message: str, status_code: int | None = None) -> None:
+    def __init__(self, message: str, status_code: Optional[int] = None) -> None:
         super().__init__(message)
         self.status_code = status_code
 

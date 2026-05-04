@@ -46,7 +46,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Dict, Optional
 
 import httpx
 
@@ -136,7 +136,7 @@ class PMSubstrateClient:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._retries = retries
-        headers: dict[str, str] = {"Content-Type": "application/json"}
+        headers: Dict[str, str] = {"Content-Type": "application/json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
         self._client = httpx.AsyncClient(
@@ -153,8 +153,8 @@ class PMSubstrateClient:
         self,
         tenant_id: str,
         vendor_profile_id: str,
-        contract_data: dict[str, Any],
-        vendor_data: dict[str, Any] | None = None,
+        contract_data: Dict[str, Any],
+        vendor_data: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Create a Contract node in the substrate graph and wire the contract→vendor edge.
@@ -322,8 +322,8 @@ class PMSubstrateClient:
         tenant_id: str,
         vendor_profile_id: str,
         budget_category_id: str,
-        vendor_data: dict[str, Any] | None = None,
-        category_data: dict[str, Any] | None = None,
+        vendor_data: Optional[Dict[str, Any]] = None,
+        category_data: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Create the wedding/vendor_budget_category edge in the substrate graph.
@@ -419,7 +419,7 @@ class PMSubstrateClient:
         self,
         tenant_id: str,
         vendor_node_id: str,
-        identity: dict[str, Any],
+        identity: Dict[str, Any],
     ) -> None:
         """Create a Vendor node with the pre-computed uuid5 ID, silently ignoring conflicts."""
         try:
@@ -448,7 +448,7 @@ class PMSubstrateClient:
         self,
         tenant_id: str,
         category_node_id: str,
-        identity: dict[str, Any],
+        identity: Dict[str, Any],
     ) -> None:
         """Create a BudgetCategory node with the pre-computed uuid5 ID, silently ignoring conflicts."""
         try:
@@ -472,10 +472,10 @@ class PMSubstrateClient:
                 ) from exc
 
     async def _post_with_retry(
-        self, path: str, body: dict[str, Any]
-    ) -> dict[str, Any]:
+        self, path: str, body: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """POST with simple retry on transient 5xx / network errors."""
-        last_exc: Exception | None = None
+        last_exc: Optional[Exception] = None
         for attempt in range(self._retries + 1):
             try:
                 resp = await self._client.post(path, json=body)
@@ -513,7 +513,7 @@ class PMSubstrateClient:
 # Module-level singleton
 # ---------------------------------------------------------------------------
 
-_default_client: PMSubstrateClient | None = None
+_default_client: Optional["PMSubstrateClient"] = None
 
 
 def get_client() -> PMSubstrateClient:
