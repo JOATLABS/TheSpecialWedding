@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict
 
@@ -497,3 +497,315 @@ async def test_get_form_distributions_rejects_non_owner(configured_form_service)
 
     with pytest.raises(HTTPException):
         await service.get_form_distributions("form_1", "intruder@example.com")
+
+
+# =============================================================================
+# Per-recipient access tokens (Item 4)
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_send_form_issues_unique_token_and_url_carries_it(
+    configured_form_service,
+):
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+
+    request = SendFormRequest(
+        recipient_emails=["a@example.com", "b@example.com"],
+        email_settings=EmailDistributionSettings(
+            subject="Please respond",
+            message="Hi",
+            sender_name="Wedding Planner",
+        ),
+    )
+    await service.send_form("form_1", request, "planner@example.com")
+
+    distributions = list(database["form_distributions"].find({"form_id": "form_1"}))
+    assert len(distributions) == 2
+
+    hashes = {d["access_token_hash"] for d in distributions}
+    assert None not in hashes  # both got a hash
+    assert len(hashes) == 2  # tokens are distinct
+    for d in distributions:
+        assert d["token_expires_at"] is not None
+
+    for sent in service.email_service.sent:
+        html = sent["html_content"]
+        assert "?dist=" in html
+        assert "&t=" in html
+
+
+@pytest.mark.asyncio
+async def test_submit_with_valid_token_succeeds_and_marks_submitted(
+    configured_form_service,
+):
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+    raw_token = "tok-1234"
+    database["form_distributions"].insert_one(
+        {
+            "_id": "dist-1",
+            "form_id": "form_1",
+            "recipient_email": "guest@example.com",
+            "sent_at": datetime.utcnow(),
+            "status": "sent",
+            "access_token_hash": service._hash_form_access_token(raw_token),
+            "token_expires_at": datetime.now(timezone.utc) + timedelta(days=10),
+        }
+    )
+
+    request = SubmitFormRequest(
+        responses={"name": "Jamie"},
+        distribution_id="dist-1",
+        access_token=raw_token,
+    )
+    await service.submit_form_response("form_1", request)
+
+    dist = database["form_distributions"].find_one({"_id": "dist-1"})
+    assert dist["status"] == "submitted"
+    assert dist["submitted_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_submit_with_wrong_token_returns_403(configured_form_service):
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+    real_token = "real-token"
+    database["form_distributions"].insert_one(
+        {
+            "_id": "dist-1",
+            "form_id": "form_1",
+            "recipient_email": "guest@example.com",
+            "sent_at": datetime.utcnow(),
+            "status": "sent",
+            "access_token_hash": service._hash_form_access_token(real_token),
+            "token_expires_at": datetime.now(timezone.utc) + timedelta(days=10),
+        }
+    )
+
+    request = SubmitFormRequest(
+        responses={"name": "Jamie"},
+        distribution_id="dist-1",
+        access_token="forged-token",
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await service.submit_form_response("form_1", request)
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_submit_with_expired_token_returns_410(configured_form_service):
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+    raw_token = "expired-token"
+    database["form_distributions"].insert_one(
+        {
+            "_id": "dist-1",
+            "form_id": "form_1",
+            "recipient_email": "guest@example.com",
+            "sent_at": datetime.utcnow(),
+            "status": "sent",
+            "access_token_hash": service._hash_form_access_token(raw_token),
+            "token_expires_at": datetime.now(timezone.utc) - timedelta(days=1),
+        }
+    )
+
+    request = SubmitFormRequest(
+        responses={"name": "Jamie"},
+        distribution_id="dist-1",
+        access_token=raw_token,
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await service.submit_form_response("form_1", request)
+    assert exc_info.value.status_code == 410
+
+
+@pytest.mark.asyncio
+async def test_submit_token_enforces_single_submission_even_with_multiple_allowed(
+    configured_form_service,
+):
+    """Tokenized links are one-shot per distribution, regardless of form-level setting."""
+    service, database = configured_form_service
+    # allow_multiple_submissions=True at the form level on purpose
+    database["forms"].insert_one(_form_doc(allow_multiple_submissions=True))
+    raw_token = "tok-once"
+    database["form_distributions"].insert_one(
+        {
+            "_id": "dist-1",
+            "form_id": "form_1",
+            "recipient_email": "guest@example.com",
+            "sent_at": datetime.utcnow(),
+            "status": "submitted",  # already submitted
+            "submitted_at": datetime.utcnow(),
+            "access_token_hash": service._hash_form_access_token(raw_token),
+            "token_expires_at": datetime.now(timezone.utc) + timedelta(days=10),
+        }
+    )
+
+    request = SubmitFormRequest(
+        responses={"name": "Second attempt"},
+        distribution_id="dist-1",
+        access_token=raw_token,
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await service.submit_form_response("form_1", request)
+    assert exc_info.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_submit_with_token_for_unknown_distribution_returns_403(
+    configured_form_service,
+):
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+
+    request = SubmitFormRequest(
+        responses={"name": "Forged"},
+        distribution_id="not-a-real-id",
+        access_token="some-token",
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await service.submit_form_response("form_1", request)
+    assert exc_info.value.status_code == 403
+
+
+# Token-less submissions still fall through cleanly even when distribution exists
+@pytest.mark.asyncio
+async def test_submit_without_token_when_distribution_has_token_still_works_via_email(
+    configured_form_service,
+):
+    """Forwards-compat: a recipient who manually pastes /forms/{id} (stripped link)
+    can still submit; without a token, no per-distribution enforcement applies."""
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc(allow_multiple_submissions=True))
+    raw_token = "tok-1"
+    database["form_distributions"].insert_one(
+        {
+            "_id": "dist-1",
+            "form_id": "form_1",
+            "recipient_email": "guest@example.com",
+            "sent_at": datetime.utcnow(),
+            "status": "sent",
+            "access_token_hash": service._hash_form_access_token(raw_token),
+            "token_expires_at": datetime.now(timezone.utc) + timedelta(days=10),
+        }
+    )
+
+    request = SubmitFormRequest(
+        responses={"name": "Jamie"},
+        submitted_by_email="guest@example.com",
+        # No distribution_id, no access_token
+    )
+    result = await service.submit_form_response("form_1", request)
+    assert "id" in result
+    dist = database["form_distributions"].find_one({"_id": "dist-1"})
+    assert dist["status"] == "submitted"  # email-match fallback
+
+
+# =============================================================================
+# check_form_distribution_link
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_check_link_returns_valid_for_unused_token(configured_form_service):
+    service, database = configured_form_service
+    raw_token = "ok-tok"
+    database["form_distributions"].insert_one(
+        {
+            "_id": "dist-1",
+            "form_id": "form_1",
+            "recipient_email": "guest@example.com",
+            "recipient_name": "Jamie",
+            "sent_at": datetime.utcnow(),
+            "status": "sent",
+            "access_token_hash": service._hash_form_access_token(raw_token),
+            "token_expires_at": datetime.now(timezone.utc) + timedelta(days=10),
+        }
+    )
+
+    result = await service.check_form_distribution_link("form_1", "dist-1", raw_token)
+    assert result["valid"] is True
+    assert result["expired"] is False
+    assert result["already_submitted"] is False
+    assert result["recipient_name"] == "Jamie"
+
+    # First valid check stamps clicked_at
+    dist = database["form_distributions"].find_one({"_id": "dist-1"})
+    assert dist["clicked_at"] is not None
+    assert dist["status"] == "clicked"
+
+
+@pytest.mark.asyncio
+async def test_check_link_returns_expired(configured_form_service):
+    service, database = configured_form_service
+    raw_token = "expired"
+    database["form_distributions"].insert_one(
+        {
+            "_id": "dist-1",
+            "form_id": "form_1",
+            "recipient_email": "guest@example.com",
+            "sent_at": datetime.utcnow(),
+            "status": "sent",
+            "access_token_hash": service._hash_form_access_token(raw_token),
+            "token_expires_at": datetime.now(timezone.utc) - timedelta(days=1),
+        }
+    )
+
+    result = await service.check_form_distribution_link("form_1", "dist-1", raw_token)
+    assert result["valid"] is False
+    assert result["expired"] is True
+
+
+@pytest.mark.asyncio
+async def test_check_link_returns_already_submitted(configured_form_service):
+    service, database = configured_form_service
+    raw_token = "tok"
+    database["form_distributions"].insert_one(
+        {
+            "_id": "dist-1",
+            "form_id": "form_1",
+            "recipient_email": "guest@example.com",
+            "sent_at": datetime.utcnow(),
+            "submitted_at": datetime.utcnow(),
+            "status": "submitted",
+            "access_token_hash": service._hash_form_access_token(raw_token),
+            "token_expires_at": datetime.now(timezone.utc) + timedelta(days=10),
+        }
+    )
+
+    result = await service.check_form_distribution_link("form_1", "dist-1", raw_token)
+    assert result["valid"] is False
+    assert result["already_submitted"] is True
+
+
+@pytest.mark.asyncio
+async def test_check_link_returns_404_for_wrong_token(configured_form_service):
+    service, database = configured_form_service
+    real_token = "real-token"
+    database["form_distributions"].insert_one(
+        {
+            "_id": "dist-1",
+            "form_id": "form_1",
+            "recipient_email": "guest@example.com",
+            "sent_at": datetime.utcnow(),
+            "status": "sent",
+            "access_token_hash": service._hash_form_access_token(real_token),
+            "token_expires_at": datetime.now(timezone.utc) + timedelta(days=10),
+        }
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.check_form_distribution_link("form_1", "dist-1", "forged")
+    assert exc_info.value.status_code == 404  # Indistinguishable from "missing"
+
+
+@pytest.mark.asyncio
+async def test_check_link_returns_404_for_unknown_distribution(
+    configured_form_service,
+):
+    service, database = configured_form_service
+    with pytest.raises(HTTPException) as exc_info:
+        await service.check_form_distribution_link("form_1", "missing", "anything")
+    assert exc_info.value.status_code == 404

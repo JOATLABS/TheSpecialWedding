@@ -775,6 +775,39 @@ async def get_public_form(form_id: str, request: Request, response: Response):
         raise HTTPException(status_code=404, detail="Form not found")
 
 
+@router.get(
+    "/public/forms/{form_id}/distributions/{distribution_id}/check",
+    tags=["Public Forms"],
+)
+async def check_public_form_distribution_link(
+    form_id: str,
+    distribution_id: str,
+    request: Request,
+    t: str = Query(..., description="Per-recipient access token from the email link"),
+):
+    """Validate a per-recipient form link before the page renders the form.
+
+    Returns ``{valid, expired, already_submitted, recipient_name, ...}`` for
+    a known good link and 404 for any wrong/forged token to avoid leaking
+    distribution data to enumeration attempts.
+    """
+    client_ip = (
+        getattr(request.client, "host", None) if request.client else "unknown"
+    )
+    if not rate_limiter.check_rate_limit(
+        f"public_form_link_check_{client_ip}", limit=120, window_seconds=3600
+    ):
+        raise HTTPException(
+            status_code=429, detail="Too many requests. Please try again later."
+        )
+
+    return await form_service.check_form_distribution_link(
+        form_id=InputSanitizer.sanitize_text(form_id, 100),
+        distribution_id=InputSanitizer.sanitize_text(distribution_id, 64),
+        access_token=t,
+    )
+
+
 @router.post("/public/forms/{form_id}/submit", tags=["Public Forms"])
 async def submit_form(
     form_id: str, response_data: SubmitFormRequest, request: Request, response: Response

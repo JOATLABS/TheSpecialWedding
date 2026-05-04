@@ -35,10 +35,11 @@ export default function PublicFormPage() {
  const router = useRouter();
  const searchParams = useSearchParams();
  const formId = params.id as string;
- // Per-recipient distribution_id from email link (?dist=...). Used to join
- // the submission back to the FormDistribution row for accurate "who
- // responded" tracking; safely ignored by the backend if invalid.
+ // Per-recipient link params from the email send: ?dist=<distribution_id>&t=<access_token>.
+ // The pair is verified against the backend before rendering the form so we can
+ // show "already responded" / "link expired" instead of a stale form.
  const distributionId = searchParams?.get('dist') || undefined;
+ const accessToken = searchParams?.get('t') || undefined;
  const [form, setForm] = useState<Form | null>(null);
  const [responses, setResponses] = useState<{ [key: string]: any }>({});
  const [loading, setLoading] = useState(true);
@@ -46,6 +47,9 @@ export default function PublicFormPage() {
  const [submitted, setSubmitted] = useState(false);
  const [error, setError] = useState('');
  const [successMessage, setSuccessMessage] = useState('');
+ const [linkState, setLinkState] = useState<
+   'unknown' | 'valid' | 'already_submitted' | 'expired' | 'invalid'
+ >('unknown');
 
  const fetchForm = useCallback(async () => {
  try {
@@ -61,12 +65,35 @@ export default function PublicFormPage() {
  } else {
  setError('Form not found or no longer available.');
  }
+
+ // Tokenized link: validate it server-side so we can short-circuit
+ // the render with an honest message instead of letting the user
+ // fill out a doomed form.
+ if (distributionId && accessToken) {
+   try {
+     const checkRes = await fetch(
+       `${baseUrl}/public/forms/${formId}/distributions/${encodeURIComponent(distributionId)}/check?t=${encodeURIComponent(accessToken)}`,
+     );
+     if (checkRes.ok) {
+       const checkData = await checkRes.json();
+       if (checkData.already_submitted) setLinkState('already_submitted');
+       else if (checkData.expired) setLinkState('expired');
+       else setLinkState('valid');
+     } else {
+       setLinkState('invalid');
+     }
+   } catch {
+     setLinkState('invalid');
+   }
+ } else {
+   setLinkState('valid'); // No-token flow stays open
+ }
  } catch (error) {
  setError('Failed to load form. Please try again later.');
  } finally {
  setLoading(false);
  }
- }, [formId]);
+ }, [formId, distributionId, accessToken]);
 
  useEffect(() => {
  if (formId) {
@@ -108,6 +135,7 @@ export default function PublicFormPage() {
  submitted_by_email: responses.email || responses.guest_email || responses.contact_email,
  submitted_by_name: responses.name || responses.guest_name || responses.contact_name,
  distribution_id: distributionId,
+ access_token: accessToken,
  };
 
  const response = await fetch(`${baseUrl}/public/forms/${formId}/submit`, {
@@ -343,6 +371,45 @@ export default function PublicFormPage() {
  <div className="text-4xl mb-4"></div>
  <h2 className="text-xl font-semibold text-gray-900 mb-2">Thank You!</h2>
  <p className="text-gray-600">{successMessage}</p>
+ </div>
+ </div>
+ );
+ }
+
+ if (linkState === 'already_submitted') {
+ return (
+ <div className="min-h-screen flex items-center justify-center bg-gray-50">
+ <div className="text-center bg-white p-8 rounded-lg shadow-sm max-w-md">
+ <h2 className="text-xl font-semibold text-gray-900 mb-2">Response Already Submitted</h2>
+ <p className="text-gray-600">
+ We&rsquo;ve already received a response for this link. If you need to update your answer, please contact the planner.
+ </p>
+ </div>
+ </div>
+ );
+ }
+
+ if (linkState === 'expired') {
+ return (
+ <div className="min-h-screen flex items-center justify-center bg-gray-50">
+ <div className="text-center bg-white p-8 rounded-lg shadow-sm max-w-md">
+ <h2 className="text-xl font-semibold text-gray-900 mb-2">Link Expired</h2>
+ <p className="text-gray-600">
+ This form link has expired. Please reach out to the planner for a fresh link.
+ </p>
+ </div>
+ </div>
+ );
+ }
+
+ if (linkState === 'invalid') {
+ return (
+ <div className="min-h-screen flex items-center justify-center bg-gray-50">
+ <div className="text-center bg-white p-8 rounded-lg shadow-sm max-w-md">
+ <h2 className="text-xl font-semibold text-gray-900 mb-2">Invalid Form Link</h2>
+ <p className="text-gray-600">
+ This form link could not be verified. It may have been mistyped or already been used.
+ </p>
  </div>
  </div>
  );

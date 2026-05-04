@@ -367,6 +367,17 @@ class FormDistribution(BaseModel):
         description="Distribution status: sent, opened, clicked, submitted",
     )
     email_id: Optional[str] = Field(None, description="Email service provider ID")
+    access_token_hash: Optional[str] = Field(
+        None,
+        description=(
+            "HMAC-SHA256 hash of the per-recipient access token. The raw "
+            "token is only ever exposed in the email link; submissions must "
+            "present it for verification."
+        ),
+    )
+    token_expires_at: Optional[datetime] = Field(
+        None, description="When the access token expires (default 30 days from send)."
+    )
 
     class Config:
         populate_by_name = True
@@ -509,6 +520,15 @@ class SubmitFormRequest(BaseModel):
             "fallback."
         ),
     )
+    access_token: Optional[str] = Field(
+        None,
+        description=(
+            "Raw per-recipient access token from the email link "
+            "(?t=...). When supplied alongside distribution_id, the server "
+            "verifies it against the stored hash, enforces expiry, and "
+            "rejects a second submission for the same distribution."
+        ),
+    )
 
     @field_validator("distribution_id")
     @classmethod
@@ -522,6 +542,20 @@ class SubmitFormRequest(BaseModel):
             return None
         if len(trimmed) > 64 or not re.match(r"^[a-zA-Z0-9_-]+$", trimmed):
             raise ValueError("Invalid distribution_id")
+        return trimmed
+
+    @field_validator("access_token")
+    @classmethod
+    def validate_access_token(cls, v):
+        if v is None:
+            return v
+        if not isinstance(v, str):
+            return None
+        trimmed = v.strip()
+        if not trimmed:
+            return None
+        if len(trimmed) > 256 or not re.match(r"^[a-zA-Z0-9_-]+$", trimmed):
+            raise ValueError("Invalid access_token")
         return trimmed
 
     @field_validator("responses")

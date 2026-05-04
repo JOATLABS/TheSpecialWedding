@@ -1,14 +1,18 @@
+import hashlib
+import hmac
 import html
 import logging
 import os
+import secrets
 import uuid
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
 
 from app.core.database import mongo
+from app.core.settings import settings
 from app.models.form import (
     CreateFormRequest,
     DuplicateFormRequest,
@@ -24,12 +28,46 @@ logger = logging.getLogger(__name__)
 
 
 class FormService:
+    # How long a per-recipient form access token is valid for. Mirrors the
+    # contract token expiry to keep the planner mental model consistent.
+    DEFAULT_FORM_TOKEN_TTL_DAYS = 30
+
     def __init__(self):
         self.forms_collection = mongo.get_forms_collection()
         self.responses_collection = mongo.db["form_responses"]
         self.distributions_collection = mongo.db["form_distributions"]
         self.wedding_collection = mongo.db["weddings"]
         self.email_service = ResendEmailService()
+
+    # ------------------------------------------------------------------
+    # Per-recipient access tokens
+    # ------------------------------------------------------------------
+
+    def _hash_form_access_token(self, raw_token: str) -> str:
+        secret_key = settings.secret_key
+        if not secret_key:
+            raise RuntimeError("SECRET_KEY is required for form token hashing")
+
+        return hmac.new(
+            secret_key.encode("utf-8"),
+            raw_token.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+    def _verify_form_access_token(self, raw_token: str, stored_hash: str) -> bool:
+        if not raw_token or not stored_hash:
+            return False
+        return hmac.compare_digest(
+            self._hash_form_access_token(raw_token), stored_hash
+        )
+
+    def _issue_form_access_token(self) -> tuple[str, str, datetime]:
+        raw_token = secrets.token_urlsafe(32)
+        token_hash = self._hash_form_access_token(raw_token)
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            days=self.DEFAULT_FORM_TOKEN_TTL_DAYS
+        )
+        return raw_token, token_hash, expires_at
 
     @staticmethod
     def _planner_state_key(email: str) -> str:
@@ -523,8 +561,11 @@ class FormService:
 
             for recipient_email in send_data.recipient_emails:
                 try:
-                    # Create distribution record
+                    # Create distribution record + per-recipient access token
                     distribution_id = str(uuid.uuid4())
+                    raw_token, token_hash, token_expires_at = (
+                        self._issue_form_access_token()
+                    )
                     distribution_doc = {
                         "_id": distribution_id,
                         "form_id": form_id,
@@ -532,12 +573,17 @@ class FormService:
                         "wedding_id": send_data.wedding_id,
                         "sent_at": datetime.now(timezone.utc),
                         "status": "sending",
+                        "access_token_hash": token_hash,
+                        "token_expires_at": token_expires_at,
                     }
 
-                    # Per-recipient URL carries the distribution_id so the
-                    # eventual submission can join back to this distribution
-                    # row independent of any email-match heuristic.
-                    recipient_form_url = f"{form_url}?dist={distribution_id}"
+                    # Per-recipient URL carries the distribution_id (join key)
+                    # AND a one-time access token (?t=). The token is verified
+                    # at submit-time so the link cannot be replayed once
+                    # consumed and cannot be guessed without the email.
+                    recipient_form_url = (
+                        f"{form_url}?dist={distribution_id}&t={raw_token}"
+                    )
 
                     # Generate personalized email content
                     email_html = self._generate_form_email_html(
@@ -663,23 +709,60 @@ class FormService:
                 )
 
             # Resolve the optional distribution_id hint from the per-recipient
-            # link. We accept it only if it actually belongs to this form.
-            # Anything else (typo, foreign id, replayed link from another form)
-            # is silently dropped — submission still proceeds without linkage.
+            # link. Two paths:
+            #   1. Tokenized path (distribution_id + access_token both supplied):
+            #      strict verification — wrong token -> 403, expired -> 410,
+            #      already submitted -> 409. Single-submission is enforced
+            #      per-distribution regardless of the form's
+            #      allow_multiple_submissions flag.
+            #   2. Hint-only path (distribution_id only, no token):
+            #      kept for the Item 3 query-param flow; bad ids silently
+            #      dropped without penalty so the submission still proceeds.
             resolved_distribution_id: Optional[str] = None
             if response_data.distribution_id:
                 distribution_match = await self.distributions_collection.find_one(
                     {"_id": response_data.distribution_id, "form_id": form_id}
                 )
-                if distribution_match:
-                    resolved_distribution_id = response_data.distribution_id
-                else:
+                if not distribution_match:
+                    if response_data.access_token:
+                        # A token was supplied for an unknown distribution —
+                        # treat as forbidden, not a benign typo.
+                        raise HTTPException(
+                            status_code=403, detail="Invalid form access link"
+                        )
                     logger.info(
                         "Ignoring distribution_id %s on submission to form %s "
                         "(no matching distribution row)",
                         response_data.distribution_id,
                         form_id,
                     )
+                else:
+                    if response_data.access_token:
+                        stored_hash = distribution_match.get("access_token_hash")
+                        if not stored_hash or not self._verify_form_access_token(
+                            response_data.access_token, stored_hash
+                        ):
+                            raise HTTPException(
+                                status_code=403, detail="Invalid form access link"
+                            )
+                        token_expires_at = distribution_match.get("token_expires_at")
+                        if token_expires_at:
+                            # Mongo can return naive datetimes; assume UTC.
+                            if token_expires_at.tzinfo is None:
+                                token_expires_at = token_expires_at.replace(
+                                    tzinfo=timezone.utc
+                                )
+                            if token_expires_at < datetime.now(timezone.utc):
+                                raise HTTPException(
+                                    status_code=410,
+                                    detail="This form access link has expired",
+                                )
+                        if distribution_match.get("submitted_at"):
+                            raise HTTPException(
+                                status_code=409,
+                                detail="A response has already been submitted with this link",
+                            )
+                    resolved_distribution_id = response_data.distribution_id
 
             # Check if multiple submissions are allowed
             if not form["settings"].get("allow_multiple_submissions", False):
@@ -838,6 +921,64 @@ class FormService:
             raise HTTPException(
                 status_code=500, detail=f"Failed to fetch responses: {str(e)}"
             )
+
+    async def check_form_distribution_link(
+        self,
+        form_id: str,
+        distribution_id: str,
+        access_token: str,
+    ) -> Dict[str, Any]:
+        """Public, unauthenticated check for a per-recipient form link.
+
+        Returns ``{valid, expired, already_submitted, recipient_name}`` so
+        the public form page can decide whether to render the form, show
+        an "already responded" message, or show "link expired" — without
+        ever leaking distribution data to bad tokens (404 instead).
+        """
+        if not (form_id and distribution_id and access_token):
+            raise HTTPException(status_code=400, detail="Invalid form access link")
+
+        distribution = await self.distributions_collection.find_one(
+            {"_id": distribution_id, "form_id": form_id}
+        )
+        if not distribution:
+            # Indistinguishable from a wrong token to prevent enumeration.
+            raise HTTPException(status_code=404, detail="Form access link not found")
+
+        stored_hash = distribution.get("access_token_hash")
+        if not stored_hash or not self._verify_form_access_token(
+            access_token, stored_hash
+        ):
+            raise HTTPException(status_code=404, detail="Form access link not found")
+
+        expired = False
+        token_expires_at = distribution.get("token_expires_at")
+        if token_expires_at:
+            if token_expires_at.tzinfo is None:
+                token_expires_at = token_expires_at.replace(tzinfo=timezone.utc)
+            expired = token_expires_at < datetime.now(timezone.utc)
+
+        already_submitted = distribution.get("submitted_at") is not None
+
+        # Best-effort: record the click on first valid hit
+        if not already_submitted and not expired and not distribution.get("clicked_at"):
+            await self.distributions_collection.update_one(
+                {"_id": distribution_id, "form_id": form_id},
+                {
+                    "$set": {
+                        "clicked_at": datetime.now(timezone.utc),
+                        "status": "clicked",
+                    }
+                },
+            )
+
+        return {
+            "valid": not expired and not already_submitted,
+            "expired": expired,
+            "already_submitted": already_submitted,
+            "recipient_name": distribution.get("recipient_name"),
+            "recipient_email": distribution.get("recipient_email"),
+        }
 
     async def get_form_distributions(
         self,
