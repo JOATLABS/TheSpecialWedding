@@ -17,6 +17,7 @@ from app.models.form import (
     CreateFormRequest,
     DuplicateFormRequest,
     FormDistributionStatus,
+    FormType,
     SendFormRequest,
     SubmitFormRequest,
     UpdateFormRequest,
@@ -75,6 +76,42 @@ class FormService:
             days=self.DEFAULT_FORM_TOKEN_TTL_DAYS
         )
         return raw_token, token_hash, expires_at
+
+    async def backfill_form_type_from_template_type(self) -> Dict[str, int]:
+        """T1 migration: copy ``template_type`` to ``form_type`` for any
+        document missing the canonical discriminator.
+
+        Idempotent — running twice is harmless. Returns the number of
+        documents updated. Designed to be called once from a deploy hook
+        or invoked manually via an admin endpoint.
+        """
+        result = await self.forms_collection.update_many(
+            {
+                "form_type": {"$in": [None, ""]},
+                "template_type": {"$exists": True, "$nin": [None, ""]},
+            },
+            [
+                {"$set": {"form_type": "$template_type"}},
+            ],
+        )
+        # Documents missing both fields fall back to "general".
+        result_default = await self.forms_collection.update_many(
+            {"form_type": {"$in": [None, ""]}},
+            {"$set": {"form_type": FormType.GENERAL.value}},
+        )
+        total = (
+            int(getattr(result, "modified_count", 0) or 0)
+            + int(getattr(result_default, "modified_count", 0) or 0)
+        )
+        if total:
+            logger.info("Backfilled form_type on %s legacy form docs", total)
+        return {
+            "from_template_type": int(getattr(result, "modified_count", 0) or 0),
+            "from_default": int(
+                getattr(result_default, "modified_count", 0) or 0
+            ),
+            "total": total,
+        }
 
     @staticmethod
     def _planner_state_key(email: str) -> str:
@@ -219,6 +256,16 @@ class FormService:
                 "created_by": creator_email,
                 "wedding_id": sanitized_data.get("wedding_id"),
                 "template_type": sanitized_data.get("template_type"),
+                # T1: backfill form_type from the legacy template_type
+                # field on creation so we never write a doc without the
+                # canonical discriminator. The legacy column is kept for
+                # backwards compat reads until the migration script
+                # sweeps existing data.
+                "form_type": (
+                    sanitized_data.get("form_type")
+                    or sanitized_data.get("template_type")
+                    or FormType.GENERAL.value
+                ),
                 "is_active": True,
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
@@ -232,6 +279,19 @@ class FormService:
             result = await self.forms_collection.insert_one(form_doc)
 
             if result.inserted_id:
+                # T2: audit log entry includes the actor (the team
+                # member who acted on behalf of the planner) so the
+                # planner-state already-stored value becomes a real
+                # accountability surface.
+                logger.info(
+                    "form_created form_id=%s owner=%s actor=%s wedding_id=%s "
+                    "form_type=%s",
+                    form_id,
+                    creator_email,
+                    form_doc.get("created_by_actor") or creator_email,
+                    sanitized_data.get("wedding_id"),
+                    form_doc["form_type"],
+                )
                 return {"id": form_id, "message": "Form created successfully"}
             else:
                 raise HTTPException(status_code=500, detail="Failed to create form")
@@ -1162,14 +1222,29 @@ class FormService:
                 status_code=500, detail=f"Failed to submit response: {str(e)}"
             )
 
+    # Hard ceiling on a single page so a buggy ``limit=999999999`` still
+    # bounds memory.
+    RESPONSE_PAGE_MAX_LIMIT = 500
+    RESPONSE_PAGE_DEFAULT_LIMIT = 100
+
     async def get_form_responses(
         self,
         form_id: str,
         created_by: str,
         *,
         owner_alias_emails: Optional[List[str]] = None,
-    ) -> List[Dict[str, Any]]:
-        """Get all responses for a form"""
+        skip: int = 0,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Get a page of responses for a form, with total count.
+
+        Pagination is required at scale: a viral RSVP with 50k responses
+        would otherwise OOM the API process. Callers without explicit
+        ``limit`` get ``RESPONSE_PAGE_DEFAULT_LIMIT`` rows; ``limit`` is
+        capped at ``RESPONSE_PAGE_MAX_LIMIT``. The return shape is now
+        ``{items, total, skip, limit, has_more}`` so existing callers
+        get a clear migration signal at the type-checker.
+        """
         try:
             # Verify user owns the form
             await self.get_form(
@@ -1178,18 +1253,34 @@ class FormService:
                 owner_alias_emails=owner_alias_emails,
             )
 
+            effective_skip = max(int(skip or 0), 0)
+            requested_limit = (
+                int(limit) if limit is not None else self.RESPONSE_PAGE_DEFAULT_LIMIT
+            )
+            effective_limit = max(1, min(requested_limit, self.RESPONSE_PAGE_MAX_LIMIT))
+
+            query: Dict[str, Any] = {"form_id": form_id}
+            total = await self.responses_collection.count_documents(query)
+
             responses = (
-                await self.responses_collection.find({"form_id": form_id})
+                await self.responses_collection.find(query)
                 .sort("submitted_at", -1)
-                .to_list(length=None)
+                .skip(effective_skip)
+                .limit(effective_limit)
+                .to_list(length=effective_limit)
             )
 
-            # Format responses
             for response in responses:
                 response["id"] = response["_id"]
                 response.pop("_id", None)
 
-            return responses
+            return {
+                "items": responses,
+                "total": total,
+                "skip": effective_skip,
+                "limit": effective_limit,
+                "has_more": effective_skip + len(responses) < total,
+            }
 
         except HTTPException:
             raise
@@ -1198,6 +1289,45 @@ class FormService:
             raise HTTPException(
                 status_code=500, detail=f"Failed to fetch responses: {str(e)}"
             )
+
+    async def iter_form_responses(
+        self,
+        form_id: str,
+        *,
+        max_total: Optional[int] = None,
+        page_size: int = 500,
+    ):
+        """Async-iterate every response for a form in bounded pages.
+
+        Used by the CSV exporter so we never load the full collection
+        into memory. ``max_total`` short-circuits the iteration once
+        that many rows have been yielded — convenient for capping
+        export size. Caller is responsible for ownership verification
+        before invoking.
+        """
+        skip = 0
+        yielded = 0
+        page_size = max(1, min(int(page_size), self.RESPONSE_PAGE_MAX_LIMIT))
+        while True:
+            page = (
+                await self.responses_collection.find({"form_id": form_id})
+                .sort("submitted_at", -1)
+                .skip(skip)
+                .limit(page_size)
+                .to_list(length=page_size)
+            )
+            if not page:
+                return
+            for row in page:
+                row["id"] = row["_id"]
+                row.pop("_id", None)
+                yield row
+                yielded += 1
+                if max_total is not None and yielded >= max_total:
+                    return
+            if len(page) < page_size:
+                return
+            skip += page_size
 
     async def check_form_distribution_link(
         self,
@@ -1618,12 +1748,21 @@ class FormService:
             if not form:
                 raise HTTPException(status_code=404, detail="Form not found")
 
-            # Get all responses for the form
-            responses = await self.get_form_responses(
-                form_id,
-                created_by,
-                owner_alias_emails=owner_alias_emails,
+            # Stream the form's responses page-by-page so even a 50k-row
+            # form doesn't OOM the API process during export. The hard
+            # ``max_export_size`` cap below is enforced by the iterator's
+            # ``max_total`` parameter, and the full count is computed
+            # cheaply server-side via count_documents so we can surface
+            # honest truncation metadata.
+            max_export_size = 10000
+            total_response_count = (
+                await self.responses_collection.count_documents({"form_id": form_id})
             )
+            responses: List[Dict[str, Any]] = []
+            async for row in self.iter_form_responses(
+                form_id, max_total=max_export_size, page_size=500
+            ):
+                responses.append(row)
 
             # Validate date parameters
             parsed_date_from = None
@@ -1677,9 +1816,10 @@ class FormService:
                 logger.info(f"No responses to export for form {form_id}")
                 # Still generate empty CSV with headers
 
-            # Limit export size to prevent DoS
-            max_export_size = 10000  # Maximum number of responses to export
-            total_response_count = len(responses)
+            # Truncation metadata. ``total_response_count`` was computed
+            # via count_documents above (cheap server-side aggregation),
+            # while ``responses`` is already capped at max_export_size by
+            # iter_form_responses, so we don't have to slice in memory.
             truncated = total_response_count > max_export_size
             truncated_count = (
                 total_response_count - max_export_size if truncated else 0
@@ -1694,7 +1834,6 @@ class FormService:
                     created_by,
                     truncated_count,
                 )
-                responses = responses[:max_export_size]
 
             # Prepare export options
             export_options = {

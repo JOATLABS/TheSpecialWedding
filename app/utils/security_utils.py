@@ -4,6 +4,7 @@ Security utilities for input sanitization, validation, and XSS prevention
 
 import html
 import logging
+import os
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -583,25 +584,22 @@ class SecurityHeaders:
 
 
 class RateLimitTracker:
-    """Simple in-memory rate limiting tracker"""
+    """Process-local rate limit tracker.
+
+    Used as a fallback when Redis is unavailable. Counts are kept in
+    memory per replica, so a deploy of N replicas effectively multiplies
+    the configured limit by N. Production should always run with
+    ``RedisRateLimitTracker`` configured via ``REDIS_URL``; this class
+    exists so unit tests and one-replica dev environments don't depend
+    on Redis being up.
+    """
 
     def __init__(self):
         self._requests = {}
 
     def check_rate_limit(self, key: str, limit: int, window_seconds: int) -> bool:
-        """
-        Check if request is within rate limit
-
-        Args:
-            key: Unique identifier (IP, user email, etc.)
-            limit: Maximum requests allowed
-            window_seconds: Time window in seconds
-        Returns:
-            True if within limit, False otherwise
-        """
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(seconds=window_seconds)
-        # Clean old entries
         if key in self._requests:
             self._requests[key] = [
                 timestamp for timestamp in self._requests[key] if timestamp > cutoff
@@ -609,14 +607,84 @@ class RateLimitTracker:
         else:
             self._requests[key] = []
 
-        # Check current count
         if len(self._requests[key]) >= limit:
             return False
 
-        # Add current request
         self._requests[key].append(now)
         return True
 
 
-# Global rate limiter instance
-rate_limiter = RateLimitTracker()
+class RedisRateLimitTracker:
+    """Redis-backed token-bucket-ish rate limiter.
+
+    Uses a single ``INCR`` plus ``EXPIRE`` per (key, window) bucket so
+    counts are shared across all API replicas. Bucketing rounds the
+    current time down to the nearest ``window_seconds`` boundary, which
+    is good enough for abuse mitigation (no floating eviction) and
+    avoids the round-trip cost of a sorted-set sliding window. Falls
+    back to the in-memory tracker on any Redis error so a Redis blip
+    can never take the whole API down.
+    """
+
+    def __init__(self, redis_client, fallback: "RateLimitTracker"):
+        self._redis = redis_client
+        self._fallback = fallback
+
+    def check_rate_limit(self, key: str, limit: int, window_seconds: int) -> bool:
+        if window_seconds <= 0 or limit <= 0:
+            return True
+        now_bucket = int(datetime.now(timezone.utc).timestamp() // window_seconds)
+        redis_key = f"rl:{key}:{window_seconds}:{now_bucket}"
+        try:
+            pipe = self._redis.pipeline()
+            pipe.incr(redis_key)
+            # EXPIRE with NX-like semantics: setting expiry on every
+            # increment is idempotent and slightly wasteful but cheap.
+            pipe.expire(redis_key, window_seconds)
+            count, _ = pipe.execute()
+            return int(count) <= limit
+        except Exception as exc:
+            logger.warning(
+                "Redis rate limiter unavailable, falling back to in-memory "
+                "(key=%s): %s",
+                key,
+                exc,
+            )
+            return self._fallback.check_rate_limit(key, limit, window_seconds)
+
+
+def _build_rate_limiter():
+    """Construct the singleton rate limiter.
+
+    Picks Redis when ``REDIS_URL`` is set and a connection succeeds,
+    otherwise falls back to the in-process tracker. The returned
+    instance is the public ``rate_limiter`` symbol used everywhere; the
+    swap is invisible to callers.
+    """
+    fallback = RateLimitTracker()
+    redis_url = os.environ.get("REDIS_URL")
+    if not redis_url:
+        return fallback
+    try:
+        import redis as _redis
+
+        client = _redis.Redis.from_url(
+            redis_url, socket_connect_timeout=2, socket_timeout=2
+        )
+        # Eagerly check connectivity so a bad URL fails at import time
+        # rather than on first request.
+        client.ping()
+        logger.info("Rate limiter using Redis (%s)", redis_url)
+        return RedisRateLimitTracker(client, fallback=fallback)
+    except Exception as exc:
+        logger.warning(
+            "Redis unavailable, using in-process rate limiter (per-replica): %s",
+            exc,
+        )
+        return fallback
+
+
+# Global rate limiter instance. Redis-backed when REDIS_URL is set and
+# reachable, otherwise an in-process tracker that's still safe for
+# single-replica deployments.
+rate_limiter = _build_rate_limiter()

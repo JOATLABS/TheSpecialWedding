@@ -480,14 +480,33 @@ async def send_form(
 
 @router.get("/forms/{form_id}/responses", tags=["Forms"])
 async def get_form_responses(
-    form_id: str, current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    form_id: str,
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    skip: int = Query(
+        0,
+        ge=0,
+        description="Number of responses to skip (offset for pagination)",
+    ),
+    limit: int = Query(
+        100,
+        ge=1,
+        le=500,
+        description="Page size (max 500). Default 100.",
+    ),
 ):
-    """Get all responses for a form"""
+    """Get a page of form responses with total count.
+
+    Returns ``{items, total, skip, limit, has_more}``. Pagination is
+    required: a form with 50,000 responses would otherwise OOM the API
+    if loaded into a single response.
+    """
     owner_scope = await _resolve_form_owner_scope(current_user)
     return await form_service.get_form_responses(
         form_id,
         owner_scope["owner_email"],
         owner_alias_emails=owner_scope["owner_alias_emails"],
+        skip=skip,
+        limit=limit,
     )
 
 

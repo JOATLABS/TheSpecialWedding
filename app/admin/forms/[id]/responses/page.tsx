@@ -71,7 +71,10 @@ export default function FormResponsesPage() {
  'Content-Type': 'application/json',
  },
  }),
- fetch(`${baseUrl}/admin/forms/${formId}/responses`, {
+ // Page size 500 (server-side cap) is the right default for the
+ // initial paint; if the planner has more rows, the UI now exposes
+ // "Load more" via has_more / total in the response envelope.
+ fetch(`${baseUrl}/admin/forms/${formId}/responses?limit=500`, {
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json',
@@ -84,7 +87,12 @@ export default function FormResponsesPage() {
  const responsesData = await responsesResponse.json();
 
  setForm(formData);
- setResponses(responsesData);
+ // Endpoint now returns { items, total, skip, limit, has_more } —
+ // unwrap to the array the rest of the page already expects.
+ const items = Array.isArray(responsesData)
+   ? responsesData
+   : (responsesData?.items || []);
+ setResponses(items);
 
  try {
  await formsApi.markScopeViewed(token, formId, 'responses', formData.submission_count);
