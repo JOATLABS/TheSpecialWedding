@@ -534,11 +534,16 @@ class FormService:
                         "status": "sending",
                     }
 
+                    # Per-recipient URL carries the distribution_id so the
+                    # eventual submission can join back to this distribution
+                    # row independent of any email-match heuristic.
+                    recipient_form_url = f"{form_url}?dist={distribution_id}"
+
                     # Generate personalized email content
                     email_html = self._generate_form_email_html(
                         form_title=form["settings"]["title"],
                         form_description=form["settings"].get("description", ""),
-                        form_url=form_url,
+                        form_url=recipient_form_url,
                         sender_name=send_data.email_settings.sender_name,
                         custom_message=send_data.email_settings.message,
                     )
@@ -657,6 +662,25 @@ class FormService:
                     response_data.submitted_by_name, 100
                 )
 
+            # Resolve the optional distribution_id hint from the per-recipient
+            # link. We accept it only if it actually belongs to this form.
+            # Anything else (typo, foreign id, replayed link from another form)
+            # is silently dropped — submission still proceeds without linkage.
+            resolved_distribution_id: Optional[str] = None
+            if response_data.distribution_id:
+                distribution_match = await self.distributions_collection.find_one(
+                    {"_id": response_data.distribution_id, "form_id": form_id}
+                )
+                if distribution_match:
+                    resolved_distribution_id = response_data.distribution_id
+                else:
+                    logger.info(
+                        "Ignoring distribution_id %s on submission to form %s "
+                        "(no matching distribution row)",
+                        response_data.distribution_id,
+                        form_id,
+                    )
+
             # Check if multiple submissions are allowed
             if not form["settings"].get("allow_multiple_submissions", False):
                 if submitted_by_email:
@@ -683,6 +707,7 @@ class FormService:
             response_doc = {
                 "_id": response_id,
                 "form_id": form_id,
+                "distribution_id": resolved_distribution_id,
                 "responses": sanitized_responses,
                 "submitted_by_email": submitted_by_email,
                 "submitted_by_name": submitted_by_name,
@@ -709,10 +734,24 @@ class FormService:
                     },
                 )
 
-                # Update distribution status if applicable
-                if submitted_by_email:
+                # Update distribution status. Prefer the explicit
+                # distribution_id from the per-recipient link; fall back to
+                # email-match for legacy / non-tokenized flows.
+                distribution_query: Optional[Dict[str, Any]] = None
+                if resolved_distribution_id:
+                    distribution_query = {
+                        "_id": resolved_distribution_id,
+                        "form_id": form_id,
+                    }
+                elif submitted_by_email:
+                    distribution_query = {
+                        "form_id": form_id,
+                        "recipient_email": submitted_by_email,
+                    }
+
+                if distribution_query is not None:
                     await self.distributions_collection.update_one(
-                        {"form_id": form_id, "recipient_email": submitted_by_email},
+                        distribution_query,
                         {
                             "$set": {
                                 "submitted_at": datetime.now(timezone.utc),
@@ -798,6 +837,56 @@ class FormService:
             logging.error(f"Error fetching form responses: {str(e)}")
             raise HTTPException(
                 status_code=500, detail=f"Failed to fetch responses: {str(e)}"
+            )
+
+    async def get_form_distributions(
+        self,
+        form_id: str,
+        created_by: str,
+        *,
+        owner_alias_emails: Optional[List[str]] = None,
+        status: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """List distribution rows for a form with their submission state.
+
+        Powers the "who has not responded" surface: each row carries the
+        recipient, the timeline (sent/opened/clicked/submitted), and the
+        joinable distribution_id that responses now persist.
+        """
+        try:
+            # Ownership check piggybacks on get_form
+            await self.get_form(
+                form_id,
+                created_by,
+                owner_alias_emails=owner_alias_emails,
+            )
+
+            query: Dict[str, Any] = {"form_id": form_id}
+            if status:
+                if status not in {"sent", "opened", "clicked", "submitted", "failed"}:
+                    raise HTTPException(
+                        status_code=400, detail="Invalid distribution status filter"
+                    )
+                query["status"] = status
+
+            distributions = (
+                await self.distributions_collection.find(query)
+                .sort("sent_at", -1)
+                .to_list(length=None)
+            )
+
+            for dist in distributions:
+                dist["id"] = dist["_id"]
+                dist.pop("_id", None)
+
+            return distributions
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logging.error(f"Error fetching form distributions: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail="Failed to fetch distributions"
             )
 
     async def mark_form_viewed(

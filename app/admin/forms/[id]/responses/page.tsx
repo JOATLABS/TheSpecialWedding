@@ -15,6 +15,8 @@ interface FormResponse {
  submitted_by_name?: string;
  submitted_at: string;
  ip_address?: string;
+ /** Set when the response came from a per-recipient email link. */
+ distribution_id?: string | null;
 }
 
 interface FormField {

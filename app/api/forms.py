@@ -475,6 +475,25 @@ async def get_form_responses(
     )
 
 
+@router.get("/forms/{form_id}/distributions", tags=["Forms"])
+async def get_form_distributions(
+    form_id: str,
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    status: Optional[str] = Query(
+        None,
+        description="Filter by distribution status: sent, opened, clicked, submitted, failed",
+    ),
+):
+    """List distribution rows for a form (the join key for 'who has not responded')."""
+    owner_scope = await _resolve_form_owner_scope(current_user)
+    return await form_service.get_form_distributions(
+        form_id,
+        owner_scope["owner_email"],
+        owner_alias_emails=owner_scope["owner_alias_emails"],
+        status=status,
+    )
+
+
 @router.post("/forms/{form_id}/views", tags=["Forms"])
 async def mark_form_view(
     form_id: str,

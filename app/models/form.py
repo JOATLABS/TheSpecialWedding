@@ -305,6 +305,14 @@ class FormModel(BaseModel):
 class FormResponse(BaseModel):
     id: Optional[str] = Field(None, alias="_id", description="Response ID")
     form_id: str = Field(..., description="Form ID")
+    distribution_id: Optional[str] = Field(
+        None,
+        description=(
+            "FK to FormDistribution. Set when the response was submitted via "
+            "a per-recipient email link, enabling reliable joins for "
+            "'who has not responded yet' analytics independent of email match."
+        ),
+    )
     responses: Dict[str, Any] = Field(
         ..., description="Field responses keyed by field ID"
     )
@@ -491,6 +499,30 @@ class SubmitFormRequest(BaseModel):
     responses: Dict[str, Any] = Field(..., description="Form field responses")
     submitted_by_email: Optional[str] = Field(None, description="Submitter email")
     submitted_by_name: Optional[str] = Field(None, description="Submitter name")
+    distribution_id: Optional[str] = Field(
+        None,
+        description=(
+            "Optional FormDistribution ID supplied by per-recipient email "
+            "links (e.g. via the ?dist= query param). When present and valid "
+            "for the form, it is persisted on the response and used to mark "
+            "the matching distribution as submitted instead of the email-match "
+            "fallback."
+        ),
+    )
+
+    @field_validator("distribution_id")
+    @classmethod
+    def validate_distribution_id(cls, v):
+        if v is None:
+            return v
+        if not isinstance(v, str):
+            return None
+        trimmed = v.strip()
+        if not trimmed:
+            return None
+        if len(trimmed) > 64 or not re.match(r"^[a-zA-Z0-9_-]+$", trimmed):
+            raise ValueError("Invalid distribution_id")
+        return trimmed
 
     @field_validator("responses")
     @classmethod

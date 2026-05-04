@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 
 interface FormField {
  id: string;
@@ -33,7 +33,12 @@ interface Form {
 export default function PublicFormPage() {
  const params = useParams();
  const router = useRouter();
+ const searchParams = useSearchParams();
  const formId = params.id as string;
+ // Per-recipient distribution_id from email link (?dist=...). Used to join
+ // the submission back to the FormDistribution row for accurate "who
+ // responded" tracking; safely ignored by the backend if invalid.
+ const distributionId = searchParams?.get('dist') || undefined;
  const [form, setForm] = useState<Form | null>(null);
  const [responses, setResponses] = useState<{ [key: string]: any }>({});
  const [loading, setLoading] = useState(true);
@@ -101,7 +106,8 @@ export default function PublicFormPage() {
  const submissionData = {
  responses,
  submitted_by_email: responses.email || responses.guest_email || responses.contact_email,
- submitted_by_name: responses.name || responses.guest_name || responses.contact_name
+ submitted_by_name: responses.name || responses.guest_name || responses.contact_name,
+ distribution_id: distributionId,
  };
 
  const response = await fetch(`${baseUrl}/public/forms/${formId}/submit`, {
