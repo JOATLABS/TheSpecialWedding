@@ -481,6 +481,19 @@ class FormSecurityValidator:
                     if isinstance(value, str) and InputSanitizer.validate_email(value):
                         sanitized[field_id] = value.lower().strip()
 
+                elif field_type == "phone":
+                    # E.164-tolerant: accept digits, spaces, dashes, parens,
+                    # leading +. Cap at 32 chars (E.164 max is 15, but we
+                    # tolerate formatting noise). Reject anything else
+                    # outright instead of letting raw user input through.
+                    if isinstance(value, str):
+                        candidate = value.strip()
+                        if (
+                            len(candidate) <= 32
+                            and re.fullmatch(r"\+?[\d\s\-().]{7,32}", candidate)
+                        ):
+                            sanitized[field_id] = candidate
+
                 elif field_type in ["number", "rating", "scale"]:
                     if isinstance(value, (int, float)):
                         sanitized[field_id] = value

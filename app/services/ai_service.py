@@ -652,12 +652,16 @@ Guidelines:
     },
 }
 
-# Model configuration
-# gemini-2.5-flash: Best price-performance, used when credits are healthy
-# gemini-2.0-flash: Faster and more economical, used when credits are low
-MODEL_PRIMARY = "gemini-2.5-flash"
-MODEL_ECONOMY = "gemini-2.0-flash"
-LOW_CREDIT_THRESHOLD = 0.10  # Switch to economy model when <10% credits remain
+# Model configuration. Pulled from settings so a Gemini model
+# rename / EOL doesn't require a code deploy — set
+# ``AI_GEMINI_MODEL_PRIMARY`` / ``AI_GEMINI_MODEL_ECONOMY`` in env to
+# roll forward. Defaults are the latest known-good IDs at time of
+# writing; LOW_CREDIT_THRESHOLD is also overridable.
+from app.core.settings import settings as _ai_settings
+
+MODEL_PRIMARY = _ai_settings.ai_gemini_model_primary or "gemini-2.5-flash"
+MODEL_ECONOMY = _ai_settings.ai_gemini_model_economy or "gemini-2.0-flash"
+LOW_CREDIT_THRESHOLD = _ai_settings.ai_low_credit_threshold
 
 
 class InsufficientCreditsError(Exception):
@@ -1052,6 +1056,25 @@ class AIService:
 
         is_root_admin = await self._is_root_admin_user(user_id)
 
+        # Internal (credits=0) features still cost real Gemini quota even
+        # when they bill nothing. Cap them per (feature, tenant, day) so
+        # a buggy retry loop can't drain provider quota silently while
+        # legitimate user-facing features starve.
+        feature_credit_cost = int(feature_config.get("credits", 0))
+        if feature_credit_cost == 0 and not is_root_admin:
+            within_quota = await self._check_internal_feature_quota(
+                feature=feature, tenant_id=tenant_id
+            )
+            if not within_quota:
+                raise InsufficientCreditsError(
+                    message=(
+                        f"Internal feature '{feature}' over its daily "
+                        f"system quota; try again tomorrow."
+                    ),
+                    required=0,
+                    available=0,
+                )
+
         # Check credits before making API call
         credits_check = await self.check_credits(
             user_id, feature, bypass_limits=is_root_admin
@@ -1431,6 +1454,40 @@ class AIService:
                 message="AI service encountered an unexpected error. Please try again.",
                 error_code="unknown_error",
             )
+
+    # Per-tenant daily cap on zero-credit internal features. Set in
+    # settings; falls back to a generous default that still bounds
+    # damage from a runaway loop.
+    INTERNAL_FEATURE_DAILY_CAP = 200
+
+    async def _check_internal_feature_quota(
+        self, *, feature: str, tenant_id: str
+    ) -> bool:
+        """Return False if today's tenant call count for ``feature`` exceeds
+        the internal cap. Counted from ``ai_usage_log`` so we don't
+        introduce another collection just for throttling.
+        """
+        try:
+            today_start = datetime.now(timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            count = await self.usage_log.count_documents(
+                {
+                    "feature": feature,
+                    "tenant_id": tenant_id,
+                    "created_at": {"$gte": today_start},
+                    "status": {"$ne": "rate_limited"},
+                }
+            )
+            return count < self.INTERNAL_FEATURE_DAILY_CAP
+        except Exception as exc:
+            # On telemetry failure, fail open so a busted Mongo doesn't
+            # take down the whole AI surface — abuse remains observable
+            # via Gemini quota dashboards.
+            logger.warning(
+                "Internal feature quota check failed (failing open): %s", exc
+            )
+            return True
 
     async def _log_usage(
         self,

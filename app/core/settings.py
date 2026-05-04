@@ -298,6 +298,18 @@ class Settings(BaseSettings):
     s3_form_uploads_bucket_name: Optional[str] = Field(
         default=None, alias="S3_FORM_UPLOADS_BUCKET"
     )
+
+    # AI model configuration (env-overridable so a Gemini rename / EOL
+    # is a config rollout, not a code deploy).
+    ai_gemini_model_primary: Optional[str] = Field(
+        default="gemini-2.5-flash", alias="AI_GEMINI_MODEL_PRIMARY"
+    )
+    ai_gemini_model_economy: Optional[str] = Field(
+        default="gemini-2.0-flash", alias="AI_GEMINI_MODEL_ECONOMY"
+    )
+    ai_low_credit_threshold: float = Field(
+        default=0.10, alias="AI_LOW_CREDIT_THRESHOLD"
+    )
     s3_region: str = Field(default="auto", alias="S3_REGION")
     s3_endpoint_url: Optional[str] = Field(default=None, alias="S3_ENDPOINT_URL")
     s3_healthcheck_ttl_seconds: int = Field(

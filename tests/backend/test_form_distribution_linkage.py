@@ -809,3 +809,64 @@ async def test_check_link_returns_404_for_unknown_distribution(
     with pytest.raises(HTTPException) as exc_info:
         await service.check_form_distribution_link("form_1", "missing", "anything")
     assert exc_info.value.status_code == 404
+
+
+# =============================================================================
+# Hardening sweep: F8 (status enum) + F9 (CSV truncation surface)
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_get_form_distributions_rejects_unknown_status_filter(
+    configured_form_service,
+):
+    """F8: status filter is sourced from FormDistributionStatus, not a free-form set."""
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.get_form_distributions(
+            "form_1", "planner@example.com", status="totally-bogus"
+        )
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_get_form_distributions_accepts_each_canonical_status(
+    configured_form_service,
+):
+    """F8: every FormDistributionStatus value is a valid filter."""
+    from app.models.form import FormDistributionStatus
+
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+
+    for status in FormDistributionStatus:
+        # Should not raise; empty result is fine.
+        result = await service.get_form_distributions(
+            "form_1", "planner@example.com", status=status.value
+        )
+        assert isinstance(result, list)
+
+
+@pytest.mark.asyncio
+async def test_send_form_writes_canonical_status_strings(configured_form_service):
+    """F8: send_form populates only valid enum values, not free-form strings."""
+    from app.models.form import FormDistributionStatus
+
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+
+    request = SendFormRequest(
+        recipient_emails=["a@example.com", "b@example.com"],
+        email_settings=EmailDistributionSettings(
+            subject="Please respond",
+            message="Hi",
+            sender_name="Wedding Planner",
+        ),
+    )
+    await service.send_form("form_1", request, "planner@example.com")
+
+    valid = {s.value for s in FormDistributionStatus}
+    for dist in database["form_distributions"].find({"form_id": "form_1"}):
+        assert dist["status"] in valid

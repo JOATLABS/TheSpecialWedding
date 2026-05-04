@@ -16,6 +16,7 @@ from app.core.settings import settings
 from app.models.form import (
     CreateFormRequest,
     DuplicateFormRequest,
+    FormDistributionStatus,
     SendFormRequest,
     SubmitFormRequest,
     UpdateFormRequest,
@@ -578,7 +579,7 @@ class FormService:
                         "recipient_email": recipient_email,
                         "wedding_id": send_data.wedding_id,
                         "sent_at": datetime.now(timezone.utc),
-                        "status": "sending",
+                        "status": FormDistributionStatus.SENDING.value,
                         "access_token_hash": token_hash,
                         "token_expires_at": token_expires_at,
                         # Snapshot reminder context so the scheduler can
@@ -626,14 +627,14 @@ class FormService:
                         )
 
                         if email_result.get("success"):
-                            distribution_doc["status"] = "sent"
+                            distribution_doc["status"] = FormDistributionStatus.SENT.value
                             distribution_doc["email_id"] = email_result.get("email_id")
                             sent_count += 1
                         else:
-                            distribution_doc["status"] = "failed"
+                            distribution_doc["status"] = FormDistributionStatus.FAILED.value
                             failed_count += 1
                     else:
-                        distribution_doc["status"] = "failed"
+                        distribution_doc["status"] = FormDistributionStatus.FAILED.value
                         failed_count += 1
 
                     # Save distribution record
@@ -688,7 +689,13 @@ class FormService:
                 "send_reminder": True,
                 "submitted_at": None,
                 "reminder_sent_at": None,
-                "status": {"$in": ["sent", "opened", "clicked"]},
+                "status": {
+                    "$in": [
+                        FormDistributionStatus.SENT.value,
+                        FormDistributionStatus.OPENED.value,
+                        FormDistributionStatus.CLICKED.value,
+                    ]
+                },
             }
         )
         candidates = await eligible_cursor.to_list(length=None)
@@ -1061,7 +1068,7 @@ class FormService:
                         {
                             "$set": {
                                 "submitted_at": datetime.now(timezone.utc),
-                                "status": "submitted",
+                                "status": FormDistributionStatus.SUBMITTED.value,
                             }
                         },
                     )
@@ -1190,7 +1197,7 @@ class FormService:
                 {
                     "$set": {
                         "clicked_at": datetime.now(timezone.utc),
-                        "status": "clicked",
+                        "status": FormDistributionStatus.CLICKED.value,
                     }
                 },
             )
@@ -1227,11 +1234,15 @@ class FormService:
 
             query: Dict[str, Any] = {"form_id": form_id}
             if status:
-                if status not in {"sent", "opened", "clicked", "submitted", "failed"}:
+                try:
+                    # Single source of truth for the status vocabulary —
+                    # invalid values now raise the same 400 they used to,
+                    # but we get type-checker support for callers.
+                    query["status"] = FormDistributionStatus(status).value
+                except ValueError:
                     raise HTTPException(
                         status_code=400, detail="Invalid distribution status filter"
                     )
-                query["status"] = status
 
             distributions = (
                 await self.distributions_collection.find(query)
@@ -1615,9 +1626,20 @@ class FormService:
 
             # Limit export size to prevent DoS
             max_export_size = 10000  # Maximum number of responses to export
-            if len(responses) > max_export_size:
+            total_response_count = len(responses)
+            truncated = total_response_count > max_export_size
+            truncated_count = (
+                total_response_count - max_export_size if truncated else 0
+            )
+            if truncated:
                 logger.warning(
-                    f"Export size limited: {len(responses)} responses truncated to {max_export_size}"
+                    "Export size limited: %s responses truncated to %s for form %s "
+                    "(user=%s); %s rows omitted from CSV",
+                    total_response_count,
+                    max_export_size,
+                    form_id,
+                    created_by,
+                    truncated_count,
                 )
                 responses = responses[:max_export_size]
 
@@ -1635,12 +1657,18 @@ class FormService:
                 form_data=form, responses=responses, options=export_options
             )
 
-            # Add additional metadata
+            # Add additional metadata. Surfacing truncation lets the
+            # planner UI render an honest banner ("Exported 10,000 of
+            # 47,832 responses") instead of silently dropping data.
             export_result.update(
                 {
                     "form_id": form_id,
                     "form_name": form.get("name", "Unknown Form"),
                     "exported_by": exported_by or created_by,
+                    "total_response_count": total_response_count,
+                    "truncated": truncated,
+                    "truncated_count": truncated_count,
+                    "max_export_size": max_export_size,
                     "request_params": {
                         "date_from": date_from,
                         "date_to": date_to,

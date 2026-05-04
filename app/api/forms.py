@@ -676,7 +676,14 @@ async def export_form_responses_csv(
             f"exported_count={export_result.get('exported_count', 0)}, "
             f"file_size={export_result.get('size', 0)} bytes"
         )
-        # Return CSV file as download
+        # Return CSV file as download. X-Total-Count / X-Truncated /
+        # X-Truncated-Count headers let the frontend show an honest
+        # "Exported 10,000 of 47,832 — 37,832 omitted" banner instead of
+        # silently shipping a partial dataset.
+        truncated = bool(export_result.get("truncated"))
+        truncated_count = int(export_result.get("truncated_count") or 0)
+        total_count = int(export_result.get("total_response_count") or 0)
+        max_export_size = int(export_result.get("max_export_size") or 0)
         return FastAPIResponse(
             content=export_result["content"],
             media_type=export_result["content_type"],
@@ -686,6 +693,17 @@ async def export_form_responses_csv(
                 "Cache-Control": "no-cache, no-store, must-revalidate",
                 "Pragma": "no-cache",
                 "Expires": "0",
+                "X-Total-Count": str(total_count),
+                "X-Truncated": "true" if truncated else "false",
+                "X-Truncated-Count": str(truncated_count),
+                "X-Max-Export-Size": str(max_export_size),
+                # Browsers strip non-CORS-allowed headers from
+                # cross-origin reads; planners UI shares the same origin
+                # in production, but expose these explicitly to be safe.
+                "Access-Control-Expose-Headers": (
+                    "Content-Disposition,X-Total-Count,X-Truncated,"
+                    "X-Truncated-Count,X-Max-Export-Size"
+                ),
             },
         )
     except HTTPException:

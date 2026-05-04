@@ -24,6 +24,21 @@ class FieldType(str, Enum):
     SCALE = "scale"
 
 
+class FormDistributionStatus(str, Enum):
+    """Lifecycle of a single FormDistribution row.
+
+    Forward transitions only: SENDING -> SENT -> OPENED -> CLICKED -> SUBMITTED.
+    FAILED is terminal at any point in the flow.
+    """
+
+    SENDING = "sending"
+    SENT = "sent"
+    OPENED = "opened"
+    CLICKED = "clicked"
+    SUBMITTED = "submitted"
+    FAILED = "failed"
+
+
 class ValidationRule(BaseModel):
     type: str = Field(
         ...,
@@ -362,9 +377,13 @@ class FormDistribution(BaseModel):
     submitted_at: Optional[datetime] = Field(
         None, description="Form submitted timestamp"
     )
-    status: str = Field(
-        default="sent",
-        description="Distribution status: sent, opened, clicked, submitted",
+    status: FormDistributionStatus = Field(
+        default=FormDistributionStatus.SENT,
+        description=(
+            "Distribution lifecycle: sending -> sent -> opened -> clicked "
+            "-> submitted. Failed is terminal. Validated as an enum so a "
+            "typo can't slip through and silently break analytics queries."
+        ),
     )
     email_id: Optional[str] = Field(None, description="Email service provider ID")
     access_token_hash: Optional[str] = Field(
