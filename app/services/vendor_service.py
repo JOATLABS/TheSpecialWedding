@@ -25,6 +25,8 @@ from fastapi import HTTPException, UploadFile
 
 from app.core.database import mongo
 from app.core.settings import settings
+from app.integrations.pm_substrate.client import get_client as _get_substrate_client
+from app.integrations.pm_substrate.errors import EdgeCreationFailed, PMSubstrateError
 from app.utils.planner_ownership import (
     build_wedding_owner_query,
     combine_mongo_filters,
@@ -442,7 +444,10 @@ class VendorService:
             "wedding_id": source_contract["wedding_id"],
             "vendor_profile_id": source_contract.get("vendor_profile_id"),
             "vendor_quote_id": source_contract.get("vendor_quote_id"),
-            "budget_category_id": source_contract.get("budget_category_id"),
+            # budget_category_id not copied — removed in P2.2.
+            # pm_contract_id not copied — the revision is a new Contract node;
+            # create_contract will assign a new pm_contract_id on the next interaction.
+            "pm_contract_id": None,
             "template_id": source_contract.get("template_id"),
             "vendor_name": source_contract["vendor_name"],
             "vendor_email": source_contract["vendor_email"],
@@ -1638,6 +1643,59 @@ class VendorService:
                 },
             )
 
+            # P2.2: sync vendor→budgetCategory edge to pm-substrate.
+            # This is the structural fact the BudgetRollupHandler needs:
+            #   contract → [contract_vendor] → vendor → [vendor_budget_category] → budgetCategory
+            # Without this edge, the budget rollup silently skips all payments
+            # through this vendor. We log + raise if the call fails because
+            # the edge is load-bearing (no edge = no rollup = silent data loss).
+            if budget_category_id and created_by:
+                try:
+                    await _get_substrate_client().assign_vendor_to_budget_category(
+                        tenant_id=created_by,
+                        vendor_profile_id=vendor_profile_id,
+                        budget_category_id=budget_category_id,
+                        vendor_data={
+                            "name": vendor["business_name"],
+                            "email": vendor.get("email"),
+                            "phone": vendor.get("phone"),
+                            "category": vendor["service_category"],
+                            "external_ref": vendor_profile_id,
+                        },
+                    )
+                    logger.info(
+                        "assign_vendor_to_wedding: wired substrate edge vendor=%s → category=%s",
+                        vendor_profile_id,
+                        budget_category_id,
+                    )
+                except EdgeCreationFailed as exc:
+                    # Fatal: without this edge, payments have no rollup target.
+                    # Log and re-raise so the assignment fails loudly rather than
+                    # silently succeeding with a broken budget rollup.
+                    logger.error(
+                        "assign_vendor_to_wedding: substrate edge creation failed — "
+                        "budget rollup will not work for vendor %s: %s",
+                        vendor_profile_id,
+                        exc,
+                    )
+                    raise HTTPException(
+                        status_code=503,
+                        detail=(
+                            "Vendor assignment saved locally but substrate budget edge "
+                            "could not be created. Budget rollup will not work until "
+                            "this is resolved. See P2.2 architecture notes."
+                        ),
+                    ) from exc
+                except Exception as _substrate_exc:
+                    # In P2.2, substrate unavailability is non-fatal for the assignment
+                    # itself but the rollup will be broken. Log clearly.
+                    logger.warning(
+                        "assign_vendor_to_wedding: substrate call failed (non-fatal in P2.2) — "
+                        "budget rollup will not fire for vendor %s: %s",
+                        vendor_profile_id,
+                        _substrate_exc,
+                    )
+
             return assignment
 
         except HTTPException:
@@ -1981,36 +2039,31 @@ class VendorService:
                     days=planner_settings["deposit_due_days"]
                 )
 
-            # Inherit budget_category_id from the vendor's assignment for this
-            # wedding so milestone payments can roll up into the budget
-            # tracker. Without this lookup the field stayed None forever and
-            # the $inc against budget_categories.actual_spent in record_payment
-            # was unreachable in practice.
+            # P2.2: look up the assignment so we can link the contract back to it
+            # (contract_id write below). budget_category_id is no longer stored on
+            # vendor_contracts — the pm-substrate graph edge
+            # (wedding/vendor_budget_category) is the source of truth for the rollup
+            # target. See JOATLABS P2.2 architecture notes.
             existing_assignment = await self.vendor_assignments.find_one(
                 {
                     "vendor_profile_id": vendor_profile_id,
                     "wedding_id": wedding_id,
                     "is_deleted": {"$ne": True},
                 },
-                {"budget_category_id": 1, "contract_id": 1},
+                {"contract_id": 1},
             )
-            assigned_category_id = (existing_assignment or {}).get("budget_category_id")
-            if assigned_category_id is None:
-                logger.warning(
-                    "Creating contract with no budget_category_id: "
-                    "no assignment-with-category found for vendor %s on wedding %s. "
-                    "Milestone payments will not roll up into budget tracking until "
-                    "the contract is linked to a category.",
-                    vendor_profile_id,
-                    wedding_id,
-                )
 
             contract = {
                 "_id": contract_id,
                 "wedding_id": wedding_id,
                 "vendor_profile_id": vendor_profile_id,
                 "vendor_quote_id": quote_id,
-                "budget_category_id": assigned_category_id,
+                # budget_category_id intentionally absent — removed in P2.2.
+                # Budget rollup is now owned by @pm/capability-wedding-budget
+                # which infers the target via graph topology (contract → vendor
+                # → budgetCategory). Storing budget_category_id here was the
+                # root cause of the silent rollup failure (it was always None).
+                "pm_contract_id": None,  # filled in below after substrate call
                 "template_id": template_id,
                 "vendor_name": vendor["business_name"],
                 "vendor_email": vendor["email"],
@@ -2048,6 +2101,56 @@ class VendorService:
             await self.vendor_contracts.insert_one(contract)
             self._serialize_doc(contract)
             self._attach_contract_version_metadata(contract)
+
+            # P2.2: register the contract in the pm-substrate graph.
+            # This creates:
+            #   1. A Vendor node (uuid5-derived, idempotent).
+            #   2. A Contract node → returns pm_contract_id.
+            #   3. A wedding/contract_vendor edge (contract → vendor).
+            # The budget rollup walks this edge chain at payment time:
+            #   contract → vendor → budgetCategory.
+            # Failures are logged but do not roll back the local Mongo write;
+            # the pm_contract_id stays None and payments fall back to
+            # the old local-only path. P2.3 will make this hard-fail.
+            try:
+                effective_date = (
+                    service_date.date().isoformat()
+                    if service_date and hasattr(service_date, "date")
+                    else datetime.now(timezone.utc).date().isoformat()
+                )
+                pm_contract_id = await _get_substrate_client().create_contract(
+                    tenant_id=created_by,
+                    vendor_profile_id=vendor_profile_id,
+                    contract_data={
+                        "amount_minor": int(total_amount * 100),
+                        "currency": "USD",
+                        "effective_date": effective_date,
+                    },
+                    vendor_data={
+                        "name": vendor["business_name"],
+                        "email": vendor.get("email"),
+                        "phone": vendor.get("phone"),
+                        "category": vendor["service_category"],
+                        "external_ref": vendor_profile_id,
+                    },
+                )
+                # Store the substrate contract ID for cross-reference.
+                await self.vendor_contracts.update_one(
+                    {"_id": contract_id},
+                    {"$set": {"pm_contract_id": pm_contract_id}},
+                )
+                contract["pm_contract_id"] = pm_contract_id
+                logger.info(
+                    "create_contract: registered in pm-substrate, pm_contract_id=%s",
+                    pm_contract_id,
+                )
+            except Exception as _substrate_exc:
+                logger.warning(
+                    "create_contract: pm-substrate call failed (non-blocking in P2.2): %s. "
+                    "Set PM_SUBSTRATE_URL to wire the live substrate. "
+                    "Budget rollup via substrate will not fire until P2.3.",
+                    _substrate_exc,
+                )
 
             # Link the new contract back to the assignment so the wedding-detail
             # Vendors tab (and any other surface that reads from the assignment)
@@ -3433,7 +3536,9 @@ class VendorService:
                     "contract_id": contract_id,
                     "wedding_id": contract["wedding_id"],
                     "vendor_profile_id": contract.get("vendor_profile_id"),
-                    "budget_category_id": contract.get("budget_category_id"),
+                    # budget_category_id not inherited — removed in P2.2.
+                    # The pm-substrate graph edge (vendor → budgetCategory) drives rollup.
+                    "pm_contract_id": contract.get("pm_contract_id"),
                     "description": m["description"],
                     "amount": m["amount"],
                     "currency": contract.get("currency", "USD"),
@@ -3720,17 +3825,65 @@ class VendorService:
                         session=session,
                     )
 
-                if milestone.get("budget_category_id"):
-                    await self.budget_categories.update_one(
-                        {"_id": ObjectId(milestone["budget_category_id"])},
-                        {"$inc": {"actual_spent": amount}},
-                        session=session,
-                    )
+                # P2.2: the budget_categories.actual_spent $inc block that lived here
+                # has been removed. It was the dead-code path that silently never ran
+                # because milestone.budget_category_id was always None (inherited from
+                # a contract that always had budget_category_id=None). The rollup now
+                # lives in @pm/capability-wedding-budget and fires on the
+                # wedding.contract.payment_recorded event emitted below.
+                # The pm-substrate call is outside the Mongo transaction (see below).
 
             await self._run_required_transaction(
                 "Vendor milestone payment recording",
                 _record_in_transaction,
             )
+
+            # P2.2: emit wedding.contract.payment_recorded to the pm-substrate.
+            # The @pm/capability-wedding-budget handler subscribes to this event
+            # and runs the budget rollup transactionally in Postgres:
+            #   1. Idempotency guard on payment_id (budget.applied_payments).
+            #   2. Lock BudgetCategory node (FOR UPDATE).
+            #   3. Increment actualSpentMinor.
+            #   4. Emit wedding.budget.actual_spent_updated in the same tx.
+            #
+            # The substrate call happens OUTSIDE the Mongo transaction so that
+            # a substrate failure doesn’t roll back the already-committed local
+            # payment record. In P2.3 we’ll add a dual-write / outbox pattern
+            # to guarantee at-least-once delivery.
+            if contract and contract.get("pm_contract_id"):
+                pm_contract_id_for_event = contract["pm_contract_id"]
+                payment_id_for_substrate = str(milestone["_id"] if isinstance(milestone.get("_id"), str) is False else milestone.get("_id"))
+                recorded_at_iso = (
+                    update_data["paid_at"].isoformat()
+                    if hasattr(update_data.get("paid_at"), "isoformat")
+                    else datetime.now(timezone.utc).isoformat()
+                )
+                try:
+                    await _get_substrate_client().record_payment(
+                        tenant_id=created_by,
+                        pm_contract_id=pm_contract_id_for_event,
+                        amount_minor=int(amount * 100),
+                        recorded_at=recorded_at_iso,
+                        payment_id=payment_id_for_substrate,
+                    )
+                    logger.info(
+                        "record_payment: emitted payment_recorded to substrate "
+                        "(contract=%s, amount_minor=%d, payment_id=%s)",
+                        pm_contract_id_for_event,
+                        int(amount * 100),
+                        payment_id_for_substrate,
+                    )
+                except Exception as _substrate_exc:
+                    logger.warning(
+                        "record_payment: substrate event emission failed (non-blocking in P2.2): %s. "
+                        "Budget rollup via substrate will not fire for this payment.",
+                        _substrate_exc,
+                    )
+            else:
+                logger.debug(
+                    "record_payment: no pm_contract_id on contract (substrate not wired "
+                    "or contract predates P2.2). Skipping substrate event."
+                )
 
             # Best-effort alert refresh after the spend mutation commits.
             # Lazy-imported to avoid a circular service-layer import; the
