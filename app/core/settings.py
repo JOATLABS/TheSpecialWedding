@@ -176,6 +176,9 @@ class Settings(BaseSettings):
     guest_media_domain: Optional[str] = Field(default=None, alias="GUEST_MEDIA_DOMAIN")
     ad_media_domain: Optional[str] = Field(default=None, alias="AD_MEDIA_DOMAIN")
     blog_media_domain: Optional[str] = Field(default=None, alias="BLOG_MEDIA_DOMAIN")
+    form_uploads_domain: Optional[str] = Field(
+        default=None, alias="FORM_UPLOADS_DOMAIN"
+    )
 
     # Security
     secret_key: str = Field(
@@ -291,6 +294,9 @@ class Settings(BaseSettings):
     s3_ad_bucket_name: Optional[str] = Field(default=None, alias="S3_AD_BUCKET_NAME")
     s3_blog_bucket_name: Optional[str] = Field(
         default=None, alias="S3_BLOG_BUCKET_NAME"
+    )
+    s3_form_uploads_bucket_name: Optional[str] = Field(
+        default=None, alias="S3_FORM_UPLOADS_BUCKET"
     )
     s3_region: str = Field(default="auto", alias="S3_REGION")
     s3_endpoint_url: Optional[str] = Field(default=None, alias="S3_ENDPOINT_URL")
@@ -491,6 +497,11 @@ class Settings(BaseSettings):
         return _normalize_optional_public_base(self.blog_media_domain)
 
     @property
+    def normalized_form_uploads_domain(self) -> Optional[str]:
+        """Canonical public domain/base URL for form-attachment uploads."""
+        return _normalize_optional_public_base(self.form_uploads_domain)
+
+    @property
     def browser_upload_origins(self) -> List[str]:
         """
         Browser origins that are expected to perform direct presigned uploads.
@@ -549,6 +560,17 @@ class Settings(BaseSettings):
     def blog_media_bucket_name(self) -> Optional[str]:
         """Dedicated blog asset bucket."""
         return self.s3_blog_bucket_name
+
+    @property
+    def form_uploads_bucket_name(self) -> Optional[str]:
+        """Dedicated bucket for FILE_UPLOAD form-field attachments.
+
+        Public form respondents upload here when filling out a form that
+        contains FILE_UPLOAD fields. Storage is segregated from primary
+        media so a misconfigured public form cannot leak into other
+        asset surfaces.
+        """
+        return self.s3_form_uploads_bucket_name
 
     @property
     def s3_credentials_configured(self) -> bool:

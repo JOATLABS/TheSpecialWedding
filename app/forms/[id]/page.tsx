@@ -8,6 +8,138 @@ import {
   isFieldVisible,
 } from '@/utils/formConditionalLogic';
 
+// Mirrors backend constants in app/services/form_upload_service.py.
+// Kept in sync manually — both are 10 MB and the same MIME set.
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const ALLOWED_UPLOAD_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/heic',
+  'image/heif',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/csv',
+  'text/plain',
+];
+
+interface FileUploadValue {
+  file_id: string;
+  filename: string;
+  url: string;
+  content_type: string;
+  size_bytes: number;
+}
+
+interface FileUploadFieldProps {
+  field: { id: string; label: string; required: boolean };
+  value: unknown;
+  disabled: boolean;
+  formId: string;
+  distributionId?: string;
+  accessToken?: string;
+  onChange: (value: FileUploadValue | null) => void;
+}
+
+function FileUploadField({
+  field,
+  value,
+  disabled,
+  formId,
+  distributionId,
+  accessToken,
+  onChange,
+}: FileUploadFieldProps) {
+  const [uploading, setUploading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const current =
+    value && typeof value === 'object' && 'file_id' in (value as Record<string, unknown>)
+      ? (value as FileUploadValue)
+      : null;
+
+  const upload = async (file: File) => {
+    setErrorMsg(null);
+    if (!distributionId || !accessToken) {
+      setErrorMsg('This form must be opened from your email link to attach files.');
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setErrorMsg(`File too large. Max ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB.`);
+      return;
+    }
+    if (file.type && !ALLOWED_UPLOAD_MIME_TYPES.includes(file.type)) {
+      setErrorMsg(`File type "${file.type}" is not allowed.`);
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const baseUrl = getApiBaseUrl();
+      const fd = new FormData();
+      fd.append('distribution_id', distributionId);
+      fd.append('access_token', accessToken);
+      fd.append('field_id', field.id);
+      fd.append('upload', file);
+
+      const res = await fetch(`${baseUrl}/public/forms/${formId}/uploads`, {
+        method: 'POST',
+        body: fd,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setErrorMsg(err.detail || 'Upload failed. Please try again.');
+        return;
+      }
+      const data = (await res.json()) as FileUploadValue;
+      onChange(data);
+    } catch {
+      setErrorMsg('Upload failed. Please check your connection.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <input
+        type="file"
+        accept={ALLOWED_UPLOAD_MIME_TYPES.join(',')}
+        disabled={disabled || uploading}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void upload(file);
+        }}
+        className="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-white focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+      />
+      {disabled && !current && (
+        <p className="text-xs text-gray-500">
+          Open this form from your email link to attach files.
+        </p>
+      )}
+      {uploading && <p className="text-sm text-gray-600">Uploading…</p>}
+      {current && (
+        <div className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-2 text-sm">
+          <span className="truncate text-gray-700">{current.filename}</span>
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            disabled={uploading}
+            className="ml-2 text-xs text-red-600 hover:underline"
+          >
+            Remove
+          </button>
+        </div>
+      )}
+      {errorMsg && <p className="text-sm text-red-600">{errorMsg}</p>}
+    </div>
+  );
+}
+
 interface FormField {
  id: string;
  label: string;
@@ -309,6 +441,19 @@ export default function PublicFormPage() {
  {responses[field.id] ? `${responses[field.id]} star${responses[field.id] !== 1 ? 's' : ''}` : 'Click to rate'}
  </span>
  </div>
+ );
+
+ case 'file_upload':
+ return (
+ <FileUploadField
+ field={field}
+ value={responses[field.id]}
+ disabled={!distributionId || !accessToken || linkState !== 'valid'}
+ distributionId={distributionId}
+ accessToken={accessToken}
+ formId={formId}
+ onChange={(val) => handleInputChange(field.id, val)}
+ />
  );
 
  case 'scale':

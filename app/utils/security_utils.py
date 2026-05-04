@@ -510,6 +510,23 @@ class FormSecurityValidator:
                         except ValueError:
                             pass  # Skip invalid dates
 
+                elif field_type == "file_upload":
+                    # The submission body carries either the bare file_id
+                    # string or a dict {file_id: ...}. Real validation
+                    # against the form_uploads collection happens later in
+                    # FormService.submit_form_response — here we just keep
+                    # the reference shape intact for that step.
+                    if isinstance(value, str):
+                        sanitized[field_id] = InputSanitizer.sanitize_text(value, 100)
+                    elif isinstance(value, dict) and isinstance(
+                        value.get("file_id"), str
+                    ):
+                        sanitized[field_id] = {
+                            "file_id": InputSanitizer.sanitize_text(
+                                value["file_id"], 100
+                            )
+                        }
+
             except Exception as e:
                 logger.warning(f"Error sanitizing field {field_id}: {str(e)}")
                 continue  # Skip problematic fields

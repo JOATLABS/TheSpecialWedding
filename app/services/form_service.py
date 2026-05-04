@@ -21,6 +21,7 @@ from app.models.form import (
     UpdateFormRequest,
 )
 from app.services.email_service_resend import ResendEmailService
+from app.services.form_upload_service import FormUploadService
 from app.utils.csv_export import CSVSecurityError, FormResponseCSVExporter
 from app.utils.form_conditional_logic import (
     filter_responses_to_visible,
@@ -42,6 +43,7 @@ class FormService:
         self.distributions_collection = mongo.db["form_distributions"]
         self.wedding_collection = mongo.db["weddings"]
         self.email_service = ResendEmailService()
+        self.upload_service = FormUploadService()
 
     # ------------------------------------------------------------------
     # Per-recipient access tokens
@@ -848,6 +850,56 @@ class FormService:
             sanitized_responses = filter_responses_to_visible(
                 form["fields"], sanitized_responses
             )
+
+            # Resolve FILE_UPLOAD field values to verified upload metadata.
+            # FILE_UPLOAD requires a tokenized link (we need the
+            # distribution_id to scope the lookup); the response value
+            # must be a file_id that was actually issued by store_upload
+            # for this same form + distribution.
+            file_upload_field_ids = {
+                field["id"]
+                for field in form["fields"]
+                if field.get("type") == "file_upload"
+            }
+            if file_upload_field_ids:
+                for field_id in list(sanitized_responses.keys()):
+                    if field_id not in file_upload_field_ids:
+                        continue
+                    raw_value = sanitized_responses[field_id]
+                    file_id = (
+                        raw_value
+                        if isinstance(raw_value, str)
+                        else (raw_value.get("file_id") if isinstance(raw_value, dict) else None)
+                    )
+                    if not file_id:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="File upload reference is invalid",
+                        )
+                    if not response_data.distribution_id:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="File upload requires the original form link",
+                        )
+                    upload_record = (
+                        await self.upload_service.get_upload_for_form_distribution(
+                            file_id=file_id,
+                            form_id=form_id,
+                            distribution_id=response_data.distribution_id,
+                        )
+                    )
+                    if not upload_record or upload_record.get("field_id") != field_id:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Unrecognized file upload",
+                        )
+                    sanitized_responses[field_id] = {
+                        "file_id": upload_record["_id"],
+                        "filename": upload_record.get("filename"),
+                        "content_type": upload_record.get("content_type"),
+                        "size_bytes": upload_record.get("size_bytes"),
+                        "url": upload_record.get("url"),
+                    }
 
             # Validate required fields, skipping any whose conditional_logic
             # makes them hidden under the current responses.

@@ -178,6 +178,25 @@ export default function FormResponsesPage() {
  case 'phone':
  return <a href={`tel:${value}`} className="text-blue-600 hover:underline">{value}</a>;
 
+ case 'file_upload':
+ if (value && typeof value === 'object' && 'url' in value) {
+ const upload = value as { url: string; filename?: string; content_type?: string; size_bytes?: number };
+ const sizeKb = typeof upload.size_bytes === 'number' ? Math.round(upload.size_bytes / 1024) : null;
+ return (
+ <a
+ href={upload.url}
+ target="_blank"
+ rel="noopener noreferrer"
+ className="text-blue-600 hover:underline"
+ title={upload.content_type || ''}
+ >
+ {upload.filename || 'attachment'}
+ {sizeKb !== null ? ` (${sizeKb} KB)` : ''}
+ </a>
+ );
+ }
+ return <span className="text-gray-400 italic">No file</span>;
+
  case 'textarea':
  return (
  <div className="max-w-xs">

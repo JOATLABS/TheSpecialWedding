@@ -2,7 +2,17 @@ import html
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.responses import Response as FastAPIResponse
 from typing_extensions import TypedDict
 
@@ -23,6 +33,11 @@ from app.models.form import (
     UpdateFormRequest,
 )
 from app.services.form_service import FormService
+from app.services.form_upload_service import (
+    ALLOWED_MIME_TYPES,
+    MAX_UPLOAD_BYTES,
+    FormUploadService,
+)
 from app.services.security_audit_service import (
     SecurityEventType,
     SecuritySeverity,
@@ -35,6 +50,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 form_service = FormService()
+form_upload_service = FormUploadService()
 
 
 class FormOwnerScope(TypedDict):
@@ -809,6 +825,76 @@ async def check_public_form_distribution_link(
         form_id=InputSanitizer.sanitize_text(form_id, 100),
         distribution_id=InputSanitizer.sanitize_text(distribution_id, 64),
         access_token=t,
+    )
+
+
+@router.post(
+    "/public/forms/{form_id}/uploads",
+    tags=["Public Forms"],
+)
+async def upload_public_form_file(
+    form_id: str,
+    request: Request,
+    distribution_id: str = Form(..., description="FormDistribution ID from the email link"),
+    access_token: str = Form(..., description="Per-recipient access token"),
+    field_id: str = Form(..., description="ID of the FILE_UPLOAD field this attachment belongs to"),
+    upload: UploadFile = File(..., description="The file to upload"),
+):
+    """Upload a single file for a FILE_UPLOAD field on a public form.
+
+    Requires the same ``(distribution_id, access_token)`` pair used by
+    submission — anonymous uploads are not accepted, by design, to keep
+    the public bucket from becoming a free-for-all. Size capped at
+    10 MB; allowed MIME types are images, PDFs, and common doc formats.
+    """
+    client_ip = (
+        getattr(request.client, "host", None) if request.client else "unknown"
+    )
+    if not rate_limiter.check_rate_limit(
+        f"public_form_upload_{client_ip}", limit=30, window_seconds=3600
+    ):
+        raise HTTPException(
+            status_code=429, detail="Too many uploads. Please try again later."
+        )
+
+    safe_form_id = InputSanitizer.sanitize_text(form_id, 100)
+    safe_distribution_id = InputSanitizer.sanitize_text(distribution_id, 64)
+    safe_field_id = InputSanitizer.sanitize_text(field_id, 64)
+
+    # Token check (returns 404 on bad token, 410 on expired etc).
+    link_state = await form_service.check_form_distribution_link(
+        form_id=safe_form_id,
+        distribution_id=safe_distribution_id,
+        access_token=access_token,
+    )
+    if not link_state.get("valid"):
+        # Already submitted / expired — no new uploads allowed.
+        raise HTTPException(
+            status_code=409, detail="This form access link is no longer accepting uploads"
+        )
+
+    # Re-fetch form + distribution for the upload service.
+    form = await form_service.get_form(safe_form_id)
+    distribution = await form_service.distributions_collection.find_one(
+        {"_id": safe_distribution_id, "form_id": safe_form_id}
+    )
+    if not distribution:
+        raise HTTPException(status_code=404, detail="Distribution not found")
+
+    contents = await upload.read(MAX_UPLOAD_BYTES + 1)
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+        )
+
+    return await form_upload_service.store_upload(
+        form=form,
+        distribution=distribution,
+        field_id=safe_field_id,
+        filename=upload.filename,
+        content_type=upload.content_type,
+        contents=contents,
     )
 
 
