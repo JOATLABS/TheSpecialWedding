@@ -3,6 +3,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import {
+  filterResponsesToVisible,
+  isFieldVisible,
+} from '@/utils/formConditionalLogic';
 
 interface FormField {
  id: string;
@@ -13,6 +17,7 @@ interface FormField {
  description?: string;
  options: string[];
  order: number;
+ conditional_logic?: Record<string, unknown> | null;
 }
 
 interface FormSettings {
@@ -112,6 +117,8 @@ export default function PublicFormPage() {
  if (!form) return false;
 
  for (const field of form.fields) {
+ // Skip hidden fields — the same evaluator runs on the backend.
+ if (!isFieldVisible(field, responses)) continue;
  if (field.required && !responses[field.id]) {
  setError(`Please fill in the required field: ${field.label}`);
  return false;
@@ -130,10 +137,22 @@ export default function PublicFormPage() {
  try {
  const baseUrl = getApiBaseUrl();
  // Prepare submission data
+ // Drop values for hidden-by-conditional-logic fields so we never send
+ // stale data from a temporarily-shown branch to the server.
+ const visibleResponses = form
+ ? filterResponsesToVisible(form.fields, responses)
+ : responses;
+
  const submissionData = {
- responses,
- submitted_by_email: responses.email || responses.guest_email || responses.contact_email,
- submitted_by_name: responses.name || responses.guest_name || responses.contact_name,
+ responses: visibleResponses,
+ submitted_by_email:
+ (visibleResponses.email as string | undefined) ||
+ (visibleResponses.guest_email as string | undefined) ||
+ (visibleResponses.contact_email as string | undefined),
+ submitted_by_name:
+ (visibleResponses.name as string | undefined) ||
+ (visibleResponses.guest_name as string | undefined) ||
+ (visibleResponses.contact_name as string | undefined),
  distribution_id: distributionId,
  access_token: accessToken,
  };
@@ -417,8 +436,10 @@ export default function PublicFormPage() {
 
  if (!form) return null;
 
- // Sort fields by order
- const sortedFields = [...form.fields].sort((a, b) => a.order - b.order);
+ // Sort fields by order, then drop any hidden by conditional_logic.
+ const sortedFields = [...form.fields]
+ .sort((a, b) => a.order - b.order)
+ .filter((field) => isFieldVisible(field, responses));
 
  return (
  <div className="min-h-screen bg-gray-50 py-8">

@@ -22,6 +22,10 @@ from app.models.form import (
 )
 from app.services.email_service_resend import ResendEmailService
 from app.utils.csv_export import CSVSecurityError, FormResponseCSVExporter
+from app.utils.form_conditional_logic import (
+    filter_responses_to_visible,
+    is_field_visible,
+)
 from app.utils.security_utils import FormSecurityValidator, InputSanitizer, rate_limiter
 
 logger = logging.getLogger(__name__)
@@ -683,9 +687,20 @@ class FormService:
                 logger.warning(f"Invalid form response for form {form_id}: {str(e)}")
                 raise HTTPException(status_code=400, detail="Invalid response data")
 
-            # Validate required fields
+            # Drop values for fields hidden by conditional_logic so stale data
+            # from a temporarily-shown branch can't be persisted.
+            sanitized_responses = filter_responses_to_visible(
+                form["fields"], sanitized_responses
+            )
+
+            # Validate required fields, skipping any whose conditional_logic
+            # makes them hidden under the current responses.
             for field in form["fields"]:
-                if field["required"] and field["id"] not in sanitized_responses:
+                if not field.get("required"):
+                    continue
+                if not is_field_visible(field, sanitized_responses):
+                    continue
+                if field["id"] not in sanitized_responses:
                     raise HTTPException(
                         status_code=400,
                         detail=f"Required field '{html.escape(field['label'])}' is missing",

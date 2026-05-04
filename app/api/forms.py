@@ -750,6 +750,10 @@ async def get_public_form(form_id: str, request: Request, response: Response):
                     "description": html.escape(field.get("description", "")),
                     "options": [html.escape(opt) for opt in field.get("options", [])],
                     "order": field.get("order", 0),
+                    # conditional_logic powers the hide/show evaluator on the
+                    # client. Field IDs/operators in this object reference
+                    # other field IDs already exposed in this same payload.
+                    "conditional_logic": field.get("conditional_logic"),
                 }
                 for field in form["fields"]
             ],
