@@ -17,6 +17,7 @@ from app.models.form import (
     CreateFormRequest,
     DuplicateFormRequest,
     FormDistributionStatus,
+    FormField,
     FormType,
     SendFormRequest,
     SubmitFormRequest,
@@ -111,6 +112,151 @@ class FormService:
                 getattr(result_default, "modified_count", 0) or 0
             ),
             "total": total,
+        }
+
+    async def seed_catalog_templates_for_planner(
+        self, planner_email: str
+    ) -> Dict[str, int]:
+        """Phase D: Auto-load the static template catalog into a planner's
+        workspace on first verification.
+
+        Idempotent — each seeded form is stamped with
+        ``seeded_from_catalog=True`` and ``catalog_template_id=<id>``, so
+        rerunning the method (e.g. an email-verification retry) creates
+        zero duplicates. Each catalog template materialises as a real
+        ``forms`` document owned by the planner with
+        ``submission_count=0``, ``is_active=True``, and a properly hashed
+        ``planner_state`` key — exactly what would happen if the planner
+        had clicked "Use template" 9 times manually.
+
+        Best-effort: any catalog parse error is logged but never raises,
+        so a malformed template (which catalog tests should already
+        catch) cannot block account verification.
+
+        Returns: ``{seeded, skipped, total}``.
+        """
+        from app.services.form_template_catalog import FORM_TEMPLATES
+
+        if not planner_email:
+            return {"seeded": 0, "skipped": 0, "total": 0}
+
+        normalized_email = planner_email.lower().strip()
+        if not normalized_email:
+            return {"seeded": 0, "skipped": 0, "total": 0}
+
+        existing_seeded_ids = set()
+        try:
+            cursor = self.forms_collection.find(
+                {
+                    "created_by": normalized_email,
+                    "seeded_from_catalog": True,
+                },
+                {"catalog_template_id": 1},
+            )
+            existing = await cursor.to_list(length=None)
+            existing_seeded_ids = {
+                doc.get("catalog_template_id")
+                for doc in existing
+                if doc.get("catalog_template_id")
+            }
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "Failed to enumerate existing seeded templates for %s: %s",
+                normalized_email,
+                exc,
+            )
+
+        now = datetime.now(timezone.utc)
+        planner_state_key = self._planner_state_key(normalized_email)
+        seeded = 0
+        skipped = 0
+
+        for template in FORM_TEMPLATES:
+            template_id = template.get("id")
+            if not template_id:
+                continue
+            if template_id in existing_seeded_ids:
+                skipped += 1
+                continue
+
+            try:
+                # Parse fields through the same Pydantic model the runtime
+                # uses so a corrupt template never lands in Mongo. The
+                # catalog test suite asserts this passes for every entry.
+                fields_payload = [
+                    FormField.model_validate(field).model_dump()
+                    for field in template.get("fields", [])
+                ]
+            except Exception as exc:
+                logger.warning(
+                    "Skipping catalog template %s for %s — field validation "
+                    "failed: %s",
+                    template_id,
+                    normalized_email,
+                    exc,
+                )
+                skipped += 1
+                continue
+
+            form_id = f"form_seed_{template_id}_{uuid.uuid4().hex[:12]}"
+            form_doc: Dict[str, Any] = {
+                "_id": form_id,
+                "name": template.get("name") or template_id,
+                "form_type": template.get("category") or FormType.GENERAL.value,
+                "template_type": template.get("category"),
+                "settings": {
+                    "title": template.get("name") or template_id,
+                    "description": template.get("description", ""),
+                    "submit_button_text": "Submit",
+                    "success_message": "Thank you for your submission!",
+                    "allow_multiple_submissions": False,
+                    "collect_email": True,
+                    "is_public": True,
+                    "requires_auth": False,
+                },
+                "fields": fields_payload,
+                "created_by": normalized_email,
+                "wedding_id": None,
+                "is_active": True,
+                "created_at": now,
+                "updated_at": now,
+                "submission_count": 0,
+                "planner_state": {
+                    planner_state_key: {
+                        "last_viewed_submission_count": 0,
+                        "last_viewed_responses_at": None,
+                        "last_viewed_analytics_at": None,
+                    }
+                },
+                # Phase D markers — power idempotence + future analytics
+                # ("how many planners actually use the seeded templates?").
+                "seeded_from_catalog": True,
+                "catalog_template_id": template_id,
+                "catalog_seeded_at": now,
+            }
+            try:
+                await self.forms_collection.insert_one(form_doc)
+                seeded += 1
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning(
+                    "Failed to seed catalog template %s for %s: %s",
+                    template_id,
+                    normalized_email,
+                    exc,
+                )
+                skipped += 1
+
+        if seeded:
+            logger.info(
+                "Seeded %s catalog templates for planner %s (skipped %s)",
+                seeded,
+                normalized_email,
+                skipped,
+            )
+        return {
+            "seeded": seeded,
+            "skipped": skipped,
+            "total": len(FORM_TEMPLATES),
         }
 
     @staticmethod

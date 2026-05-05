@@ -1251,6 +1251,31 @@ class UserManagementService:
                     user_id=str(user["_id"]),
                     user={**user, "email_verified": True, "is_active": True},
                 )
+
+            # Phase D: Seed the catalog of pre-built form templates so a
+            # newly-verified planner sees 9 ready-to-send forms in their
+            # workspace from second one. Best-effort — wrapped so any
+            # seeder failure (Mongo blip, malformed catalog entry) cannot
+            # block account verification. Idempotent on re-run.
+            if (user.get("role") or "").strip().lower() == "wedding_planner":
+                try:
+                    from app.services.form_service import FormService
+
+                    seed_result = await FormService().seed_catalog_templates_for_planner(
+                        user["email"]
+                    )
+                    self.logger.info(
+                        "Catalog seed for verified planner %s: %s",
+                        user["email"],
+                        seed_result,
+                    )
+                except Exception as seed_exc:  # pragma: no cover - defensive
+                    self.logger.warning(
+                        "Catalog seed failed for %s (verification still succeeded): %s",
+                        user["email"],
+                        seed_exc,
+                    )
+
             return {
                 "message": "Email verified successfully! Your account is now active. You can log in.",
                 "email": user["email"],
