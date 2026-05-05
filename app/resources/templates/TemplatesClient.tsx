@@ -137,7 +137,8 @@ export default function TemplatesClient({ templates }: TemplatesClientProps) {
         {templates.map((template) => (
           <article
             key={template.id}
-            className="bg-white rounded-2xl shadow-sm border border-[#eee5d8] p-6 flex flex-col"
+            id={template.id}
+            className="bg-white rounded-2xl shadow-sm border border-[#eee5d8] p-6 flex flex-col scroll-mt-24"
           >
             <div className="text-xs font-semibold uppercase tracking-wider text-[#9a8f82] mb-2">
               {template.category}

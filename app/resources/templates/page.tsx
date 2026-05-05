@@ -18,7 +18,18 @@
  * renderable without leaking auth surface.
  */
 
+import type { Metadata } from 'next';
+
+import BreadcrumbSchema from '@/components/seo/BreadcrumbSchema';
+
 import TemplatesClient from './TemplatesClient';
+
+const SITE_ORIGIN = 'https://thespecialwedding.io';
+const PAGE_PATH = '/resources/templates';
+const PAGE_URL = `${SITE_ORIGIN}${PAGE_PATH}`;
+const PAGE_DESCRIPTION =
+  'Nine production-ready form templates for wedding planners — couple intake, order of events, vendor onboarding, dietary surveys, shot lists. Download as PDF, free.';
+const PAGE_TITLE = 'Free Wedding Planner Templates — The Special Wedding';
 
 // Small static manifest mirroring the python catalog.  Kept in sync by
 // hand; the catalog test suite (test_form_template_catalog.py) is the
@@ -106,15 +117,83 @@ const MARKETING_TEMPLATES: Array<{
   },
 ];
 
-export const metadata = {
-  title: 'Free Wedding Planner Templates — The Special Wedding',
-  description:
-    'Nine production-ready form templates for wedding planners — couple intake, order of events, vendor onboarding, dietary surveys, shot lists. Download as PDF, free.',
+// Full Next.js Metadata API per
+// https://nextjs.org/docs/app/api-reference/functions/generate-metadata —
+// metadataBase + alternates.canonical resolve relative URLs in the
+// rendered head, openGraph + twitter give social-share previews,
+// robots is permissive by inheritance from the root layout.
+export const metadata: Metadata = {
+  metadataBase: new URL(SITE_ORIGIN),
+  title: PAGE_TITLE,
+  description: PAGE_DESCRIPTION,
+  alternates: {
+    canonical: PAGE_PATH,
+  },
+  openGraph: {
+    type: 'website',
+    url: PAGE_URL,
+    title: PAGE_TITLE,
+    description: PAGE_DESCRIPTION,
+    siteName: 'The Special Wedding',
+    images: [
+      {
+        url: '/og-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'Free wedding planner template library',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    site: '@thespecialwedding',
+    title: PAGE_TITLE,
+    description: PAGE_DESCRIPTION,
+    images: ['/og-image.png'],
+  },
 };
 
 export default function PublicTemplatesPage() {
+  // schema.org ItemList (https://schema.org/ItemList) surfaces the 9
+  // templates as a single rich-result-eligible list per
+  // https://developers.google.com/search/docs/appearance/structured-data.
+  // Each template links to its anchor on this page so search snippets
+  // can deep-link into the catalog.
+  const itemListJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    name: 'Free Wedding Planner Templates',
+    description: PAGE_DESCRIPTION,
+    itemListOrder: 'https://schema.org/ItemListOrderAscending',
+    numberOfItems: MARKETING_TEMPLATES.length,
+    itemListElement: MARKETING_TEMPLATES.map((template, idx) => ({
+      '@type': 'ListItem',
+      position: idx + 1,
+      name: template.name,
+      description: template.description,
+      url: `${PAGE_URL}#${template.id}`,
+    })),
+  };
   return (
     <main className="min-h-screen bg-[#fbf9f6] py-16 sm:py-24">
+      {/*
+       * Structured data: ItemList for the 9 templates +
+       * BreadcrumbList for the Home → Resources → Free Templates
+       * trail. Both surface as Google Rich Results when the page is
+       * indexed (validated against
+       * https://developers.google.com/search/docs/appearance/structured-data).
+       */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
+      />
+      <BreadcrumbSchema
+        items={[
+          { name: 'Home', href: '/' },
+          { name: 'Resources', href: '/resources' },
+          { name: 'Free Templates', href: PAGE_PATH },
+        ]}
+      />
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <header className="text-center mb-12 sm:mb-16">
           <p className="text-sm font-medium uppercase tracking-wider text-[#6b5d4f] mb-3">
