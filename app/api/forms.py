@@ -33,6 +33,7 @@ from app.models.form import (
     UpdateFormRequest,
 )
 from app.services.form_service import FormService
+from app.services.form_template_catalog import FORM_TEMPLATES as _CATALOG_TEMPLATES
 from app.services.form_upload_service import (
     ALLOWED_MIME_TYPES,
     MAX_UPLOAD_BYTES,
@@ -1294,6 +1295,15 @@ def _get_form_templates() -> list[FormTemplateDefinition]:
             ],
         },
     ]
+    # Append the production catalog (couple intake, order of events,
+    # guest dietary, vendor onboarding, photo shot list, bridal-party
+    # logistics, vendor performance review, engagement session brief,
+    # day-of emergency contacts). The catalog lives in its own module
+    # (app/services/form_template_catalog.py) and is validated at
+    # import-time by tests/backend/test_form_template_catalog.py — every
+    # field passes through FormField.model_validate before this code
+    # path can ship.
+    templates.extend(_CATALOG_TEMPLATES)
     return templates
 
 
