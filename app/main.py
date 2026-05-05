@@ -422,6 +422,7 @@ async def lifespan(app: FastAPI):
     rollup_task: asyncio.Task | None = None
     billing_task: asyncio.Task | None = None
     guest_media_task: asyncio.Task | None = None
+    outbox_task: asyncio.Task | None = None
     scheduler_heartbeat_task: asyncio.Task | None = None
     scheduler_holder_id: str | None = None
 
@@ -517,21 +518,34 @@ async def lifespan(app: FastAPI):
         await sse_manager.start_redis_listener()
         logger.info("SSE Redis pub/sub listener started")
 
+        # Ensure outbox collection indexes exist (idempotent).
+        try:
+            from app.integrations.pm_substrate.outbox import ensure_outbox_indexes
+            await ensure_outbox_indexes()
+            logger.info("PM substrate outbox indexes verified")
+        except Exception as _outbox_idx_exc:
+            logger.warning("PM substrate outbox index setup failed: %s", _outbox_idx_exc)
+
         # Only one replica should run the long-lived background schedulers.
         scheduler_holder_id = _build_scheduler_holder_id()
         if await _acquire_scheduler_leadership(scheduler_holder_id):
             rollup_task = asyncio.create_task(_nightly_rollup_scheduler())
             billing_task = asyncio.create_task(_monthly_billing_scheduler())
             guest_media_task = asyncio.create_task(_guest_media_maintenance_scheduler())
+            from app.integrations.pm_substrate.dispatcher import outbox_dispatcher_scheduler
+            outbox_task = asyncio.create_task(outbox_dispatcher_scheduler())
             scheduler_heartbeat_task = asyncio.create_task(
                 _scheduler_leadership_heartbeat(
-                    scheduler_holder_id, [rollup_task, billing_task, guest_media_task]
+                    scheduler_holder_id,
+                    [rollup_task, billing_task, guest_media_task, outbox_task],
                 )
             )
             logger.info(
-                f"Background schedulers started on leader replica {scheduler_holder_id}"
+                f"Background schedulers started on leader replica {scheduler_holder_id} "
+                "(includes pm-substrate outbox dispatcher)"
             )
         else:
+            outbox_task = None
             logger.info("Background schedulers not started on this replica")
 
         logger.info("Application startup complete")
@@ -544,6 +558,7 @@ async def lifespan(app: FastAPI):
             rollup_task,
             billing_task,
             guest_media_task,
+            outbox_task,
         ]:
             if task and not task.done():
                 task.cancel()
@@ -552,6 +567,7 @@ async def lifespan(app: FastAPI):
             rollup_task,
             billing_task,
             guest_media_task,
+            outbox_task,
         ]:
             if not task:
                 continue
