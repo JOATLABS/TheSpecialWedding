@@ -268,6 +268,53 @@ class FormService:
             "total": len(FORM_TEMPLATES),
         }
 
+    async def get_seeded_form_id(
+        self,
+        catalog_template_id: str,
+        *,
+        created_by: str,
+        owner_alias_emails: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Resolve the planner's catalog-seeded form id for a given
+        catalog template (Chunk 4 of the wedding-checklist nudge).
+
+        The frontend toast that fires when a couple accepts the portal
+        invite needs to map ``couple_intake`` (the catalog id, stable
+        across all planners) to the actual ``form_id`` Mongo assigned
+        when Phase D seeded the template into this planner's
+        workspace. Without this lookup the toast can't render an
+        action button.
+
+        - Whitelists ``catalog_template_id`` against FORM_TEMPLATES
+          (400 on unknown — defence against probing).
+        - Owner-scoped via ``_build_creator_query`` so a team member
+          inherits the parent planner's seed.
+        - Returns 404 with a benign body when the planner has no
+          seeded form (legacy account or planner deleted the seed).
+        """
+        from app.services.form_template_catalog import FORM_TEMPLATES
+
+        valid_ids = {t.get("id") for t in FORM_TEMPLATES}
+        if catalog_template_id not in valid_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="Unknown catalog template id",
+            )
+
+        creator_query = self._build_creator_query(created_by, owner_alias_emails)
+        query: Dict[str, Any] = dict(creator_query)
+        query["seeded_from_catalog"] = True
+        query["catalog_template_id"] = catalog_template_id
+
+        doc = await self.forms_collection.find_one(
+            query, {"_id": 1, "name": 1}
+        )
+        if not doc:
+            raise HTTPException(
+                status_code=404, detail="No seeded template found"
+            )
+        return {"form_id": str(doc["_id"]), "name": doc.get("name") or ""}
+
     @staticmethod
     def _planner_state_key(email: str) -> str:
         """Deterministic, collision-safe key for ``planner_state`` field paths.

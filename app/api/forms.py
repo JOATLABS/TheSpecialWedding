@@ -1466,6 +1466,37 @@ def get_form_templates(
     return {"templates": _get_form_templates()}
 
 
+@router.get(
+    "/forms/seeded/{catalog_template_id}",
+    tags=["Forms"],
+    responses={
+        200: {"description": "Seeded form id resolved for this planner"},
+        400: {"description": "Unknown catalog template id"},
+        404: {"description": "No seeded template for this planner"},
+    },
+)
+async def get_seeded_form_for_template(
+    catalog_template_id: str,
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+):
+    """Resolve a catalog template id (e.g. ``couple_intake``) to the
+    planner's actual seeded form id (Phase D seeded forms).
+
+    Used by the action-button toast on the planner UI: when the
+    couple accepts the portal invite, the toast metadata carries
+    catalog_template_id (stable across all planners), and this
+    endpoint lets the frontend look up the per-planner form_id
+    needed to call ``POST /admin/forms/{form_id}/send`` without
+    scanning every form in the planner's workspace.
+    """
+    owner_scope = await _resolve_form_owner_scope(current_user)
+    return await form_service.get_seeded_form_id(
+        catalog_template_id,
+        created_by=owner_scope["owner_email"],
+        owner_alias_emails=owner_scope["owner_alias_emails"],
+    )
+
+
 @router.post("/forms/from-template/{template_id}", tags=["Form Templates"])
 async def create_form_from_template(
     template_id: str,
