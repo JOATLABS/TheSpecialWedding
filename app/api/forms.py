@@ -14,6 +14,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import Response as FastAPIResponse
+from pydantic import BaseModel, EmailStr, Field
 from typing_extensions import TypedDict
 
 from app.dependencies.auth_extended import (
@@ -1000,6 +1001,90 @@ async def preview_form_template_pdf(
             "Cache-Control": "public, max-age=300, must-revalidate",
         },
     )
+
+
+# Phase C: lead-capture for the public template-download surface.
+# Pydantic v2 validators per the canonical guidance at
+# https://pydantic.dev/docs/validation/latest/concepts/validators/.
+class _MarketingTemplateDownloadRequest(BaseModel):
+    template_id: str = Field(..., min_length=1, max_length=64)
+    email: EmailStr
+    name: Optional[str] = Field(None, max_length=120)
+    utm_source: Optional[str] = Field(None, max_length=60)
+    utm_medium: Optional[str] = Field(None, max_length=60)
+    utm_campaign: Optional[str] = Field(None, max_length=120)
+
+
+@router.post(
+    "/public/marketing/template-download",
+    tags=["Public Forms"],
+    responses={
+        200: {"description": "Lead recorded; PDF dispatched by email"},
+        400: {"description": "Validation error"},
+        404: {"description": "Unknown template"},
+        429: {"description": "Rate limited"},
+    },
+)
+async def public_marketing_template_download(
+    payload: _MarketingTemplateDownloadRequest,
+    request: Request,
+):
+    """Email-gated download of a catalog form template (Phase C).
+
+    The marketing page collects email + optional name + UTM context;
+    we record the lead in ``marketing_leads`` and dispatch the
+    rendered PDF as an email attachment via Resend. Rate-limited
+    aggressively (10/hour/IP) because each call costs an outbound
+    email; idempotent on (email, template_id) so a determined visitor
+    can re-trigger the email without polluting the lead table.
+    """
+    client_ip = (
+        getattr(request.client, "host", None) if request.client else "unknown"
+    )
+    if not rate_limiter.check_rate_limit(
+        f"marketing_template_download_{client_ip}",
+        limit=10,
+        window_seconds=3600,
+    ):
+        raise HTTPException(
+            status_code=429, detail="Too many requests. Please try again later."
+        )
+
+    safe_template_id = InputSanitizer.sanitize_text(payload.template_id, 64)
+    if not safe_template_id:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    try:
+        from app.services.marketing_lead_service import MarketingLeadService
+
+        service = MarketingLeadService()
+        result = await service.capture_template_download(
+            email=str(payload.email),
+            template_id=safe_template_id,
+            recipient_name=payload.name,
+            utm_source=payload.utm_source,
+            utm_medium=payload.utm_medium,
+            utm_campaign=payload.utm_campaign,
+            ip_address=client_ip,
+            user_agent=request.headers.get("user-agent"),
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Template not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return {
+        "status": result.get("status"),
+        "email_dispatched": result.get("email_dispatched"),
+        "message": (
+            "Check your inbox — the template is on its way."
+            if result.get("email_dispatched")
+            else (
+                "We've recorded your request. If you don't receive the "
+                "PDF in a few minutes, please try again."
+            )
+        ),
+    }
 
 
 @router.post("/public/forms/{form_id}/submit", tags=["Public Forms"])
