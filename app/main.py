@@ -14,7 +14,7 @@ from fastapi.encoders import ENCODERS_BY_TYPE
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.admin_activity import router as admin_activity_router
@@ -952,6 +952,11 @@ def build_root_response(config) -> dict[str, object]:
     if config.api_docs_enabled:
         response["docs_url"] = "/docs"
     return response
+
+
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt():
+    return PlainTextResponse("User-agent: *\nDisallow: /\n")
 
 
 @app.get("/", tags=["Health"])
