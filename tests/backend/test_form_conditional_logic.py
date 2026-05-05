@@ -231,11 +231,14 @@ def test_filter_responses_to_visible_drops_hidden_field_values():
     assert filtered == {"diet": "non-veg"}
 
 
-def test_filter_responses_keeps_unrelated_keys():
-    """Keys that don't correspond to a defined field are kept untouched."""
+def test_filter_responses_keeps_unrelated_keys_when_opted_in():
+    """``keep_unknown=True`` retains keys that don't match any defined
+    field — opt-in for callers that need historical-schema reconstruction.
+    Default behavior changed in the Item 5 audit fix: orphan keys are
+    dropped unless explicitly preserved."""
     fields = [{"id": "diet", "required": True}]
     responses = {"diet": "veg", "metadata_marker": "x"}
-    filtered = filter_responses_to_visible(fields, responses)
+    filtered = filter_responses_to_visible(fields, responses, keep_unknown=True)
     assert filtered == {"diet": "veg", "metadata_marker": "x"}
 
 
@@ -439,3 +442,28 @@ async def test_submit_accepts_full_branch_responses(configured_form_service):
     response = database["form_responses"].find_one({"_id": result["id"]})
     assert response["responses"]["diet"] == "veg"
     assert response["responses"]["veg_kind"] == "vegan"
+
+
+# =============================================================================
+# Item 5 (audit fix): orphan / unknown response keys
+# =============================================================================
+
+
+def test_filter_responses_drops_unknown_keys_by_default():
+    """A response key that doesn't match any defined field is dropped by
+    default. Catches the case where a planner removes a field after
+    responses have been collected — the orphan column no longer pollutes
+    CSV exports."""
+    fields = [{"id": "diet", "required": True}]
+    responses = {"diet": "veg", "ghost_field": "stale_value"}
+    out = filter_responses_to_visible(fields, responses)
+    assert out == {"diet": "veg"}
+
+
+def test_filter_responses_keeps_unknown_when_opted_in():
+    """``keep_unknown=True`` preserves orphan keys for the rare caller
+    that wants the historical-schema reconstruction."""
+    fields = [{"id": "diet", "required": True}]
+    responses = {"diet": "veg", "ghost_field": "stale_value"}
+    out = filter_responses_to_visible(fields, responses, keep_unknown=True)
+    assert out == {"diet": "veg", "ghost_field": "stale_value"}

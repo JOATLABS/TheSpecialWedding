@@ -40,6 +40,13 @@ class FormService:
     # contract token expiry to keep the planner mental model consistent.
     DEFAULT_FORM_TOKEN_TTL_DAYS = 30
 
+    # Item 6 (audit fix): caps for ``send_form_reminders`` so a single
+    # daily tick can't blow through the Resend rate limit. Overflow is
+    # deferred to the next scheduler tick (24h later) — acceptable for a
+    # reminder workflow.
+    REMINDER_BUDGET_PER_TICK = 200
+    REMINDER_BUDGET_PER_PLANNER = 50
+
     def __init__(self):
         self.forms_collection = mongo.get_forms_collection()
         self.responses_collection = mongo.db["form_responses"]
@@ -203,7 +210,9 @@ class FormService:
                 "_id": form_id,
                 "name": template.get("name") or template_id,
                 "form_type": template.get("category") or FormType.GENERAL.value,
-                "template_type": template.get("category"),
+                # Item 7 (audit cleanup): legacy template_type is no longer
+                # written. form_type carries the canonical discriminator;
+                # the backfill helper handles existing pre-migration docs.
                 "settings": {
                     "title": template.get("name") or template_id,
                     "description": template.get("description", ""),
@@ -396,17 +405,16 @@ class FormService:
             form_doc = {
                 "_id": form_id,
                 "name": InputSanitizer.sanitize_text(sanitized_data["name"], 100),
-                "form_type": sanitized_data.get("form_type", "general"),
                 "settings": sanitized_data["settings"],
                 "fields": sanitized_data["fields"],
                 "created_by": creator_email,
                 "wedding_id": sanitized_data.get("wedding_id"),
-                "template_type": sanitized_data.get("template_type"),
-                # T1: backfill form_type from the legacy template_type
-                # field on creation so we never write a doc without the
-                # canonical discriminator. The legacy column is kept for
-                # backwards compat reads until the migration script
-                # sweeps existing data.
+                # T1: form_type is the canonical discriminator. We backfill
+                # from legacy template_type on creation so existing clients
+                # that still post template_type don't lose the label, then
+                # default to "general" when neither is supplied. The legacy
+                # template_type field is no longer written (Item 7) — reads
+                # still tolerate it via the migration helper.
                 "form_type": (
                     sanitized_data.get("form_type")
                     or sanitized_data.get("template_type")
@@ -957,9 +965,22 @@ class FormService:
         skipped = 0
         failed = 0
 
+        # Item 6 (audit fix): bound a single scheduler tick so a planner
+        # with 1000 due reminders cannot drain the Resend rate limit in
+        # one pass. ``REMINDER_BUDGET_PER_TICK`` is the global ceiling;
+        # ``REMINDER_BUDGET_PER_PLANNER`` keeps a single planner from
+        # monopolising the tick. Overflow is logged and deferred — the
+        # next daily scheduler run picks up the remaining candidates.
+        sent_per_planner: Dict[str, int] = {}
+        deferred_for_budget = 0
+
         for distribution in candidates:
             distribution_id = distribution.get("_id")
             try:
+                if sent >= self.REMINDER_BUDGET_PER_TICK:
+                    deferred_for_budget += 1
+                    continue
+
                 # Skip if reminder window not yet reached.
                 sent_at = distribution.get("sent_at")
                 if not sent_at:
@@ -987,6 +1008,17 @@ class FormService:
                 )
                 if not form or not form.get("is_active", True):
                     skipped += 1
+                    continue
+
+                # Per-planner budget gate. A planner with 800 due
+                # reminders shouldn't crowd out 4 other planners' due
+                # reminders in the same tick.
+                planner_email = (form.get("created_by") or "").lower().strip()
+                if (
+                    sent_per_planner.get(planner_email, 0)
+                    >= self.REMINDER_BUDGET_PER_PLANNER
+                ):
+                    deferred_for_budget += 1
                     continue
 
                 # Rotate the token so the new email link is fresh and the
@@ -1041,6 +1073,9 @@ class FormService:
                         },
                     )
                     sent += 1
+                    sent_per_planner[planner_email] = (
+                        sent_per_planner.get(planner_email, 0) + 1
+                    )
                 else:
                     failed += 1
             except Exception as exc:  # pragma: no cover - defensive
@@ -1051,14 +1086,21 @@ class FormService:
                 )
                 failed += 1
 
-        if sent or failed:
+        if sent or failed or deferred_for_budget:
             logger.info(
-                "Form reminder pass complete: sent=%d skipped=%d failed=%d",
+                "Form reminder pass complete: sent=%d skipped=%d failed=%d "
+                "deferred_for_budget=%d",
                 sent,
                 skipped,
                 failed,
+                deferred_for_budget,
             )
-        return {"sent": sent, "skipped": skipped, "failed": failed}
+        return {
+            "sent": sent,
+            "skipped": skipped,
+            "failed": failed,
+            "deferred_for_budget": deferred_for_budget,
+        }
 
     async def submit_form_response(
         self,
@@ -1240,11 +1282,18 @@ class FormService:
                                     status_code=410,
                                     detail="This form access link has expired",
                                 )
-                        if distribution_match.get("submitted_at"):
-                            raise HTTPException(
-                                status_code=409,
-                                detail="A response has already been submitted with this link",
-                            )
+                    # Item 4 (audit fix): single-submission per distribution
+                    # is enforced whenever a recognised distribution_id is
+                    # supplied, regardless of whether a token was also
+                    # supplied or whether the submitter provided an email.
+                    # Previously this lived inside the access_token branch,
+                    # which meant a hint-only (no-token) replay against a
+                    # submitted distribution slipped through silently.
+                    if distribution_match.get("submitted_at"):
+                        raise HTTPException(
+                            status_code=409,
+                            detail="A response has already been submitted with this link",
+                        )
                     resolved_distribution_id = response_data.distribution_id
 
             # Check if multiple submissions are allowed
@@ -1332,16 +1381,11 @@ class FormService:
                     f"email={submitted_by_email}, ip={safe_ip}"
                 )
 
-                # Notify planner about the form submission
-                await self._notify_planner_form_submission(
-                    form=form,
-                    submitter_name=submitted_by_name
-                    or submitted_by_email
-                    or "Anonymous",
-                    form_id=form_id,
-                )
-
-                # Sanitize response message to prevent XSS
+                # Item 8 (audit cleanup): sanitize the response payload
+                # BEFORE dispatching downstream notifications so any future
+                # consumer that logs / forwards the message sees the safe
+                # version. The notify path doesn't currently consume
+                # success_message, but the ordering invariant is the point.
                 success_message = form["settings"].get(
                     "success_message", "Thank you for your submission!"
                 )
@@ -1351,6 +1395,15 @@ class FormService:
                 safe_redirect_url = None
                 if redirect_url and InputSanitizer.validate_url(redirect_url):
                     safe_redirect_url = redirect_url
+
+                # Notify planner about the form submission
+                await self._notify_planner_form_submission(
+                    form=form,
+                    submitter_name=submitted_by_name
+                    or submitted_by_email
+                    or "Anonymous",
+                    form_id=form_id,
+                )
 
                 return {
                     "id": response_id,
@@ -1442,21 +1495,41 @@ class FormService:
         *,
         max_total: Optional[int] = None,
         page_size: int = 500,
+        submitted_from: Optional[datetime] = None,
+        submitted_to: Optional[datetime] = None,
     ):
         """Async-iterate every response for a form in bounded pages.
 
         Used by the CSV exporter so we never load the full collection
         into memory. ``max_total`` short-circuits the iteration once
         that many rows have been yielded — convenient for capping
-        export size. Caller is responsible for ownership verification
-        before invoking.
+        export size.
+
+        Item 1 (audit fix): ``submitted_from`` / ``submitted_to`` are
+        applied at the Mongo query layer so the CSV export's
+        ``date_from`` / ``date_to`` request parameters actually filter
+        the dataset (previously parsed but never applied — see audit).
+        Both bounds are inclusive; either may be omitted.
+
+        Caller is responsible for ownership verification before
+        invoking.
         """
         skip = 0
         yielded = 0
         page_size = max(1, min(int(page_size), self.RESPONSE_PAGE_MAX_LIMIT))
+
+        query: Dict[str, Any] = {"form_id": form_id}
+        if submitted_from or submitted_to:
+            range_clause: Dict[str, Any] = {}
+            if submitted_from is not None:
+                range_clause["$gte"] = submitted_from
+            if submitted_to is not None:
+                range_clause["$lte"] = submitted_to
+            query["submitted_at"] = range_clause
+
         while True:
             page = (
-                await self.responses_collection.find({"form_id": form_id})
+                await self.responses_collection.find(query)
                 .sort("submitted_at", -1)
                 .skip(skip)
                 .limit(page_size)
@@ -1894,29 +1967,15 @@ class FormService:
             if not form:
                 raise HTTPException(status_code=404, detail="Form not found")
 
-            # Stream the form's responses page-by-page so even a 50k-row
-            # form doesn't OOM the API process during export. The hard
-            # ``max_export_size`` cap below is enforced by the iterator's
-            # ``max_total`` parameter, and the full count is computed
-            # cheaply server-side via count_documents so we can surface
-            # honest truncation metadata.
-            max_export_size = 10000
-            total_response_count = (
-                await self.responses_collection.count_documents({"form_id": form_id})
-            )
-            responses: List[Dict[str, Any]] = []
-            async for row in self.iter_form_responses(
-                form_id, max_total=max_export_size, page_size=500
-            ):
-                responses.append(row)
-
-            # Validate date parameters
+            # Item 1 (audit fix): parse and validate the date filters
+            # FIRST so they actually scope the exported dataset. The
+            # previous order parsed them after iter_form_responses had
+            # already streamed every row — making the filter dead code.
             parsed_date_from = None
             parsed_date_to = None
 
             if date_from:
                 try:
-                    # Support various date formats
                     date_from = InputSanitizer.sanitize_text(date_from, 50)
                     parsed_date_from = datetime.fromisoformat(
                         date_from.replace("Z", "+00:00")
@@ -1941,7 +2000,6 @@ class FormService:
                         detail="Invalid date_to format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
                     )
 
-            # Validate date range
             if (
                 parsed_date_from
                 and parsed_date_to
@@ -1950,6 +2008,38 @@ class FormService:
                 raise HTTPException(
                     status_code=400, detail="date_from cannot be after date_to"
                 )
+
+            # Stream the form's responses page-by-page so even a 50k-row
+            # form doesn't OOM the API process during export. The hard
+            # ``max_export_size`` cap below is enforced by the iterator's
+            # ``max_total`` parameter, and the full count is computed
+            # cheaply server-side via count_documents so we can surface
+            # honest truncation metadata.
+            #
+            # Both the count and the iterator share the same date-range
+            # filter so total_response_count reflects what the user
+            # actually requested, not the full collection.
+            max_export_size = 10000
+            count_query: Dict[str, Any] = {"form_id": form_id}
+            if parsed_date_from or parsed_date_to:
+                range_clause: Dict[str, Any] = {}
+                if parsed_date_from is not None:
+                    range_clause["$gte"] = parsed_date_from
+                if parsed_date_to is not None:
+                    range_clause["$lte"] = parsed_date_to
+                count_query["submitted_at"] = range_clause
+            total_response_count = (
+                await self.responses_collection.count_documents(count_query)
+            )
+            responses: List[Dict[str, Any]] = []
+            async for row in self.iter_form_responses(
+                form_id,
+                max_total=max_export_size,
+                page_size=500,
+                submitted_from=parsed_date_from,
+                submitted_to=parsed_date_to,
+            ):
+                responses.append(row)
 
             # Log export attempt for security audit
             logger.info(
@@ -1963,9 +2053,10 @@ class FormService:
                 # Still generate empty CSV with headers
 
             # Truncation metadata. ``total_response_count`` was computed
-            # via count_documents above (cheap server-side aggregation),
-            # while ``responses`` is already capped at max_export_size by
-            # iter_form_responses, so we don't have to slice in memory.
+            # via count_documents above (cheap server-side aggregation,
+            # date-filter-aware), while ``responses`` is capped at
+            # max_export_size by iter_form_responses, so no in-memory
+            # slicing is needed.
             truncated = total_response_count > max_export_size
             truncated_count = (
                 total_response_count - max_export_size if truncated else 0

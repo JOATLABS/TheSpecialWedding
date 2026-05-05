@@ -214,7 +214,7 @@ async def test_reminder_sent_when_window_elapsed(configured_form_service):
 
     result = await service.send_form_reminders()
 
-    assert result == {"sent": 1, "skipped": 0, "failed": 0}
+    assert result == {"sent": 1, "skipped": 0, "failed": 0, "deferred_for_budget": 0}
     sent = service.email_service.sent
     assert len(sent) == 1
     assert sent[0]["to_email"] == "d1@example.com"
@@ -237,7 +237,7 @@ async def test_reminder_skipped_before_window(configured_form_service):
 
     result = await service.send_form_reminders()
 
-    assert result == {"sent": 0, "skipped": 1, "failed": 0}
+    assert result == {"sent": 0, "skipped": 1, "failed": 0, "deferred_for_budget": 0}
     assert service.email_service.sent == []
 
 
@@ -252,7 +252,7 @@ async def test_reminder_skipped_when_already_submitted(configured_form_service):
     result = await service.send_form_reminders()
     # Submitted distributions are filtered out at the Mongo query level —
     # they don't even get inspected, so they don't bump 'skipped'.
-    assert result == {"sent": 0, "skipped": 0, "failed": 0}
+    assert result == {"sent": 0, "skipped": 0, "failed": 0, "deferred_for_budget": 0}
 
 
 @pytest.mark.asyncio
@@ -266,7 +266,7 @@ async def test_reminder_skipped_when_already_reminded(configured_form_service):
     )
 
     result = await service.send_form_reminders()
-    assert result == {"sent": 0, "skipped": 0, "failed": 0}
+    assert result == {"sent": 0, "skipped": 0, "failed": 0, "deferred_for_budget": 0}
 
 
 @pytest.mark.asyncio
@@ -280,7 +280,7 @@ async def test_reminder_skipped_when_send_reminder_disabled(configured_form_serv
     )
 
     result = await service.send_form_reminders()
-    assert result == {"sent": 0, "skipped": 0, "failed": 0}
+    assert result == {"sent": 0, "skipped": 0, "failed": 0, "deferred_for_budget": 0}
 
 
 @pytest.mark.asyncio
@@ -296,7 +296,7 @@ async def test_reminder_skipped_when_token_expired(configured_form_service):
     )
 
     result = await service.send_form_reminders()
-    assert result == {"sent": 0, "skipped": 1, "failed": 0}
+    assert result == {"sent": 0, "skipped": 1, "failed": 0, "deferred_for_budget": 0}
     assert service.email_service.sent == []
 
 
@@ -309,7 +309,7 @@ async def test_reminder_skipped_when_form_inactive(configured_form_service):
     )
 
     result = await service.send_form_reminders()
-    assert result == {"sent": 0, "skipped": 1, "failed": 0}
+    assert result == {"sent": 0, "skipped": 1, "failed": 0, "deferred_for_budget": 0}
 
 
 @pytest.mark.asyncio
@@ -348,8 +348,8 @@ async def test_reminder_idempotent_second_pass_does_nothing(
     first = await service.send_form_reminders()
     second = await service.send_form_reminders()
 
-    assert first == {"sent": 1, "skipped": 0, "failed": 0}
-    assert second == {"sent": 0, "skipped": 0, "failed": 0}
+    assert first == {"sent": 1, "skipped": 0, "failed": 0, "deferred_for_budget": 0}
+    assert second == {"sent": 0, "skipped": 0, "failed": 0, "deferred_for_budget": 0}
     assert len(service.email_service.sent) == 1
 
 
@@ -384,3 +384,75 @@ async def test_send_form_records_reminder_snapshot_on_each_distribution(
     assert dist["reminder_sender_name"] == "Wedding Planner"
     assert dist["reminder_sent_at"] is None
     assert dist["reminder_count"] == 0
+
+
+# =============================================================================
+# Item 6 (audit fix): per-tick + per-planner budget caps
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_send_form_reminders_caps_at_global_budget(
+    configured_form_service, monkeypatch
+):
+    """Drop the global cap to a small number, seed more eligible
+    distributions than the cap, and assert the overflow is deferred
+    rather than dispatched."""
+    service, database = configured_form_service
+    monkeypatch.setattr(service, "REMINDER_BUDGET_PER_TICK", 3)
+    monkeypatch.setattr(service, "REMINDER_BUDGET_PER_PLANNER", 999)
+    database["forms"].insert_one(_form_doc())
+
+    for i in range(5):
+        database["form_distributions"].insert_one(
+            _distribution_doc(distribution_id=f"d{i}", sent_days_ago=10)
+        )
+
+    result = await service.send_form_reminders()
+
+    assert result["sent"] == 3
+    assert result["deferred_for_budget"] == 2
+    # 3 emails dispatched, 2 distributions still pending for the next tick.
+    assert len(service.email_service.sent) == 3
+
+
+@pytest.mark.asyncio
+async def test_send_form_reminders_caps_per_planner(
+    configured_form_service, monkeypatch
+):
+    """A single noisy planner cannot crowd out other planners' due
+    reminders in the same tick."""
+    service, database = configured_form_service
+    monkeypatch.setattr(service, "REMINDER_BUDGET_PER_TICK", 999)
+    monkeypatch.setattr(service, "REMINDER_BUDGET_PER_PLANNER", 2)
+
+    # Planner A owns form_a with 4 due reminders; Planner B owns form_b
+    # with 1 due reminder.
+    database["forms"].insert_one(_form_doc(form_id="form_a"))
+    database["forms"].insert_one(_form_doc(form_id="form_b"))
+    # Planner A doc was inserted via _form_doc default created_by="planner@example.com".
+    # Override planner B's doc.
+    database["forms"].update_one(
+        {"_id": "form_b"}, {"$set": {"created_by": "other@example.com"}}
+    )
+
+    for i in range(4):
+        database["form_distributions"].insert_one(
+            _distribution_doc(
+                distribution_id=f"a{i}", form_id="form_a", sent_days_ago=10
+            )
+        )
+    database["form_distributions"].insert_one(
+        _distribution_doc(distribution_id="b0", form_id="form_b", sent_days_ago=10)
+    )
+
+    result = await service.send_form_reminders()
+
+    # Planner A: capped at 2. Planner B: 1 sent. Total dispatched = 3.
+    # 2 of planner A's distributions deferred for budget.
+    assert result["sent"] == 3
+    assert result["deferred_for_budget"] == 2
+
+    sent_to = sorted(call["to_email"] for call in service.email_service.sent)
+    # Planner B's recipient is included; only 2 of A's 4 are.
+    assert "b0@example.com" in sent_to

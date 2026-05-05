@@ -121,24 +121,43 @@ def is_field_visible(field: Dict[str, Any], responses: Dict[str, Any]) -> bool:
 
 
 def filter_responses_to_visible(
-    fields: Iterable[Dict[str, Any]], responses: Dict[str, Any]
+    fields: Iterable[Dict[str, Any]],
+    responses: Dict[str, Any],
+    *,
+    keep_unknown: bool = False,
 ) -> Dict[str, Any]:
     """Drop response values for fields that are not visible under the current state.
 
-    Visibility depends on responses to *other* fields, so we evaluate against
-    the full submitted ``responses`` map. Fields without conditional_logic are
-    kept untouched. Useful when the backend wants to ensure that hidden-field
-    values don't leak into stored responses.
+    Visibility depends on responses to *other* fields, so we evaluate
+    against the full submitted ``responses`` map. Fields without
+    ``conditional_logic`` are kept untouched.
+
+    Item 5 (audit fix): orphan response keys (keys that don't match any
+    current field id — typically because the planner removed a field
+    after responses came in) are now dropped by default. Pass
+    ``keep_unknown=True`` to retain them — useful when the caller is
+    reconstructing historical schemas (e.g. an export tool that wants to
+    surface "deleted-field" columns explicitly).
     """
+    fields_list = list(fields)
+    known_field_ids = {f.get("id") for f in fields_list if isinstance(f, dict)}
     visible_field_ids = {
         field["id"]
-        for field in fields
-        if isinstance(field, dict) and "id" in field and is_field_visible(field, responses)
+        for field in fields_list
+        if isinstance(field, dict)
+        and "id" in field
+        and is_field_visible(field, responses)
     }
+    if keep_unknown:
+        return {
+            field_id: value
+            for field_id, value in responses.items()
+            if field_id in visible_field_ids or field_id not in known_field_ids
+        }
     return {
         field_id: value
         for field_id, value in responses.items()
-        if field_id in visible_field_ids or field_id not in {f.get("id") for f in fields}
+        if field_id in visible_field_ids
     }
 
 

@@ -870,3 +870,43 @@ async def test_send_form_writes_canonical_status_strings(configured_form_service
     valid = {s.value for s in FormDistributionStatus}
     for dist in database["form_distributions"].find({"form_id": "form_1"}):
         assert dist["status"] in valid
+
+
+# =============================================================================
+# Item 4 (audit fix): hint-only single-submission enforcement
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_tokenized_submission_blocks_replay_when_email_missing(
+    configured_form_service,
+):
+    """A second submission against an already-submitted distribution
+    must return 409 even when no access_token and no submitted_by_email
+    are provided. Previously this slipped through because the 409 gate
+    lived inside the access_token branch."""
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc(allow_multiple_submissions=True))
+    database["form_distributions"].insert_one(
+        {
+            "_id": "dist-1",
+            "form_id": "form_1",
+            "recipient_email": "guest@example.com",
+            "sent_at": datetime.utcnow(),
+            "status": "submitted",
+            "submitted_at": datetime.utcnow(),
+            # Hash and expiry don't matter here — the test exercises the
+            # path where the client supplies dist_id but NO token.
+            "access_token_hash": service._hash_form_access_token("any"),
+            "token_expires_at": datetime.now(timezone.utc) + timedelta(days=10),
+        }
+    )
+
+    request = SubmitFormRequest(
+        responses={"name": "Replay Attacker"},
+        distribution_id="dist-1",
+        # No access_token, no submitted_by_email
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await service.submit_form_response("form_1", request)
+    assert exc_info.value.status_code == 409
