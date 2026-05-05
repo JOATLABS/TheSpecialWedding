@@ -936,6 +936,72 @@ async def upload_public_form_file(
     )
 
 
+@router.get(
+    "/public/form-templates/{template_id}/preview.pdf",
+    tags=["Public Forms"],
+    responses={
+        200: {"content": {"application/pdf": {}}},
+        404: {"description": "Template not found"},
+        429: {"description": "Rate limited"},
+        503: {"description": "PDF rendering not available"},
+    },
+)
+async def preview_form_template_pdf(
+    template_id: str,
+    request: Request,
+):
+    """Public, unauthenticated PDF preview of a catalog template.
+
+    Powers the marketing surface ("Free Wedding Planner Templates")
+    and serves as the upstream renderer for in-app previews. Rate-
+    limited (60/hour/IP) and rendered off the event loop via
+    ``asyncio.to_thread`` so a 200–500 ms WeasyPrint pass cannot block
+    other requests. Output is cached in-memory by template id, so
+    repeat requests return without re-rendering.
+    """
+    import asyncio
+
+    client_ip = (
+        getattr(request.client, "host", None) if request.client else "unknown"
+    )
+    if not rate_limiter.check_rate_limit(
+        f"public_template_pdf_{client_ip}", limit=60, window_seconds=3600
+    ):
+        raise HTTPException(
+            status_code=429, detail="Too many requests. Please try again later."
+        )
+
+    safe_template_id = InputSanitizer.sanitize_text(template_id, 64)
+    if not safe_template_id:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    try:
+        from app.services.form_template_pdf_service import render_form_template_pdf
+
+        pdf_bytes = await asyncio.to_thread(
+            render_form_template_pdf, safe_template_id
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Template not found")
+    except ImportError:
+        raise HTTPException(
+            status_code=503, detail="PDF generation is temporarily unavailable"
+        )
+
+    filename = f"{safe_template_id}.pdf"
+    return FastAPIResponse(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Content-Length": str(len(pdf_bytes)),
+            # Public marketing assets — short browser cache + revalidation
+            # is fine. The render itself is cached process-side via lru_cache.
+            "Cache-Control": "public, max-age=300, must-revalidate",
+        },
+    )
+
+
 @router.post("/public/forms/{form_id}/submit", tags=["Public Forms"])
 async def submit_form(
     form_id: str, response_data: SubmitFormRequest, request: Request, response: Response
