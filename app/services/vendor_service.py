@@ -27,6 +27,10 @@ from app.core.database import mongo
 from app.core.settings import settings
 from app.integrations.pm_substrate.client import get_client as _get_substrate_client
 from app.integrations.pm_substrate.errors import EdgeCreationFailed, PMSubstrateError
+from app.integrations.pm_substrate.outbox import (
+    build_outbox_row,
+    get_outbox_collection,
+)
 from app.utils.planner_ownership import (
     build_wedding_owner_query,
     combine_mongo_filters,
@@ -107,6 +111,7 @@ class VendorService:
         self.payment_links = mongo.db["payment_links"]
         self.vendor_forms = mongo.db["vendor_forms"]
         self.form_responses = mongo.db["form_responses"]
+        self.pm_substrate_outbox = mongo.db["pm_substrate_outbox"]
 
         # Services
         self.email_service = ResendEmailService()
@@ -444,8 +449,8 @@ class VendorService:
             "wedding_id": source_contract["wedding_id"],
             "vendor_profile_id": source_contract.get("vendor_profile_id"),
             "vendor_quote_id": source_contract.get("vendor_quote_id"),
-            # budget_category_id not copied — removed in P2.2.
-            # pm_contract_id not copied — the revision is a new Contract node;
+            # budget_category_id not copied - removed in P2.2.
+            # pm_contract_id not copied - the revision is a new Contract node;
             # create_contract will assign a new pm_contract_id on the next interaction.
             "pm_contract_id": None,
             "template_id": source_contract.get("template_id"),
@@ -695,7 +700,7 @@ class VendorService:
         honoured in both production (real Mongo) and tests (injected fake).
         ``actor_email=None`` is the root-admin bypass: no ownership filter
         is applied.  Returns ``None`` on bad ID, missing record, or wrong
-        owner — callers raise 404 so foreign IDs are indistinguishable from
+        owner - callers raise 404 so foreign IDs are indistinguishable from
         missing ones (AGENTS.md §"Authorization And Tenant Boundary Rule").
         """
         if not vendor_id:
@@ -727,7 +732,7 @@ class VendorService:
         Uses ``self.weddings`` so the instance-level collection is honoured
         in both production (real Mongo) and tests (injected fake).
         ``actor_email=None`` is the root-admin bypass.  Tries the string ID
-        first, then ObjectId — matching the legacy ``_get_wedding`` shape so
+        first, then ObjectId - matching the legacy ``_get_wedding`` shape so
         wedding IDs stored as ``wedding_<hex>`` strings still resolve.
         """
         if not wedding_id:
@@ -803,7 +808,7 @@ class VendorService:
         Boundary Rule") to defend against ownership drift surfaced by
         `app/scripts/report_planner_ownership_drift.py`. When `actor_email` is
         None we treat the call as root-admin and skip scoping. Always returns a
-        dict with `couple_email` and `couple_names` keys — both may be None.
+        dict with `couple_email` and `couple_names` keys - both may be None.
         Never raises.
         """
         result: Dict[str, Optional[str]] = {
@@ -832,7 +837,7 @@ class VendorService:
             if not wedding_belongs_to_owner(
                 wedding, planner_email=normalized_actor_email
             ):
-                # Wedding is missing or owned by a different planner — refuse
+                # Wedding is missing or owned by a different planner - refuse
                 # to leak couple contact info. Return the empty result.
                 return result
 
@@ -871,7 +876,7 @@ class VendorService:
         if not result["couple_email"] or not result["couple_names"]:
             if wedding is None and normalized_actor_email is None:
                 try:
-                    # root-admin: bypass owner scope intentional — see Task #47
+                    # root-admin: bypass owner scope intentional - see Task #47
                     wedding = await self._get_wedding(wedding_id)
                 except Exception as e:
                     logger.warning(
@@ -1191,7 +1196,7 @@ class VendorService:
             # If it exists and was manually added by a planner, don't touch it
             if existing and existing.get("source", "manual") == "manual":
                 logger.debug(
-                    f"Skipping scraped vendor '{business_name}' — already exists as manual entry"
+                    f"Skipping scraped vendor '{business_name}' - already exists as manual entry"
                 )
                 existing["_id"] = str(existing["_id"])
                 return existing
@@ -1466,11 +1471,11 @@ class VendorService:
         bypass), the filters are skipped and the counts span every
         planner. The milestone aggregation pipeline ``$match``es on
         ``created_by`` BEFORE any ``$group`` so we never accidentally
-        sum across other planners' milestones — that was the
+        sum across other planners' milestones - that was the
         cross-tenant leak fixed under VENDOR_CONTRACT_PREPROD #2.
         """
         try:
-            # Vendor counts — scope to planner unless root-admin bypass.
+            # Vendor counts - scope to planner unless root-admin bypass.
             vendor_query: Dict[str, Any] = {"is_active": True}
             if created_by is not None:
                 vendor_query["created_by"] = created_by
@@ -1479,7 +1484,7 @@ class VendorService:
                 {**vendor_query, "is_preferred": True}
             )
 
-            # Contract counts — scope to planner unless root-admin bypass.
+            # Contract counts - scope to planner unless root-admin bypass.
             # Soft-deleted contracts are excluded so dashboard counts only
             # reflect live records.
             contract_query: Dict[str, Any] = {"is_soft_deleted": {"$ne": True}}
@@ -1496,7 +1501,7 @@ class VendorService:
                 {**contract_query, "status": "signed"}
             )
 
-            # Payment milestone counts and aggregation — scope to
+            # Payment milestone counts and aggregation - scope to
             # planner unless root-admin bypass. Pre-fix this filter was
             # missing, so a planner saw totals summed across every
             # other planner's milestones.
@@ -1583,7 +1588,7 @@ class VendorService:
             # ``normalize_planner_email(None)`` returns ``None``, preserving
             # the root-admin bypass (no ownership filter).
             created_by = normalize_planner_email(created_by)
-            # Get vendor profile (scoped by planner ownership — prevents
+            # Get vendor profile (scoped by planner ownership - prevents
             # cross-tenant assignment via a client-supplied vendor_profile_id).
             vendor = await self._get_owned_vendor_profile(vendor_profile_id, created_by)
             if not vendor:
@@ -1596,7 +1601,7 @@ class VendorService:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
             # Check if already assigned. Soft-deleted assignments are
-            # ignored — a fresh assignment of the same vendor must succeed
+            # ignored - a fresh assignment of the same vendor must succeed
             # after archival, and the partial unique index in
             # database_indexes.py enforces this at the storage layer.
             existing = await self.vendor_assignments.find_one(
@@ -1643,57 +1648,49 @@ class VendorService:
                 },
             )
 
-            # P2.2: sync vendor→budgetCategory edge to pm-substrate.
-            # This is the structural fact the BudgetRollupHandler needs:
-            #   contract → [contract_vendor] → vendor → [vendor_budget_category] → budgetCategory
-            # Without this edge, the budget rollup silently skips all payments
-            # through this vendor. We log + raise if the call fails because
-            # the edge is load-bearing (no edge = no rollup = silent data loss).
+            # P2.3: write vendor→budgetCategory edge to outbox instead of
+            # calling the substrate directly. The outbox guarantees at-least-once
+            # delivery even when the substrate is temporarily unavailable.
+            # The dispatcher picks up the row and calls
+            # client.assign_vendor_to_budget_category() with exponential backoff.
             if budget_category_id and created_by:
                 try:
-                    await _get_substrate_client().assign_vendor_to_budget_category(
+                    outbox_row = build_outbox_row(
                         tenant_id=created_by,
-                        vendor_profile_id=vendor_profile_id,
-                        budget_category_id=budget_category_id,
-                        vendor_data={
-                            "name": vendor["business_name"],
-                            "email": vendor.get("email"),
-                            "phone": vendor.get("phone"),
-                            "category": vendor["service_category"],
-                            "external_ref": vendor_profile_id,
+                        created_by=created_by,
+                        event_type="substrate.assign_vendor_to_budget_category",
+                        payload={
+                            "vendor_profile_id": vendor_profile_id,
+                            "budget_category_id": budget_category_id,
+                            "vendor_data": {
+                                "name": vendor["business_name"],
+                                "email": vendor.get("email"),
+                                "phone": vendor.get("phone"),
+                                "category": vendor["service_category"],
+                                "external_ref": vendor_profile_id,
+                            },
                         },
+                        route="substrate.assign_vendor_to_budget_category",
+                        idempotency_key=f"{created_by}:{vendor_profile_id}:{budget_category_id}",
                     )
+                    await self.pm_substrate_outbox.insert_one(outbox_row)
                     logger.info(
-                        "assign_vendor_to_wedding: wired substrate edge vendor=%s → category=%s",
+                        "assign_vendor_to_wedding: queued substrate edge vendor=%s → "
+                        "category=%s in outbox (row=%s)",
                         vendor_profile_id,
                         budget_category_id,
+                        outbox_row["_id"],
                     )
-                except EdgeCreationFailed as exc:
-                    # Fatal: without this edge, payments have no rollup target.
-                    # Log and re-raise so the assignment fails loudly rather than
-                    # silently succeeding with a broken budget rollup.
+                except Exception as _outbox_exc:
+                    # The outbox write failing is serious but not fatal for the assignment.
+                    # Log as error - ops must reconcile manually if this persists.
                     logger.error(
-                        "assign_vendor_to_wedding: substrate edge creation failed — "
-                        "budget rollup will not work for vendor %s: %s",
+                        "assign_vendor_to_wedding: outbox write failed for vendor=%s → "
+                        "category=%s: %s. Budget rollup edge will not be delivered until "
+                        "the outbox is reconciled.",
                         vendor_profile_id,
-                        exc,
-                    )
-                    raise HTTPException(
-                        status_code=503,
-                        detail=(
-                            "Vendor assignment saved locally but substrate budget edge "
-                            "could not be created. Budget rollup will not work until "
-                            "this is resolved. See P2.2 architecture notes."
-                        ),
-                    ) from exc
-                except Exception as _substrate_exc:
-                    # In P2.2, substrate unavailability is non-fatal for the assignment
-                    # itself but the rollup will be broken. Log clearly.
-                    logger.warning(
-                        "assign_vendor_to_wedding: substrate call failed (non-fatal in P2.2) — "
-                        "budget rollup will not fire for vendor %s: %s",
-                        vendor_profile_id,
-                        _substrate_exc,
+                        budget_category_id,
+                        _outbox_exc,
                     )
 
             return assignment
@@ -1741,7 +1738,7 @@ class VendorService:
             )
 
         try:
-            # Pre-flight ownership check — keeps the planner-scoped query
+            # Pre-flight ownership check - keeps the planner-scoped query
             # in the helper module and raises 404 if the assignment is
             # missing or owned by another planner. The subsequent
             # find_one_and_update is then re-scoped on _id + created_by
@@ -1917,7 +1914,7 @@ class VendorService:
             # script) can't silently persist an inconsistent contract.
             #
             # NOTE: The current ``CreateVendorContractRequest`` DTO does not
-            # expose ``deposit_amount`` — only ``deposit_percentage`` (capped
+            # expose ``deposit_amount`` - only ``deposit_percentage`` (capped
             # at 100). So the API path can't currently trip this; the guard
             # is here for defense in depth and to catch any caller that does
             # pass ``deposit_amount`` directly (internal scripts, tests, or
@@ -1942,13 +1939,13 @@ class VendorService:
             # Get planner's contract settings (with fallback to system defaults)
             planner_settings = await self._get_planner_contract_settings(created_by)
 
-            # Get vendor profile (scoped by planner ownership — prevents
+            # Get vendor profile (scoped by planner ownership - prevents
             # cross-tenant write via a client-supplied vendor_profile_id).
             vendor = await self._get_owned_vendor_profile(vendor_profile_id, created_by)
             if not vendor:
                 raise HTTPException(status_code=404, detail="Vendor not found")
 
-            # Get wedding (scoped by planner ownership — prevents
+            # Get wedding (scoped by planner ownership - prevents
             # cross-tenant write via a client-supplied wedding_id).
             wedding = await self._get_owned_wedding(wedding_id, created_by)
             if not wedding:
@@ -2041,7 +2038,7 @@ class VendorService:
 
             # P2.2: look up the assignment so we can link the contract back to it
             # (contract_id write below). budget_category_id is no longer stored on
-            # vendor_contracts — the pm-substrate graph edge
+            # vendor_contracts - the pm-substrate graph edge
             # (wedding/vendor_budget_category) is the source of truth for the rollup
             # target. See JOATLABS P2.2 architecture notes.
             existing_assignment = await self.vendor_assignments.find_one(
@@ -2058,7 +2055,7 @@ class VendorService:
                 "wedding_id": wedding_id,
                 "vendor_profile_id": vendor_profile_id,
                 "vendor_quote_id": quote_id,
-                # budget_category_id intentionally absent — removed in P2.2.
+                # budget_category_id intentionally absent - removed in P2.2.
                 # Budget rollup is now owned by @pm/capability-wedding-budget
                 # which infers the target via graph topology (contract → vendor
                 # → budgetCategory). Storing budget_category_id here was the
@@ -2102,60 +2099,57 @@ class VendorService:
             self._serialize_doc(contract)
             self._attach_contract_version_metadata(contract)
 
-            # P2.2: register the contract in the pm-substrate graph.
-            # This creates:
-            #   1. A Vendor node (uuid5-derived, idempotent).
-            #   2. A Contract node → returns pm_contract_id.
-            #   3. A wedding/contract_vendor edge (contract → vendor).
-            # The budget rollup walks this edge chain at payment time:
-            #   contract → vendor → budgetCategory.
-            # Failures are logged but do not roll back the local Mongo write;
-            # the pm_contract_id stays None and payments fall back to
-            # the old local-only path. P2.3 will make this hard-fail.
+            # P2.3: register the contract in the pm-substrate via the outbox.
+            # The outbox dispatcher will call client.create_contract() and
+            # store the returned pm_contract_id back on this document.
+            # At-least-once delivery guaranteed; idempotent on the substrate side.
             try:
                 effective_date = (
                     service_date.date().isoformat()
                     if service_date and hasattr(service_date, "date")
                     else datetime.now(timezone.utc).date().isoformat()
                 )
-                pm_contract_id = await _get_substrate_client().create_contract(
+                outbox_row = build_outbox_row(
                     tenant_id=created_by,
-                    vendor_profile_id=vendor_profile_id,
-                    contract_data={
-                        "amount_minor": int(total_amount * 100),
-                        "currency": "USD",
-                        "effective_date": effective_date,
+                    created_by=created_by,
+                    event_type="substrate.create_contract",
+                    payload={
+                        "local_contract_id": str(contract_id),
+                        "vendor_profile_id": vendor_profile_id,
+                        "contract_data": {
+                            "amount_minor": int(total_amount * 100),
+                            "currency": "USD",
+                            "effective_date": effective_date,
+                        },
+                        "vendor_data": {
+                            "name": vendor["business_name"],
+                            "email": vendor.get("email"),
+                            "phone": vendor.get("phone"),
+                            "category": vendor["service_category"],
+                            "external_ref": vendor_profile_id,
+                        },
                     },
-                    vendor_data={
-                        "name": vendor["business_name"],
-                        "email": vendor.get("email"),
-                        "phone": vendor.get("phone"),
-                        "category": vendor["service_category"],
-                        "external_ref": vendor_profile_id,
-                    },
+                    route="substrate.create_contract",
+                    idempotency_key=str(contract_id),
                 )
-                # Store the substrate contract ID for cross-reference.
-                await self.vendor_contracts.update_one(
-                    {"_id": contract_id},
-                    {"$set": {"pm_contract_id": pm_contract_id}},
-                )
-                contract["pm_contract_id"] = pm_contract_id
+                await self.pm_substrate_outbox.insert_one(outbox_row)
                 logger.info(
-                    "create_contract: registered in pm-substrate, pm_contract_id=%s",
-                    pm_contract_id,
+                    "create_contract: queued substrate contract creation in outbox "
+                    "(local_contract=%s, outbox_row=%s)",
+                    contract_id,
+                    outbox_row["_id"],
                 )
-            except Exception as _substrate_exc:
+            except Exception as _outbox_exc:
                 logger.warning(
-                    "create_contract: pm-substrate call failed (non-blocking in P2.2): %s. "
-                    "Set PM_SUBSTRATE_URL to wire the live substrate. "
-                    "Budget rollup via substrate will not fire until P2.3.",
-                    _substrate_exc,
+                    "create_contract: outbox write failed (non-blocking): %s. "
+                    "pm_contract_id will remain None until outbox is reconciled.",
+                    _outbox_exc,
                 )
 
             # Link the new contract back to the assignment so the wedding-detail
             # Vendors tab (and any other surface that reads from the assignment)
             # can show the contract immediately, not only after sign. We only
-            # set contract_id when it's currently null — first-contract-wins
+            # set contract_id when it's currently null - first-contract-wins
             # semantics, matching the prior behavior that sign_contract did at
             # sign time. Status is intentionally NOT changed: the documented
             # state machine reserves "contracted" for SIGNED, and a draft
@@ -2629,7 +2623,7 @@ class VendorService:
                         detail="Revision lineage does not match the contract it supersedes",
                     )
 
-            # Get wedding info — contract ownership was already verified by
+            # Get wedding info - contract ownership was already verified by
             # ``get_contract`` above; tighten the wedding read to the same
             # ``created_by`` so the lookup itself is owner-scoped.
             wedding = await self._get_owned_wedding(contract["wedding_id"], created_by)
@@ -2649,7 +2643,7 @@ class VendorService:
                 base_url, contract_id, raw_token
             )
 
-            # Build email — escape every planner/vendor-supplied string before
+            # Build email - escape every planner/vendor-supplied string before
             # interpolating into the HTML body. Numeric amounts are formatted
             # via :,.2f and contract_link is a server-built URL, but we still
             # escape it defensively in case a future change lets user input
@@ -3183,7 +3177,7 @@ class VendorService:
                 }
 
             # Owner-scoping (parallels _get_owned_form / _get_owned_form_submission):
-            #   - vendor_forms.created_by is the planner's email — filter directly.
+            #   - vendor_forms.created_by is the planner's email - filter directly.
             #   - vendor_submissions has no created_by; scope it transitively
             #     through the parent vendor_forms it references via form_id.
             # When created_by is None we're acting as root-admin and skip scoping,
@@ -3536,7 +3530,7 @@ class VendorService:
                     "contract_id": contract_id,
                     "wedding_id": contract["wedding_id"],
                     "vendor_profile_id": contract.get("vendor_profile_id"),
-                    # budget_category_id not inherited — removed in P2.2.
+                    # budget_category_id not inherited - removed in P2.2.
                     # The pm-substrate graph edge (vendor → budgetCategory) drives rollup.
                     "pm_contract_id": contract.get("pm_contract_id"),
                     "description": m["description"],
@@ -3605,7 +3599,7 @@ class VendorService:
 
         The ``update_many`` overdue-marking branch carries the same
         ``created_by`` filter so a planner's overdue sweep cannot
-        accidentally flip another planner's milestone status — defending
+        accidentally flip another planner's milestone status - defending
         the write at the Mongo layer matches the Authorization And
         Tenant Boundary Rule.
         """
@@ -3639,7 +3633,7 @@ class VendorService:
                         m["status"] = PaymentMilestoneStatus.OVERDUE.value
                         overdue_milestone_ids.append(ObjectId(m["_id"]))
 
-            # Persist overdue status changes to database — re-apply the
+            # Persist overdue status changes to database - re-apply the
             # planner ``created_by`` filter so the write is scoped at
             # the Mongo layer, not just by the in-memory ``$in`` set.
             if overdue_milestone_ids:
@@ -3800,6 +3794,37 @@ class VendorService:
             if stripe_payment_intent_id:
                 update_data["stripe_payment_intent_id"] = stripe_payment_intent_id
 
+            # P2.3: build the outbox row before the transaction so we can
+            # include it in the same Mongo transaction as the payment write.
+            # The idempotency_key IS the payment_id — substrate dedupes on it.
+            payment_id_for_substrate = str(
+                milestone["_id"]
+                if not isinstance(milestone.get("_id"), str)
+                else milestone.get("_id")
+            )
+            recorded_at_iso = (
+                update_data["paid_at"].isoformat()
+                if hasattr(update_data.get("paid_at"), "isoformat")
+                else datetime.now(timezone.utc).isoformat()
+            )
+            # We build the outbox row now; whether it gets inserted depends on
+            # whether the contract has a pm_contract_id (see inside the tx below).
+            outbox_row_for_payment: Optional[dict] = None
+            if contract and contract.get("pm_contract_id"):
+                outbox_row_for_payment = build_outbox_row(
+                    tenant_id=created_by,
+                    created_by=created_by,
+                    event_type="wedding.contract.payment_recorded",
+                    payload={
+                        "pm_contract_id": contract["pm_contract_id"],
+                        "amount_minor": int(amount * 100),
+                        "recorded_at": recorded_at_iso,
+                        "payment_id": payment_id_for_substrate,
+                    },
+                    route=f"POST /tenants/{created_by}/events",
+                    idempotency_key=payment_id_for_substrate,
+                )
+
             async def _record_in_transaction(session: Any) -> None:
                 await self.payment_milestones.update_one(
                     {"_id": ObjectId(milestone_id)},
@@ -3825,64 +3850,47 @@ class VendorService:
                         session=session,
                     )
 
-                # P2.2: the budget_categories.actual_spent $inc block that lived here
-                # has been removed. It was the dead-code path that silently never ran
-                # because milestone.budget_category_id was always None (inherited from
-                # a contract that always had budget_category_id=None). The rollup now
-                # lives in @pm/capability-wedding-budget and fires on the
-                # wedding.contract.payment_recorded event emitted below.
-                # The pm-substrate call is outside the Mongo transaction (see below).
+                # P2.3: write the substrate event to the outbox IN THIS TRANSACTION.
+                # If the outbox write fails, the entire transaction rolls back —
+                # the local payment record is not committed without the outbox row.
+                # This closes the P2.2 atomicity gap: the outbox row and the
+                # local write are either both committed or both absent.
+                if outbox_row_for_payment is not None:
+                    await self.pm_substrate_outbox.insert_one(
+                        outbox_row_for_payment,
+                        session=session,
+                    )
+                    logger.debug(
+                        "record_payment: outbox row inserted in transaction "
+                        "(payment_id=%s, outbox_row=%s)",
+                        payment_id_for_substrate,
+                        outbox_row_for_payment["_id"],
+                    )
+                else:
+                    logger.debug(
+                        "record_payment: no pm_contract_id on contract — "
+                        "skipping outbox insert (substrate not yet wired or "
+                        "contract predates P2.2)."
+                    )
 
             await self._run_required_transaction(
                 "Vendor milestone payment recording",
                 _record_in_transaction,
             )
 
-            # P2.2: emit wedding.contract.payment_recorded to the pm-substrate.
-            # The @pm/capability-wedding-budget handler subscribes to this event
-            # and runs the budget rollup transactionally in Postgres:
-            #   1. Idempotency guard on payment_id (budget.applied_payments).
-            #   2. Lock BudgetCategory node (FOR UPDATE).
-            #   3. Increment actualSpentMinor.
-            #   4. Emit wedding.budget.actual_spent_updated in the same tx.
-            #
-            # The substrate call happens OUTSIDE the Mongo transaction so that
-            # a substrate failure doesn’t roll back the already-committed local
-            # payment record. In P2.3 we’ll add a dual-write / outbox pattern
-            # to guarantee at-least-once delivery.
-            if contract and contract.get("pm_contract_id"):
-                pm_contract_id_for_event = contract["pm_contract_id"]
-                payment_id_for_substrate = str(milestone["_id"] if isinstance(milestone.get("_id"), str) is False else milestone.get("_id"))
-                recorded_at_iso = (
-                    update_data["paid_at"].isoformat()
-                    if hasattr(update_data.get("paid_at"), "isoformat")
-                    else datetime.now(timezone.utc).isoformat()
+            if outbox_row_for_payment is not None:
+                logger.info(
+                    "record_payment: payment committed + substrate event queued in outbox "
+                    "(contract=%s, amount_minor=%d, payment_id=%s, outbox_row=%s)",
+                    contract["pm_contract_id"],
+                    int(amount * 100),
+                    payment_id_for_substrate,
+                    outbox_row_for_payment["_id"],
                 )
-                try:
-                    await _get_substrate_client().record_payment(
-                        tenant_id=created_by,
-                        pm_contract_id=pm_contract_id_for_event,
-                        amount_minor=int(amount * 100),
-                        recorded_at=recorded_at_iso,
-                        payment_id=payment_id_for_substrate,
-                    )
-                    logger.info(
-                        "record_payment: emitted payment_recorded to substrate "
-                        "(contract=%s, amount_minor=%d, payment_id=%s)",
-                        pm_contract_id_for_event,
-                        int(amount * 100),
-                        payment_id_for_substrate,
-                    )
-                except Exception as _substrate_exc:
-                    logger.warning(
-                        "record_payment: substrate event emission failed (non-blocking in P2.2): %s. "
-                        "Budget rollup via substrate will not fire for this payment.",
-                        _substrate_exc,
-                    )
             else:
                 logger.debug(
-                    "record_payment: no pm_contract_id on contract (substrate not wired "
-                    "or contract predates P2.2). Skipping substrate event."
+                    "record_payment: payment committed, no substrate event queued "
+                    "(contract predates P2.2 or pm_contract_id not yet resolved)."
                 )
 
             # Best-effort alert refresh after the spend mutation commits.
@@ -4032,7 +4040,7 @@ class VendorService:
 
             file_url = f"{self.media_domain}/{filename}"
 
-            # Update contract with document URL — re-scope the update query
+            # Update contract with document URL - re-scope the update query
             # to the owner so a TOCTOU swap between the ownership check
             # and the write cannot smuggle in a foreign contract.
             field = f"{document_type}_document_url"
@@ -4115,7 +4123,7 @@ class VendorService:
         root-admin bypass case (skips the planner-ownership filter).
         """
         try:
-            # Get vendor profile (scoped by planner ownership — prevents a
+            # Get vendor profile (scoped by planner ownership - prevents a
             # cross-tenant write via a client-supplied vendor_profile_id).
             # Use the helper so root-admin (created_by=None) skips the
             # ownership filter cleanly; the prior call to get_vendor_profile
@@ -4124,7 +4132,7 @@ class VendorService:
             if not vendor:
                 raise HTTPException(status_code=404, detail="Vendor not found")
 
-            # Get wedding (scoped by planner ownership — prevents a planner
+            # Get wedding (scoped by planner ownership - prevents a planner
             # from uploading a PDF against another tenant's wedding).
             wedding = await self._get_owned_wedding(wedding_id, created_by)
             if not wedding:
@@ -4529,14 +4537,14 @@ class VendorService:
         Handle Stripe webhook for payment link completion.
 
         On `checkout.session.completed`:
-          1. Route the milestone credit through `record_payment` — the canonical
-             primitive — so the three guards (intent idempotency, status lock,
+          1. Route the milestone credit through `record_payment` - the canonical
+             primitive - so the three guards (intent idempotency, status lock,
              amount clamp) and the transactional rollup to vendor_assignments,
              vendor_profiles, and budget_categories all run.
           2. ONLY on record_payment success (or its translated idempotent acks)
              do we mark the payment_link row PAID. If record_payment raises
              non-idempotently, the link stays in its prior status and Stripe
-             will retry — on retry record_payment can complete cleanly.
+             will retry - on retry record_payment can complete cleanly.
 
         The legacy inline milestone update bypassed `record_payment`, so:
           - Stripe webhook retries → milestone double-credited (paid_amount inflated).
@@ -4545,7 +4553,7 @@ class VendorService:
             budget_categories.actual_spent never moved on payment-link-paid milestones.
 
         Guard rejections are translated into idempotent 200-style returns so
-        Stripe stops retrying — re-driving the same intent through this path
+        Stripe stops retrying - re-driving the same intent through this path
         is benign now.
 
         Stale-state protection on the payment_link doc update:
@@ -4564,7 +4572,7 @@ class VendorService:
             event_type = stripe_event.get("type")
             data = stripe_event.get("data", {}).get("object", {})
 
-            # Authoritative settlement time from Stripe — falls back to None
+            # Authoritative settlement time from Stripe - falls back to None
             # (record_payment defaults to now) if absent.
             event_created = stripe_event.get("created")
             event_payment_date: Optional[datetime] = None
@@ -4628,7 +4636,7 @@ class VendorService:
                         # Best-effort receipt URL: Stripe gives us the PI id on
                         # the checkout.session payload, but not the charge's
                         # receipt URL. Fetch the PI and pull `latest_charge`.
-                        # This is best-effort — failures here must NOT prevent
+                        # This is best-effort - failures here must NOT prevent
                         # the milestone credit from being recorded.
                         receipt_url: Optional[str] = None
                         if payment_intent_id:
@@ -4655,7 +4663,7 @@ class VendorService:
                             # milestone (record_payment scopes by ownership).
                             # Log and bail on the milestone credit. The
                             # payment_link doc still gets the PAID update
-                            # below — the planner needs the doc to reflect
+                            # below - the planner needs the doc to reflect
                             # what Stripe collected, even though the rollup
                             # never ran. Ops finds these via the ERROR log.
                             logger.error(
@@ -4759,7 +4767,7 @@ class VendorService:
                                 else:
                                     raise
                     else:
-                        # No milestone bound — link doc update is the only
+                        # No milestone bound - link doc update is the only
                         # action this webhook performs. Treat as success so
                         # the doc update below runs.
                         record_payment_succeeded = True
@@ -4771,7 +4779,7 @@ class VendorService:
                     if record_payment_succeeded:
                         # Stale-state guard: only DRAFT/SENT/CLICKED links
                         # may transition to PAID via this fast path. The
-                        # filter is the source of truth — it prevents
+                        # filter is the source of truth - it prevents
                         # CANCELLED audit overwrite (defence-in-depth on top
                         # of the early-return above) and prevents replay
                         # from clobbering the original paid_at on already-
