@@ -11,6 +11,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
+from urllib.parse import quote
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -419,6 +420,79 @@ class PlannerNotificationService:
                 "form_id": form_id,
             },
             action_url=f"/admin/planner/weddings/{wedding_id}/forms",
+        )
+
+    # =========================================================================
+    # Two-stage wedding-checklist nudge
+    # =========================================================================
+    #
+    # Stage 1 (notify_wedding_created) fires the moment a wedding row is
+    # created. The toast prompts the planner to invite the couple to
+    # their portal next.
+    #
+    # Stage 2 (notify_couple_portal_accepted) fires when the couple
+    # completes setup-password — i.e. they accepted the portal invite.
+    # The toast carries the seeded couple_intake form id so the planner
+    # can one-click "Send checklist" without navigating anywhere.
+    #
+    # Both helpers wrap create_notification, which already handles SSE
+    # broadcast + web-push delivery in addition to Mongo persistence.
+
+    async def notify_wedding_created(
+        self,
+        planner_id: str,
+        wedding_id: str,
+        couple_names: Optional[str] = None,
+    ):
+        """Stage 1: a wedding has just been created."""
+        couple_label = (couple_names or "the couple").strip() or "the couple"
+        return await self.create_notification(
+            planner_id=planner_id,
+            notification_type=PlannerNotificationTypes.WEDDING_CREATED,
+            title="New wedding created",
+            message=(
+                f"Invite {couple_label} to their portal next — "
+                f"they'll be ready for the wedding checklist once they accept."
+            ),
+            wedding_id=wedding_id,
+            metadata={"couple_names": couple_names},
+            action_url=f"/admin/planner/weddings/{wedding_id}?tab=couple",
+        )
+
+    async def notify_couple_portal_accepted(
+        self,
+        planner_id: str,
+        wedding_id: Optional[str],
+        couple_email: str,
+        couple_names: Optional[str],
+        seeded_form_id: Optional[str],
+    ):
+        """Stage 2: the couple has accepted the portal invite.
+
+        Carries ``seeded_form_id`` (the planner's catalog-seeded
+        ``couple_intake`` form) and the couple's email in metadata so
+        the frontend toast can render an action button that one-click
+        dispatches the form via ``POST /admin/forms/{form_id}/send``.
+        """
+        couple_label = (couple_names or "the couple").strip() or "The couple"
+        action_url = (
+            f"/admin/planner/forms/{seeded_form_id}/send"
+            f"?prefill_email={quote(couple_email or '')}"
+            if seeded_form_id
+            else f"/admin/planner/weddings/{wedding_id or ''}"
+        )
+        return await self.create_notification(
+            planner_id=planner_id,
+            notification_type=PlannerNotificationTypes.COUPLE_PORTAL_ACCEPTED,
+            title=f"{couple_label} accepted the portal invite",
+            message="Send them the wedding checklist now.",
+            wedding_id=wedding_id,
+            metadata={
+                "couple_email": couple_email,
+                "couple_names": couple_names,
+                "form_id": seeded_form_id,
+            },
+            action_url=action_url,
         )
 
     async def notify_rsvp_update(
