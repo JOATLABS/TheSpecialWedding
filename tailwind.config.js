@@ -61,11 +61,17 @@ module.exports = {
         'parallax-medium': 'parallaxMedium 25s ease-in-out infinite',
         'parallax-fast': 'parallaxFast 20s ease-in-out infinite',
         'float': 'float 6s ease-in-out infinite',
+        'flash': 'flash 1.5s ease-out',
       },
       keyframes: {
         fadeIn: {
           '0%': { opacity: '0' },
           '100%': { opacity: '1' },
+        },
+        flash: {
+          '0%, 100%': { backgroundColor: 'transparent' },
+          '20%': { backgroundColor: 'rgb(254 240 138)' },
+          '60%': { backgroundColor: 'rgb(254 249 195)' },
         },
         slideUp: {
           '0%': { transform: 'translateY(10px)', opacity: '0' },

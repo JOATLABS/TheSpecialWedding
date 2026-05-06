@@ -595,6 +595,33 @@ async def test_submit_with_wrong_token_returns_403(configured_form_service):
     with pytest.raises(HTTPException) as exc_info:
         await service.submit_form_response("form_1", request)
     assert exc_info.value.status_code == 403
+    # Batch 12 / R6 audit: structured detail so the frontend can render
+    # a friendly mid-rotation race screen instead of a generic toast.
+    assert isinstance(exc_info.value.detail, dict)
+    assert exc_info.value.detail.get("reason") == "token_rotated_or_revoked"
+    assert exc_info.value.detail.get("message") == "Invalid form access link"
+
+
+@pytest.mark.asyncio
+async def test_submit_with_token_for_unknown_distribution_carries_structured_reason(
+    configured_form_service,
+):
+    """Mid-rotation race: an old link points at a distribution that no
+    longer exists. The 403 must carry the structured reason code so the
+    frontend renders a friendly explanation."""
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+
+    request = SubmitFormRequest(
+        responses={"name": "Stale"},
+        distribution_id="vanished",
+        access_token="some-token",
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await service.submit_form_response("form_1", request)
+    assert exc_info.value.status_code == 403
+    assert isinstance(exc_info.value.detail, dict)
+    assert exc_info.value.detail.get("reason") == "token_rotated_or_revoked"
 
 
 @pytest.mark.asyncio

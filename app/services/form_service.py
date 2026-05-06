@@ -1419,9 +1419,16 @@ class FormService:
                 if not distribution_match:
                     if response_data.access_token:
                         # A token was supplied for an unknown distribution —
-                        # treat as forbidden, not a benign typo.
+                        # treat as forbidden, not a benign typo. Structured
+                        # detail (R6 audit) lets the frontend distinguish
+                        # this from a generic 403 and surface a friendly
+                        # "this link was refreshed by your planner" screen.
                         raise HTTPException(
-                            status_code=403, detail="Invalid form access link"
+                            status_code=403,
+                            detail={
+                                "message": "Invalid form access link",
+                                "reason": "token_rotated_or_revoked",
+                            },
                         )
                     logger.info(
                         "Ignoring distribution_id %s on submission to form %s "
@@ -1436,7 +1443,11 @@ class FormService:
                             response_data.access_token, stored_hash
                         ):
                             raise HTTPException(
-                                status_code=403, detail="Invalid form access link"
+                                status_code=403,
+                                detail={
+                                    "message": "Invalid form access link",
+                                    "reason": "token_rotated_or_revoked",
+                                },
                             )
                         token_expires_at = distribution_match.get("token_expires_at")
                         if token_expires_at:
