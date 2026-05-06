@@ -456,10 +456,20 @@ export default function PlannerCalendarPage() {
     [events],
   );
 
+  const eventVersion = (event: SharedCalendarEvent): number => {
+    const raw = event.details?.version;
+    return typeof raw === 'number' && Number.isFinite(raw) ? raw : 1;
+  };
+
   const handleAcceptExternalChange = async (event: SharedCalendarEvent) => {
     if (!token) return;
     try {
-      await acceptExternalChange(token, event.id, createCalendarMutationIntent());
+      await acceptExternalChange(
+        token,
+        event.id,
+        eventVersion(event),
+        createCalendarMutationIntent(),
+      );
       toast.success('External change accepted.');
       await refreshAll();
     } catch (err) {
@@ -470,7 +480,12 @@ export default function PlannerCalendarPage() {
   const handleRejectExternalChange = async (event: SharedCalendarEvent) => {
     if (!token) return;
     try {
-      await rejectExternalChange(token, event.id, createCalendarMutationIntent());
+      await rejectExternalChange(
+        token,
+        event.id,
+        eventVersion(event),
+        createCalendarMutationIntent(),
+      );
       toast.success('External change rejected; canonical state pushed back.');
       await refreshAll();
     } catch (err) {
@@ -481,7 +496,12 @@ export default function PlannerCalendarPage() {
   const handleApproveCoupleBooking = async (event: SharedCalendarEvent) => {
     if (!token) return;
     try {
-      await approveCoupleBooking(token, event.id, createCalendarMutationIntent());
+      await approveCoupleBooking(
+        token,
+        event.id,
+        eventVersion(event),
+        createCalendarMutationIntent(),
+      );
       toast.success('Booking approved and synced to your calendar.');
       await refreshAll();
     } catch (err) {
@@ -492,7 +512,12 @@ export default function PlannerCalendarPage() {
   const handleDeclineCoupleBooking = async (event: SharedCalendarEvent) => {
     if (!token) return;
     try {
-      await declineCoupleBooking(token, event.id, createCalendarMutationIntent());
+      await declineCoupleBooking(
+        token,
+        event.id,
+        eventVersion(event),
+        createCalendarMutationIntent(),
+      );
       toast.success('Booking declined.');
       await refreshAll();
     } catch (err) {
