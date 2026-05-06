@@ -9,6 +9,8 @@ import { getApiBaseUrl } from '@/utils/env';
 import PageHeader from '../components/PageHeader';
 import WeddingPicker from '../components/WeddingPicker';
 import { MessageEnrichment } from '@/components/ui/MessageEnrichment';
+import { redirectOnBillingBlock } from '@/utils/adminApiAuthGuard';
+import { DEFAULT_TEAM_MEMBER_BLOCK_REASON, isTeamMemberRole } from '@/utils/roles';
 import { usePagination } from '@/admin/hooks/usePagination';
 import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
 import {
@@ -118,7 +120,7 @@ const WEDDING_PARTY_GROUP_IDS = ['maid_of_honor', 'bridesmaids', 'best_man', 'gr
 // ==================== MAIN COMPONENT ====================
 
 export default function AdminGuestsPage() {
-  const { token, apiRequest } = useAdmin();
+  const { token, userProfile, expireSession, logout } = useAdmin();
   const router = useRouter();
   const apiBaseUrl = getApiBaseUrl();
   const searchParams = useSearchParams();
@@ -955,17 +957,93 @@ export default function AdminGuestsPage() {
     // wantsEmail is true: the guard above returns early otherwise.
     // Capture in a const so the async task closures below can reference it
     // without optional chaining (TypeScript cannot narrow across async boundaries).
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const weddingSlug = wedding!.slug!;
 
     setReminderSending(true);
 
-    // We route both sends through AdminContext.apiRequest rather than raw
-    // fetch so the centralized 401/402 handling fires for us — apiRequest
-    // returns ``undefined`` after it has already triggered logout (401 or
-    // team-member 402) or hard-redirected the planner to billing (402). In
-    // that case we MUST bail without surfacing a generic "Failed to send"
-    // toast that would race the navigation and confuse the user.
+    // Helper: run a single reminder POST with the same 401/402 handling
+    // AdminContext.apiRequest applies — but with raw fetch so we can keep
+    // the success body and the failure ``detail`` distinct. apiRequest
+    // collapses both ``undefined``-return cases (auth handled vs. empty 200)
+    // and stringifies error bodies, so we re-implement the gate inline
+    // rather than overload its return value.
+    type FetchOutcome<T> =
+      | { kind: 'ok'; data: T | undefined }
+      | { kind: 'fail'; reason: string }
+      | { kind: 'authHandled' };
+
+    const runReminderCall = async <T,>(path: string, body: unknown): Promise<FetchOutcome<T>> => {
+      let response: Response;
+      try {
+        response = await fetch(`${apiBaseUrl}${path}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          credentials: 'include',
+        });
+      } catch {
+        return { kind: 'fail', reason: 'Network error' };
+      }
+
+      // 401: token invalid/expired. Mirror apiRequest's expireSession() flow.
+      if (response.status === 401) {
+        expireSession();
+        return { kind: 'authHandled' };
+      }
+
+      // 402: subscription block. Two distinct flows, identical to
+      // AdminContext.apiRequest:
+      //   - team member → logout to /admin/login?error=<detail>
+      //   - planner    → hard-redirect to /admin/planner/billing
+      if (response.status === 402) {
+        if (isTeamMemberRole(userProfile)) {
+          let reason = DEFAULT_TEAM_MEMBER_BLOCK_REASON;
+          try {
+            const data = await response.clone().json();
+            if (data && typeof data.detail === 'string' && data.detail.trim()) {
+              reason = data.detail;
+            }
+          } catch {
+            // Fall through to default phrasing.
+          }
+          logout({
+            message: reason,
+            redirectTo: `/admin/login?error=${encodeURIComponent(reason)}`,
+            showToast: false,
+          });
+          return { kind: 'authHandled' };
+        }
+        if (redirectOnBillingBlock(response)) {
+          return { kind: 'authHandled' };
+        }
+      }
+
+      if (!response.ok) {
+        let reason = `Request failed (${response.status})`;
+        try {
+          const errBody = await response.clone().json();
+          if (errBody && typeof errBody.detail === 'string' && errBody.detail.trim()) {
+            reason = errBody.detail;
+          }
+        } catch {
+          const text = await response.text().catch(() => '');
+          if (text.trim()) reason = text;
+        }
+        return { kind: 'fail', reason };
+      }
+
+      try {
+        const data = (await response.json()) as T;
+        return { kind: 'ok', data };
+      } catch {
+        return { kind: 'ok', data: undefined };
+      }
+    };
+
     type SendOutcome =
       | { kind: 'ok' }
       | { kind: 'fail'; reason: string }
@@ -976,31 +1054,23 @@ export default function AdminGuestsPage() {
     if (wantsSms) {
       tasks.push(
         (async () => {
-          try {
-            const result = await apiRequest<{
-              sent?: number;
-              failed?: number;
-              failure_reasons?: string[];
-            }>('/admin/reminders/send-to-guests', 'POST', {
-              guest_tokens: [reminderGuest.token],
-              message,
-            });
-            if (result === undefined) {
-              return { kind: 'authHandled' };
-            }
-            if ((result.sent ?? 0) > 0) {
-              return { kind: 'ok' };
-            }
-            const reason = Array.isArray(result.failure_reasons) && result.failure_reasons.length > 0
-              ? result.failure_reasons[0]
-              : 'SMS was not delivered';
-            return { kind: 'fail', reason };
-          } catch (err) {
-            return {
-              kind: 'fail',
-              reason: err instanceof Error && err.message ? err.message : 'Failed to send SMS',
-            };
+          const outcome = await runReminderCall<{
+            sent?: number;
+            failed?: number;
+            failure_reasons?: string[];
+          }>('/admin/reminders/send-to-guests', {
+            guest_tokens: [reminderGuest.token],
+            message,
+          });
+          if (outcome.kind !== 'ok') return outcome;
+          const result = outcome.data;
+          if (result && (result.sent ?? 0) > 0) {
+            return { kind: 'ok' };
           }
+          const reason = result && Array.isArray(result.failure_reasons) && result.failure_reasons.length > 0
+            ? result.failure_reasons[0]
+            : 'SMS was not delivered';
+          return { kind: 'fail', reason };
         })()
       );
     }
@@ -1008,40 +1078,32 @@ export default function AdminGuestsPage() {
     if (wantsEmail) {
       tasks.push(
         (async () => {
-          try {
-            const body = await apiRequest<{
-              sent?: boolean;
-              success?: boolean;
-              error?: string;
-            }>('/admin/email/send-reminder-individual', 'POST', {
-              wedding_slug: weddingSlug,
-              guest_email: reminderGuest.email,
-              guest_name: reminderGuest.name,
-              guest_token: reminderGuest.token,
-              custom_message: message,
-            });
-            if (body === undefined) {
-              return { kind: 'authHandled' };
-            }
-            if (body.sent || body.success) {
-              return { kind: 'ok' };
-            }
-            return { kind: 'fail', reason: body.error || 'Email was not delivered' };
-          } catch (err) {
-            return {
-              kind: 'fail',
-              reason: err instanceof Error && err.message ? err.message : 'Failed to send email',
-            };
+          const outcome = await runReminderCall<{
+            sent?: boolean;
+            success?: boolean;
+            error?: string;
+          }>('/admin/email/send-reminder-individual', {
+            wedding_slug: weddingSlug,
+            guest_email: reminderGuest.email,
+            guest_name: reminderGuest.name,
+            guest_token: reminderGuest.token,
+            custom_message: message,
+          });
+          if (outcome.kind !== 'ok') return outcome;
+          const data = outcome.data;
+          if (data && (data.sent || data.success)) {
+            return { kind: 'ok' };
           }
+          return { kind: 'fail', reason: (data && data.error) || 'Email was not delivered' };
         })()
       );
     }
 
     const results = await Promise.all(tasks);
 
-    // If apiRequest already kicked off a logout or billing redirect for any
+    // If the auth gate kicked off a logout or billing redirect for any
     // call, defer to it: clear local state quietly and let navigation take
-    // over.
+    // over without surfacing a misleading "Failed to send" toast.
     if (results.some((r) => r.kind === 'authHandled')) {
       closeReminderModal();
       return;
