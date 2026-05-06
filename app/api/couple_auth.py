@@ -348,9 +348,9 @@ async def _dispatch_couple_portal_accepted_notification(couple: dict) -> None:
     notification.
     """
     planner_id = (
-        couple.get("planner_id")
+        couple.get("planner_email")
+        or couple.get("planner_id")
         or couple.get("assigned_planner_id")
-        or couple.get("planner_email")
     )
     if not planner_id:
         return

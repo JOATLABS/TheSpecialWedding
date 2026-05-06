@@ -261,8 +261,8 @@ async def create_wedding(
         )
 
         planner_id_for_notify = (
-            wedding_data.get("assigned_planner_id")
-            or wedding_data.get("created_by")
+            wedding_data.get("assigned_planner_email")
+            or owner_email
             or current_user.email
         )
         await planner_notification_service.notify_wedding_created(

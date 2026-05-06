@@ -296,7 +296,7 @@ class Settings(BaseSettings):
         default=None, alias="S3_BLOG_BUCKET_NAME"
     )
     s3_form_uploads_bucket_name: Optional[str] = Field(
-        default=None, alias="S3_FORM_UPLOADS_BUCKET"
+        default=None, alias="S3_FORM_UPLOADS_BUCKET_NAME"
     )
 
     # AI model configuration (env-overridable so a Gemini rename / EOL

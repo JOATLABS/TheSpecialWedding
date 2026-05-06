@@ -31,6 +31,7 @@ Validation against official sources
 from __future__ import annotations
 
 import base64
+import html
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -74,9 +75,9 @@ def _confirmation_html(template: Dict[str, Any], recipient_name: Optional[str]) 
 
     Kept short on purpose — the PDF attachment is the value; the
     email is the delivery vehicle plus a soft brand touch."""
-    safe_name = (recipient_name or "").strip() or "there"
-    template_name = template.get("name") or template.get("id") or "your template"
-    description = template.get("description") or ""
+    safe_name = html.escape((recipient_name or "").strip() or "there")
+    template_name = html.escape(template.get("name") or template.get("id") or "your template")
+    description = html.escape(template.get("description") or "")
 
     return f"""\
 <!DOCTYPE html>
