@@ -89,31 +89,62 @@ verify the OAuth handshake and real provider sync against a sandbox account.
 
 1. **Sign up at Aurinko** (https://www.aurinko.io). Create an "App" in the
    developer console; the free tier covers a sandbox app for development.
-2. **Pick which providers to enable.** For sandbox testing, Google is the
-   easiest because Google's OAuth consent screen accepts test users without
-   verification. Enable Google Calendar in your Aurinko app's provider list.
-3. **Configure the redirect URI** in your Aurinko app to match
+2. **Enable the right Core capabilities on the new app.** You need
+   **three** of the five toggles checked:
+   - ☑ **End user sessions** — the user-facing OAuth flow
+   - ☑ **Dynamic API** — the unified calendar / events API surface
+   - ☑ **Scheduler** — required to expose the **per-provider configuration UI**
+     (Google, Microsoft 365, iCloud, etc.). Even though our backend does NOT
+     call any Aurinko Scheduler endpoints, the provider-tile settings are only
+     reachable when this capability is enabled. Skipping it means you can't
+     configure or even see the providers.
+   - ☐ Mailbox APIs — leave unchecked
+   - ☐ Messaging — leave unchecked
+3. **Pick which providers to enable** in the now-visible provider tiles.
+   For sandbox testing, Google is the easiest because Google's OAuth consent
+   screen accepts test users without app verification. Aurinko ships default
+   OAuth credentials for each provider — you can use those for testing
+   without creating your own Google Cloud OAuth client. Per-provider BYO
+   credentials are only needed when you want planners to see "WeddingWebApp
+   wants to access…" instead of "Aurinko wants to access…" on Google's
+   consent screen.
+4. **Configure the redirect URI** in your Aurinko app to match
    `AURINKO_REDIRECT_URI`. For local dev, the app uses
    `http://localhost:3000/admin/planner/calendar/callback`.
-4. **Configure the webhook URL** in your Aurinko app to a publicly
-   reachable HTTPS endpoint. For local dev, run `ngrok http 8000` (or your
-   preferred tunnel) and point Aurinko's webhook URL at
-   `https://<your-ngrok>.ngrok-free.app/api/calendar/webhooks/aurinko`. The
-   webhook secret you set in the Aurinko app must match
-   `AURINKO_WEBHOOK_SECRET` in your local `.env`.
-5. **Copy the credentials into `.env`** (see `.env.example`):
-   - `AURINKO_APP_ID` — the app id from the developer console
-   - `AURINKO_CLIENT_ID` — OAuth client id
-   - `AURINKO_CLIENT_SECRET` — OAuth client secret
-   - `AURINKO_API_KEY` — platform-level API key (used for hosted-auth)
-   - `AURINKO_WEBHOOK_SECRET` — webhook HMAC secret
-   - `AURINKO_REDIRECT_URI` — must match step 3
-   - `AURINKO_OAUTH_STATE_SIGNING_KEY` — generate any random 32+ char string
-   - `TOKEN_ENCRYPTION_KEY` — generate any random 32+ char string
+5. **Configure the webhook URL.** No global webhook field exists in the
+   Aurinko app settings — the URL is sent dynamically by our backend on
+   each `POST /v1/subscriptions` call after a successful OAuth callback
+   (see `app/services/calendar_provider_service.py:_webhook_url`). The
+   value is built from the `NEXT_PUBLIC_API_BASE_URL` env var. For local
+   dev, run `ngrok http 8000` and set
+   `NEXT_PUBLIC_API_BASE_URL=https://<your-ngrok>.ngrok-free.app` in
+   `.env`. The webhook secret you set in Aurinko's app dashboard
+   ("Signing secret") must match `AURINKO_WEBHOOK_SECRET` in your
+   local `.env`.
+6. **Copy the credentials into `.env`** (see `.env.example`). All values
+   come from the Aurinko app's **Dashboard** page, *not* the Settings page:
+   - `AURINKO_APP_ID` — the numeric app id (e.g. `3456`) from the URL or the
+     Settings page sidebar
+   - `AURINKO_CLIENT_ID` — labeled "Client ID" on the Dashboard
+   - `AURINKO_CLIENT_SECRET` — labeled "Client secret" on the Dashboard
+     (click the 👁 icon to reveal)
+   - `AURINKO_WEBHOOK_SECRET` — labeled "Signing secret" on the Dashboard
+     (click the 👁 icon to reveal). Aurinko uses this same value to
+     HMAC-sign webhook deliveries; the backend reuses it to verify them.
+   - `AURINKO_API_KEY` — leave **blank**. Aurinko's current product does
+     not expose a separate API key; the codebase only references this as
+     a fallback for `AURINKO_CLIENT_SECRET`.
+   - `AURINKO_REDIRECT_URI` — must match step 4
+   - `AURINKO_OAUTH_STATE_SIGNING_KEY` — `openssl rand -base64 32` (local
+     secret, never sent to Aurinko)
+   - `TOKEN_ENCRYPTION_KEY` — `openssl rand -base64 32` (local secret,
+     encrypts per-account tokens at rest)
    - `AURINKO_API_BASE_URL` — defaults to `https://api.aurinko.io/v1`
-6. **Restart the backend** so the new env vars are picked up:
+   - `NEXT_PUBLIC_API_BASE_URL` — set to your `https://<id>.ngrok-free.app`
+     for sandbox testing so Aurinko can reach the webhook endpoint
+7. **Restart the backend** so the new env vars are picked up:
    `uvicorn app.main:app --reload --port 8000`.
-7. **Run the driver in SANDBOX mode**:
+8. **Run the driver in SANDBOX mode**:
    `AURINKO_SANDBOX_ENABLED=1 python testbed/verify_couple_booking_lifecycle.py`.
    The driver will pause at P7 with explicit Chrome instructions for completing
    OAuth — log in as the seeded test planner and click **Connect calendar**
