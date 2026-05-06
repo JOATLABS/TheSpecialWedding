@@ -65,7 +65,7 @@ describe('PublicContractPageClient', () => {
 
     await view.findByText('Photography Agreement');
     view.getByText('Capture the full wedding day.');
-    assert.equal(calls[0]?.url, 'http://localhost:8000/vendor-contract/public/contracts/contract_1/path-token');
+    assert.equal(calls[0]?.url, '/api/proxy/vendor-contract/public/contracts/contract_1/path-token');
     assert.equal(calls[0]?.cache, 'no-store');
   });
 
@@ -204,7 +204,7 @@ describe('PublicContractPageClient', () => {
     fireEvent.click(view.getAllByRole('button', { name: 'Sign Contract' })[1]);
 
     await view.findByText('Contract Signed!');
-    assert.equal(calls[1]?.url, 'http://localhost:8000/vendor-contract/public/contracts/contract_1/sign-token/sign');
+    assert.equal(calls[1]?.url, '/api/proxy/vendor-contract/public/contracts/contract_1/sign-token/sign');
     assert.equal(calls[1]?.method, 'POST');
     assert.equal(calls[1]?.cache, 'no-store');
     assert.match(calls[1]?.body || '', /"signer_name":"Vendor Co"/);
