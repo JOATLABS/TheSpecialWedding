@@ -164,17 +164,22 @@ export function MultiSelect({
   return (
     <div className={className}>
       {label && (
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+        <label
+          htmlFor={`${uid}-toggle`}
+          className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+        >
           {label}
         </label>
       )}
       <div ref={wrapperRef} className="relative">
-        <button
-          type="button"
+        {/*
+          The trigger is a plain <div> so that the real <button> elements used
+          for chip removal and the chevron toggle are not nested inside another
+          interactive element (invalid HTML per the spec).
+        */}
+        <div
+          className="relative w-full cursor-pointer rounded-lg bg-white dark:bg-slate-700 border border-gray-300 dark:border-gray-600 text-left focus-within:ring-2 focus-within:ring-wedding-rose focus-within:border-transparent"
           onClick={() => setOpen((prev) => !prev)}
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          className="relative w-full cursor-pointer overflow-hidden rounded-lg bg-white dark:bg-slate-700 border border-gray-300 dark:border-gray-600 text-left focus:outline-none focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
         >
           <div className="flex flex-wrap gap-1.5 p-2 pr-8 min-h-[48px]">
             {selectedOptions.length > 0 ? (
@@ -185,9 +190,8 @@ export function MultiSelect({
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm bg-wedding-rose/10 text-wedding-rose dark:bg-wedding-rose/20 dark:text-wedding-rose-light border border-wedding-rose/20"
                   >
                     <span className="truncate max-w-[120px]">{option.label}</span>
-                    <span
-                      role="button"
-                      tabIndex={0}
+                    <button
+                      type="button"
                       onClick={(e) => removeOption(option.value, e)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
@@ -200,7 +204,7 @@ export function MultiSelect({
                       aria-label={`Remove ${option.label}`}
                     >
                       <XMarkIcon className="h-3.5 w-3.5" />
-                    </span>
+                    </button>
                   </span>
                 ))}
                 {selectedOptions.length > 3 && (
@@ -215,13 +219,23 @@ export function MultiSelect({
               </span>
             )}
           </div>
-          <span className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+          {/* Dedicated toggle button — the only keyboard-focusable trigger control. */}
+          <button
+            type="button"
+            id={`${uid}-toggle`}
+            onClick={(e) => { e.stopPropagation(); setOpen((prev) => !prev); }}
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            aria-controls={listboxId}
+            aria-label={open ? 'Close options' : 'Open options'}
+            className="absolute inset-y-0 right-0 flex items-center pr-2 focus:outline-none"
+          >
             <ChevronUpDownIcon
               className="h-5 w-5 text-gray-400"
               aria-hidden="true"
             />
-          </span>
-        </button>
+          </button>
+        </div>
 
         {open && (
           <div
