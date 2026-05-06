@@ -64,7 +64,6 @@ class AvailabilitySlotService:
     def __init__(self) -> None:
         self.weddings_collection = mongo.get_weddings_collection()
         self.connections_collection = mongo.get_calendar_connections_collection()
-        self.users_collection = mongo.get_users_collection()
 
     async def _resolve_candidate_staff(
         self,
@@ -275,6 +274,11 @@ class AvailabilitySlotService:
         )
 
         duration = timedelta(minutes=duration_minutes)
+        # Compute busy intervals per staff once, not once per (day × staff).
+        busy_by_staff = {
+            staff.user_id: self._busy_intervals_for_staff(events, staff.user_id)
+            for staff in candidates
+        }
         slots: list[AvailabilitySlot] = []
         day_cursor = start
         while day_cursor < end:
@@ -287,9 +291,10 @@ class AvailabilitySlotService:
                 window_end = min(window_end, end)
                 if window_end <= window_start:
                     continue
-                busy = self._busy_intervals_for_staff(events, staff.user_id)
                 free = self._subtract_busy(
-                    (window_start, window_end), busy, DEFAULT_BUFFER_MINUTES
+                    (window_start, window_end),
+                    busy_by_staff[staff.user_id],
+                    DEFAULT_BUFFER_MINUTES,
                 )
                 for slot_start, slot_end in self._chunk_into_slots(free, duration):
                     slots.append(

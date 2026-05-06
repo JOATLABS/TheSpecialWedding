@@ -54,6 +54,28 @@ _AURINKO_HTTP_TIMEOUT_SECONDS = 30.0
 _AURINKO_LIST_PAGE_SIZE = 100
 _AURINKO_LIST_MAX_PAGES = 50
 
+# Shared httpx.AsyncClient — keeps connections alive across calls so the
+# team-availability fan-out (one request per connection) reuses TCP/TLS state.
+_aurinko_http_client: Optional[httpx.AsyncClient] = None
+
+
+def _get_aurinko_http_client() -> httpx.AsyncClient:
+    global _aurinko_http_client
+    if _aurinko_http_client is None or _aurinko_http_client.is_closed:
+        _aurinko_http_client = httpx.AsyncClient(
+            timeout=_AURINKO_HTTP_TIMEOUT_SECONDS,
+            limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
+        )
+    return _aurinko_http_client
+
+
+async def close_aurinko_http_client() -> None:
+    """Close the shared client. Call from app shutdown."""
+    global _aurinko_http_client
+    if _aurinko_http_client is not None and not _aurinko_http_client.is_closed:
+        await _aurinko_http_client.aclose()
+    _aurinko_http_client = None
+
 # Conservative scrubber for Aurinko-issued bearer tokens and OAuth codes that
 # may surface inside error strings before they hit the database/log pipeline.
 _REDACT_NAMED_PATTERNS = [
@@ -131,10 +153,7 @@ class AurinkoClient:
         platform_auth: bool = False,
     ) -> httpx.Response:
         url = f"{self.base_url}{path}"
-        kwargs: dict[str, Any] = {
-            "params": params,
-            "timeout": _AURINKO_HTTP_TIMEOUT_SECONDS,
-        }
+        kwargs: dict[str, Any] = {"params": params}
         if json_body is not None:
             kwargs["json"] = json_body
 
@@ -144,10 +163,12 @@ class AurinkoClient:
         elif account_token:
             kwargs["headers"] = self._account_headers(account_token)
         else:
-            raise RuntimeError("Aurinko request requires either an account token or platform auth")
+            raise RuntimeError(
+                "Aurinko request requires either an account token or platform auth"
+            )
 
-        async with httpx.AsyncClient() as client:
-            return await client.request(method, url, **kwargs)
+        client = _get_aurinko_http_client()
+        return await client.request(method, url, **kwargs)
 
     async def authorize_url(
         self,
@@ -172,7 +193,10 @@ class AurinkoClient:
             "returnUrl": return_url,
             "state": state,
         }
-        query = "&".join(f"{k}={httpx.QueryParams({k: v})[k]}" for k, v in params.items())
+        # httpx.QueryParams URL-encodes values when stringified — important
+        # because both `state` (signed JWT with `=` `+` `/`) and `scopes`
+        # (space-separated) contain reserved characters.
+        query = str(httpx.QueryParams(params))
         return f"{self.base_url}/auth/authorize?{query}"
 
     async def exchange_code(self, code: str) -> dict[str, Any]:
@@ -224,22 +248,32 @@ class AurinkoClient:
         time_max: datetime,
         max_results: int,
     ) -> list[dict[str, Any]]:
-        """List events within a calendar/time-window."""
-        params = {
-            "calendarId": calendar_id,
-            "start": time_min.isoformat(),
-            "end": time_max.isoformat(),
-            "pageSize": min(max_results, _AURINKO_LIST_PAGE_SIZE),
-        }
-        response = await self._request(
-            "GET",
-            "/calendars/events",
-            account_token=account_token,
-            params=params,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        return payload.get("records") or payload.get("events") or []
+        """List events within a calendar/time-window with offset pagination."""
+        page_size = min(max_results, _AURINKO_LIST_PAGE_SIZE)
+        events: list[dict[str, Any]] = []
+        offset = 0
+        for _ in range(_AURINKO_LIST_MAX_PAGES):
+            params = {
+                "calendarId": calendar_id,
+                "start": time_min.isoformat(),
+                "end": time_max.isoformat(),
+                "pageSize": page_size,
+                "offset": offset,
+            }
+            response = await self._request(
+                "GET",
+                "/calendars/events",
+                account_token=account_token,
+                params=params,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            records = payload.get("records") or payload.get("events") or []
+            events.extend(records)
+            if len(records) < page_size or len(events) >= max_results:
+                break
+            offset += page_size
+        return events[:max_results]
 
     async def create_event(
         self,
@@ -434,6 +468,13 @@ class CalendarProviderService:
             (settings.AURINKO_CLIENT_ID or settings.AURINKO_APP_ID)
             and (settings.AURINKO_CLIENT_SECRET or settings.AURINKO_API_KEY)
         )
+
+    def _webhook_url(self) -> Optional[str]:
+        """Build the public Aurinko webhook delivery URL."""
+        base = settings.NEXT_PUBLIC_API_BASE_URL
+        if not base:
+            return None
+        return base.rstrip("/") + "/api/calendar/webhooks/aurinko"
 
     def _validate_security_configuration(self) -> None:
         if not (self._aurinko_configured() and self._is_production_environment()):
@@ -993,6 +1034,39 @@ class CalendarProviderService:
                 {"$set": {"is_default_write_target": True, "updated_at": now}},
             )
 
+        # Register a single Aurinko subscription per account so external
+        # changes flow into our webhook handler. Aurinko delivers per-account
+        # change events, so one subscription covers all calendars on that
+        # account; we store the subscription id on every row of the account.
+        webhook_url = self._webhook_url()
+        if webhook_url:
+            try:
+                subscription = await self.client.create_subscription(
+                    account_token=account_token, webhook_url=webhook_url
+                )
+                subscription_id = str(
+                    subscription.get("id") or subscription.get("subscriptionId") or ""
+                )
+                if subscription_id:
+                    await self.connections_collection.update_many(
+                        {
+                            "user_id": user_id,
+                            "aurinko_account_id": aurinko_account_id,
+                        },
+                        {
+                            "$set": {
+                                "aurinko_subscription_id": subscription_id,
+                                "updated_at": now,
+                            }
+                        },
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to register Aurinko webhook subscription for account %s: %s",
+                    aurinko_account_id,
+                    _redact_sensitive(exc),
+                )
+
         await calendar_audit_service.log(
             action="calendar_connection_connected",
             message=f"Connected calendar account {provider_account_email} ({provider_label})",
@@ -1060,6 +1134,7 @@ class CalendarProviderService:
             "provider_account_name": doc.get("provider_account_name"),
             "aurinko_account_id": doc.get("aurinko_account_id"),
             "aurinko_calendar_id": doc.get("aurinko_calendar_id"),
+            "aurinko_subscription_id": doc.get("aurinko_subscription_id"),
             "calendar_id": doc.get("calendar_id"),
             "calendar_name": doc.get("calendar_name"),
             "access_role": doc.get("access_role"),
@@ -1354,6 +1429,18 @@ class CalendarProviderService:
             token = self._decrypt_token(
                 connection_doc.get("aurinko_access_token_encrypted")
             )
+            subscription_id = connection_doc.get("aurinko_subscription_id")
+            if token and subscription_id:
+                try:
+                    await self.client.delete_subscription(
+                        account_token=token, subscription_id=str(subscription_id)
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Aurinko unsubscribe for account %s failed: %s",
+                        connection_doc.get("aurinko_account_id"),
+                        _redact_sensitive(exc),
+                    )
             if token:
                 try:
                     await self.client.revoke_account(token)
@@ -1471,9 +1558,19 @@ class CalendarProviderService:
 
         for (_user_id, aurinko_account_id), account_docs in by_account.items():
             sample = account_docs[0]
-            token = self._decrypt_token(
-                sample.get("aurinko_access_token_encrypted")
-            )
+            token = self._decrypt_token(sample.get("aurinko_access_token_encrypted"))
+            subscription_id = sample.get("aurinko_subscription_id")
+            if token and subscription_id:
+                try:
+                    await self.client.delete_subscription(
+                        account_token=token, subscription_id=str(subscription_id)
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Aurinko unsubscribe for account %s failed: %s",
+                        aurinko_account_id,
+                        _redact_sensitive(exc),
+                    )
             if token:
                 try:
                     await self.client.revoke_account(token)

@@ -48,6 +48,9 @@ export default function SlotPicker({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<AvailabilitySlot | null>(null);
+  // Frozen for the lifetime of the current selection so retries with the same
+  // slot replay against the same idempotency record on the server.
+  const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
   const [title, setTitle] = useState('Planner check-in');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -86,30 +89,39 @@ export default function SlotPicker({
   }, [durationMinutes, defaultStaffId]);
 
   const handleBook = async () => {
-    if (!selected) return;
+    if (!selected || !idempotencyKey) return;
     setSubmitting(true);
     try {
-      const result = await bookMeeting({
+      await bookMeeting({
         staff_id: selected.staff_id,
         start: selected.start,
         end: selected.end,
         title,
         notes: notes || undefined,
         timezone: browserTimezone,
-        idempotency_key: generateIdempotencyKey(),
+        idempotency_key: idempotencyKey,
       });
       toast.success('Meeting booked. Check your email for the calendar invite.');
-      setSelected(null);
       setSlots((current) =>
         current.filter((s) => !(s.start === selected.start && s.staff_id === selected.staff_id))
       );
-      // eslint-disable-next-line no-console
-      console.log('Booking result', result);
+      setSelected(null);
+      setIdempotencyKey(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to book meeting');
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSelectSlot = (slot: AvailabilitySlot) => {
+    setSelected(slot);
+    setIdempotencyKey(generateIdempotencyKey());
+  };
+
+  const handleCancelSelection = () => {
+    setSelected(null);
+    setIdempotencyKey(null);
   };
 
   return (
@@ -144,7 +156,7 @@ export default function SlotPicker({
           return (
             <li key={`${slot.staff_id}-${slot.start}`}>
               <button
-                onClick={() => setSelected(slot)}
+                onClick={() => handleSelectSlot(slot)}
                 className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition ${
                   isSelected
                     ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
@@ -196,7 +208,7 @@ export default function SlotPicker({
               {submitting ? 'Booking...' : 'Confirm booking'}
             </button>
             <button
-              onClick={() => setSelected(null)}
+              onClick={handleCancelSelection}
               disabled={submitting}
               className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/60"
             >
