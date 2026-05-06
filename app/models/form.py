@@ -81,9 +81,7 @@ def _validate_conditional_logic(value: Any) -> Optional[Dict[str, Any]]:
         raise ValueError("conditional_logic.show_when must be an object")
 
     if "all" in show_when and "any" in show_when:
-        raise ValueError(
-            "conditional_logic.show_when cannot use both 'all' and 'any'"
-        )
+        raise ValueError("conditional_logic.show_when cannot use both 'all' and 'any'")
     combinator = "all" if "all" in show_when else "any" if "any" in show_when else None
     if combinator is None:
         raise ValueError(
@@ -102,9 +100,7 @@ def _validate_conditional_logic(value: Any) -> Optional[Dict[str, Any]]:
         field_id = cond.get("field_id")
         operator = cond.get("operator")
         if not isinstance(field_id, str) or not _FIELD_ID_PATTERN.match(field_id):
-            raise ValueError(
-                f"conditional_logic condition {idx} has invalid field_id"
-            )
+            raise ValueError(f"conditional_logic condition {idx} has invalid field_id")
         if operator not in _VALID_CONDITION_OPERATORS:
             raise ValueError(
                 f"conditional_logic condition {idx} has unknown operator "
@@ -496,7 +492,8 @@ class FormDistribution(BaseModel):
         None, description="When the reminder was last sent."
     )
     reminder_count: int = Field(
-        default=0, description="How many reminders have been sent for this distribution."
+        default=0,
+        description="How many reminders have been sent for this distribution.",
     )
 
     class Config:
@@ -701,8 +698,10 @@ class SubmitFormRequest(BaseModel):
             return None
         # 8 to 128 chars; URL-safe alphabet matches our token pattern
         # and accepts standard UUIDv4 strings (36 chars with hyphens).
-        if len(trimmed) < 8 or len(trimmed) > 128 or not re.match(
-            r"^[a-zA-Z0-9_-]+$", trimmed
+        if (
+            len(trimmed) < 8
+            or len(trimmed) > 128
+            or not re.match(r"^[a-zA-Z0-9_-]+$", trimmed)
         ):
             raise ValueError("Invalid idempotency_key")
         return trimmed

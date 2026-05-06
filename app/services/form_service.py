@@ -73,9 +73,7 @@ class FormService:
     def _verify_form_access_token(self, raw_token: str, stored_hash: str) -> bool:
         if not raw_token or not stored_hash:
             return False
-        return hmac.compare_digest(
-            self._hash_form_access_token(raw_token), stored_hash
-        )
+        return hmac.compare_digest(self._hash_form_access_token(raw_token), stored_hash)
 
     def _issue_form_access_token(self) -> tuple[str, str, datetime]:
         raw_token = secrets.token_urlsafe(32)
@@ -107,17 +105,14 @@ class FormService:
             {"form_type": {"$in": [None, ""]}},
             {"$set": {"form_type": FormType.GENERAL.value}},
         )
-        total = (
-            int(getattr(result, "modified_count", 0) or 0)
-            + int(getattr(result_default, "modified_count", 0) or 0)
+        total = int(getattr(result, "modified_count", 0) or 0) + int(
+            getattr(result_default, "modified_count", 0) or 0
         )
         if total:
             logger.info("Backfilled form_type on %s legacy form docs", total)
         return {
             "from_template_type": int(getattr(result, "modified_count", 0) or 0),
-            "from_default": int(
-                getattr(result_default, "modified_count", 0) or 0
-            ),
+            "from_default": int(getattr(result_default, "modified_count", 0) or 0),
             "total": total,
         }
 
@@ -196,8 +191,7 @@ class FormService:
                 ]
             except Exception as exc:
                 logger.warning(
-                    "Skipping catalog template %s for %s — field validation "
-                    "failed: %s",
+                    "Skipping catalog template %s for %s — field validation failed: %s",
                     template_id,
                     normalized_email,
                     exc,
@@ -306,13 +300,9 @@ class FormService:
         query["seeded_from_catalog"] = True
         query["catalog_template_id"] = catalog_template_id
 
-        doc = await self.forms_collection.find_one(
-            query, {"_id": 1, "name": 1}
-        )
+        doc = await self.forms_collection.find_one(query, {"_id": 1, "name": 1})
         if not doc:
-            raise HTTPException(
-                status_code=404, detail="No seeded template found"
-            )
+            raise HTTPException(status_code=404, detail="No seeded template found")
         return {"form_id": str(doc["_id"]), "name": doc.get("name") or ""}
 
     @staticmethod
@@ -881,9 +871,7 @@ class FormService:
 
             for recipient_email in send_data.recipient_emails:
                 try:
-                    normalized_recipient = (
-                        (recipient_email or "").strip().lower()
-                    )
+                    normalized_recipient = (recipient_email or "").strip().lower()
                     if not normalized_recipient:
                         continue
 
@@ -937,12 +925,8 @@ class FormService:
                         # later edits to the form's email settings don't
                         # retroactively change reminder behaviour for
                         # already-sent distributions.
-                        "send_reminder": bool(
-                            send_data.email_settings.send_reminder
-                        ),
-                        "reminder_days": int(
-                            send_data.email_settings.reminder_days
-                        ),
+                        "send_reminder": bool(send_data.email_settings.send_reminder),
+                        "reminder_days": int(send_data.email_settings.reminder_days),
                         "reminder_subject": send_data.email_settings.subject,
                         "reminder_message": send_data.email_settings.message,
                         "reminder_sender_name": send_data.email_settings.sender_name,
@@ -978,13 +962,17 @@ class FormService:
                         )
 
                         if email_result.get("success"):
-                            distribution_doc["status"] = FormDistributionStatus.SENT.value
+                            distribution_doc["status"] = (
+                                FormDistributionStatus.SENT.value
+                            )
                             distribution_doc["email_id"] = email_result.get("email_id")
                             distribution_doc["email_sends"] = 1
                             distribution_doc["email_send_failures"] = 0
                             sent_count += 1
                         else:
-                            distribution_doc["status"] = FormDistributionStatus.FAILED.value
+                            distribution_doc["status"] = (
+                                FormDistributionStatus.FAILED.value
+                            )
                             distribution_doc["email_sends"] = 0
                             distribution_doc["email_send_failures"] = 1
                             delivery_error = (
@@ -1062,9 +1050,7 @@ class FormService:
                 return False
             if user.get("is_active") is False:
                 return False
-            normalized = normalize_subscription_status(
-                user.get("subscription_status")
-            )
+            normalized = normalize_subscription_status(user.get("subscription_status"))
             return normalized in ACTIVE_SUBSCRIPTION_STATUSES
         except Exception as exc:
             logger.warning(
@@ -1074,7 +1060,9 @@ class FormService:
             )
             return False
 
-    async def send_form_reminders(self, *, now: Optional[datetime] = None) -> Dict[str, int]:
+    async def send_form_reminders(
+        self, *, now: Optional[datetime] = None
+    ) -> Dict[str, int]:
         """Send a one-shot reminder email per overdue, unsubmitted distribution.
 
         A distribution is eligible iff its snapshot at send-time enabled
@@ -1092,9 +1080,7 @@ class FormService:
 
         frontend_url = os.getenv("FRONTEND_URL")
         if not frontend_url:
-            logger.warning(
-                "FRONTEND_URL not set — skipping form reminder pass"
-            )
+            logger.warning("FRONTEND_URL not set — skipping form reminder pass")
             return {"sent": 0, "skipped": 0, "failed": 0}
 
         eligible_cursor = self.distributions_collection.find(
@@ -1192,22 +1178,17 @@ class FormService:
                 # Rotate the token so the new email link is fresh and the
                 # original link stops working (prevents stale-link
                 # confusion if the recipient kept it open).
-                raw_token, token_hash, new_expires_at = (
-                    self._issue_form_access_token()
-                )
+                raw_token, token_hash, new_expires_at = self._issue_form_access_token()
                 reminder_form_url = (
                     f"{frontend_url}/forms/{distribution['form_id']}"
                     f"?dist={distribution_id}&t={raw_token}"
                 )
 
-                subject_base = (
-                    distribution.get("reminder_subject")
-                    or form.get("settings", {}).get("title", "Form")
-                )
+                subject_base = distribution.get("reminder_subject") or form.get(
+                    "settings", {}
+                ).get("title", "Form")
                 reminder_subject = f"Reminder: {subject_base}"
-                custom_message = (
-                    distribution.get("reminder_message") or ""
-                )
+                custom_message = distribution.get("reminder_message") or ""
                 sender_name = distribution.get("reminder_sender_name") or ""
 
                 email_html = self._generate_form_email_html(
@@ -1339,7 +1320,11 @@ class FormService:
                     file_id = (
                         raw_value
                         if isinstance(raw_value, str)
-                        else (raw_value.get("file_id") if isinstance(raw_value, dict) else None)
+                        else (
+                            raw_value.get("file_id")
+                            if isinstance(raw_value, dict)
+                            else None
+                        )
                     )
                     if not file_id:
                         raise HTTPException(
@@ -1861,9 +1846,7 @@ class FormService:
             raise
         except Exception as e:
             logging.error(f"Error fetching form distributions: {str(e)}")
-            raise HTTPException(
-                status_code=500, detail="Failed to fetch distributions"
-            )
+            raise HTTPException(status_code=500, detail="Failed to fetch distributions")
 
     async def mark_form_viewed(
         self,
@@ -2233,8 +2216,8 @@ class FormService:
                 if parsed_date_to is not None:
                     range_clause["$lte"] = parsed_date_to
                 count_query["submitted_at"] = range_clause
-            total_response_count = (
-                await self.responses_collection.count_documents(count_query)
+            total_response_count = await self.responses_collection.count_documents(
+                count_query
             )
             responses: List[Dict[str, Any]] = []
             async for row in self.iter_form_responses(
@@ -2263,9 +2246,7 @@ class FormService:
             # max_export_size by iter_form_responses, so no in-memory
             # slicing is needed.
             truncated = total_response_count > max_export_size
-            truncated_count = (
-                total_response_count - max_export_size if truncated else 0
-            )
+            truncated_count = total_response_count - max_export_size if truncated else 0
             if truncated:
                 logger.warning(
                     "Export size limited: %s responses truncated to %s for form %s "

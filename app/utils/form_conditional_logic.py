@@ -26,7 +26,7 @@ server-side required-field check.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List
 
 _VALID_OPERATORS = {
     "equals",

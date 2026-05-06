@@ -6,8 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.constants.roles import ROLE_WEDDING_PLANNER, is_wedding_planner_role
 from app.core.database import mongo
-
-logger = logging.getLogger(__name__)
 from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
 from app.models.subscription import (
     ACTIVE_SUBSCRIPTION_STATUSES,
@@ -18,6 +16,8 @@ from app.services.planner_access_lifecycle_service import (
     planner_access_lifecycle_service,
 )
 from app.utils.pydantic_objectid import PyObjectId
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 

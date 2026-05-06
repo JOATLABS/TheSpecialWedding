@@ -57,7 +57,12 @@ FORM_TEMPLATES: List[Dict[str, Any]] = [
                 "label": "Partner 1 — Pronouns",
                 "type": "select",
                 "required": False,
-                "options": ["she/her", "he/him", "they/them", "Other (please share below)"],
+                "options": [
+                    "she/her",
+                    "he/him",
+                    "they/them",
+                    "Other (please share below)",
+                ],
                 "order": 2,
             },
             {
@@ -72,7 +77,12 @@ FORM_TEMPLATES: List[Dict[str, Any]] = [
                 "label": "Partner 2 — Pronouns",
                 "type": "select",
                 "required": False,
-                "options": ["she/her", "he/him", "they/them", "Other (please share below)"],
+                "options": [
+                    "she/her",
+                    "he/him",
+                    "they/them",
+                    "Other (please share below)",
+                ],
                 "order": 4,
             },
             {
@@ -94,7 +104,13 @@ FORM_TEMPLATES: List[Dict[str, Any]] = [
                 "label": "Preferred way to communicate",
                 "type": "radio",
                 "required": True,
-                "options": ["Email", "Phone call", "Text message", "WhatsApp", "Video call"],
+                "options": [
+                    "Email",
+                    "Phone call",
+                    "Text message",
+                    "WhatsApp",
+                    "Video call",
+                ],
                 "order": 7,
             },
             {

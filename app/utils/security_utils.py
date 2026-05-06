@@ -489,9 +489,8 @@ class FormSecurityValidator:
                     # outright instead of letting raw user input through.
                     if isinstance(value, str):
                         candidate = value.strip()
-                        if (
-                            len(candidate) <= 32
-                            and re.fullmatch(r"\+?[\d\s\-().]{7,32}", candidate)
+                        if len(candidate) <= 32 and re.fullmatch(
+                            r"\+?[\d\s\-().]{7,32}", candidate
                         ):
                             sanitized[field_id] = candidate
 

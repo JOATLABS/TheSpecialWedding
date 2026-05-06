@@ -143,9 +143,7 @@ class FormUploadService:
         if len(contents) > MAX_UPLOAD_BYTES:
             raise HTTPException(
                 status_code=413,
-                detail=(
-                    f"File too large. Max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB."
-                ),
+                detail=(f"File too large. Max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB."),
             )
 
         # Per-distribution aggregate quota. Counted from existing
@@ -181,9 +179,7 @@ class FormUploadService:
 
         safe_filename = sanitize_filename(filename)
         file_id = str(uuid.uuid4())
-        key = (
-            f"forms/{form['_id']}/{distribution['_id']}/{file_id}-{safe_filename}"
-        )
+        key = f"forms/{form['_id']}/{distribution['_id']}/{file_id}-{safe_filename}"
 
         try:
             self.storage.client.put_object(

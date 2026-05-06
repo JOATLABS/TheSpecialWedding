@@ -213,18 +213,14 @@ class MarketingLeadService:
             }
             send_result = await self.email_service.send_email(
                 to_email=normalized_email,
-                subject=(
-                    f"Your {template.get('name') or 'wedding planner template'}"
-                ),
+                subject=(f"Your {template.get('name') or 'wedding planner template'}"),
                 html_content=html,
                 from_name=_BRAND_NAME,
                 attachments=[attachment_payload],
                 email_type="marketing_template_download",
             )
             email_dispatched = bool(send_result.get("success"))
-            inc = {"email_sends": 1} if email_dispatched else {
-                "email_send_failures": 1
-            }
+            inc = {"email_sends": 1} if email_dispatched else {"email_send_failures": 1}
             await self.leads.update_one(
                 {"_id": existing["_id"] if existing else insert_result.inserted_id},
                 {"$inc": inc, "$set": {"last_email_attempt_at": now}},

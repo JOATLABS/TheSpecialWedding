@@ -2457,8 +2457,7 @@ class VendorService:
 
             vendor_changed = (
                 target_vendor_profile_id is not None
-                and target_vendor_profile_id
-                != source_contract.get("vendor_profile_id")
+                and target_vendor_profile_id != source_contract.get("vendor_profile_id")
             )
             wedding_changed = (
                 target_wedding_id is not None
@@ -2485,9 +2484,7 @@ class VendorService:
                 vendor_phone = source_contract.get("vendor_phone")
                 vendor_address = source_contract.get("vendor_address")
                 service_category = source_contract["service_category"]
-                custom_service_category = source_contract.get(
-                    "custom_service_category"
-                )
+                custom_service_category = source_contract.get("custom_service_category")
 
             new_contract_id = ObjectId()
             now = datetime.now(timezone.utc)
@@ -2507,7 +2504,9 @@ class VendorService:
                 "vendor_profile_id": vendor_profile_id,
                 "vendor_quote_id": None,
                 "budget_category_id": (
-                    None if wedding_changed else source_contract.get("budget_category_id")
+                    None
+                    if wedding_changed
+                    else source_contract.get("budget_category_id")
                 ),
                 "template_id": source_contract.get("template_id"),
                 "vendor_name": vendor_name,
@@ -2568,7 +2567,9 @@ class VendorService:
                 "deposit_amount": source_contract.get("deposit_amount"),
                 "deposit_due_date": None,
                 "status": ContractStatus.DRAFT.value,
-                "service_date": None if wedding_changed else source_contract.get("service_date"),
+                "service_date": None
+                if wedding_changed
+                else source_contract.get("service_date"),
                 "service_start_time": source_contract.get("service_start_time"),
                 "service_end_time": source_contract.get("service_end_time"),
                 "service_location": (
@@ -2639,9 +2640,7 @@ class VendorService:
             raise
         except Exception as e:
             logger.error(f"Error duplicating contract: {str(e)}")
-            raise HTTPException(
-                status_code=500, detail="Failed to duplicate contract"
-            )
+            raise HTTPException(status_code=500, detail="Failed to duplicate contract")
 
     async def get_contract_revision_history(
         self, contract_id: str, created_by: str

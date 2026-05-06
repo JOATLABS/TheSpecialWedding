@@ -35,7 +35,7 @@ from __future__ import annotations
 import html
 import logging
 from functools import lru_cache
-from typing import Any, Dict, Iterable, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +80,7 @@ def _format_field_block(field: Mapping[str, Any]) -> str:
     if field_type in ("select", "radio"):
         options = field.get("options") or []
         items = "\n".join(
-            f'<li><span class="option-mark"></span> {_esc(o)}</li>'
-            for o in options
+            f'<li><span class="option-mark"></span> {_esc(o)}</li>' for o in options
         )
         body = f'<ul class="field-options">{items}</ul>'
     elif field_type == "checkbox":
@@ -249,7 +248,7 @@ def _render_template_html(template: Mapping[str, Any]) -> str:
 </head>
 <body>
   <h1 class="doc-title">{name}</h1>
-  {f'<p class="doc-description">{description}</p>' if description else ''}
+  {f'<p class="doc-description">{description}</p>' if description else ""}
   {field_blocks}
 </body>
 </html>
@@ -266,9 +265,7 @@ def _render_pdf_bytes(template: Mapping[str, Any]) -> bytes:
     try:
         from weasyprint import HTML  # local import — see existing services
     except ImportError:
-        logger.error(
-            "WeasyPrint not installed. Install with: pip install weasyprint"
-        )
+        logger.error("WeasyPrint not installed. Install with: pip install weasyprint")
         raise
 
     html_content = _render_template_html(template)
@@ -309,7 +306,9 @@ def _content_signature(template: Mapping[str, Any]) -> str:
     name and description capture every realistic mutation source.
     """
     fields: Iterable[Mapping[str, Any]] = template.get("fields") or []
-    return f"{template.get('name')}|{template.get('description')}|{sum(1 for _ in fields)}"
+    return (
+        f"{template.get('name')}|{template.get('description')}|{sum(1 for _ in fields)}"
+    )
 
 
 def render_form_template_pdf(template_id: str, *, use_cache: bool = True) -> bytes:

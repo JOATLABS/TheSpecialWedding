@@ -245,9 +245,7 @@ class AICacheService:
 
             # Fall back to expired entries (stale insights > no insights)
             # but still scoped to the plan to preserve isolation.
-            cached = await self.cache.find_one(
-                base_query, sort=[("created_at", -1)]
-            )
+            cached = await self.cache.find_one(base_query, sort=[("created_at", -1)])
 
             if cached:
                 logger.info(

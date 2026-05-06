@@ -36,7 +36,6 @@ from app.models.form import (
 from app.services.form_service import FormService
 from app.services.form_template_catalog import FORM_TEMPLATES as _CATALOG_TEMPLATES
 from app.services.form_upload_service import (
-    ALLOWED_MIME_TYPES,
     MAX_UPLOAD_BYTES,
     FormUploadService,
 )
@@ -850,9 +849,7 @@ async def check_public_form_distribution_link(
     a known good link and 404 for any wrong/forged token to avoid leaking
     distribution data to enumeration attempts.
     """
-    client_ip = (
-        getattr(request.client, "host", None) if request.client else "unknown"
-    )
+    client_ip = getattr(request.client, "host", None) if request.client else "unknown"
     if not rate_limiter.check_rate_limit(
         f"public_form_link_check_{client_ip}", limit=120, window_seconds=3600
     ):
@@ -874,9 +871,13 @@ async def check_public_form_distribution_link(
 async def upload_public_form_file(
     form_id: str,
     request: Request,
-    distribution_id: str = Form(..., description="FormDistribution ID from the email link"),
+    distribution_id: str = Form(
+        ..., description="FormDistribution ID from the email link"
+    ),
     access_token: str = Form(..., description="Per-recipient access token"),
-    field_id: str = Form(..., description="ID of the FILE_UPLOAD field this attachment belongs to"),
+    field_id: str = Form(
+        ..., description="ID of the FILE_UPLOAD field this attachment belongs to"
+    ),
     upload: UploadFile = File(..., description="The file to upload"),
 ):
     """Upload a single file for a FILE_UPLOAD field on a public form.
@@ -886,9 +887,7 @@ async def upload_public_form_file(
     the public bucket from becoming a free-for-all. Size capped at
     10 MB; allowed MIME types are images, PDFs, and common doc formats.
     """
-    client_ip = (
-        getattr(request.client, "host", None) if request.client else "unknown"
-    )
+    client_ip = getattr(request.client, "host", None) if request.client else "unknown"
     if not rate_limiter.check_rate_limit(
         f"public_form_upload_{client_ip}", limit=30, window_seconds=3600
     ):
@@ -909,7 +908,8 @@ async def upload_public_form_file(
     if not link_state.get("valid"):
         # Already submitted / expired — no new uploads allowed.
         raise HTTPException(
-            status_code=409, detail="This form access link is no longer accepting uploads"
+            status_code=409,
+            detail="This form access link is no longer accepting uploads",
         )
 
     # Re-fetch form + distribution for the upload service.
@@ -962,9 +962,7 @@ async def preview_form_template_pdf(
     """
     import asyncio
 
-    client_ip = (
-        getattr(request.client, "host", None) if request.client else "unknown"
-    )
+    client_ip = getattr(request.client, "host", None) if request.client else "unknown"
     if not rate_limiter.check_rate_limit(
         f"public_template_pdf_{client_ip}", limit=60, window_seconds=3600
     ):
@@ -979,9 +977,7 @@ async def preview_form_template_pdf(
     try:
         from app.services.form_template_pdf_service import render_form_template_pdf
 
-        pdf_bytes = await asyncio.to_thread(
-            render_form_template_pdf, safe_template_id
-        )
+        pdf_bytes = await asyncio.to_thread(render_form_template_pdf, safe_template_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Template not found")
     except ImportError:
@@ -1038,9 +1034,7 @@ async def public_marketing_template_download(
     email; idempotent on (email, template_id) so a determined visitor
     can re-trigger the email without polluting the lead table.
     """
-    client_ip = (
-        getattr(request.client, "host", None) if request.client else "unknown"
-    )
+    client_ip = getattr(request.client, "host", None) if request.client else "unknown"
     if not rate_limiter.check_rate_limit(
         f"marketing_template_download_{client_ip}",
         limit=10,

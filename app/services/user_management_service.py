@@ -1262,8 +1262,10 @@ class UserManagementService:
                 try:
                     from app.services.form_service import FormService
 
-                    seed_result = await FormService().seed_catalog_templates_for_planner(
-                        user["email"]
+                    seed_result = (
+                        await FormService().seed_catalog_templates_for_planner(
+                            user["email"]
+                        )
                     )
                     self.logger.info(
                         "Catalog seed for verified planner %s: %s",
@@ -1794,8 +1796,10 @@ class UserManagementService:
                 try:
                     from app.services.form_service import FormService
 
-                    seed_result = await FormService().seed_catalog_templates_for_planner(
-                        new_email
+                    seed_result = (
+                        await FormService().seed_catalog_templates_for_planner(
+                            new_email
+                        )
                     )
                     self.logger.info(
                         "Catalog seed for planner email change %s -> %s: %s",

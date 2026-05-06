@@ -663,7 +663,7 @@ Guidelines:
 # ``AI_GEMINI_MODEL_PRIMARY`` / ``AI_GEMINI_MODEL_ECONOMY`` in env to
 # roll forward. Defaults are the latest known-good IDs at time of
 # writing; LOW_CREDIT_THRESHOLD is also overridable.
-from app.core.settings import settings as _ai_settings
+from app.core.settings import settings as _ai_settings  # noqa: E402
 
 MODEL_PRIMARY = _ai_settings.ai_gemini_model_primary or "gemini-2.5-flash"
 MODEL_ECONOMY = _ai_settings.ai_gemini_model_economy or "gemini-2.0-flash"
@@ -1553,9 +1553,23 @@ class AIService:
             if cp < 0x20 or cp == 0x7F:
                 continue  # other ASCII controls
             # Zero-width / bidi-override
-            if cp in (0x200B, 0x200C, 0x200D, 0x2028, 0x2029, 0x202A,
-                      0x202B, 0x202C, 0x202D, 0x202E, 0x2066, 0x2067,
-                      0x2068, 0x2069, 0xFEFF):
+            if cp in (
+                0x200B,
+                0x200C,
+                0x200D,
+                0x2028,
+                0x2029,
+                0x202A,
+                0x202B,
+                0x202C,
+                0x202D,
+                0x202E,
+                0x2066,
+                0x2067,
+                0x2068,
+                0x2069,
+                0xFEFF,
+            ):
                 continue
             cleaned_chars.append(ch)
         cleaned = "".join(cleaned_chars)
@@ -1568,11 +1582,7 @@ class AIService:
                 pos = lowered.find(trigger, idx)
                 if pos < 0:
                     break
-                cleaned = (
-                    cleaned[:pos]
-                    + "[filtered]"
-                    + cleaned[pos + len(trigger):]
-                )
+                cleaned = cleaned[:pos] + "[filtered]" + cleaned[pos + len(trigger) :]
                 lowered = cleaned.lower()
                 idx = pos + len("[filtered]")
 
