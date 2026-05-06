@@ -501,26 +501,91 @@ class PlannerNotificationService:
     # Both helpers wrap create_notification, which already handles SSE
     # broadcast + web-push delivery in addition to Mongo persistence.
 
+    async def _resolve_team_recipients(
+        self, planner_id: str, *, required_permission: str
+    ) -> list[str]:
+        """Return the list of notification recipients for a planner-scoped event.
+
+        Includes the planner themselves plus every active team member
+        whose resolved permissions grant ``required_permission``. Each
+        recipient gets their own notification document so per-session
+        SSE channels and bell counts are independent.
+
+        Best-effort: a team_members lookup failure logs and returns the
+        planner alone — the trigger must not be blocked by team-member
+        plumbing breakage.
+        """
+        recipients: list[str] = [planner_id]
+        try:
+            from app.core.database import mongo
+            from app.models.team_member import resolve_team_permissions
+
+            cursor = mongo.db["team_members"].find(
+                {
+                    "owner_email": planner_id,
+                    "status": "active",
+                },
+                {"email": 1, "role": 1, "custom_permissions": 1},
+            )
+            members = await cursor.to_list(length=None)
+            for member in members:
+                email = (member.get("email") or "").strip().lower()
+                if not email or email == planner_id:
+                    continue
+                perms = resolve_team_permissions(
+                    member.get("role", "viewer"),
+                    member.get("custom_permissions") or {},
+                )
+                if perms.get(required_permission):
+                    recipients.append(email)
+        except Exception as exc:
+            logger.warning(
+                "Team-member fan-out lookup failed for %s; falling back to "
+                "planner-only delivery: %s",
+                planner_id,
+                exc,
+            )
+        # Preserve order, dedupe.
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for email in recipients:
+            if email and email not in seen:
+                seen.add(email)
+                deduped.append(email)
+        return deduped
+
     async def notify_wedding_created(
         self,
         planner_id: str,
         wedding_id: str,
         couple_names: Optional[str] = None,
     ):
-        """Stage 1: a wedding has just been created."""
+        """Stage 1: a wedding has just been created.
+
+        Fans out to the owning planner plus every active team member
+        with the ``manage_couple_portal`` permission (the same gate the
+        planner UI uses to surface the "Invite couple" CTA). Each
+        recipient gets their own notification document.
+        """
         couple_label = (couple_names or "the couple").strip() or "the couple"
-        return await self.create_notification(
-            planner_id=planner_id,
-            notification_type=PlannerNotificationTypes.WEDDING_CREATED,
-            title="New wedding created",
-            message=(
-                f"Invite {couple_label} to their portal next — "
-                f"they'll be ready for the wedding checklist once they accept."
-            ),
-            wedding_id=wedding_id,
-            metadata={"couple_names": couple_names},
-            action_url=f"/admin/planner/weddings/{wedding_id}?tab=couple",
+        recipients = await self._resolve_team_recipients(
+            planner_id, required_permission="manage_couple_portal"
         )
+        last = None
+        for recipient in recipients:
+            last = await self.create_notification(
+                planner_id=recipient,
+                notification_type=PlannerNotificationTypes.WEDDING_CREATED,
+                title="New wedding created",
+                message=(
+                    f"Invite {couple_label} to their portal next — "
+                    f"they'll be ready for the wedding checklist once they accept."
+                ),
+                wedding_id=wedding_id,
+                metadata={"couple_names": couple_names},
+                action_url=f"/admin/planner/weddings/{wedding_id}?tab=couple",
+            )
+        return last
 
     async def notify_couple_portal_accepted(
         self,
@@ -532,10 +597,15 @@ class PlannerNotificationService:
     ):
         """Stage 2: the couple has accepted the portal invite.
 
-        Carries ``seeded_form_id`` (the planner's catalog-seeded
-        ``couple_intake`` form) and the couple's email in metadata so
-        the frontend toast can render an action button that one-click
-        dispatches the form via ``POST /admin/forms/{form_id}/send``.
+        Fans out to the owning planner plus every active team member
+        with the ``manage_forms`` permission (so a coordinator who
+        normally handles checklists sees the action toast on their
+        own session). Each recipient gets their own notification
+        document. Carries ``seeded_form_id`` (the planner's catalog-
+        seeded ``couple_intake`` form) and the couple's email in
+        metadata so the frontend toast can render an action button
+        that one-click dispatches the form via
+        ``POST /admin/forms/{form_id}/send``.
         """
         couple_label = (couple_names or "the couple").strip() or "The couple"
         action_url = (
@@ -544,19 +614,25 @@ class PlannerNotificationService:
             if seeded_form_id
             else f"/admin/planner/weddings/{wedding_id or ''}"
         )
-        return await self.create_notification(
-            planner_id=planner_id,
-            notification_type=PlannerNotificationTypes.COUPLE_PORTAL_ACCEPTED,
-            title=f"{couple_label} accepted the portal invite",
-            message="Send them the wedding checklist now.",
-            wedding_id=wedding_id,
-            metadata={
-                "couple_email": couple_email,
-                "couple_names": couple_names,
-                "form_id": seeded_form_id,
-            },
-            action_url=action_url,
+        recipients = await self._resolve_team_recipients(
+            planner_id, required_permission="manage_forms"
         )
+        last = None
+        for recipient in recipients:
+            last = await self.create_notification(
+                planner_id=recipient,
+                notification_type=PlannerNotificationTypes.COUPLE_PORTAL_ACCEPTED,
+                title=f"{couple_label} accepted the portal invite",
+                message="Send them the wedding checklist now.",
+                wedding_id=wedding_id,
+                metadata={
+                    "couple_email": couple_email,
+                    "couple_names": couple_names,
+                    "form_id": seeded_form_id,
+                },
+                action_url=action_url,
+            )
+        return last
 
     async def notify_rsvp_update(
         self,
