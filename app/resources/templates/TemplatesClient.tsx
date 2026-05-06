@@ -61,6 +61,15 @@ export default function TemplatesClient({ templates }: TemplatesClientProps) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  // Batch 13 / R9: capture the most recent submission payload so the
+  // success state's "Resend" button can re-POST the same lead without
+  // making the user re-enter anything. Server is idempotent — repeats
+  // increment download_count and re-send the email.
+  const [lastSubmission, setLastSubmission] = useState<
+    { templateId: string; email: string; name?: string } | null
+  >(null);
+  const [resending, setResending] = useState(false);
+  const [resent, setResent] = useState(false);
 
   const utm = useMemo(readUtmFromUrl, []);
 
@@ -70,8 +79,42 @@ export default function TemplatesClient({ templates }: TemplatesClientProps) {
     if (active) {
       setError(null);
       setSuccess(null);
+      setResent(false);
     }
   }, [active]);
+
+  const dispatchDownload = async (
+    templateId: string,
+    targetEmail: string,
+    targetName?: string,
+  ) => {
+    const res = await fetch(
+      `${getApiBaseUrl()}/public/marketing/template-download`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          template_id: templateId,
+          email: targetEmail,
+          name: targetName || undefined,
+          ...utm,
+        }),
+      },
+    );
+    if (res.status === 429) {
+      throw new Error(
+        'Too many requests right now. Please try again in a few minutes.',
+      );
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(
+        (data && (data.detail || data.message)) ||
+          'Something went wrong. Please try again.',
+      );
+    }
+    return res.json();
+  };
 
   const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -84,50 +127,35 @@ export default function TemplatesClient({ templates }: TemplatesClientProps) {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(
-        `${getApiBaseUrl()}/public/marketing/template-download`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            template_id: active.id,
-            email,
-            name: name || undefined,
-            ...utm,
-          }),
-        },
-      );
-
-      if (res.status === 429) {
-        setError('Too many requests right now. Please try again in a few minutes.');
-        return;
-      }
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(
-          (data && (data.detail || data.message)) ||
-            'Something went wrong. Please try again.',
-        );
-        return;
-      }
-
-      const data = await res.json();
+      const data = await dispatchDownload(active.id, email, name);
       setSuccess(
         data.message ||
           'Check your inbox — the template is on its way.',
       );
-      setEmail('');
-      setName('');
-      // Close the modal after a brief confirmation pause
-      setTimeout(() => {
-        setActive(null);
-        setSuccess(null);
-      }, 2500);
-    } catch {
-      setError('Network error. Please try again.');
+      setLastSubmission({ templateId: active.id, email, name });
+      // Don't auto-close: the user should see the Resend link.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error. Please try again.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const onResend = async () => {
+    if (!lastSubmission || resending) return;
+    setResending(true);
+    setError(null);
+    try {
+      await dispatchDownload(
+        lastSubmission.templateId,
+        lastSubmission.email,
+        lastSubmission.name,
+      );
+      setResent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error. Please try again.');
+    } finally {
+      setResending(false);
     }
   };
 
@@ -185,8 +213,38 @@ export default function TemplatesClient({ templates }: TemplatesClientProps) {
             </p>
 
             {success ? (
-              <div className="rounded-lg bg-emerald-50 text-emerald-900 px-4 py-3 text-sm">
-                {success}
+              <div className="space-y-3">
+                <div className="rounded-lg bg-emerald-50 text-emerald-900 px-4 py-3 text-sm">
+                  {success}
+                </div>
+                <div className="flex items-center justify-between text-xs text-[#555]">
+                  <span>
+                    {resent
+                      ? 'Sent again — please check your spam folder too.'
+                      : "Didn't receive it?"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onResend}
+                    disabled={resending || !lastSubmission}
+                    data-testid="marketing-resend"
+                    className="rounded-full border border-[#d6cfc1] bg-white px-3 py-1 text-xs font-medium text-[#1a1a1a] hover:bg-[#f5efe5] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {resending ? 'Resending…' : resent ? 'Resend again' : 'Resend'}
+                  </button>
+                </div>
+                {error && (
+                  <p className="text-sm text-red-600" role="alert">
+                    {error}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setActive(null)}
+                  className="text-xs text-[#9a8f82] hover:text-[#6b5d4f] underline"
+                >
+                  Close
+                </button>
               </div>
             ) : (
               <form onSubmit={onSubmit} className="space-y-4">
