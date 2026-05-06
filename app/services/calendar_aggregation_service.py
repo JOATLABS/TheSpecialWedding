@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 from app.core.database import mongo
 from app.models.calendar import VisibilityMode
-from app.services.google_calendar_service import google_calendar_service
+from app.services.calendar_provider_service import calendar_provider_service
 
 
 class CalendarAggregationService:
@@ -76,6 +76,12 @@ class CalendarAggregationService:
                 query["schedule_item_type"] = {"$in": schedule_item_types}
         return query
 
+    @staticmethod
+    def _wants_external(source_types: Optional[list[str]]) -> bool:
+        if not source_types:
+            return True
+        return "external" in source_types
+
     def _normalize_internal(self, task: dict) -> dict:
         schedule_item_type = task.get("schedule_item_type") or (
             "meeting" if task.get("category") == "meeting" else "task"
@@ -128,7 +134,8 @@ class CalendarAggregationService:
         end_info = event.get("end", {})
         return {
             "id": event.get("id"),
-            "source_type": "external_google",
+            "source_type": "external",
+            "external_provider": connection.get("provider"),
             "title": event.get("summary") if show_details else "Busy",
             "start_date": start_info.get("dateTime") or start_info.get("date"),
             "end_date": end_info.get("dateTime") or end_info.get("date"),
@@ -145,6 +152,7 @@ class CalendarAggregationService:
             "details": {
                 "calendar_connection_id": connection.get("id"),
                 "calendar_name": connection.get("calendar_name"),
+                "provider": connection.get("provider"),
                 "provider_account_email": connection.get("provider_account_email"),
                 "description": event.get("description") if show_details else None,
             },
@@ -186,9 +194,8 @@ class CalendarAggregationService:
         internal_events = [self._normalize_internal(row) for row in internal_rows]
 
         external_events: list[dict] = []
-        include_external = not source_types or "external_google" in source_types
-        if include_external:
-            connections = await google_calendar_service.list_connections(
+        if self._wants_external(source_types):
+            connections = await calendar_provider_service.list_connections(
                 owner_id=owner_id,
                 current_user_id=current_user_id,
                 include_all_owner_connections=include_all_owner_connections,
@@ -206,7 +213,7 @@ class CalendarAggregationService:
 
             fetched_events = await asyncio.gather(
                 *[
-                    google_calendar_service.fetch_google_events_for_connection(
+                    calendar_provider_service.fetch_external_events_for_connection(
                         connection["id"],
                         time_min=start,
                         time_max=end,

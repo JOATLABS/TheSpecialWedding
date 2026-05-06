@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import {
-  beginGoogleCalendarConnect,
+  beginCalendarConnect,
   CalendarConnection,
   disconnectCalendarConnection,
   healthcheckCalendarConnection,
@@ -24,7 +24,7 @@ interface StaffOption {
   role?: string;
 }
 
-interface GoogleCalendarConnectProps {
+interface CalendarConnectProps {
   connections: CalendarConnection[];
   staffOptions?: StaffOption[];
   weddings?: Array<{ id: string; couple_names: string }>;
@@ -131,13 +131,13 @@ function visibilityLabel(mode: string) {
   return mode === 'details' ? 'Full details' : 'Busy/free';
 }
 
-export default function GoogleCalendarConnect({
+export default function CalendarConnect({
   connections,
   staffOptions = [],
   weddings = [],
   loading = false,
   onRefresh,
-}: GoogleCalendarConnectProps) {
+}: CalendarConnectProps) {
   const { token } = useAdmin();
   const { confirm } = useConfirmDialog();
   const [activeAction, setActiveAction] = useState<string | null>(null);
@@ -189,11 +189,11 @@ export default function GoogleCalendarConnect({
     setActiveAction('connect');
     setError('');
     try {
-      const { auth_url } = await beginGoogleCalendarConnect(token);
+      const { auth_url } = await beginCalendarConnect(token);
       window.location.href = auth_url;
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : 'Failed to start Google Calendar connection';
+        err instanceof Error ? err.message : 'Failed to start calendar connection';
       setError(message);
       setActiveAction(null);
     }
@@ -203,9 +203,9 @@ export default function GoogleCalendarConnect({
     if (!token) return;
 
     const confirmed = await confirm({
-      title: 'Disconnect Google Calendar',
+      title: 'Disconnect calendar',
       message:
-        'Disconnect this calendar connection? Internal meetings stay in the platform, but external sync stops and Google access is revoked when applicable.',
+        'Disconnect this calendar connection? Internal meetings stay in the platform, but external sync stops and the underlying provider grant is revoked when applicable.',
       variant: 'warning',
       confirmText: 'Disconnect',
       cancelText: 'Cancel',
@@ -364,8 +364,9 @@ export default function GoogleCalendarConnect({
               </svg>
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Google Calendar Connections</h3>
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Calendar connections</h3>
               <p className="text-sm text-slate-500 dark:text-slate-400">
+                Connect Google, Microsoft 365, iCloud, or Exchange via the calendar aggregator.
                 Shared view is opt-in per connection. Personal external calendars stay busy/free
                 only unless the owner enables full details.
               </p>
@@ -392,7 +393,7 @@ export default function GoogleCalendarConnect({
               Connecting...
             </>
           ) : (
-            'Connect Google Calendar'
+            'Connect calendar'
           )}
         </button>
       </div>
@@ -419,7 +420,7 @@ export default function GoogleCalendarConnect({
                 <div>
                   <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{group.accountEmail}</h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {group.rows[0]?.provider_account_name || 'Google account'} •{' '}
+                    {group.rows[0]?.provider_account_name || 'Calendar account'} •{' '}
                     {group.rows[0]?.user_email || 'Workspace user'}
                   </p>
                 </div>

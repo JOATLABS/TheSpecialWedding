@@ -1,5 +1,6 @@
 /**
- * Calendar API client for planner scheduling, shared calendars, and Google connections.
+ * Calendar API client for planner scheduling, shared calendars, and external
+ * calendar connections (Google / 365 / iCloud / Exchange via Aurinko).
  */
 import { getApiBaseUrl } from '@/utils/env';
 
@@ -158,9 +159,19 @@ export interface CalendarSyncStatusItem {
   updated_at?: string | null;
 }
 
+export type CalendarProviderLabel =
+  | 'google'
+  | 'office365'
+  | 'outlook'
+  | 'exchange'
+  | 'icloud'
+  | 'zoho'
+  | 'unknown';
+
 export interface SharedCalendarEvent {
   id: string;
-  source_type: 'internal_task' | 'internal_meeting' | 'external_google' | string;
+  source_type: 'internal_task' | 'internal_meeting' | 'external' | string;
+  external_provider?: CalendarProviderLabel | string | null;
   title?: string | null;
   start_date?: string | null;
   end_date?: string | null;
@@ -192,7 +203,7 @@ export interface MeetingUpsertResponse {
   invite_status: Array<Record<string, unknown>>;
 }
 
-export interface GoogleAuthUrlResponse {
+export interface CalendarAuthUrlResponse {
   auth_url: string;
   message: string;
 }
@@ -409,7 +420,7 @@ export async function deleteTask(token: string, taskId: string): Promise<void> {
   });
 }
 
-export async function syncTaskToGoogle(token: string, taskId: string): Promise<PlannerTask> {
+export async function syncTaskToProvider(token: string, taskId: string): Promise<PlannerTask> {
   return authFetch<PlannerTask>(token, `/admin/planner/calendar/tasks/${taskId}/sync`, {
     method: 'POST',
   });
@@ -466,22 +477,22 @@ export async function listCalendarConnections(token: string): Promise<CalendarCo
   return authFetch<CalendarConnection[]>(token, '/admin/planner/calendar/connections');
 }
 
-export async function beginGoogleCalendarConnect(token: string): Promise<GoogleAuthUrlResponse> {
-  return authFetch<GoogleAuthUrlResponse>(
+export async function beginCalendarConnect(token: string): Promise<CalendarAuthUrlResponse> {
+  return authFetch<CalendarAuthUrlResponse>(
     token,
-    '/admin/planner/calendar/connections/google/connect',
+    '/admin/planner/calendar/connections/provider/connect',
     { method: 'POST' }
   );
 }
 
-export async function completeGoogleCalendarCallback(
+export async function completeCalendarCallback(
   token: string,
   code: string,
   state: string
 ): Promise<Record<string, unknown>> {
   return authFetch<Record<string, unknown>>(
     token,
-    `/admin/planner/calendar/connections/google/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
+    `/admin/planner/calendar/connections/provider/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
   );
 }
 

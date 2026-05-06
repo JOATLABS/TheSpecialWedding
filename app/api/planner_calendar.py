@@ -29,6 +29,7 @@ from app.models.calendar import (
     CalendarEventUpdate,
     CalendarSyncPolicy,
     CalendarSyncStatus,
+    ExternalConflictStatus,
     InviteDeliveryMode,
     MeetingLifecycleStatus,
     ScheduleItemType,
@@ -41,7 +42,7 @@ from app.services.calendar_audit_service import calendar_audit_service
 from app.services.calendar_idempotency_service import calendar_idempotency_service
 from app.services.calendar_job_service import calendar_job_service
 from app.services.calendar_sync_service import calendar_sync_service
-from app.services.google_calendar_service import google_calendar_service
+from app.services.calendar_provider_service import calendar_provider_service
 from app.utils.query_validation import (
     calculate_pagination_params,
     validated_status_filter,
@@ -129,15 +130,15 @@ class TaskListResponse(BaseModel):
     page_size: int
 
 
-class GoogleAuthUrlResponse(BaseModel):
-    """Response for Google OAuth authorization URL."""
+class CalendarAuthUrlResponse(BaseModel):
+    """Response carrying the calendar aggregator hosted-auth URL."""
 
     auth_url: str
     message: str
 
 
-class GoogleCallbackResponse(BaseModel):
-    """Response after Google OAuth callback."""
+class CalendarCallbackResponse(BaseModel):
+    """Response after the calendar aggregator OAuth callback completes."""
 
     connected: bool
     calendar_id: Optional[str] = None
@@ -677,60 +678,50 @@ async def _meeting_mutation_lock(meeting_id: str):
 
 
 # ============================================================================
-# Google Calendar OAuth Endpoints
+# Calendar Aggregator OAuth Endpoints (Aurinko)
 # ============================================================================
 
 
 @router.get(
-    "/planner/calendar/google/connect",
+    "/planner/calendar/provider/connect",
     tags=["Planner Calendar"],
-    response_model=GoogleAuthUrlResponse,
+    response_model=CalendarAuthUrlResponse,
 )
-async def get_google_auth_url(
+async def get_calendar_auth_url(
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("connect_personal_calendar")
     ),
-) -> GoogleAuthUrlResponse:
-    """
-    Get Google OAuth authorization URL to connect Google Calendar.
-
-    Redirects the user to Google's consent screen to authorize
-    calendar access. After consent, user is redirected to the callback URL.
-    """
+) -> CalendarAuthUrlResponse:
+    """Generate the calendar aggregator hosted-auth URL for the current user."""
     context = get_calendar_owner_identity(current_user)
-    auth_url = await google_calendar_service.get_authorization_url(
+    auth_url = await calendar_provider_service.get_authorization_url(
         user_id=context.get("user_id") or "",
         user_email=context.get("user_email") or current_user.email,
         owner_id=context.get("owner_id") or context.get("user_id") or "",
         owner_email=context.get("owner_email") or current_user.email,
     )
 
-    return GoogleAuthUrlResponse(
+    return CalendarAuthUrlResponse(
         auth_url=auth_url,
-        message="Redirect user to auth_url to connect Google Calendar",
+        message="Redirect the user to auth_url to connect a calendar account",
     )
 
 
 @router.get(
-    "/planner/calendar/google/callback",
+    "/planner/calendar/provider/callback",
     tags=["Planner Calendar"],
-    response_model=GoogleCallbackResponse,
+    response_model=CalendarCallbackResponse,
 )
-async def google_oauth_callback(
-    code: str = Query(..., description="Authorization code from Google"),
-    state: str = Query(..., description="State parameter containing user email"),
+async def calendar_oauth_callback(
+    code: str = Query(..., description="Authorization code from the calendar aggregator"),
+    state: str = Query(..., description="Signed state parameter from the connect step"),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("connect_personal_calendar")
     ),
-) -> GoogleCallbackResponse:
-    """
-    Handle Google OAuth callback after user grants consent.
-
-    This endpoint is called by Google after user authorizes access.
-    The authorization code is exchanged for access/refresh tokens.
-    """
+) -> CalendarCallbackResponse:
+    """Handle the calendar aggregator OAuth callback after the user grants consent."""
     context = get_calendar_owner_identity(current_user)
-    result = await google_calendar_service.handle_oauth_callback(
+    result = await calendar_provider_service.handle_oauth_callback(
         code=code,
         state=state,
         current_user_context={
@@ -739,7 +730,7 @@ async def google_oauth_callback(
         },
     )
 
-    return GoogleCallbackResponse(
+    return CalendarCallbackResponse(
         connected=result.get("connected", False),
         calendar_id=result.get("calendar_id"),
         message=result.get("message", ""),
@@ -747,19 +738,15 @@ async def google_oauth_callback(
 
 
 @router.get(
-    "/planner/calendar/google/status",
+    "/planner/calendar/provider/status",
     tags=["Planner Calendar"],
     response_model=CalendarSyncStatus,
 )
-async def get_google_calendar_status(
+async def get_calendar_status(
     current_user: ExtendedAuthUser = Depends(require_calendar_access),
 ) -> CalendarSyncStatus:
-    """
-    Check if Google Calendar is connected for the current user.
-
-    Returns connection status, last sync time, and number of synced events.
-    """
-    status = await google_calendar_service.get_connection_status(current_user.email)
+    """Return the connection status for the current user's calendar account."""
+    status = await calendar_provider_service.get_connection_status(current_user.email)
 
     return CalendarSyncStatus(
         connected=status.get("connected", False),
@@ -771,42 +758,34 @@ async def get_google_calendar_status(
 
 
 @router.delete(
-    "/planner/calendar/google/disconnect",
+    "/planner/calendar/provider/disconnect",
     tags=["Planner Calendar"],
 )
-async def disconnect_google_calendar(
+async def disconnect_calendar(
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("connect_personal_calendar")
     ),
 ) -> dict:
-    """
-    Disconnect Google Calendar for the current user.
-
-    Removes stored OAuth tokens. Tasks are preserved but sync is disabled.
-    """
-    result = await google_calendar_service.disconnect(current_user.email)
+    """Disconnect every calendar connection for the current user."""
+    result = await calendar_provider_service.disconnect(current_user.email)
     return result
 
 
 @router.get(
-    "/planner/calendar/google/events",
+    "/planner/calendar/provider/events",
     tags=["Planner Calendar"],
 )
-async def fetch_google_events(
+async def fetch_calendar_events(
     current_user: ExtendedAuthUser = Depends(require_calendar_access),
     days_ahead: int = Query(
         default=30, ge=1, le=365, description="Days ahead to fetch"
     ),
 ) -> List[dict]:
-    """
-    Fetch events from connected Google Calendar.
-
-    Returns events from now until the specified number of days ahead.
-    """
+    """Fetch events from the user's default writable calendar via Aurinko."""
     time_min = datetime.now(UTC)
     time_max = time_min + timedelta(days=days_ahead)
 
-    events = await google_calendar_service.fetch_google_events(
+    events = await calendar_provider_service.fetch_external_events(
         current_user.email,
         time_min=time_min,
         time_max=time_max,
@@ -823,9 +802,9 @@ async def fetch_google_events(
 async def list_calendar_connections(
     current_user: ExtendedAuthUser = Depends(require_calendar_access),
 ) -> list[CalendarConnectionResponse]:
-    """List visible Google calendar connections in the planner owner scope."""
+    """List visible external calendar connections in the planner owner scope."""
     scope = get_accessible_calendar_scope(current_user)
-    connections = await google_calendar_service.list_connections(
+    connections = await calendar_provider_service.list_connections(
         owner_id=str(scope.get("owner_id") or ""),
         current_user_id=get_calendar_owner_identity(current_user).get("user_id"),
         include_all_owner_connections=bool(scope.get("is_owner")),
@@ -834,33 +813,33 @@ async def list_calendar_connections(
 
 
 @router.post(
-    "/planner/calendar/connections/google/connect",
+    "/planner/calendar/connections/provider/connect",
     tags=["Planner Calendar"],
-    response_model=GoogleAuthUrlResponse,
+    response_model=CalendarAuthUrlResponse,
 )
-async def get_google_connection_auth_url(
+async def get_calendar_connection_auth_url(
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("connect_personal_calendar")
     ),
-) -> GoogleAuthUrlResponse:
-    """Connection-aware alias for the Google OAuth connect flow."""
-    return await get_google_auth_url(current_user=current_user)
+) -> CalendarAuthUrlResponse:
+    """Connection-aware alias for the calendar aggregator connect flow."""
+    return await get_calendar_auth_url(current_user=current_user)
 
 
 @router.get(
-    "/planner/calendar/connections/google/callback",
+    "/planner/calendar/connections/provider/callback",
     tags=["Planner Calendar"],
-    response_model=GoogleCallbackResponse,
+    response_model=CalendarCallbackResponse,
 )
-async def google_connection_oauth_callback(
+async def calendar_connection_oauth_callback(
     code: str = Query(...),
     state: str = Query(...),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("connect_personal_calendar")
     ),
-) -> GoogleCallbackResponse:
-    """Connection-aware alias for the Google OAuth callback."""
-    return await google_oauth_callback(
+) -> CalendarCallbackResponse:
+    """Connection-aware alias for the calendar aggregator OAuth callback."""
+    return await calendar_oauth_callback(
         code=code, state=state, current_user=current_user
     )
 
@@ -876,7 +855,7 @@ async def update_calendar_connection(
     current_user: ExtendedAuthUser = Depends(require_calendar_access),
 ) -> CalendarConnectionResponse:
     """Update mutable connection settings for a calendar row."""
-    connection_doc = await google_calendar_service._get_connection_doc(connection_id)
+    connection_doc = await calendar_provider_service.get_connection_doc(connection_id)
     current_context = get_calendar_owner_identity(current_user)
     is_owner = current_user.is_root_admin or current_user.is_wedding_planner
     is_connection_owner = connection_doc.get("user_id") == current_context.get(
@@ -929,7 +908,7 @@ async def update_calendar_connection(
             updates["allowed_wedding_ids"],
         )
 
-    updated = await google_calendar_service.update_connection(
+    updated = await calendar_provider_service.update_connection(
         connection_id,
         updates,
         actor_email=current_user.email,
@@ -947,7 +926,7 @@ async def delete_calendar_connection(
     current_user: ExtendedAuthUser = Depends(require_calendar_access),
 ) -> dict:
     """Disconnect one calendar connection, revoking provider access when appropriate."""
-    connection_doc = await google_calendar_service._get_connection_doc(connection_id)
+    connection_doc = await calendar_provider_service.get_connection_doc(connection_id)
     current_context = get_calendar_owner_identity(current_user)
     is_owner = current_user.is_root_admin or current_user.is_wedding_planner
     can_manage_all = bool(
@@ -966,7 +945,7 @@ async def delete_calendar_connection(
         raise HTTPException(
             status_code=403, detail="Cannot disconnect this calendar connection"
         )
-    return await google_calendar_service.disconnect_connection(
+    return await calendar_provider_service.disconnect_connection(
         connection_id,
         actor_email=current_user.email,
         actor_role=current_user.role,
@@ -982,8 +961,8 @@ async def healthcheck_calendar_connection(
     connection_id: str,
     current_user: ExtendedAuthUser = Depends(require_calendar_access),
 ) -> CalendarConnectionResponse:
-    """Validate a connection against Google and return updated health metadata."""
-    connection_doc = await google_calendar_service._get_connection_doc(connection_id)
+    """Validate a connection against the calendar aggregator and return updated health metadata."""
+    connection_doc = await calendar_provider_service.get_connection_doc(connection_id)
     current_context = get_calendar_owner_identity(current_user)
     can_manage_all = bool(
         current_user.team_permissions
@@ -1002,7 +981,7 @@ async def healthcheck_calendar_connection(
         raise HTTPException(
             status_code=403, detail="Cannot healthcheck this calendar connection"
         )
-    result = await google_calendar_service.healthcheck_connection(connection_id)
+    result = await calendar_provider_service.healthcheck_connection(connection_id)
     return CalendarConnectionResponse(**result)
 
 
@@ -2413,4 +2392,107 @@ async def get_meeting_sync_status(
     return {
         "meeting_id": meeting_id,
         "sync_status": await calendar_sync_service.get_sync_status(meeting_id),
+    }
+
+
+@router.post(
+    "/planner/calendar/meetings/{meeting_id}/external-change/accept",
+    tags=["Planner Calendar"],
+)
+async def accept_meeting_external_change(
+    meeting_id: str,
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("edit_meetings")
+    ),
+) -> dict:
+    """Accept an externally detected change: copy ``external_*`` snapshot fields
+    onto canonical fields and reschedule ICS to attendees."""
+    try:
+        oid = ObjectId(meeting_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid meeting ID format")
+    task = await _get_scoped_meeting(oid, current_user)
+    now = datetime.now(UTC)
+
+    canonical_updates: dict[str, Any] = {
+        "external_conflict_status": ExternalConflictStatus.NONE.value,
+        "external_conflict_source": None,
+        "external_conflict_detected_at": None,
+        "updated_at": now,
+        "meeting_status": MeetingLifecycleStatus.RESCHEDULED.value,
+    }
+    if task.get("external_start_date"):
+        canonical_updates["start_date"] = task["external_start_date"]
+    if task.get("external_end_date"):
+        canonical_updates["end_date"] = task["external_end_date"]
+    if task.get("external_title"):
+        canonical_updates["title"] = task["external_title"]
+    if task.get("external_description") is not None:
+        canonical_updates["description"] = task["external_description"]
+
+    await mongo.get_planner_tasks_collection().update_one(
+        {"_id": oid}, {"$set": canonical_updates}
+    )
+    refreshed_task = await _get_scoped_meeting(oid, current_user)
+    invite_status: list[dict[str, Any]] = []
+    if (
+        refreshed_task.get("invite_delivery_mode") == InviteDeliveryMode.EMAIL_ICS.value
+        and refreshed_task.get("couple_attendee_emails")
+    ):
+        invite_status = await calendar_job_service.enqueue_invite_job(
+            refreshed_task,
+            method="REQUEST",
+            reason="external_change_accepted",
+        )
+    return {
+        "meeting_id": meeting_id,
+        "external_conflict_status": ExternalConflictStatus.NONE.value,
+        "invite_status": invite_status,
+    }
+
+
+@router.post(
+    "/planner/calendar/meetings/{meeting_id}/external-change/reject",
+    tags=["Planner Calendar"],
+)
+async def reject_meeting_external_change(
+    meeting_id: str,
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("edit_meetings")
+    ),
+) -> dict:
+    """Reject an externally detected change: leave canonical fields untouched
+    and re-sync canonical state back onto external calendars."""
+    try:
+        oid = ObjectId(meeting_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid meeting ID format")
+    task = await _get_scoped_meeting(oid, current_user)
+    now = datetime.now(UTC)
+
+    await mongo.get_planner_tasks_collection().update_one(
+        {"_id": oid},
+        {
+            "$set": {
+                "external_conflict_status": ExternalConflictStatus.NONE.value,
+                "external_conflict_source": None,
+                "external_conflict_detected_at": None,
+                "external_sync_requested": True,
+                "updated_at": now,
+            }
+        },
+    )
+    task["external_sync_requested"] = True
+    sync_status = await calendar_sync_service.sync_schedule_item(
+        task,
+        actor_user_id=_calendar_user_id(current_user),
+        actor_is_owner=bool(
+            current_user.is_root_admin or current_user.is_wedding_planner
+        ),
+        actor_role_scope=_calendar_actor_role_scope(current_user),
+    )
+    return {
+        "meeting_id": meeting_id,
+        "external_conflict_status": ExternalConflictStatus.NONE.value,
+        "sync_status": sync_status,
     }
