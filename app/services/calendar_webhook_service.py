@@ -54,7 +54,9 @@ class CalendarWebhookService:
         self.syncs_collection = mongo.get_calendar_event_syncs_collection()
         self.tasks_collection = mongo.get_planner_tasks_collection()
 
-    def verify_signature(self, raw_body: bytes, signature_header: Optional[str]) -> bool:
+    def verify_signature(
+        self, raw_body: bytes, signature_header: Optional[str]
+    ) -> bool:
         """Verify Aurinko HMAC signature on a webhook delivery."""
         secret = settings.AURINKO_WEBHOOK_SECRET
         if not secret:
@@ -166,9 +168,7 @@ class CalendarWebhookService:
             "external_conflict_detected_at": datetime.now(UTC),
             "updated_at": datetime.now(UTC),
         }
-        await self.tasks_collection.update_one(
-            {"_id": task_id}, {"$set": update_doc}
-        )
+        await self.tasks_collection.update_one({"_id": task_id}, {"$set": update_doc})
         return {"matched": True, "task_id": str(task_id), "change": change_type}
 
 

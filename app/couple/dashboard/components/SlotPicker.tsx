@@ -8,6 +8,7 @@ import {
   bookMeeting,
   getAvailability,
 } from '@/couple/lib/calendarApi';
+import { useCoupleSessionExpiryHandler } from '@/couple/hooks/useCoupleSessionExpiryHandler';
 
 interface SlotPickerProps {
   durationMinutes?: number;
@@ -54,6 +55,7 @@ export default function SlotPicker({
   const [title, setTitle] = useState('Planner check-in');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const handleSessionFailure = useCoupleSessionExpiryHandler();
 
   const browserTimezone = useMemo(() => {
     try {
@@ -69,10 +71,13 @@ export default function SlotPicker({
       setLoading(true);
       setError(null);
       try {
-        const data = await getAvailability({
-          durationMinutes,
-          staffId: defaultStaffId,
-        });
+        const data = await getAvailability(
+          {
+            durationMinutes,
+            staffId: defaultStaffId,
+          },
+          handleSessionFailure,
+        );
         if (!cancelled) setSlots(data.slots);
       } catch (err) {
         if (!cancelled) {
@@ -86,24 +91,35 @@ export default function SlotPicker({
     return () => {
       cancelled = true;
     };
-  }, [durationMinutes, defaultStaffId]);
+  }, [durationMinutes, defaultStaffId, handleSessionFailure]);
 
   const handleBook = async () => {
     if (!selected || !idempotencyKey) return;
     setSubmitting(true);
     try {
-      await bookMeeting({
-        staff_id: selected.staff_id,
-        start: selected.start,
-        end: selected.end,
-        title,
-        notes: notes || undefined,
-        timezone: browserTimezone,
-        idempotency_key: idempotencyKey,
-      });
-      toast.success('Meeting booked. Check your email for the calendar invite.');
+      const result = await bookMeeting(
+        {
+          staff_id: selected.staff_id,
+          start: selected.start,
+          end: selected.end,
+          title,
+          notes: notes || undefined,
+          timezone: browserTimezone,
+          idempotency_key: idempotencyKey,
+        },
+        handleSessionFailure,
+      );
+      if (result.requires_approval || result.meeting_status === 'pending_approval') {
+        toast.success(
+          'Request sent. Your planner will confirm — you will get an invite once approved.',
+        );
+      } else {
+        toast.success('Meeting booked. Check your email for the calendar invite.');
+      }
       setSlots((current) =>
-        current.filter((s) => !(s.start === selected.start && s.staff_id === selected.staff_id))
+        current.filter(
+          (s) => !(s.start === selected.start && s.staff_id === selected.staff_id),
+        ),
       );
       setSelected(null);
       setIdempotencyKey(null);
@@ -167,6 +183,11 @@ export default function SlotPicker({
                 {slot.staff_email && (
                   <div className="mt-1 text-xs opacity-75">with {slot.staff_email}</div>
                 )}
+                {slot.requires_approval && (
+                  <div className="mt-1 text-xs font-medium text-amber-600 dark:text-amber-300">
+                    Pending planner approval
+                  </div>
+                )}
               </button>
             </li>
           );
@@ -178,6 +199,12 @@ export default function SlotPicker({
           <div className="text-sm">
             <p className="font-medium text-slate-900 dark:text-slate-100">Confirm booking</p>
             <p className="mt-1 text-slate-500 dark:text-slate-400">{formatSlot(selected)}</p>
+            {selected.requires_approval && (
+              <p className="mt-2 text-xs text-amber-600 dark:text-amber-300">
+                This request will be sent to your planner for approval. You will receive a
+                calendar invite once it is confirmed.
+              </p>
+            )}
           </div>
           <label className="block text-sm">
             <span className="mb-1 block font-medium text-slate-700 dark:text-slate-200">Title</span>
@@ -205,7 +232,11 @@ export default function SlotPicker({
               disabled={submitting || !title}
               className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
             >
-              {submitting ? 'Booking...' : 'Confirm booking'}
+              {submitting
+                ? 'Booking...'
+                : selected.requires_approval
+                  ? 'Request booking'
+                  : 'Confirm booking'}
             </button>
             <button
               onClick={handleCancelSelection}

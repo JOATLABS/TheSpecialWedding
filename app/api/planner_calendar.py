@@ -35,7 +35,10 @@ from app.models.calendar import (
     ScheduleItemType,
     VisibilityMode,
 )
-from app.models.calendar_connection import CalendarConnectionUpdateRequest
+from app.models.calendar_connection import (
+    CalendarConnectionUpdateRequest,
+    CalendarSchedulerRole,
+)
 from app.models.calendar_sync import CalendarSyncStatusValue
 from app.services.calendar_aggregation_service import calendar_aggregation_service
 from app.services.calendar_audit_service import calendar_audit_service
@@ -143,6 +146,7 @@ class CalendarCallbackResponse(BaseModel):
     connected: bool
     calendar_id: Optional[str] = None
     message: str
+    warning: Optional[str] = None
 
 
 class CalendarConnectionResponse(BaseModel):
@@ -171,6 +175,7 @@ class CalendarConnectionResponse(BaseModel):
     is_shared_in_team_view: bool = False
     details_visibility: str = VisibilityMode.BUSY_ONLY.value
     sync_enabled: bool = False
+    couple_booking_auto_confirm: bool = True
     connection_status: str
     token_expiry: Optional[datetime] = None
     last_sync_at: Optional[datetime] = None
@@ -715,7 +720,9 @@ async def get_calendar_auth_url(
     response_model=CalendarCallbackResponse,
 )
 async def calendar_oauth_callback(
-    code: str = Query(..., description="Authorization code from the calendar aggregator"),
+    code: str = Query(
+        ..., description="Authorization code from the calendar aggregator"
+    ),
     state: str = Query(..., description="Signed state parameter from the connect step"),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("connect_personal_calendar")
@@ -736,6 +743,7 @@ async def calendar_oauth_callback(
         connected=result.get("connected", False),
         calendar_id=result.get("calendar_id"),
         message=result.get("message", ""),
+        warning=result.get("warning"),
     )
 
 
@@ -889,6 +897,7 @@ async def update_calendar_connection(
             "allowed_wedding_ids",
             "is_shared_in_team_view",
             "details_visibility",
+            "couple_booking_auto_confirm",
         }
         if restricted_fields.intersection(updates.keys()):
             raise HTTPException(
@@ -2397,72 +2406,157 @@ async def get_meeting_sync_status(
     }
 
 
+_EXTERNAL_SNAPSHOT_FIELDS = (
+    "external_start_date",
+    "external_end_date",
+    "external_title",
+    "external_description",
+    "external_location",
+    "external_last_modified_at",
+)
+
+
 @router.post(
     "/planner/calendar/meetings/{meeting_id}/external-change/accept",
     tags=["Planner Calendar"],
 )
 async def accept_meeting_external_change(
     meeting_id: str,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("edit_meetings")
     ),
 ) -> dict:
     """Accept an externally detected change: copy ``external_*`` snapshot fields
-    onto canonical fields and reschedule ICS to attendees."""
+    onto canonical fields, clear the snapshot, bump version, audit, and
+    reschedule ICS to attendees."""
     try:
         oid = ObjectId(meeting_id)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid meeting ID format")
-    task = await _get_scoped_meeting(oid, current_user)
-    now = datetime.now(UTC)
 
-    canonical_updates: dict[str, Any] = {
-        "external_conflict_status": ExternalConflictStatus.NONE.value,
-        "external_conflict_source": None,
-        "external_conflict_detected_at": None,
-        "updated_at": now,
-    }
-    timestamps_changed = False
-    if task.get("external_start_date") and task.get("external_start_date") != task.get(
-        "start_date"
-    ):
-        canonical_updates["start_date"] = task["external_start_date"]
-        timestamps_changed = True
-    if task.get("external_end_date") and task.get("external_end_date") != task.get(
-        "end_date"
-    ):
-        canonical_updates["end_date"] = task["external_end_date"]
-        timestamps_changed = True
-    if task.get("external_title"):
-        canonical_updates["title"] = task["external_title"]
-    if task.get("external_description") is not None:
-        canonical_updates["description"] = task["external_description"]
-    # Only flip lifecycle to RESCHEDULED when the time actually moved; metadata
-    # edits (title/description) shouldn't change scheduling state.
-    if timestamps_changed and task.get(
-        "meeting_status"
-    ) == MeetingLifecycleStatus.SCHEDULED.value:
-        canonical_updates["meeting_status"] = MeetingLifecycleStatus.RESCHEDULED.value
-
-    await mongo.get_planner_tasks_collection().update_one(
-        {"_id": oid}, {"$set": canonical_updates}
+    scope_key = _build_meeting_idempotency_scope("accept_external_change", meeting_id)
+    idempotency_key_value, replay_payload = await _begin_meeting_idempotency(
+        scope_key=scope_key,
+        idempotency_key=idempotency_key,
+        action="accept_external_change",
+        payload={"meeting_id": meeting_id},
     )
-    refreshed_task = await _get_scoped_meeting(oid, current_user)
-    invite_status: list[dict[str, Any]] = []
-    if (
-        refreshed_task.get("invite_delivery_mode") == InviteDeliveryMode.EMAIL_ICS.value
-        and refreshed_task.get("couple_attendee_emails")
-    ):
-        invite_status = await calendar_job_service.enqueue_invite_job(
-            refreshed_task,
-            method="REQUEST",
-            reason="external_change_accepted",
-        )
-    return {
-        "meeting_id": meeting_id,
-        "external_conflict_status": ExternalConflictStatus.NONE.value,
-        "invite_status": invite_status,
-    }
+    if replay_payload:
+        return replay_payload
+
+    async with _meeting_mutation_lock(meeting_id):
+        try:
+            task = await _get_scoped_meeting(oid, current_user)
+            current_status = task.get("external_conflict_status")
+            if current_status not in (
+                ExternalConflictStatus.PENDING_REVIEW.value,
+                ExternalConflictStatus.AUTO_ACCEPTED.value,
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail=("No pending external change to accept on this meeting."),
+                )
+            now = datetime.now(UTC)
+
+            canonical_updates: dict[str, Any] = {
+                "external_conflict_status": ExternalConflictStatus.NONE.value,
+                "external_conflict_source": None,
+                "external_conflict_detected_at": None,
+                "updated_at": now,
+                "version": int(task.get("version") or 1) + 1,
+            }
+            timestamps_changed = False
+            if task.get("external_start_date") and task.get(
+                "external_start_date"
+            ) != task.get("start_date"):
+                canonical_updates["start_date"] = task["external_start_date"]
+                timestamps_changed = True
+            if task.get("external_end_date") and task.get(
+                "external_end_date"
+            ) != task.get("end_date"):
+                canonical_updates["end_date"] = task["external_end_date"]
+                timestamps_changed = True
+            if task.get("external_title"):
+                canonical_updates["title"] = task["external_title"]
+            if task.get("external_description") is not None:
+                canonical_updates["description"] = task["external_description"]
+            if task.get("external_location") is not None:
+                canonical_updates["location"] = task["external_location"]
+            if (
+                timestamps_changed
+                and task.get("meeting_status") == MeetingLifecycleStatus.SCHEDULED.value
+            ):
+                canonical_updates["meeting_status"] = (
+                    MeetingLifecycleStatus.RESCHEDULED.value
+                )
+
+            unset_doc = {field: "" for field in _EXTERNAL_SNAPSHOT_FIELDS}
+
+            await mongo.get_planner_tasks_collection().update_one(
+                {"_id": oid},
+                {"$set": canonical_updates, "$unset": unset_doc},
+            )
+            refreshed_task = await _get_scoped_meeting(oid, current_user)
+            invite_status: list[dict[str, Any]] = []
+            if refreshed_task.get(
+                "invite_delivery_mode"
+            ) == InviteDeliveryMode.EMAIL_ICS.value and refreshed_task.get(
+                "couple_attendee_emails"
+            ):
+                invite_status = await calendar_job_service.enqueue_invite_job(
+                    refreshed_task,
+                    method="REQUEST",
+                    reason="external_change_accepted",
+                )
+
+            await calendar_audit_service.log(
+                action="calendar_external_change_accepted",
+                message=(
+                    f"Accepted external change for meeting "
+                    f"{refreshed_task.get('title') or meeting_id}"
+                ),
+                owner_planner_email=_optional_str(
+                    refreshed_task.get("owner_planner_email")
+                )
+                or _optional_str(refreshed_task.get("planner_email")),
+                actor_email=current_user.email,
+                actor_role=current_user.role,
+                wedding_id=_optional_str(refreshed_task.get("wedding_id")),
+                metadata={
+                    "task_id": meeting_id,
+                    "version": int(refreshed_task.get("version") or 1),
+                    "previous_conflict_status": current_status,
+                    "timestamps_changed": timestamps_changed,
+                },
+            )
+
+            response_payload = {
+                "meeting_id": meeting_id,
+                "external_conflict_status": ExternalConflictStatus.NONE.value,
+                "version": int(refreshed_task.get("version") or 1),
+                "invite_status": invite_status,
+            }
+            await _complete_meeting_idempotency(
+                scope_key=scope_key,
+                idempotency_key=idempotency_key_value,
+                payload=response_payload,
+            )
+            return response_payload
+        except HTTPException as exc:
+            await _fail_meeting_idempotency(
+                scope_key=scope_key,
+                idempotency_key=idempotency_key_value,
+                detail=str(exc.detail),
+            )
+            raise
+        except Exception as exc:
+            await _fail_meeting_idempotency(
+                scope_key=scope_key,
+                idempotency_key=idempotency_key_value,
+                detail=str(exc),
+            )
+            raise
 
 
 @router.post(
@@ -2471,42 +2565,361 @@ async def accept_meeting_external_change(
 )
 async def reject_meeting_external_change(
     meeting_id: str,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("edit_meetings")
     ),
 ) -> dict:
-    """Reject an externally detected change: leave canonical fields untouched
-    and re-sync canonical state back onto external calendars."""
+    """Reject an externally detected change: leave canonical fields untouched,
+    clear the snapshot, bump version, audit, and re-sync canonical state back
+    onto external calendars."""
     try:
         oid = ObjectId(meeting_id)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid meeting ID format")
-    task = await _get_scoped_meeting(oid, current_user)
-    now = datetime.now(UTC)
 
-    await mongo.get_planner_tasks_collection().update_one(
-        {"_id": oid},
-        {
-            "$set": {
+    scope_key = _build_meeting_idempotency_scope("reject_external_change", meeting_id)
+    idempotency_key_value, replay_payload = await _begin_meeting_idempotency(
+        scope_key=scope_key,
+        idempotency_key=idempotency_key,
+        action="reject_external_change",
+        payload={"meeting_id": meeting_id},
+    )
+    if replay_payload:
+        return replay_payload
+
+    async with _meeting_mutation_lock(meeting_id):
+        try:
+            task = await _get_scoped_meeting(oid, current_user)
+            current_status = task.get("external_conflict_status")
+            if current_status not in (
+                ExternalConflictStatus.PENDING_REVIEW.value,
+                ExternalConflictStatus.AUTO_ACCEPTED.value,
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail=("No pending external change to reject on this meeting."),
+                )
+            now = datetime.now(UTC)
+
+            unset_doc = {field: "" for field in _EXTERNAL_SNAPSHOT_FIELDS}
+            await mongo.get_planner_tasks_collection().update_one(
+                {"_id": oid},
+                {
+                    "$set": {
+                        "external_conflict_status": ExternalConflictStatus.NONE.value,
+                        "external_conflict_source": None,
+                        "external_conflict_detected_at": None,
+                        "external_sync_requested": True,
+                        "updated_at": now,
+                        "version": int(task.get("version") or 1) + 1,
+                    },
+                    "$unset": unset_doc,
+                },
+            )
+            refreshed_task = await _get_scoped_meeting(oid, current_user)
+            sync_status = await calendar_sync_service.sync_schedule_item(
+                refreshed_task,
+                actor_user_id=_calendar_user_id(current_user),
+                actor_is_owner=bool(
+                    current_user.is_root_admin or current_user.is_wedding_planner
+                ),
+                actor_role_scope=_calendar_actor_role_scope(current_user),
+            )
+
+            await calendar_audit_service.log(
+                action="calendar_external_change_rejected",
+                message=(
+                    f"Rejected external change for meeting "
+                    f"{refreshed_task.get('title') or meeting_id}"
+                ),
+                owner_planner_email=_optional_str(
+                    refreshed_task.get("owner_planner_email")
+                )
+                or _optional_str(refreshed_task.get("planner_email")),
+                actor_email=current_user.email,
+                actor_role=current_user.role,
+                wedding_id=_optional_str(refreshed_task.get("wedding_id")),
+                metadata={
+                    "task_id": meeting_id,
+                    "version": int(refreshed_task.get("version") or 1),
+                    "previous_conflict_status": current_status,
+                },
+            )
+
+            response_payload = {
+                "meeting_id": meeting_id,
                 "external_conflict_status": ExternalConflictStatus.NONE.value,
-                "external_conflict_source": None,
-                "external_conflict_detected_at": None,
-                "external_sync_requested": True,
-                "updated_at": now,
+                "version": int(refreshed_task.get("version") or 1),
+                "sync_status": sync_status,
             }
-        },
+            await _complete_meeting_idempotency(
+                scope_key=scope_key,
+                idempotency_key=idempotency_key_value,
+                payload=response_payload,
+            )
+            return response_payload
+        except HTTPException as exc:
+            await _fail_meeting_idempotency(
+                scope_key=scope_key,
+                idempotency_key=idempotency_key_value,
+                detail=str(exc.detail),
+            )
+            raise
+        except Exception as exc:
+            await _fail_meeting_idempotency(
+                scope_key=scope_key,
+                idempotency_key=idempotency_key_value,
+                detail=str(exc),
+            )
+            raise
+
+
+@router.post(
+    "/planner/calendar/meetings/{meeting_id}/approve-couple-booking",
+    tags=["Planner Calendar"],
+)
+async def approve_couple_booking(
+    meeting_id: str,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("approve_couple_bookings")
+    ),
+) -> dict:
+    """Approve a couple-initiated booking sitting in ``pending_approval``.
+
+    Flips status to ``scheduled``, runs sync to the staff's external calendar,
+    and enqueues an ICS invite to the couple. Idempotent on Idempotency-Key.
+    """
+    try:
+        oid = ObjectId(meeting_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid meeting ID format")
+
+    scope_key = _build_meeting_idempotency_scope("approve_couple_booking", meeting_id)
+    idempotency_key_value, replay_payload = await _begin_meeting_idempotency(
+        scope_key=scope_key,
+        idempotency_key=idempotency_key,
+        action="approve_couple_booking",
+        payload={"meeting_id": meeting_id},
     )
-    task["external_sync_requested"] = True
-    sync_status = await calendar_sync_service.sync_schedule_item(
-        task,
-        actor_user_id=_calendar_user_id(current_user),
-        actor_is_owner=bool(
-            current_user.is_root_admin or current_user.is_wedding_planner
-        ),
-        actor_role_scope=_calendar_actor_role_scope(current_user),
+    if replay_payload:
+        return replay_payload
+
+    async with _meeting_mutation_lock(meeting_id):
+        try:
+            task = await _get_scoped_meeting(oid, current_user)
+            if (
+                task.get("meeting_status")
+                != MeetingLifecycleStatus.PENDING_APPROVAL.value
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="This meeting is not awaiting approval.",
+                )
+            if not task.get("created_by_couple"):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Approve only applies to couple-initiated bookings.",
+                )
+            now = datetime.now(UTC)
+            await mongo.get_planner_tasks_collection().update_one(
+                {"_id": oid},
+                {
+                    "$set": {
+                        "meeting_status": MeetingLifecycleStatus.SCHEDULED.value,
+                        "external_sync_requested": True,
+                        "updated_at": now,
+                        "version": int(task.get("version") or 1) + 1,
+                    }
+                },
+            )
+            refreshed_task = await _get_scoped_meeting(oid, current_user)
+            sync_status = await calendar_sync_service.sync_schedule_item(
+                refreshed_task,
+                actor_user_id=_calendar_user_id(current_user),
+                actor_is_owner=True,
+                actor_role_scope=CalendarSchedulerRole.OWNER.value,
+            )
+            any_synced = bool(
+                isinstance(sync_status, list)
+                and any(
+                    isinstance(row, dict) and row.get("sync_status") == "synced"
+                    for row in sync_status
+                )
+            )
+            if not any_synced:
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "Approved but could not project to the staff calendar. "
+                        "Please retry."
+                    ),
+                )
+            invite_status: list[dict[str, Any]] = []
+            if refreshed_task.get(
+                "invite_delivery_mode"
+            ) == InviteDeliveryMode.EMAIL_ICS.value and refreshed_task.get(
+                "couple_attendee_emails"
+            ):
+                invite_status = await calendar_job_service.enqueue_invite_job(
+                    refreshed_task,
+                    method="REQUEST",
+                    reason="couple_booking_approved",
+                )
+
+            await calendar_audit_service.log(
+                action="calendar_couple_booking_approved",
+                message=(
+                    f"Approved couple booking "
+                    f"{refreshed_task.get('title') or meeting_id}"
+                ),
+                owner_planner_email=_optional_str(
+                    refreshed_task.get("owner_planner_email")
+                )
+                or _optional_str(refreshed_task.get("planner_email")),
+                actor_email=current_user.email,
+                actor_role=current_user.role,
+                wedding_id=_optional_str(refreshed_task.get("wedding_id")),
+                metadata={
+                    "task_id": meeting_id,
+                    "version": int(refreshed_task.get("version") or 1),
+                    "assigned_user_ids": refreshed_task.get("assigned_user_ids", []),
+                },
+            )
+
+            response_payload = {
+                "meeting_id": meeting_id,
+                "meeting_status": MeetingLifecycleStatus.SCHEDULED.value,
+                "version": int(refreshed_task.get("version") or 1),
+                "sync_status": sync_status,
+                "invite_status": invite_status,
+            }
+            await _complete_meeting_idempotency(
+                scope_key=scope_key,
+                idempotency_key=idempotency_key_value,
+                payload=response_payload,
+            )
+            return response_payload
+        except HTTPException as exc:
+            await _fail_meeting_idempotency(
+                scope_key=scope_key,
+                idempotency_key=idempotency_key_value,
+                detail=str(exc.detail),
+            )
+            raise
+        except Exception as exc:
+            await _fail_meeting_idempotency(
+                scope_key=scope_key,
+                idempotency_key=idempotency_key_value,
+                detail=str(exc),
+            )
+            raise
+
+
+@router.post(
+    "/planner/calendar/meetings/{meeting_id}/decline-couple-booking",
+    tags=["Planner Calendar"],
+)
+async def decline_couple_booking(
+    meeting_id: str,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("approve_couple_bookings")
+    ),
+) -> dict:
+    """Decline a couple-initiated booking sitting in ``pending_approval``.
+
+    Flips status to ``cancelled`` and records an audit entry. The couple's
+    portal will surface the cancelled state via the existing meetings list.
+    """
+    try:
+        oid = ObjectId(meeting_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid meeting ID format")
+
+    scope_key = _build_meeting_idempotency_scope("decline_couple_booking", meeting_id)
+    idempotency_key_value, replay_payload = await _begin_meeting_idempotency(
+        scope_key=scope_key,
+        idempotency_key=idempotency_key,
+        action="decline_couple_booking",
+        payload={"meeting_id": meeting_id},
     )
-    return {
-        "meeting_id": meeting_id,
-        "external_conflict_status": ExternalConflictStatus.NONE.value,
-        "sync_status": sync_status,
-    }
+    if replay_payload:
+        return replay_payload
+
+    async with _meeting_mutation_lock(meeting_id):
+        try:
+            task = await _get_scoped_meeting(oid, current_user)
+            if (
+                task.get("meeting_status")
+                != MeetingLifecycleStatus.PENDING_APPROVAL.value
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="This meeting is not awaiting approval.",
+                )
+            if not task.get("created_by_couple"):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Decline only applies to couple-initiated bookings.",
+                )
+            now = datetime.now(UTC)
+            await mongo.get_planner_tasks_collection().update_one(
+                {"_id": oid},
+                {
+                    "$set": {
+                        "meeting_status": MeetingLifecycleStatus.CANCELLED.value,
+                        "external_sync_requested": False,
+                        "updated_at": now,
+                        "version": int(task.get("version") or 1) + 1,
+                    }
+                },
+            )
+            refreshed_task = await _get_scoped_meeting(oid, current_user)
+
+            await calendar_audit_service.log(
+                action="calendar_couple_booking_declined",
+                message=(
+                    f"Declined couple booking "
+                    f"{refreshed_task.get('title') or meeting_id}"
+                ),
+                owner_planner_email=_optional_str(
+                    refreshed_task.get("owner_planner_email")
+                )
+                or _optional_str(refreshed_task.get("planner_email")),
+                actor_email=current_user.email,
+                actor_role=current_user.role,
+                wedding_id=_optional_str(refreshed_task.get("wedding_id")),
+                metadata={
+                    "task_id": meeting_id,
+                    "version": int(refreshed_task.get("version") or 1),
+                    "assigned_user_ids": refreshed_task.get("assigned_user_ids", []),
+                },
+            )
+
+            response_payload = {
+                "meeting_id": meeting_id,
+                "meeting_status": MeetingLifecycleStatus.CANCELLED.value,
+                "version": int(refreshed_task.get("version") or 1),
+            }
+            await _complete_meeting_idempotency(
+                scope_key=scope_key,
+                idempotency_key=idempotency_key_value,
+                payload=response_payload,
+            )
+            return response_payload
+        except HTTPException as exc:
+            await _fail_meeting_idempotency(
+                scope_key=scope_key,
+                idempotency_key=idempotency_key_value,
+                detail=str(exc.detail),
+            )
+            raise
+        except Exception as exc:
+            await _fail_meeting_idempotency(
+                scope_key=scope_key,
+                idempotency_key=idempotency_key_value,
+                detail=str(exc),
+            )
+            raise

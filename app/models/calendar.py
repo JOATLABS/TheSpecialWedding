@@ -87,6 +87,7 @@ class InviteDeliveryMode(str, Enum):
 class MeetingLifecycleStatus(str, Enum):
     """Lifecycle state for canonical meeting records."""
 
+    PENDING_APPROVAL = "pending_approval"
     SCHEDULED = "scheduled"
     RESCHEDULED = "rescheduled"
     CANCELLED = "cancelled"
@@ -407,7 +408,9 @@ class CalendarEventUpdate(BaseModel):
 class CalendarSyncStatus(BaseModel):
     """Status of the user's external calendar connection (via Aurinko)."""
 
-    connected: bool = Field(..., description="Whether an external calendar is connected")
+    connected: bool = Field(
+        ..., description="Whether an external calendar is connected"
+    )
     calendar_id: Optional[str] = Field(None, description="Connected calendar ID")
     last_sync: Optional[datetime] = Field(None, description="Last sync timestamp")
     sync_enabled: bool = Field(

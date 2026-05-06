@@ -17,7 +17,10 @@ from datetime import UTC, datetime, time, timedelta
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
+from bson import ObjectId
+
 from app.core.database import mongo
+from app.models.team_member import TeamMemberStatus, resolve_team_permissions
 from app.services.calendar_aggregation_service import calendar_aggregation_service
 from app.utils.planner_ownership import (
     extract_wedding_owner_identity,
@@ -41,6 +44,7 @@ class AvailabilitySlot:
     staff_email: Optional[str]
     start: datetime
     end: datetime
+    requires_approval: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -48,6 +52,7 @@ class AvailabilitySlot:
             "staff_email": self.staff_email,
             "start": self.start.isoformat(),
             "end": self.end.isoformat(),
+            "requires_approval": self.requires_approval,
         }
 
 
@@ -56,6 +61,7 @@ class _CandidateStaff:
     user_id: str
     user_email: Optional[str]
     timezone: str
+    requires_approval: bool = False
 
 
 class AvailabilitySlotService:
@@ -64,6 +70,86 @@ class AvailabilitySlotService:
     def __init__(self) -> None:
         self.weddings_collection = mongo.get_weddings_collection()
         self.connections_collection = mongo.get_calendar_connections_collection()
+        self.users_collection = mongo.get_users_collection()
+        self.team_members_collection = mongo.db["team_members"]
+
+    async def _resolve_user_timezone(self, user_id: str) -> str:
+        """Look up a user's preferred timezone, falling back to UTC.
+
+        Without this, every staff member is treated as UTC and their working
+        hours are interpreted in UTC — i.e., 9am-6pm UTC instead of 9am-6pm
+        local time. The fallback chain is user record → DEFAULT_TIMEZONE.
+        """
+        if not user_id:
+            return DEFAULT_TIMEZONE
+        try:
+            user_oid: Any = ObjectId(user_id)
+        except Exception:
+            user_oid = user_id
+        doc = await self.users_collection.find_one({"_id": user_oid}, {"timezone": 1})
+        if not doc:
+            return DEFAULT_TIMEZONE
+        tz_value = doc.get("timezone")
+        if not isinstance(tz_value, str) or not tz_value.strip():
+            return DEFAULT_TIMEZONE
+        try:
+            ZoneInfo(tz_value.strip())
+        except Exception:
+            return DEFAULT_TIMEZONE
+        return tz_value.strip()
+
+    async def _is_team_member_couple_bookable(
+        self, owner_id: str, user_id: str
+    ) -> bool:
+        """Check the team-permissions ``couple_bookable`` flag.
+
+        Returns True for the owner planner unconditionally — the owner is the
+        source of truth and is not represented as a team_members row.
+        """
+        if not user_id or user_id == owner_id:
+            return True
+        doc = await self.team_members_collection.find_one(
+            {
+                "owner_id": owner_id,
+                "user_id": user_id,
+                "status": TeamMemberStatus.ACTIVE.value,
+            }
+        )
+        if not doc:
+            # No team_members row but the user owns a calendar connection in
+            # the wedding scope — treat as bookable to preserve back-compat
+            # for setups predating the team-management feature.
+            return True
+        permissions = resolve_team_permissions(
+            doc.get("role", "viewer"),
+            doc.get("custom_permissions"),
+        )
+        return bool(permissions.get("couple_bookable", False))
+
+    async def _staff_requires_approval(
+        self, owner_id: str, user_id: str, wedding_id: str
+    ) -> bool:
+        """Return True if any of the staff's writable, wedding-eligible
+        connections has ``couple_booking_auto_confirm=False``.
+
+        We err on the side of approval-required: if even one connection
+        the booking might land on requires approval, the booking is held
+        for the planner to confirm.
+        """
+        async for conn in self.connections_collection.find(
+            {
+                "owner_planner_id": owner_id,
+                "user_id": user_id,
+                "is_writable": True,
+                "sync_enabled": True,
+            }
+        ):
+            allowed = conn.get("allowed_wedding_ids") or []
+            if allowed and str(wedding_id) not in {str(v) for v in allowed}:
+                continue
+            if not conn.get("couple_booking_auto_confirm", True):
+                return True
+        return False
 
     async def _resolve_candidate_staff(
         self,
@@ -87,7 +173,10 @@ class AvailabilitySlotService:
             candidates[owner_id] = _CandidateStaff(
                 user_id=owner_id,
                 user_email=owner_email,
-                timezone=DEFAULT_TIMEZONE,
+                timezone=await self._resolve_user_timezone(owner_id),
+                requires_approval=await self._staff_requires_approval(
+                    owner_id, owner_id, wedding_id
+                ),
             )
 
         async for conn in self.connections_collection.find(
@@ -99,13 +188,20 @@ class AvailabilitySlotService:
             allowed = conn.get("allowed_wedding_ids") or []
             if allowed and str(wedding_id) not in {str(v) for v in allowed}:
                 continue
-            existing = candidates.get(connection_user_id)
-            if existing is None:
-                candidates[connection_user_id] = _CandidateStaff(
-                    user_id=connection_user_id,
-                    user_email=conn.get("user_email"),
-                    timezone=DEFAULT_TIMEZONE,
-                )
+            if connection_user_id in candidates:
+                continue
+            if not await self._is_team_member_couple_bookable(
+                owner_id or "", connection_user_id
+            ):
+                continue
+            candidates[connection_user_id] = _CandidateStaff(
+                user_id=connection_user_id,
+                user_email=conn.get("user_email"),
+                timezone=await self._resolve_user_timezone(connection_user_id),
+                requires_approval=await self._staff_requires_approval(
+                    owner_id or "", connection_user_id, wedding_id
+                ),
+            )
 
         if staff_id is not None:
             if staff_id not in candidates:
@@ -303,6 +399,7 @@ class AvailabilitySlotService:
                             staff_email=staff.user_email,
                             start=slot_start,
                             end=slot_end,
+                            requires_approval=staff.requires_approval,
                         )
                     )
             day_cursor = day_cursor + timedelta(days=1)

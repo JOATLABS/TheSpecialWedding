@@ -9,9 +9,12 @@ import PageHeader from '../../components/PageHeader';
 import TaskModal from './components/TaskModal';
 import CalendarConnect from './components/CalendarConnect';
 import {
+  acceptExternalChange,
+  approveCoupleBooking,
   CalendarConnection,
   CATEGORY_LABELS,
   createCalendarMutationIntent,
+  declineCoupleBooking,
   deleteMeeting,
   deleteTask,
   getSharedCalendarView,
@@ -22,6 +25,7 @@ import {
   listTeamMembers,
   PlannerTask,
   PRIORITY_CONFIG,
+  rejectExternalChange,
   SharedCalendarEvent,
   TeamMemberSummary,
   WeddingSummary,
@@ -432,6 +436,70 @@ export default function PlannerCalendarPage() {
     );
   };
 
+  const eventsNeedingReview = useMemo(
+    () =>
+      events.filter((event) => {
+        if (event.source_type !== 'internal_meeting') return false;
+        const status = event.details?.external_conflict_status;
+        return status === 'pending_review' || status === 'auto_accepted';
+      }),
+    [events],
+  );
+
+  const eventsAwaitingApproval = useMemo(
+    () =>
+      events.filter(
+        (event) =>
+          event.source_type === 'internal_meeting' &&
+          event.details?.meeting_status === 'pending_approval',
+      ),
+    [events],
+  );
+
+  const handleAcceptExternalChange = async (event: SharedCalendarEvent) => {
+    if (!token) return;
+    try {
+      await acceptExternalChange(token, event.id, createCalendarMutationIntent());
+      toast.success('External change accepted.');
+      await refreshAll();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to accept change');
+    }
+  };
+
+  const handleRejectExternalChange = async (event: SharedCalendarEvent) => {
+    if (!token) return;
+    try {
+      await rejectExternalChange(token, event.id, createCalendarMutationIntent());
+      toast.success('External change rejected; canonical state pushed back.');
+      await refreshAll();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to reject change');
+    }
+  };
+
+  const handleApproveCoupleBooking = async (event: SharedCalendarEvent) => {
+    if (!token) return;
+    try {
+      await approveCoupleBooking(token, event.id, createCalendarMutationIntent());
+      toast.success('Booking approved and synced to your calendar.');
+      await refreshAll();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to approve booking');
+    }
+  };
+
+  const handleDeclineCoupleBooking = async (event: SharedCalendarEvent) => {
+    if (!token) return;
+    try {
+      await declineCoupleBooking(token, event.id, createCalendarMutationIntent());
+      toast.success('Booking declined.');
+      await refreshAll();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to decline booking');
+    }
+  };
+
   const goToPreviousMonth = () => {
     if (currentMonth === 0) {
       setCurrentMonth(11);
@@ -518,6 +586,117 @@ export default function PlannerCalendarPage() {
           <p className="mt-3 text-3xl font-semibold text-slate-900 dark:text-slate-100">{filteredEvents.length}</p>
         </div>
       </div>
+
+      {(eventsAwaitingApproval.length > 0 || eventsNeedingReview.length > 0) && (
+        <section className={`${PANEL_CLASS} p-5 space-y-4`}>
+          {eventsAwaitingApproval.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Couple booking requests ({eventsAwaitingApproval.length})
+              </h3>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                These bookings will not land on your calendar or send a couple invite until you approve them.
+              </p>
+              <ul className="mt-3 space-y-2">
+                {eventsAwaitingApproval.map((event) => (
+                  <li
+                    key={`approval-${event.id}`}
+                    className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 text-sm dark:border-amber-900 dark:bg-amber-950/30 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div>
+                      <div className="font-medium text-slate-900 dark:text-slate-100">
+                        {event.title || 'Untitled meeting'}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        {event.start_date ? formatDateTime(event.start_date) : '—'}
+                        {event.assigned_user_emails?.length
+                          ? ` • with ${event.assigned_user_emails[0]}`
+                          : ''}
+                      </div>
+                    </div>
+                    {canEditMeetings && (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleApproveCoupleBooking(event)}
+                          className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeclineCoupleBooking(event)}
+                          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/60"
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {eventsNeedingReview.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                External calendar changes ({eventsNeedingReview.length})
+              </h3>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Someone changed these meetings directly in their external calendar. Accept to apply
+                the change here, or reject to push your canonical state back.
+              </p>
+              <ul className="mt-3 space-y-2">
+                {eventsNeedingReview.map((event) => {
+                  const detail = event.details ?? {};
+                  const externalStart = detail.external_start_date as string | undefined;
+                  const externalTitle = detail.external_title as string | undefined;
+                  return (
+                    <li
+                      key={`conflict-${event.id}`}
+                      className="flex flex-col gap-2 rounded-xl border border-rose-200 bg-rose-50/60 px-4 py-3 text-sm dark:border-rose-900 dark:bg-rose-950/30 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div>
+                        <div className="font-medium text-slate-900 dark:text-slate-100">
+                          {event.title || 'Untitled meeting'}
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                          {event.start_date ? formatDateTime(event.start_date) : '—'} (current)
+                        </div>
+                        {(externalStart || externalTitle) && (
+                          <div className="text-xs text-rose-700 dark:text-rose-300">
+                            External: {externalTitle || event.title}
+                            {externalStart ? ` • ${formatDateTime(externalStart)}` : ''}
+                          </div>
+                        )}
+                      </div>
+                      {canEditMeetings && (
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleAcceptExternalChange(event)}
+                            className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
+                          >
+                            Accept
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRejectExternalChange(event)}
+                            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/60"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
 
       <CalendarConnect
         connections={connections}

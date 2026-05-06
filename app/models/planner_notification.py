@@ -38,6 +38,9 @@ class PlannerNotificationTypes:
     # Sprint 3: Couple portal notification types
     COUPLE_MESSAGE: Final[Literal["couple_message"]] = "couple_message"
     COUPLE_NOTE: Final[Literal["couple_note"]] = "couple_note"
+    MEETING_BOOKING_REQUEST: Final[Literal["meeting_booking_request"]] = (
+        "meeting_booking_request"
+    )
 
 
 NotificationType = Literal[
@@ -55,6 +58,7 @@ NotificationType = Literal[
     "bulk_send_summary",
     "couple_message",
     "couple_note",
+    "meeting_booking_request",
 ]
 
 

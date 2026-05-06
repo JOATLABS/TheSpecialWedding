@@ -243,6 +243,7 @@ export default function CalendarConnect({
         | 'details_visibility'
         | 'sync_enabled'
         | 'is_default_write_target'
+        | 'couple_booking_auto_confirm'
       >
     >,
     successMessage: string
@@ -787,6 +788,30 @@ export default function CalendarConnect({
                             {connection.is_default_write_target ? 'Selected' : 'Set as default'}
                           </button>
                         </div>
+
+                        <label className={`flex items-center justify-between gap-3 ${TOGGLE_CARD_CLASS}`}>
+                          <div className="flex flex-col">
+                            <span>Auto-confirm couple bookings</span>
+                            <span className="mt-1 text-xs font-normal text-slate-500 dark:text-slate-400">
+                              When off, couple bookings on this calendar wait for your approval before syncing.
+                            </span>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={connection.couple_booking_auto_confirm !== false}
+                            onChange={(event) =>
+                              handleToggle(
+                                connection,
+                                { couple_booking_auto_confirm: event.target.checked },
+                                event.target.checked
+                                  ? 'Couple bookings will auto-confirm'
+                                  : 'Couple bookings now require your approval'
+                              )
+                            }
+                            disabled={updateLoading || !connection.is_writable}
+                            className="h-4 w-4 rounded border-slate-300 text-slate-900 dark:border-slate-600 dark:bg-slate-800"
+                          />
+                        </label>
                       </div>
                     </div>
                   );
