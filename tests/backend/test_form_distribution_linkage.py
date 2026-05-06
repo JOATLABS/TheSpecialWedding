@@ -104,9 +104,12 @@ class StubEmailService:
     def __init__(self) -> None:
         self.configured = True
         self.sent: list[Dict[str, Any]] = []
+        self.return_success: bool = True
 
     async def send_email(self, **kwargs) -> Dict[str, Any]:
         self.sent.append(kwargs)
+        if not self.return_success:
+            return {"success": False, "error": "stubbed bounce"}
         return {"success": True, "email_id": f"email_{len(self.sent)}"}
 
 
@@ -910,3 +913,145 @@ async def test_tokenized_submission_blocks_replay_when_email_missing(
     with pytest.raises(HTTPException) as exc_info:
         await service.submit_form_response("form_1", request)
     assert exc_info.value.status_code == 409
+
+
+# =============================================================================
+# Batch 1 (audit closeout): send_form dedup + per-recipient detail + bounce
+# counters + submit idempotency_key
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_send_form_skips_recipient_with_open_distribution(
+    configured_form_service,
+):
+    """P1/P3 audit fix — second send to the same email returns
+    skipped_duplicates instead of dispatching a second email."""
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+
+    settings = EmailDistributionSettings(
+        subject="Please respond",
+        message="Hi",
+        sender_name="Wedding Planner",
+    )
+    first = await service.send_form(
+        "form_1",
+        SendFormRequest(recipient_emails=["guest@example.com"], email_settings=settings),
+        "planner@example.com",
+    )
+    assert first["sent"] == 1
+    assert first["skipped_duplicates"] == 0
+    assert first["recipients"][0]["status"] == "sent"
+
+    second = await service.send_form(
+        "form_1",
+        SendFormRequest(recipient_emails=["guest@example.com"], email_settings=settings),
+        "planner@example.com",
+    )
+    assert second["sent"] == 0
+    assert second["skipped_duplicates"] == 1
+    assert second["recipients"][0]["status"] == "skipped_duplicate"
+    assert "open form invitation" in (second["recipients"][0]["error"] or "")
+    assert database["form_distributions"].count_documents({"form_id": "form_1"}) == 1
+
+
+@pytest.mark.asyncio
+async def test_send_form_dedup_does_not_block_resend_after_submission(
+    configured_form_service,
+):
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+    settings = EmailDistributionSettings(
+        subject="Please respond", message="Hi", sender_name="Wedding Planner"
+    )
+    first = await service.send_form(
+        "form_1",
+        SendFormRequest(recipient_emails=["guest@example.com"], email_settings=settings),
+        "planner@example.com",
+    )
+    database["form_distributions"].update_one(
+        {"_id": first["recipients"][0]["distribution_id"]},
+        {"$set": {"submitted_at": datetime.utcnow(), "status": "submitted"}},
+    )
+
+    second = await service.send_form(
+        "form_1",
+        SendFormRequest(recipient_emails=["guest@example.com"], email_settings=settings),
+        "planner@example.com",
+    )
+    assert second["sent"] == 1
+    assert second["skipped_duplicates"] == 0
+    assert database["form_distributions"].count_documents({"form_id": "form_1"}) == 2
+
+
+@pytest.mark.asyncio
+async def test_send_form_records_bounce_counters_on_distribution(
+    configured_form_service,
+):
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+    service.email_service.return_success = False  # type: ignore[attr-defined]
+
+    settings = EmailDistributionSettings(
+        subject="Please respond", message="Hi", sender_name="Wedding Planner"
+    )
+    result = await service.send_form(
+        "form_1",
+        SendFormRequest(
+            recipient_emails=["bounce@example.com"], email_settings=settings
+        ),
+        "planner@example.com",
+    )
+    assert result["failed"] == 1
+    assert result["recipients"][0]["status"] == "failed"
+    assert result["recipients"][0]["error"]
+    dist = database["form_distributions"].find_one({"recipient_email": "bounce@example.com"})
+    assert dist is not None
+    assert dist["email_sends"] == 0
+    assert dist["email_send_failures"] == 1
+
+
+@pytest.mark.asyncio
+async def test_submit_with_repeat_idempotency_key_returns_original_response(
+    configured_form_service,
+):
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+
+    request = SubmitFormRequest(
+        responses={"name": "Jamie"},
+        idempotency_key="11111111-1111-4111-8111-111111111111",
+    )
+    first = await service.submit_form_response("form_1", request)
+    assert "id" in first
+    assert "duplicate_of_idempotent_request" not in first
+
+    second = await service.submit_form_response("form_1", request)
+    assert second["id"] == first["id"]
+    assert second.get("duplicate_of_idempotent_request") is True
+    assert database["form_responses"].count_documents({"form_id": "form_1"}) == 1
+
+
+@pytest.mark.asyncio
+async def test_submit_with_distinct_idempotency_keys_inserts_two_rows(
+    configured_form_service,
+):
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc(allow_multiple_submissions=True))
+
+    await service.submit_form_response(
+        "form_1",
+        SubmitFormRequest(
+            responses={"name": "Jamie A"},
+            idempotency_key="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        ),
+    )
+    await service.submit_form_response(
+        "form_1",
+        SubmitFormRequest(
+            responses={"name": "Jamie B"},
+            idempotency_key="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        ),
+    )
+    assert database["form_responses"].count_documents({"form_id": "form_1"}) == 2

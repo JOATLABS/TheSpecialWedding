@@ -649,6 +649,17 @@ class SubmitFormRequest(BaseModel):
             "rejects a second submission for the same distribution."
         ),
     )
+    idempotency_key: Optional[str] = Field(
+        None,
+        description=(
+            "Client-generated UUID-ish token, stable for the lifetime "
+            "of one form-fill session. When supplied, the server "
+            "deduplicates retries: a network drop mid-submit followed "
+            "by a client retry returns the original response instead "
+            "of inserting a duplicate row. Cleared on successful "
+            "submit confirmation."
+        ),
+    )
 
     @field_validator("distribution_id")
     @classmethod
@@ -676,6 +687,24 @@ class SubmitFormRequest(BaseModel):
             return None
         if len(trimmed) > 256 or not re.match(r"^[a-zA-Z0-9_-]+$", trimmed):
             raise ValueError("Invalid access_token")
+        return trimmed
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def validate_idempotency_key(cls, v):
+        if v is None:
+            return v
+        if not isinstance(v, str):
+            return None
+        trimmed = v.strip()
+        if not trimmed:
+            return None
+        # 8 to 128 chars; URL-safe alphabet matches our token pattern
+        # and accepts standard UUIDv4 strings (36 chars with hyphens).
+        if len(trimmed) < 8 or len(trimmed) > 128 or not re.match(
+            r"^[a-zA-Z0-9_-]+$", trimmed
+        ):
+            raise ValueError("Invalid idempotency_key")
         return trimmed
 
     @field_validator("responses")

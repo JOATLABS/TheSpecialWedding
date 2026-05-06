@@ -873,9 +873,51 @@ class FormService:
 
             sent_count = 0
             failed_count = 0
+            skipped_count = 0
+            # Per-recipient detail (Batch 4 — P6 audit fix). Lets the
+            # planner UI render a "3 of 50 bounced — see which" view
+            # instead of just an aggregate count.
+            per_recipient: List[Dict[str, Any]] = []
 
             for recipient_email in send_data.recipient_emails:
                 try:
+                    normalized_recipient = (
+                        (recipient_email or "").strip().lower()
+                    )
+                    if not normalized_recipient:
+                        continue
+
+                    # Distribution dedup (Batch 1 — P1/P3 audit fix). If a
+                    # distribution already exists for (form_id, recipient_email)
+                    # AND it has a live (unexpired) token AND it has not
+                    # been submitted yet, skip — the planner has already
+                    # sent this recipient the form. Stops double-sends
+                    # when the planner re-clicks "Send" or the action-
+                    # button toast races with a manual send.
+                    existing = await self.distributions_collection.find_one(
+                        {
+                            "form_id": form_id,
+                            "recipient_email": normalized_recipient,
+                        }
+                    )
+                    if existing and existing.get("submitted_at") is None:
+                        # Treat any prior unsubmitted distribution as a
+                        # legitimate dedup — the planner / scheduler can
+                        # always re-send via the reminder flow if the
+                        # original token expired.
+                        skipped_count += 1
+                        per_recipient.append(
+                            {
+                                "email": normalized_recipient,
+                                "distribution_id": str(existing["_id"]),
+                                "status": "skipped_duplicate",
+                                "error": (
+                                    "Recipient already has an open form invitation"
+                                ),
+                            }
+                        )
+                        continue
+
                     # Create distribution record + per-recipient access token
                     distribution_id = str(uuid.uuid4())
                     raw_token, token_hash, token_expires_at = (
@@ -884,7 +926,7 @@ class FormService:
                     distribution_doc = {
                         "_id": distribution_id,
                         "form_id": form_id,
-                        "recipient_email": recipient_email,
+                        "recipient_email": normalized_recipient,
                         "wedding_id": send_data.wedding_id,
                         "sent_at": datetime.now(timezone.utc),
                         "status": FormDistributionStatus.SENDING.value,
@@ -926,9 +968,10 @@ class FormService:
                     )
 
                     # Send email
+                    delivery_error: Optional[str] = None
                     if self.email_service.configured:
                         email_result = await self.email_service.send_email(
-                            to_email=recipient_email,
+                            to_email=normalized_recipient,
                             subject=send_data.email_settings.subject,
                             html_content=email_html,
                             from_name=send_data.email_settings.sender_name,
@@ -937,27 +980,58 @@ class FormService:
                         if email_result.get("success"):
                             distribution_doc["status"] = FormDistributionStatus.SENT.value
                             distribution_doc["email_id"] = email_result.get("email_id")
+                            distribution_doc["email_sends"] = 1
+                            distribution_doc["email_send_failures"] = 0
                             sent_count += 1
                         else:
                             distribution_doc["status"] = FormDistributionStatus.FAILED.value
+                            distribution_doc["email_sends"] = 0
+                            distribution_doc["email_send_failures"] = 1
+                            delivery_error = (
+                                email_result.get("error")
+                                or "Email service rejected the recipient"
+                            )
                             failed_count += 1
                     else:
                         distribution_doc["status"] = FormDistributionStatus.FAILED.value
+                        distribution_doc["email_sends"] = 0
+                        distribution_doc["email_send_failures"] = 1
+                        delivery_error = "Email service not configured"
                         failed_count += 1
 
                     # Save distribution record
                     await self.distributions_collection.insert_one(distribution_doc)
+                    per_recipient.append(
+                        {
+                            "email": normalized_recipient,
+                            "distribution_id": distribution_id,
+                            "status": distribution_doc["status"],
+                            "error": delivery_error,
+                        }
+                    )
 
                 except Exception as email_error:
                     logging.error(
                         f"Failed to send form to {recipient_email}: {str(email_error)}"
                     )
                     failed_count += 1
+                    per_recipient.append(
+                        {
+                            "email": (recipient_email or "").strip().lower(),
+                            "distribution_id": None,
+                            "status": "failed",
+                            "error": str(email_error),
+                        }
+                    )
 
             return {
                 "sent": sent_count,
                 "failed": failed_count,
+                "skipped_duplicates": skipped_count,
                 "form_url": form_url,
+                # Per-recipient detail so the planner UI can render a
+                # bounce / dedup report instead of just aggregate counts.
+                "recipients": per_recipient,
                 "message": f"Form sent to {sent_count} recipients",
             }
 
@@ -1355,6 +1429,31 @@ class FormService:
                             detail="You have already submitted a response to this form",
                         )
 
+            # Submit-idempotency lookup (R3 audit fix). When the client
+            # supplies an idempotency_key (a stable per-form-fill UUID),
+            # a network-blip-then-retry returns the original
+            # success response instead of inserting a duplicate row.
+            # Key validation already applied via SubmitFormRequest model.
+            idempotency_key = response_data.idempotency_key
+            if idempotency_key:
+                existing_response = await self.responses_collection.find_one(
+                    {"form_id": form_id, "idempotency_key": idempotency_key}
+                )
+                if existing_response:
+                    success_message = form["settings"].get(
+                        "success_message", "Thank you for your submission!"
+                    )
+                    redirect_url = form["settings"].get("redirect_url")
+                    safe_redirect_url = None
+                    if redirect_url and InputSanitizer.validate_url(redirect_url):
+                        safe_redirect_url = redirect_url
+                    return {
+                        "id": str(existing_response["_id"]),
+                        "message": html.escape(success_message),
+                        "redirect_url": safe_redirect_url,
+                        "duplicate_of_idempotent_request": True,
+                    }
+
             # Create response document with sanitized data
             response_id = str(uuid.uuid4())
 
@@ -1370,6 +1469,7 @@ class FormService:
                 "_id": response_id,
                 "form_id": form_id,
                 "distribution_id": resolved_distribution_id,
+                "idempotency_key": idempotency_key,
                 "responses": sanitized_responses,
                 "submitted_by_email": submitted_by_email,
                 "submitted_by_name": submitted_by_name,
