@@ -77,6 +77,15 @@ def test_validate_phone_accepts_canonical_shapes(
         # Empty / whitespace
         "",
         "   ",
+        # Formatting-only strings — the regex used to allow these
+        # because it didn't require any actual digits. Phone "fields"
+        # full of dashes / parens / spaces are not valid input.
+        "-------",
+        "(   )",
+        "( ) - .",
+        # Punctuation around too-few digits to satisfy the 7-digit minimum.
+        "(123)-45",
+        "+1-2-3-4",
         # Non-string types
     ],
 )
@@ -544,6 +553,85 @@ def test_ai_cache_key_handles_missing_plan_safely():
     )
     assert a == b
     assert "unknown" in a
+
+
+# Codex review P2 — when callers don't pass subscription_plan into the
+# fallback path (the AI error / insufficient-credit code paths in
+# AIService.generate_response), the lookup must NOT scope by plan or it
+# will starve the fallback against entries written under "free", the
+# real plan tier, etc.
+
+
+@pytest.mark.asyncio
+async def test_get_latest_cached_response_without_plan_finds_plan_tagged_entries():
+    """The fallback caller (no subscription_plan) must still hit
+    cache rows that were written under 'free' / 'active' / etc."""
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import AsyncMock
+
+    from app.services.ai_cache_service import AICacheService
+
+    svc = AICacheService()
+    captured_query: Dict[str, Any] = {}
+
+    async def fake_find_one(query, sort=None):
+        captured_query.clear()
+        captured_query.update(query)
+        if "expires_at" in query:
+            return {
+                "feature": "budget_insights",
+                "tenant_id": "tenant-1",
+                "subscription_plan": "free",
+                "response": {"answer": "stale-but-real"},
+                "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+            }
+        return None
+
+    svc.cache = AsyncMock()
+    svc.cache.find_one = fake_find_one
+
+    result = await svc.get_latest_cached_response(
+        feature="budget_insights",
+        tenant_id="tenant-1",
+        # subscription_plan intentionally omitted — error / no-credit
+        # callers don't have it.
+    )
+    assert result is not None
+    assert result["response"]["answer"] == "stale-but-real"
+    # The query must NOT have included a subscription_plan filter.
+    assert "subscription_plan" not in captured_query, (
+        f"Fallback lookup without plan must drop the plan filter; "
+        f"got query={captured_query!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_latest_cached_response_with_plan_keeps_scope():
+    """Inverse — when caller threads the plan through, we keep the
+    isolation tight to stop a downgraded view from reading paid-tier
+    cache."""
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import AsyncMock
+
+    from app.services.ai_cache_service import AICacheService
+
+    svc = AICacheService()
+    captured_query: Dict[str, Any] = {}
+
+    async def fake_find_one(query, sort=None):
+        captured_query.clear()
+        captured_query.update(query)
+        return None
+
+    svc.cache = AsyncMock()
+    svc.cache.find_one = fake_find_one
+
+    await svc.get_latest_cached_response(
+        feature="budget_insights",
+        tenant_id="tenant-1",
+        subscription_plan="boutique",
+    )
+    assert captured_query.get("subscription_plan") == "boutique"
 
 
 # =============================================================================

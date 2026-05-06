@@ -1040,6 +1040,126 @@ async def test_send_form_records_bounce_counters_on_distribution(
 
 
 @pytest.mark.asyncio
+async def test_send_form_dedup_falls_through_when_prior_send_failed(
+    configured_form_service,
+):
+    """Codex review P2 — a previous distribution with email_sends=0
+    (Resend rejected the address, the SMTP gateway timed out, etc.) must
+    NOT block a manual resend. The dedup gate should only fire on a
+    deliverable, unexpired open invitation."""
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+    service.email_service.return_success = False  # type: ignore[attr-defined]
+
+    settings = EmailDistributionSettings(
+        subject="Please respond", message="Hi", sender_name="Wedding Planner"
+    )
+    first = await service.send_form(
+        "form_1",
+        SendFormRequest(
+            recipient_emails=["bounce@example.com"], email_settings=settings
+        ),
+        "planner@example.com",
+    )
+    assert first["failed"] == 1
+    assert first["recipients"][0]["status"] == "failed"
+
+    # Email service recovers; planner retries to the same address.
+    service.email_service.return_success = True  # type: ignore[attr-defined]
+    second = await service.send_form(
+        "form_1",
+        SendFormRequest(
+            recipient_emails=["bounce@example.com"], email_settings=settings
+        ),
+        "planner@example.com",
+    )
+    assert second["sent"] == 1, (
+        "After a failed first send, a manual resend must go through — "
+        "previously the dedup gate ate it as skipped_duplicate"
+    )
+    assert second["skipped_duplicates"] == 0
+    assert second["recipients"][0]["status"] == "sent"
+
+
+@pytest.mark.asyncio
+async def test_send_form_dedup_falls_through_when_prior_token_expired(
+    configured_form_service,
+):
+    """Codex review P2 — a prior open distribution whose token has
+    expired (typically at the 30-day TTL) must not block a fresh send.
+    Recipients with no usable link can't recover otherwise."""
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+
+    # Seed an expired-token open distribution directly.
+    database["form_distributions"].insert_one(
+        {
+            "_id": "dist-stale",
+            "form_id": "form_1",
+            "recipient_email": "expired@example.com",
+            "sent_at": datetime.utcnow() - timedelta(days=45),
+            "status": "sent",
+            "submitted_at": None,
+            "email_sends": 1,
+            "email_send_failures": 0,
+            "access_token_hash": "x" * 64,
+            "token_expires_at": datetime.now(timezone.utc) - timedelta(days=15),
+        }
+    )
+
+    settings = EmailDistributionSettings(
+        subject="Please respond", message="Hi", sender_name="Wedding Planner"
+    )
+    result = await service.send_form(
+        "form_1",
+        SendFormRequest(
+            recipient_emails=["expired@example.com"], email_settings=settings
+        ),
+        "planner@example.com",
+    )
+    assert result["sent"] == 1, (
+        "A prior open distribution with an expired token must NOT count "
+        "as a live duplicate — the recipient has no usable link"
+    )
+    assert result["skipped_duplicates"] == 0
+    assert result["recipients"][0]["status"] == "sent"
+
+
+@pytest.mark.asyncio
+async def test_send_form_dedup_still_skips_active_open_distribution(
+    configured_form_service,
+):
+    """Inverse of the recovery cases — an active, deliverable open
+    distribution (email sent successfully, token still valid) MUST
+    still be deduped to stop the planner from accidentally double-
+    sending the same form."""
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+
+    settings = EmailDistributionSettings(
+        subject="Please respond", message="Hi", sender_name="Wedding Planner"
+    )
+    first = await service.send_form(
+        "form_1",
+        SendFormRequest(
+            recipient_emails=["guest@example.com"], email_settings=settings
+        ),
+        "planner@example.com",
+    )
+    assert first["sent"] == 1
+
+    second = await service.send_form(
+        "form_1",
+        SendFormRequest(
+            recipient_emails=["guest@example.com"], email_settings=settings
+        ),
+        "planner@example.com",
+    )
+    assert second["skipped_duplicates"] == 1
+    assert second["recipients"][0]["status"] == "skipped_duplicate"
+
+
+@pytest.mark.asyncio
 async def test_submit_with_repeat_idempotency_key_returns_original_response(
     configured_form_service,
 ):

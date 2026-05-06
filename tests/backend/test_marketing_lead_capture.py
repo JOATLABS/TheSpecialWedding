@@ -309,3 +309,52 @@ async def test_truncates_oversized_utm_strings(configured_marketing_service):
     assert lead["utm_campaign"] is not None and len(lead["utm_campaign"]) <= 120
     assert lead["recipient_name"] is not None and len(lead["recipient_name"]) <= 120
     assert lead["user_agent"] is not None and len(lead["user_agent"]) <= 300
+
+
+# =============================================================================
+# HTML escaping in the confirmation email body — Copilot review.
+# `_confirmation_html` interpolates recipient_name + template metadata into
+# an HTML string. Both the recipient_name (public POST) and the catalog
+# description (admin-authored) need to be escaped to avoid HTML injection
+# in outbound emails.
+# =============================================================================
+
+
+def test_confirmation_html_escapes_recipient_name():
+    template = FORM_TEMPLATES[0]
+    body = marketing_module._confirmation_html(
+        recipient_name='<script>alert("xss")</script>',
+        template=template,
+    )
+    assert "<script>alert" not in body
+    assert "&lt;script&gt;alert" in body
+
+
+def test_confirmation_html_escapes_template_metadata():
+    poisoned_template = {
+        "id": "test",
+        "name": "<b>Boutique</b>",
+        "description": '<img src=x onerror="alert(1)">',
+    }
+    body = marketing_module._confirmation_html(
+        recipient_name="Jamie",
+        template=poisoned_template,
+    )
+    # The angle brackets must be escaped; the literal markup must NOT
+    # render as HTML.
+    assert "<b>Boutique</b>" not in body
+    assert "&lt;b&gt;Boutique&lt;/b&gt;" in body
+    assert "<img src=x" not in body
+    assert "&lt;img src=x" in body
+
+
+def test_confirmation_html_keeps_known_safe_chars():
+    """Sanity: a vanilla name still renders cleanly without entities
+    leaking into the human-readable copy."""
+    template = {"id": "test", "name": "Boutique", "description": "Plain"}
+    body = marketing_module._confirmation_html(
+        recipient_name="Jamie",
+        template=template,
+    )
+    assert "Hi Jamie," in body
+    assert "<strong>Boutique</strong>" in body

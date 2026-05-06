@@ -912,8 +912,15 @@ async def upload_public_form_file(
             detail="This form access link is no longer accepting uploads",
         )
 
-    # Re-fetch form + distribution for the upload service.
-    form = await form_service.get_form(safe_form_id)
+    # Fetch the raw form document — NOT via get_form(), which sanitises
+    # the public response shape (rewrites _id → id, escapes labels).
+    # FormUploadService keys S3 paths and the form_uploads row by the
+    # raw `_id`, so a sanitised doc would 500 with a KeyError.
+    form = await form_service.forms_collection.find_one(
+        {"_id": safe_form_id, "is_active": True}
+    )
+    if not form:
+        raise HTTPException(status_code=404, detail="Form not found")
     distribution = await form_service.distributions_collection.find_one(
         {"_id": safe_distribution_id, "form_id": safe_form_id}
     )

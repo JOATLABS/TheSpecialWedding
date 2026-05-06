@@ -519,3 +519,74 @@ async def test_submit_with_file_id_from_other_distribution_is_rejected(
     with pytest.raises(HTTPException) as exc:
         await service.submit_form_response("form_1", request)
     assert exc.value.status_code == 400
+
+
+# =============================================================================
+# Public upload endpoint contract — regression for the Codex review P1
+# =============================================================================
+#
+# get_form() returns a sanitized public shape (rewrites _id → id, escapes
+# labels). FormUploadService.store_upload() keys quotas, S3 paths, and the
+# Mongo row by raw form["_id"], so passing the sanitized doc into store_upload
+# previously raised KeyError("_id") and 500'd every public file upload. The
+# upload endpoint now queries the raw forms_collection directly.
+
+
+@pytest.mark.asyncio
+async def test_get_form_strips_underscore_id_from_public_response(configured_form_service):
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+
+    sanitized = await service.get_form("form_1")
+    assert sanitized.get("id") == "form_1"
+    assert "_id" not in sanitized, (
+        "get_form() is the sanitized public-response shape; the upload "
+        "endpoint must NOT pass this dict into FormUploadService."
+    )
+
+
+@pytest.mark.asyncio
+async def test_store_upload_keyerrors_on_sanitized_form_doc(configured_form_service):
+    """Document the contract that fed the regression: a sanitized doc
+    breaks store_upload. Forces the upload endpoint to keep using the
+    raw forms_collection lookup."""
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+
+    sanitized = await service.get_form("form_1")
+    distribution = {"_id": "dist-1", "form_id": "form_1"}
+
+    with pytest.raises(KeyError):
+        await service.upload_service.store_upload(
+            form=sanitized,
+            distribution=distribution,
+            field_id="insurance",
+            filename="cert.pdf",
+            content_type="application/pdf",
+            contents=b"hello",
+        )
+
+
+@pytest.mark.asyncio
+async def test_store_upload_succeeds_on_raw_form_doc(configured_form_service):
+    """Inverse of the above — the raw forms_collection.find_one shape
+    has _id and works end-to-end. This is what the upload endpoint
+    must use."""
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+
+    raw_form = database["forms"].find_one({"_id": "form_1", "is_active": True})
+    assert raw_form is not None and "_id" in raw_form
+
+    distribution = {"_id": "dist-1", "form_id": "form_1"}
+    result = await service.upload_service.store_upload(
+        form=raw_form,
+        distribution=distribution,
+        field_id="insurance",
+        filename="cert.pdf",
+        content_type="application/pdf",
+        contents=b"hello",
+    )
+    assert result.get("filename") == "cert.pdf"
+    stored = database["form_uploads"].find_one({"_id": result["file_id"]})
+    assert stored is not None and stored["form_id"] == "form_1"

@@ -75,9 +75,17 @@ def _confirmation_html(template: Dict[str, Any], recipient_name: Optional[str]) 
 
     Kept short on purpose — the PDF attachment is the value; the
     email is the delivery vehicle plus a soft brand touch."""
-    safe_name = html.escape((recipient_name or "").strip() or "there")
-    template_name = html.escape(template.get("name") or template.get("id") or "your template")
-    description = html.escape(template.get("description") or "")
+    raw_name = (recipient_name or "").strip() or "there"
+    raw_template_name = template.get("name") or template.get("id") or "your template"
+    raw_description = template.get("description") or ""
+
+    # Lead-capture form takes recipient_name from a public POST and the
+    # catalog metadata is admin-authored — both sources can carry HTML
+    # by accident or by design, so escape every interpolated string
+    # before splicing it into the email body.
+    safe_name = html.escape(raw_name)
+    template_name = html.escape(str(raw_template_name))
+    description = html.escape(str(raw_description))
 
     return f"""\
 <!DOCTYPE html>

@@ -220,36 +220,49 @@ class AICacheService:
         Args:
             feature: AI feature name (e.g., "budget_insights")
             tenant_id: Wedding or Planner ID
+            subscription_plan: Optional plan tier. When supplied the lookup
+                is plan-scoped so a downgraded caller can't read a paid-
+                tier response. When omitted (Codex P2 review fix) the
+                gate falls back to tenant_id only — the AI error /
+                insufficient-credit code paths in ``AIService.generate_response``
+                don't have a resolved plan handy, and a plan-scoped query
+                would otherwise miss every entry written under the real
+                plan tier and starve the fallback path entirely.
 
         Returns:
             Most recent cached response dict or None if nothing cached
         """
         try:
-            # Plan-scoped fallback so a downgraded user can't read a
-            # paid-tier response that's still in the cache. When the
-            # caller can't resolve a plan we narrow as far as possible.
-            plan = self._normalize_plan(subscription_plan)
             base_query: Dict[str, Any] = {
                 "feature": feature,
                 "tenant_id": tenant_id,
-                "subscription_plan": plan,
             }
+            plan_label: str
+            if subscription_plan is not None:
+                # Caller threaded the plan through — keep the scope
+                # tight so the fallback can't leak paid-tier cache.
+                plan_label = self._normalize_plan(subscription_plan)
+                base_query["subscription_plan"] = plan_label
+            else:
+                plan_label = "any"
             cached = await self.cache.find_one(
                 {**base_query, "expires_at": {"$gt": datetime.now(timezone.utc)}},
                 sort=[("created_at", -1)],
             )
 
             if cached:
-                logger.debug(f"Fallback cache hit for {feature}/{tenant_id}/{plan}")
+                logger.debug(
+                    f"Fallback cache hit for {feature}/{tenant_id}/{plan_label}"
+                )
                 return cached
 
-            # Fall back to expired entries (stale insights > no insights)
-            # but still scoped to the plan to preserve isolation.
+            # Fall back to expired entries (stale insights > no insights),
+            # honouring the same plan scope choice as the fresh lookup.
             cached = await self.cache.find_one(base_query, sort=[("created_at", -1)])
 
             if cached:
                 logger.info(
-                    f"Returning expired fallback cache for {feature}/{tenant_id}/{plan}"
+                    f"Returning expired fallback cache for {feature}/{tenant_id}/{plan_label}"
                 )
                 return cached
 

@@ -889,22 +889,36 @@ class FormService:
                         }
                     )
                     if existing and existing.get("submitted_at") is None:
-                        # Treat any prior unsubmitted distribution as a
-                        # legitimate dedup — the planner / scheduler can
-                        # always re-send via the reminder flow if the
-                        # original token expired.
-                        skipped_count += 1
-                        per_recipient.append(
-                            {
-                                "email": normalized_recipient,
-                                "distribution_id": str(existing["_id"]),
-                                "status": "skipped_duplicate",
-                                "error": (
-                                    "Recipient already has an open form invitation"
-                                ),
-                            }
-                        )
-                        continue
+                        # Only treat the prior row as a live duplicate
+                        # when it actually represents a usable invitation
+                        # — i.e. an email was successfully delivered AND
+                        # the access token is still valid. A failed send,
+                        # an expired token, or a row whose email never
+                        # left the queue should fall through so the
+                        # planner can manually recover from the bounce
+                        # without bumping into a "skipped_duplicate".
+                        delivered = int(existing.get("email_sends") or 0) > 0
+                        token_expires_at = existing.get("token_expires_at")
+                        token_live = False
+                        if token_expires_at is not None:
+                            if token_expires_at.tzinfo is None:
+                                token_expires_at = token_expires_at.replace(
+                                    tzinfo=timezone.utc
+                                )
+                            token_live = token_expires_at > datetime.now(timezone.utc)
+                        if delivered and token_live:
+                            skipped_count += 1
+                            per_recipient.append(
+                                {
+                                    "email": normalized_recipient,
+                                    "distribution_id": str(existing["_id"]),
+                                    "status": "skipped_duplicate",
+                                    "error": (
+                                        "Recipient already has an open form invitation"
+                                    ),
+                                }
+                            )
+                            continue
 
                     # Create distribution record + per-recipient access token
                     distribution_id = str(uuid.uuid4())

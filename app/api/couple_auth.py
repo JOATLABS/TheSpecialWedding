@@ -347,8 +347,14 @@ async def _dispatch_couple_portal_accepted_notification(couple: dict) -> None:
     against an already-sent distribution, and dispatch the Stage 2
     notification.
     """
+    # Notification fan-out queries SSE channels + team_members.owner_email
+    # by email, so the recipient identifier MUST be the planner email,
+    # not an ObjectId-style planner_id. Prefer planner_email; only fall
+    # back to other id fields when no email is on the doc (legacy rows).
     planner_email = (couple.get("planner_email") or "").lower().strip() or None
-    planner_id = planner_email or couple.get("planner_id") or couple.get("assigned_planner_id")
+    planner_id = planner_email or (
+        couple.get("planner_id") or couple.get("assigned_planner_id")
+    )
     if not planner_id:
         return
 

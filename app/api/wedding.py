@@ -260,9 +260,15 @@ async def create_wedding(
             planner_notification_service,
         )
 
+        # PlannerNotificationService keys SSE channels, bell rows, and the
+        # team-fanout query by planner email — passing an ObjectId-style
+        # `assigned_planner_id` here drops the toast on the floor.
+        # Prefer email fields; fall back to the authenticated user's
+        # email so we never end up with a non-email identifier.
         planner_id_for_notify = (
             wedding_data.get("assigned_planner_email")
-            or owner_email
+            or wedding_data.get("owner_email")
+            or wedding_data.get("created_by")
             or current_user.email
         )
         await planner_notification_service.notify_wedding_created(

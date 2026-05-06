@@ -313,3 +313,45 @@ async def test_dispatch_no_ops_when_planner_id_missing(monkeypatch):
     )
 
     assert captured == {}
+
+
+@pytest.mark.asyncio
+async def test_dispatch_prefers_planner_email_over_objectid_planner_id(monkeypatch):
+    """Notification fan-out queries by email — passing an ObjectId-style
+    planner_id silently drops the toast. The dispatcher must prefer
+    planner_email even when both fields are present."""
+    ca, captured, _, _ = _make_couple_auth_module(
+        monkeypatch, seeded_doc=None, distribution_doc=None
+    )
+
+    await ca._dispatch_couple_portal_accepted_notification(
+        {
+            "email": "couple@example.com",
+            "planner_id": "507f1f77bcf86cd799439011",  # ObjectId-style
+            "planner_email": "real-planner@example.com",
+        }
+    )
+
+    assert captured.get("planner_id") == "real-planner@example.com", (
+        "Dispatcher must use planner_email as the notification key, "
+        "even when the legacy planner_id field is also set"
+    )
+
+
+@pytest.mark.asyncio
+async def test_dispatch_falls_back_to_legacy_id_when_no_email(monkeypatch):
+    """Strictly-legacy rows without planner_email still get a best-
+    effort delivery via the legacy id (the team-fanout helper degrades
+    gracefully on a non-email key)."""
+    ca, captured, _, _ = _make_couple_auth_module(
+        monkeypatch, seeded_doc=None, distribution_doc=None
+    )
+
+    await ca._dispatch_couple_portal_accepted_notification(
+        {
+            "email": "couple@example.com",
+            "planner_id": "507f1f77bcf86cd799439011",
+        }
+    )
+
+    assert captured.get("planner_id") == "507f1f77bcf86cd799439011"

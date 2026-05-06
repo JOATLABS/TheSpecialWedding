@@ -485,12 +485,15 @@ class FormSecurityValidator:
                 elif field_type == "phone":
                     # E.164-tolerant: accept digits, spaces, dashes, parens,
                     # leading +. Cap at 32 chars (E.164 max is 15, but we
-                    # tolerate formatting noise). Reject anything else
-                    # outright instead of letting raw user input through.
+                    # tolerate formatting noise). Require at least 7
+                    # actual digits — the previous shape allowed pure
+                    # punctuation strings ("-------", "(   )") through.
                     if isinstance(value, str):
                         candidate = value.strip()
-                        if len(candidate) <= 32 and re.fullmatch(
-                            r"(?=.*\d)\+?[\d\s\-().]{7,32}", candidate
+                        if (
+                            len(candidate) <= 32
+                            and re.fullmatch(r"\+?[\d\s\-().]{7,32}", candidate)
+                            and sum(ch.isdigit() for ch in candidate) >= 7
                         ):
                             sanitized[field_id] = candidate
 
