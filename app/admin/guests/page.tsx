@@ -947,14 +947,16 @@ export default function AdminGuestsPage() {
     }
 
     if (wantsEmail && !wedding?.slug) {
-      setError('Email reminders require a wedding with a published URL to be selected.');
+      setError('Email reminders require a wedding to be selected.');
       return;
     }
 
-    // wedding?.slug is guaranteed to be a non-empty string here when wantsEmail
-    // is true (validated by the guard above). Capture it so the type-checker and
-    // the async task closures below can reference it without optional chaining.
-    const weddingSlug = wedding?.slug ?? '';
+    // wedding and wedding.slug are both guaranteed to be defined here when
+    // wantsEmail is true: the guard above returns early otherwise.
+    // Capture in a const so the async task closures below can reference it
+    // without optional chaining (TypeScript cannot narrow across async boundaries).
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    const weddingSlug = wedding!.slug!;
 
     setReminderSending(true);
 
