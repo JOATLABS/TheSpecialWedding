@@ -897,13 +897,13 @@ export default function AdminGuestsPage() {
   );
 
   const openReminderModal = (guest: Guest) => {
-    if (!guest.phone && !guest.email) {
+    const hasPhone = Boolean(guest.phone && guest.phone.trim() !== '');
+    const hasEmail = Boolean(guest.email && guest.email.trim() !== '');
+    if (!hasPhone && !hasEmail) {
       setError('This guest needs a phone number or email before you can send a reminder.');
       return;
     }
 
-    const hasPhone = Boolean(guest.phone && guest.phone.trim() !== '');
-    const hasEmail = Boolean(guest.email && guest.email.trim() !== '');
     const defaultChannel: 'sms' | 'email' | 'both' = hasPhone && hasEmail
       ? 'both'
       : hasPhone
@@ -946,10 +946,15 @@ export default function AdminGuestsPage() {
       return;
     }
 
-    if (reminderChannel === 'email' && !wedding?.slug) {
-      setError('Email reminders require a wedding to be selected.');
+    if (wantsEmail && !wedding?.slug) {
+      setError('Email reminders require a wedding with a published URL to be selected.');
       return;
     }
+
+    // wedding?.slug is guaranteed to be a non-empty string here when wantsEmail
+    // is true (validated by the guard above). Capture it so the type-checker and
+    // the async task closures below can reference it without optional chaining.
+    const weddingSlug = wedding?.slug ?? '';
 
     setReminderSending(true);
 
@@ -998,7 +1003,7 @@ export default function AdminGuestsPage() {
       );
     }
 
-    if (wantsEmail && wedding?.slug) {
+    if (wantsEmail) {
       tasks.push(
         (async () => {
           try {
@@ -1007,7 +1012,7 @@ export default function AdminGuestsPage() {
               success?: boolean;
               error?: string;
             }>('/admin/email/send-reminder-individual', 'POST', {
-              wedding_slug: wedding.slug,
+              wedding_slug: weddingSlug,
               guest_email: reminderGuest.email,
               guest_name: reminderGuest.name,
               guest_token: reminderGuest.token,
