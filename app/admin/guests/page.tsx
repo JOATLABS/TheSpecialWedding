@@ -118,7 +118,7 @@ const WEDDING_PARTY_GROUP_IDS = ['maid_of_honor', 'bridesmaids', 'best_man', 'gr
 // ==================== MAIN COMPONENT ====================
 
 export default function AdminGuestsPage() {
-  const { token } = useAdmin();
+  const { token, apiRequest } = useAdmin();
   const router = useRouter();
   const apiBaseUrl = getApiBaseUrl();
   const searchParams = useSearchParams();
@@ -953,40 +953,46 @@ export default function AdminGuestsPage() {
 
     setReminderSending(true);
 
-    const baseUrl = apiBaseUrl;
-    const tasks: Array<Promise<{ ok: boolean; reason?: string }>> = [];
+    // We route both sends through AdminContext.apiRequest rather than raw
+    // fetch so the centralized 401/402 handling fires for us — apiRequest
+    // returns ``undefined`` after it has already triggered logout (401 or
+    // team-member 402) or hard-redirected the planner to billing (402). In
+    // that case we MUST bail without surfacing a generic "Failed to send"
+    // toast that would race the navigation and confuse the user.
+    type SendOutcome =
+      | { kind: 'ok' }
+      | { kind: 'fail'; reason: string }
+      | { kind: 'authHandled' };
+
+    const tasks: Array<Promise<SendOutcome>> = [];
 
     if (wantsSms) {
       tasks.push(
         (async () => {
           try {
-            const response = await fetch(`${baseUrl}/admin/reminders/send-to-guests`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                guest_tokens: [reminderGuest.token],
-                message,
-              }),
+            const result = await apiRequest<{
+              sent?: number;
+              failed?: number;
+              failure_reasons?: string[];
+            }>('/admin/reminders/send-to-guests', 'POST', {
+              guest_tokens: [reminderGuest.token],
+              message,
             });
-
-            if (!response.ok) {
-              const errorData = await response.json().catch(() => ({}));
-              return { ok: false, reason: errorData.detail || 'Failed to send SMS' };
+            if (result === undefined) {
+              return { kind: 'authHandled' };
             }
-
-            const result = await response.json().catch(() => ({}));
             if ((result.sent ?? 0) > 0) {
-              return { ok: true };
+              return { kind: 'ok' };
             }
             const reason = Array.isArray(result.failure_reasons) && result.failure_reasons.length > 0
               ? result.failure_reasons[0]
               : 'SMS was not delivered';
-            return { ok: false, reason };
-          } catch {
-            return { ok: false, reason: 'Network error sending SMS' };
+            return { kind: 'fail', reason };
+          } catch (err) {
+            return {
+              kind: 'fail',
+              reason: err instanceof Error && err.message ? err.message : 'Failed to send SMS',
+            };
           }
         })()
       );
@@ -996,41 +1002,46 @@ export default function AdminGuestsPage() {
       tasks.push(
         (async () => {
           try {
-            const response = await fetch(`${baseUrl}/admin/email/send-reminder-individual`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                wedding_slug: wedding.slug,
-                guest_email: reminderGuest.email,
-                guest_name: reminderGuest.name,
-                guest_token: reminderGuest.token,
-                custom_message: message,
-              }),
+            const body = await apiRequest<{
+              sent?: boolean;
+              success?: boolean;
+              error?: string;
+            }>('/admin/email/send-reminder-individual', 'POST', {
+              wedding_slug: wedding.slug,
+              guest_email: reminderGuest.email,
+              guest_name: reminderGuest.name,
+              guest_token: reminderGuest.token,
+              custom_message: message,
             });
-
-            if (!response.ok) {
-              const errorData = await response.json().catch(() => ({}));
-              return { ok: false, reason: errorData.detail || 'Failed to send email' };
+            if (body === undefined) {
+              return { kind: 'authHandled' };
             }
-
-            const body = await response.json().catch(() => ({}));
             if (body.sent || body.success) {
-              return { ok: true };
+              return { kind: 'ok' };
             }
-            return { ok: false, reason: body.error || 'Email was not delivered' };
-          } catch {
-            return { ok: false, reason: 'Network error sending email' };
+            return { kind: 'fail', reason: body.error || 'Email was not delivered' };
+          } catch (err) {
+            return {
+              kind: 'fail',
+              reason: err instanceof Error && err.message ? err.message : 'Failed to send email',
+            };
           }
         })()
       );
     }
 
     const results = await Promise.all(tasks);
-    const okCount = results.filter((r) => r.ok).length;
-    const failures = results.filter((r) => !r.ok);
+
+    // If apiRequest already kicked off a logout or billing redirect for any
+    // call, defer to it: clear local state quietly and let navigation take
+    // over.
+    if (results.some((r) => r.kind === 'authHandled')) {
+      closeReminderModal();
+      return;
+    }
+
+    const okCount = results.filter((r) => r.kind === 'ok').length;
+    const failures = results.filter((r): r is { kind: 'fail'; reason: string } => r.kind === 'fail');
 
     if (okCount > 0 && failures.length === 0) {
       showSuccess(`Reminder sent to ${reminderGuest.name}.`);
