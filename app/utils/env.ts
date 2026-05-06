@@ -103,7 +103,10 @@ function getConfiguredApiBaseUrl(): string {
     return normalizeBaseUrl(internalUrl);
   }
 
-  const publicUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+  // Bracket notation prevents Next.js from statically replacing this with the
+  // literal value at build time, keeping the API URL out of the client bundle.
+  // This function is server-side only; the browser path returns '/api/proxy' first.
+  const publicUrl = (process.env['NEXT_PUBLIC_API_BASE_URL'] as string | undefined)?.trim();
   if (publicUrl) {
     return normalizeBaseUrl(publicUrl);
   }
@@ -123,17 +126,17 @@ function getConfiguredApiBaseUrl(): string {
 /**
  * Get the API base URL.
  *
- * In split-service deployments, the frontend image must be environment-neutral
- * so the same SHA can be promoted from staging to production. Browser callers
- * therefore derive the API host from the current origin, while server-side
- * callers use the deployment env vars.
+ * In the browser, always returns the relative path '/api/proxy' so that all
+ * API calls are routed through the Next.js rewrite rule. This keeps the API
+ * subdomain invisible to crawlers and out of the client bundle.
+ *
+ * On the server (SSR/RSC/sitemap/etc.) uses deployment env vars so that
+ * server-side fetches reach the backend directly without a round trip through
+ * the public proxy.
  */
 export function getApiBaseUrl(): string {
   if (typeof window !== 'undefined') {
-    const derived = deriveApiOrigin(window.location.protocol, window.location.hostname);
-    if (derived) {
-      return normalizeBaseUrl(derived);
-    }
+    return '/api/proxy';
   }
 
   return getConfiguredApiBaseUrl();
