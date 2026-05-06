@@ -2422,6 +2422,7 @@ _EXTERNAL_SNAPSHOT_FIELDS = (
 )
 async def accept_meeting_external_change(
     meeting_id: str,
+    expected_version: int = Query(...),
     idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("edit_meetings")
@@ -2440,7 +2441,7 @@ async def accept_meeting_external_change(
         scope_key=scope_key,
         idempotency_key=idempotency_key,
         action="accept_external_change",
-        payload={"meeting_id": meeting_id},
+        payload={"meeting_id": meeting_id, "expected_version": expected_version},
     )
     if replay_payload:
         return replay_payload
@@ -2448,6 +2449,15 @@ async def accept_meeting_external_change(
     async with _meeting_mutation_lock(meeting_id):
         try:
             task = await _get_scoped_meeting(oid, current_user)
+            current_version = int(task.get("version") or 1)
+            if current_version != expected_version:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "This meeting was changed since you opened it. Refresh and try again.",
+                        "current_version": current_version,
+                    },
+                )
             current_status = task.get("external_conflict_status")
             if current_status not in (
                 ExternalConflictStatus.PENDING_REVIEW.value,
@@ -2565,6 +2575,7 @@ async def accept_meeting_external_change(
 )
 async def reject_meeting_external_change(
     meeting_id: str,
+    expected_version: int = Query(...),
     idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("edit_meetings")
@@ -2583,7 +2594,7 @@ async def reject_meeting_external_change(
         scope_key=scope_key,
         idempotency_key=idempotency_key,
         action="reject_external_change",
-        payload={"meeting_id": meeting_id},
+        payload={"meeting_id": meeting_id, "expected_version": expected_version},
     )
     if replay_payload:
         return replay_payload
@@ -2591,6 +2602,15 @@ async def reject_meeting_external_change(
     async with _meeting_mutation_lock(meeting_id):
         try:
             task = await _get_scoped_meeting(oid, current_user)
+            current_version = int(task.get("version") or 1)
+            if current_version != expected_version:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "This meeting was changed since you opened it. Refresh and try again.",
+                        "current_version": current_version,
+                    },
+                )
             current_status = task.get("external_conflict_status")
             if current_status not in (
                 ExternalConflictStatus.PENDING_REVIEW.value,
@@ -2681,6 +2701,7 @@ async def reject_meeting_external_change(
 )
 async def approve_couple_booking(
     meeting_id: str,
+    expected_version: int = Query(...),
     idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("approve_couple_bookings")
@@ -2701,7 +2722,7 @@ async def approve_couple_booking(
         scope_key=scope_key,
         idempotency_key=idempotency_key,
         action="approve_couple_booking",
-        payload={"meeting_id": meeting_id},
+        payload={"meeting_id": meeting_id, "expected_version": expected_version},
     )
     if replay_payload:
         return replay_payload
@@ -2709,6 +2730,15 @@ async def approve_couple_booking(
     async with _meeting_mutation_lock(meeting_id):
         try:
             task = await _get_scoped_meeting(oid, current_user)
+            current_version = int(task.get("version") or 1)
+            if current_version != expected_version:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "This meeting was changed since you opened it. Refresh and try again.",
+                        "current_version": current_version,
+                    },
+                )
             if (
                 task.get("meeting_status")
                 != MeetingLifecycleStatus.PENDING_APPROVAL.value
@@ -2823,6 +2853,7 @@ async def approve_couple_booking(
 )
 async def decline_couple_booking(
     meeting_id: str,
+    expected_version: int = Query(...),
     idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("approve_couple_bookings")
@@ -2843,7 +2874,7 @@ async def decline_couple_booking(
         scope_key=scope_key,
         idempotency_key=idempotency_key,
         action="decline_couple_booking",
-        payload={"meeting_id": meeting_id},
+        payload={"meeting_id": meeting_id, "expected_version": expected_version},
     )
     if replay_payload:
         return replay_payload
@@ -2851,6 +2882,15 @@ async def decline_couple_booking(
     async with _meeting_mutation_lock(meeting_id):
         try:
             task = await _get_scoped_meeting(oid, current_user)
+            current_version = int(task.get("version") or 1)
+            if current_version != expected_version:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "This meeting was changed since you opened it. Refresh and try again.",
+                        "current_version": current_version,
+                    },
+                )
             if (
                 task.get("meeting_status")
                 != MeetingLifecycleStatus.PENDING_APPROVAL.value

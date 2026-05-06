@@ -676,14 +676,17 @@ export interface ExternalChangeResolutionResponse {
 export async function acceptExternalChange(
   token: string,
   meetingId: string,
+  expectedVersion: number,
   mutationIntent: string
 ): Promise<ExternalChangeResolutionResponse> {
-  const path = `/admin/planner/calendar/meetings/${meetingId}/external-change/accept`;
+  const basePath = `/admin/planner/calendar/meetings/${meetingId}/external-change/accept`;
+  const path = `${basePath}${buildQuery({ expected_version: String(expectedVersion) })}`;
   return authFetch<ExternalChangeResolutionResponse>(token, path, {
     method: 'POST',
     headers: {
-      'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'POST', path, {
+      'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'POST', basePath, {
         meeting_id: meetingId,
+        expected_version: expectedVersion,
       }),
     },
   });
@@ -692,14 +695,17 @@ export async function acceptExternalChange(
 export async function rejectExternalChange(
   token: string,
   meetingId: string,
+  expectedVersion: number,
   mutationIntent: string
 ): Promise<ExternalChangeResolutionResponse> {
-  const path = `/admin/planner/calendar/meetings/${meetingId}/external-change/reject`;
+  const basePath = `/admin/planner/calendar/meetings/${meetingId}/external-change/reject`;
+  const path = `${basePath}${buildQuery({ expected_version: String(expectedVersion) })}`;
   return authFetch<ExternalChangeResolutionResponse>(token, path, {
     method: 'POST',
     headers: {
-      'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'POST', path, {
+      'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'POST', basePath, {
         meeting_id: meetingId,
+        expected_version: expectedVersion,
       }),
     },
   });
@@ -716,14 +722,17 @@ export interface CoupleBookingApprovalResponse {
 export async function approveCoupleBooking(
   token: string,
   meetingId: string,
+  expectedVersion: number,
   mutationIntent: string
 ): Promise<CoupleBookingApprovalResponse> {
-  const path = `/admin/planner/calendar/meetings/${meetingId}/approve-couple-booking`;
+  const basePath = `/admin/planner/calendar/meetings/${meetingId}/approve-couple-booking`;
+  const path = `${basePath}${buildQuery({ expected_version: String(expectedVersion) })}`;
   return authFetch<CoupleBookingApprovalResponse>(token, path, {
     method: 'POST',
     headers: {
-      'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'POST', path, {
+      'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'POST', basePath, {
         meeting_id: meetingId,
+        expected_version: expectedVersion,
       }),
     },
   });
@@ -732,14 +741,17 @@ export async function approveCoupleBooking(
 export async function declineCoupleBooking(
   token: string,
   meetingId: string,
+  expectedVersion: number,
   mutationIntent: string
 ): Promise<CoupleBookingApprovalResponse> {
-  const path = `/admin/planner/calendar/meetings/${meetingId}/decline-couple-booking`;
+  const basePath = `/admin/planner/calendar/meetings/${meetingId}/decline-couple-booking`;
+  const path = `${basePath}${buildQuery({ expected_version: String(expectedVersion) })}`;
   return authFetch<CoupleBookingApprovalResponse>(token, path, {
     method: 'POST',
     headers: {
-      'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'POST', path, {
+      'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'POST', basePath, {
         meeting_id: meetingId,
+        expected_version: expectedVersion,
       }),
     },
   });

@@ -1052,6 +1052,15 @@ class CalendarProviderService:
         # account; we store the subscription id on every row of the account.
         # Reconnects must clear the prior subscription before creating a new
         # one — otherwise Aurinko-side subscriptions accumulate.
+        #
+        # KNOWN LIMITATION (cross-account reconnect): if a planner re-OAuths
+        # into a *different* aurinko_account_id without first calling
+        # disconnect_connection on the prior account, the prior account's
+        # subscription is not cleaned up here (the dedup query is keyed on
+        # the new account id). The prior connection rows remain valid (a
+        # planner may legitimately add a second account), so we cannot blindly
+        # revoke them. Cleanup is left to disconnect_connection or to manual
+        # reconciliation. Tracked in the round-2 audit follow-ups.
         webhook_url = self._webhook_url()
         webhook_warning: Optional[str] = None
         if webhook_url:
@@ -1290,6 +1299,7 @@ class CalendarProviderService:
                 "is_shared_in_team_view",
                 "details_visibility",
                 "sync_enabled",
+                "couple_booking_auto_confirm",
             }
             and v is not None
         }
