@@ -6,8 +6,8 @@ from datetime import UTC, datetime, timedelta
 
 from app.core.config import settings
 from app.core.database import mongo
+from app.services.calendar_provider_service import calendar_provider_service
 from app.services.calendar_sync_service import calendar_sync_service
-from app.services.google_calendar_service import google_calendar_service
 
 
 class CalendarMaintenanceService:
@@ -40,7 +40,7 @@ class CalendarMaintenanceService:
             .limit(limit)
         )
         async for connection_doc in connection_cursor:
-            await google_calendar_service.healthcheck_connection(
+            await calendar_provider_service.healthcheck_connection(
                 str(connection_doc["_id"])
             )
             checked_connections += 1

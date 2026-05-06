@@ -270,8 +270,14 @@ class MeetingInviteService:
         *,
         method: str = "REQUEST",
         recipient_emails: Optional[list[str]] = None,
+        source: str = "planner",
     ) -> list[dict[str, Any]]:
-        """Mark invite recipients as queued before background delivery."""
+        """Mark invite recipients as queued before background delivery.
+
+        ``source`` is "planner" for planner-initiated meetings and "couple"
+        for couple-initiated bookings; carried through to invite metadata so
+        downstream messaging templates can adjust wording.
+        """
         recipient_emails = recipient_emails or task.get("couple_attendee_emails", [])
         if not recipient_emails:
             return []
@@ -296,6 +302,7 @@ class MeetingInviteService:
                     "success": True,
                     "status": "queued",
                     "method": method,
+                    "source": source,
                 }
             )
         return queued_rows

@@ -1,4 +1,4 @@
-"""Calendar connection models for external provider integrations."""
+"""Calendar connection models for external provider integrations via Aurinko."""
 
 from __future__ import annotations
 
@@ -12,9 +12,19 @@ from app.models.calendar import VisibilityMode
 
 
 class CalendarProvider(str, Enum):
-    """Supported external calendar providers."""
+    """Underlying calendar providers exposed through the Aurinko aggregator.
+
+    Stored on each connection for UI badges, audit logs, and support — never
+    used for routing. Aurinko owns the per-provider OAuth flow and unified API.
+    """
 
     GOOGLE = "google"
+    OFFICE365 = "office365"
+    OUTLOOK = "outlook"
+    EXCHANGE = "exchange"
+    ICLOUD = "icloud"
+    ZOHO = "zoho"
+    UNKNOWN = "unknown"
 
 
 class CalendarConnectionStatus(str, Enum):
@@ -52,16 +62,29 @@ class CalendarSyncTargetingMode(str, Enum):
 
 
 class CalendarConnectionModel(BaseModel):
-    """A single connected external calendar row."""
+    """A single connected external calendar row.
+
+    One row per calendar (an Aurinko account exposing N calendars yields N
+    rows). Database uniqueness is the compound index
+    ``(owner_planner_id, user_id, aurinko_account_id, aurinko_calendar_id)``.
+    """
 
     id: str = Field(..., alias="_id")
     owner_planner_id: str
     owner_planner_email: str
     user_id: str
     user_email: str
-    provider: str = Field(default=CalendarProvider.GOOGLE.value)
+    # Underlying provider returned by Aurinko — informational only.
+    provider: str = Field(default=CalendarProvider.UNKNOWN.value)
     provider_account_email: str
     provider_account_name: Optional[str] = None
+    # Aurinko-side identifiers. Aurinko owns the per-provider OAuth tokens
+    # (Google/Microsoft/etc.) — we never store those. Aurinko issues us a
+    # per-account bearer token during OAuth callback that we use for
+    # subsequent API calls; that token is stored encrypted.
+    aurinko_account_id: str
+    aurinko_calendar_id: str
+    aurinko_access_token_encrypted: Optional[str] = None
     calendar_id: str
     calendar_name: str
     access_role: Optional[str] = None
@@ -82,10 +105,6 @@ class CalendarConnectionModel(BaseModel):
     details_visibility: str = Field(default=VisibilityMode.BUSY_ONLY.value)
     sync_enabled: bool = True
     connection_status: str = Field(default=CalendarConnectionStatus.ACTIVE.value)
-    access_token_encrypted: str
-    refresh_token_encrypted: Optional[str] = None
-    token_expiry: Optional[datetime] = None
-    scope_version: Optional[str] = None
     last_sync_at: Optional[datetime] = None
     last_healthcheck_at: Optional[datetime] = None
     last_error: Optional[str] = None

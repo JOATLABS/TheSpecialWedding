@@ -40,23 +40,23 @@ class Settings:
             raise ValueError(f"{url_name} environment variable is not configured")
         return value
 
-    # Google Calendar Integration
-    GOOGLE_CLIENT_ID: Optional[str] = os.getenv("GOOGLE_CLIENT_ID")
-    GOOGLE_CLIENT_SECRET: Optional[str] = os.getenv("GOOGLE_CLIENT_SECRET")
-    GOOGLE_REDIRECT_URI: Optional[str] = os.getenv("GOOGLE_REDIRECT_URI")
-    GOOGLE_OAUTH_STATE_SIGNING_KEY: Optional[str] = os.getenv(
-        "GOOGLE_OAUTH_STATE_SIGNING_KEY"
+    # Calendar aggregator integration (Aurinko)
+    AURINKO_API_KEY: Optional[str] = os.getenv("AURINKO_API_KEY")
+    AURINKO_APP_ID: Optional[str] = os.getenv("AURINKO_APP_ID")
+    AURINKO_CLIENT_ID: Optional[str] = os.getenv("AURINKO_CLIENT_ID")
+    AURINKO_CLIENT_SECRET: Optional[str] = os.getenv("AURINKO_CLIENT_SECRET")
+    AURINKO_WEBHOOK_SECRET: Optional[str] = os.getenv("AURINKO_WEBHOOK_SECRET")
+    AURINKO_API_BASE_URL: str = os.getenv(
+        "AURINKO_API_BASE_URL", "https://api.aurinko.io/v1"
     )
+    AURINKO_OAUTH_STATE_SIGNING_KEY: Optional[str] = os.getenv(
+        "AURINKO_OAUTH_STATE_SIGNING_KEY"
+    )
+    AURINKO_REDIRECT_URI: Optional[str] = os.getenv("AURINKO_REDIRECT_URI")
     TOKEN_ENCRYPTION_KEY: Optional[str] = os.getenv("TOKEN_ENCRYPTION_KEY")
-    GOOGLE_CALENDAR_DEFAULT_TIMEZONE: str = os.getenv(
-        "GOOGLE_CALENDAR_DEFAULT_TIMEZONE", "UTC"
-    )
-    GOOGLE_APP_PUBLIC_HOME_URL: Optional[str] = os.getenv("GOOGLE_APP_PUBLIC_HOME_URL")
-    GOOGLE_APP_PRIVACY_URL: Optional[str] = os.getenv("GOOGLE_APP_PRIVACY_URL")
-    GOOGLE_APP_TERMS_URL: Optional[str] = os.getenv("GOOGLE_APP_TERMS_URL")
-    GOOGLE_APP_SUPPORT_URL: Optional[str] = os.getenv("GOOGLE_APP_SUPPORT_URL")
-    GOOGLE_APP_DATA_DELETION_URL: Optional[str] = os.getenv(
-        "GOOGLE_APP_DATA_DELETION_URL"
+    CALENDAR_DEFAULT_TIMEZONE: str = os.getenv("CALENDAR_DEFAULT_TIMEZONE", "UTC")
+    CALENDAR_WEBHOOK_REPLAY_WINDOW_SECONDS: int = int(
+        os.getenv("CALENDAR_WEBHOOK_REPLAY_WINDOW_SECONDS", "300")
     )
     CALENDAR_SHARED_EVENTS_CACHE_SECONDS: int = int(
         os.getenv("CALENDAR_SHARED_EVENTS_CACHE_SECONDS", "60")
@@ -88,11 +88,11 @@ class Settings:
         os.getenv("CALENDAR_DRIFT_CHECK_INTERVAL_MINUTES", "30")
     )
 
-    # Scopes needed for calendar read/write access
-    GOOGLE_CALENDAR_SCOPES: list = [
-        "https://www.googleapis.com/auth/calendar.events",
-        "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
-        "https://www.googleapis.com/auth/userinfo.email",
+    # Aurinko scopes requested when starting the OAuth connect flow.
+    AURINKO_SCOPES: list = [
+        "Calendar.Read",
+        "Calendar.ReadWrite",
+        "AccountInfo.Read",
     ]
 
     # Web Push Notification Service (VAPID)

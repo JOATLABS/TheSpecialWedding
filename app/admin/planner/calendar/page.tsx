@@ -7,7 +7,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import PageHeader from '../../components/PageHeader';
 import TaskModal from './components/TaskModal';
-import GoogleCalendarConnect from './components/GoogleCalendarConnect';
+import CalendarConnect from './components/CalendarConnect';
 import {
   CalendarConnection,
   CATEGORY_LABELS,
@@ -46,7 +46,7 @@ const MONTH_NAMES = [
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 type ViewMode = 'calendar' | 'list';
-type SourceFilter = 'all' | 'internal_task' | 'internal_meeting' | 'external_google';
+type SourceFilter = 'all' | 'internal_task' | 'internal_meeting' | 'external';
 type VisibilityFilter = 'all' | 'details' | 'busy_only';
 
 const PANEL_CLASS =
@@ -77,7 +77,7 @@ function buildCalendarDays(year: number, month: number) {
 }
 
 function eventTone(event: SharedCalendarEvent) {
-  if (event.source_type === 'external_google') {
+  if (event.source_type === 'external') {
     return 'border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-700/80 dark:text-slate-100';
   }
   if (event.source_type === 'internal_meeting') {
@@ -92,7 +92,7 @@ function eventTone(event: SharedCalendarEvent) {
 }
 
 function eventDisplayTitle(event: SharedCalendarEvent) {
-  if (event.source_type === 'external_google' && event.visibility_mode === 'busy_only') {
+  if (event.source_type === 'external' && event.visibility_mode === 'busy_only') {
     return 'Busy';
   }
   return event.title || 'Untitled item';
@@ -367,7 +367,7 @@ export default function PlannerCalendarPage() {
   const openExistingItem = async (event: SharedCalendarEvent) => {
     if (!token) return;
 
-    if (event.source_type === 'external_google') {
+    if (event.source_type === 'external') {
       toast.message('External Google events are read-only here. Change sharing or sync settings from the connection panel.');
       return;
     }
@@ -508,7 +508,7 @@ export default function PlannerCalendarPage() {
           <p className="mt-3 text-3xl font-semibold text-slate-900 dark:text-slate-100">
             {
               events.filter(
-                (event) => event.source_type === 'external_google' && event.visibility_mode === 'busy_only'
+                (event) => event.source_type === 'external' && event.visibility_mode === 'busy_only'
               ).length
             }
           </p>
@@ -519,7 +519,7 @@ export default function PlannerCalendarPage() {
         </div>
       </div>
 
-      <GoogleCalendarConnect
+      <CalendarConnect
         connections={connections}
         staffOptions={staffOptions}
         weddings={weddings}
@@ -614,7 +614,7 @@ export default function PlannerCalendarPage() {
                 <option value="all">All sources</option>
                 <option value="internal_task">Internal tasks</option>
                 <option value="internal_meeting">Internal meetings</option>
-                <option value="external_google">Google calendars</option>
+                <option value="external">External calendars</option>
               </select>
 
               <select
@@ -810,7 +810,7 @@ export default function PlannerCalendarPage() {
                       <span className={`rounded-full border px-2 py-1 text-[11px] font-medium ${eventTone(event)}`}>
                         {event.source_type === 'internal_meeting'
                           ? 'Meeting'
-                          : event.source_type === 'external_google'
+                          : event.source_type === 'external'
                           ? 'Google'
                           : 'Task'}
                       </span>

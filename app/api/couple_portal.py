@@ -2496,6 +2496,256 @@ async def list_meetings_couple(couple: dict = Depends(require_couple_auth)):
 
 
 # ============================================================================
+# Couple Self-Service Booking
+# ============================================================================
+
+
+class CoupleBookMeetingRequest(BaseModel):
+    """Body for couple-initiated meeting bookings."""
+
+    staff_id: str = Field(..., description="Planner staff member to book with")
+    start: datetime = Field(..., description="Slot start, ISO datetime with tzinfo")
+    end: datetime = Field(..., description="Slot end, ISO datetime with tzinfo")
+    title: str = Field(..., min_length=1, max_length=200)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+    timezone: str = Field(default="UTC", description="IANA timezone identifier")
+    idempotency_key: str = Field(
+        ..., min_length=8, max_length=128, description="Client-supplied idempotency key"
+    )
+
+
+@router.get(
+    "/couple/portal/availability",
+    tags=["Couple Portal - Booking"],
+)
+async def get_couple_availability(
+    duration: int = Query(..., ge=15, le=240, description="Slot duration in minutes"),
+    start: Optional[datetime] = Query(default=None),
+    end: Optional[datetime] = Query(default=None),
+    staff_id: Optional[str] = Query(default=None),
+    couple: dict = Depends(require_couple_auth),
+) -> dict:
+    """Return bookable slots for the wedding's allowed planner team."""
+    from app.services.availability_slot_service import availability_slot_service
+
+    wedding_id = couple.get("wedding_id")
+    if not wedding_id:
+        raise HTTPException(status_code=404, detail="Wedding not found")
+    if couple.get("wedding_archived"):
+        raise HTTPException(status_code=403, detail="Wedding is archived")
+    try:
+        slots = await availability_slot_service.generate_slots(
+            wedding_id=wedding_id,
+            duration_minutes=duration,
+            range_start=start,
+            range_end=end,
+            staff_id=staff_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Availability lookup failed: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Scheduling temporarily unavailable, please try again shortly",
+        ) from exc
+    return {"slots": [slot.to_dict() for slot in slots], "count": len(slots)}
+
+
+@router.post(
+    "/couple/portal/meetings/book",
+    tags=["Couple Portal - Booking"],
+)
+async def book_couple_meeting(
+    body: CoupleBookMeetingRequest,
+    couple: dict = Depends(require_couple_auth),
+) -> dict:
+    """Book a meeting with the assigned planner team.
+
+    Pipeline: lock the (staff, start, end) tuple, re-check availability inside
+    the lock, persist the planner_task with all sync-required fields, project
+    onto the staff's external calendar via calendar_sync_service, and enqueue
+    an ICS invite. Idempotent on ``idempotency_key``.
+    """
+    from app.services.availability_slot_service import availability_slot_service
+    from app.services.calendar_idempotency_service import calendar_idempotency_service
+    from app.services.calendar_job_service import calendar_job_service
+    from app.services.calendar_sync_service import calendar_sync_service
+    from app.core.cache import cache
+    from app.utils.planner_ownership import (
+        extract_wedding_owner_identity,
+        normalize_wedding_query_id,
+    )
+    from app.models.calendar import (
+        CalendarSyncPolicy,
+        InviteDeliveryMode,
+        MeetingLifecycleStatus,
+        ScheduleItemType,
+    )
+
+    wedding_id = couple.get("wedding_id")
+    if not wedding_id:
+        raise HTTPException(status_code=404, detail="Wedding not found")
+    if couple.get("wedding_archived"):
+        raise HTTPException(status_code=403, detail="Wedding is archived")
+
+    if body.end <= body.start:
+        raise HTTPException(status_code=400, detail="end must be after start")
+
+    wedding = await mongo.get_weddings_collection().find_one(
+        {"_id": normalize_wedding_query_id(wedding_id)}
+    )
+    if not wedding:
+        raise HTTPException(status_code=404, detail="Wedding not found")
+    owner_id, owner_email = extract_wedding_owner_identity(wedding)
+
+    candidate_users, _ = await availability_slot_service._resolve_candidate_staff(
+        wedding_id=wedding_id, staff_id=body.staff_id
+    )
+    if not candidate_users:
+        raise HTTPException(status_code=403, detail="Staff not available for this wedding")
+    staff = candidate_users[0]
+
+    scope_key = f"couple_meeting_book:{wedding_id}:{couple.get('email')}"
+    request_hash = calendar_idempotency_service.build_request_hash(
+        action="couple_meeting_book",
+        payload=body.model_dump(),
+    )
+    resolution = await calendar_idempotency_service.begin(
+        scope_key=scope_key,
+        idempotency_key=body.idempotency_key,
+        request_hash=request_hash,
+    )
+    if resolution.state == "replay" and resolution.response_payload:
+        return resolution.response_payload
+    if resolution.state == "conflict":
+        raise HTTPException(
+            status_code=409, detail="Idempotency key reused with a different payload"
+        )
+    if resolution.state == "in_progress":
+        raise HTTPException(status_code=409, detail="Booking already in progress; retry")
+
+    lock_key = (
+        f"couple_meeting_book:{staff.user_id}:{body.start.isoformat()}:{body.end.isoformat()}"
+    )
+    lock_value = uuid.uuid4().hex
+    acquired = await cache.acquire_lock(lock_key, lock_value, expire=30)
+    if acquired is False:
+        raise HTTPException(
+            status_code=409, detail="That slot is being booked by someone else; try again"
+        )
+
+    try:
+        slots = await availability_slot_service.generate_slots(
+            wedding_id=wedding_id,
+            duration_minutes=int((body.end - body.start).total_seconds() // 60),
+            range_start=body.start,
+            range_end=body.end,
+            staff_id=staff.user_id,
+        )
+        slot_match = next(
+            (
+                slot
+                for slot in slots
+                if slot.start == body.start and slot.end == body.end
+            ),
+            None,
+        )
+        if slot_match is None:
+            raise HTTPException(status_code=409, detail="Slot is no longer available")
+
+        couple_emails = [
+            email
+            for email in (couple.get("email"), couple.get("partner_email"))
+            if email
+        ]
+        now = datetime.now(timezone.utc)
+        task_doc = {
+            "owner_planner_id": owner_id,
+            "owner_planner_email": owner_email,
+            "planner_email": owner_email,
+            "created_by_user_id": owner_id,
+            "created_by_email": owner_email,
+            "assigned_user_ids": [staff.user_id],
+            "assigned_user_emails": [staff.user_email] if staff.user_email else [],
+            "wedding_id": wedding_id,
+            "title": body.title,
+            "description": body.notes or "",
+            "category": "meeting",
+            "schedule_item_type": ScheduleItemType.MEETING.value,
+            "calendar_sync_policy": CalendarSyncPolicy.ASSIGNED_ONLY.value,
+            "couple_attendee_emails": couple_emails,
+            "invite_delivery_mode": InviteDeliveryMode.EMAIL_ICS.value,
+            "meeting_status": MeetingLifecycleStatus.SCHEDULED.value,
+            "external_sync_requested": True,
+            "start_date": body.start,
+            "end_date": body.end,
+            "timezone": body.timezone,
+            "all_day": False,
+            "status": "pending",
+            "priority": "medium",
+            "external_conflict_status": "none",
+            "created_by_couple": True,
+            "created_at": now,
+            "updated_at": now,
+            "version": 1,
+        }
+        result = await mongo.get_planner_tasks_collection().insert_one(task_doc)
+        task_doc["_id"] = result.inserted_id
+        sync_status = await calendar_sync_service.sync_schedule_item(
+            task_doc,
+            actor_user_id=staff.user_id,
+            actor_is_owner=False,
+            actor_role_scope=None,
+        )
+        invite_status = await calendar_job_service.enqueue_invite_job(
+            task_doc,
+            method="REQUEST",
+            reason="couple_self_booking",
+            source="couple",
+        )
+        response_payload = {
+            "meeting_id": str(task_doc["_id"]),
+            "sync_status": sync_status,
+            "invite_status": invite_status,
+            "start": body.start.isoformat(),
+            "end": body.end.isoformat(),
+            "staff_id": staff.user_id,
+        }
+        await calendar_idempotency_service.complete(
+            scope_key=scope_key,
+            idempotency_key=body.idempotency_key,
+            response_payload=response_payload,
+        )
+        return response_payload
+    except HTTPException as exc:
+        await calendar_idempotency_service.fail(
+            scope_key=scope_key,
+            idempotency_key=body.idempotency_key,
+            error_detail=str(exc.detail),
+        )
+        raise
+    except Exception as exc:
+        logger.exception("Couple booking failed: %s", exc)
+        await calendar_idempotency_service.fail(
+            scope_key=scope_key,
+            idempotency_key=body.idempotency_key,
+            error_detail=str(exc),
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Booking failed; please try again shortly",
+        ) from exc
+    finally:
+        if acquired:
+            await cache.release_lock(lock_key, lock_value)
+
+
+# ============================================================================
 # SPRINT 6: REGISTRY CRUD (Couple + Planner shared access)
 # ============================================================================
 

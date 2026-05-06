@@ -3,14 +3,14 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
-import { completeGoogleCalendarCallback } from '@/services/calendarApi';
+import { completeCalendarCallback } from '@/services/calendarApi';
 
-export default function GoogleCalendarCallbackPage() {
+export default function CalendarCallbackPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { token, isLoading } = useAdmin();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
-  const [message, setMessage] = useState('Processing Google Calendar connection...');
+  const [message, setMessage] = useState('Processing calendar connection...');
 
   useEffect(() => {
     if (isLoading) return;
@@ -26,8 +26,8 @@ export default function GoogleCalendarCallbackPage() {
         setStatus('error');
         setMessage(
           error === 'access_denied'
-            ? 'You cancelled the Google Calendar authorization.'
-            : `Google authorization failed: ${error}`
+            ? 'You cancelled the calendar authorization.'
+            : `Calendar authorization failed: ${error}`
         );
         return;
       }
@@ -40,19 +40,19 @@ export default function GoogleCalendarCallbackPage() {
 
       if (!token) {
         setStatus('error');
-        setMessage('Your admin session is missing. Sign in again and restart the Google connection.');
+        setMessage('Your admin session is missing. Sign in again and restart the calendar connection.');
         return;
       }
 
       try {
-        const result = await completeGoogleCalendarCallback(token, code, state);
+        const result = await completeCalendarCallback(token, code, state);
 
         if (cancelled) return;
 
         const connected = Boolean(result.connected);
         if (connected) {
           setStatus('success');
-          setMessage('Google Calendar connected successfully. Redirecting to the planner calendar...');
+          setMessage('Calendar connected successfully. Redirecting to the planner calendar...');
           window.setTimeout(() => {
             router.push('/admin/planner/calendar');
           }, 1500);
@@ -60,7 +60,7 @@ export default function GoogleCalendarCallbackPage() {
         }
 
         setStatus('error');
-        setMessage(String(result.message || 'Failed to connect Google Calendar.'));
+        setMessage(String(result.message || 'Failed to connect calendar.'));
       } catch (err) {
         if (cancelled) return;
         setStatus('error');
@@ -101,9 +101,9 @@ export default function GoogleCalendarCallbackPage() {
         </div>
 
         <h1 className="text-center text-xl font-semibold text-slate-900 dark:text-slate-100">
-          {status === 'loading' && 'Connecting Google Calendar'}
-          {status === 'success' && 'Calendar Connected'}
-          {status === 'error' && 'Connection Failed'}
+          {status === 'loading' && 'Connecting calendar'}
+          {status === 'success' && 'Calendar connected'}
+          {status === 'error' && 'Connection failed'}
         </h1>
 
         <p className="mt-3 text-center text-sm leading-6 text-slate-500 dark:text-slate-400">{message}</p>

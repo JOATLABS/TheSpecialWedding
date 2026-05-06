@@ -85,6 +85,7 @@ class CalendarJobService:
         method: str,
         recipient_emails: Optional[list[str]] = None,
         reason: str,
+        source: str = "planner",
     ) -> list[dict[str, Any]]:
         recipients = sorted(
             {
@@ -102,6 +103,7 @@ class CalendarJobService:
             task,
             method=method,
             recipient_emails=recipients,
+            source=source,
         )
         now = datetime.now(UTC)
         dedupe_key = self._build_invite_dedupe_key(
@@ -125,6 +127,7 @@ class CalendarJobService:
                         "task": task,
                         "method": method,
                         "reason": reason,
+                        "source": source,
                         "recipient_emails": recipients,
                     },
                     "run_at": now,

@@ -67,6 +67,7 @@ from app.api.otp import router as otp_router
 from app.api.packages import router as packages_router
 from app.api.planner_ad_interactions import router as planner_ad_interactions_router
 from app.api.planner_ad_preferences import router as planner_ad_preferences_router
+from app.api.calendar_webhooks import router as calendar_webhooks_router
 from app.api.planner_calendar import router as planner_calendar_router
 from app.api.planner_metrics import router as planner_metrics_router
 from app.api.planner_notifications import router as planner_notifications_router
@@ -786,6 +787,7 @@ app.include_router(
 app.include_router(saas_config_router, prefix="/saas", tags=["Subscription"])
 app.include_router(testimonials_router, prefix="/saas", tags=["Testimonials"])
 app.include_router(public_contact_router, tags=["Sales"])
+app.include_router(calendar_webhooks_router, tags=["Calendar Webhooks"])
 app.include_router(guest_verification_router, tags=["Guest"])
 app.include_router(forms_router, tags=["Forms"])  # Legacy + public form endpoints
 app.include_router(
