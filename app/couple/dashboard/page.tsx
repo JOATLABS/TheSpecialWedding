@@ -7,6 +7,7 @@ import CoupleSidebar, { type CoupleSection } from '../components/CoupleSidebar';
 import CoupleTopHeader from '../components/CoupleTopHeader';
 import CoupleOnboardingModal from '../components/CoupleOnboardingModal';
 import CoupleMemoriesSection from '../components/CoupleMemoriesSection';
+import SlotPicker from './components/SlotPicker';
 import { useCoupleSSE } from '@/couple/hooks/useCoupleSSE';
 import PageHeader from '@/components/ui/PageHeader';
 import MessageBubble from '@/components/ui/MessageBubble';
@@ -1791,6 +1792,8 @@ function MeetingsSection({ archived }: { archived: boolean }) {
           This wedding is archived, so meeting scheduling is paused. Archived portals do not show active meeting links.
         </div>
       )}
+
+      {!archived && <SlotPicker />}
 
       {loadingMeetings ? (
         <div className="flex items-center justify-center py-16">

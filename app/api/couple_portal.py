@@ -2638,6 +2638,13 @@ async def book_couple_meeting(
         raise HTTPException(
             status_code=409, detail="That slot is being booked by someone else; try again"
         )
+    if acquired is None:
+        # Redis unavailable — without the lock we cannot guarantee single-write
+        # semantics on the slot. Fail closed rather than racing duplicates.
+        raise HTTPException(
+            status_code=503,
+            detail="Booking lock service is unavailable; please try again shortly",
+        )
 
     try:
         slots = await availability_slot_service.generate_slots(
@@ -2658,11 +2665,8 @@ async def book_couple_meeting(
         if slot_match is None:
             raise HTTPException(status_code=409, detail="Slot is no longer available")
 
-        couple_emails = [
-            email
-            for email in (couple.get("email"), couple.get("partner_email"))
-            if email
-        ]
+        # couple_users stores a single shared email per couple; ICS goes to it.
+        couple_emails = [email for email in (couple.get("email"),) if email]
         now = datetime.now(timezone.utc)
         task_doc = {
             "owner_planner_id": owner_id,

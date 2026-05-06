@@ -85,6 +85,9 @@ class CalendarConnectionModel(BaseModel):
     aurinko_account_id: str
     aurinko_calendar_id: str
     aurinko_access_token_encrypted: Optional[str] = None
+    # Aurinko-side webhook subscription id, populated when we register a
+    # /calendars/events subscription so we can unsubscribe on disconnect.
+    aurinko_subscription_id: Optional[str] = None
     calendar_id: str
     calendar_name: str
     access_role: Optional[str] = None

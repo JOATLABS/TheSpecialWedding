@@ -185,6 +185,7 @@ class SharedCalendarEventResponse(BaseModel):
 
     id: str
     source_type: str
+    external_provider: Optional[str] = None
     title: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
@@ -522,6 +523,7 @@ def _serialize_shared_event(row: dict) -> SharedCalendarEventResponse:
     return SharedCalendarEventResponse(
         id=str(row.get("id")),
         source_type=row.get("source_type", "internal_task"),
+        external_provider=row.get("external_provider"),
         title=row.get("title"),
         start_date=_isoformat(row.get("start_date")),
         end_date=_isoformat(row.get("end_date")),
@@ -2419,16 +2421,28 @@ async def accept_meeting_external_change(
         "external_conflict_source": None,
         "external_conflict_detected_at": None,
         "updated_at": now,
-        "meeting_status": MeetingLifecycleStatus.RESCHEDULED.value,
     }
-    if task.get("external_start_date"):
+    timestamps_changed = False
+    if task.get("external_start_date") and task.get("external_start_date") != task.get(
+        "start_date"
+    ):
         canonical_updates["start_date"] = task["external_start_date"]
-    if task.get("external_end_date"):
+        timestamps_changed = True
+    if task.get("external_end_date") and task.get("external_end_date") != task.get(
+        "end_date"
+    ):
         canonical_updates["end_date"] = task["external_end_date"]
+        timestamps_changed = True
     if task.get("external_title"):
         canonical_updates["title"] = task["external_title"]
     if task.get("external_description") is not None:
         canonical_updates["description"] = task["external_description"]
+    # Only flip lifecycle to RESCHEDULED when the time actually moved; metadata
+    # edits (title/description) shouldn't change scheduling state.
+    if timestamps_changed and task.get(
+        "meeting_status"
+    ) == MeetingLifecycleStatus.SCHEDULED.value:
+        canonical_updates["meeting_status"] = MeetingLifecycleStatus.RESCHEDULED.value
 
     await mongo.get_planner_tasks_collection().update_one(
         {"_id": oid}, {"$set": canonical_updates}
