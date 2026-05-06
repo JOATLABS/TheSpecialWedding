@@ -150,7 +150,11 @@ class PlannerNotificationService:
                 lambda t: t.exception() if not t.cancelled() and t.exception() else None
             )
 
-            # Broadcast via SSE (non-blocking)
+            # Broadcast via SSE (non-blocking).
+            # Batch 11: SSE payload now carries notification_id + metadata
+            # + action_url so the action-toast listener can (a) call
+            # mark-actioned after a successful CTA, and (b) re-open the
+            # toast from a bell-click without re-querying Mongo.
             from app.services.sse_manager import sse_manager
 
             sse_task = asyncio.create_task(
@@ -158,11 +162,14 @@ class PlannerNotificationService:
                     planner_id,
                     "notification-new",
                     {
+                        "id": str(result.inserted_id),
                         "title": title,
                         "message": message,
                         "type": notification_type,
                         "wedding_id": wedding_id,
                         "priority": priority,
+                        "metadata": metadata or {},
+                        "action_url": action_url,
                     },
                 )
             )
