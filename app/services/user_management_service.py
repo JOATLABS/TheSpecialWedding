@@ -1781,6 +1781,35 @@ class UserManagementService:
             except Exception as e:
                 self.logger.warning("Failed to publish email changed event: %s", e)
 
+            # Phase D parity: a planner whose email changes should still
+            # have the catalog seeded under the new email. The cascade
+            # above rewrites forms.created_by from old → new, so already-
+            # seeded planners are no-ops here (idempotent via the
+            # seeded_from_catalog markers). The case this catches is the
+            # admin-onboarded planner who never went through verify_email
+            # originally — their new email becomes their canonical
+            # identity and we ensure the catalog is present.
+            if (user.get("role") or "").strip().lower() == "wedding_planner":
+                try:
+                    from app.services.form_service import FormService
+
+                    seed_result = await FormService().seed_catalog_templates_for_planner(
+                        new_email
+                    )
+                    self.logger.info(
+                        "Catalog seed for planner email change %s -> %s: %s",
+                        old_email,
+                        new_email,
+                        seed_result,
+                    )
+                except Exception as seed_exc:
+                    self.logger.warning(
+                        "Catalog seed on email-change failed for %s -> %s: %s",
+                        old_email,
+                        new_email,
+                        seed_exc,
+                    )
+
             return {
                 "message": "Email address changed successfully",
                 "old_email": old_email,
