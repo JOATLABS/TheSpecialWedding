@@ -129,6 +129,7 @@ export interface CalendarConnection {
   is_shared_in_team_view: boolean;
   details_visibility: VisibilityMode;
   sync_enabled: boolean;
+  couple_booking_auto_confirm?: boolean;
   connection_status: ConnectionStatus | string;
   token_expiry?: string | null;
   last_sync_at?: string | null;
@@ -512,6 +513,7 @@ export async function updateCalendarConnection(
       | 'details_visibility'
       | 'sync_enabled'
       | 'is_default_write_target'
+      | 'couple_booking_auto_confirm'
     >
   >
 ): Promise<CalendarConnection> {
@@ -661,6 +663,86 @@ export async function syncMeeting(
       method: 'POST',
     }
   );
+}
+
+export interface ExternalChangeResolutionResponse {
+  meeting_id: string;
+  external_conflict_status: string;
+  version: number;
+  invite_status?: Array<Record<string, unknown>>;
+  sync_status?: CalendarSyncStatusItem[];
+}
+
+export async function acceptExternalChange(
+  token: string,
+  meetingId: string,
+  mutationIntent: string
+): Promise<ExternalChangeResolutionResponse> {
+  const path = `/admin/planner/calendar/meetings/${meetingId}/external-change/accept`;
+  return authFetch<ExternalChangeResolutionResponse>(token, path, {
+    method: 'POST',
+    headers: {
+      'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'POST', path, {
+        meeting_id: meetingId,
+      }),
+    },
+  });
+}
+
+export async function rejectExternalChange(
+  token: string,
+  meetingId: string,
+  mutationIntent: string
+): Promise<ExternalChangeResolutionResponse> {
+  const path = `/admin/planner/calendar/meetings/${meetingId}/external-change/reject`;
+  return authFetch<ExternalChangeResolutionResponse>(token, path, {
+    method: 'POST',
+    headers: {
+      'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'POST', path, {
+        meeting_id: meetingId,
+      }),
+    },
+  });
+}
+
+export interface CoupleBookingApprovalResponse {
+  meeting_id: string;
+  meeting_status: string;
+  version: number;
+  sync_status?: CalendarSyncStatusItem[];
+  invite_status?: Array<Record<string, unknown>>;
+}
+
+export async function approveCoupleBooking(
+  token: string,
+  meetingId: string,
+  mutationIntent: string
+): Promise<CoupleBookingApprovalResponse> {
+  const path = `/admin/planner/calendar/meetings/${meetingId}/approve-couple-booking`;
+  return authFetch<CoupleBookingApprovalResponse>(token, path, {
+    method: 'POST',
+    headers: {
+      'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'POST', path, {
+        meeting_id: meetingId,
+      }),
+    },
+  });
+}
+
+export async function declineCoupleBooking(
+  token: string,
+  meetingId: string,
+  mutationIntent: string
+): Promise<CoupleBookingApprovalResponse> {
+  const path = `/admin/planner/calendar/meetings/${meetingId}/decline-couple-booking`;
+  return authFetch<CoupleBookingApprovalResponse>(token, path, {
+    method: 'POST',
+    headers: {
+      'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'POST', path, {
+        meeting_id: meetingId,
+      }),
+    },
+  });
 }
 
 export async function getMeetingSyncStatus(

@@ -119,6 +119,35 @@ class CalendarAggregationService:
                 "meeting_status": task.get("meeting_status"),
                 "conference_url": task.get("conference_url"),
                 "invite_delivery_mode": task.get("invite_delivery_mode"),
+                "version": int(task.get("version") or 1),
+                "external_conflict_status": task.get("external_conflict_status"),
+                "external_conflict_source": task.get("external_conflict_source"),
+                "external_conflict_detected_at": (
+                    task.get("external_conflict_detected_at").isoformat()
+                    if isinstance(
+                        task.get("external_conflict_detected_at"),
+                        (datetime,),
+                    )
+                    else task.get("external_conflict_detected_at")
+                ),
+                "external_start_date": (
+                    task.get("external_start_date").isoformat()
+                    if isinstance(task.get("external_start_date"), (datetime,))
+                    else task.get("external_start_date")
+                ),
+                "external_end_date": (
+                    task.get("external_end_date").isoformat()
+                    if isinstance(task.get("external_end_date"), (datetime,))
+                    else task.get("external_end_date")
+                ),
+                "external_title": task.get("external_title"),
+                "external_description": task.get("external_description"),
+                "external_location": task.get("external_location"),
+                "external_last_modified_at": (
+                    task.get("external_last_modified_at").isoformat()
+                    if isinstance(task.get("external_last_modified_at"), (datetime,))
+                    else task.get("external_last_modified_at")
+                ),
             },
         }
 

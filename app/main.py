@@ -566,6 +566,15 @@ async def lifespan(app: FastAPI):
         # Stop SSE Redis listener
         await sse_manager.stop_redis_listener()
 
+        # Close the shared Aurinko httpx client so connections aren't leaked
+        # across reloads.
+        try:
+            from app.services.calendar_provider_service import close_aurinko_http_client
+
+            await close_aurinko_http_client()
+        except Exception as exc:
+            logger.warning("Failed to close Aurinko HTTP client: %s", exc)
+
         # Drain the audit-log buffer before the DB connection closes.
         # ``shutdown()`` is idempotent — the ``finally`` block below
         # will no-op if we already drained here.

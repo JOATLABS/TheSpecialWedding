@@ -10,11 +10,14 @@
 
 import { coupleFetch, extractApiErrorMessage } from './auth';
 
+export type CoupleSessionFailureHandler = (response: Response) => Promise<boolean>;
+
 export interface AvailabilitySlot {
   staff_id: string;
   staff_email: string | null;
   start: string;
   end: string;
+  requires_approval: boolean;
 }
 
 export interface AvailabilityResponse {
@@ -34,6 +37,8 @@ export interface BookMeetingRequest {
 
 export interface BookMeetingResponse {
   meeting_id: string;
+  meeting_status: string;
+  requires_approval: boolean;
   staff_id: string;
   start: string;
   end: string;
@@ -41,12 +46,15 @@ export interface BookMeetingResponse {
   invite_status: unknown;
 }
 
-export async function getAvailability(params: {
-  durationMinutes: number;
-  start?: Date;
-  end?: Date;
-  staffId?: string;
-}): Promise<AvailabilityResponse> {
+export async function getAvailability(
+  params: {
+    durationMinutes: number;
+    start?: Date;
+    end?: Date;
+    staffId?: string;
+  },
+  onSessionFailure?: CoupleSessionFailureHandler,
+): Promise<AvailabilityResponse> {
   const search = new URLSearchParams();
   search.set('duration', String(params.durationMinutes));
   if (params.start) search.set('start', params.start.toISOString());
@@ -55,17 +63,26 @@ export async function getAvailability(params: {
 
   const response = await coupleFetch(`/couple/portal/availability?${search.toString()}`);
   if (!response.ok) {
+    if (onSessionFailure && (await onSessionFailure(response))) {
+      throw new Error('Your session has expired. Please sign in again.');
+    }
     throw new Error(await extractApiErrorMessage(response, 'Failed to load availability'));
   }
   return response.json();
 }
 
-export async function bookMeeting(body: BookMeetingRequest): Promise<BookMeetingResponse> {
+export async function bookMeeting(
+  body: BookMeetingRequest,
+  onSessionFailure?: CoupleSessionFailureHandler,
+): Promise<BookMeetingResponse> {
   const response = await coupleFetch('/couple/portal/meetings/book', {
     method: 'POST',
     body: JSON.stringify(body),
   });
   if (!response.ok) {
+    if (onSessionFailure && (await onSessionFailure(response))) {
+      throw new Error('Your session has expired. Please sign in again.');
+    }
     throw new Error(await extractApiErrorMessage(response, 'Failed to book meeting'));
   }
   return response.json();

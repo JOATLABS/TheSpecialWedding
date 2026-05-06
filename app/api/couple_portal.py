@@ -2575,6 +2575,7 @@ async def book_couple_meeting(
     from app.services.calendar_idempotency_service import calendar_idempotency_service
     from app.services.calendar_job_service import calendar_job_service
     from app.services.calendar_sync_service import calendar_sync_service
+    from app.services.planner_notification_service import planner_notification_service
     from app.core.cache import cache
     from app.utils.planner_ownership import (
         extract_wedding_owner_identity,
@@ -2586,6 +2587,8 @@ async def book_couple_meeting(
         MeetingLifecycleStatus,
         ScheduleItemType,
     )
+    from app.models.calendar_connection import CalendarSchedulerRole
+    from app.models.planner_notification import PlannerNotificationTypes
 
     wedding_id = couple.get("wedding_id")
     if not wedding_id:
@@ -2607,7 +2610,9 @@ async def book_couple_meeting(
         wedding_id=wedding_id, staff_id=body.staff_id
     )
     if not candidate_users:
-        raise HTTPException(status_code=403, detail="Staff not available for this wedding")
+        raise HTTPException(
+            status_code=403, detail="Staff not available for this wedding"
+        )
     staff = candidate_users[0]
 
     scope_key = f"couple_meeting_book:{wedding_id}:{couple.get('email')}"
@@ -2627,16 +2632,17 @@ async def book_couple_meeting(
             status_code=409, detail="Idempotency key reused with a different payload"
         )
     if resolution.state == "in_progress":
-        raise HTTPException(status_code=409, detail="Booking already in progress; retry")
+        raise HTTPException(
+            status_code=409, detail="Booking already in progress; retry"
+        )
 
-    lock_key = (
-        f"couple_meeting_book:{staff.user_id}:{body.start.isoformat()}:{body.end.isoformat()}"
-    )
+    lock_key = f"couple_meeting_book:{staff.user_id}:{body.start.isoformat()}:{body.end.isoformat()}"
     lock_value = uuid.uuid4().hex
     acquired = await cache.acquire_lock(lock_key, lock_value, expire=30)
     if acquired is False:
         raise HTTPException(
-            status_code=409, detail="That slot is being booked by someone else; try again"
+            status_code=409,
+            detail="That slot is being booked by someone else; try again",
         )
     if acquired is None:
         # Redis unavailable — without the lock we cannot guarantee single-write
@@ -2667,13 +2673,21 @@ async def book_couple_meeting(
 
         # couple_users stores a single shared email per couple; ICS goes to it.
         couple_emails = [email for email in (couple.get("email"),) if email]
+        couple_record_id = to_str_id(couple)
+        couple_email = couple.get("email")
+        requires_approval = bool(slot_match.requires_approval)
+        meeting_status = (
+            MeetingLifecycleStatus.PENDING_APPROVAL.value
+            if requires_approval
+            else MeetingLifecycleStatus.SCHEDULED.value
+        )
         now = datetime.now(timezone.utc)
         task_doc = {
             "owner_planner_id": owner_id,
             "owner_planner_email": owner_email,
             "planner_email": owner_email,
-            "created_by_user_id": owner_id,
-            "created_by_email": owner_email,
+            "created_by_user_id": couple_record_id or owner_id,
+            "created_by_email": couple_email or owner_email,
             "assigned_user_ids": [staff.user_id],
             "assigned_user_emails": [staff.user_email] if staff.user_email else [],
             "wedding_id": wedding_id,
@@ -2684,8 +2698,8 @@ async def book_couple_meeting(
             "calendar_sync_policy": CalendarSyncPolicy.ASSIGNED_ONLY.value,
             "couple_attendee_emails": couple_emails,
             "invite_delivery_mode": InviteDeliveryMode.EMAIL_ICS.value,
-            "meeting_status": MeetingLifecycleStatus.SCHEDULED.value,
-            "external_sync_requested": True,
+            "meeting_status": meeting_status,
+            "external_sync_requested": not requires_approval,
             "start_date": body.start,
             "end_date": body.end,
             "timezone": body.timezone,
@@ -2700,20 +2714,75 @@ async def book_couple_meeting(
         }
         result = await mongo.get_planner_tasks_collection().insert_one(task_doc)
         task_doc["_id"] = result.inserted_id
-        sync_status = await calendar_sync_service.sync_schedule_item(
-            task_doc,
-            actor_user_id=staff.user_id,
-            actor_is_owner=False,
-            actor_role_scope=None,
-        )
-        invite_status = await calendar_job_service.enqueue_invite_job(
-            task_doc,
-            method="REQUEST",
-            reason="couple_self_booking",
-            source="couple",
-        )
+
+        sync_status: Any = None
+        invite_status: Optional[dict] = None
+        if requires_approval:
+            # Planner approval gate: no external sync, no ICS to couple. The
+            # planner approves or declines via the planner_calendar endpoints,
+            # which then run sync + ICS.
+            try:
+                await planner_notification_service.create_notification(
+                    planner_id=owner_email or owner_id or "",
+                    notification_type=PlannerNotificationTypes.MEETING_BOOKING_REQUEST,
+                    title="New booking request",
+                    message=(
+                        f"{couple_email or 'A couple'} requested a meeting "
+                        f"with {staff.user_email or staff.user_id} on "
+                        f"{body.start.isoformat()}."
+                    ),
+                    wedding_id=str(wedding_id),
+                    metadata={
+                        "meeting_id": str(task_doc["_id"]),
+                        "staff_id": staff.user_id,
+                        "couple_id": couple_record_id,
+                    },
+                    priority="medium",
+                    action_url=f"/admin/planner/calendar?meeting={task_doc['_id']}",
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to create planner approval notification: %s", exc
+                )
+        else:
+            # Couple booking is system-initiated on behalf of the wedding's
+            # planner team; treat the actor as owner so connection-level
+            # scheduler-access policies (OWNER_ONLY, etc.) don't block the
+            # write. The couple was already gated upstream by
+            # _resolve_candidate_staff (wedding-team membership +
+            # allowed_wedding_ids).
+            sync_status = await calendar_sync_service.sync_schedule_item(
+                task_doc,
+                actor_user_id=staff.user_id,
+                actor_is_owner=True,
+                actor_role_scope=CalendarSchedulerRole.OWNER.value,
+            )
+            any_synced = bool(
+                isinstance(sync_status, list)
+                and any(
+                    isinstance(row, dict) and row.get("sync_status") == "synced"
+                    for row in sync_status
+                )
+            )
+            if not any_synced:
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "Booking saved internally but could not be projected to the "
+                        "planner's calendar. Please retry or contact support."
+                    ),
+                )
+            invite_status = await calendar_job_service.enqueue_invite_job(
+                task_doc,
+                method="REQUEST",
+                reason="couple_self_booking",
+                source="couple",
+            )
+
         response_payload = {
             "meeting_id": str(task_doc["_id"]),
+            "meeting_status": meeting_status,
+            "requires_approval": requires_approval,
             "sync_status": sync_status,
             "invite_status": invite_status,
             "start": body.start.isoformat(),

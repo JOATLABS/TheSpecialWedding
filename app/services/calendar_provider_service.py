@@ -13,16 +13,15 @@ endpoints) is provider-agnostic and consumes the result shapes returned here.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import hashlib
-import json
 import logging
 import re
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any, AsyncIterator, Dict, List, Optional
 from contextlib import asynccontextmanager
+from urllib.parse import quote
 from uuid import uuid4
 
 import httpx
@@ -75,6 +74,7 @@ async def close_aurinko_http_client() -> None:
     if _aurinko_http_client is not None and not _aurinko_http_client.is_closed:
         await _aurinko_http_client.aclose()
     _aurinko_http_client = None
+
 
 # Conservative scrubber for Aurinko-issued bearer tokens and OAuth codes that
 # may surface inside error strings before they hit the database/log pipeline.
@@ -203,7 +203,7 @@ class AurinkoClient:
         """Exchange a hosted-auth code for an account-scoped access token."""
         response = await self._request(
             "POST",
-            "/auth/token/" + code,
+            f"/auth/token/{quote(code, safe='')}",
             platform_auth=True,
         )
         if response.status_code >= 400:
@@ -215,7 +215,9 @@ class AurinkoClient:
 
     async def get_account(self, account_token: str) -> dict[str, Any]:
         """Fetch the connected account's identity info from Aurinko."""
-        response = await self._request("GET", "/am/accounts/me", account_token=account_token)
+        response = await self._request(
+            "GET", "/am/accounts/me", account_token=account_token
+        )
         response.raise_for_status()
         return response.json()
 
@@ -435,7 +437,9 @@ def _normalize_event_for_aggregation(
         "id": raw_event.get("id") or raw_event.get("eventId"),
         "etag": raw_event.get("etag") or raw_event.get("changeKey"),
         "summary": raw_event.get("subject") or raw_event.get("summary") or "",
-        "description": raw_event.get("description") or raw_event.get("bodyPreview") or "",
+        "description": raw_event.get("description")
+        or raw_event.get("bodyPreview")
+        or "",
         "location": (raw_event.get("location") or {}).get("displayName")
         if isinstance(raw_event.get("location"), dict)
         else raw_event.get("location"),
@@ -604,7 +608,9 @@ class CalendarProviderService:
             if isinstance(payload, dict):
                 error_reason = payload.get("error") or payload.get("code")
                 message = payload.get("message") or message
-        elif isinstance(exc, (TimeoutError, ConnectionError, OSError, httpx.RequestError)):
+        elif isinstance(
+            exc, (TimeoutError, ConnectionError, OSError, httpx.RequestError)
+        ):
             return {
                 "retryable": True,
                 "error_category": "temporary",
@@ -726,7 +732,9 @@ class CalendarProviderService:
     def _get_fernet(self) -> Fernet:
         if self._is_production_environment() and not settings.TOKEN_ENCRYPTION_KEY:
             raise RuntimeError("TOKEN_ENCRYPTION_KEY must be configured in production")
-        raw_key = settings.TOKEN_ENCRYPTION_KEY or settings.SECRET_KEY or "dev-token-key"
+        raw_key = (
+            settings.TOKEN_ENCRYPTION_KEY or settings.SECRET_KEY or "dev-token-key"
+        )
         derived_key = base64.urlsafe_b64encode(
             hashlib.sha256(raw_key.encode()).digest()
         )
@@ -844,9 +852,7 @@ class CalendarProviderService:
         except HTTPException:
             raise
         except Exception as exc:
-            logger.error(
-                "Aurinko code exchange failed: %s", _redact_sensitive(exc)
-            )
+            logger.error("Aurinko code exchange failed: %s", _redact_sensitive(exc))
             raise HTTPException(
                 status_code=400, detail="Failed to complete calendar authorization"
             ) from exc
@@ -872,14 +878,18 @@ class CalendarProviderService:
                 detail="Could not verify calendar account identity. Please try again.",
             ) from exc
 
-        provider_account_email = account_info.get("email") or token_response.get("email")
+        provider_account_email = account_info.get("email") or token_response.get(
+            "email"
+        )
         if not provider_account_email:
             raise HTTPException(
                 status_code=502,
                 detail="Aurinko did not return an account email. Please try again.",
             )
         provider_account_name = (
-            account_info.get("name") or account_info.get("displayName") or provider_account_email
+            account_info.get("name")
+            or account_info.get("displayName")
+            or provider_account_email
         )
         provider_label = self._map_aurinko_service_to_provider(
             account_info.get("type") or token_response.get("serviceType")
@@ -988,7 +998,9 @@ class CalendarProviderService:
                     else False
                 ),
                 "details_visibility": (
-                    existing_doc.get("details_visibility", VisibilityMode.BUSY_ONLY.value)
+                    existing_doc.get(
+                        "details_visibility", VisibilityMode.BUSY_ONLY.value
+                    )
                     if existing_doc is not None
                     else VisibilityMode.BUSY_ONLY.value
                 ),
@@ -1038,8 +1050,37 @@ class CalendarProviderService:
         # changes flow into our webhook handler. Aurinko delivers per-account
         # change events, so one subscription covers all calendars on that
         # account; we store the subscription id on every row of the account.
+        # Reconnects must clear the prior subscription before creating a new
+        # one — otherwise Aurinko-side subscriptions accumulate.
         webhook_url = self._webhook_url()
+        webhook_warning: Optional[str] = None
         if webhook_url:
+            prior_subscription_doc = await self.connections_collection.find_one(
+                {
+                    "user_id": user_id,
+                    "aurinko_account_id": aurinko_account_id,
+                    "aurinko_subscription_id": {"$nin": [None, ""]},
+                }
+            )
+            prior_subscription_id = (
+                str(prior_subscription_doc.get("aurinko_subscription_id"))
+                if prior_subscription_doc
+                else None
+            )
+            if prior_subscription_id:
+                try:
+                    await self.client.delete_subscription(
+                        account_token=account_token,
+                        subscription_id=prior_subscription_id,
+                    )
+                except Exception as exc:
+                    logger.info(
+                        "Could not delete prior Aurinko subscription %s for account %s: %s",
+                        prior_subscription_id,
+                        aurinko_account_id,
+                        _redact_sensitive(exc),
+                    )
+
             try:
                 subscription = await self.client.create_subscription(
                     account_token=account_token, webhook_url=webhook_url
@@ -1061,10 +1102,26 @@ class CalendarProviderService:
                         },
                     )
             except Exception as exc:
+                webhook_warning = (
+                    "Webhook subscription failed; external calendar changes "
+                    "won't be detected in real time. Reconnect to retry."
+                )
                 logger.warning(
                     "Failed to register Aurinko webhook subscription for account %s: %s",
                     aurinko_account_id,
                     _redact_sensitive(exc),
+                )
+                await self.connections_collection.update_many(
+                    {
+                        "user_id": user_id,
+                        "aurinko_account_id": aurinko_account_id,
+                    },
+                    {
+                        "$set": {
+                            "last_error": webhook_warning,
+                            "updated_at": now,
+                        }
+                    },
                 )
 
         await calendar_audit_service.log(
@@ -1082,12 +1139,16 @@ class CalendarProviderService:
             },
         )
 
+        message = "Successfully connected calendar account"
+        if webhook_warning:
+            message = f"{message}. {webhook_warning}"
         return {
             "connected": True,
             "calendar_id": default_write_id,
             "connections_created": len(seen_calendar_ids),
             "redirect_to": state_payload.get("redirect_to"),
-            "message": "Successfully connected calendar account",
+            "message": message,
+            "warning": webhook_warning,
         }
 
     def _is_writable_calendar(self, entry: dict[str, Any]) -> bool:
@@ -1162,6 +1223,7 @@ class CalendarProviderService:
                 "details_visibility", VisibilityMode.BUSY_ONLY.value
             ),
             "sync_enabled": doc.get("sync_enabled", False),
+            "couple_booking_auto_confirm": doc.get("couple_booking_auto_confirm", True),
             "connection_status": doc.get(
                 "connection_status", CalendarConnectionStatus.ERROR.value
             ),
@@ -1254,7 +1316,9 @@ class CalendarProviderService:
             )
         if "allowed_schedule_item_types" in set_doc:
             set_doc["allowed_schedule_item_types"] = (
-                self._normalize_schedule_item_types(set_doc["allowed_schedule_item_types"])
+                self._normalize_schedule_item_types(
+                    set_doc["allowed_schedule_item_types"]
+                )
             )
         if "allowed_wedding_ids" in set_doc:
             set_doc["allowed_wedding_ids"] = self._normalize_string_list(
@@ -1372,7 +1436,9 @@ class CalendarProviderService:
         """Validate a connection against Aurinko and persist health state."""
         connection_doc = await self.get_connection_doc(connection_id)
         now = datetime.now(UTC)
-        token = self._decrypt_token(connection_doc.get("aurinko_access_token_encrypted"))
+        token = self._decrypt_token(
+            connection_doc.get("aurinko_access_token_encrypted")
+        )
         if not token:
             await self.connections_collection.update_one(
                 {"_id": connection_doc["_id"]},
@@ -1385,10 +1451,39 @@ class CalendarProviderService:
                     }
                 },
             )
-            return self._serialize_connection(await self.get_connection_doc(connection_id))
+            return self._serialize_connection(
+                await self.get_connection_doc(connection_id)
+            )
 
         try:
             await self.client.get_account(token)
+            calendar_id = connection_doc.get(
+                "aurinko_calendar_id"
+            ) or connection_doc.get("calendar_id")
+            if calendar_id:
+                calendars = await self.client.list_calendars(token)
+                still_present = any(
+                    (entry.get("id") or entry.get("calendarId")) == calendar_id
+                    for entry in calendars
+                )
+                if not still_present:
+                    await self.connections_collection.update_one(
+                        {"_id": connection_doc["_id"]},
+                        {
+                            "$set": {
+                                "connection_status": CalendarConnectionStatus.ERROR.value,
+                                "last_error": (
+                                    "Calendar is no longer available on the connected "
+                                    "account. Please reconnect or pick another calendar."
+                                ),
+                                "last_healthcheck_at": now,
+                                "updated_at": now,
+                            }
+                        },
+                    )
+                    return self._serialize_connection(
+                        await self.get_connection_doc(connection_id)
+                    )
             await self.connections_collection.update_one(
                 {"_id": connection_doc["_id"]},
                 {
@@ -1402,7 +1497,9 @@ class CalendarProviderService:
             )
         except Exception as exc:
             classification = self._classify_aurinko_exception(exc)
-            await self._apply_provider_error_to_connection(connection_doc, classification)
+            await self._apply_provider_error_to_connection(
+                connection_doc, classification
+            )
             await self.connections_collection.update_one(
                 {"_id": connection_doc["_id"]},
                 {"$set": {"last_healthcheck_at": now}},
@@ -1715,7 +1812,9 @@ class CalendarProviderService:
             )
         except Exception as exc:
             classification = self._classify_aurinko_exception(exc)
-            await self._apply_provider_error_to_connection(connection_doc, classification)
+            await self._apply_provider_error_to_connection(
+                connection_doc, classification
+            )
             logger.error(
                 "Failed to create calendar event for connection %s: %s",
                 connection_id,
@@ -1774,7 +1873,9 @@ class CalendarProviderService:
             )
         except Exception as exc:
             classification = self._classify_aurinko_exception(exc)
-            await self._apply_provider_error_to_connection(connection_doc, classification)
+            await self._apply_provider_error_to_connection(
+                connection_doc, classification
+            )
             logger.error(
                 "Failed to update calendar event %s: %s",
                 external_event_id,
@@ -1827,7 +1928,9 @@ class CalendarProviderService:
                     external_event_id=external_event_id,
                     classification=classification,
                 )
-            await self._apply_provider_error_to_connection(connection_doc, classification)
+            await self._apply_provider_error_to_connection(
+                connection_doc, classification
+            )
             logger.error(
                 "Failed to delete calendar event %s: %s",
                 external_event_id,
@@ -1865,7 +1968,8 @@ class CalendarProviderService:
                 external_event_id=external_event_id,
             )
             normalized = _normalize_event_for_aggregation(
-                raw, provider=connection_doc.get("provider", CalendarProvider.UNKNOWN.value)
+                raw,
+                provider=connection_doc.get("provider", CalendarProvider.UNKNOWN.value),
             )
             return self._build_provider_result(
                 success=True,
@@ -1876,7 +1980,9 @@ class CalendarProviderService:
             )
         except Exception as exc:
             classification = self._classify_aurinko_exception(exc)
-            await self._apply_provider_error_to_connection(connection_doc, classification)
+            await self._apply_provider_error_to_connection(
+                connection_doc, classification
+            )
             return self._build_provider_result(
                 success=False,
                 connection_doc=connection_doc,
@@ -1950,7 +2056,9 @@ class CalendarProviderService:
             return events
         except Exception as exc:
             classification = self._classify_aurinko_exception(exc)
-            await self._apply_provider_error_to_connection(connection_doc, classification)
+            await self._apply_provider_error_to_connection(
+                connection_doc, classification
+            )
             logger.error(
                 "Failed to fetch calendar events for connection %s: %s",
                 connection_id,
@@ -1989,7 +2097,9 @@ class CalendarProviderService:
             account_token=token, webhook_url=webhook_url
         )
 
-    async def unsubscribe_webhook(self, connection_id: str, subscription_id: str) -> None:
+    async def unsubscribe_webhook(
+        self, connection_id: str, subscription_id: str
+    ) -> None:
         connection_doc = await self.get_connection_doc(connection_id)
         token = await self._account_token_for_connection(connection_doc)
         if not token:

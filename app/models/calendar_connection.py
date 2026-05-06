@@ -107,6 +107,7 @@ class CalendarConnectionModel(BaseModel):
     is_shared_in_team_view: bool = False
     details_visibility: str = Field(default=VisibilityMode.BUSY_ONLY.value)
     sync_enabled: bool = True
+    couple_booking_auto_confirm: bool = True
     connection_status: str = Field(default=CalendarConnectionStatus.ACTIVE.value)
     last_sync_at: Optional[datetime] = None
     last_healthcheck_at: Optional[datetime] = None
@@ -131,3 +132,4 @@ class CalendarConnectionUpdateRequest(BaseModel):
     is_shared_in_team_view: Optional[bool] = None
     details_visibility: Optional[str] = None
     sync_enabled: Optional[bool] = None
+    couple_booking_auto_confirm: Optional[bool] = None

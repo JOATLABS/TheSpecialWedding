@@ -28,9 +28,9 @@ import {
   coupleFetch,
   extractApiErrorMessage,
   logoutCoupleSession,
-  resolveCoupleSessionFailure,
 } from '@/couple/lib/auth';
 import { useCoupleAuth } from '@/contexts/CoupleAuthContext';
+import { useCoupleSessionExpiryHandler } from '@/couple/hooks/useCoupleSessionExpiryHandler';
 import { getWeddingEventLabel } from '@/utils/weddingEvents';
 import {
   type CoupleThreadMessage,
@@ -288,29 +288,6 @@ const COUPLE_SECTIONS: CoupleSection[] = [
 
 function isCoupleSection(value: string | null): value is CoupleSection {
   return Boolean(value && COUPLE_SECTIONS.includes(value as CoupleSection));
-}
-
-function useCoupleSessionExpiryHandler() {
-  const { expireSession } = useCoupleAuth();
-
-  return useCallback(
-    async (
-      response: Response,
-      options?: {
-        blockedFallback?: string;
-        unauthenticatedFallback?: string;
-      },
-    ) => {
-      const failure = await resolveCoupleSessionFailure(response, options);
-      if (!failure) {
-        return false;
-      }
-
-      await expireSession(failure.message);
-      return true;
-    },
-    [expireSession],
-  );
 }
 
 // ============================================================================

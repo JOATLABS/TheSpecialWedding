@@ -7,7 +7,7 @@ reject of an external change) live in ``planner_calendar.py``.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request, Response
