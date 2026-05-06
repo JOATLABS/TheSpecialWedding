@@ -107,3 +107,6 @@ docs/Desktop PageSpeed Insights.pdf
 docs/performance/pagespeed-insights-2026-04-30.md
 skills/
 vendor-contract-preprod-blockers.skill
+
+# TypeScript incremental build info (regenerated on every build)
+*.tsbuildinfo
