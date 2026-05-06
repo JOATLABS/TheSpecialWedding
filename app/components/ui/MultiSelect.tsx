@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useId } from 'react';
 import { CheckIcon, ChevronUpDownIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
 export interface MultiSelectOption {
@@ -32,8 +32,13 @@ export function MultiSelect({
 }: MultiSelectProps) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const listboxRef = useRef<HTMLUListElement>(null);
+  const uid = useId();
+  const listboxId = `${uid}-listbox`;
+  const getOptionId = (index: number) => `${uid}-option-${index}`;
 
   const filteredOptions = useMemo(() => {
     if (!query) return options;
@@ -48,6 +53,56 @@ export function MultiSelect({
   const selectedOptions = useMemo(() => {
     return options.filter((option) => selected.includes(option.value));
   }, [options, selected]);
+
+  // Reset active index whenever the filtered list changes or the dropdown closes.
+  useEffect(() => {
+    setActiveIndex(-1);
+  }, [query, open]);
+
+  // Scroll the active option into view when it changes.
+  useEffect(() => {
+    if (activeIndex < 0 || !listboxRef.current) return;
+    const activeEl = listboxRef.current.querySelector<HTMLElement>(
+      `#${CSS.escape(getOptionId(activeIndex))}`
+    );
+    activeEl?.scrollIntoView({ block: 'nearest' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIndex]);
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!open) return;
+    const count = filteredOptions.length;
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setActiveIndex((prev) => (count === 0 ? -1 : (prev + 1) % count));
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setActiveIndex((prev) => (count === 0 ? -1 : prev <= 0 ? count - 1 : prev - 1));
+        break;
+      case 'Home':
+        if (count > 0) { e.preventDefault(); setActiveIndex(0); }
+        break;
+      case 'End':
+        if (count > 0) { e.preventDefault(); setActiveIndex(count - 1); }
+        break;
+      case 'Enter':
+        if (activeIndex >= 0 && activeIndex < count) {
+          e.preventDefault();
+          toggleOption(filteredOptions[activeIndex].value);
+        }
+        break;
+      case 'Escape':
+        setOpen(false);
+        setQuery('');
+        break;
+      case 'Tab':
+        setOpen(false);
+        setQuery('');
+        break;
+    }
+  };
 
   const toggleOption = (value: string) => {
     if (selected.includes(value)) {
@@ -171,14 +226,19 @@ export function MultiSelect({
         {open && (
           <div
             className="absolute z-50 mt-1 max-h-72 w-full overflow-auto rounded-lg bg-white dark:bg-slate-800 py-1 shadow-lg ring-1 ring-black/5 dark:ring-white/10 focus:outline-none"
-            role="listbox"
           >
             <div className="sticky top-0 bg-white dark:bg-slate-800 px-3 py-2 border-b border-gray-100 dark:border-gray-700">
               <input
                 ref={searchInputRef}
                 type="text"
+                role="combobox"
+                aria-expanded={open}
+                aria-controls={listboxId}
+                aria-activedescendant={activeIndex >= 0 ? getOptionId(activeIndex) : undefined}
+                aria-autocomplete="list"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
                 placeholder={searchPlaceholder}
                 aria-label="Search options"
                 className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-wedding-rose"
@@ -216,19 +276,21 @@ export function MultiSelect({
                 {emptyMessage}
               </div>
             ) : (
-              <ul className="py-1">
-                {filteredOptions.map((option) => {
+              <ul ref={listboxRef} id={listboxId} role="listbox" aria-multiselectable="true" aria-label={label || placeholder} className="py-1">
+                {filteredOptions.map((option, index) => {
                   const isSelected = selected.includes(option.value);
+                  const isActive = index === activeIndex;
                   return (
-                    <li key={option.value}>
+                    <li key={option.value} role="presentation">
                       <button
                         type="button"
+                        id={getOptionId(index)}
                         role="option"
                         aria-selected={isSelected}
                         onClick={() => toggleOption(option.value)}
                         className={`relative w-full text-left cursor-pointer select-none py-2.5 pl-10 pr-4 transition-colors hover:bg-wedding-rose/10 dark:hover:bg-wedding-rose/20 ${
                           isSelected ? 'bg-wedding-rose/5 dark:bg-wedding-rose/10' : ''
-                        }`}
+                        } ${isActive ? 'outline outline-2 outline-offset-[-2px] outline-wedding-rose/50' : ''}`}
                       >
                         <span className="absolute inset-y-0 left-0 flex items-center pl-3">
                           <span
