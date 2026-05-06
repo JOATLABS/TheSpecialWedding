@@ -328,6 +328,69 @@ class PlannerNotificationService:
                 status_code=500, detail=f"Error updating notification: {str(e)}"
             )
 
+    async def mark_action_completed(
+        self, notification_id: str, planner_id: str
+    ) -> dict:
+        """Mark a notification as actioned via its action button.
+
+        Distinct from `is_read`: a notification can be read but its
+        action ("Send checklist", "Invite couple") still pending. This
+        endpoint is invoked by toast handlers after their network call
+        succeeds so the bell entry stops re-prompting and the next
+        toast that re-opens it can fall back to a read-only state.
+
+        Idempotent: a second call on an already-actioned notification
+        is a no-op (still returns 200 to keep the client UX stable).
+        """
+        try:
+            obj_id = ObjectId(notification_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid notification ID")
+
+        try:
+            now = datetime.now(timezone.utc)
+            result = await self.collection.update_one(
+                {"_id": obj_id, "planner_id": planner_id},
+                {
+                    "$set": {
+                        "actioned_at": now,
+                        "actioned_via_action_button": True,
+                        "is_read": True,
+                        "read_at": now,
+                    }
+                },
+            )
+
+            if result.matched_count == 0:
+                raise HTTPException(status_code=404, detail="Notification not found")
+
+            from app.services.sse_manager import sse_manager
+
+            try:
+                counts = await self.get_notification_count(planner_id)
+                task = asyncio.create_task(
+                    sse_manager.broadcast_to_user(
+                        planner_id, "notification-count", counts
+                    )
+                )
+                task.add_done_callback(
+                    lambda t: (
+                        t.exception() if not t.cancelled() and t.exception() else None
+                    )
+                )
+            except Exception:
+                pass
+
+            return {"message": "Notification marked as actioned"}
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error marking notification actioned: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error updating notification: {str(e)}"
+            )
+
     async def mark_all_as_read(
         self, planner_id: str, wedding_id: Optional[str] = None
     ) -> dict:
