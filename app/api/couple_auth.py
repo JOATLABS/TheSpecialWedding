@@ -347,15 +347,11 @@ async def _dispatch_couple_portal_accepted_notification(couple: dict) -> None:
     against an already-sent distribution, and dispatch the Stage 2
     notification.
     """
-    planner_id = (
-        couple.get("planner_email")
-        or couple.get("planner_id")
-        or couple.get("assigned_planner_id")
-    )
+    planner_email = (couple.get("planner_email") or "").lower().strip() or None
+    planner_id = planner_email or couple.get("planner_id") or couple.get("assigned_planner_id")
     if not planner_id:
         return
 
-    planner_email = (couple.get("planner_email") or "").lower().strip() or None
     couple_email = (couple.get("email") or "").lower().strip() or None
     couple_names = couple.get("couple_names") or couple.get("display_name")
     wedding_id = couple.get("wedding_id")
