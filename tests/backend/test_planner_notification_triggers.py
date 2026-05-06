@@ -148,9 +148,13 @@ async def test_notify_couple_portal_accepted_carries_form_metadata(
         "couple_names": "Alex & Jamie",
         "form_id": "form-seed-1",
     }
+    # Must point at the canonical planner-side send route at
+    # app/admin/forms/[id]/send/page.tsx — there is no
+    # /admin/planner/forms/* route, so the older form would 404.
     assert captured["action_url"].startswith(
-        "/admin/planner/forms/form-seed-1/send"
+        "/admin/forms/form-seed-1/send"
     )
+    assert "/admin/planner/forms" not in captured["action_url"]
     assert "prefill_email=couple%40example.com" in captured["action_url"]
 
 

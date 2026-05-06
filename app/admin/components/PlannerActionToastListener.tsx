@@ -204,7 +204,7 @@ function CoupleAcceptedToastBody({
             onClick={() => {
               if (formId) {
                 router.push(
-                  `/admin/planner/forms/${encodeURIComponent(formId)}/send` +
+                  `/admin/forms/${encodeURIComponent(formId)}/send` +
                     (recipientEmail
                       ? `?prefill_email=${encodeURIComponent(recipientEmail)}`
                       : ''),

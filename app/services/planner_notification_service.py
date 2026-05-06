@@ -615,8 +615,12 @@ class PlannerNotificationService:
         ``POST /admin/forms/{form_id}/send``.
         """
         couple_label = (couple_names or "the couple").strip() or "The couple"
+        # The canonical planner-side send page is mounted at
+        # ``app/admin/forms/[id]/send/page.tsx``. There is no
+        # ``/admin/planner/forms`` route, so this URL must use the
+        # ``/admin/forms`` prefix or the bell entry's deep-link 404s.
         action_url = (
-            f"/admin/planner/forms/{seeded_form_id}/send"
+            f"/admin/forms/{seeded_form_id}/send"
             f"?prefill_email={quote(couple_email or '')}"
             if seeded_form_id
             else f"/admin/planner/weddings/{wedding_id or ''}"

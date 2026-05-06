@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.constants.roles import ROLE_WEDDING_PLANNER, is_wedding_planner_role
 from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
@@ -523,7 +524,7 @@ async def create_wedding_planner(
         # Create user document
         user_doc = {
             "email": planner_data["email"],
-            "role": "wedding_planner",
+            "role": ROLE_WEDDING_PLANNER,
             "company_name": planner_data.get("company_name", ""),
             "plan_id": planner_data.get("plan_id"),
             "subscription_status": "inactive",
@@ -538,8 +539,13 @@ async def create_wedding_planner(
         # Phase D parity: admin-bulk-onboarded planners never go through
         # the verify_email flow that normally triggers the catalog seed,
         # so they would otherwise see an empty Forms tab on first login.
-        # Seed unconditionally here — the seeder's seeded_from_catalog
-        # markers make any later verify_email call a no-op.
+        # Seed when the inserted role IS the planner role — guards against
+        # a future caller passing role=ROOT_ADMIN through the same endpoint.
+        if not is_wedding_planner_role(user_doc["role"]):
+            return {
+                "message": "Wedding planner created successfully",
+                "user_id": str(result.inserted_id),
+            }
         try:
             from app.services.form_service import FormService
 

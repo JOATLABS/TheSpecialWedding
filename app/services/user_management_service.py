@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
 
+from app.constants.roles import is_wedding_planner_role
 from app.core.cache import CacheKeys, cache
 from app.core.database import mongo
 from app.core.events import EventFactory, event_bus
@@ -1257,7 +1258,7 @@ class UserManagementService:
             # workspace from second one. Best-effort — wrapped so any
             # seeder failure (Mongo blip, malformed catalog entry) cannot
             # block account verification. Idempotent on re-run.
-            if (user.get("role") or "").strip().lower() == "wedding_planner":
+            if is_wedding_planner_role(user.get("role")):
                 try:
                     from app.services.form_service import FormService
 
@@ -1789,7 +1790,7 @@ class UserManagementService:
             # admin-onboarded planner who never went through verify_email
             # originally — their new email becomes their canonical
             # identity and we ensure the catalog is present.
-            if (user.get("role") or "").strip().lower() == "wedding_planner":
+            if is_wedding_planner_role(user.get("role")):
                 try:
                     from app.services.form_service import FormService
 
