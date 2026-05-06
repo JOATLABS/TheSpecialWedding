@@ -1,9 +1,12 @@
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.database import mongo
+
+logger = logging.getLogger(__name__)
 from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
 from app.models.subscription import (
     ACTIVE_SUBSCRIPTION_STATUSES,
@@ -531,6 +534,30 @@ async def create_wedding_planner(
 
         # Insert user
         result = await mongo.get_users_collection().insert_one(user_doc)
+
+        # Phase D parity: admin-bulk-onboarded planners never go through
+        # the verify_email flow that normally triggers the catalog seed,
+        # so they would otherwise see an empty Forms tab on first login.
+        # Seed unconditionally here — the seeder's seeded_from_catalog
+        # markers make any later verify_email call a no-op.
+        try:
+            from app.services.form_service import FormService
+
+            seed_result = await FormService().seed_catalog_templates_for_planner(
+                planner_data["email"]
+            )
+            logger.info(
+                "Catalog seed for admin-created planner %s: %s",
+                planner_data["email"],
+                seed_result,
+            )
+        except Exception as seed_exc:
+            logger.warning(
+                "Catalog seed failed for admin-created planner %s "
+                "(account creation still succeeded): %s",
+                planner_data["email"],
+                seed_exc,
+            )
 
         return {
             "message": "Wedding planner created successfully",
