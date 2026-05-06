@@ -64,17 +64,32 @@ test.afterEach(() => {
   resetEnvironment();
 });
 
-test('browser runtime derives staging API host from the current origin', () => {
+test('browser runtime always returns /api/proxy on staging origin', () => {
   process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.thespecialwedding.io';
   setBrowserLocation('https://staging.thespecialwedding.io');
 
-  assert.equal(getApiBaseUrl(), 'https://api.staging.thespecialwedding.io');
+  assert.equal(getApiBaseUrl(), '/api/proxy');
 });
 
-test('browser runtime derives production API host from the current origin', () => {
+test('browser runtime always returns /api/proxy on production origin', () => {
   setBrowserLocation('https://thespecialwedding.io');
 
-  assert.equal(getApiBaseUrl(), 'https://api.thespecialwedding.io');
+  assert.equal(getApiBaseUrl(), '/api/proxy');
+});
+
+test('browser runtime always returns /api/proxy on localhost', () => {
+  setBrowserLocation('http://localhost:3000');
+
+  assert.equal(getApiBaseUrl(), '/api/proxy');
+});
+
+test('browser runtime always returns /api/proxy regardless of NEXT_PUBLIC_API_BASE_URL value', () => {
+  process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com';
+  setBrowserLocation('https://example.com');
+
+  // The env var must never influence the browser-side return value — the API
+  // subdomain must stay invisible to crawlers and out of the client bundle.
+  assert.equal(getApiBaseUrl(), '/api/proxy');
 });
 
 test('server runtime prefers INTERNAL_API_BASE_URL when configured', () => {
