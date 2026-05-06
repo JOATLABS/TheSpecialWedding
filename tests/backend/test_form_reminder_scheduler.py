@@ -188,6 +188,25 @@ def configured_form_service(monkeypatch):
         lambda *args, **kwargs: True,
     )
 
+    # Seed an active-subscription planner user row by default so the
+    # P7 audit-fix gate (subscription-state check) doesn't fail-closed
+    # for the happy-path tests. Tests that exercise inactive
+    # subscriptions overwrite this row explicitly.
+    database["users"].insert_one(
+        {
+            "email": "planner@example.com",
+            "subscription_status": "active",
+            "is_active": True,
+        }
+    )
+    database["users"].insert_one(
+        {
+            "email": "other@example.com",
+            "subscription_status": "active",
+            "is_active": True,
+        }
+    )
+
     service = form_service_module.FormService()
     service.email_service = StubEmailService()
 
@@ -456,3 +475,101 @@ async def test_send_form_reminders_caps_per_planner(
     sent_to = sorted(call["to_email"] for call in service.email_service.sent)
     # Planner B's recipient is included; only 2 of A's 4 are.
     assert "b0@example.com" in sent_to
+
+
+# =============================================================================
+# Batch 2 (audit closeout): subscription-state gate (P7)
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_send_form_reminders_skips_distributions_for_inactive_planner(
+    configured_form_service,
+):
+    """P7 audit fix — a planner whose subscription is canceled / past_due
+    has reminders suppressed (skipped, not failed). Their forms still
+    exist in Mongo; we just don't send under their brand."""
+    service, database = configured_form_service
+    database["forms"].insert_one(_form_doc())
+    # Replace the fixture's default active-planner user row with one
+    # whose subscription is cancelled.
+    database["users"].delete_many({"email": "planner@example.com"})
+    database["users"].insert_one(
+        {
+            "email": "planner@example.com",
+            "subscription_status": "cancelled",
+            "is_active": True,
+        }
+    )
+    database["form_distributions"].insert_one(
+        _distribution_doc(distribution_id="d1", sent_days_ago=10)
+    )
+
+    result = await service.send_form_reminders()
+
+    assert result["sent"] == 0
+    assert result["skipped"] == 1
+    assert result["failed"] == 0
+    # Email service was never called.
+    assert service.email_service.sent == []
+
+
+@pytest.mark.asyncio
+async def test_send_form_reminders_processes_active_subscription_planner(
+    configured_form_service,
+):
+    """Sanity / control case — active subscription proceeds normally."""
+    service, database = configured_form_service
+    # Default fixture row is already active — reuse it.
+    database["forms"].insert_one(_form_doc())
+    database["form_distributions"].insert_one(
+        _distribution_doc(distribution_id="d1", sent_days_ago=10)
+    )
+
+    result = await service.send_form_reminders()
+    assert result["sent"] == 1
+
+
+@pytest.mark.asyncio
+async def test_send_form_reminders_skips_when_user_doc_missing(
+    configured_form_service,
+):
+    """Defensive — planner deleted their account but forms remain.
+    We fail-closed (skip) rather than send under a deleted brand."""
+    service, database = configured_form_service
+    # Drop the fixture's default user row to simulate deletion.
+    database["users"].delete_many({"email": "planner@example.com"})
+    database["forms"].insert_one(_form_doc())
+    database["form_distributions"].insert_one(
+        _distribution_doc(distribution_id="d1", sent_days_ago=10)
+    )
+
+    result = await service.send_form_reminders()
+    assert result["sent"] == 0
+    assert result["skipped"] == 1
+
+
+@pytest.mark.asyncio
+async def test_send_form_reminders_normalizes_subscription_status_aliases(
+    configured_form_service,
+):
+    """Stripe / legacy code paths use 'trialing' and 'canceled' (single
+    'l'). normalize_subscription_status maps them to canonical values
+    so the gate works regardless of which path wrote the user row."""
+    service, database = configured_form_service
+    database["users"].delete_many({"email": "planner@example.com"})
+    database["users"].insert_one(
+        {
+            "email": "planner@example.com",
+            "subscription_status": "trialing",  # alias for 'trial'
+            "is_active": True,
+        }
+    )
+    database["forms"].insert_one(_form_doc())
+    database["form_distributions"].insert_one(
+        _distribution_doc(distribution_id="d1", sent_days_ago=10)
+    )
+
+    result = await service.send_form_reminders()
+    # 'trialing' normalizes to 'trial' which is in ACTIVE_SUBSCRIPTION_STATUSES.
+    assert result["sent"] == 1

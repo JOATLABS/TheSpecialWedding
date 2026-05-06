@@ -1043,6 +1043,37 @@ class FormService:
                 status_code=500, detail=f"Failed to send form: {str(e)}"
             )
 
+    async def _planner_subscription_active(self, planner_email: str) -> bool:
+        """Return True if the planner's subscription is in the active
+        set (active / trial / trial_expiring). False on missing user,
+        explicit blocked status, or any lookup error (fail-closed for
+        outbound email).
+        """
+        try:
+            from app.models.subscription import (
+                ACTIVE_SUBSCRIPTION_STATUSES,
+                normalize_subscription_status,
+            )
+
+            user = await mongo.db["users"].find_one(
+                {"email": planner_email}, {"subscription_status": 1, "is_active": 1}
+            )
+            if not user:
+                return False
+            if user.get("is_active") is False:
+                return False
+            normalized = normalize_subscription_status(
+                user.get("subscription_status")
+            )
+            return normalized in ACTIVE_SUBSCRIPTION_STATUSES
+        except Exception as exc:
+            logger.warning(
+                "Subscription-state lookup failed for %s; failing closed: %s",
+                planner_email,
+                exc,
+            )
+            return False
+
     async def send_form_reminders(self, *, now: Optional[datetime] = None) -> Dict[str, int]:
         """Send a one-shot reminder email per overdue, unsubmitted distribution.
 
@@ -1131,10 +1162,26 @@ class FormService:
                     skipped += 1
                     continue
 
+                planner_email = (form.get("created_by") or "").lower().strip()
+
+                # P7 audit fix: subscription-state gate. A planner whose
+                # subscription is past_due / canceled / expired must not
+                # have reminders go out under their brand — they can no
+                # longer reply to the recipient. We check the user row's
+                # ``subscription_status`` field (the canonical store —
+                # subscription writes mirror onto the user doc; see
+                # subscription_service.py:355) and skip when it isn't in
+                # the active set. Failure to resolve the user (e.g. the
+                # planner deleted their account) also skips.
+                if planner_email and not await self._planner_subscription_active(
+                    planner_email
+                ):
+                    skipped += 1
+                    continue
+
                 # Per-planner budget gate. A planner with 800 due
                 # reminders shouldn't crowd out 4 other planners' due
                 # reminders in the same tick.
-                planner_email = (form.get("created_by") or "").lower().strip()
                 if (
                     sent_per_planner.get(planner_email, 0)
                     >= self.REMINDER_BUDGET_PER_PLANNER
