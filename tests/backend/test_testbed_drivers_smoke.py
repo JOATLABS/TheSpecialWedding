@@ -47,6 +47,9 @@ VERIFIER_MODULES = [
     "testbed.verify_form_marketing_lead_capture",
     "testbed.verify_form_response_pagination",
     "testbed.verify_form_csv_export_truncation",
+    "testbed.verify_form_send_dedup_recovery",
+    "testbed.verify_planner_two_stage_toast",
+    "testbed.verify_homepage_starter_pack_lead_magnet",
 ]
 
 
@@ -61,6 +64,8 @@ CLEANUP_MODULES = [
     "testbed.cleanup_form_marketing_lead_capture_state",
     "testbed.cleanup_form_response_pagination_state",
     "testbed.cleanup_form_csv_export_truncation_state",
+    "testbed.cleanup_form_send_dedup_recovery_state",
+    "testbed.cleanup_planner_two_stage_toast_state",
 ]
 
 

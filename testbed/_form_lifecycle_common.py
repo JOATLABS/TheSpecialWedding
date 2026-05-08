@@ -64,6 +64,12 @@ PUBLIC_PDF = FormVerifierAccount("formlife_pdf", "FormPdf2026!")
 MARKETING = FormVerifierAccount("formlife_market", "FormMarket2026!")
 PAGINATION = FormVerifierAccount("formlife_page", "FormPage2026!")
 CSV_TRUNCATION = FormVerifierAccount("formlife_csv", "FormCsv2026!")
+DEDUP_RECOVERY = FormVerifierAccount("formlife_dedup", "FormDedup2026!")
+TWO_STAGE_TOAST = FormVerifierAccount("toast_lifecycle", "ToastLife2026!")
+# Homepage starter-pack lead magnet — visitor (not planner) flow but the
+# helper machinery (plus-tagged email, idempotent cleanup) is the same.
+HOMEPAGE_PACK = FormVerifierAccount("homepage_pack", "PackSeed2026!")
+IDEMPOTENCY = FormVerifierAccount("formlife_idempo", "FormIdempo2026!")
 
 
 ALL_FORM_VERIFIER_ACCOUNTS: List[FormVerifierAccount] = [
@@ -77,6 +83,10 @@ ALL_FORM_VERIFIER_ACCOUNTS: List[FormVerifierAccount] = [
     MARKETING,
     PAGINATION,
     CSV_TRUNCATION,
+    DEDUP_RECOVERY,
+    TWO_STAGE_TOAST,
+    HOMEPAGE_PACK,
+    IDEMPOTENCY,
 ]
 
 
@@ -225,14 +235,18 @@ __all__ = [
     "ANON_SUBMIT",
     "CONDITIONAL",
     "CSV_TRUNCATION",
+    "DEDUP_RECOVERY",
     "FILE_UPLOAD",
     "FormVerifierAccount",
+    "HOMEPAGE_PACK",
+    "IDEMPOTENCY",
     "MARKETING",
     "PAGINATION",
     "PHASE_D_SEED",
     "PUBLIC_PDF",
     "REMINDER",
     "TOKENIZED_SUBMIT",
+    "TWO_STAGE_TOAST",
     "banner",
     "checkpoint_pause",
     "count_documents",
