@@ -66,6 +66,7 @@ CLEANUP_MODULES = [
     "testbed.cleanup_form_csv_export_truncation_state",
     "testbed.cleanup_form_send_dedup_recovery_state",
     "testbed.cleanup_planner_two_stage_toast_state",
+    "testbed.cleanup_homepage_starter_pack_lead_magnet_state",
 ]
 
 
