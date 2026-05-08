@@ -171,7 +171,18 @@ class FormUploadService:
                 ),
             )
 
-        target = self.storage.require_target(StorageTarget.FORM_UPLOADS)
+        # MediaStorage.require_target raises RuntimeError when the
+        # target health is not ready (no bucket, missing creds, etc).
+        # Translate that into the documented 503 so the public upload
+        # endpoint surfaces a clean "uploads are not configured" path
+        # instead of bubbling a generic 500.
+        try:
+            target = self.storage.require_target(StorageTarget.FORM_UPLOADS)
+        except RuntimeError as exc:
+            logger.warning("Form uploads target not ready: %s", exc)
+            raise HTTPException(
+                status_code=503, detail="Form uploads are not configured"
+            ) from exc
         if not target.bucket_name:
             raise HTTPException(
                 status_code=503, detail="Form uploads are not configured"

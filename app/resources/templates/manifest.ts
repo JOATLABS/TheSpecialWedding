@@ -102,7 +102,25 @@ export function getMarketingTemplate(id: string): MarketingTemplate | undefined 
 }
 
 export function getMarketingTemplates(ids: readonly string[]): MarketingTemplate[] {
-  return ids
-    .map((id) => getMarketingTemplate(id))
-    .filter((t): t is MarketingTemplate => Boolean(t));
+  const resolved: MarketingTemplate[] = [];
+  const missing: string[] = [];
+  for (const id of ids) {
+    const tpl = getMarketingTemplate(id);
+    if (tpl) {
+      resolved.push(tpl);
+    } else {
+      missing.push(id);
+    }
+  }
+  if (missing.length && typeof console !== 'undefined') {
+    // Runtime warning so a typo'd template id in blog frontmatter
+    // doesn't silently render zero cards under "Related templates" —
+    // the heading would otherwise sit above an empty list with no
+    // signal to the author.
+    console.warn(
+      '[manifest] getMarketingTemplates: unknown template id(s)',
+      missing,
+    );
+  }
+  return resolved;
 }

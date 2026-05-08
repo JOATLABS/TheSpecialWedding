@@ -124,22 +124,21 @@ export default async function BlogPostPage({
       '@type': 'WebPage',
       '@id': `https://thespecialwedding.io/resources/blog/${slug}`,
     },
-    // Topical-cluster signal: tell crawlers this post is about the related
-    // free templates. Helps the templates page rank for transactional
-    // queries when the post ranks for informational ones.
-    mentions: hasRelatedTemplates
-      ? relatedTemplateRecords.map((t) => ({
-          '@type': 'CreativeWork',
-          name: t.name,
-          url: `https://thespecialwedding.io/resources/templates#${t.id}`,
-        }))
-      : [
-          {
-            '@type': 'CollectionPage',
-            name: 'Free wedding planner templates',
-            url: 'https://thespecialwedding.io/resources/templates',
-          },
-        ],
+    // Topical-cluster signal: emit `mentions` ONLY when the post
+    // actually references specific templates. Emitting a generic
+    // CollectionPage fallback when there are no related templates is
+    // semantically wrong — the post doesn't mention the templates page
+    // any more than any other unrelated page on the site — and Google
+    // can flag it as keyword stuffing.
+    ...(hasRelatedTemplates
+      ? {
+          mentions: relatedTemplateRecords.map((t) => ({
+            '@type': 'CreativeWork',
+            name: t.name,
+            url: `https://thespecialwedding.io/resources/templates#${t.id}`,
+          })),
+        }
+      : {}),
   };
 
   return (
