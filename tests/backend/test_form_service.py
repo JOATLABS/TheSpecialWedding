@@ -330,3 +330,76 @@ async def test_csv_export_applies_date_from_to_filter(form_service):
     assert "r_mid" in result["content"]
     assert "r_old" not in result["content"]
     assert "r_new" not in result["content"]
+
+
+# =============================================================================
+# Codex review P2 (PR #299) follow-up — /forms/from-template path must
+# preserve conditional_logic. This is the integration test the
+# integration-review agent flagged as missing: a manually-created copy
+# of a conditional template (via FormSecurityValidator → create_form,
+# which is exactly the code path /forms/from-template hits) needs to
+# end up with the same show_when rules as the auto-seeded copy.
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_create_form_preserves_conditional_logic_through_validator(form_service):
+    """Sends a CreateFormRequest with a conditional rule through the
+    full FormService.create_form path (which runs every field through
+    FormSecurityValidator.validate_form_field) and reads the persisted
+    Mongo doc back to confirm the rule survives."""
+    from app.models.form import CreateFormRequest, FormField, FormSettings
+
+    service, database = form_service
+
+    rule = {
+        "show_when": {
+            "all": [
+                {"field_id": "diet", "operator": "equals", "value": "vegetarian"}
+            ]
+        }
+    }
+
+    request = CreateFormRequest(
+        name="With conditional",
+        settings=FormSettings(
+            title="Vegetarian intake",
+            description="",
+            submit_button_text="Send",
+            success_message="Thanks",
+            collect_email=True,
+            is_public=True,
+            requires_auth=False,
+        ),
+        fields=[
+            FormField(
+                id="diet",
+                label="Diet",
+                type="select",
+                required=True,
+                options=["omnivore", "vegetarian"],
+                order=1,
+            ),
+            FormField(
+                id="veg_kind",
+                label="What kind of vegetarian?",
+                type="text",
+                required=True,
+                order=2,
+                conditional_logic=rule,
+            ),
+        ],
+    )
+
+    result = await service.create_form(request, "planner@example.com")
+    stored = database["forms"].find_one({"_id": result["id"]})
+
+    veg_field = next(f for f in stored["fields"] if f["id"] == "veg_kind")
+    assert veg_field.get("conditional_logic") == rule, (
+        "FormService.create_form must preserve conditional_logic "
+        "through FormSecurityValidator.validate_form_field — "
+        "/forms/from-template uses this same path."
+    )
+    # The non-conditional sibling stays unconditional.
+    diet_field = next(f for f in stored["fields"] if f["id"] == "diet")
+    assert "conditional_logic" not in diet_field

@@ -21,6 +21,7 @@ from __future__ import annotations
 import base64
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -457,3 +458,83 @@ async def test_starter_pack_lead_is_idempotent_per_email(
     for call in service.email_service.calls:
         assert call["email_type"] == "marketing_starter_pack_download"
         assert len(call["attachments"]) == 9
+
+
+# =============================================================================
+# Concurrent-insert race — Codex review P2 follow-up
+# Two requests for the same (email, template_id) can both see
+# existing=None and race to insert. The unique compound index on
+# marketing_leads (created in scripts/create_indexes_p1_forms_and_ai.py)
+# makes Mongo raise on the loser; the service must treat that as an
+# idempotent re-send rather than 500.
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_capture_handles_duplicate_key_race(monkeypatch, configured_marketing_service):
+    """Simulate the race where existing=None at find_one time but a
+    concurrent insert lands a duplicate-key error. The service must
+    fall back to the resent path without surfacing the exception."""
+    service, database = configured_marketing_service
+    template_id = FORM_TEMPLATES[0]["id"]
+
+    # Pre-seed a lead so the post-error find_one resolves it. Without
+    # this the recovery path can't recover and re-raises (the service's
+    # contract — defensible if Mongo says the row was inserted but then
+    # vanishes between calls).
+    pre_existing = {
+        "email": "racer@example.com",
+        "template_id": template_id,
+        "template_name": FORM_TEMPLATES[0].get("name"),
+        "first_downloaded_at": datetime.now(timezone.utc),
+        "last_downloaded_at": datetime.now(timezone.utc),
+        "download_count": 1,
+        "email_sends": 0,
+        "email_send_failures": 0,
+    }
+    database["marketing_leads"].insert_one(pre_existing)
+
+    real_find_one = service.leads.find_one
+    real_insert_one = service.leads.insert_one
+    call_log: List[str] = []
+
+    async def first_find_returns_none(*args, **kwargs):
+        # First find_one returns None to simulate the race; subsequent
+        # find_ones (recovery path) hit the real collection so the
+        # update branch resolves the pre-seeded row.
+        if not call_log:
+            call_log.append("miss")
+            return None
+        return await real_find_one(*args, **kwargs)
+
+    async def insert_raises_dup_key(*args, **kwargs):
+        # Simulate a Mongo unique-index violation. Match by class name
+        # to avoid coupling the test to PyMongo's exception import path.
+        class _DuplicateKeyError(Exception):
+            pass
+
+        _DuplicateKeyError.__name__ = "DuplicateKeyError"
+        raise _DuplicateKeyError(
+            "E11000 duplicate key error collection: marketing_leads"
+        )
+
+    service.leads.find_one = first_find_returns_none  # type: ignore[assignment]
+    service.leads.insert_one = insert_raises_dup_key  # type: ignore[assignment]
+
+    try:
+        result = await service.capture_template_download(
+            email="racer@example.com",
+            template_id=template_id,
+        )
+    finally:
+        service.leads.find_one = real_find_one  # type: ignore[assignment]
+        service.leads.insert_one = real_insert_one  # type: ignore[assignment]
+
+    # Race resolved as a re-send, not a 500.
+    assert result["status"] == "resent"
+    assert result["email_dispatched"] is True
+
+    # Pre-seed download_count was 1; the recovery path bumps it.
+    leads = list(database["marketing_leads"].find({}))
+    assert len(leads) == 1, "race recovery must NOT create a duplicate lead row"
+    assert leads[0]["download_count"] == 2
