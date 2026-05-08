@@ -440,6 +440,17 @@ class FormSecurityValidator:
                     if opt and isinstance(opt, str)
                 ]
 
+        # Preserve conditional_logic when present. The shape is validated
+        # upstream by Pydantic (FormField._validate_conditional_logic in
+        # app/models/form.py), so by the time we reach this sanitizer the
+        # blob is either ``None`` or a structurally-valid show_when rule.
+        # Dropping it here used to make catalog templates with conditional
+        # rules behave inconsistently — auto-seeded copies kept the rules
+        # while /forms/from-template copies rendered every field
+        # unconditionally. Pass it through verbatim instead.
+        if field.get("conditional_logic") is not None:
+            sanitized["conditional_logic"] = field["conditional_logic"]
+
         return sanitized
 
     @staticmethod
