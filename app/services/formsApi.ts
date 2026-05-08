@@ -34,6 +34,28 @@ export interface FormTemplateResponse {
   category: string;
 }
 
+export type FormDistributionStatus =
+  | 'sending'
+  | 'sent'
+  | 'opened'
+  | 'clicked'
+  | 'submitted'
+  | 'failed';
+
+export interface FormDistributionResponse {
+  id: string;
+  form_id: string;
+  recipient_email: string;
+  recipient_name?: string | null;
+  wedding_id?: string | null;
+  sent_at: string;
+  opened_at?: string | null;
+  clicked_at?: string | null;
+  submitted_at?: string | null;
+  status: FormDistributionStatus;
+  email_id?: string | null;
+}
+
 interface RequestOptions {
   token: string;
   init?: RequestInit;
@@ -198,5 +220,19 @@ export const formsApi = {
     });
 
     return response.json();
+  },
+
+  async fetchDistributions(
+    token: string,
+    formId: string,
+    status?: FormDistributionStatus,
+  ): Promise<FormDistributionResponse[]> {
+    const query = status ? `?status=${encodeURIComponent(status)}` : '';
+    const response = await authorisedFetch(
+      `/admin/forms/${formId}/distributions${query}`,
+      { token },
+    );
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
   },
 };

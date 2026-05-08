@@ -1,8 +1,10 @@
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.constants.roles import ROLE_WEDDING_PLANNER, is_wedding_planner_role
 from app.core.database import mongo
 from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
 from app.models.subscription import (
@@ -14,6 +16,8 @@ from app.services.planner_access_lifecycle_service import (
     planner_access_lifecycle_service,
 )
 from app.utils.pydantic_objectid import PyObjectId
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -520,7 +524,7 @@ async def create_wedding_planner(
         # Create user document
         user_doc = {
             "email": planner_data["email"],
-            "role": "wedding_planner",
+            "role": ROLE_WEDDING_PLANNER,
             "company_name": planner_data.get("company_name", ""),
             "plan_id": planner_data.get("plan_id"),
             "subscription_status": "inactive",
@@ -531,6 +535,35 @@ async def create_wedding_planner(
 
         # Insert user
         result = await mongo.get_users_collection().insert_one(user_doc)
+
+        # Phase D parity: admin-bulk-onboarded planners never go through
+        # the verify_email flow that normally triggers the catalog seed,
+        # so they would otherwise see an empty Forms tab on first login.
+        # Seed when the inserted role IS the planner role — guards against
+        # a future caller passing role=ROOT_ADMIN through the same endpoint.
+        if not is_wedding_planner_role(user_doc["role"]):
+            return {
+                "message": "Wedding planner created successfully",
+                "user_id": str(result.inserted_id),
+            }
+        try:
+            from app.services.form_service import FormService
+
+            seed_result = await FormService().seed_catalog_templates_for_planner(
+                planner_data["email"]
+            )
+            logger.info(
+                "Catalog seed for admin-created planner %s: %s",
+                planner_data["email"],
+                seed_result,
+            )
+        except Exception as seed_exc:
+            logger.warning(
+                "Catalog seed failed for admin-created planner %s "
+                "(account creation still succeeded): %s",
+                planner_data["email"],
+                seed_exc,
+            )
 
         return {
             "message": "Wedding planner created successfully",

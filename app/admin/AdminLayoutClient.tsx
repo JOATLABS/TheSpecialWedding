@@ -10,6 +10,7 @@ import TopHeader from './components/TopHeader';
 import TrialBanner from './components/TrialBanner';
 import SubscriptionUsageBanner from './components/SubscriptionUsageBanner';
 import { AIChatWidget } from '@/components/ai/AIChatWidget';
+import PlannerActionToastListener from './components/PlannerActionToastListener';
 import { Toaster } from 'sonner';
 import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
@@ -113,6 +114,18 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
 
       {/* AI Chat Widget - Only for planners and their team members (paid feature) */}
       {(userProfile?.is_wedding_planner || userProfile?.is_team_member) && <AIChatWidget />}
+
+      {/*
+       * Two-stage wedding-checklist nudge (chunk 5). Listens to the
+       * notification-received CustomEvent that TopHeader dispatches
+       * from the SSE notification-new channel. Renders an action-button
+       * toast for wedding_created (Stage 1) and couple_portal_accepted
+       * (Stage 2). Component returns null itself — purely an event
+       * listener bridge between SSE → sonner.toast.custom.
+       */}
+      {(userProfile?.is_wedding_planner || userProfile?.is_team_member) && (
+        <PlannerActionToastListener />
+      )}
 
       <Toaster position="top-right" richColors theme="system" />
     </div>

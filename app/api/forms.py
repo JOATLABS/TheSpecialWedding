@@ -2,8 +2,19 @@ import html
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.responses import Response as FastAPIResponse
+from pydantic import BaseModel, EmailStr, Field
 from typing_extensions import TypedDict
 
 from app.dependencies.auth_extended import (
@@ -23,6 +34,11 @@ from app.models.form import (
     UpdateFormRequest,
 )
 from app.services.form_service import FormService
+from app.services.form_template_catalog import FORM_TEMPLATES as _CATALOG_TEMPLATES
+from app.services.form_upload_service import (
+    MAX_UPLOAD_BYTES,
+    FormUploadService,
+)
 from app.services.security_audit_service import (
     SecurityEventType,
     SecuritySeverity,
@@ -35,6 +51,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 form_service = FormService()
+form_upload_service = FormUploadService()
 
 
 class FormOwnerScope(TypedDict):
@@ -464,14 +481,52 @@ async def send_form(
 
 @router.get("/forms/{form_id}/responses", tags=["Forms"])
 async def get_form_responses(
-    form_id: str, current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    form_id: str,
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    skip: int = Query(
+        0,
+        ge=0,
+        description="Number of responses to skip (offset for pagination)",
+    ),
+    limit: int = Query(
+        100,
+        ge=1,
+        le=500,
+        description="Page size (max 500). Default 100.",
+    ),
 ):
-    """Get all responses for a form"""
+    """Get a page of form responses with total count.
+
+    Returns ``{items, total, skip, limit, has_more}``. Pagination is
+    required: a form with 50,000 responses would otherwise OOM the API
+    if loaded into a single response.
+    """
     owner_scope = await _resolve_form_owner_scope(current_user)
     return await form_service.get_form_responses(
         form_id,
         owner_scope["owner_email"],
         owner_alias_emails=owner_scope["owner_alias_emails"],
+        skip=skip,
+        limit=limit,
+    )
+
+
+@router.get("/forms/{form_id}/distributions", tags=["Forms"])
+async def get_form_distributions(
+    form_id: str,
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    status: Optional[str] = Query(
+        None,
+        description="Filter by distribution status: sent, opened, clicked, submitted, failed",
+    ),
+):
+    """List distribution rows for a form (the join key for 'who has not responded')."""
+    owner_scope = await _resolve_form_owner_scope(current_user)
+    return await form_service.get_form_distributions(
+        form_id,
+        owner_scope["owner_email"],
+        owner_alias_emails=owner_scope["owner_alias_emails"],
+        status=status,
     )
 
 
@@ -641,7 +696,14 @@ async def export_form_responses_csv(
             f"exported_count={export_result.get('exported_count', 0)}, "
             f"file_size={export_result.get('size', 0)} bytes"
         )
-        # Return CSV file as download
+        # Return CSV file as download. X-Total-Count / X-Truncated /
+        # X-Truncated-Count headers let the frontend show an honest
+        # "Exported 10,000 of 47,832 — 37,832 omitted" banner instead of
+        # silently shipping a partial dataset.
+        truncated = bool(export_result.get("truncated"))
+        truncated_count = int(export_result.get("truncated_count") or 0)
+        total_count = int(export_result.get("total_response_count") or 0)
+        max_export_size = int(export_result.get("max_export_size") or 0)
         return FastAPIResponse(
             content=export_result["content"],
             media_type=export_result["content_type"],
@@ -651,6 +713,17 @@ async def export_form_responses_csv(
                 "Cache-Control": "no-cache, no-store, must-revalidate",
                 "Pragma": "no-cache",
                 "Expires": "0",
+                "X-Total-Count": str(total_count),
+                "X-Truncated": "true" if truncated else "false",
+                "X-Truncated-Count": str(truncated_count),
+                "X-Max-Export-Size": str(max_export_size),
+                # Browsers strip non-CORS-allowed headers from
+                # cross-origin reads; planners UI shares the same origin
+                # in production, but expose these explicitly to be safe.
+                "Access-Control-Expose-Headers": (
+                    "Content-Disposition,X-Total-Count,X-Truncated,"
+                    "X-Truncated-Count,X-Max-Export-Size"
+                ),
             },
         )
     except HTTPException:
@@ -731,6 +804,10 @@ async def get_public_form(form_id: str, request: Request, response: Response):
                     "description": html.escape(field.get("description", "")),
                     "options": [html.escape(opt) for opt in field.get("options", [])],
                     "order": field.get("order", 0),
+                    # conditional_logic powers the hide/show evaluator on the
+                    # client. Field IDs/operators in this object reference
+                    # other field IDs already exposed in this same payload.
+                    "conditional_logic": field.get("conditional_logic"),
                 }
                 for field in form["fields"]
             ],
@@ -744,6 +821,15 @@ async def get_public_form(form_id: str, request: Request, response: Response):
         ) in SecurityHeaders.get_form_security_headers().items():
             response.headers[header_name] = header_value
 
+        # Public form metadata (title, fields, settings) is effectively
+        # immutable across short windows and is fetched on every public
+        # render — let browsers + CDN edge cache it for 5 minutes with a
+        # 60-second SWR window. The security middleware honours an
+        # explicit Cache-Control set here instead of forcing no-store.
+        response.headers["Cache-Control"] = (
+            "public, max-age=300, must-revalidate, stale-while-revalidate=60"
+        )
+
         # Log public access
         logger.info(f"Public form accessed: id={form_id}, ip={client_ip}")
 
@@ -754,6 +840,261 @@ async def get_public_form(form_id: str, request: Request, response: Response):
     except Exception as e:
         logger.error(f"Error fetching public form {form_id}: {str(e)}")
         raise HTTPException(status_code=404, detail="Form not found")
+
+
+@router.get(
+    "/public/forms/{form_id}/distributions/{distribution_id}/check",
+    tags=["Public Forms"],
+)
+async def check_public_form_distribution_link(
+    form_id: str,
+    distribution_id: str,
+    request: Request,
+    t: str = Query(..., description="Per-recipient access token from the email link"),
+):
+    """Validate a per-recipient form link before the page renders the form.
+
+    Returns ``{valid, expired, already_submitted, recipient_name, ...}`` for
+    a known good link and 404 for any wrong/forged token to avoid leaking
+    distribution data to enumeration attempts.
+    """
+    client_ip = getattr(request.client, "host", None) if request.client else "unknown"
+    if not rate_limiter.check_rate_limit(
+        f"public_form_link_check_{client_ip}", limit=120, window_seconds=3600
+    ):
+        raise HTTPException(
+            status_code=429, detail="Too many requests. Please try again later."
+        )
+
+    return await form_service.check_form_distribution_link(
+        form_id=InputSanitizer.sanitize_text(form_id, 100),
+        distribution_id=InputSanitizer.sanitize_text(distribution_id, 64),
+        access_token=t,
+    )
+
+
+@router.post(
+    "/public/forms/{form_id}/uploads",
+    tags=["Public Forms"],
+)
+async def upload_public_form_file(
+    form_id: str,
+    request: Request,
+    distribution_id: str = Form(
+        ..., description="FormDistribution ID from the email link"
+    ),
+    access_token: str = Form(..., description="Per-recipient access token"),
+    field_id: str = Form(
+        ..., description="ID of the FILE_UPLOAD field this attachment belongs to"
+    ),
+    upload: UploadFile = File(..., description="The file to upload"),
+):
+    """Upload a single file for a FILE_UPLOAD field on a public form.
+
+    Requires the same ``(distribution_id, access_token)`` pair used by
+    submission — anonymous uploads are not accepted, by design, to keep
+    the public bucket from becoming a free-for-all. Size capped at
+    10 MB; allowed MIME types are images, PDFs, and common doc formats.
+    """
+    client_ip = getattr(request.client, "host", None) if request.client else "unknown"
+    if not rate_limiter.check_rate_limit(
+        f"public_form_upload_{client_ip}", limit=30, window_seconds=3600
+    ):
+        raise HTTPException(
+            status_code=429, detail="Too many uploads. Please try again later."
+        )
+
+    safe_form_id = InputSanitizer.sanitize_text(form_id, 100)
+    safe_distribution_id = InputSanitizer.sanitize_text(distribution_id, 64)
+    safe_field_id = InputSanitizer.sanitize_text(field_id, 64)
+
+    # Token check (returns 404 on bad token, 410 on expired etc).
+    link_state = await form_service.check_form_distribution_link(
+        form_id=safe_form_id,
+        distribution_id=safe_distribution_id,
+        access_token=access_token,
+    )
+    if not link_state.get("valid"):
+        # Already submitted / expired — no new uploads allowed.
+        raise HTTPException(
+            status_code=409,
+            detail="This form access link is no longer accepting uploads",
+        )
+
+    # Fetch the raw form document — NOT via get_form(), which sanitises
+    # the public response shape (rewrites _id → id, escapes labels).
+    # FormUploadService keys S3 paths and the form_uploads row by the
+    # raw `_id`, so a sanitised doc would 500 with a KeyError.
+    form = await form_service.forms_collection.find_one(
+        {"_id": safe_form_id, "is_active": True}
+    )
+    if not form:
+        raise HTTPException(status_code=404, detail="Form not found")
+    distribution = await form_service.distributions_collection.find_one(
+        {"_id": safe_distribution_id, "form_id": safe_form_id}
+    )
+    if not distribution:
+        raise HTTPException(status_code=404, detail="Distribution not found")
+
+    contents = await upload.read(MAX_UPLOAD_BYTES + 1)
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+        )
+
+    return await form_upload_service.store_upload(
+        form=form,
+        distribution=distribution,
+        field_id=safe_field_id,
+        filename=upload.filename,
+        content_type=upload.content_type,
+        contents=contents,
+    )
+
+
+@router.get(
+    "/public/form-templates/{template_id}/preview.pdf",
+    tags=["Public Forms"],
+    responses={
+        200: {"content": {"application/pdf": {}}},
+        404: {"description": "Template not found"},
+        429: {"description": "Rate limited"},
+        503: {"description": "PDF rendering not available"},
+    },
+)
+async def preview_form_template_pdf(
+    template_id: str,
+    request: Request,
+):
+    """Public, unauthenticated PDF preview of a catalog template.
+
+    Powers the marketing surface ("Free Wedding Planner Templates")
+    and serves as the upstream renderer for in-app previews. Rate-
+    limited (60/hour/IP) and rendered off the event loop via
+    ``asyncio.to_thread`` so a 200–500 ms WeasyPrint pass cannot block
+    other requests. Output is cached in-memory by template id, so
+    repeat requests return without re-rendering.
+    """
+    import asyncio
+
+    client_ip = getattr(request.client, "host", None) if request.client else "unknown"
+    if not rate_limiter.check_rate_limit(
+        f"public_template_pdf_{client_ip}", limit=60, window_seconds=3600
+    ):
+        raise HTTPException(
+            status_code=429, detail="Too many requests. Please try again later."
+        )
+
+    safe_template_id = InputSanitizer.sanitize_text(template_id, 64)
+    if not safe_template_id:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    try:
+        from app.services.form_template_pdf_service import render_form_template_pdf
+
+        pdf_bytes = await asyncio.to_thread(render_form_template_pdf, safe_template_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Template not found")
+    except ImportError:
+        raise HTTPException(
+            status_code=503, detail="PDF generation is temporarily unavailable"
+        )
+
+    filename = f"{safe_template_id}.pdf"
+    return FastAPIResponse(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Content-Length": str(len(pdf_bytes)),
+            # Public marketing assets — short browser cache + revalidation
+            # is fine. The render itself is cached process-side via lru_cache.
+            "Cache-Control": "public, max-age=300, must-revalidate",
+        },
+    )
+
+
+# Phase C: lead-capture for the public template-download surface.
+# Pydantic v2 validators per the canonical guidance at
+# https://pydantic.dev/docs/validation/latest/concepts/validators/.
+class _MarketingTemplateDownloadRequest(BaseModel):
+    template_id: str = Field(..., min_length=1, max_length=64)
+    email: EmailStr
+    name: Optional[str] = Field(None, max_length=120)
+    utm_source: Optional[str] = Field(None, max_length=60)
+    utm_medium: Optional[str] = Field(None, max_length=60)
+    utm_campaign: Optional[str] = Field(None, max_length=120)
+
+
+@router.post(
+    "/public/marketing/template-download",
+    tags=["Public Forms"],
+    responses={
+        200: {"description": "Lead recorded; PDF dispatched by email"},
+        400: {"description": "Validation error"},
+        404: {"description": "Unknown template"},
+        429: {"description": "Rate limited"},
+    },
+)
+async def public_marketing_template_download(
+    payload: _MarketingTemplateDownloadRequest,
+    request: Request,
+):
+    """Email-gated download of a catalog form template (Phase C).
+
+    The marketing page collects email + optional name + UTM context;
+    we record the lead in ``marketing_leads`` and dispatch the
+    rendered PDF as an email attachment via Resend. Rate-limited
+    aggressively (10/hour/IP) because each call costs an outbound
+    email; idempotent on (email, template_id) so a determined visitor
+    can re-trigger the email without polluting the lead table.
+    """
+    client_ip = getattr(request.client, "host", None) if request.client else "unknown"
+    if not rate_limiter.check_rate_limit(
+        f"marketing_template_download_{client_ip}",
+        limit=10,
+        window_seconds=3600,
+    ):
+        raise HTTPException(
+            status_code=429, detail="Too many requests. Please try again later."
+        )
+
+    safe_template_id = InputSanitizer.sanitize_text(payload.template_id, 64)
+    if not safe_template_id:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    try:
+        from app.services.marketing_lead_service import MarketingLeadService
+
+        service = MarketingLeadService()
+        result = await service.capture_template_download(
+            email=str(payload.email),
+            template_id=safe_template_id,
+            recipient_name=payload.name,
+            utm_source=payload.utm_source,
+            utm_medium=payload.utm_medium,
+            utm_campaign=payload.utm_campaign,
+            ip_address=client_ip,
+            user_agent=request.headers.get("user-agent"),
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Template not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return {
+        "status": result.get("status"),
+        "email_dispatched": result.get("email_dispatched"),
+        "message": (
+            "Check your inbox — the template is on its way."
+            if result.get("email_dispatched")
+            else (
+                "We've recorded your request. If you don't receive the "
+                "PDF in a few minutes, please try again."
+            )
+        ),
+    }
 
 
 @router.post("/public/forms/{form_id}/submit", tags=["Public Forms"])
@@ -1115,6 +1456,15 @@ def _get_form_templates() -> list[FormTemplateDefinition]:
             ],
         },
     ]
+    # Append the production catalog (couple intake, order of events,
+    # guest dietary, vendor onboarding, photo shot list, bridal-party
+    # logistics, vendor performance review, engagement session brief,
+    # day-of emergency contacts). The catalog lives in its own module
+    # (app/services/form_template_catalog.py) and is validated at
+    # import-time by tests/backend/test_form_template_catalog.py — every
+    # field passes through FormField.model_validate before this code
+    # path can ship.
+    templates.extend(_CATALOG_TEMPLATES)
     return templates
 
 
@@ -1124,6 +1474,38 @@ def get_form_templates(
 ) -> FormTemplateResponse:
     """Get available form templates"""
     return {"templates": _get_form_templates()}
+
+
+@router.get(
+    "/forms/seeded/{catalog_template_id}",
+    tags=["Forms"],
+    responses={
+        200: {"description": "Seeded form id resolved for this planner"},
+        400: {"description": "Unknown catalog template id"},
+        404: {"description": "No seeded template for this planner"},
+    },
+)
+async def get_seeded_form_for_template(
+    catalog_template_id: str,
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+):
+    """Resolve a catalog template id (e.g. ``couple_intake``) to the
+    planner's actual seeded form id (Phase D seeded forms).
+
+    Used by the action-button toast on the planner UI: when the
+    couple accepts the portal invite, the toast metadata carries
+    catalog_template_id (stable across all planners), and this
+    endpoint lets the frontend look up the per-planner form_id
+    needed to call ``POST /admin/forms/{form_id}/send`` without
+    scanning every form in the planner's workspace.
+    """
+    enforce_team_permission(current_user, "manage_forms")
+    owner_scope = await _resolve_form_owner_scope(current_user)
+    return await form_service.get_seeded_form_id(
+        catalog_template_id,
+        created_by=owner_scope["owner_email"],
+        owner_alias_emails=owner_scope["owner_alias_emails"],
+    )
 
 
 @router.post("/forms/from-template/{template_id}", tags=["Form Templates"])

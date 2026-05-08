@@ -251,6 +251,36 @@ async def create_wedding(
         wedding_id=str(wedding_data.get("_id", "")),
     )
 
+    # Stage 1 of the two-stage wedding-checklist nudge: surface a
+    # toast to the planner reminding them to invite the couple to
+    # their portal next. Best-effort — a notification failure must
+    # never block wedding creation.
+    try:
+        from app.services.planner_notification_service import (
+            planner_notification_service,
+        )
+
+        # PlannerNotificationService keys SSE channels, bell rows, and the
+        # team-fanout query by planner email — passing an ObjectId-style
+        # `assigned_planner_id` here drops the toast on the floor.
+        # Prefer email fields; fall back to the authenticated user's
+        # email so we never end up with a non-email identifier.
+        planner_id_for_notify = (
+            wedding_data.get("assigned_planner_email")
+            or wedding_data.get("owner_email")
+            or wedding_data.get("created_by")
+            or current_user.email
+        )
+        await planner_notification_service.notify_wedding_created(
+            planner_id=str(planner_id_for_notify),
+            wedding_id=str(wedding_data.get("_id", "")),
+            couple_names=wedding_data.get("couple_names"),
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(
+            "wedding_created notification failed (creation succeeded): %s", exc
+        )
+
     return result
 
 

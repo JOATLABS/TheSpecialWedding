@@ -38,6 +38,16 @@ class PlannerNotificationTypes:
     # Sprint 3: Couple portal notification types
     COUPLE_MESSAGE: Final[Literal["couple_message"]] = "couple_message"
     COUPLE_NOTE: Final[Literal["couple_note"]] = "couple_note"
+    # Two-stage wedding-checklist nudge:
+    #   Stage 1 fires when a wedding is created — prompts the planner
+    #   to invite the couple to their portal.
+    #   Stage 2 fires when the couple finishes setup-password (i.e.
+    #   accepts the portal invite) — surfaces an action-button toast
+    #   that one-click sends the seeded couple_intake template.
+    WEDDING_CREATED: Final[Literal["wedding_created"]] = "wedding_created"
+    COUPLE_PORTAL_ACCEPTED: Final[Literal["couple_portal_accepted"]] = (
+        "couple_portal_accepted"
+    )
 
 
 NotificationType = Literal[
@@ -55,6 +65,8 @@ NotificationType = Literal[
     "bulk_send_summary",
     "couple_message",
     "couple_note",
+    "wedding_created",
+    "couple_portal_accepted",
 ]
 
 

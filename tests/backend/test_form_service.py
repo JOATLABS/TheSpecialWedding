@@ -103,7 +103,7 @@ def form_service(monkeypatch):
 
 def _sample_form_doc(created_by: str, **overrides):
     now = _utc_now()
-    planner_key = created_by.replace(".", "_")
+    planner_key = form_service_module.FormService._planner_state_key(created_by)
     return {
         "_id": overrides.get("_id", "form_original"),
         "name": overrides.get("name", "Vendor Intake"),
@@ -175,7 +175,7 @@ async def test_duplicate_form_copies_structure_and_resets_submission_state(
     assert duplicated is not None
     assert duplicated["name"] == "Vendor Intake Copy"
     assert duplicated["submission_count"] == 0
-    planner_key = planner_email.replace(".", "_")
+    planner_key = form_service_module.FormService._planner_state_key(planner_email)
     assert duplicated["planner_state"][planner_key]["last_viewed_submission_count"] == 0
     assert duplicated["fields"][0]["id"] == "company_name"
     assert duplicated["created_by"] == planner_email
@@ -209,7 +209,7 @@ async def test_mark_form_viewed_updates_planner_state_and_unread_counter(form_se
     assert result["unread_responses"] == 0
 
     stored = database["forms"].find_one({"_id": "form_original"})
-    planner_key = planner_email.replace(".", "_")
+    planner_key = form_service_module.FormService._planner_state_key(planner_email)
     assert stored["planner_state"][planner_key]["last_viewed_submission_count"] == 5
     assert stored["planner_state"][planner_key]["last_viewed_responses_at"] is not None
 
@@ -228,3 +228,105 @@ async def test_mark_form_viewed_rejects_invalid_scope(form_service):
         await service.mark_form_viewed("form_original", planner_email, "unknown")
 
     assert exc_info.value.status_code == 400
+
+
+# =============================================================================
+# Items 3, 7, 1 (audit fixes): create-form shape + CSV date filter
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_create_form_does_not_double_assign_form_type(form_service):
+    """Item 3 audit fix: form_type appears exactly once in the persisted
+    document. Previously line 399 wrote a default that line 410 would
+    immediately overwrite."""
+    from app.models.form import CreateFormRequest, FormSettings
+
+    service, database = form_service
+    request = CreateFormRequest(
+        name="One-shot",
+        settings=FormSettings(
+            title="Test",
+            description="",
+            submit_button_text="Send",
+            success_message="Thanks",
+            collect_email=True,
+            is_public=True,
+            requires_auth=False,
+        ),
+        fields=[],
+    )
+    result = await service.create_form(request, "planner@example.com")
+    stored = database["forms"].find_one({"_id": result["id"]})
+    # exactly one form_type key; no template_type leak from the defunct
+    # double-assignment.
+    assert "form_type" in stored
+    assert stored["form_type"] == "general"
+
+
+@pytest.mark.asyncio
+async def test_create_form_does_not_write_legacy_template_type(form_service):
+    """Item 7 audit fix: template_type is no longer written on new
+    forms. The migration helper still tolerates it for legacy reads."""
+    from app.models.form import CreateFormRequest, FormSettings
+
+    service, database = form_service
+    await service.create_form(
+        CreateFormRequest(
+            name="Sans legacy",
+            settings=FormSettings(
+                title="Test",
+                description="",
+                submit_button_text="Send",
+                success_message="Thanks",
+                collect_email=True,
+                is_public=True,
+                requires_auth=False,
+            ),
+            fields=[],
+        ),
+        "planner@example.com",
+    )
+    forms = list(database["forms"].find({}))
+    assert forms
+    # Item 7 — legacy field is no longer written; either absent or None.
+    assert all(f.get("template_type") in (None, "") for f in forms)
+
+
+@pytest.mark.asyncio
+async def test_csv_export_applies_date_from_to_filter(form_service):
+    """Item 1 audit fix (CRITICAL): date_from / date_to actually scope
+    the exported dataset. Previously parsed but never applied."""
+    from datetime import datetime, timedelta, timezone
+
+    service, database = form_service
+    planner_email = "planner@example.com"
+    database["forms"].insert_one(_sample_form_doc(planner_email))
+
+    # Three responses across a week.
+    base = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    for offset, rid in enumerate(["r_old", "r_mid", "r_new"]):
+        database["form_responses"].insert_one(
+            {
+                "_id": rid,
+                "form_id": "form_original",
+                "responses": {"company_name": rid},
+                "submitted_at": base + timedelta(days=offset * 2),
+                "submitted_by_email": None,
+                "submitted_by_name": None,
+            }
+        )
+
+    # Window covers only r_mid (May 3) and excludes r_old (May 1) and r_new (May 5).
+    result = await service.export_form_responses_csv(
+        form_id="form_original",
+        created_by=planner_email,
+        date_from="2026-05-02",
+        date_to="2026-05-04",
+    )
+
+    assert result["total_response_count"] == 1
+    assert result["truncated"] is False
+    assert "r_mid" in result["content"]
+    assert "r_old" not in result["content"]
+    assert "r_new" not in result["content"]
