@@ -39,7 +39,11 @@ class CalendarEventSyncModel(BaseModel):
     target_user_id: Optional[str] = None
     target_user_email: Optional[str] = None
     calendar_connection_id: Optional[str] = None
-    provider: str = Field(default=CalendarProvider.GOOGLE.value)
+    # Default UNKNOWN — actual provider is written from the owning connection
+    # at sync-row insert time. Aurinko fans out to Google / Office365 / iCloud
+    # / EWS / Zoho, so a Google-only default would silently lie about coverage
+    # for any row inserted before the connection's provider is resolved.
+    provider: str = Field(default=CalendarProvider.UNKNOWN.value)
     calendar_id: Optional[str] = None
     external_event_id: Optional[str] = None
     sync_direction: str = Field(default=CalendarSyncDirection.OUTBOUND.value)

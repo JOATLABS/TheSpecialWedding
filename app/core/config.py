@@ -89,10 +89,17 @@ class Settings:
     )
 
     # Aurinko scopes requested when starting the OAuth connect flow.
+    # Calendar.ReadWrite supersedes Calendar.Read — requesting both is
+    # redundant and clutters the consent screen, so we ask only for
+    # ReadWrite. ``AccountInfo.Read`` was previously included for the
+    # identity call at /am/accounts/me, but Aurinko's scope parser
+    # rejects it as unknown ("Unable to parse Scopes"). The /am/accounts/me
+    # call appears to work on the base account-token grant without an
+    # explicit scope — if a future error surfaces a missing identity
+    # scope, the canonical name needs to come from the Aurinko docs page
+    # at docs.aurinko.io/authentication/authentication-scopes.
     AURINKO_SCOPES: list = [
-        "Calendar.Read",
         "Calendar.ReadWrite",
-        "AccountInfo.Read",
     ]
 
     # Web Push Notification Service (VAPID)

@@ -46,3 +46,43 @@ def test_replay_window_accepts_recent_deliveries() -> None:
 def test_replay_window_accepts_missing_timestamp() -> None:
     """Without a timestamp we can't verify replay; permit and rely on signature + dedupe."""
     assert calendar_webhook_service.is_within_replay_window(None) is True
+
+
+# ============================================================================
+# Webhook handler payload-parser tests — pin the parser against Aurinko's
+# documented delivery shape: {subscription, resource, accountId, payloads[]}.
+# ============================================================================
+
+
+from app.api.calendar_webhooks import _extract_calendar_id  # noqa: E402
+
+
+def test_extract_calendar_id_from_specific_calendar_resource() -> None:
+    assert _extract_calendar_id("/calendars/cal-abc/events") == "cal-abc"
+
+
+def test_extract_calendar_id_from_primary_resource() -> None:
+    assert _extract_calendar_id("/calendars/primary/events") == "primary"
+
+
+def test_extract_calendar_id_handles_trailing_slash() -> None:
+    assert _extract_calendar_id("/calendars/cal-abc/events/") == "cal-abc"
+
+
+def test_extract_calendar_id_rejects_non_calendar_resource() -> None:
+    """Aurinko subscribes to other resources too (mail, contacts) — the calendar
+    parser must not match them."""
+    assert _extract_calendar_id("/email/messages") is None
+    assert _extract_calendar_id("/contacts") is None
+    assert _extract_calendar_id("") is None
+    assert _extract_calendar_id(None) is None
+
+
+def test_extract_calendar_id_handles_url_encoded_calendar() -> None:
+    """Some providers use email-style ids — Aurinko url-encodes them inside
+    the resource string. We decode so the result matches the value stored
+    in Mongo at OAuth callback time."""
+    assert (
+        _extract_calendar_id("/calendars/user%40example.com/events")
+        == "user@example.com"
+    )

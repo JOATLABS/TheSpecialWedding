@@ -22,6 +22,7 @@ from app.services.email_service_resend import ResendEmailService
 from app.services.planner_access_lifecycle_service import (
     planner_access_lifecycle_service,
 )
+from app.services.stripe_meter_helpers import assert_meter_config
 from app.utils.id_utils import to_object_id
 from app.utils.planner_ownership import (
     build_wedding_owner_query,
@@ -58,6 +59,13 @@ def _safe_external_url(url: Optional[str]) -> Optional[str]:
 # Initialize Stripe
 if settings.stripe_enabled and settings.stripe_secret_key:
     stripe.api_key = settings.stripe_secret_key
+    # Pin the API version so MeterEvent / MeterEventAdjustment / Meter
+    # behavior does not drift on Stripe-side default changes between
+    # SDK upgrades. Matches the SDK 15.1.0 default
+    # (stripe._api_version._ApiVersion.CURRENT). Bump intentionally when
+    # the codebase adopts a newer API behavior. Mirrored in
+    # scripts/seed_subscription_plans.py — keep both in sync.
+    stripe.api_version = "2026-04-22.dahlia"
 else:
     logger.warning("Stripe is not enabled or API key is missing")
 
@@ -226,6 +234,19 @@ class StripeService:
                     status_code=400,
                     detail=f"Metered plan '{plan.get('_id')}' requires a valid Stripe meter_id or meter_event_name",
                 )
+
+            # Preflight: verify the live meter's config matches what the
+            # codebase requires. Without this, a meter created in the Stripe
+            # Dashboard with the wrong aggregation formula or payload key
+            # mappings would cause every meter event to be silently
+            # rejected (or, worse on Count/Last, silently overbill on
+            # delete-reversals). See METERING_REVIEW_2026-05-04_PART2.md
+            # §5 (CC2) and stripe_meter_helpers.assert_meter_config.
+            if is_metered and meter_id:
+                try:
+                    assert_meter_config(meter_id)
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc))
 
             # 1. Create or Update Product
             if not product_id:

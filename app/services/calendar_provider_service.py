@@ -185,10 +185,19 @@ class AurinkoClient:
         parameter that we exchange for an account token.
         """
         client_id, _ = self._platform_basic_auth()
+        # serviceType values match Aurinko's hosted-auth provider list. On-prem
+        # Exchange uses "EWS" (Exchange Web Services) — "Exchange" is silently
+        # dropped, which is why earlier hosted-auth screens did not offer it.
+        #
+        # Scopes MUST be comma-separated. Aurinko's scope parser rejects
+        # space-separated lists with `Unable to parse Scopes`, even though
+        # some doc snippets show `Mail.Read Mail.Send`. The space form likely
+        # works only when the URL never round-trips through `+` encoding;
+        # comma is the safe canonical form.
         params = {
             "clientId": client_id,
-            "serviceType": "Google,Office365,iCloud,Exchange",
-            "scopes": " ".join(scopes),
+            "serviceType": "Google,Office365,iCloud,EWS",
+            "scopes": ",".join(scopes),
             "responseType": "code",
             "returnUrl": return_url,
             "state": state,
@@ -250,13 +259,17 @@ class AurinkoClient:
         time_max: datetime,
         max_results: int,
     ) -> list[dict[str, Any]]:
-        """List events within a calendar/time-window with offset pagination."""
+        """List events within a calendar/time-window with offset pagination.
+
+        Aurinko's event endpoints take the calendar id in the URL path
+        (``/calendars/{calId}/events``); it is not a query parameter.
+        """
         page_size = min(max_results, _AURINKO_LIST_PAGE_SIZE)
         events: list[dict[str, Any]] = []
         offset = 0
+        path = f"/calendars/{quote(calendar_id, safe='')}/events"
         for _ in range(_AURINKO_LIST_MAX_PAGES):
             params = {
-                "calendarId": calendar_id,
                 "start": time_min.isoformat(),
                 "end": time_max.isoformat(),
                 "pageSize": page_size,
@@ -264,7 +277,7 @@ class AurinkoClient:
             }
             response = await self._request(
                 "GET",
-                "/calendars/events",
+                path,
                 account_token=account_token,
                 params=params,
             )
@@ -286,9 +299,8 @@ class AurinkoClient:
     ) -> dict[str, Any]:
         response = await self._request(
             "POST",
-            "/calendars/events",
+            f"/calendars/{quote(calendar_id, safe='')}/events",
             account_token=account_token,
-            params={"calendarId": calendar_id},
             json_body=body,
         )
         response.raise_for_status()
@@ -302,11 +314,12 @@ class AurinkoClient:
         external_event_id: str,
         body: dict[str, Any],
     ) -> dict[str, Any]:
+        # Aurinko uses PATCH (not PUT) for event updates per their Calendar API
+        # docs. PUT silently 404s on most providers via Aurinko's router.
         response = await self._request(
-            "PUT",
-            f"/calendars/events/{external_event_id}",
+            "PATCH",
+            f"/calendars/{quote(calendar_id, safe='')}/events/{quote(external_event_id, safe='')}",
             account_token=account_token,
-            params={"calendarId": calendar_id},
             json_body=body,
         )
         response.raise_for_status()
@@ -321,9 +334,8 @@ class AurinkoClient:
     ) -> None:
         response = await self._request(
             "DELETE",
-            f"/calendars/events/{external_event_id}",
+            f"/calendars/{quote(calendar_id, safe='')}/events/{quote(external_event_id, safe='')}",
             account_token=account_token,
-            params={"calendarId": calendar_id},
         )
         if response.status_code == 404:
             return
@@ -338,9 +350,8 @@ class AurinkoClient:
     ) -> dict[str, Any]:
         response = await self._request(
             "GET",
-            f"/calendars/events/{external_event_id}",
+            f"/calendars/{quote(calendar_id, safe='')}/events/{quote(external_event_id, safe='')}",
             account_token=account_token,
-            params={"calendarId": calendar_id},
         )
         response.raise_for_status()
         return response.json()
@@ -349,10 +360,20 @@ class AurinkoClient:
         self,
         *,
         account_token: str,
+        calendar_id: str,
         webhook_url: str,
     ) -> dict[str, Any]:
+        """Subscribe to change notifications for a single calendar.
+
+        Aurinko subscriptions are scoped per-resource — there is no
+        "all calendars on this account" subscription. The valid resource
+        strings for calendar events are ``/calendars/primary/events`` and
+        ``/calendars/{calId}/events``. We always use the explicit calendar id
+        so a planner with multiple calendars connected gets per-calendar
+        delivery.
+        """
         body = {
-            "resource": "/calendars/events",
+            "resource": f"/calendars/{calendar_id}/events",
             "notificationUrl": webhook_url,
         }
         response = await self._request(
@@ -867,24 +888,38 @@ class CalendarProviderService:
                 detail="Calendar aggregator did not return a usable account token",
             )
 
+        # Identity probe is best-effort. /am/accounts/me may require a scope
+        # we no longer request (Aurinko's catalog has no AccountInfo.Read
+        # equivalent), in which case it 401s. We can still serve the connect
+        # flow by falling back to the email returned at token-exchange time
+        # and finally to the planner's own email captured in the signed
+        # state JWT — both are trusted sources we already validated above.
+        account_info: dict[str, Any] = {}
         try:
             account_info = await self.client.get_account(account_token)
         except Exception as exc:
-            logger.error(
-                "Failed to fetch Aurinko account info: %s", _redact_sensitive(exc)
+            logger.warning(
+                "Aurinko /am/accounts/me probe failed; continuing with token-response "
+                "+ state-JWT identity fallback: %s",
+                _redact_sensitive(exc),
             )
-            raise HTTPException(
-                status_code=502,
-                detail="Could not verify calendar account identity. Please try again.",
-            ) from exc
 
-        provider_account_email = account_info.get("email") or token_response.get(
-            "email"
+        provider_account_email = (
+            account_info.get("email")
+            or token_response.get("email")
+            or state_payload.get("user_email")
         )
         if not provider_account_email:
+            # Three independent sources empty — that should be impossible
+            # because state_payload.user_email is required at state-build
+            # time. If we land here, the state JWT itself was malformed and
+            # we cannot proceed safely.
             raise HTTPException(
                 status_code=502,
-                detail="Aurinko did not return an account email. Please try again.",
+                detail=(
+                    "Could not resolve a connected-account email from any source "
+                    "(account info, token response, or signed state). Please retry."
+                ),
             )
         provider_account_name = (
             account_info.get("name")
@@ -1046,84 +1081,87 @@ class CalendarProviderService:
                 {"$set": {"is_default_write_target": True, "updated_at": now}},
             )
 
-        # Register a single Aurinko subscription per account so external
-        # changes flow into our webhook handler. Aurinko delivers per-account
-        # change events, so one subscription covers all calendars on that
-        # account; we store the subscription id on every row of the account.
-        # Reconnects must clear the prior subscription before creating a new
-        # one — otherwise Aurinko-side subscriptions accumulate.
-        #
-        # KNOWN LIMITATION (cross-account reconnect): if a planner re-OAuths
-        # into a *different* aurinko_account_id without first calling
-        # disconnect_connection on the prior account, the prior account's
-        # subscription is not cleaned up here (the dedup query is keyed on
-        # the new account id). The prior connection rows remain valid (a
-        # planner may legitimately add a second account), so we cannot blindly
-        # revoke them. Cleanup is left to disconnect_connection or to manual
-        # reconciliation. Tracked in the round-2 audit follow-ups.
+        # Register one Aurinko subscription per writable calendar. Aurinko
+        # subscriptions are per-resource (``/calendars/{calId}/events``); there
+        # is no "all calendars on this account" subscription. Reconnects must
+        # tear down the prior per-row subscription before creating a new one
+        # so subscriptions don't accumulate Aurinko-side.
         webhook_url = self._webhook_url()
         webhook_warning: Optional[str] = None
+        webhook_failure_count = 0
         if webhook_url:
-            prior_subscription_doc = await self.connections_collection.find_one(
+            writable_rows = await self.connections_collection.find(
                 {
                     "user_id": user_id,
                     "aurinko_account_id": aurinko_account_id,
-                    "aurinko_subscription_id": {"$nin": [None, ""]},
+                    "is_writable": True,
                 }
-            )
-            prior_subscription_id = (
-                str(prior_subscription_doc.get("aurinko_subscription_id"))
-                if prior_subscription_doc
-                else None
-            )
-            if prior_subscription_id:
-                try:
-                    await self.client.delete_subscription(
-                        account_token=account_token,
-                        subscription_id=prior_subscription_id,
-                    )
-                except Exception as exc:
-                    logger.info(
-                        "Could not delete prior Aurinko subscription %s for account %s: %s",
-                        prior_subscription_id,
-                        aurinko_account_id,
-                        _redact_sensitive(exc),
-                    )
+            ).to_list(length=None)
 
-            try:
-                subscription = await self.client.create_subscription(
-                    account_token=account_token, webhook_url=webhook_url
-                )
-                subscription_id = str(
-                    subscription.get("id") or subscription.get("subscriptionId") or ""
-                )
-                if subscription_id:
-                    await self.connections_collection.update_many(
-                        {
-                            "user_id": user_id,
-                            "aurinko_account_id": aurinko_account_id,
-                        },
+            for row in writable_rows:
+                calendar_id = row.get("aurinko_calendar_id")
+                if not calendar_id:
+                    continue
+
+                prior_subscription_id = row.get("aurinko_subscription_id")
+                if prior_subscription_id:
+                    try:
+                        await self.client.delete_subscription(
+                            account_token=account_token,
+                            subscription_id=str(prior_subscription_id),
+                        )
+                    except Exception as exc:
+                        logger.info(
+                            "Could not delete prior Aurinko subscription %s for "
+                            "calendar %s on account %s: %s",
+                            prior_subscription_id,
+                            calendar_id,
+                            aurinko_account_id,
+                            _redact_sensitive(exc),
+                        )
+
+                try:
+                    subscription = await self.client.create_subscription(
+                        account_token=account_token,
+                        calendar_id=calendar_id,
+                        webhook_url=webhook_url,
+                    )
+                    subscription_id = str(
+                        subscription.get("id")
+                        or subscription.get("subscriptionId")
+                        or ""
+                    )
+                    await self.connections_collection.update_one(
+                        {"_id": row["_id"]},
                         {
                             "$set": {
-                                "aurinko_subscription_id": subscription_id,
+                                "aurinko_subscription_id": subscription_id or None,
                                 "updated_at": now,
                             }
                         },
                     )
-            except Exception as exc:
+                except Exception as exc:
+                    webhook_failure_count += 1
+                    logger.warning(
+                        "Failed to register Aurinko webhook subscription for "
+                        "calendar %s on account %s: %s",
+                        calendar_id,
+                        aurinko_account_id,
+                        _redact_sensitive(exc),
+                    )
+
+            if webhook_failure_count:
                 webhook_warning = (
-                    "Webhook subscription failed; external calendar changes "
-                    "won't be detected in real time. Reconnect to retry."
-                )
-                logger.warning(
-                    "Failed to register Aurinko webhook subscription for account %s: %s",
-                    aurinko_account_id,
-                    _redact_sensitive(exc),
+                    f"Webhook subscription failed for {webhook_failure_count} "
+                    "calendar(s); external changes on those calendars won't be "
+                    "detected in real time until you reconnect."
                 )
                 await self.connections_collection.update_many(
                     {
                         "user_id": user_id,
                         "aurinko_account_id": aurinko_account_id,
+                        "is_writable": True,
+                        "aurinko_subscription_id": None,
                     },
                     {
                         "$set": {
@@ -1182,7 +1220,10 @@ class CalendarProviderService:
             return CalendarProvider.OFFICE365.value
         if normalized in {"outlook", "outlookcom", "outlook.com"}:
             return CalendarProvider.OUTLOOK.value
-        if normalized in {"exchange"}:
+        if normalized in {"exchange", "ews"}:
+            # Aurinko's hosted-auth uses "EWS" (Exchange Web Services) on the
+            # request side and may echo either form back from /am/accounts/me;
+            # both map to our EXCHANGE provider label.
             return CalendarProvider.EXCHANGE.value
         if normalized in {"icloud", "apple"}:
             return CalendarProvider.ICLOUD.value
@@ -1364,6 +1405,75 @@ class CalendarProviderService:
             {"_id": connection_doc["_id"]}, {"$set": set_doc}
         )
         await self.invalidate_connection_events_cache(connection_id)
+
+        # Subscription lifecycle on sync_enabled flip. Aurinko subscriptions
+        # are per-resource (one per calendar), so we track them per-row.
+        # true→false: tear down the row's subscription so we stop receiving
+        # change notifications we no longer want to act on.
+        # false→true: register a fresh subscription so external changes
+        # surface again. No-op if calendar is not writable (subscriptions are
+        # only meaningful for write-targets).
+        if "sync_enabled" in set_doc and connection_doc.get("is_writable"):
+            prior_sync_enabled = bool(connection_doc.get("sync_enabled", False))
+            new_sync_enabled = bool(set_doc["sync_enabled"])
+            token = await self._account_token_for_connection(connection_doc)
+            calendar_id = connection_doc.get("aurinko_calendar_id")
+
+            if prior_sync_enabled and not new_sync_enabled:
+                prior_subscription_id = connection_doc.get("aurinko_subscription_id")
+                if token and prior_subscription_id:
+                    try:
+                        await self.client.delete_subscription(
+                            account_token=token,
+                            subscription_id=str(prior_subscription_id),
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Aurinko unsubscribe on sync_enabled toggle failed for "
+                            "calendar %s: %s",
+                            calendar_id,
+                            _redact_sensitive(exc),
+                        )
+                await self.connections_collection.update_one(
+                    {"_id": connection_doc["_id"]},
+                    {
+                        "$set": {
+                            "aurinko_subscription_id": None,
+                            "updated_at": datetime.now(UTC),
+                        }
+                    },
+                )
+
+            if not prior_sync_enabled and new_sync_enabled:
+                webhook_url = self._webhook_url()
+                if webhook_url and token and calendar_id:
+                    try:
+                        subscription = await self.client.create_subscription(
+                            account_token=token,
+                            calendar_id=calendar_id,
+                            webhook_url=webhook_url,
+                        )
+                        subscription_id = str(
+                            subscription.get("id")
+                            or subscription.get("subscriptionId")
+                            or ""
+                        )
+                        await self.connections_collection.update_one(
+                            {"_id": connection_doc["_id"]},
+                            {
+                                "$set": {
+                                    "aurinko_subscription_id": subscription_id or None,
+                                    "updated_at": datetime.now(UTC),
+                                }
+                            },
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Aurinko subscribe on sync_enabled toggle failed for "
+                            "calendar %s: %s",
+                            calendar_id,
+                            _redact_sensitive(exc),
+                        )
 
         if set_doc.get("sync_enabled") is False and connection_doc.get(
             "is_default_write_target"
@@ -1666,19 +1776,26 @@ class CalendarProviderService:
         for (_user_id, aurinko_account_id), account_docs in by_account.items():
             sample = account_docs[0]
             token = self._decrypt_token(sample.get("aurinko_access_token_encrypted"))
-            subscription_id = sample.get("aurinko_subscription_id")
-            if token and subscription_id:
-                try:
-                    await self.client.delete_subscription(
-                        account_token=token, subscription_id=str(subscription_id)
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "Aurinko unsubscribe for account %s failed: %s",
-                        aurinko_account_id,
-                        _redact_sensitive(exc),
-                    )
+            # Each row carries its own per-calendar subscription. Unsubscribe
+            # every row that has one — sharing-by-account is no longer the
+            # subscription model.
             if token:
+                for row in account_docs:
+                    subscription_id = row.get("aurinko_subscription_id")
+                    if not subscription_id:
+                        continue
+                    try:
+                        await self.client.delete_subscription(
+                            account_token=token,
+                            subscription_id=str(subscription_id),
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Aurinko unsubscribe for calendar %s on account %s failed: %s",
+                            row.get("aurinko_calendar_id"),
+                            aurinko_account_id,
+                            _redact_sensitive(exc),
+                        )
                 try:
                     await self.client.revoke_account(token)
                 except Exception as exc:

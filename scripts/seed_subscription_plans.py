@@ -2,6 +2,18 @@
 Seed Subscription Plans Script
 Creates default subscription plans in MongoDB and corresponding products/prices in Stripe.
 Runs on container startup via Dockerfile.coolify.
+
+Metered-plan provisioning lives here too: when a plan dict has
+``is_metered=True`` and ``meter_event_name`` set, the script calls
+``ensure_stripe_meter`` to idempotently provision the Stripe Billing Meter
+before creating the Product/Price pair. The Price is then created with
+``recurring.usage_type=metered`` and ``recurring.meter=<meter_id>`` so
+``stripe.billing.MeterEvent.create`` calls actually drive billing.
+
+The shared helpers in ``app/services/stripe_meter_helpers`` are a tiny
+mongo-independent module so this script can import them without dragging
+in the full async service layer. See METERING_REVIEW_2026-05-04_PART2.md
+§5 for the rationale.
 """
 
 import os
@@ -118,9 +130,15 @@ stripe_enabled = os.getenv("STRIPE_ENABLED", "false").lower() == "true"
 
 if STRIPE_AVAILABLE and stripe and stripe_secret and stripe_enabled:
     stripe.api_key = stripe_secret
+    # Pin the Stripe API version. Mirrored in
+    # app/services/stripe_service.py — keep both in sync. The seed and the
+    # runtime must use the same version so MeterEvent / Meter behavior is
+    # identical between container-startup provisioning and request-time
+    # meter event reporting.
+    stripe.api_version = "2026-04-22.dahlia"
     STRIPE_CONFIGURED = True
     print(
-        f"[OK] Stripe configured (mode: {'live' if stripe_secret.startswith('sk_live') else 'test'})"
+        f"[OK] Stripe configured (mode: {'live' if stripe_secret.startswith('sk_live') else 'test'}, api_version: {stripe.api_version})"
     )
 else:
     STRIPE_CONFIGURED = False
@@ -129,16 +147,111 @@ else:
     elif not stripe_secret:
         print("[WARN] STRIPE_SECRET_KEY not set, skipping Stripe integration")
 
+# Import meter helpers. These have ZERO mongo dependencies, so importing
+# them at container-startup time (before the FastAPI app boots) is safe —
+# see app/services/stripe_meter_helpers.py module docstring.
+try:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from app.services.stripe_meter_helpers import (  # noqa: E402
+        assert_meter_config,
+        ensure_stripe_meter,
+    )
+
+    METER_HELPERS_AVAILABLE = True
+except ImportError as e:
+    METER_HELPERS_AVAILABLE = False
+    print(
+        f"[WARN] Could not import meter helpers ({e}); metered plans cannot be provisioned"
+    )
+
+
+def _provision_meter_if_needed(plan: dict) -> str | None:
+    """Idempotently provision a Stripe Meter for a metered plan.
+
+    Returns the meter_id if the plan is metered (and Stripe is configured),
+    otherwise None. If the plan already has ``meter_id`` set, the existing
+    value is validated via ``assert_meter_config`` and returned.
+    """
+    if not plan.get("is_metered") or not plan.get("meter_event_name"):
+        return None
+    if not METER_HELPERS_AVAILABLE:
+        print(
+            "  [WARN] Plan is metered but meter helpers unavailable — skipping meter provisioning"
+        )
+        return None
+
+    event_name = plan["meter_event_name"]
+    existing_meter_id = plan.get("meter_id")
+
+    if existing_meter_id:
+        try:
+            assert_meter_config(existing_meter_id)
+            print(
+                f"  [OK] Existing Stripe meter {existing_meter_id} matches required config"
+            )
+            return existing_meter_id
+        except ValueError as e:
+            print(f"  [ERROR] Configured meter_id {existing_meter_id} is invalid: {e}")
+            print(f"  [INFO] Falling back to ensure_stripe_meter for {event_name!r}")
+
+    try:
+        meter_id = ensure_stripe_meter(
+            event_name=event_name,
+            display_name=f"{plan['name']} ({event_name})",
+        )
+        print(f"  [METER] Provisioned Stripe meter for {event_name!r}: {meter_id}")
+        return meter_id
+    except StripeError as e:
+        print(f"  [ERROR] Could not provision meter for {event_name!r}: {e}")
+        return None
+    except ValueError as e:
+        # ensure_stripe_meter raises ValueError when an existing meter is
+        # found but misconfigured. We intentionally do NOT auto-fix this —
+        # silently replacing the meter would orphan prior events. The
+        # operator must intervene in the Stripe Dashboard. See
+        # METERING_GAP_SCENARIOS_2026-05-04.md §C2.
+        print(f"  [ERROR] Existing meter for {event_name!r} is misconfigured: {e}")
+        print(
+            "  [ACTION] Operator must fix or deactivate the meter in the "
+            "Stripe Dashboard before re-running the seed."
+        )
+        return None
+
+
+def _build_recurring(interval: str, plan: dict, meter_id: str | None) -> dict:
+    """Build the ``recurring`` config for a Stripe Price.
+
+    Flat plans → ``{interval: ...}``. Metered plans get
+    ``usage_type=metered`` and ``meter=<id>`` so meter events drive billing.
+    See https://docs.stripe.com/billing/subscriptions/usage-based/recording-usage.
+    """
+    config: dict = {"interval": interval}
+    if plan.get("is_metered") and meter_id:
+        config["usage_type"] = "metered"
+        config["meter"] = meter_id
+    return config
+
 
 def create_stripe_product_and_prices(plan: dict) -> dict:
-    """Create Stripe product and prices, return IDs."""
+    """Create Stripe product, meter (if metered), and prices. Return IDs.
+
+    Metered plans get a properly configured ``recurring.usage_type=metered``
+    price linked to the Stripe Meter. This is the single seed-time path that
+    matches what ``app/services/stripe_service.sync_plan_to_stripe`` does at
+    runtime — keep them aligned.
+    """
     if not STRIPE_CONFIGURED or not stripe:
         return {}
 
     plan_id = plan["_id"]
     plan_name = plan["name"]
 
-    # Check if product already exists by metadata
+    # 1. Provision the meter first (no-op for flat plans). This must happen
+    #    BEFORE price creation because metered prices reference the meter ID.
+    meter_id = _provision_meter_if_needed(plan)
+    is_metered = plan.get("is_metered") and meter_id is not None
+
+    # 2. Check if product already exists by metadata
     try:
         existing_products = stripe.Product.search(
             query=f"metadata['plan_id']:'{plan_id}'"
@@ -147,67 +260,98 @@ def create_stripe_product_and_prices(plan: dict) -> dict:
             product = existing_products.data[0]
             print(f"  [EXISTS] Stripe product: {product.id}")
 
-            # Get existing prices
+            # Get existing prices and verify metering shape matches plan
             prices = stripe.Price.list(product=product.id, active=True)
             monthly_price = None
             yearly_price = None
 
             for price in prices.data:
-                if price.recurring and price.recurring.interval == "month":
+                if not price.recurring:
+                    continue
+                # Reject prices whose metered-ness no longer matches the
+                # plan's intent — caller will create a fresh price below.
+                price_is_metered = price.recurring.usage_type == "metered"
+                if price_is_metered != bool(is_metered):
+                    continue
+                if price.recurring.interval == "month":
                     monthly_price = price.id
-                elif price.recurring and price.recurring.interval == "year":
+                elif price.recurring.interval == "year":
                     yearly_price = price.id
 
-            return {
+            result = {
                 "stripe_product_id": product.id,
                 "stripe_price_id_monthly": monthly_price,
                 "stripe_price_id_yearly": yearly_price,
             }
+            if meter_id:
+                result["meter_id"] = meter_id
+            # If a price was missing or stale-shape, fall through to create
+            # the missing one(s) using the same product.
+            if monthly_price and yearly_price:
+                return result
+            print(
+                "  [INFO] Some prices missing or shape changed — creating to backfill"
+            )
+            # Use the existing product going forward.
+            product_id = product.id
+        else:
+            product_id = None
     except StripeError as e:
         print(f"[WARN] Error searching Stripe products: {e}")
+        product_id = None
 
-    # Create new product
+    # 3. Create product if not found
     try:
-        product = stripe.Product.create(
-            name=f"The Special Wedding - {plan_name}",
-            description=plan.get("description", f"{plan_name} subscription plan"),
-            metadata={"plan_id": plan_id, "source": "seed_script"},
-        )
-        print(f"  [CREATED] Stripe product: {product.id}")
+        if not product_id:
+            product = stripe.Product.create(
+                name=f"The Special Wedding - {plan_name}",
+                description=plan.get("description", f"{plan_name} subscription plan"),
+                metadata={"plan_id": plan_id, "source": "seed_script"},
+            )
+            product_id = product.id
+            print(f"  [CREATED] Stripe product: {product_id}")
 
-        # Create monthly price
+        # 4. Create monthly price (metered-aware)
         new_monthly_price = stripe.Price.create(
-            product=product.id,
+            product=product_id,
             unit_amount=int(plan["price_monthly"] * 100),  # Convert to cents
             currency="usd",
-            recurring={"interval": "month"},
+            recurring=_build_recurring("month", plan, meter_id),
             metadata={"plan_id": plan_id, "interval": "monthly"},
         )
+        metered_tag = " [METERED]" if is_metered else ""
         print(
-            f"  [CREATED] Monthly price: {new_monthly_price.id} (${plan['price_monthly']}/mo)"
+            f"  [CREATED] Monthly price: {new_monthly_price.id} "
+            f"(${plan['price_monthly']}/mo){metered_tag}"
         )
 
-        # Create yearly price
+        # 5. Create yearly price (metered-aware)
         new_yearly_price = stripe.Price.create(
-            product=product.id,
+            product=product_id,
             unit_amount=int(plan["price_yearly"] * 100),  # Convert to cents
             currency="usd",
-            recurring={"interval": "year"},
+            recurring=_build_recurring("year", plan, meter_id),
             metadata={"plan_id": plan_id, "interval": "yearly"},
         )
         print(
-            f"  [CREATED] Yearly price: {new_yearly_price.id} (${plan['price_yearly']}/yr)"
+            f"  [CREATED] Yearly price: {new_yearly_price.id} "
+            f"(${plan['price_yearly']}/yr){metered_tag}"
         )
 
-        return {
-            "stripe_product_id": product.id,
+        result = {
+            "stripe_product_id": product_id,
             "stripe_price_id_monthly": new_monthly_price.id,
             "stripe_price_id_yearly": new_yearly_price.id,
         }
+        if meter_id:
+            result["meter_id"] = meter_id
+        return result
 
     except StripeError as e:
-        print(f"  [ERROR] Stripe error creating product: {e}")
-        return {}
+        print(f"  [ERROR] Stripe error creating product/prices: {e}")
+        # Even on failure, return any meter_id we provisioned so it gets
+        # persisted to Mongo and the next run can reuse it.
+        return {"meter_id": meter_id} if meter_id else {}
 
 
 # Define plans
@@ -385,6 +529,12 @@ for plan in plans:
                 "price_monthly": plan_with_stripe["price_monthly"],
                 "price_yearly": plan_with_stripe.get("price_yearly"),
                 "is_metered": plan_with_stripe.get("is_metered", False),
+                # Metered config — these MUST be in $set or the seed will
+                # silently drop them on update, leaving plans in a half-
+                # configured state (is_metered=True with no event_name).
+                # See METERING_REVIEW_2026-05-04_PART2.md §1 (CC3).
+                "meter_event_name": plan_with_stripe.get("meter_event_name"),
+                "meter_id": plan_with_stripe.get("meter_id"),
                 "max_weddings": plan_with_stripe.get("max_weddings"),
                 "max_guests_per_wedding": plan_with_stripe.get(
                     "max_guests_per_wedding"

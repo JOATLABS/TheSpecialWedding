@@ -1173,7 +1173,9 @@ async def create_task(
     result = await tasks_collection.insert_one(task_doc)
     task_doc["_id"] = result.inserted_id
 
-    # Sync to Google Calendar if requested and connected
+    # Sync to connected external calendar(s) if requested — fans out to
+    # every configured target (Google / 365 / iCloud / Exchange via the
+    # calendar aggregator).
     if external_sync_requested:
         await calendar_sync_service.sync_schedule_item(
             task_doc,
@@ -1417,8 +1419,9 @@ async def delete_task(
     """
     Delete a task.
 
-    If the task is synced to Google Calendar, the Google event
-    will also be deleted.
+    If the task is synced to an external calendar (Google / 365 / iCloud /
+    Exchange via the calendar aggregator), the projected event is also
+    deleted on each connected target.
     """
     tasks_collection = mongo.get_planner_tasks_collection()
 
@@ -1433,7 +1436,8 @@ async def delete_task(
     )
     task = _require_document(task, "Task not found")
 
-    # Delete from Google Calendar if synced
+    # Delete from any connected external calendar (Google / 365 / iCloud /
+    # Exchange via the calendar aggregator) if synced.
     await calendar_sync_service.delete_schedule_item_syncs(task_id)
 
     await tasks_collection.delete_one({"_id": oid})
@@ -1448,17 +1452,18 @@ async def delete_task(
     tags=["Planner Calendar"],
     response_model=TaskResponse,
 )
-async def sync_task_to_google(
+async def sync_task_to_external_calendar(
     task_id: str,
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("sync_calendar_tasks")
     ),
 ) -> TaskResponse:
     """
-    Manually sync a specific task to Google Calendar.
+    Manually sync a specific task to its connected external calendar(s).
 
-    Creates the event in Google Calendar if not already synced,
-    or updates it if already synced.
+    Creates the event on each configured target (Google / 365 / iCloud /
+    Exchange via the calendar aggregator) if not already synced, or updates
+    the existing event if it is.
     """
     tasks_collection = mongo.get_planner_tasks_collection()
 

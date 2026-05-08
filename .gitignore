@@ -110,3 +110,4 @@ vendor-contract-preprod-blockers.skill
 
 # TypeScript incremental build info (regenerated on every build)
 *.tsbuildinfo
+client_secret_*.com.json
