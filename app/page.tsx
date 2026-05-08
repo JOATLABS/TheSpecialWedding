@@ -3,6 +3,7 @@ import Image from "next/image";
 import { DeferredHomeEffects } from "./components/landing-page/DeferredHomeEffects.client";
 import { FeatureShowcase } from "./components/landing-page/FeatureShowcase.client";
 import { PricingSignupSection } from "./components/landing-page/PricingSignupSection.client";
+import HomepageTemplatesBand from "./components/saas/HomepageTemplatesBand";
 import SaasNav from "./components/saas/SaasNav";
 import type { ThemeConfig } from "./types/wedding";
 
@@ -193,6 +194,8 @@ export default function HomePage() {
         </div>
       </section>
 
+      <HomepageTemplatesBand />
+
       <SectionBridge label="See what's inside" />
 
       <section id="showcase" className="scroll-mt-28 bg-slate-950 px-5 py-8 sm:px-8 sm:py-10 lg:px-12">
@@ -255,7 +258,10 @@ export default function HomePage() {
       <footer className="border-t border-white/10 bg-black px-6 py-10 text-sm text-slate-400 sm:px-8 lg:px-12">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <p>&copy; {year} The Special Wedding. All rights reserved.</p>
-          <div className="flex gap-5">
+          <div className="flex flex-wrap gap-5">
+            <Link href="/resources/templates" className="hover:text-white">
+              Free templates
+            </Link>
             <Link href="/privacy" className="hover:text-white">
               Privacy
             </Link>

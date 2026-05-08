@@ -72,6 +72,26 @@ async def mark_activity_notification_read(
     )
 
 
+@router.put(
+    "/planner/activity-notifications/{notification_id}/actioned",
+    tags=["Planner Notifications"],
+)
+async def mark_activity_notification_actioned(
+    notification_id: str,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+):
+    """Mark an activity notification as actioned via its action button.
+
+    Distinct from /read: read tracks visibility on the bell, actioned
+    tracks whether the toast's CTA (e.g. "Send checklist") was actually
+    invoked. The Stage 2 toast handler POSTs here once its outbound
+    request succeeds so the bell stops re-prompting.
+    """
+    return await planner_notification_service.mark_action_completed(
+        notification_id=notification_id, planner_id=current_user.email
+    )
+
+
 @router.put("/planner/activity-notifications/read-all", tags=["Planner Notifications"])
 async def mark_all_activity_notifications_read(
     wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),

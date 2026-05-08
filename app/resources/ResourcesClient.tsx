@@ -535,6 +535,28 @@ export default function ResourcesClient({
             </div>
           ) : (
             <div className="mx-auto max-w-5xl px-6 py-10 sm:px-10">
+              <Link
+                href="/resources/templates"
+                data-testid="resources-templates-tile"
+                className="group mb-8 flex flex-col items-start gap-4 overflow-hidden rounded-2xl border border-wedding-rose/30 bg-gradient-to-br from-wedding-rose/20 via-wedding-rose/10 to-amber-500/10 p-6 transition hover:border-wedding-rose/50 hover:from-wedding-rose/25 sm:flex-row sm:items-center sm:justify-between sm:p-8"
+              >
+                <div className="flex-1">
+                  <span className="text-[10px] uppercase tracking-[0.3em] text-wedding-rose">
+                    New &middot; Free download
+                  </span>
+                  <h2 className="mt-2 text-xl font-semibold text-white transition-colors group-hover:text-wedding-rose sm:text-2xl">
+                    Free templates for wedding planners
+                  </h2>
+                  <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-300">
+                    Download polished contracts, timelines, and checklists you can drop straight
+                    into client work. No signup wall — just pick a pack and download.
+                  </p>
+                </div>
+                <span className="inline-flex items-center justify-center whitespace-nowrap rounded-full bg-wedding-rose px-5 py-2.5 text-sm font-semibold text-slate-900 shadow-md shadow-wedding-rose/30 transition group-hover:bg-wedding-blush">
+                  Browse templates →
+                </span>
+              </Link>
+
               <div className="mb-8 flex flex-wrap items-center gap-3">
                 <input
                   type="text"

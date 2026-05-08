@@ -35,6 +35,18 @@ export default function SendFormPage() {
  const [sending, setSending] = useState(false);
  const [error, setError] = useState('');
  const [success, setSuccess] = useState('');
+ // Batch 4 / P6 audit: per-recipient send-result detail.
+ const [sendResult, setSendResult] = useState<{
+   sent: number;
+   failed: number;
+   skipped?: number;
+   form_url?: string;
+   recipients?: Array<{
+     email: string;
+     status: 'sent' | 'skipped_duplicate' | 'failed';
+     error?: string | null;
+   }>;
+ } | null>(null);
 
  // Email configuration
  const [recipients, setRecipients] = useState<string[]>(['']);
@@ -143,6 +155,7 @@ export default function SendFormPage() {
  setSending(true);
  setError('');
  setSuccess('');
+ setSendResult(null);
 
  try {
  const baseUrl = getApiBaseUrl();
@@ -165,11 +178,10 @@ export default function SendFormPage() {
 
  if (response.ok) {
  const data = await response.json();
- setSuccess(`Form sent successfully to ${data.sent} recipients! ${data.failed > 0 ? `(${data.failed} failed)` : ''}`);
- // Show form URL for manual sharing
- if (data.form_url) {
- setSuccess(prev => prev + `\n\nForm URL for manual sharing: ${data.form_url}`);
- }
+ setSendResult(data);
+ const skipNote = data.skipped > 0 ? ` (${data.skipped} skipped — already pending)` : '';
+ const failNote = data.failed > 0 ? ` (${data.failed} failed)` : '';
+ setSuccess(`Form sent to ${data.sent} recipient${data.sent === 1 ? '' : 's'}.${skipNote}${failNote}`);
  } else {
  const errorData = await response.json();
  setError(errorData.detail || 'Failed to send form');
@@ -438,6 +450,76 @@ export default function SendFormPage() {
  </svg>
  <div className="text-green-700 dark:text-green-300 text-sm whitespace-pre-line">{success}</div>
  </div>
+ {sendResult?.form_url && (
+ <p className="text-xs text-green-700 dark:text-green-300 mt-2 break-all">
+ Form URL for manual sharing:{' '}
+ <a href={sendResult.form_url} className="underline" target="_blank" rel="noreferrer">
+ {sendResult.form_url}
+ </a>
+ </p>
+ )}
+ </div>
+ )}
+
+ {sendResult?.recipients && sendResult.recipients.length > 0 && (
+ <div
+ className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-4"
+ data-testid="per-recipient-report"
+ >
+ <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+ Send report
+ </h3>
+ <ul className="space-y-2">
+ {sendResult.recipients.map((row) => {
+ const dotClass =
+ row.status === 'sent'
+ ? 'bg-green-500'
+ : row.status === 'skipped_duplicate'
+ ? 'bg-gray-400'
+ : 'bg-red-500';
+ const labelClass =
+ row.status === 'sent'
+ ? 'text-green-700 dark:text-green-300'
+ : row.status === 'skipped_duplicate'
+ ? 'text-gray-500 dark:text-gray-400'
+ : 'text-red-700 dark:text-red-300';
+ const statusLabel =
+ row.status === 'sent'
+ ? 'Sent'
+ : row.status === 'skipped_duplicate'
+ ? 'Skipped — already pending'
+ : 'Failed';
+ return (
+ <li
+ key={`${row.email}-${row.status}`}
+ className="flex items-start gap-2 text-xs"
+ data-recipient-status={row.status}
+ >
+ <span
+ className={`mt-1 inline-block h-2 w-2 rounded-full ${dotClass}`}
+ aria-hidden
+ />
+ <span className="flex-1 text-gray-900 dark:text-gray-200 break-all">
+ {row.email}
+ </span>
+ <span className={`font-medium ${labelClass}`} title={row.error || undefined}>
+ {statusLabel}
+ </span>
+ </li>
+ );
+ })}
+ </ul>
+ {sendResult.recipients.some((r) => r.status === 'failed' && r.error) && (
+ <div className="mt-3 border-t border-gray-200 dark:border-slate-700 pt-3 space-y-1">
+ {sendResult.recipients
+ .filter((r) => r.status === 'failed' && r.error)
+ .map((r) => (
+ <p key={r.email} className="text-xs text-red-700 dark:text-red-300">
+ <span className="font-medium">{r.email}:</span> {r.error}
+ </p>
+ ))}
+ </div>
+ )}
  </div>
  )}
 

@@ -12,6 +12,12 @@ export interface BlogPost {
   readTime: number;
   ogDescription: string;
   content: React.ReactNode;
+  /**
+   * Optional list of marketing template ids (matching `MARKETING_TEMPLATES`
+   * in `app/resources/templates/manifest.ts`) that are surfaced as a
+   * "Related free templates" card below this post's body. 1–3 ids max.
+   */
+  relatedTemplates?: readonly string[];
 }
 
 export const blogPosts = {
@@ -22,6 +28,7 @@ export const blogPosts = {
     date: '2026-03-19',
     readTime: 9,
     ogDescription: 'The Special Wedding is the complete workspace for wedding planners, couples, and vendors. Purpose-built, AI-powered, and built to replace your entire tool stack.',
+    relatedTemplates: ['couple_intake', 'vendor_onboarding', 'order_of_events'],
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
         <p>
@@ -155,6 +162,7 @@ export const blogPosts = {
     date: '2026-03-12',
     readTime: 8,
     ogDescription: 'A practical pricing framework for wedding planners. Learn tiered packaging, value-based pricing, and how to validate rates against market data.',
+    relatedTemplates: ['couple_intake', 'vendor_performance_review'],
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
         <p>
@@ -379,6 +387,7 @@ export const blogPosts = {
     date: '2026-03-05',
     readTime: 6,
     ogDescription: 'Systems and strategies for managing 200+ wedding guests. RSVP tracking, plus-ones, dietary needs, and table assignments.',
+    relatedTemplates: ['guest_dietary_access', 'couple_intake', 'bridal_party_logistics'],
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
         <p>
@@ -629,6 +638,7 @@ export const blogPosts = {
     date: '2026-02-26',
     readTime: 10,
     ogDescription: 'HoneyBook vs Aisle Planner: a detailed comparison for wedding planners. Pricing, features, workflows, and where each tool excels.',
+    relatedTemplates: ['couple_intake', 'vendor_onboarding'],
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
         <p>
@@ -804,6 +814,7 @@ export const blogPosts = {
     date: '2026-02-19',
     readTime: 7,
     ogDescription: 'Essential contract clauses for wedding planners. Legal protection, scope definition, payment terms, and liability coverage.',
+    relatedTemplates: ['vendor_onboarding', 'couple_intake'],
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
         <p>
@@ -1061,6 +1072,7 @@ export const blogPosts = {
     date: '2026-02-12',
     readTime: 9,
     ogDescription: 'Practical AI for wedding planners. How to use AI for pricing, contracts, and cash flow forecasting.',
+    relatedTemplates: ['couple_intake', 'order_of_events'],
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
         <p>
@@ -1292,6 +1304,7 @@ export const blogPosts = {
     date: '2026-02-05',
     readTime: 5,
     ogDescription: 'Seating chart strategy for wedding planners. How to orchestrate 200+ guests with attention to family dynamics and experience.',
+    relatedTemplates: ['guest_dietary_access', 'bridal_party_logistics', 'order_of_events'],
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
         <p>
@@ -1444,6 +1457,7 @@ export const blogPosts = {
     date: '2026-05-04',
     readTime: 7,
     ogDescription: 'Every wedding gets a public microsite built in — no Squarespace, no The Knot, no copy-paste. See how the couple-facing site and planner workspace share one data model.',
+    relatedTemplates: ['couple_intake', 'guest_dietary_access'],
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
         <p>
@@ -1527,6 +1541,7 @@ export const blogPosts = {
     date: '2026-05-11',
     readTime: 8,
     ogDescription: 'The Special Wedding is a vendor network: public directory, contract portal, and advertising marketplace. See how the vendor side of the wedding stops being a separate universe.',
+    relatedTemplates: ['vendor_onboarding', 'vendor_performance_review'],
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
         <p>
@@ -1608,6 +1623,7 @@ export const blogPosts = {
     date: '2026-05-18',
     readTime: 6,
     ogDescription: 'How the couple portal kills the "did you get my text?" loop by giving couples self-serve answers, real-time updates, and one inbox with their planner.',
+    relatedTemplates: ['couple_intake', 'guest_dietary_access'],
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
         <p>
@@ -1681,6 +1697,7 @@ export const blogPosts = {
     date: '2026-05-25',
     readTime: 7,
     ogDescription: 'Real-time SSE updates, inbound email threading, and a full activity audit log — the operational layer that turns wedding planning from async email tag into shared real-time work.',
+    relatedTemplates: ['order_of_events', 'day_of_emergency_contacts'],
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
         <p>
@@ -1762,6 +1779,7 @@ export const blogPosts = {
     date: '2026-06-01',
     readTime: 7,
     ogDescription: 'Granular team permissions, activity audit logs, OTP guest access, CSV guest imports, and the operational backbone that planning teams need to actually scale.',
+    relatedTemplates: ['vendor_performance_review', 'day_of_emergency_contacts'],
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
         <p>

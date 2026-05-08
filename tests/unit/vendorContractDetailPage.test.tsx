@@ -57,6 +57,7 @@ function makeServices(overrides: Partial<NonNullable<DetailRuntimeOverrides>['se
     updateContract: async () => makeContract(),
     sendContract: async () => ({ sent_to: 'vendor@example.com' }),
     createContractRevision: async () => ({ _id: 'contract_2' }),
+    duplicateContract: async () => makeContract({ _id: 'contract_dup' }),
     getContractFormData: async () => ({
       vendor_submissions: [],
       available_fields: {},

@@ -11,6 +11,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
+from urllib.parse import quote
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -149,7 +150,11 @@ class PlannerNotificationService:
                 lambda t: t.exception() if not t.cancelled() and t.exception() else None
             )
 
-            # Broadcast via SSE (non-blocking)
+            # Broadcast via SSE (non-blocking).
+            # Batch 11: SSE payload now carries notification_id + metadata
+            # + action_url so the action-toast listener can (a) call
+            # mark-actioned after a successful CTA, and (b) re-open the
+            # toast from a bell-click without re-querying Mongo.
             from app.services.sse_manager import sse_manager
 
             sse_task = asyncio.create_task(
@@ -157,11 +162,14 @@ class PlannerNotificationService:
                     planner_id,
                     "notification-new",
                     {
+                        "id": str(result.inserted_id),
                         "title": title,
                         "message": message,
                         "type": notification_type,
                         "wedding_id": wedding_id,
                         "priority": priority,
+                        "metadata": metadata or {},
+                        "action_url": action_url,
                     },
                 )
             )
@@ -214,15 +222,32 @@ class PlannerNotificationService:
                 .skip(skip)
                 .limit(limit)
             )
+            page_docs = [doc async for doc in cursor]
+
+            # Batch-fetch wedding names for all notifications on this page
+            # to avoid an N+1 lookup against the weddings collection.
+            unique_wedding_ids = {
+                doc["wedding_id"] for doc in page_docs if doc.get("wedding_id")
+            }
+            wedding_lookup: Dict[str, Dict[str, Any]] = {}
+            if unique_wedding_ids:
+                wedding_cursor = self.weddings_collection.find(
+                    {"wedding_id": {"$in": list(unique_wedding_ids)}},
+                    {"wedding_id": 1, "title": 1},
+                )
+                async for wedding in wedding_cursor:
+                    wid = wedding.get("wedding_id")
+                    if wid:
+                        wedding_lookup[wid] = wedding
+
             notifications = []
 
-            async for doc in cursor:
-                # Enrich with wedding name if available
+            for doc in page_docs:
+                # Enrich with wedding name if available (single batched lookup above)
                 wedding_name = None
-                if doc.get("wedding_id"):
-                    wedding = await self.weddings_collection.find_one(
-                        {"wedding_id": doc["wedding_id"]}, {"title": 1}
-                    )
+                wedding_id_value = doc.get("wedding_id")
+                if wedding_id_value:
+                    wedding = wedding_lookup.get(wedding_id_value)
                     if wedding:
                         wedding_name = wedding.get("title")
 
@@ -327,6 +352,69 @@ class PlannerNotificationService:
                 status_code=500, detail=f"Error updating notification: {str(e)}"
             )
 
+    async def mark_action_completed(
+        self, notification_id: str, planner_id: str
+    ) -> dict:
+        """Mark a notification as actioned via its action button.
+
+        Distinct from `is_read`: a notification can be read but its
+        action ("Send checklist", "Invite couple") still pending. This
+        endpoint is invoked by toast handlers after their network call
+        succeeds so the bell entry stops re-prompting and the next
+        toast that re-opens it can fall back to a read-only state.
+
+        Idempotent: a second call on an already-actioned notification
+        is a no-op (still returns 200 to keep the client UX stable).
+        """
+        try:
+            obj_id = ObjectId(notification_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid notification ID")
+
+        try:
+            now = datetime.now(timezone.utc)
+            result = await self.collection.update_one(
+                {"_id": obj_id, "planner_id": planner_id},
+                {
+                    "$set": {
+                        "actioned_at": now,
+                        "actioned_via_action_button": True,
+                        "is_read": True,
+                        "read_at": now,
+                    }
+                },
+            )
+
+            if result.matched_count == 0:
+                raise HTTPException(status_code=404, detail="Notification not found")
+
+            from app.services.sse_manager import sse_manager
+
+            try:
+                counts = await self.get_notification_count(planner_id)
+                task = asyncio.create_task(
+                    sse_manager.broadcast_to_user(
+                        planner_id, "notification-count", counts
+                    )
+                )
+                task.add_done_callback(
+                    lambda t: (
+                        t.exception() if not t.cancelled() and t.exception() else None
+                    )
+                )
+            except Exception:
+                pass
+
+            return {"message": "Notification marked as actioned"}
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error marking notification actioned: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error updating notification: {str(e)}"
+            )
+
     async def mark_all_as_read(
         self, planner_id: str, wedding_id: Optional[str] = None
     ) -> dict:
@@ -420,6 +508,159 @@ class PlannerNotificationService:
             },
             action_url=f"/admin/planner/weddings/{wedding_id}/forms",
         )
+
+    # =========================================================================
+    # Two-stage wedding-checklist nudge
+    # =========================================================================
+    #
+    # Stage 1 (notify_wedding_created) fires the moment a wedding row is
+    # created. The toast prompts the planner to invite the couple to
+    # their portal next.
+    #
+    # Stage 2 (notify_couple_portal_accepted) fires when the couple
+    # completes setup-password — i.e. they accepted the portal invite.
+    # The toast carries the seeded couple_intake form id so the planner
+    # can one-click "Send checklist" without navigating anywhere.
+    #
+    # Both helpers wrap create_notification, which already handles SSE
+    # broadcast + web-push delivery in addition to Mongo persistence.
+
+    async def _resolve_team_recipients(
+        self, planner_id: str, *, required_permission: str
+    ) -> list[str]:
+        """Return the list of notification recipients for a planner-scoped event.
+
+        Includes the planner themselves plus every active team member
+        whose resolved permissions grant ``required_permission``. Each
+        recipient gets their own notification document so per-session
+        SSE channels and bell counts are independent.
+
+        Best-effort: a team_members lookup failure logs and returns the
+        planner alone — the trigger must not be blocked by team-member
+        plumbing breakage.
+        """
+        recipients: list[str] = [planner_id]
+        try:
+            from app.core.database import mongo
+            from app.models.team_member import resolve_team_permissions
+
+            cursor = mongo.db["team_members"].find(
+                {
+                    "owner_email": planner_id,
+                    "status": "active",
+                },
+                {"email": 1, "role": 1, "custom_permissions": 1},
+            )
+            members = await cursor.to_list(length=None)
+            for member in members:
+                email = (member.get("email") or "").strip().lower()
+                if not email or email == planner_id:
+                    continue
+                perms = resolve_team_permissions(
+                    member.get("role", "viewer"),
+                    member.get("custom_permissions") or {},
+                )
+                if perms.get(required_permission):
+                    recipients.append(email)
+        except Exception as exc:
+            logger.warning(
+                "Team-member fan-out lookup failed for %s; falling back to "
+                "planner-only delivery: %s",
+                planner_id,
+                exc,
+            )
+        # Preserve order, dedupe.
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for email in recipients:
+            if email and email not in seen:
+                seen.add(email)
+                deduped.append(email)
+        return deduped
+
+    async def notify_wedding_created(
+        self,
+        planner_id: str,
+        wedding_id: str,
+        couple_names: Optional[str] = None,
+    ):
+        """Stage 1: a wedding has just been created.
+
+        Fans out to the owning planner plus every active team member
+        with the ``manage_couple_portal`` permission (the same gate the
+        planner UI uses to surface the "Invite couple" CTA). Each
+        recipient gets their own notification document.
+        """
+        couple_label = (couple_names or "the couple").strip() or "the couple"
+        recipients = await self._resolve_team_recipients(
+            planner_id, required_permission="manage_couple_portal"
+        )
+        last = None
+        for recipient in recipients:
+            last = await self.create_notification(
+                planner_id=recipient,
+                notification_type=PlannerNotificationTypes.WEDDING_CREATED,
+                title="New wedding created",
+                message=(
+                    f"Invite {couple_label} to their portal next — "
+                    f"they'll be ready for the wedding checklist once they accept."
+                ),
+                wedding_id=wedding_id,
+                metadata={"couple_names": couple_names},
+                action_url=f"/admin/planner/weddings/{wedding_id}?tab=couple",
+            )
+        return last
+
+    async def notify_couple_portal_accepted(
+        self,
+        planner_id: str,
+        wedding_id: Optional[str],
+        couple_email: str,
+        couple_names: Optional[str],
+        seeded_form_id: Optional[str],
+    ):
+        """Stage 2: the couple has accepted the portal invite.
+
+        Fans out to the owning planner plus every active team member
+        with the ``manage_forms`` permission (so a coordinator who
+        normally handles checklists sees the action toast on their
+        own session). Each recipient gets their own notification
+        document. Carries ``seeded_form_id`` (the planner's catalog-
+        seeded ``couple_intake`` form) and the couple's email in
+        metadata so the frontend toast can render an action button
+        that one-click dispatches the form via
+        ``POST /admin/forms/{form_id}/send``.
+        """
+        couple_label = (couple_names or "the couple").strip() or "The couple"
+        # The canonical planner-side send page is mounted at
+        # ``app/admin/forms/[id]/send/page.tsx``. There is no
+        # ``/admin/planner/forms`` route, so this URL must use the
+        # ``/admin/forms`` prefix or the bell entry's deep-link 404s.
+        action_url = (
+            f"/admin/forms/{seeded_form_id}/send"
+            f"?prefill_email={quote(couple_email or '')}"
+            if seeded_form_id
+            else f"/admin/planner/weddings/{wedding_id or ''}"
+        )
+        recipients = await self._resolve_team_recipients(
+            planner_id, required_permission="manage_forms"
+        )
+        last = None
+        for recipient in recipients:
+            last = await self.create_notification(
+                planner_id=recipient,
+                notification_type=PlannerNotificationTypes.COUPLE_PORTAL_ACCEPTED,
+                title=f"{couple_label} accepted the portal invite",
+                message="Send them the wedding checklist now.",
+                wedding_id=wedding_id,
+                metadata={
+                    "couple_email": couple_email,
+                    "couple_names": couple_names,
+                    "form_id": seeded_form_id,
+                },
+                action_url=action_url,
+            )
+        return last
 
     async def notify_rsvp_update(
         self,

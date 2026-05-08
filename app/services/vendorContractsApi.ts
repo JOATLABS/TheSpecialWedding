@@ -45,7 +45,8 @@ export interface ContractTemplate {
   _id: string;
   name: string;
   description?: string;
-  service_category: VendorCategory;
+  /** Omitted/null = universal template that applies to any vendor category. */
+  service_category?: VendorCategory | null;
   sections: ContractSection[];
   terms_and_conditions?: string;
   cancellation_policy?: string;
@@ -194,7 +195,8 @@ export interface PublicContract {
 export interface CreateVendorContractTemplateRequest {
   name: string;
   description?: string;
-  service_category: VendorCategory;
+  /** Omit to create a universal template (applies to all vendor categories). */
+  service_category?: VendorCategory | null;
   sections: ContractSection[];
   terms_and_conditions?: string;
   cancellation_policy?: string;
@@ -277,6 +279,17 @@ export interface CreateVendorContractRevisionRequest {
   copy_custom_clauses?: boolean;
 }
 
+export interface DuplicateVendorContractRequest {
+  new_contract_title?: string;
+  target_wedding_id?: string;
+  target_vendor_profile_id?: string;
+  copy_sections?: boolean;
+  copy_terms_and_conditions?: boolean;
+  copy_cancellation_policy?: boolean;
+  copy_custom_clauses?: boolean;
+  copy_attachments?: boolean;
+}
+
 export interface VendorContractRevisionSummary {
   id: string;
   contract_number?: string;
@@ -308,7 +321,8 @@ export type VendorContractActivityType =
   | 'milestones_created'
   | 'payment_recorded'
   | 'revision_created'
-  | 'contract_superseded';
+  | 'contract_superseded'
+  | 'contract_duplicated';
 
 export interface VendorContractActivityActor {
   type: 'planner' | 'vendor' | 'system';
@@ -475,6 +489,28 @@ export async function createContractRevision(
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(extractErrorMessage(error, 'Failed to create contract revision'));
+  }
+
+  return response.json();
+}
+
+export async function duplicateContract(
+  token: string,
+  contractId: string,
+  data: DuplicateVendorContractRequest = {}
+): Promise<VendorContract> {
+  const response = await fetch(`${API_BASE}/admin/contracts/${contractId}/duplicate`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, 'Failed to duplicate contract'));
   }
 
   return response.json();

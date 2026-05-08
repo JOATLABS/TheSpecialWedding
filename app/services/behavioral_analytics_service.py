@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from bson import ObjectId
 
+from app.constants.roles import ROLE_TEAM_MEMBER, ROLE_WEDDING_PLANNER
 from app.core.cache import cache
 from app.core.database import mongo
 
@@ -132,7 +133,7 @@ class BehavioralAnalyticsService:
                 users_col,
                 {
                     "last_login": {"$gte": seven_days_ago},
-                    "role": {"$in": ["wedding_planner", "team_member"]},
+                    "role": {"$in": [ROLE_WEDDING_PLANNER, ROLE_TEAM_MEMBER]},
                 },
             )
         )
@@ -201,7 +202,7 @@ class BehavioralAnalyticsService:
         async for planner in users_col.find(
             {
                 "created_at": {"$gte": thirty_days_ago},
-                "role": "wedding_planner",
+                "role": ROLE_WEDDING_PLANNER,
             },
             {"email": 1, "onboarding_completed": 1},
         ):
@@ -292,7 +293,7 @@ class BehavioralAnalyticsService:
         # Also compute all-time funnel for the 90-day window
         all_time_signups = await self._count_documents(
             users_col,
-            {"created_at": {"$gte": ninety_days_ago}, "role": "wedding_planner"},
+            {"created_at": {"$gte": ninety_days_ago}, "role": ROLE_WEDDING_PLANNER},
         )
 
         return {
@@ -375,7 +376,7 @@ class BehavioralAnalyticsService:
             async for user in users_col.find(
                 {
                     "created_at": {"$gte": cohort_start, "$lt": cohort_end},
-                    "role": "wedding_planner",
+                    "role": ROLE_WEDDING_PLANNER,
                 },
                 {"email": 1},
             ):

@@ -24,11 +24,15 @@ class VendorContractSectionInput(BaseModel):
 
 
 class CreateVendorContractTemplateRequest(BaseModel):
-    """Create a planner-owned vendor contract template."""
+    """Create a planner-owned vendor contract template.
+
+    `service_category` may be omitted to create a universal template that
+    is offered for any vendor type, including custom 'other' categories.
+    """
 
     name: str
     description: Optional[str] = None
-    service_category: VendorCategory
+    service_category: Optional[VendorCategory] = None
     sections: List[VendorContractSectionInput] = Field(default_factory=list)
     terms_and_conditions: Optional[str] = None
     cancellation_policy: Optional[str] = None
@@ -198,6 +202,27 @@ class CreateVendorContractRevisionRequest(BaseModel):
     copy_custom_clauses: bool = True
 
 
+class DuplicateVendorContractRequest(BaseModel):
+    """Clone an existing contract into a brand-new draft root contract.
+
+    Unlike a revision (which creates a new version of the same lineage),
+    a duplicate produces an independent root contract with a fresh number,
+    no parent, version_number=1, and DRAFT status. Optionally retargets
+    to a different wedding or vendor; when retargeted, the new contract's
+    denormalized vendor fields are refreshed from the new vendor profile
+    and any form-submission linkage is cleared.
+    """
+
+    new_contract_title: Optional[str] = Field(None, min_length=1, max_length=300)
+    target_wedding_id: Optional[str] = None
+    target_vendor_profile_id: Optional[str] = None
+    copy_sections: bool = True
+    copy_terms_and_conditions: bool = True
+    copy_cancellation_policy: bool = True
+    copy_custom_clauses: bool = True
+    copy_attachments: bool = True
+
+
 class VendorContractRevisionSummary(BaseModel):
     """Compact lineage summary for vendor contract history surfaces."""
 
@@ -236,6 +261,7 @@ class VendorContractActivityType(str, Enum):
     PAYMENT_RECORDED = "payment_recorded"
     REVISION_CREATED = "revision_created"
     CONTRACT_SUPERSEDED = "contract_superseded"
+    CONTRACT_DUPLICATED = "contract_duplicated"
 
 
 class VendorContractActivityActor(BaseModel):
