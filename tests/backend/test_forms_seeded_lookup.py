@@ -12,11 +12,13 @@ from __future__ import annotations
 import os
 import sys
 from datetime import datetime
+from importlib import reload
 from pathlib import Path
 
 import mongomock
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -25,6 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
 os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
+os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
 import app.services.form_service as form_service_module  # noqa: E402
 
@@ -259,3 +262,86 @@ async def test_get_seeded_form_does_not_match_non_seeded_forms(
             "couple_intake", created_by="planner@example.com"
         )
     assert exc_info.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# API-level permission-gate regression
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def api_client(monkeypatch):
+    """Build a FastAPI TestClient mounting the forms router under
+    /admin and replacing the auth dependency, so we can exercise the
+    permission gate on the seeded-lookup endpoint directly."""
+    client = mongomock.MongoClient()
+    database = client["wedding_forms"]
+
+    import app.services.form_service as fsm
+
+    reload(fsm)
+    monkeypatch.setattr(fsm, "mongo", _FakeMongo(database))
+    monkeypatch.setattr(
+        fsm.rate_limiter, "check_rate_limit", lambda *a, **kw: True
+    )
+
+    import app.api.forms as forms_module
+
+    reload(forms_module)
+    monkeypatch.setattr(forms_module, "form_service", fsm.FormService())
+    monkeypatch.setattr(
+        forms_module.rate_limiter, "check_rate_limit", lambda *a, **kw: True
+    )
+
+    async def _noop_security_audit(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(
+        forms_module.security_audit, "log_security_event", _noop_security_audit
+    )
+
+    app = FastAPI()
+    app.include_router(forms_module.router, prefix="/admin")
+    test_client = TestClient(app)
+
+    def override_user(user):
+        async def _override():
+            return user
+
+        app.dependency_overrides[forms_module.require_team_or_planner] = _override
+
+    yield test_client, database, forms_module, override_user
+
+    app.dependency_overrides.clear()
+
+
+def test_seeded_lookup_rejects_team_member_without_manage_forms(api_client):
+    """A team member whose permission map lacks ``manage_forms`` must
+    receive 403 from ``GET /admin/forms/seeded/{catalog_template_id}``,
+    even though ``require_team_or_planner`` would otherwise admit them."""
+    client, database, forms_module, override_user = api_client
+
+    _seed_form(
+        database,
+        form_id="form-seeded-couple",
+        planner="owner@example.com",
+        catalog_id="couple_intake",
+    )
+
+    team_member = forms_module.ExtendedAuthUser(
+        email="team@example.com",
+        role="team_member",
+        user_data={
+            "role": "team_member",
+            "team_owner_email": "owner@example.com",
+        },
+    )
+    # Explicit empty permissions dict — no manage_forms.
+    team_member.team_permissions = {"manage_forms": False}
+    team_member.team_owner_email = "owner@example.com"
+    override_user(team_member)
+
+    response = client.get("/admin/forms/seeded/couple_intake")
+
+    assert response.status_code == 403
+    assert "manage forms" in response.json()["detail"].lower()

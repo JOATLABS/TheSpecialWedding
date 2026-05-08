@@ -353,3 +353,48 @@ def test_root_admin_can_mark_form_viewed(api_client):
     from app.services.form_service import FormService
     admin_key = FormService._planner_state_key(os.environ["ROOT_ADMIN_EMAIL"])
     assert stored["planner_state"][admin_key]["last_viewed_analytics_at"] is not None
+
+
+def test_public_form_get_sets_short_lived_shared_cache_header(api_client):
+    """``GET /public/forms/{form_id}`` returns immutable form metadata
+    (title, field schema) on every render, so the response opts into a
+    short browser + CDN cache (``public, max-age=300, ...``) rather
+    than the blanket ``no-store`` that other form endpoints carry."""
+    client, database, forms_module, override_user = api_client
+
+    database["forms"].insert_one(
+        _form_document(
+            "owner@example.com",
+            _id="form_public_meta",
+            settings={
+                "title": "RSVP",
+                "description": "Reply",
+                "is_public": True,
+                "submit_button_text": "Submit",
+                "collect_email": True,
+                "allow_multiple_submissions": False,
+            },
+            fields=[
+                {
+                    "id": "name",
+                    "label": "Your name",
+                    "type": "text",
+                    "placeholder": "",
+                    "required": True,
+                    "description": "",
+                    "options": [],
+                    "order": 0,
+                }
+            ],
+        )
+    )
+
+    response = client.get("/admin/public/forms/form_public_meta")
+    assert response.status_code == 200
+
+    cache_control = response.headers.get("Cache-Control", "")
+    assert "public" in cache_control
+    assert "max-age=300" in cache_control
+    assert "must-revalidate" in cache_control
+    assert "stale-while-revalidate=60" in cache_control
+    assert "no-store" not in cache_control

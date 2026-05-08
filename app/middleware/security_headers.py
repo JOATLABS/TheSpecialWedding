@@ -92,11 +92,16 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Security-Policy"] = "strict"
 
         if self._is_sensitive_path(path):
-            response.headers["Cache-Control"] = (
-                "no-store, no-cache, must-revalidate, private"
-            )
-            response.headers["Pragma"] = "no-cache"
-            response.headers["Expires"] = "0"
+            # Honour an explicit Cache-Control set by the route handler —
+            # endpoints like ``GET /public/forms/{form_id}`` opt-in to a
+            # short shared cache (``public, max-age=...``) and the
+            # blanket no-store would otherwise override that intent.
+            if "Cache-Control" not in response.headers:
+                response.headers["Cache-Control"] = (
+                    "no-store, no-cache, must-revalidate, private"
+                )
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
 
         # Hide default server header
         if "Server" in response.headers:
