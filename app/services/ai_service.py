@@ -1189,8 +1189,14 @@ class AIService:
             # Before raising, try to return cached data as fallback
             # This handles the case where credits ran out but we have cached insights
             if feature_config["cacheable"]:
+                # Pass the resolved subscription_plan so the fallback
+                # lookup is plan-scoped — without it the cache helper
+                # would fall through to a tenant-only query and could
+                # serve a paid-tier response to a downgraded caller.
                 fallback = await ai_cache_service.get_latest_cached_response(
-                    feature=feature, tenant_id=tenant_id
+                    feature=feature,
+                    tenant_id=tenant_id,
+                    subscription_plan=subscription_plan,
                 )
                 if fallback:
                     logger.info(
@@ -1233,10 +1239,14 @@ class AIService:
             logger.error(f"AI generation error for {feature}: {str(e)}")
 
             # Fallback: Try to return cached data instead of erroring out
-            # This provides a much better UX - stale insights > no insights
+            # This provides a much better UX - stale insights > no insights.
+            # Plan-scoped to match the credit-exhaustion fallback above and
+            # avoid serving a paid-tier response to a downgraded caller.
             if feature_config["cacheable"]:
                 fallback = await ai_cache_service.get_latest_cached_response(
-                    feature=feature, tenant_id=tenant_id
+                    feature=feature,
+                    tenant_id=tenant_id,
+                    subscription_plan=subscription_plan,
                 )
                 if fallback:
                     logger.info(

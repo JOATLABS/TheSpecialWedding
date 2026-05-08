@@ -208,9 +208,57 @@ class MarketingLeadService:
                 "email_sends": 0,
                 "email_send_failures": 0,
             }
-            insert_result = await self.leads.insert_one(lead_doc)
-            lead_id = str(insert_result.inserted_id)
-            status = "created"
+            try:
+                insert_result = await self.leads.insert_one(lead_doc)
+                lead_id = str(insert_result.inserted_id)
+                status = "created"
+            except Exception as exc:
+                # Concurrent-insert race: two requests for the same
+                # (email, template_id) saw existing=None and both raced
+                # to insert. The unique compound index on those fields
+                # (scripts/create_indexes_p1_forms_and_ai.py) raises a
+                # DuplicateKeyError on the loser; treat that as a benign
+                # idempotent re-send and fall through to the update path
+                # so download_count + UTM history still get recorded.
+                err_name = exc.__class__.__name__
+                err_text = str(exc)
+                if (
+                    "Duplicate" not in err_name
+                    and "duplicate key" not in err_text.lower()
+                ):
+                    raise
+                logger.info(
+                    "marketing_leads dedup race resolved for %s / %s",
+                    normalized_email,
+                    template_id,
+                )
+                existing = await self.leads.find_one(
+                    {"email": normalized_email, "template_id": template_id}
+                )
+                if existing is None:
+                    # Whatever raised the error, the row is also gone —
+                    # safer to surface the exception to the caller.
+                    raise
+                # Fall through to the update branch by re-binding state.
+                insert_result = None
+                # Update path follows below via the existing-not-None branch.
+                await self.leads.update_one(
+                    {"_id": existing["_id"]},
+                    {
+                        "$set": {"last_downloaded_at": now},
+                        "$inc": {"download_count": 1},
+                        "$push": {
+                            "subsequent_utm": {
+                                "at": now,
+                                "utm_source": _truncate(utm_source, 60),
+                                "utm_medium": _truncate(utm_medium, 60),
+                                "utm_campaign": _truncate(utm_campaign, 120),
+                            }
+                        },
+                    },
+                )
+                lead_id = str(existing["_id"])
+                status = "resent"
         else:
             await self.leads.update_one(
                 {"_id": existing["_id"]},

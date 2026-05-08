@@ -134,9 +134,21 @@ export default function TemplateDownloadModal({
       );
     }
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
+      // Some error responses are HTML (CDN/edge/error pages) and not
+      // JSON. Log the parse failure so the silent fallback message
+      // doesn't hide real backend regressions.
+      const data = await res.json().catch((parseErr: unknown) => {
+        if (typeof console !== 'undefined') {
+          console.warn(
+            '[TemplateDownloadModal] non-JSON error response from /public/marketing/template-download',
+            { status: res.status, parseErr },
+          );
+        }
+        return {} as Record<string, unknown>;
+      });
       throw new Error(
-        (data && (data.detail || data.message)) ||
+        (data && ((data as { detail?: string }).detail ||
+          (data as { message?: string }).message)) ||
           'Something went wrong. Please try again.',
       );
     }
