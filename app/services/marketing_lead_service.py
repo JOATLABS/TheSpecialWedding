@@ -47,12 +47,33 @@ logger = logging.getLogger(__name__)
 _BRAND_NAME = "The Special Wedding"
 _TRIAL_LINK = "https://thespecialwedding.io/saas?utm_source=template_download"
 
+# Sentinel template_id for the homepage "starter pack" lead magnet —
+# ships all 9 catalog PDFs in a single email. Stored on the lead row
+# under template_id="starter_pack" so analytics can distinguish bundle
+# downloads from per-template ones.
+STARTER_PACK_TEMPLATE_ID = "starter_pack"
+
 
 def _resolve_template(template_id: str) -> Optional[Dict[str, Any]]:
     for tpl in FORM_TEMPLATES:
         if tpl.get("id") == template_id:
             return tpl
     return None
+
+
+def _starter_pack_descriptor() -> Dict[str, Any]:
+    """Metadata for the starter-pack 'pseudo-template' used by the
+    homepage email-gated band. Not part of FORM_TEMPLATES because it
+    isn't a real template — it's a bundle of all 9."""
+    return {
+        "id": STARTER_PACK_TEMPLATE_ID,
+        "name": "Free Wedding Planner Starter Pack",
+        "description": (
+            "9 production-ready templates — couple intake, vendor "
+            "intake, wedding-party RSVP, and more — to kick off your "
+            "next wedding."
+        ),
+    }
 
 
 def _normalize_email(email: str) -> str:
@@ -145,14 +166,22 @@ class MarketingLeadService:
         Returns ``{status, email_dispatched, lead_id}`` where ``status``
         is ``"created"`` for first-time leads and ``"resent"`` for
         repeat downloads of the same template by the same email.
+
+        When ``template_id == STARTER_PACK_TEMPLATE_ID`` the email
+        contains all 9 catalog PDFs as attachments (homepage
+        lead-magnet path); the lead row stores
+        ``template_id="starter_pack"`` for analytics.
         """
         normalized_email = _normalize_email(email)
         if not normalized_email:
             raise ValueError("email is required")
 
-        template = _resolve_template(template_id)
-        if template is None:
-            raise KeyError(template_id)
+        if template_id == STARTER_PACK_TEMPLATE_ID:
+            template = _starter_pack_descriptor()
+        else:
+            template = _resolve_template(template_id)
+            if template is None:
+                raise KeyError(template_id)
 
         now = datetime.now(timezone.utc)
 
@@ -206,27 +235,45 @@ class MarketingLeadService:
             lead_id = str(existing["_id"])
             status = "resent"
 
-        # Render PDF (cached process-side via Phase B's lru_cache) and
-        # ship it as a Resend attachment. We don't block the lead
-        # capture on email-send success — a deliverability blip should
-        # still leave the lead row for follow-up.
+        # Render PDF(s) (cached process-side via Phase B's lru_cache) and
+        # ship as Resend attachment(s). We don't block the lead capture
+        # on email-send success — a deliverability blip should still
+        # leave the lead row for follow-up.
         email_dispatched = False
         try:
-            pdf_bytes = render_form_template_pdf(template_id)
+            if template_id == STARTER_PACK_TEMPLATE_ID:
+                # 9 catalog PDFs in one email. Each PDF ≈ a few hundred
+                # KB, total well under Resend's 40 MB after-base64 cap
+                # (https://resend.com/docs/api-reference/emails/send-email).
+                attachments = [
+                    {
+                        "filename": f"{tpl['id']}.pdf",
+                        "content": base64.b64encode(
+                            render_form_template_pdf(tpl["id"])
+                        ).decode("utf-8"),
+                    }
+                    for tpl in FORM_TEMPLATES
+                ]
+                email_type = "marketing_starter_pack_download"
+            else:
+                pdf_bytes = render_form_template_pdf(template_id)
+                attachments = [
+                    {
+                        "filename": f"{template_id}.pdf",
+                        # Resend expects a buffer or base64 string;
+                        # codebase's ICS-attachment path uses base64.
+                        "content": base64.b64encode(pdf_bytes).decode("utf-8"),
+                    }
+                ]
+                email_type = "marketing_template_download"
             html = _confirmation_html(template, recipient_name)
-            attachment_payload = {
-                "filename": f"{template_id}.pdf",
-                # Resend expects a buffer or base64 string; the codebase's
-                # ICS-attachment path uses base64 and we mirror that.
-                "content": base64.b64encode(pdf_bytes).decode("utf-8"),
-            }
             send_result = await self.email_service.send_email(
                 to_email=normalized_email,
                 subject=(f"Your {template.get('name') or 'wedding planner template'}"),
                 html_content=html,
                 from_name=_BRAND_NAME,
-                attachments=[attachment_payload],
-                email_type="marketing_template_download",
+                attachments=attachments,
+                email_type=email_type,
             )
             email_dispatched = bool(send_result.get("success"))
             inc = {"email_sends": 1} if email_dispatched else {"email_send_failures": 1}

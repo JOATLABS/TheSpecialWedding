@@ -1126,6 +1126,21 @@ class FormService:
         sent_per_planner: Dict[str, int] = {}
         deferred_for_budget = 0
 
+        # Per-tick cache: a single planner with N due distributions only
+        # needs ONE subscription-state lookup, not N. The tick is a single
+        # synchronous pass — the planner's subscription state can't change
+        # between rows — so caching is safe and bounded by distinct
+        # planners on the page.
+        subscription_cache: Dict[str, bool] = {}
+
+        async def _is_subscription_active(email: str) -> bool:
+            cached = subscription_cache.get(email)
+            if cached is not None:
+                return cached
+            active = await self._planner_subscription_active(email)
+            subscription_cache[email] = active
+            return active
+
         for distribution in candidates:
             distribution_id = distribution.get("_id")
             try:
@@ -1173,9 +1188,7 @@ class FormService:
                 # subscription_service.py:355) and skip when it isn't in
                 # the active set. Failure to resolve the user (e.g. the
                 # planner deleted their account) also skips.
-                if planner_email and not await self._planner_subscription_active(
-                    planner_email
-                ):
+                if planner_email and not await _is_subscription_active(planner_email):
                     skipped += 1
                     continue
 

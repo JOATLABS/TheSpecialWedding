@@ -37,9 +37,63 @@ def indexes():
 
 def test_index_count_matches_audit_target(indexes):
     """The audit identified 14 indexes (the 5-key reminder compound
-    counts as one). Guards against accidental drops in future
-    refactors."""
-    assert len(indexes) == 14
+    counts as one), plus 3 P1 follow-ups for planner_notifications,
+    team_members, and form_distributions per-recipient dedup. Guards
+    against accidental drops in future refactors."""
+    assert len(indexes) == 17
+
+
+def test_planner_notifications_unread_recent_index_present(indexes):
+    """get_notifications + get_notification_count rely on a compound
+    over (planner_id, is_read, created_at desc) — see
+    planner_notification_service.py:267-268, 281-283."""
+    matches = [
+        (collection, spec, kwargs)
+        for collection, spec, kwargs in indexes
+        if collection == "planner_notifications"
+        and spec == [("planner_id", 1), ("is_read", 1), ("created_at", -1)]
+    ]
+    assert len(matches) == 1, "missing planner_notifications unread-recent index"
+    _, _, kwargs = matches[0]
+    assert kwargs.get("name") == "idx_planner_unread_recent"
+    assert "expireAfterSeconds" not in kwargs, (
+        "planner_notifications index must not be TTL"
+    )
+
+
+def test_team_members_owner_status_index_present(indexes):
+    """_resolve_team_recipients fan-out scans by (owner_email, status)
+    — see planner_notification_service.py:530-537."""
+    matches = [
+        (collection, spec, kwargs)
+        for collection, spec, kwargs in indexes
+        if collection == "team_members"
+        and spec == [("owner_email", 1), ("status", 1)]
+    ]
+    assert len(matches) == 1, "missing team_members owner+status index"
+    _, _, kwargs = matches[0]
+    assert kwargs.get("name") == "idx_owner_status"
+    assert "expireAfterSeconds" not in kwargs, (
+        "team_members index must not be TTL"
+    )
+
+
+def test_form_distributions_recipient_dedup_index_present(indexes):
+    """send_form's per-recipient dedup loop hits
+    form_distributions.find_one({form_id, recipient_email}) — see
+    form_service.py:885."""
+    matches = [
+        (collection, spec, kwargs)
+        for collection, spec, kwargs in indexes
+        if collection == "form_distributions"
+        and spec == [("form_id", 1), ("recipient_email", 1)]
+    ]
+    assert len(matches) == 1, "missing form_distributions per-recipient index"
+    _, _, kwargs = matches[0]
+    assert kwargs.get("name") == "idx_form_recipient"
+    assert "expireAfterSeconds" not in kwargs, (
+        "form_distributions per-recipient index must not be TTL"
+    )
 
 
 def test_every_index_has_a_name(indexes):

@@ -358,3 +358,102 @@ def test_confirmation_html_keeps_known_safe_chars():
     )
     assert "Hi Jamie," in body
     assert "<strong>Boutique</strong>" in body
+
+
+# =============================================================================
+# Starter-pack bundle (homepage lead magnet)
+# =============================================================================
+# The homepage band ships ALL 9 catalog PDFs in a single email when the
+# caller passes ``template_id == STARTER_PACK_TEMPLATE_ID``. The lead row
+# stores ``template_id="starter_pack"`` so analytics can distinguish the
+# bundle from per-template downloads on /resources/templates.
+
+
+@pytest.mark.asyncio
+async def test_capture_starter_pack_emits_one_email_with_nine_attachments(
+    configured_marketing_service, monkeypatch
+):
+    """One email, 9 attachments, one filename per FORM_TEMPLATES entry.
+
+    We patch ``render_form_template_pdf`` so the test does not exercise
+    WeasyPrint — we only care here that the service collects every
+    catalog template into a single Resend payload."""
+    service, database = configured_marketing_service
+
+    def fake_render(template_id: str) -> bytes:
+        return f"<pdf-bytes-for-{template_id}>".encode("utf-8")
+
+    monkeypatch.setattr(marketing_module, "render_form_template_pdf", fake_render)
+
+    result = await service.capture_template_download(
+        email="visitor@example.com",
+        template_id=marketing_module.STARTER_PACK_TEMPLATE_ID,
+    )
+
+    assert result["status"] == "created"
+    assert result["email_dispatched"] is True
+
+    sends = service.email_service.calls
+    assert len(sends) == 1, "starter-pack ships in a single Resend email"
+    call = sends[0]
+    assert call["to_email"] == "visitor@example.com"
+    assert call["email_type"] == "marketing_starter_pack_download"
+
+    attachments = call["attachments"]
+    assert len(attachments) == len(FORM_TEMPLATES) == 9
+
+    expected_filenames = {f"{tpl['id']}.pdf" for tpl in FORM_TEMPLATES}
+    actual_filenames = {a["filename"] for a in attachments}
+    assert actual_filenames == expected_filenames
+
+    # Each attachment is base64-encoded per the Resend contract.
+    for attachment in attachments:
+        decoded = base64.b64decode(attachment["content"])
+        assert decoded.startswith(b"<pdf-bytes-for-")
+
+    # Lead row records the sentinel id so analytics can distinguish
+    # bundle leads from per-template ones.
+    leads = list(database["marketing_leads"].find({}))
+    assert len(leads) == 1
+    lead = leads[0]
+    assert lead["template_id"] == marketing_module.STARTER_PACK_TEMPLATE_ID
+    assert lead["email"] == "visitor@example.com"
+    assert lead["download_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_starter_pack_lead_is_idempotent_per_email(
+    configured_marketing_service, monkeypatch
+):
+    """Repeat starter-pack downloads from the same email must not create
+    a second lead row but DO dispatch a second email — same idempotence
+    contract as per-template downloads."""
+    service, database = configured_marketing_service
+
+    monkeypatch.setattr(
+        marketing_module,
+        "render_form_template_pdf",
+        lambda template_id: f"<pdf-bytes-for-{template_id}>".encode("utf-8"),
+    )
+
+    first = await service.capture_template_download(
+        email="visitor@example.com",
+        template_id=marketing_module.STARTER_PACK_TEMPLATE_ID,
+    )
+    second = await service.capture_template_download(
+        email="visitor@example.com",
+        template_id=marketing_module.STARTER_PACK_TEMPLATE_ID,
+    )
+
+    assert first["status"] == "created"
+    assert second["status"] == "resent"
+
+    leads = list(database["marketing_leads"].find({}))
+    assert len(leads) == 1, "no duplicate lead row on starter-pack resubmit"
+    assert leads[0]["download_count"] == 2
+
+    # Both calls dispatched a real email.
+    assert len(service.email_service.calls) == 2
+    for call in service.email_service.calls:
+        assert call["email_type"] == "marketing_starter_pack_download"
+        assert len(call["attachments"]) == 9

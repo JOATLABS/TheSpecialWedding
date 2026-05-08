@@ -169,6 +169,31 @@ INDEXES = [
         [("_id", 1), ("is_active", 1)],
         {"name": "idx_id_active"},
     ),
+    # ── planner_notifications ────────────────────────────────────────
+    # Covers get_notifications + get_notification_count: filter by
+    # planner + unread state, sort by recency
+    # (planner_notification_service.py:267-268, 281-283).
+    (
+        "planner_notifications",
+        [("planner_id", 1), ("is_read", 1), ("created_at", -1)],
+        {"name": "idx_planner_unread_recent"},
+    ),
+    # ── team_members ─────────────────────────────────────────────────
+    # Covers _resolve_team_recipients fan-out scan over an owner's
+    # active team members (planner_notification_service.py:530-537).
+    (
+        "team_members",
+        [("owner_email", 1), ("status", 1)],
+        {"name": "idx_owner_status"},
+    ),
+    # ── form_distributions ───────────────────────────────────────────
+    # Covers send_form per-recipient dedup loop
+    # (form_service.py:885) — find_one({form_id, recipient_email}).
+    (
+        "form_distributions",
+        [("form_id", 1), ("recipient_email", 1)],
+        {"name": "idx_form_recipient"},
+    ),
 ]
 
 

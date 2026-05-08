@@ -222,15 +222,32 @@ class PlannerNotificationService:
                 .skip(skip)
                 .limit(limit)
             )
+            page_docs = [doc async for doc in cursor]
+
+            # Batch-fetch wedding names for all notifications on this page
+            # to avoid an N+1 lookup against the weddings collection.
+            unique_wedding_ids = {
+                doc["wedding_id"] for doc in page_docs if doc.get("wedding_id")
+            }
+            wedding_lookup: Dict[str, Dict[str, Any]] = {}
+            if unique_wedding_ids:
+                wedding_cursor = self.weddings_collection.find(
+                    {"wedding_id": {"$in": list(unique_wedding_ids)}},
+                    {"wedding_id": 1, "title": 1},
+                )
+                async for wedding in wedding_cursor:
+                    wid = wedding.get("wedding_id")
+                    if wid:
+                        wedding_lookup[wid] = wedding
+
             notifications = []
 
-            async for doc in cursor:
-                # Enrich with wedding name if available
+            for doc in page_docs:
+                # Enrich with wedding name if available (single batched lookup above)
                 wedding_name = None
-                if doc.get("wedding_id"):
-                    wedding = await self.weddings_collection.find_one(
-                        {"wedding_id": doc["wedding_id"]}, {"title": 1}
-                    )
+                wedding_id_value = doc.get("wedding_id")
+                if wedding_id_value:
+                    wedding = wedding_lookup.get(wedding_id_value)
                     if wedding:
                         wedding_name = wedding.get("title")
 

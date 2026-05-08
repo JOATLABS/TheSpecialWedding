@@ -573,3 +573,83 @@ async def test_send_form_reminders_normalizes_subscription_status_aliases(
     result = await service.send_form_reminders()
     # 'trialing' normalizes to 'trial' which is in ACTIVE_SUBSCRIPTION_STATUSES.
     assert result["sent"] == 1
+
+
+# =============================================================================
+# B3: per-tick subscription-state cache
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_subscription_lookup_cached_per_tick(
+    configured_form_service, monkeypatch
+):
+    """B3 — `_planner_subscription_active` should be invoked once per
+    distinct planner per scheduler tick, not once per distribution. With
+    1000 due distributions belonging to 5 planners we want 5 lookups,
+    not 1000.
+    """
+    service, database = configured_form_service
+
+    # Two planners: planner-a@example.com (3 distributions), planner-b@example.com (2).
+    database["users"].insert_one(
+        {
+            "email": "planner-a@example.com",
+            "subscription_status": "active",
+            "is_active": True,
+        }
+    )
+    database["users"].insert_one(
+        {
+            "email": "planner-b@example.com",
+            "subscription_status": "active",
+            "is_active": True,
+        }
+    )
+
+    database["forms"].insert_one(_form_doc(form_id="form_a"))
+    database["forms"].insert_one(_form_doc(form_id="form_b"))
+    database["forms"].update_one(
+        {"_id": "form_a"}, {"$set": {"created_by": "planner-a@example.com"}}
+    )
+    database["forms"].update_one(
+        {"_id": "form_b"}, {"$set": {"created_by": "planner-b@example.com"}}
+    )
+
+    for i in range(3):
+        database["form_distributions"].insert_one(
+            _distribution_doc(
+                distribution_id=f"a{i}", form_id="form_a", sent_days_ago=10
+            )
+        )
+    for i in range(2):
+        database["form_distributions"].insert_one(
+            _distribution_doc(
+                distribution_id=f"b{i}", form_id="form_b", sent_days_ago=10
+            )
+        )
+
+    # Wrap the real method with a counting spy so we can assert the
+    # cache short-circuits repeat calls within the same tick.
+    call_log: list[str] = []
+    original = service._planner_subscription_active
+
+    async def _counting(email: str) -> bool:
+        call_log.append(email)
+        return await original(email)
+
+    monkeypatch.setattr(service, "_planner_subscription_active", _counting)
+
+    result = await service.send_form_reminders()
+
+    # All 5 distributions go out — both planners are active.
+    assert result["sent"] == 5
+    # Exactly one lookup per distinct planner — NOT one per row.
+    assert len(call_log) == 2, (
+        f"expected 2 subscription lookups (one per distinct planner), "
+        f"got {len(call_log)}: {call_log}"
+    )
+    assert sorted(call_log) == [
+        "planner-a@example.com",
+        "planner-b@example.com",
+    ]

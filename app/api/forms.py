@@ -821,6 +821,15 @@ async def get_public_form(form_id: str, request: Request, response: Response):
         ) in SecurityHeaders.get_form_security_headers().items():
             response.headers[header_name] = header_value
 
+        # Public form metadata (title, fields, settings) is effectively
+        # immutable across short windows and is fetched on every public
+        # render — let browsers + CDN edge cache it for 5 minutes with a
+        # 60-second SWR window. The security middleware honours an
+        # explicit Cache-Control set here instead of forcing no-store.
+        response.headers["Cache-Control"] = (
+            "public, max-age=300, must-revalidate, stale-while-revalidate=60"
+        )
+
         # Log public access
         logger.info(f"Public form accessed: id={form_id}, ip={client_ip}")
 
@@ -1490,6 +1499,7 @@ async def get_seeded_form_for_template(
     needed to call ``POST /admin/forms/{form_id}/send`` without
     scanning every form in the planner's workspace.
     """
+    enforce_team_permission(current_user, "manage_forms")
     owner_scope = await _resolve_form_owner_scope(current_user)
     return await form_service.get_seeded_form_id(
         catalog_template_id,
