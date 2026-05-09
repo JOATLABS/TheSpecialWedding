@@ -29,6 +29,8 @@ import logging
 from datetime import UTC, datetime
 from typing import Any, Optional
 
+from bson import ObjectId
+
 from app.core.config import settings
 from app.core.database import mongo
 from app.models.calendar import (
@@ -261,14 +263,19 @@ class CalendarWebhookService:
         if not sync_row:
             return {"matched": False, "reason": "sync_row_not_found"}
 
-        task_id = sync_row.get("planner_task_id")
+        task_id = sync_row.get("task_id")
         if not task_id:
             return {"matched": False, "reason": "task_id_missing"}
+
+        try:
+            task_object_id = ObjectId(task_id)
+        except Exception:
+            return {"matched": False, "reason": "task_id_invalid"}
 
         now = datetime.now(UTC)
         if change_type == "deleted":
             await self.tasks_collection.update_one(
-                {"_id": task_id},
+                {"_id": task_object_id},
                 {
                     "$set": {
                         "external_conflict_status": ExternalConflictStatus.PENDING_REVIEW.value,
@@ -326,7 +333,7 @@ class CalendarWebhookService:
         else:
             update_doc["external_last_modified_at"] = now
 
-        await self.tasks_collection.update_one({"_id": task_id}, {"$set": update_doc})
+        await self.tasks_collection.update_one({"_id": task_object_id}, {"$set": update_doc})
         return {"matched": True, "task_id": str(task_id), "change": change_type}
 
 

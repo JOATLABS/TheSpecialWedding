@@ -34,6 +34,7 @@ from urllib.parse import unquote
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 
+from app.services.calendar_idempotency_service import calendar_idempotency_service
 from app.services.calendar_webhook_service import calendar_webhook_service
 
 logger = logging.getLogger(__name__)
@@ -127,43 +128,63 @@ async def aurinko_webhook(
     if await calendar_webhook_service.is_duplicate_delivery(str(delivery_id)):
         return Response(status_code=200)
 
-    aurinko_account_id = str(payload.get("accountId") or "")
-    resource = payload.get("resource")
-    aurinko_calendar_id = _extract_calendar_id(
-        resource if isinstance(resource, str) else None
-    )
-    items = payload.get("payloads")
-
-    if not aurinko_account_id or not aurinko_calendar_id or not isinstance(items, list):
-        raise HTTPException(
-            status_code=422,
-            detail="Webhook missing accountId, resource, or payloads array",
+    try:
+        aurinko_account_id = str(payload.get("accountId") or "")
+        resource = payload.get("resource")
+        aurinko_calendar_id = _extract_calendar_id(
+            resource if isinstance(resource, str) else None
         )
+        items = payload.get("payloads")
 
-    queued = 0
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        external_event_id = str(item.get("id") or "")
-        change_type = str(item.get("changeType") or "updated").lower()
-        if not external_event_id:
-            continue
-        # BackgroundTasks runs after the response is sent — Aurinko gets its
-        # 200 ack immediately, snapshot fetch + planner_task update happen
-        # off the request path.
-        background_tasks.add_task(
-            calendar_webhook_service.process_event_change_async,
-            aurinko_account_id=aurinko_account_id,
-            aurinko_calendar_id=aurinko_calendar_id,
-            external_event_id=external_event_id,
-            change_type=change_type,
+        if not aurinko_account_id or not aurinko_calendar_id or not isinstance(items, list):
+            raise HTTPException(
+                status_code=422,
+                detail="Webhook missing accountId, resource, or payloads array",
+            )
+
+        queued = 0
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            external_event_id = str(item.get("id") or "")
+            change_type = str(item.get("changeType") or "updated").lower()
+            if not external_event_id:
+                continue
+            # BackgroundTasks runs after the response is sent — Aurinko gets its
+            # 200 ack immediately, snapshot fetch + planner_task update happen
+            # off the request path.
+            background_tasks.add_task(
+                calendar_webhook_service.process_event_change_async,
+                aurinko_account_id=aurinko_account_id,
+                aurinko_calendar_id=aurinko_calendar_id,
+                external_event_id=external_event_id,
+                change_type=change_type,
+            )
+            queued += 1
+
+        # Mark delivery processed before responding so a quick retry from Aurinko
+        # short-circuits at the dedupe check rather than re-queueing background
+        # tasks.
+        await calendar_webhook_service.mark_delivery_processed(str(delivery_id))
+    except HTTPException:
+        # Permanent client errors (422) — mark the idempotency record failed so
+        # Aurinko can stop retrying and subsequent retries with the same
+        # delivery_id are not suppressed as in_progress.
+        await calendar_idempotency_service.fail(
+            scope_key="aurinko_webhook",
+            idempotency_key=str(delivery_id),
+            error_detail="invalid_payload",
         )
-        queued += 1
+        raise
+    except Exception as exc:
+        # Transient server errors — mark failed so retries are not suppressed.
+        await calendar_idempotency_service.fail(
+            scope_key="aurinko_webhook",
+            idempotency_key=str(delivery_id),
+            error_detail=str(exc),
+        )
+        raise
 
-    # Mark delivery processed before responding so a quick retry from Aurinko
-    # short-circuits at the dedupe check rather than re-queueing background
-    # tasks.
-    await calendar_webhook_service.mark_delivery_processed(str(delivery_id))
     logger.info(
         "Aurinko webhook ack 200: delivery=%s items=%d queued=%d account=%s calendar=%s",
         delivery_id,
