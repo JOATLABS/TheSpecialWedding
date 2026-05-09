@@ -8,6 +8,8 @@ from app.core.database import mongo
 from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
 from app.models.subscription import SubscriptionStatus, normalize_subscription_status
 from app.services.stripe_service import stripe_service
+from app.utils.meter_state import update_wedding_meter_state
+from app.utils.period_parsing import coerce_period_start
 
 logger = logging.getLogger(__name__)
 
@@ -73,25 +75,12 @@ async def process_daily_usage_check():
                 }
             )
 
-            # 3. Check if billing is needed
-            # We need to know the current billing period start/end for the subscription
-            current_period_start = sub.get("current_period_start")
+            # 3. Check if billing is needed.
+            # Shared helper: see app/utils/period_parsing.py and
+            # docs/analysis/METERING_GAP_SCENARIOS_2026-05-04.md §C5.
+            current_period_start = coerce_period_start(sub.get("current_period_start"))
             if not current_period_start:
-                # If missing (legacy?), fetch from Stripe? Or skip?
                 continue
-
-            if isinstance(current_period_start, str):
-                try:
-                    current_period_start = datetime.fromisoformat(
-                        current_period_start.replace("Z", "+00:00")
-                    )
-                except ValueError:
-                    continue
-
-            # If current_period_start is naive, make it aware (assume UTC)
-            # If current_period_start is naive, make it aware (assume UTC)
-            if current_period_start.tzinfo is None:
-                current_period_start = current_period_start.replace(tzinfo=timezone.utc)
 
             async for wedding in weddings:
                 last_billed = wedding.get("last_billed_at")
@@ -124,10 +113,12 @@ async def process_daily_usage_check():
                     )
 
                     if result.get("status") == "success":
-                        # Update last_billed_at
-                        await mongo.db["weddings"].update_one(
-                            {"_id": wedding["_id"]},
-                            {"$set": {"last_billed_at": datetime.now(timezone.utc)}},
+                        # SS4: retry helper — see meter_state.py.
+                        await update_wedding_meter_state(
+                            mongo.db["weddings"],
+                            wedding["_id"],
+                            {"last_billed_at": datetime.now(timezone.utc)},
+                            context="billing_job_daily_success",
                         )
                         count_reported += 1
 
