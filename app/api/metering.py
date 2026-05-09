@@ -7,6 +7,7 @@ from app.core.database import mongo
 from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
 from app.models.subscription import SubscriptionStatus
 from app.services.stripe_service import stripe_service
+from app.utils.meter_state import update_wedding_meter_state
 
 logger = logging.getLogger(__name__)
 
@@ -102,18 +103,21 @@ async def retry_pending_meter_events(
                 )
                 if meter_result.get("status") == "success":
                     succeeded += 1
-                    await mongo.db["weddings"].update_one(
-                        {"_id": wedding.get("_id")},
+                    # SS4: retry helper — silent failure here would
+                    # leave operator thinking retry cleared when it
+                    # didn't, leading to next-batch double-bill.
+                    await update_wedding_meter_state(
+                        mongo.db["weddings"],
+                        wedding.get("_id"),
                         {
-                            "$set": {
-                                "last_billed_at": datetime.now(timezone.utc),
-                                "billed_period": datetime.now(timezone.utc).strftime(
-                                    "%Y-%m"
-                                ),
-                                "meter_pending": False,
-                                "meter_pending_reason": None,
-                            }
+                            "last_billed_at": datetime.now(timezone.utc),
+                            "billed_period": datetime.now(timezone.utc).strftime(
+                                "%Y-%m"
+                            ),
+                            "meter_pending": False,
+                            "meter_pending_reason": None,
                         },
+                        context="metering_retry_pending_success",
                     )
                 else:
                     failed.append(

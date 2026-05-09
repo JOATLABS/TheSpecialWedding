@@ -21,6 +21,8 @@ from app.services.sse_manager import sse_manager
 from app.services.stripe_service import stripe_service
 from app.services.subscription_service import SubscriptionService
 from app.services.wedding_service import WeddingService
+from app.utils.meter_state import update_wedding_meter_state
+from app.utils.period_parsing import coerce_period_start
 from app.utils.planner_ownership import (
     extract_wedding_owner_identity,
     normalize_query_id,
@@ -153,26 +155,13 @@ async def create_wedding(
                 )
 
                 if plan and plan.get("is_metered") and plan.get("meter_event_name"):
-                    current_period_start = sub.get("current_period_start")
+                    # Shared helper — fixes a latent local-timezone bug.
+                    # See METERING_GAP_SCENARIOS_2026-05-04.md §C5 and
+                    # app/utils/period_parsing.py.
+                    current_period_start = coerce_period_start(
+                        sub.get("current_period_start")
+                    )
                     last_billed_at = None
-
-                    if isinstance(current_period_start, str):
-                        try:
-                            current_period_start = datetime.fromisoformat(
-                                current_period_start.replace("Z", "+00:00")
-                            )
-                        except Exception as e:
-                            logger.warning(
-                                f"Failed to parse current_period_start: {current_period_start}, error: {e}"
-                            )
-                            current_period_start = None
-                    if (
-                        isinstance(current_period_start, datetime)
-                        and current_period_start.tzinfo is None
-                    ):
-                        current_period_start = current_period_start.replace(
-                            tzinfo=datetime.now(timezone.utc).astimezone().tzinfo
-                        )
 
                     # Check if this wedding was already billed this period
                     wedding_record = await mongo.db["weddings"].find_one(
@@ -210,35 +199,37 @@ async def create_wedding(
                             },
                             identifier=idempotency_key,
                         )
+                        # SS4: retry helper — silent Mongo failure on the
+                        # success branch leads to double-billing on the
+                        # next daily batch run (different idempotency-key
+                        # prefix → Stripe doesn't dedupe).
                         if meter_result.get("status") == "success":
-                            await mongo.db["weddings"].update_one(
-                                {"_id": wedding_data["_id"]},
+                            await update_wedding_meter_state(
+                                mongo.db["weddings"],
+                                wedding_data["_id"],
                                 {
-                                    "$set": {
-                                        "last_billed_at": datetime.now(timezone.utc),
-                                        "billed_period": datetime.now(
-                                            timezone.utc
-                                        ).strftime("%Y-%m"),
-                                        "meter_pending": False,
-                                        "meter_pending_reason": None,
-                                    }
+                                    "last_billed_at": datetime.now(timezone.utc),
+                                    "billed_period": datetime.now(
+                                        timezone.utc
+                                    ).strftime("%Y-%m"),
+                                    "meter_pending": False,
+                                    "meter_pending_reason": None,
                                 },
+                                context="wedding_create_success",
                             )
                         else:
-                            await mongo.db["weddings"].update_one(
-                                {"_id": wedding_data["_id"]},
+                            await update_wedding_meter_state(
+                                mongo.db["weddings"],
+                                wedding_data["_id"],
                                 {
-                                    "$set": {
-                                        "meter_pending": True,
-                                        "meter_pending_reason": meter_result.get(
-                                            "message"
-                                        )
-                                        or "metering_failed",
-                                        "billed_period": datetime.now(
-                                            timezone.utc
-                                        ).strftime("%Y-%m"),
-                                    }
+                                    "meter_pending": True,
+                                    "meter_pending_reason": meter_result.get("message")
+                                    or "metering_failed",
+                                    "billed_period": datetime.now(
+                                        timezone.utc
+                                    ).strftime("%Y-%m"),
                                 },
+                                context="wedding_create_meter_failed",
                             )
         except Exception as e:
             logger.error(f"Error reporting meter event on creation: {e}")
@@ -422,24 +413,29 @@ async def delete_wedding_admin(
                             identifier=idempotency_key,
                         )
                         reversal_success = reverse_result.get("status") == "success"
-                        await mongo.db["weddings"].update_one(
-                            {"_id": normalize_query_id(wedding_id)},
+                        # SS4: retry helper for the reversal write.
+                        await update_wedding_meter_state(
+                            mongo.db["weddings"],
+                            normalize_query_id(wedding_id),
                             {
-                                "$set": {
-                                    "meter_reversed_period": (
-                                        current_period
-                                        if reversal_success
-                                        else wedding.get("meter_reversed_period")
-                                    ),
-                                    "meter_pending": not reversal_success,
-                                    "meter_pending_reason": (
-                                        None
-                                        if reversal_success
-                                        else reverse_result.get("message")
-                                        or "meter_reversal_failed"
-                                    ),
-                                }
+                                "meter_reversed_period": (
+                                    current_period
+                                    if reversal_success
+                                    else wedding.get("meter_reversed_period")
+                                ),
+                                "meter_pending": not reversal_success,
+                                "meter_pending_reason": (
+                                    None
+                                    if reversal_success
+                                    else reverse_result.get("message")
+                                    or "meter_reversal_failed"
+                                ),
                             },
+                            context=(
+                                "wedding_delete_reversal_success"
+                                if reversal_success
+                                else "wedding_delete_reversal_failed"
+                            ),
                         )
 
         # Perform soft delete cascade
