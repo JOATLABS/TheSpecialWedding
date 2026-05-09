@@ -2638,21 +2638,22 @@ async def book_couple_meeting(
 
     lock_key = f"couple_meeting_book:{staff.user_id}:{body.start.isoformat()}:{body.end.isoformat()}"
     lock_value = uuid.uuid4().hex
-    acquired = await cache.acquire_lock(lock_key, lock_value, expire=30)
-    if acquired is False:
-        raise HTTPException(
-            status_code=409,
-            detail="That slot is being booked by someone else; try again",
-        )
-    if acquired is None:
-        # Redis unavailable — without the lock we cannot guarantee single-write
-        # semantics on the slot. Fail closed rather than racing duplicates.
-        raise HTTPException(
-            status_code=503,
-            detail="Booking lock service is unavailable; please try again shortly",
-        )
+    acquired = None
 
     try:
+        acquired = await cache.acquire_lock(lock_key, lock_value, expire=30)
+        if acquired is False:
+            raise HTTPException(
+                status_code=409,
+                detail="That slot is being booked by someone else; try again",
+            )
+        if acquired is None:
+            # Redis unavailable — without the lock we cannot guarantee single-write
+            # semantics on the slot. Fail closed rather than racing duplicates.
+            raise HTTPException(
+                status_code=503,
+                detail="Booking lock service is unavailable; please try again shortly",
+            )
         slots = await availability_slot_service.generate_slots(
             wedding_id=wedding_id,
             duration_minutes=int((body.end - body.start).total_seconds() // 60),
