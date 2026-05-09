@@ -286,7 +286,7 @@ class CalendarWebhookService:
                     }
                 },
             )
-            return {"matched": True, "task_id": str(task_id), "change": "deleted"}
+            return {"matched": True, "task_id": str(task_object_id), "change": "deleted"}
 
         update_doc: dict[str, Any] = {
             "external_conflict_status": ExternalConflictStatus.PENDING_REVIEW.value,
@@ -334,7 +334,7 @@ class CalendarWebhookService:
             update_doc["external_last_modified_at"] = now
 
         await self.tasks_collection.update_one({"_id": task_object_id}, {"$set": update_doc})
-        return {"matched": True, "task_id": str(task_id), "change": change_type}
+        return {"matched": True, "task_id": str(task_object_id), "change": change_type}
 
 
 calendar_webhook_service = CalendarWebhookService()
