@@ -1021,7 +1021,9 @@ export default function PlannerCalendarPage() {
                         {event.source_type === 'internal_meeting'
                           ? 'Meeting'
                           : event.source_type === 'external'
-                          ? 'Google'
+                          ? (event.external_provider
+                              ? event.external_provider.charAt(0).toUpperCase() + event.external_provider.slice(1)
+                              : 'External')
                           : 'Task'}
                       </span>
                     </div>
