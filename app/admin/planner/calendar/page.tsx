@@ -372,7 +372,13 @@ export default function PlannerCalendarPage() {
     if (!token) return;
 
     if (event.source_type === 'external') {
-      toast.message('External Google events are read-only here. Change sharing or sync settings from the connection panel.');
+      const providerLabel =
+        'external_provider' in event &&
+        typeof event.external_provider === 'string' &&
+        event.external_provider.trim().length > 0
+          ? `External ${event.external_provider.trim()} events`
+          : 'External calendar events';
+      toast.message(`${providerLabel} are read-only here. Change sharing or sync settings from the connection panel.`);
       return;
     }
     if (event.source_type === 'internal_task' && !canManageGeneralTasks) {
