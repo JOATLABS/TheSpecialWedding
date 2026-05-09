@@ -166,6 +166,14 @@ async def aurinko_webhook(
         # short-circuits at the dedupe check rather than re-queueing background
         # tasks.
         await calendar_webhook_service.mark_delivery_processed(str(delivery_id))
+        logger.info(
+            "Aurinko webhook ack 200: delivery=%s items=%d queued=%d account=%s calendar=%s",
+            delivery_id,
+            len(items),
+            queued,
+            aurinko_account_id,
+            aurinko_calendar_id,
+        )
     except HTTPException:
         # Permanent client errors (422) — mark the idempotency record failed so
         # Aurinko can stop retrying and subsequent retries with the same
@@ -185,12 +193,4 @@ async def aurinko_webhook(
         )
         raise
 
-    logger.info(
-        "Aurinko webhook ack 200: delivery=%s items=%d queued=%d account=%s calendar=%s",
-        delivery_id,
-        len(items),
-        queued,
-        aurinko_account_id,
-        aurinko_calendar_id,
-    )
     return Response(status_code=200)
