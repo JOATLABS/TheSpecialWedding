@@ -130,7 +130,7 @@ export const ThemedHeroSection: React.FC<ThemedHeroSectionProps> = ({ wedding, o
             }}
           >
             <span className="text-sm sm:text-base font-medium text-white">
-              Celebrate with us
+              Celebrate with us | RSVP Here
             </span>
           </button>
         </div>

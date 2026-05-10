@@ -31,7 +31,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ coupleName, date }) =>
         <div className="mt-8 sm:mt-12">
           <div className="inline-block px-6 py-3 bg-white bg-opacity-10 backdrop-blur-sm rounded-full">
             <p className="text-sm sm:text-base font-medium">
-              Celebrate with us
+              Celebrate with us | RSVP Here
             </p>
           </div>
         </div>
