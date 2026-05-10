@@ -1727,6 +1727,12 @@ selected={selectedGuests}
  </td>
  <td className="px-6 py-4 whitespace-nowrap text-sm">
  <div className="flex flex-col gap-1">
+ {log.fallback_channel !== 'email' &&
+  log.delivery_status !== 'failed' &&
+  log.delivery_status !== 'undelivered' &&
+  !(log.status && log.status.startsWith('failed')) && (
+   <span className="text-xs text-gray-400 dark:text-gray-500">No action</span>
+  )}
  {log.fallback_channel === 'email' && (
  <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${
   log.fallback_status === 'sent' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200' : 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200'
