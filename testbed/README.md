@@ -60,6 +60,7 @@ not be deleted by cleanup — that's what lets the seed phase stay cheap.
 | `verify_planner_active_lifecycle.py` | Scenarios B/C/D — active subscription UX, wedding + AI-credit caps, plan upgrade/downgrade (incl. plan_snapshot grandfather), cancel/resubscribe, and past-due recovery. Reusable clock. | `cleanup_planner_active_verify_state.py` |
 | `verify_planner_metered_lifecycle.py` | Scenario E — wedding create/delete reports Stripe meter events, `/metering/retry-pending` clears pending rows. Exits 0 with a skip banner when no plan is `is_metered=True`. Reusable clock. | `cleanup_planner_metered_verify_state.py` |
 | `verify_performance_baseline.py` | One-planner / one-wedding performance baseline - seeds an isolated paid planner, measures blocking planner-dashboard backend endpoints, calculates load-per-dollar fields, and writes a JSON artifact under `docs/performance/baselines/`. | `cleanup_performance_baseline_state.py` |
+| `verify_guest_help_sms_inbox_lifecycle.py` | Public RSVP help form → planner-scoped SMS support ticket → Twilio inbound reply → communications inbox + notification scoping, including resolved-thread reopen and cross-planner negative checks. | `cleanup_guest_help_sms_inbox_state.py` |
 | `test_trial_with_test_clock.py` | Early trial repro snippet predating the Scenario A driver. Kept for ad-hoc debugging; prefer `verify_planner_trial_lifecycle.py`. | _(inline reset section at end of file)_ |
 
 All scenarios from `docs/plans/SUBSCRIPTION_LIFECYCLE_TEST_PLAN.md` (A–E)

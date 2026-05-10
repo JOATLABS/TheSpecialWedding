@@ -19,7 +19,11 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from starlette.datastructures import FormData, UploadFile
 
 from app.core.database import mongo
-from app.utils.support_inbox_links import build_support_inbox_url
+from app.utils.contact_sanitizer import sanitize_phone
+from app.utils.support_inbox_links import (
+    build_support_inbox_path,
+    build_support_inbox_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +83,204 @@ def _parse_optional_int(raw_value: Optional[str], field_name: str) -> Optional[i
             raw_value,
         )
         return None
+
+
+def _phone_lookup_variants(phone: str) -> list[str]:
+    sanitized = sanitize_phone(phone)
+    if not sanitized:
+        return []
+
+    digits_only = "".join(ch for ch in sanitized if ch.isdigit())
+    variants = {sanitized}
+    if digits_only:
+        variants.add(digits_only)
+        variants.add(f"+{digits_only}")
+        if len(digits_only) == 10:
+            variants.update({f"1{digits_only}", f"+1{digits_only}"})
+        elif len(digits_only) == 11 and digits_only.startswith("1"):
+            local_number = digits_only[1:]
+            variants.update({local_number, f"1{local_number}", f"+1{local_number}"})
+    return [variant for variant in variants if variant]
+
+
+def _wedding_lookup_variants(wedding_id: Any) -> list[Any]:
+    if not wedding_id:
+        return []
+    wedding_id_str = str(wedding_id)
+    variants: list[Any] = [wedding_id, wedding_id_str]
+    if ObjectId.is_valid(wedding_id_str):
+        variants.append(ObjectId(wedding_id_str))
+    return variants
+
+
+async def _find_existing_sms_ticket_for_inbound(
+    from_number: str,
+    wedding_id: Any = None,
+    assigned_to: Optional[str] = None,
+) -> Optional[dict]:
+    """Find the active/reopenable SMS thread for an inbound guest reply."""
+    phone_variants = _phone_lookup_variants(from_number)
+    if not phone_variants:
+        return None
+
+    base_query: dict[str, Any] = {
+        "source": "sms",
+        "phone": {"$in": phone_variants},
+        "assigned_to": {"$nin": [None, ""]},
+    }
+    wedding_variants = _wedding_lookup_variants(wedding_id)
+    if wedding_variants:
+        base_query["wedding_id"] = {"$in": wedding_variants}
+    if assigned_to:
+        base_query["assigned_to"] = assigned_to
+
+    for statuses in (["new", "in_progress"], ["resolved", "closed"]):
+        query = {**base_query, "status": {"$in": statuses}}
+        cursor = (
+            mongo.db["support_tickets"]
+            .find(query)
+            .sort([("updated_at", -1), ("created_at", -1)])
+            .limit(5)
+        )
+        tickets = await cursor.to_list(length=5)
+        if not tickets:
+            continue
+
+        if not wedding_variants and not assigned_to:
+            scope_keys = {
+                (
+                    str(ticket.get("assigned_to") or ""),
+                    str(ticket.get("wedding_id") or ""),
+                )
+                for ticket in tickets
+            }
+            if len(scope_keys) > 1:
+                logger.warning(
+                    "Ambiguous inbound SMS thread for %s across %s planner scopes",
+                    from_number,
+                    len(scope_keys),
+                )
+                return None
+
+        return tickets[0]
+    return None
+
+
+async def _create_sms_guest_message_notification(
+    ticket: dict, message_preview: str
+) -> None:
+    planner_email = ticket.get("assigned_to")
+    if not planner_email:
+        return
+
+    try:
+        from app.models.planner_notification import (
+            PlannerNotificationTypes,
+            create_notification_document,
+        )
+        from app.services.sse_manager import sse_manager
+
+        ticket_id = str(ticket.get("_id"))
+        guest_name = (
+            (ticket.get("guest_name") or "").strip()
+            or (ticket.get("phone") or "").strip()
+            or "Guest"
+        )
+        wedding_id = str(ticket.get("wedding_id")) if ticket.get("wedding_id") else None
+        action_url = build_support_inbox_path(
+            conversation="sms_support",
+            ticket_id=ticket_id,
+            wedding_id=wedding_id,
+        )
+        preview = message_preview[:100] + ("..." if len(message_preview) > 100 else "")
+        doc = create_notification_document(
+            planner_id=planner_email,
+            notification_type=PlannerNotificationTypes.GUEST_MESSAGE,
+            title="New Guest SMS",
+            message=f"{guest_name}: {preview}",
+            wedding_id=wedding_id,
+            metadata={
+                "guest_name": guest_name,
+                "guest_id": ticket.get("guest_id"),
+                "ticket_id": ticket_id,
+                "source": "sms_support",
+            },
+            priority="high",
+            action_url=action_url,
+        )
+        result = await mongo.db["planner_notifications"].insert_one(doc)
+
+        await sse_manager.broadcast_to_user(
+            planner_email,
+            "notification-new",
+            {
+                "id": str(result.inserted_id),
+                "title": doc["title"],
+                "message": doc["message"],
+                "type": doc["type"],
+                "wedding_id": wedding_id,
+                "priority": doc["priority"],
+                "metadata": doc["metadata"],
+                "action_url": action_url,
+            },
+        )
+
+        try:
+            unread = await mongo.db["planner_notifications"].count_documents(
+                {"planner_id": planner_email, "is_read": False}
+            )
+            total = await mongo.db["planner_notifications"].count_documents(
+                {"planner_id": planner_email}
+            )
+            await sse_manager.broadcast_to_user(
+                planner_email,
+                "notification-count",
+                {"total": total, "unread": unread, "read": total - unread},
+            )
+        except Exception:
+            logger.debug("Unable to broadcast SMS guest message notification count")
+    except Exception as exc:
+        logger.error("Failed to create SMS guest message notification: %s", exc)
+
+
+async def _append_inbound_sms_to_ticket(
+    ticket: dict,
+    *,
+    from_number: str,
+    body_text: str,
+    message_sid: Optional[str],
+) -> dict:
+    now = datetime.now(timezone.utc)
+    guest_message = {
+        "message": body_text,
+        "received_at": now,
+        "message_sid": message_sid,
+        "phone": from_number,
+        "sender_name": ticket.get("guest_name") or ticket.get("phone") or "Guest",
+    }
+
+    update: dict[str, dict[str, Any]] = {
+        "$push": {"guest_messages": guest_message},
+        "$set": {
+            "updated_at": now,
+            "last_guest_message_at": now,
+            "last_message_preview": body_text[:160],
+            "last_message_direction": "inbound",
+            "is_read": False,
+            "status": "new",
+        },
+        "$unset": {"resolved_at": ""},
+    }
+    if message_sid:
+        update["$set"]["message_sid"] = message_sid
+
+    await mongo.db["support_tickets"].update_one({"_id": ticket["_id"]}, update)
+
+    ticket.setdefault("guest_messages", []).append(guest_message)
+    ticket.update(update["$set"])
+    ticket.pop("resolved_at", None)
+    await _create_sms_guest_message_notification(ticket, body_text)
+    return ticket
 
 
 # Twilio error code to human-readable message mapping
@@ -935,17 +1137,12 @@ async def handle_twilio_incoming_message(
         wedding_collection = mongo.db["weddings"]
 
         # Normalize phone number for lookup
+        phone_variants = _phone_lookup_variants(from_number)
         normalized_number = from_number.replace("+1", "").replace("+", "")
 
         # Find guest by phone number
         guest = await guest_collection.find_one(
-            {
-                "$or": [
-                    {"phone": from_number},
-                    {"phone": normalized_number},
-                    {"phone": f"1{normalized_number}"},
-                ]
-            }
+            {"$or": [{"phone": variant} for variant in phone_variants]}
         )
 
         # Get wedding name if guest found
@@ -956,7 +1153,9 @@ async def handle_twilio_incoming_message(
 
         if guest and guest.get("wedding_id"):
             wedding_id = guest["wedding_id"]
-            wedding = await wedding_collection.find_one({"_id": wedding_id})
+            wedding = await wedding_collection.find_one(
+                {"_id": {"$in": _wedding_lookup_variants(wedding_id)}}
+            )
             if wedding:
                 wedding_name = wedding.get("couple_names", "the wedding")
                 assigned_planner_email = wedding.get("assigned_planner_email")
@@ -1081,17 +1280,54 @@ async def handle_twilio_incoming_message(
 
         # Handle any other message (support ticket)
         else:
+            existing_ticket = await _find_existing_sms_ticket_for_inbound(
+                from_number,
+                wedding_id=wedding_id,
+                assigned_to=assigned_planner_email,
+            )
+            if existing_ticket:
+                updated_ticket = await _append_inbound_sms_to_ticket(
+                    existing_ticket,
+                    from_number=from_number,
+                    body_text=body_text,
+                    message_sid=message_sid,
+                )
+                logger.info(
+                    "Inbound SMS appended to support ticket %s from %s",
+                    updated_ticket.get("_id"),
+                    from_number,
+                )
+                return {
+                    "status": "ok",
+                    "action": "support_ticket_reply",
+                    "ticket_id": str(updated_ticket.get("_id")),
+                }
+
             # Create support ticket routed to wedding planner
             support_ticket = {
                 "phone": from_number,
                 "message": body_text,
+                "guest_messages": [
+                    {
+                        "message": body_text,
+                        "received_at": datetime.now(timezone.utc),
+                        "message_sid": message_sid,
+                        "phone": from_number,
+                        "sender_name": guest.get("name") if guest else "Guest",
+                    }
+                ],
                 "guest_id": str(guest["_id"]) if guest else None,
+                "guest_name": guest.get("name") if guest else None,
                 "wedding_id": str(wedding_id) if wedding_id else None,
                 "wedding_name": wedding_name,
                 "assigned_to": assigned_planner_email,
                 "planner_name": planner_name,
                 "status": "new",
                 "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+                "last_guest_message_at": datetime.now(timezone.utc),
+                "last_message_preview": body_text[:160],
+                "last_message_direction": "inbound",
                 "source": "sms",
                 "provider": "twilio",
                 "message_sid": message_sid,
@@ -1116,6 +1352,7 @@ async def handle_twilio_incoming_message(
 
             # Notify wedding planner
             if assigned_planner_email:
+                await _create_sms_guest_message_notification(support_ticket, body_text)
                 await _notify_planner_support_ticket(
                     support_ticket, assigned_planner_email
                 )
