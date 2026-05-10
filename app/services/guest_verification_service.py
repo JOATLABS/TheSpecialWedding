@@ -5,6 +5,7 @@ import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
+from urllib.parse import quote
 
 from bson.objectid import ObjectId
 from fastapi import HTTPException
@@ -1062,8 +1063,12 @@ class GuestVerificationService:
                     "message": "If you're on the guest list, you'll receive your RSVP link shortly.",
                 }
 
-            frontend_url = os.getenv("FRONTEND_URL", "https://thespecialwedding.io")
-            rsvp_url = f"{frontend_url}/{slug}/invite/{token}"
+            frontend_url = os.getenv("FRONTEND_URL", "https://thespecialwedding.io").rstrip("/")
+            rsvp_url = (
+                f"{frontend_url}/otp/verify"
+                f"?slug={quote(slug, safe='')}"
+                f"&token={quote(token, safe='')}"
+            )
             couple_names = wedding.get("couple_names", "the couple")
             guest_name = guest.get("name", "Guest")
 
