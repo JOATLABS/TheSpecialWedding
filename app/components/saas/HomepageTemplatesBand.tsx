@@ -5,13 +5,13 @@
  *
  * Slots between the dark hero and the "See what's inside" showcase on
  * /. Renders three preview cards (curated from the same canonical
- * manifest as /resources/templates so copy never drifts) plus a single
+ * manifest as the Resources templates tab so copy never drifts) plus a single
  * primary CTA that opens the shared TemplateDownloadModal with
  * templateId="starter_pack". The starter-pack sentinel tells the
  * backend to attach all 9 catalog PDFs in a single Resend email.
  *
  * UTM context is forwarded explicitly so analytics can distinguish
- * homepage-sourced leads from /resources/templates direct visitors.
+ * homepage-sourced leads from Resources template-tab visitors.
  */
 
 import Link from 'next/link';
@@ -69,7 +69,7 @@ export default function HomepageTemplatesBand() {
                 Get all 9 templates &rarr;
               </button>
               <Link
-                href="/resources/templates"
+                href="/resources?tab=templates"
                 className="inline-flex items-center text-sm font-medium text-slate-300 underline-offset-4 transition hover:text-white hover:underline"
               >
                 Browse all templates

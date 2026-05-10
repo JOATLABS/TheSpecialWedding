@@ -1,7 +1,7 @@
 /**
  * Canonical client-side manifest of the 9 free marketing templates.
  *
- * Exported from one place so the public templates page, the blog
+ * Exported from one place so the Resources templates tab, the blog
  * "Related templates" card, and any future surface (homepage band,
  * resources hub tile, etc.) all reference identical names + copy.
  *
@@ -12,7 +12,7 @@
  *
  * Adding a template: add its row here AND in the Python catalog. The
  * `id` must match the Python catalog `id` so deep links to
- * `/resources/templates#<id>` work.
+ * `/resources?tab=templates#<id>` work.
  */
 export interface MarketingTemplate {
   id: string;

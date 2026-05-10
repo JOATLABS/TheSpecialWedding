@@ -2,7 +2,7 @@
 Admin Platform Config API Router
 
 REST API for root admin to manage advertising platform settings,
-view data pipeline status, and export advertising data.
+view data pipeline status, and export marketing/advertising data.
 
 All endpoints require ROOT_ADMIN auth.
 
@@ -90,14 +90,14 @@ async def get_pipeline_status(
 @router.get(
     "/export",
     summary="Export advertising data",
-    description="Export data from any advertising collection as JSON.",
+    description="Export root-admin marketing and advertising data as JSON.",
 )
 async def export_data(
     dataset: str = Query(
         ...,
         description="Dataset to export: vendor_accounts, active_campaigns, all_campaigns, "
         "campaign_performance, ad_events, ad_leads, planner_feedback, "
-        "campaign_daily_stats, placement_daily_stats, fraud_signals",
+        "campaign_daily_stats, placement_daily_stats, fraud_signals, marketing_leads",
     ),
     date_range: str = Query(
         "last_30_days",

@@ -178,8 +178,10 @@ async def main() -> None:
 
     await _purge_state()
     pre_count = sum(
-        await count_documents("marketing_leads", {"email": e.lower()})
-        for e in ALL_EMAILS
+        [
+            await count_documents("marketing_leads", {"email": e.lower()})
+            for e in ALL_EMAILS
+        ]
     )
     _assert(pre_count == 0, "SEED: zero pre-existing marketing_leads rows")
 
@@ -216,34 +218,40 @@ async def main() -> None:
         user_agent="Mozilla/5.0 (verifier)",
     )
     _assert(result_1["status"] == "created", "first POST returns status='created'")
-    _assert(result_1["email_dispatched"] is True,
-            "first POST returns email_dispatched=True")
+    _assert(
+        result_1["email_dispatched"] is True, "first POST returns email_dispatched=True"
+    )
     pack_calls = stub.calls_for(PRIMARY_EMAIL)
     _assert(len(pack_calls) == 1, "exactly ONE Resend send_email call")
     call = pack_calls[0]
-    _assert(call.get("email_type") == "marketing_starter_pack_download",
-            "email_type='marketing_starter_pack_download'")
+    _assert(
+        call.get("email_type") == "marketing_starter_pack_download",
+        "email_type='marketing_starter_pack_download'",
+    )
     attachments = call.get("attachments") or []
-    _assert(len(attachments) == 9,
-            "send_email attachments has exactly 9 entries (one per catalog id)")
+    _assert(
+        len(attachments) == 9,
+        "send_email attachments has exactly 9 entries (one per catalog id)",
+    )
     attachment_ids = {a["filename"].rsplit(".pdf", 1)[0] for a in attachments}
-    _assert(attachment_ids == catalog_ids,
-            "attachment filenames cover every FORM_TEMPLATES id")
+    _assert(
+        attachment_ids == catalog_ids,
+        "attachment filenames cover every FORM_TEMPLATES id",
+    )
 
     lead_1 = await _latest_lead(PRIMARY_EMAIL, STARTER_PACK_TEMPLATE_ID)
     _assert(lead_1 is not None, "marketing_leads row created for starter_pack")
-    _assert(lead_1["template_id"] == "starter_pack",
-            "lead.template_id='starter_pack'")
-    _assert(lead_1["template_name"] == "Free Wedding Planner Starter Pack",
-            "lead.template_name='Free Wedding Planner Starter Pack'")
+    assert lead_1 is not None
+    _assert(lead_1["template_id"] == "starter_pack", "lead.template_id='starter_pack'")
+    _assert(
+        lead_1["template_name"] == "Free Wedding Planner Starter Pack",
+        "lead.template_name='Free Wedding Planner Starter Pack'",
+    )
     _assert(int(lead_1.get("download_count") or 0) == 1, "lead.download_count=1")
     _assert(int(lead_1.get("email_sends") or 0) == 1, "lead.email_sends=1")
-    _assert(lead_1.get("utm_source") == "homepage_band",
-            "lead.utm_source persisted")
-    _assert(lead_1.get("utm_medium") == "organic",
-            "lead.utm_medium persisted")
-    _assert(lead_1.get("utm_campaign") == "starter_pack",
-            "lead.utm_campaign persisted")
+    _assert(lead_1.get("utm_source") == "homepage_band", "lead.utm_source persisted")
+    _assert(lead_1.get("utm_medium") == "organic", "lead.utm_medium persisted")
+    _assert(lead_1.get("utm_campaign") == "starter_pack", "lead.utm_campaign persisted")
     checkpoint_pause(
         "Fresh starter_pack capture",
         [
@@ -268,31 +276,44 @@ async def main() -> None:
         utm_campaign="starter_pack",
     )
     _assert(result_2["status"] == "resent", "second POST returns status='resent'")
-    _assert(result_2["email_dispatched"] is True,
-            "second POST returns email_dispatched=True")
+    _assert(
+        result_2["email_dispatched"] is True,
+        "second POST returns email_dispatched=True",
+    )
     rows_after_resend = await count_documents(
         "marketing_leads",
         {"email": PRIMARY_EMAIL.lower(), "template_id": STARTER_PACK_TEMPLATE_ID},
     )
-    _assert(rows_after_resend == 1,
-            "still exactly ONE lead row for (email, starter_pack) after resend")
+    _assert(
+        rows_after_resend == 1,
+        "still exactly ONE lead row for (email, starter_pack) after resend",
+    )
     lead_2 = await _latest_lead(PRIMARY_EMAIL, STARTER_PACK_TEMPLATE_ID)
-    _assert(int(lead_2.get("download_count") or 0) == 2,
-            "lead.download_count incremented to 2")
-    _assert(int(lead_2.get("email_sends") or 0) == 2,
-            "lead.email_sends incremented to 2")
+    assert lead_2 is not None
+    _assert(
+        int(lead_2.get("download_count") or 0) == 2,
+        "lead.download_count incremented to 2",
+    )
+    _assert(
+        int(lead_2.get("email_sends") or 0) == 2, "lead.email_sends incremented to 2"
+    )
 
     # ------------------------------------------------------------------
     # CHECKPOINT 3: UTM history persisted on resend.
     # ------------------------------------------------------------------
     _log_checkpoint(3, TOTAL, "UTM context: original on lead, resend in subsequent_utm")
-    _assert(lead_2.get("utm_source") == "homepage_band",
-            "ORIGINAL utm_source unchanged on resend (not overwritten)")
+    _assert(
+        lead_2.get("utm_source") == "homepage_band",
+        "ORIGINAL utm_source unchanged on resend (not overwritten)",
+    )
     subsequent = lead_2.get("subsequent_utm") or []
-    _assert(len(subsequent) == 1,
-            "subsequent_utm has exactly one entry after one resend")
-    _assert(subsequent[0].get("utm_source") == "homepage_band_v2",
-            "subsequent_utm[0].utm_source captures the new UTM context")
+    _assert(
+        len(subsequent) == 1, "subsequent_utm has exactly one entry after one resend"
+    )
+    _assert(
+        subsequent[0].get("utm_source") == "homepage_band_v2",
+        "subsequent_utm[0].utm_source captures the new UTM context",
+    )
     checkpoint_pause(
         "UTM persistence + resend behavior",
         [
@@ -313,27 +334,40 @@ async def main() -> None:
         recipient_name="Test Visitor",
         utm_source="resources_page",
     )
-    _assert(result_4["status"] == "created",
-            "couple_intake first capture returns status='created'")
+    _assert(
+        result_4["status"] == "created",
+        "couple_intake first capture returns status='created'",
+    )
     rows_total_for_email = await count_documents(
         "marketing_leads", {"email": PRIMARY_EMAIL.lower()}
     )
-    _assert(rows_total_for_email == 2,
-            "two distinct lead rows for the visitor (starter_pack + couple_intake)")
+    _assert(
+        rows_total_for_email == 2,
+        "two distinct lead rows for the visitor (starter_pack + couple_intake)",
+    )
     lead_couple = await _latest_lead(PRIMARY_EMAIL, "couple_intake")
-    _assert(lead_couple is not None,
-            "couple_intake lead row exists separately from the bundle row")
-    _assert(lead_couple["template_id"] == "couple_intake",
-            "couple_intake lead.template_id='couple_intake'")
+    _assert(
+        lead_couple is not None,
+        "couple_intake lead row exists separately from the bundle row",
+    )
+    _assert(
+        lead_couple["template_id"] == "couple_intake",
+        "couple_intake lead.template_id='couple_intake'",
+    )
     couple_calls = [
-        c for c in stub.calls
+        c
+        for c in stub.calls
         if c.get("email_type") == "marketing_template_download"
         and c.get("to_email") == PRIMARY_EMAIL.lower()
     ]
-    _assert(len(couple_calls) == 1,
-            "single-template Resend call uses email_type='marketing_template_download'")
-    _assert(len(couple_calls[0].get("attachments") or []) == 1,
-            "single-template path attaches exactly 1 PDF (not 9)")
+    _assert(
+        len(couple_calls) == 1,
+        "single-template Resend call uses email_type='marketing_template_download'",
+    )
+    _assert(
+        len(couple_calls[0].get("attachments") or []) == 1,
+        "single-template path attaches exactly 1 PDF (not 9)",
+    )
 
     # ------------------------------------------------------------------
     # CHECKPOINT 5: Bad email rejected.
@@ -349,14 +383,14 @@ async def main() -> None:
             template_id=STARTER_PACK_TEMPLATE_ID,
             email="not-an-email",
             name="Bad Email",
+            utm_source=None,
+            utm_medium=None,
+            utm_campaign=None,
         )
     except ValidationError:
         raised = True
-    _assert(raised,
-            "EmailStr rejects 'not-an-email' before the route handler runs")
-    rows_for_bad = await count_documents(
-        "marketing_leads", {"email": "not-an-email"}
-    )
+    _assert(raised, "EmailStr rejects 'not-an-email' before the route handler runs")
+    rows_for_bad = await count_documents("marketing_leads", {"email": "not-an-email"})
     _assert(rows_for_bad == 0, "no Mongo row created for malformed email")
 
     # ------------------------------------------------------------------
@@ -371,15 +405,15 @@ async def main() -> None:
         )
     except KeyError:
         raised_key = True
-    _assert(raised_key,
-            "service raises KeyError for unknown template_id "
-            "(route layer maps to 404)")
+    _assert(
+        raised_key,
+        "service raises KeyError for unknown template_id (route layer maps to 404)",
+    )
     rows_bad_tpl = await count_documents(
         "marketing_leads",
         {"email": PRIMARY_EMAIL.lower(), "template_id": "not_a_real_template"},
     )
-    _assert(rows_bad_tpl == 0,
-            "no Mongo row created for unknown template_id")
+    _assert(rows_bad_tpl == 0, "no Mongo row created for unknown template_id")
 
     # ------------------------------------------------------------------
     # CHECKPOINT 7: Concurrent dup-key race.
@@ -407,18 +441,22 @@ async def main() -> None:
         return_exceptions=True,
     )
     failures = [r for r in results if isinstance(r, Exception)]
-    _assert(not failures,
-            f"neither concurrent task raised an unhandled exception "
-            f"(got: {failures})")
+    _assert(
+        not failures,
+        f"neither concurrent task raised an unhandled exception (got: {failures})",
+    )
     statuses = sorted(r.get("status") for r in results if isinstance(r, dict))
-    _assert(statuses == ["created", "resent"] or statuses == ["resent", "resent"],
-            f"loser falls through to status='resent' (got: {statuses})")
+    _assert(
+        statuses == ["created", "resent"] or statuses == ["resent", "resent"],
+        f"loser falls through to status='resent' (got: {statuses})",
+    )
     rows_dup = await count_documents(
         "marketing_leads",
         {"email": DUP_EMAIL.lower(), "template_id": STARTER_PACK_TEMPLATE_ID},
     )
-    _assert(rows_dup == 1,
-            "exactly ONE lead row for (dup_email, starter_pack) after race")
+    _assert(
+        rows_dup == 1, "exactly ONE lead row for (dup_email, starter_pack) after race"
+    )
 
     # ------------------------------------------------------------------
     # CHECKPOINT 8: HTML escape on recipient_name.
@@ -434,19 +472,27 @@ async def main() -> None:
         recipient_name=XSS_PAYLOAD,
         utm_source="homepage_band",
     )
-    _assert(result_xss["status"] == "created",
-            "XSS-named visitor still records a lead (storage allowed)")
+    _assert(
+        result_xss["status"] == "created",
+        "XSS-named visitor still records a lead (storage allowed)",
+    )
     xss_lead = await _latest_lead(XSS_EMAIL, STARTER_PACK_TEMPLATE_ID)
     _assert(xss_lead is not None, "XSS-named lead row exists")
-    _assert(xss_lead.get("recipient_name") == XSS_PAYLOAD,
-            "raw payload stored verbatim on the lead row (storage is OK)")
+    _assert(
+        xss_lead.get("recipient_name") == XSS_PAYLOAD,
+        "raw payload stored verbatim on the lead row (storage is OK)",
+    )
     xss_calls = stub.calls_for(XSS_EMAIL)
     _assert(len(xss_calls) == 1, "one Resend call for XSS visitor")
     rendered_html = xss_calls[0].get("html_content") or ""
-    _assert("&lt;script&gt;" in rendered_html,
-            "rendered email body contains escaped '&lt;script&gt;'")
-    _assert(XSS_PAYLOAD not in rendered_html,
-            "raw '<script>...</script>' tag is NOT present in rendered email body")
+    _assert(
+        "&lt;script&gt;" in rendered_html,
+        "rendered email body contains escaped '&lt;script&gt;'",
+    )
+    _assert(
+        XSS_PAYLOAD not in rendered_html,
+        "raw '<script>...</script>' tag is NOT present in rendered email body",
+    )
     checkpoint_pause(
         "Manual verification: XSS payload escaping",
         [
@@ -480,10 +526,12 @@ async def main() -> None:
             allowed_count += 1
         else:
             blocked_count += 1
-    _assert(allowed_count == 10,
-            "first 10 requests from one IP are allowed (10/hr cap)")
-    _assert(blocked_count == 1,
-            "11th request from same IP is blocked (route returns 429)")
+    _assert(
+        allowed_count == 10, "first 10 requests from one IP are allowed (10/hr cap)"
+    )
+    _assert(
+        blocked_count == 1, "11th request from same IP is blocked (route returns 429)"
+    )
 
     # ------------------------------------------------------------------
     # Wrap-up
@@ -494,7 +542,9 @@ async def main() -> None:
     )
     print()
     print(f"  ↳ final marketing_leads count across verifier emails: {final_count}")
-    print(f"  ↳ run cleanup: python testbed/cleanup_homepage_starter_pack_lead_magnet_state.py")
+    print(
+        "  ↳ run cleanup: python testbed/cleanup_homepage_starter_pack_lead_magnet_state.py"
+    )
 
 
 if __name__ == "__main__":

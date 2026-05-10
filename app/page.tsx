@@ -259,7 +259,7 @@ export default function HomePage() {
         <div className="mx-auto flex max-w-7xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <p>&copy; {year} The Special Wedding. All rights reserved.</p>
           <div className="flex flex-wrap gap-5">
-            <Link href="/resources/templates" className="hover:text-white">
+            <Link href="/resources?tab=templates" className="hover:text-white">
               Free templates
             </Link>
             <Link href="/privacy" className="hover:text-white">

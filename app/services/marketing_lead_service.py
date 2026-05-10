@@ -1,7 +1,7 @@
 """Lead-capture service for the public template-download surface (Phase C).
 
-The public marketing page (/resources/templates) lets visitors download
-any catalog form template as a PDF in exchange for their email. Each
+The public Resources templates tab lets visitors download any catalog
+form template as a PDF in exchange for their email. Each
 download writes a row to the ``marketing_leads`` Mongo collection (with
 optional UTM provenance) and dispatches a confirmation email containing
 the PDF as an attachment plus a discreet trial CTA.

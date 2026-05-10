@@ -643,14 +643,16 @@ class GuestVerificationService:
             if privacy_mode == "private":
                 # OTP verification (replaces name/phone verification)
                 # Check if this is an OTP verification
-                otp_code = verification_data.get("otp_code")
-                contact = verification_data.get("contact", "").strip()
+                otp_code = self._sanitize_input(
+                    verification_data.get("otp_code") or "", "otp", max_length=10
+                )
+                contact = self._sanitize_input(
+                    verification_data.get("contact") or "",
+                    "contact",
+                    max_length=100,
+                )
 
                 if otp_code and contact:
-                    # Sanitize inputs
-                    otp_code = self._sanitize_input(otp_code, "otp", max_length=10)
-                    contact = self._sanitize_input(contact, "contact", max_length=100)
-
                     # Verify OTP
                     try:
                         otp_result = await self.otp_service.verify_otp(
@@ -695,8 +697,16 @@ class GuestVerificationService:
                         )
 
                 # Method 3: Request OTP (when phone/email provided without code)
-                phone = verification_data.get("phone", "").strip()
-                email = verification_data.get("email", "").strip()
+                phone = self._sanitize_input(
+                    verification_data.get("phone") or "",
+                    "contact",
+                    max_length=100,
+                )
+                email = self._sanitize_input(
+                    verification_data.get("email") or "",
+                    "contact",
+                    max_length=100,
+                )
 
                 if phone or email:
                     # Return special response indicating OTP should be sent

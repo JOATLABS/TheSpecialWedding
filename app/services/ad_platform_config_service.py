@@ -16,6 +16,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,18 @@ def invalidate_config_cache():
     global _config_cache, _config_cache_ts
     _config_cache = None
     _config_cache_ts = 0.0
+
+
+def _serialize_export_value(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, ObjectId):
+        return str(value)
+    if isinstance(value, list):
+        return [_serialize_export_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _serialize_export_value(item) for key, item in value.items()}
+    return value
 
 
 # Default config values — used when no config document exists yet
@@ -175,6 +188,7 @@ class AdPlatformConfigService:
             "placement_day_stats",
             "ad_fraud_signals",
             "ad_lead_charges",
+            "marketing_leads",
             "vendor_ad_billing",
             "planner_ad_preferences",
         ]
@@ -216,20 +230,23 @@ class AdPlatformConfigService:
         limit: int = 1000,
     ) -> Dict[str, Any]:
         """
-        Export advertising data as JSON (CSV conversion happens on frontend).
+        Export root-admin marketing and advertising data as JSON.
+        CSV conversion happens on frontend.
         Returns rows + metadata.
         """
         now = datetime.now(timezone.utc)
 
+        def build_date_filter(field: str = "created_at") -> Dict[str, Any]:
+            if date_range == "last_7_days":
+                return {field: {"$gte": now - timedelta(days=7)}}
+            if date_range == "last_30_days":
+                return {field: {"$gte": now - timedelta(days=30)}}
+            if date_range == "last_90_days":
+                return {field: {"$gte": now - timedelta(days=90)}}
+            return {}
+
         # Date range filter
-        date_filter = {}
-        if date_range == "last_7_days":
-            date_filter = {"created_at": {"$gte": now - timedelta(days=7)}}
-        elif date_range == "last_30_days":
-            date_filter = {"created_at": {"$gte": now - timedelta(days=30)}}
-        elif date_range == "last_90_days":
-            date_filter = {"created_at": {"$gte": now - timedelta(days=90)}}
-        # "all_time" = no filter
+        date_filter = build_date_filter()
 
         # Dataset to collection mapping
         dataset_map = {
@@ -243,6 +260,10 @@ class AdPlatformConfigService:
             "campaign_daily_stats": ("campaign_day_stats", {**date_filter}),
             "placement_daily_stats": ("placement_day_stats", {**date_filter}),
             "fraud_signals": ("ad_fraud_signals", {**date_filter}),
+            "marketing_leads": (
+                "marketing_leads",
+                build_date_filter("first_downloaded_at"),
+            ),
         }
 
         if dataset not in dataset_map:
@@ -252,20 +273,19 @@ class AdPlatformConfigService:
         col = self.db[col_name]
 
         total = await col.count_documents(query)
-        cursor = col.find(query).sort("created_at", -1).limit(limit)
+        sort_field = (
+            "first_downloaded_at" if dataset == "marketing_leads" else "created_at"
+        )
+        cursor = col.find(query).sort(sort_field, -1).limit(limit)
         rows = []
         async for doc in cursor:
-            doc["_id"] = str(doc["_id"])
-            # Convert datetime fields to ISO strings for JSON serialization
-            for key, val in doc.items():
-                if isinstance(val, datetime):
-                    doc[key] = val.isoformat()
-            rows.append(doc)
+            rows.append(_serialize_export_value(doc))
 
         return {
             "dataset": dataset,
             "date_range": date_range,
             "total": total,
             "returned": len(rows),
+            "row_count": len(rows),
             "rows": rows,
         }
