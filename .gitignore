@@ -25,6 +25,10 @@ archive/
 # Logs
 *.log
 
+.venv-codex/
+k8s/
+plugins/
+AGENTS.md
 
 # IDE specific files
 .claude/
