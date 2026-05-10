@@ -88,7 +88,9 @@ class GuestExportService:
         Returns:
             Full RSVP URL
         """
-        frontend_url = (os.getenv("FRONTEND_URL") or "https://thespecialwedding.io").rstrip("/")
+        frontend_url = (
+            os.getenv("FRONTEND_URL") or "https://thespecialwedding.io"
+        ).rstrip("/")
         return (
             f"{frontend_url}/otp/verify"
             f"?slug={quote(slug, safe='')}"
