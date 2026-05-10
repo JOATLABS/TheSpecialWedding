@@ -518,13 +518,22 @@ jobs:
             fi
             sleep 3
           done
+          PROXY_STATUS=$(curl -s -o /tmp/proxy-health.json -w "%{http_code}" --max-time 5 http://localhost:3000/api/proxy/health/livez 2>/dev/null || echo "000")
+          echo "Frontend proxy health: HTTP $PROXY_STATUS"
+          if [ "$PROXY_STATUS" != "200" ]; then
+            echo "Frontend /api/proxy failed to reach backend"
+            cat /tmp/proxy-health.json 2>/dev/null || true
+            docker logs frontend-smoke --tail=50
+            docker logs backend-smoke --tail=50
+            exit 1
+          fi
           echo "Frontend smoke test passed"
 
       - name: All smoke tests passed
         run: |
           echo "## Smoke Test Results" >> $GITHUB_STEP_SUMMARY
           echo "- Backend: healthy, auth working" >> $GITHUB_STEP_SUMMARY
-          echo "- Frontend: healthy, serving pages" >> $GITHUB_STEP_SUMMARY
+          echo "- Frontend: healthy, serving pages and proxying /api/proxy" >> $GITHUB_STEP_SUMMARY
           echo "- Image tag: \`${{ steps.tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Cleanup

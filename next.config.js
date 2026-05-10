@@ -26,21 +26,6 @@ const remotePatterns = [
 ].filter(Boolean)
 
 const nextConfig = {
-  // Proxy all browser API calls through /api/proxy so the backend subdomain
-  // is never exposed in the client bundle or to web crawlers.
-  // BACKEND_SERVICE_URL controls the target:
-  //   Coolify (single container): http://localhost:8000 (default)
-  //   Kubernetes: http://backend.wedding-app.svc.cluster.local:8000
-  async rewrites() {
-    const backendUrl = process.env.BACKEND_SERVICE_URL || 'http://localhost:8000';
-    return [
-      {
-        source: '/api/proxy/:path*',
-        destination: `${backendUrl}/:path*`,
-      },
-    ];
-  },
-
   images: {
     formats: ['image/avif', 'image/webp'],
     remotePatterns,

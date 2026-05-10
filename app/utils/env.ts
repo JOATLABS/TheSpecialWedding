@@ -123,11 +123,58 @@ function getConfiguredApiBaseUrl(): string {
   throw new Error(errorMsg);
 }
 
+function assertValidProxyBackend(apiBase: string, frontendOrigin?: string): void {
+  let apiUrl: URL;
+  try {
+    apiUrl = new URL(apiBase);
+  } catch {
+    throw new Error(`Proxy backend URL is invalid. Resolved value: ${apiBase}`);
+  }
+
+  if (apiUrl.protocol !== 'http:' && apiUrl.protocol !== 'https:') {
+    throw new Error(
+      `Proxy backend URL must use http or https. Resolved value: ${apiBase}`,
+    );
+  }
+
+  if (!frontendOrigin) {
+    return;
+  }
+
+  let appUrl: URL;
+  try {
+    appUrl = new URL(frontendOrigin);
+  } catch {
+    throw new Error(`Frontend origin is invalid. Resolved value: ${frontendOrigin}`);
+  }
+
+  if (apiUrl.origin === appUrl.origin) {
+    throw new Error(
+      `Proxy backend URL must not point at the frontend origin (${appUrl.origin}). ` +
+        'Configure BACKEND_SERVICE_URL or INTERNAL_API_BASE_URL to a backend service URL.',
+    );
+  }
+}
+
+/**
+ * Get the backend target used by the runtime `/api/proxy` route.
+ *
+ * `BACKEND_SERVICE_URL` is an explicit proxy override for split-service
+ * runtimes. When it is absent, reuse the server API fallback chain so existing
+ * Coolify `INTERNAL_API_BASE_URL` settings also drive browser proxy traffic.
+ */
+export function getProxyBackendBaseUrl(frontendOrigin?: string): string {
+  const backendUrl = process.env.BACKEND_SERVICE_URL?.trim();
+  const apiBase = backendUrl ? normalizeBaseUrl(backendUrl) : getConfiguredApiBaseUrl();
+  assertValidProxyBackend(apiBase, frontendOrigin);
+  return apiBase;
+}
+
 /**
  * Get the API base URL.
  *
  * In the browser, always returns the relative path '/api/proxy' so that all
- * API calls are routed through the Next.js rewrite rule. This keeps the API
+ * API calls are routed through the runtime `/api/proxy` route. This keeps the API
  * subdomain invisible to crawlers and out of the client bundle.
  *
  * On the server (SSR/RSC/sitemap/etc.) uses deployment env vars so that

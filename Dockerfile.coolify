@@ -21,7 +21,8 @@ RUN npm ci
 # Copy all source files (controlled by .dockerignore)
 COPY . .
 
-# Set build-time environment variables
+# Set build-time environment variables for the legacy single-container image.
+# Runtime /api/proxy uses INTERNAL_API_BASE_URL below, not a baked rewrite.
 # ARG must be declared AFTER FROM due to Coolify bug #7118 (comments before FROM cause injection issues)
 ARG NEXT_PUBLIC_API_BASE_URL
 ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
