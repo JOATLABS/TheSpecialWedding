@@ -2,6 +2,7 @@
 
 import os
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -46,7 +47,11 @@ class RSVPReminderHelper:
             phone = guest.get("phone")
             if not token or not phone:
                 continue
-            url = f"{self.base_url}/{slug}/invite/{token}"
+            url = (
+                f"{self.base_url.rstrip('/')}/otp/verify"
+                f"?slug={quote(slug, safe='')}"
+                f"&token={quote(token, safe='')}"
+            )
 
             # Use custom message if provided, otherwise use default
             if custom_message:
