@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from html import escape
 from io import BytesIO
 from typing import Dict, List, Optional
+from urllib.parse import quote
 
 from app.core.database import mongo
 
@@ -87,8 +88,12 @@ class GuestExportService:
         Returns:
             Full RSVP URL
         """
-        frontend_url = os.getenv("FRONTEND_URL") or "https://thespecialwedding.io"
-        return f"{frontend_url}/{slug}/invite/{token}"
+        frontend_url = (os.getenv("FRONTEND_URL") or "https://thespecialwedding.io").rstrip("/")
+        return (
+            f"{frontend_url}/otp/verify"
+            f"?slug={quote(slug, safe='')}"
+            f"&token={quote(token, safe='')}"
+        )
 
     async def get_guest_with_rsvp(self, guest: Dict, rsvp_map: Dict[str, Dict]) -> Dict:
         """
