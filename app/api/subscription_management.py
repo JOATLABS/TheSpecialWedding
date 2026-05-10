@@ -1,5 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.constants.billing import (
+    CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
+    CANONICAL_PUBLIC_PLAN_METER_EVENT_NAME,
+    plan_billing_model,
+)
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     require_admin_or_planner,
@@ -303,17 +308,13 @@ async def sync_plans_to_stripe(
     Manually sync all existing subscription plans to Stripe Products/Prices.
     Useful if you added Stripe credentials after creating plans.
     """
-    from app.services.stripe_service import stripe_service
-
     plans = await subscription_service.list_plans(include_inactive=True)
     synced_count = 0
     errors = []
 
     for plan in plans:
         try:
-            stripe_data = stripe_service.sync_plan_to_stripe(plan)
-            # Update local DB with new IDs
-            await subscription_service.update_plan(plan["_id"], stripe_data)
+            await subscription_service.update_plan(plan["_id"], {})
             synced_count += 1
         except Exception as e:
             errors.append(f"Plan {plan.get('name', 'Unknown')}: {str(e)}")
@@ -334,6 +335,9 @@ async def seed_default_subscription_plans(
             "description": "For new planners onboarding their first weddings",
             "price_monthly": 29,
             "price_yearly": 290,
+            "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
+            "is_metered": True,
+            "meter_event_name": CANONICAL_PUBLIC_PLAN_METER_EVENT_NAME,
             "max_weddings": 3,
             "max_guests_per_wedding": 150,
             "ai_credits_monthly": 100,
@@ -368,6 +372,9 @@ async def seed_default_subscription_plans(
             "description": "Most popular plan with full automation features",
             "price_monthly": 59,
             "price_yearly": 590,
+            "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
+            "is_metered": True,
+            "meter_event_name": CANONICAL_PUBLIC_PLAN_METER_EVENT_NAME,
             "max_weddings": 10,
             "max_guests_per_wedding": 350,
             "ai_credits_monthly": 300,
@@ -409,6 +416,9 @@ async def seed_default_subscription_plans(
             "description": "For agencies and high-volume wedding planners",
             "price_monthly": 149,
             "price_yearly": 1490,
+            "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
+            "is_metered": True,
+            "meter_event_name": CANONICAL_PUBLIC_PLAN_METER_EVENT_NAME,
             "max_weddings": -1,
             "max_guests_per_wedding": -1,
             "ai_credits_monthly": 1000,
@@ -505,6 +515,8 @@ async def get_public_subscription_plans():
                 "description": plan.get("description"),
                 "price_monthly": plan.get("price_monthly", 0),
                 "price_yearly": plan.get("price_yearly"),
+                "billing_model": plan.get("billing_model") or plan_billing_model(plan),
+                "is_metered": bool(plan.get("is_metered", False)),
                 "max_weddings": plan.get("max_weddings", 1),
                 "max_guests_per_wedding": plan.get("max_guests_per_wedding", 100),
                 "ai_credits_monthly": plan.get("ai_credits_monthly", 10),
@@ -534,12 +546,17 @@ async def get_public_subscription_plan(plan_id: str):
         "description": plan.get("description"),
         "price_monthly": plan["price_monthly"],
         "price_yearly": plan.get("price_yearly"),
+        "billing_model": plan.get("billing_model") or plan_billing_model(plan),
+        "is_metered": bool(plan.get("is_metered", False)),
         "max_weddings": plan["max_weddings"],
         "max_guests_per_wedding": plan["max_guests_per_wedding"],
         "ai_credits_monthly": plan["ai_credits_monthly"],
         "storage_gb": plan["storage_gb"],
         "staff_seats": plan["staff_seats"],
         "features": plan.get("features", {}),
+        "features_list": plan.get("features_list", []),
         "is_featured": plan.get("is_featured", False),
+        "trial_days": plan.get("trial_days", 0),
+        "display_order": plan.get("display_order", plan.get("sort_order", 0)),
     }
     return public_plan

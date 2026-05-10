@@ -24,7 +24,7 @@ export function QuoteRequestModal({
   selectedWeddingId,
   onClose,
 }: QuoteRequestModalProps) {
-  const { token, userProfile } = useAdmin();
+  const { token, apiRequest } = useAdmin();
   const [message, setMessage] = useState(
     `Hi ${card.vendor_name},\n\nI found your profile on The Special Wedding and I'm interested in your services. Could you provide a quote?\n\nThank you!`
   );
@@ -44,13 +44,14 @@ export function QuoteRequestModal({
 
     try {
       setSubmitting(true);
-      await requestQuote(token, {
+      const result = await requestQuote(apiRequest, {
         campaign_id: card.campaign_id,
         message: message.trim(),
         wedding_id: weddingId || undefined,
         wedding_context: Object.values(weddingContext).some(Boolean) ? weddingContext : undefined,
         auto_add_to_directory: autoAdd,
       });
+      if (!result) return;
       setSubmitted(true);
       toast.success(`Quote request sent to ${card.vendor_name}`);
       setTimeout(onClose, 1500);
@@ -65,10 +66,11 @@ export function QuoteRequestModal({
     if (!token) return;
     try {
       setDrafting(true);
-      const result = await draftQuote(token, {
+      const result = await draftQuote(apiRequest, {
         campaign_id: card.campaign_id,
         wedding_context: Object.values(weddingContext).some(Boolean) ? weddingContext : undefined,
       });
+      if (!result) return;
       if (result.draft?.body) {
         setMessage(result.draft.body);
         setAiDrafted(true);

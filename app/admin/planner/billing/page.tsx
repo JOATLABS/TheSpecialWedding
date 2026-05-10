@@ -44,6 +44,8 @@ interface SubscriptionPlan {
   description: string;
   price_monthly: number;
   price_yearly: number;
+  billing_model?: string;
+  is_metered?: boolean;
   max_weddings: number;
   max_guests_per_wedding: number;
   ai_credits_monthly: number;
@@ -53,6 +55,14 @@ interface SubscriptionPlan {
   features_list?: string[];
   is_featured: boolean;
 }
+
+const billingCadenceLabel = (plan: SubscriptionPlan | null | undefined, interval: 'monthly' | 'yearly') => {
+  const isMetered = plan?.is_metered || plan?.billing_model === 'metered';
+  if (isMetered) {
+    return interval === 'yearly' ? 'active wedding/yr' : 'active wedding/mo';
+  }
+  return interval === 'yearly' ? 'yr' : 'mo';
+};
 
 interface UserSubscription {
   _id?: string;
@@ -840,7 +850,7 @@ export default function PlannerBillingPage() {
             const displayPrice = displayInterval === 'yearly' && plan.price_yearly > 0
               ? plan.price_yearly
               : plan.price_monthly;
-            const displayCadence = displayInterval === 'yearly' ? 'yr' : 'mo';
+            const displayCadence = billingCadenceLabel(plan, displayInterval);
 
             return (
               <Card
@@ -1079,7 +1089,10 @@ export default function PlannerBillingPage() {
                         : currentPlan.price_monthly}
                     </span>
                     <span className="text-gray-500 dark:text-gray-400 text-sm">
-                      /{currentSubscription.billing_interval === 'monthly' ? 'mo' : 'yr'}
+                      /{billingCadenceLabel(
+                        currentPlan,
+                        currentSubscription.billing_interval === 'yearly' ? 'yearly' : 'monthly',
+                      )}
                     </span>
                   </div>
                 </div>

@@ -7,7 +7,7 @@
  */
 
 import { getApiBaseUrl } from '@/utils/env';
-import { redirectOnBillingBlock } from '@/utils/adminApiAuthGuard';
+import { adminGet, type AdminApiRequest } from '@/services/adminApiRequest';
 
 const API_BASE = getApiBaseUrl();
 
@@ -155,84 +155,52 @@ export interface BudgetBreakdown {
  * Fetch full behavioral analytics (ROOT_ADMIN only)
  */
 export async function fetchBehavioralAnalytics(
-  token: string,
+  apiRequest: AdminApiRequest,
   timeframe: string = '30d'
-): Promise<BehavioralAnalyticsResponse> {
-  const res = await fetch(
-    `${API_BASE}/admin/behavioral-analytics?timeframe=${timeframe}`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-      credentials: 'include',
-    }
+): Promise<BehavioralAnalyticsResponse | undefined> {
+  return adminGet<BehavioralAnalyticsResponse>(
+    apiRequest,
+    '/admin/behavioral-analytics',
+    { timeframe },
   );
-  if (!res.ok) {
-    redirectOnBillingBlock(res);
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body?.detail || 'Failed to fetch behavioral analytics');
-  }
-  return res.json();
 }
 
 /**
  * Fetch per-wedding engagement signals (planner)
  */
 export async function fetchEngagementSignals(
-  token: string
-): Promise<{ signals: WeddingEngagementSignal[]; count: number }> {
-  const res = await fetch(`${API_BASE}/admin/engagement-signals`, {
-    headers: { Authorization: `Bearer ${token}` },
-    credentials: 'include',
-  });
-  if (!res.ok) {
-    redirectOnBillingBlock(res);
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body?.detail || 'Failed to fetch engagement signals');
-  }
-  return res.json();
+  apiRequest: AdminApiRequest
+): Promise<{ signals: WeddingEngagementSignal[]; count: number } | undefined> {
+  return adminGet<{ signals: WeddingEngagementSignal[]; count: number }>(
+    apiRequest,
+    '/admin/engagement-signals',
+  );
 }
 
 /**
  * Fetch non-responders for a wedding (admin/planner — uses Bearer token)
  */
 export async function fetchNonResponders(
-  token: string,
+  apiRequest: AdminApiRequest,
   weddingId: string
-): Promise<{ wedding_id: string; non_responders: NonResponder[]; count: number }> {
-  const res = await fetch(
-    `${API_BASE}/admin/weddings/${weddingId}/non-responders`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-      credentials: 'include',
-    }
+): Promise<{ wedding_id: string; non_responders: NonResponder[]; count: number } | undefined> {
+  return adminGet<{ wedding_id: string; non_responders: NonResponder[]; count: number }>(
+    apiRequest,
+    `/admin/weddings/${weddingId}/non-responders`,
   );
-  if (!res.ok) {
-    redirectOnBillingBlock(res);
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body?.detail || 'Failed to fetch non-responders');
-  }
-  return res.json();
 }
 
 /**
  * Fetch budget category breakdown (admin/planner — uses Bearer token)
  */
 export async function fetchBudgetBreakdown(
-  token: string,
+  apiRequest: AdminApiRequest,
   weddingId: string
-): Promise<BudgetBreakdown> {
-  const res = await fetch(
-    `${API_BASE}/admin/weddings/${weddingId}/budget-breakdown`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-      credentials: 'include',
-    }
+): Promise<BudgetBreakdown | undefined> {
+  return adminGet<BudgetBreakdown>(
+    apiRequest,
+    `/admin/weddings/${weddingId}/budget-breakdown`,
   );
-  if (!res.ok) {
-    redirectOnBillingBlock(res);
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body?.detail || 'Failed to fetch budget breakdown');
-  }
-  return res.json();
 }
 
 // ---------------------------------------------------------------------------
@@ -251,7 +219,6 @@ export async function fetchCoupleNonResponders(): Promise<{
     credentials: 'include',
   });
   if (!res.ok) {
-    redirectOnBillingBlock(res);
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.detail || 'Failed to fetch non-responders');
   }
@@ -266,7 +233,6 @@ export async function fetchCoupleBudgetBreakdown(): Promise<BudgetBreakdown> {
     credentials: 'include',
   });
   if (!res.ok) {
-    redirectOnBillingBlock(res);
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.detail || 'Failed to fetch budget breakdown');
   }

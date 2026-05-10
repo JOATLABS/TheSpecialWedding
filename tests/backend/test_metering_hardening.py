@@ -404,27 +404,24 @@ def test_c5_already_utc_aware_passes_through():
 # ===========================================================================
 
 
-def test_seed_is_hardcoded_source_of_truth_for_plan_config():
-    """The seed script must NOT read plan config from Mongo. It is
-    intentionally the source of truth — operators flip plans by editing
-    the file and redeploying. If anyone changes this contract, the
-    testbed driver's design breaks (it calls helpers directly because
-    it can't rely on seed-respects-Mongo).
+def test_seed_preserves_admin_mutable_plan_config_but_owns_billing_shape():
+    """The seed script bootstraps canonical plans and enforces billing shape.
 
-    This test scans the seed source for any read of subscription_plans.
-    The only legitimate Mongo reads are for the dedup pass at startup.
+    This test scans the seed source for Mongo reads that would drive the
+    seed catalog. The legitimate Mongo reads are the dedup pass at startup,
+    loading an existing plan so root-admin price/features/visibility changes
+    are preserved, and the billing-model transition guard that checks whether
+    active subscriptions would be stranded on old Stripe Prices.
     """
     from pathlib import Path
 
     seed_path = Path(PROJECT_ROOT) / "scripts" / "seed_subscription_plans.py"
     src = seed_path.read_text()
 
-    # The dedup pass at startup reads collection.find({}). That's the
-    # only sanctioned Mongo read pre-seeding. Beyond that, NO Mongo
-    # state should drive plan config.
+    # The dedup pass at startup reads collection.find({}). The transition
+    # guard may read one existing plan to compare billing_model, but NO Mongo
+    # state should drive which plans or fields are seeded.
     forbidden_patterns = [
-        # Reading individual plans from Mongo to drive the iteration:
-        'collection.find_one({"_id":',
         # Iterating Mongo to choose what to seed:
         "for plan in collection.find",
     ]
@@ -445,3 +442,11 @@ def test_seed_is_hardcoded_source_of_truth_for_plan_config():
         "Seed no longer iterates the hardcoded `plans` list. If the "
         "iteration shape changed, update this test."
     )
+    assert "_build_effective_seed_plan(plan, existing_plan)" in src
+    assert (
+        "_guard_seed_billing_model_transition(plan_id, existing_plan, plan_for_sync)"
+        in src
+    )
+    assert '"price_monthly": plan_with_stripe["price_monthly"]' in src
+    assert '"features": plan_with_stripe.get("features", {})' in src
+    assert '"billing_model": plan_with_stripe.get(' in src

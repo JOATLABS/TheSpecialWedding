@@ -20,6 +20,13 @@ import {
   type PlatformConfig,
   type PipelineStatus,
 } from '@/services/campaignAdvertisingApi';
+import {
+  buildPlanFeatureState,
+  formatFeatureListInput,
+  getPlanFeatureEntries,
+  getPlanFeatureLabel,
+  parseFeatureListInput,
+} from './planFeatureConfig';
 
 interface SubscriptionPlan {
  _id: string;
@@ -35,7 +42,9 @@ interface SubscriptionPlan {
  features: {
  [key: string]: boolean;
  };
+ features_list?: string[];
  // Metered billing
+ billing_model?: 'flat_rate' | 'metered';
  is_metered?: boolean;
  meter_event_name?: string;
  meter_id?: string;
@@ -43,6 +52,8 @@ interface SubscriptionPlan {
  is_featured: boolean;
  is_active: boolean;
  display_order: number;
+ sort_order?: number;
+ trial_days?: number;
  created_by: string;
  created_at: string;
  updated_at: string;
@@ -147,6 +158,13 @@ function formatNumber(amount: number): string {
   return new Intl.NumberFormat('en-US').format(amount);
 }
 
+function formatBillingModel(plan: Pick<SubscriptionPlan, 'is_metered' | 'meter_event_name'>): string {
+  if (plan.is_metered) {
+    return `Metered (${plan.meter_event_name || 'wedding_active'})`;
+  }
+  return 'Flat-rate';
+}
+
 /* Landing page content (hero, features, stats, theme, etc.) is now hardcoded
    in app/page.tsx for performance. The SaaS Content and Theme tabs have been
    removed. Subscription plans, analytics, and customer reviews remain admin-configurable. */
@@ -214,7 +232,7 @@ const EMPTY_BEHAVIORAL_METRICS: BehavioralAnalyticsResponse = {
 const SaasAdminDashboard = () => {
  const router = useRouter();
  const searchParams = useSearchParams();
- const { userProfile, token, expireSession } = useAdmin();
+ const { userProfile, token, expireSession, apiRequest } = useAdmin();
  const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'reviews' | 'ad-config' | 'vendor-data'>('overview');
  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
  const [planners, setPlanners] = useState<WeddingPlanner[]>([]);
@@ -318,8 +336,10 @@ const SaasAdminDashboard = () => {
       // Fetch behavioral analytics (WAU, funnels, retention, MRR movement)
       try {
         setBehavioralLoading(true);
-        const behavioralData = await fetchBehavioralAnalytics(token, metricsTimeframe);
-        setBehavioralMetrics(behavioralData);
+        const behavioralData = await fetchBehavioralAnalytics(apiRequest, metricsTimeframe);
+        if (behavioralData) {
+          setBehavioralMetrics(behavioralData);
+        }
       } catch (err) {
         console.error('[SaaS Admin] Failed to load behavioral analytics:', err);
       } finally {
@@ -413,7 +433,7 @@ const SaasAdminDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [expireSession, metricsTimeframe, token]);
+  }, [apiRequest, expireSession, metricsTimeframe, token]);
 
   useEffect(() => {
     fetchData();
@@ -1347,11 +1367,12 @@ const SaasAdminDashboard = () => {
  <p>Max Weddings: {plan.max_weddings === -1 ? 'Unlimited' : plan.max_weddings}</p>
  <p>AI Credits: {plan.ai_credits_monthly}/month</p>
  <p>Storage: {plan.storage_gb}GB</p>
- {plan.is_metered && (
- <p className="text-blue-600 dark:text-blue-400 font-medium">
- Metered: {plan.meter_event_name || 'wedding_active'}
+ <p>
+ Billing Model:{' '}
+ <span className={plan.is_metered ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-emerald-700 dark:text-emerald-300 font-medium'}>
+ {formatBillingModel(plan)}
+ </span>
  </p>
- )}
  </div>
 
  <div className="space-y-2">
@@ -1425,27 +1446,30 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  trial_days: (plan as any)?.trial_days || 0,
  is_featured: plan?.is_featured || false,
  is_active: plan?.is_active !== false,
- display_order: plan?.display_order || 0,
+ display_order: plan?.display_order ?? plan?.sort_order ?? 0,
  // Metered billing configuration
- is_metered: (plan as any)?.is_metered || false,
+ is_metered: (plan as any)?.is_metered !== false,
  meter_event_name: (plan as any)?.meter_event_name || 'wedding_active',
  meter_id: (plan as any)?.meter_id || '',
- features: {
- basic_website_builder: plan?.features?.basic_website_builder || false,
- guest_management: plan?.features?.guest_management || false,
- rsvp_system: plan?.features?.rsvp_system || false,
- ai_tools: plan?.features?.ai_tools || false,
- advanced_reporting: plan?.features?.advanced_reporting || false,
- white_label: plan?.features?.white_label || false,
- custom_integrations: plan?.features?.custom_integrations || false,
- multi_user_collaboration: plan?.features?.multi_user_collaboration || false,
- priority_support: plan?.features?.priority_support || false,
- }
+ features: buildPlanFeatureState(plan?.features),
+ features_list_text: formatFeatureListInput(plan?.features_list),
  });
+ const featureEntries = useMemo(
+ () => getPlanFeatureEntries(formData.features),
+ [formData.features],
+ );
 
  const handleSubmit = (e: React.FormEvent) => {
  e.preventDefault();
- onSave(formData);
+ const { features_list_text, ...planPayload } = formData;
+ onSave({
+ ...planPayload,
+ billing_model: formData.is_metered ? 'metered' : 'flat_rate',
+ meter_event_name: formData.is_metered ? formData.meter_event_name : null,
+ meter_id: formData.is_metered ? formData.meter_id || null : null,
+ features_list: parseFeatureListInput(features_list_text),
+ sort_order: formData.display_order,
+ });
  };
 
  return (
@@ -1454,8 +1478,14 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  <h2 className="text-2xl font-bold mb-4">
  {isEditing ? 'Edit Plan' : 'Create New Plan'}
  </h2>
+ <div className="mb-4 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100">
+ Billing model: {formData.is_metered ? `Metered (${formData.meter_event_name || 'wedding_active'})` : 'Flat-rate'}
+ <span className="block text-xs text-blue-800 dark:text-blue-200">
+ Metering is the production pricing model. Backend guards block unsafe flat-to-metered or metered-to-flat flips while active subscriptions exist.
+ </span>
+ </div>
  <form onSubmit={handleSubmit} className="space-y-4">
- <div className="grid grid-cols-2 gap-4">
+ <div className="grid grid-cols-3 gap-4">
  <div>
 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Plan Name</label>
  <input
@@ -1474,6 +1504,17 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  min="0"
  value={formData.price_monthly}
  onChange={(e) => setFormData(prev => ({ ...prev, price_monthly: parseFloat(e.target.value) || 0 }))}
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+ />
+ </div>
+ <div>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Yearly Price ($)</label>
+ <input
+ type="number"
+ step="0.01"
+ min="0"
+ value={formData.price_yearly}
+ onChange={(e) => setFormData(prev => ({ ...prev, price_yearly: parseFloat(e.target.value) || 0 }))}
  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
@@ -1516,6 +1557,17 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  />
  </div>
  <div>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max Guests/Wedding</label>
+ <input
+ type="number"
+ min="-1"
+ value={formData.max_guests_per_wedding}
+ onChange={(e) => setFormData(prev => ({ ...prev, max_guests_per_wedding: parseInt(e.target.value) || 0 }))}
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+ placeholder="-1 for unlimited"
+ />
+ </div>
+ <div>
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">AI Credits/Month</label>
  <input
  type="number"
@@ -1535,6 +1587,26 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
+ <div>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Staff Seats</label>
+ <input
+ type="number"
+ min="0"
+ value={formData.staff_seats}
+ onChange={(e) => setFormData(prev => ({ ...prev, staff_seats: parseInt(e.target.value) || 0 }))}
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+ />
+ </div>
+ <div>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Display Order</label>
+ <input
+ type="number"
+ min="0"
+ value={formData.display_order}
+ onChange={(e) => setFormData(prev => ({ ...prev, display_order: parseInt(e.target.value) || 0 }))}
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+ />
+ </div>
  </div>
 
  {/* Metered Billing Configuration */}
@@ -1551,7 +1623,7 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  onChange={(e) => setFormData(prev => ({ ...prev, is_metered: e.target.checked }))}
  className="rounded"
  />
- <span className="text-sm">Enable metered billing (charge per wedding created)</span>
+ <span className="text-sm">Enable metered billing</span>
  </label>
  {formData.is_metered && (
  <div className="grid grid-cols-2 gap-4 ml-6">
@@ -1589,21 +1661,37 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  <div>
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Features</label>
  <div className="grid grid-cols-2 gap-2">
- {Object.entries(formData.features).map(([key, value]) => (
+ {featureEntries.map(({ key, label }) => (
  <label key={key} className="flex items-center space-x-2">
  <input
  type="checkbox"
- checked={value}
+ checked={Boolean(formData.features[key])}
  onChange={(e) => setFormData(prev => ({
  ...prev,
  features: { ...prev.features, [key]: e.target.checked }
  }))}
  className="rounded"
  />
- <span className="text-sm">{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+ <span className="text-sm">{label || getPlanFeatureLabel(key)}</span>
  </label>
  ))}
  </div>
+ </div>
+
+ <div>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+ Public Feature Highlights
+ </label>
+ <textarea
+ value={formData.features_list_text}
+ onChange={(e) => setFormData(prev => ({ ...prev, features_list_text: e.target.value }))}
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+ rows={5}
+ placeholder={'One public pricing highlight per line'}
+ />
+ <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+ These lines appear on public pricing cards and in signup plan selection.
+ </p>
  </div>
 
  <div className="flex items-center space-x-4">
@@ -2004,7 +2092,7 @@ const AD_EXPORT_DATE_RANGES = [
 ];
 
 function AdPlatformConfigTab() {
-  const { token } = useAdmin();
+  const { token, apiRequest } = useAdmin();
   const [subTab, setSubTab] = useState<AdConfigSubTab>('settings');
   const [config, setConfig] = useState<PlatformConfig | null>(null);
   const [pipeline, setPipeline] = useState<PipelineStatus | null>(null);
@@ -2024,7 +2112,10 @@ function AdPlatformConfigTab() {
 
     try {
       setLoading(true);
-      const data = await getAdminConfig(token);
+      const data = await getAdminConfig(apiRequest);
+      if (!data) {
+        return;
+      }
       setConfig(data);
       setEditedConfig(data);
     } catch (err: any) {
@@ -2032,7 +2123,7 @@ function AdPlatformConfigTab() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [apiRequest, token]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -2042,12 +2133,15 @@ function AdPlatformConfigTab() {
     }
 
     try {
-      const data = await getAdminPipelineStatus(token);
+      const data = await getAdminPipelineStatus(apiRequest);
+      if (!data) {
+        return;
+      }
       setPipeline(data);
     } catch (err: any) {
       toast.error(err.message);
     }
-  }, [token]);
+  }, [apiRequest, token]);
 
   useEffect(() => {
     if (subTab === 'pipeline') {
@@ -2068,7 +2162,10 @@ function AdPlatformConfigTab() {
 
     try {
       setSaving(true);
-      const updated = await updateAdminConfig(token, editedConfig);
+      const updated = await updateAdminConfig(apiRequest, editedConfig);
+      if (!updated) {
+        return;
+      }
       setConfig(updated);
       setEditedConfig(updated);
       toast.success('Configuration saved');
@@ -2123,7 +2220,10 @@ function AdPlatformConfigTab() {
 
     try {
       setExporting(true);
-      const result = await exportAdminData(token, exportDataset, exportDateRange, 'json');
+      const result = await exportAdminData(apiRequest, exportDataset, exportDateRange, 'json');
+      if (!result) {
+        return;
+      }
       setExportResult(result);
       toast.success(`Exported ${result.row_count} rows`);
     } catch (err: any) {

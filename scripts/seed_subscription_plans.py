@@ -10,6 +10,14 @@ from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
+from app.constants.billing import (
+    BILLING_MODEL_FLAT_RATE,
+    BILLING_MODEL_METERED,
+    CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
+    PLAN_BILLING_MODEL_MIGRATION_FLAG,
+    plan_billing_model_migration_enabled,
+)
+
 # Load environment variables
 load_dotenv()
 
@@ -58,6 +66,25 @@ except (ConnectionFailure, ServerSelectionTimeoutError) as e:
 
 db = client[db_name]
 collection = db["subscription_plans"]
+
+ADMIN_MUTABLE_PLAN_FIELDS = (
+    "name",
+    "description",
+    "price_monthly",
+    "price_yearly",
+    "trial_days",
+    "max_weddings",
+    "max_guests_per_wedding",
+    "ai_credits_monthly",
+    "storage_gb",
+    "staff_seats",
+    "features",
+    "features_list",
+    "is_active",
+    "is_featured",
+    "sort_order",
+    "display_order",
+)
 
 # ---- Deduplication cleanup ----
 # Remove duplicate plans (same name, different IDs) keeping the canonical _id.
@@ -197,6 +224,11 @@ def _provision_meter_if_needed(plan: dict) -> str | None:
 
 def _build_recurring(interval: str, plan: dict, meter_id: str | None) -> dict:
     """Build the ``recurring`` config for a Stripe Price."""
+    if plan.get("is_metered") and not meter_id:
+        raise RuntimeError(
+            f"Metered plan {plan.get('_id')} requires a Stripe meter before "
+            "Stripe Price creation."
+        )
     config: dict = {"interval": interval}
     if plan.get("is_metered") and meter_id:
         config["usage_type"] = "metered"
@@ -213,7 +245,13 @@ def create_stripe_product_and_prices(plan: dict) -> dict:
     plan_name = plan["name"]
 
     meter_id = _provision_meter_if_needed(plan)
-    is_metered = plan.get("is_metered") and meter_id is not None
+    if plan.get("is_metered") and not meter_id:
+        raise RuntimeError(
+            f"Metered plan {plan_id} requires a valid Stripe Meter for "
+            f"{plan.get('meter_event_name')!r}; aborting seed before creating "
+            "a flat Stripe Price by accident."
+        )
+    is_metered = bool(plan.get("is_metered"))
 
     try:
         existing_products = stripe.Product.search(
@@ -306,6 +344,59 @@ def create_stripe_product_and_prices(plan: dict) -> dict:
         return {"meter_id": meter_id} if meter_id else {}
 
 
+def _seed_billing_model(plan: dict | None) -> str:
+    if plan and plan.get("is_metered"):
+        return BILLING_MODEL_METERED
+    return BILLING_MODEL_FLAT_RATE
+
+
+def _build_effective_seed_plan(seed_plan: dict, existing_plan: dict | None) -> dict:
+    """Preserve root-admin mutable config while enforcing billing shape."""
+    if not existing_plan:
+        return dict(seed_plan)
+
+    effective = dict(seed_plan)
+    for field in ADMIN_MUTABLE_PLAN_FIELDS:
+        if field in existing_plan:
+            effective[field] = existing_plan[field]
+
+    if existing_plan.get("meter_id"):
+        effective["meter_id"] = existing_plan["meter_id"]
+
+    effective["billing_model"] = CANONICAL_PUBLIC_PLAN_BILLING_MODEL
+    effective["is_metered"] = True
+    effective["meter_event_name"] = seed_plan["meter_event_name"]
+    return effective
+
+
+def _guard_seed_billing_model_transition(
+    plan_id: str, existing_plan: dict | None, next_plan: dict
+) -> None:
+    if not existing_plan:
+        return
+
+    previous_model = _seed_billing_model(existing_plan)
+    next_model = _seed_billing_model(next_plan)
+    if previous_model == next_model:
+        return
+
+    active_subscriptions = db["user_subscriptions"].count_documents(
+        {"plan_id": plan_id, "status": {"$in": ["active", "trial", "trial_expiring"]}}
+    )
+    if active_subscriptions and not plan_billing_model_migration_enabled():
+        print(
+            f"  [ERROR] Refusing to change {plan_id} from {previous_model} to "
+            f"{next_model} while {active_subscriptions} active subscriptions "
+            "exist."
+        )
+        print(
+            "  [ACTION] Existing Stripe subscriptions remain on old Stripe "
+            "prices. Run an explicit subscription-item migration, then set "
+            f"{PLAN_BILLING_MODEL_MIGRATION_FLAG}=true for that operator run."
+        )
+        sys.exit(1)
+
+
 # Define plans
 plans = [
     {
@@ -315,7 +406,9 @@ plans = [
         "price_monthly": 29,
         "price_yearly": 290,  # ~2 months free
         "trial_days": 30,
-        "is_metered": False,
+        "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
+        "is_metered": True,
+        "meter_event_name": "wedding_active",
         "max_weddings": 3,
         "max_guests_per_wedding": 150,
         "ai_credits_monthly": 100,
@@ -355,7 +448,9 @@ plans = [
         "price_monthly": 59,
         "price_yearly": 590,  # ~2 months free
         "trial_days": 30,
-        "is_metered": False,
+        "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
+        "is_metered": True,
+        "meter_event_name": "wedding_active",
         "max_weddings": 10,
         "max_guests_per_wedding": 350,
         "ai_credits_monthly": 300,
@@ -401,7 +496,9 @@ plans = [
         "price_monthly": 149,
         "price_yearly": 1490,  # ~2 months free
         "trial_days": 30,
-        "is_metered": False,
+        "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
+        "is_metered": True,
+        "meter_event_name": "wedding_active",
         "max_weddings": -1,  # Unlimited
         "max_guests_per_wedding": -1,  # Unlimited
         "ai_credits_monthly": 1000,
@@ -456,12 +553,21 @@ skipped = 0
 for plan in plans:
     plan_id = plan["_id"]
     print(f"\n[PLAN] Processing: {plan['name']} - ${plan['price_monthly']}/month")
+    existing_plan = collection.find_one({"_id": plan_id})
+    plan_for_sync = _build_effective_seed_plan(plan, existing_plan)
+    _guard_seed_billing_model_transition(plan_id, existing_plan, plan_for_sync)
 
-    # Create Stripe products if configured (idempotent - checks existing first)
-    stripe_ids = create_stripe_product_and_prices(plan) if STRIPE_CONFIGURED else {}
+    # Create Stripe products if configured (idempotent - checks existing first).
+    # Inactive plans are intentionally hidden by root admin and should not
+    # create fresh sellable Stripe Prices during a rolling deploy.
+    stripe_ids = (
+        create_stripe_product_and_prices(plan_for_sync)
+        if STRIPE_CONFIGURED and plan_for_sync.get("is_active", True)
+        else {}
+    )
 
     # Merge Stripe IDs into plan
-    plan_with_stripe = {**plan, **stripe_ids}
+    plan_with_stripe = {**plan_for_sync, **stripe_ids}
 
     # ATOMIC upsert: prevents race conditions when multiple containers start simultaneously
     # $setOnInsert: only set these fields if document is newly created
@@ -474,19 +580,11 @@ for plan in plans:
                     "created_at", datetime.now(timezone.utc)
                 ),
                 "created_by": plan_with_stripe.get("created_by", "system"),
-            },
-            "$set": {
                 "name": plan_with_stripe["name"],
                 "description": plan_with_stripe.get("description"),
                 "price_monthly": plan_with_stripe["price_monthly"],
                 "price_yearly": plan_with_stripe.get("price_yearly"),
-                "is_metered": plan_with_stripe.get("is_metered", False),
-                # Metered config — these MUST be in $set or the seed will
-                # silently drop them on update, leaving plans in a half-
-                # configured state. See METERING_GAP_SCENARIOS_2026-05-04.md
-                # §CC3 (the structural bug that made setup feel manual).
-                "meter_event_name": plan_with_stripe.get("meter_event_name"),
-                "meter_id": plan_with_stripe.get("meter_id"),
+                "trial_days": plan_with_stripe.get("trial_days", 0),
                 "max_weddings": plan_with_stripe.get("max_weddings"),
                 "max_guests_per_wedding": plan_with_stripe.get(
                     "max_guests_per_wedding"
@@ -502,6 +600,18 @@ for plan in plans:
                 "display_order": plan_with_stripe.get(
                     "display_order", plan_with_stripe.get("sort_order", 0)
                 ),
+            },
+            "$set": {
+                "billing_model": plan_with_stripe.get(
+                    "billing_model", BILLING_MODEL_METERED
+                ),
+                "is_metered": plan_with_stripe.get("is_metered", True),
+                # Metered config — these MUST be in $set or the seed will
+                # silently drop them on update, leaving plans in a half-
+                # configured state. See METERING_GAP_SCENARIOS_2026-05-04.md
+                # §CC3 (the structural bug that made setup feel manual).
+                "meter_event_name": plan_with_stripe.get("meter_event_name"),
+                "meter_id": plan_with_stripe.get("meter_id"),
                 "updated_at": datetime.now(timezone.utc),
                 # Only update Stripe IDs if we have them (field names must match codebase convention)
                 **(

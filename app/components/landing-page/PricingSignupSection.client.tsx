@@ -30,6 +30,8 @@ type ApiPlan = {
   _id: string;
   name: string;
   price_monthly: number;
+  billing_model?: string;
+  is_metered?: boolean;
   trial_days?: number;
   features_list?: string[];
   is_featured?: boolean;
@@ -37,6 +39,12 @@ type ApiPlan = {
   display_order?: number;
   is_active?: boolean;
 };
+
+function getPlanPeriod(plan: Pick<ApiPlan, "is_metered" | "billing_model">): string {
+  return plan.is_metered || plan.billing_model === "metered"
+    ? "/active wedding/mo"
+    : "/month";
+}
 
 export function PricingSignupSection({ pricing, theme }: Props) {
   const [displayPricing, setDisplayPricing] = useState<PricingTier[]>(pricing);
@@ -61,7 +69,7 @@ export function PricingSignupSection({ pricing, theme }: Props) {
               name: plan.name,
               tagline: plan.is_featured ? "Most popular for growing planner studios." : `For ${plan.name.toLowerCase()} planning teams.`,
               price: `$${plan.price_monthly}`,
-              period: "/month",
+              period: getPlanPeriod(plan),
               features: plan.features_list?.length ? plan.features_list : [],
               cta: plan.trial_days ? `Start ${plan.trial_days}-day trial` : `Choose ${plan.name}`,
               popular: Boolean(plan.is_featured),

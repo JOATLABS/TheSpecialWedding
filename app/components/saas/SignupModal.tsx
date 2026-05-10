@@ -12,6 +12,8 @@ interface SubscriptionPlan {
   description: string;
   price_monthly: number;
   price_yearly: number;
+  billing_model?: string;
+  is_metered?: boolean;
   max_weddings: number;
   max_guests_per_wedding: number;
   trial_days?: number;
@@ -29,6 +31,8 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
     description: 'For new planners',
     price_monthly: 29,
     price_yearly: 290,
+    billing_model: 'metered',
+    is_metered: true,
     trial_days: 30,
     max_weddings: 3,
     max_guests_per_wedding: 150,
@@ -50,6 +54,8 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
     description: 'Most popular',
     price_monthly: 59,
     price_yearly: 590,
+    billing_model: 'metered',
+    is_metered: true,
     trial_days: 30,
     max_weddings: 10,
     max_guests_per_wedding: 350,
@@ -73,6 +79,8 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
     description: 'For high-volume wedding planning firms',
     price_monthly: 149,
     price_yearly: 1490,
+    billing_model: 'metered',
+    is_metered: true,
     trial_days: 30,
     max_weddings: -1,
     max_guests_per_wedding: -1,
@@ -109,6 +117,18 @@ type FormValues = {
   confirmPassword: string;
   acceptTerms: boolean;
 };
+
+function getBillingUnitLabel(plan: SubscriptionPlan | null | undefined, interval: 'monthly' | 'yearly') {
+  const isMetered = plan?.is_metered || plan?.billing_model === 'metered';
+  if (isMetered) {
+    return interval === 'yearly' ? 'active wedding / year' : 'active wedding / month';
+  }
+  return interval === 'yearly' ? 'year' : 'month';
+}
+
+function getCompactBillingUnit(plan: SubscriptionPlan | null | undefined) {
+  return plan?.is_metered || plan?.billing_model === 'metered' ? 'active wedding/mo' : 'mo';
+}
 
 export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selectedPlanId }) => {
   const apiBaseUrl = getApiBaseUrl();
@@ -321,7 +341,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
 
               <div className="bg-white/10 rounded-xl p-4 mb-4">
                 <div className="text-3xl font-bold">${displayPrice}</div>
-                <div className="text-sm text-indigo-200">per {billingInterval === 'yearly' ? 'year' : 'month'}</div>
+                <div className="text-sm text-indigo-200">per {getBillingUnitLabel(selectedPlan, billingInterval)}</div>
                 {selectedPlan?.trial_days ? (
                   <div className="mt-1 text-xs font-medium text-emerald-200">
                     {selectedPlan.trial_days}-day free trial · no card required
@@ -347,7 +367,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
               className="w-full mt-4 px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/30"
             >
               {plans.map(plan => (
-                <option key={plan._id} value={plan._id} className="text-slate-900">{plan.name} - ${plan.price_monthly}/mo</option>
+                <option key={plan._id} value={plan._id} className="text-slate-900">{plan.name} - ${plan.price_monthly}/{getCompactBillingUnit(plan)}</option>
               ))}
             </select>
           </div>
@@ -383,7 +403,11 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
               </div>
               <div className="text-right">
                 <div className="text-lg font-bold text-white">${displayPrice}</div>
-                <div className="text-[10px] text-slate-400">/{billingInterval === 'yearly' ? 'yr' : 'mo'}</div>
+                <div className="text-[10px] text-slate-400">
+                  /{selectedPlan?.is_metered || selectedPlan?.billing_model === 'metered'
+                    ? billingInterval === 'yearly' ? 'active wedding/yr' : 'active wedding/mo'
+                    : billingInterval === 'yearly' ? 'yr' : 'mo'}
+                </div>
               </div>
             </div>
 

@@ -16,6 +16,8 @@ export interface SubscriptionPlan {
   description: string;
   price_monthly: number;
   price_yearly: number;
+  billing_model?: string;
+  is_metered?: boolean;
   trial_days?: number;
   is_featured: boolean;
   is_active: boolean;
@@ -111,6 +113,10 @@ function PlanToggle({
       return 'Free';
     }
     const value = cycle === 'monthly' ? plan.price_monthly : plan.price_yearly || plan.price_monthly * 12;
+    const isMetered = plan.is_metered || plan.billing_model === 'metered';
+    if (isMetered) {
+      return `$${value}${cycle === 'monthly' ? '/active wedding/mo' : '/active wedding/yr'}`;
+    }
     return `$${value}${cycle === 'monthly' ? '/mo' : '/yr'}`;
   };
 

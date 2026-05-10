@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 from stripe import InvalidRequestError, SignatureVerificationError, StripeError
 
+from app.constants.billing import plan_billing_model
 from app.core.database import mongo
 from app.core.settings import settings
 from app.models.subscription import SubscriptionStatus, normalize_subscription_status
@@ -940,6 +941,10 @@ class StripeService:
                             "features": plan.get("features", {}),
                             "price_monthly": plan.get("price_monthly", 0),
                             "price_yearly": plan.get("price_yearly"),
+                            "billing_model": plan_billing_model(plan),
+                            "is_metered": bool(plan.get("is_metered", False)),
+                            "meter_event_name": plan.get("meter_event_name"),
+                            "meter_id": plan.get("meter_id"),
                             "stripe_price_id_monthly": plan.get(
                                 "stripe_price_id_monthly"
                             ),
@@ -1825,6 +1830,10 @@ class StripeService:
                     "features": plan.get("features", {}),
                     "price_monthly": plan.get("price_monthly", 0),
                     "price_yearly": plan.get("price_yearly"),
+                    "billing_model": plan_billing_model(plan),
+                    "is_metered": bool(plan.get("is_metered", False)),
+                    "meter_event_name": plan.get("meter_event_name"),
+                    "meter_id": plan.get("meter_id"),
                     "stripe_price_id_monthly": plan.get("stripe_price_id_monthly"),
                     "stripe_price_id_yearly": plan.get("stripe_price_id_yearly"),
                     "snapshot_date": datetime.now(timezone.utc),
