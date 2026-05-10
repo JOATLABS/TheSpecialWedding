@@ -1063,7 +1063,9 @@ class GuestVerificationService:
                     "message": "If you're on the guest list, you'll receive your RSVP link shortly.",
                 }
 
-            frontend_url = os.getenv("FRONTEND_URL", "https://thespecialwedding.io").rstrip("/")
+            frontend_url = os.getenv(
+                "FRONTEND_URL", "https://thespecialwedding.io"
+            ).rstrip("/")
             rsvp_url = (
                 f"{frontend_url}/otp/verify"
                 f"?slug={quote(slug, safe='')}"
