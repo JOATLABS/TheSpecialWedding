@@ -27,10 +27,12 @@ interface TemplateCard {
 
 interface TemplatesClientProps {
   templates: TemplateCard[];
+  surface?: 'light' | 'dark';
 }
 
-export default function TemplatesClient({ templates }: TemplatesClientProps) {
+export default function TemplatesClient({ templates, surface = 'light' }: TemplatesClientProps) {
   const [active, setActive] = useState<TemplateCard | null>(null);
+  const isDark = surface === 'dark';
 
   return (
     <>
@@ -39,24 +41,44 @@ export default function TemplatesClient({ templates }: TemplatesClientProps) {
           <article
             key={template.id}
             id={template.id}
-            className="bg-white rounded-2xl shadow-sm border border-[#eee5d8] p-6 flex flex-col scroll-mt-24"
+            className={`flex scroll-mt-28 flex-col rounded-2xl border p-6 transition ${
+              isDark
+                ? 'border-white/10 bg-white/[0.04] hover:border-wedding-rose/40'
+                : 'border-[#eee5d8] bg-white shadow-sm'
+            }`}
           >
-            <div className="text-xs font-semibold uppercase tracking-wider text-[#9a8f82] mb-2">
+            <div
+              className={`mb-2 text-xs font-semibold uppercase tracking-wider ${
+                isDark ? 'text-wedding-rose' : 'text-[#9a8f82]'
+              }`}
+            >
               {template.category}
             </div>
-            <h3 className="font-serif text-xl text-[#1a1a1a] mb-2 leading-snug">
+            <h3
+              className={`mb-2 font-serif text-xl leading-snug ${
+                isDark ? 'text-white' : 'text-[#1a1a1a]'
+              }`}
+            >
               {template.name}
             </h3>
-            <p className="text-sm text-[#555] mb-4 flex-grow">
+            <p
+              className={`mb-4 flex-grow text-sm leading-relaxed ${
+                isDark ? 'text-slate-300' : 'text-[#555]'
+              }`}
+            >
               {template.description}
             </p>
-            <div className="text-xs text-[#9a8f82] mb-4">
+            <div className={`mb-4 text-xs ${isDark ? 'text-slate-500' : 'text-[#9a8f82]'}`}>
               {template.fieldCount} fields · A4 PDF
             </div>
             <button
               type="button"
               onClick={() => setActive(template)}
-              className="self-start rounded-full bg-[#6b5d4f] text-white px-5 py-2 text-sm font-medium hover:bg-[#574a3e] transition-colors"
+              className={`self-start rounded-full px-5 py-2 text-sm font-medium transition-colors ${
+                isDark
+                  ? 'bg-wedding-rose text-slate-950 hover:bg-wedding-blush'
+                  : 'bg-[#6b5d4f] text-white hover:bg-[#574a3e]'
+              }`}
             >
               Download as PDF
             </button>
@@ -70,7 +92,7 @@ export default function TemplatesClient({ templates }: TemplatesClientProps) {
         templateId={active?.id ?? ''}
         headline={active?.name ?? ''}
         subhead="Drop your email and we'll send the PDF straight to your inbox."
-        surface="light"
+        surface={surface}
         testIdPrefix="templates-card"
       />
     </>

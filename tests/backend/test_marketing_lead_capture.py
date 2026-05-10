@@ -110,6 +110,11 @@ def configured_marketing_service(monkeypatch):
     client = mongomock.MongoClient()
     database = client["wedding_marketing"]
     monkeypatch.setattr(marketing_module, "mongo", _FakeMongo(database))
+    monkeypatch.setattr(
+        marketing_module,
+        "render_form_template_pdf",
+        lambda template_id: f"%PDF-1.4\n% fake-pdf-for-{template_id}\n".encode("utf-8"),
+    )
     service = marketing_module.MarketingLeadService()
     service.email_service = _StubResend()
     return service, database
@@ -258,9 +263,7 @@ async def test_blank_email_raises_value_error(configured_marketing_service):
     template_id = FORM_TEMPLATES[0]["id"]
     for bad in ("", "   ", None):
         with pytest.raises(ValueError):
-            await service.capture_template_download(
-                email=bad, template_id=template_id
-            )
+            await service.capture_template_download(email=bad, template_id=template_id)
 
 
 @pytest.mark.asyncio
@@ -367,7 +370,7 @@ def test_confirmation_html_keeps_known_safe_chars():
 # The homepage band ships ALL 9 catalog PDFs in a single email when the
 # caller passes ``template_id == STARTER_PACK_TEMPLATE_ID``. The lead row
 # stores ``template_id="starter_pack"`` so analytics can distinguish the
-# bundle from per-template downloads on /resources/templates.
+# bundle from per-template downloads on the Resources templates tab.
 
 
 @pytest.mark.asyncio
@@ -471,7 +474,9 @@ async def test_starter_pack_lead_is_idempotent_per_email(
 
 
 @pytest.mark.asyncio
-async def test_capture_handles_duplicate_key_race(monkeypatch, configured_marketing_service):
+async def test_capture_handles_duplicate_key_race(
+    monkeypatch, configured_marketing_service
+):
     """Simulate the race where existing=None at find_one time but a
     concurrent insert lands a duplicate-key error. The service must
     fall back to the resent path without surfacing the exception."""

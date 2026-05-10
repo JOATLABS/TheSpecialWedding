@@ -119,6 +119,7 @@ function WeddingLandingContent() {
  setWedding(weddingData);
  setGuest(guestData);
  setGalleryAccess(accessData ?? buildPublicGalleryAccess(guestData));
+ setOpenGuestRsvpOnLoad(Boolean(guestData));
  setAccessGranted(true);
  };
 

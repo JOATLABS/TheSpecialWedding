@@ -67,9 +67,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     },
     {
-      // Phase C marketing page — Free Wedding Planner Templates.
-      // Static catalog of 9 downloadable templates; rebuilds rarely.
-      url: `${baseUrl}/resources/templates`,
+      // First-class Resources tab for the free planner-template catalog.
+      url: `${baseUrl}/resources?tab=templates`,
       lastModified: now,
       changeFrequency: 'monthly',
       priority: 0.9,

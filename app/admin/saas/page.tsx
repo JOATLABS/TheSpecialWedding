@@ -1989,6 +1989,7 @@ const AD_EXPORT_DATASETS = [
   { value: 'campaign_performance', label: 'Campaign Performance Metrics' },
   { value: 'ad_events', label: 'Ad Events (raw)' },
   { value: 'ad_leads', label: 'Ad Leads' },
+  { value: 'marketing_leads', label: 'Marketing Leads (template downloads)' },
   { value: 'planner_feedback', label: 'Planner Feedback (hides/suppressions)' },
   { value: 'campaign_daily_stats', label: 'Campaign Daily Stats (rollups)' },
   { value: 'placement_daily_stats', label: 'Placement Daily Stats' },
@@ -2386,7 +2387,7 @@ function AdPlatformConfigTab() {
               </div>
             ) : (
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Export ad-platform data sets as JSON from this central SaaS configuration tab.
+                Export marketing and ad-platform data sets as JSON from this central SaaS configuration tab.
               </p>
             )}
           </Card>

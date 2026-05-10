@@ -422,6 +422,8 @@ export interface PipelineStatus {
 export interface ExportResponse {
   dataset: string;
   date_range: string;
+  total?: number;
+  returned?: number;
   row_count: number;
   rows: any[];
 }

@@ -5,7 +5,7 @@
  *
  * Used by:
  * - The homepage "starter pack" lead-magnet band (templateId="starter_pack").
- * - The /resources/templates per-template cards.
+ * - The Resources templates-tab per-template cards.
  *
  * Submits to POST {API}/public/marketing/template-download. The backend
  * is idempotent on (email, template_id) so the success-state's "Resend"

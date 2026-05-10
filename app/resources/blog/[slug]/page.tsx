@@ -127,7 +127,7 @@ export default async function BlogPostPage({
     // Topical-cluster signal: emit `mentions` ONLY when the post
     // actually references specific templates. Emitting a generic
     // CollectionPage fallback when there are no related templates is
-    // semantically wrong — the post doesn't mention the templates page
+    // semantically wrong — the post doesn't mention the templates tab
     // any more than any other unrelated page on the site — and Google
     // can flag it as keyword stuffing.
     ...(hasRelatedTemplates
@@ -135,7 +135,7 @@ export default async function BlogPostPage({
           mentions: relatedTemplateRecords.map((t) => ({
             '@type': 'CreativeWork',
             name: t.name,
-            url: `https://thespecialwedding.io/resources/templates#${t.id}`,
+            url: `https://thespecialwedding.io/resources?tab=templates#${t.id}`,
           })),
         }
       : {}),
@@ -219,7 +219,7 @@ export default async function BlogPostPage({
                 {relatedTemplateRecords.map((template) => (
                   <li key={template.id}>
                     <Link
-                      href={`/resources/templates#${template.id}`}
+                      href={`/resources?tab=templates#${template.id}`}
                       className="block h-full rounded-xl border border-white/10 bg-slate-900/60 p-5 transition hover:border-wedding-rose/60 hover:bg-slate-900"
                       data-testid="blog-related-template-link"
                     >
@@ -237,7 +237,7 @@ export default async function BlogPostPage({
                 ))}
               </ul>
               <Link
-                href="/resources/templates"
+                href="/resources?tab=templates"
                 className="mt-6 inline-block text-sm font-medium text-wedding-rose hover:text-wedding-blush"
               >
                 Browse all {MARKETING_TEMPLATES.length} free templates →
@@ -255,7 +255,7 @@ export default async function BlogPostPage({
                 Skip the blank page — these templates ship with the form fields you actually need.
               </p>
               <Link
-                href="/resources/templates"
+                href="/resources?tab=templates"
                 className="mt-4 inline-block text-sm font-medium text-wedding-rose hover:text-wedding-blush"
                 data-testid="blog-related-template-link"
               >
