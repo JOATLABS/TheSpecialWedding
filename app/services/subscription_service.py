@@ -5,7 +5,15 @@ from typing import List, Optional
 import stripe
 from fastapi import HTTPException
 
+from app.constants.billing import (
+    PLAN_BILLING_MODEL_MIGRATION_FLAG,
+    CANONICAL_PUBLIC_PLAN_METER_EVENT_NAME,
+    CANONICAL_PUBLIC_PLAN_IDS,
+    plan_billing_model,
+    plan_billing_model_migration_enabled,
+)
 from app.core.database import mongo
+from app.models.subscription import ACTIVE_SUBSCRIPTION_STATUSES
 from app.services.couple_lifecycle_service import (
     COUPLE_PORTAL_STATE_REVOKED,
     couple_lifecycle_service,
@@ -28,11 +36,63 @@ class SubscriptionService:
         self.users_collection = mongo.get_users_collection()
         self.weddings_collection = mongo.db["weddings"]
 
+    def _normalize_plan_billing_fields(self, plan_data: dict) -> None:
+        """Derive billing_model and fail closed on incomplete metered config."""
+        plan_data["is_metered"] = bool(plan_data.get("is_metered", True))
+        plan_data["billing_model"] = plan_billing_model(plan_data)
+
+        if not plan_data["is_metered"]:
+            if plan_data.get("meter_event_name") == "":
+                plan_data["meter_event_name"] = None
+            if plan_data.get("meter_id") == "":
+                plan_data["meter_id"] = None
+            return
+
+        meter_event_name = str(
+            plan_data.get("meter_event_name") or CANONICAL_PUBLIC_PLAN_METER_EVENT_NAME
+        ).strip()
+        if not meter_event_name:
+            raise HTTPException(
+                status_code=400,
+                detail="Metered plans require a non-empty meter_event_name.",
+            )
+
+        meter_id = str(plan_data.get("meter_id") or "").strip()
+        plan_data["meter_event_name"] = meter_event_name
+        plan_data["meter_id"] = meter_id or None
+
+    async def _guard_billing_model_transition(
+        self, plan_id: str, existing_plan: dict, merged_plan: dict
+    ) -> None:
+        previous_model = plan_billing_model(existing_plan)
+        next_model = plan_billing_model(merged_plan)
+        if previous_model == next_model:
+            return
+
+        active_subscriptions = await self.subscriptions_collection.count_documents(
+            {
+                "plan_id": plan_id,
+                "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)},
+            }
+        )
+        if active_subscriptions and not plan_billing_model_migration_enabled():
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Cannot change billing model for {plan_id} while "
+                    f"{active_subscriptions} active subscriptions exist. "
+                    "Existing Stripe subscriptions keep old Stripe prices; "
+                    f"set {PLAN_BILLING_MODEL_MIGRATION_FLAG}=true only "
+                    "while running an explicit subscription-item migration."
+                ),
+            )
+
     # Subscription Plan Management (ROOT_ADMIN only)
     async def create_plan(self, plan_data: dict, creator_email: str) -> dict:
         """Create a new subscription plan"""
         try:
             plan_data["_id"] = f"plan_{plan_data['name'].lower().replace(' ', '_')}"
+            self._normalize_plan_billing_fields(plan_data)
             plan_data["created_by"] = creator_email
             plan_data["created_at"] = datetime.now(timezone.utc)
             plan_data["updated_at"] = datetime.now(timezone.utc)
@@ -47,6 +107,8 @@ class SubscriptionService:
             try:
                 stripe_data = stripe_service.sync_plan_to_stripe(plan_data)
                 plan_data.update(stripe_data)
+            except HTTPException:
+                raise
             except Exception as e:
                 # Log but don't block creation if stripe fails?
                 # Better to fail so we don't have inconsistent state
@@ -116,11 +178,29 @@ class SubscriptionService:
                 )
 
             merged_plan = {**existing_plan, **update_data}
+            self._normalize_plan_billing_fields(merged_plan)
+            await self._guard_billing_model_transition(
+                plan_id, existing_plan, merged_plan
+            )
+            update_data["billing_model"] = merged_plan["billing_model"]
+            update_data["is_metered"] = merged_plan["is_metered"]
+            if update_data.get("is_metered") is False:
+                update_data["meter_event_name"] = None
+                update_data["meter_id"] = None
+            else:
+                if "meter_event_name" in update_data or merged_plan["is_metered"]:
+                    update_data["meter_event_name"] = merged_plan.get(
+                        "meter_event_name"
+                    )
+                if "meter_id" in update_data or merged_plan["is_metered"]:
+                    update_data["meter_id"] = merged_plan.get("meter_id")
 
             # Sync to Stripe
             try:
                 stripe_data = stripe_service.sync_plan_to_stripe(merged_plan)
                 update_data.update(stripe_data)
+            except HTTPException:
+                raise
             except Exception as e:
                 raise HTTPException(
                     status_code=500, detail=f"Failed to sync plan to Stripe: {str(e)}"
@@ -170,6 +250,22 @@ class SubscriptionService:
                     logger.warning(
                         f"Failed to archive Stripe product {stripe_product_id}: {e}"
                     )
+
+            if plan_id in CANONICAL_PUBLIC_PLAN_IDS:
+                await self.plans_collection.update_one(
+                    {"_id": plan_id},
+                    {
+                        "$set": {
+                            "is_active": False,
+                            "deleted_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(timezone.utc),
+                        }
+                    },
+                )
+                return {
+                    "message": "Subscription plan archived successfully",
+                    "stripe_archived": bool(stripe_product_id),
+                }
 
             result = await self.plans_collection.delete_one({"_id": plan_id})
 
@@ -251,6 +347,10 @@ class SubscriptionService:
                 "features": plan.get("features", {}),
                 "price_monthly": plan.get("price_monthly", 0),
                 "price_yearly": plan.get("price_yearly"),
+                "billing_model": plan_billing_model(plan),
+                "is_metered": bool(plan.get("is_metered", False)),
+                "meter_event_name": plan.get("meter_event_name"),
+                "meter_id": plan.get("meter_id"),
                 "stripe_price_id_monthly": plan.get("stripe_price_id_monthly"),
                 "stripe_price_id_yearly": plan.get("stripe_price_id_yearly"),
                 "snapshot_date": now,

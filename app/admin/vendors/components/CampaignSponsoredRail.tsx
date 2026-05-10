@@ -31,7 +31,7 @@ export function CampaignSponsoredRail({
   onWeddingChange,
   onVisibilityChange,
 }: CampaignSponsoredRailProps) {
-  const { token, userProfile } = useAdmin();
+  const { token, userProfile, apiRequest } = useAdmin();
   // Planners and root admins always see every control. Team members can
   // view the rail but only mutate (add to directory, request quote, hide,
   // change preferences) when their planner has granted `manage_vendors`.
@@ -57,14 +57,16 @@ export function CampaignSponsoredRail({
     const loadPrefs = async () => {
       if (!token) return;
       try {
-        const prefs = await getAdPreferences(token);
-        setReducedFreq(prefs.reduced_frequency);
+        const prefs = await getAdPreferences(apiRequest);
+        if (prefs) {
+          setReducedFreq(prefs.reduced_frequency);
+        }
       } catch {
         // Preferences not critical — fail silently
       }
     };
     loadPrefs();
-  }, [token]);
+  }, [apiRequest, token]);
 
   // Fetch sponsored cards from the campaign platform
   useEffect(() => {
@@ -76,11 +78,14 @@ export function CampaignSponsoredRail({
 
       try {
         setLoading(true);
-        const response = await getSponsoredCards(token, {
+        const response = await getSponsoredCards(apiRequest, {
           location,
           categories: categories?.join(','),
           limit: maxItems,
         });
+        if (!response) {
+          return;
+        }
         setCards(response.cards);
       } catch (err) {
         console.error('Failed to fetch sponsored cards:', err);
@@ -90,7 +95,7 @@ export function CampaignSponsoredRail({
     };
 
     fetchCards();
-  }, [token, location, categories, maxItems]);
+  }, [apiRequest, token, location, categories, maxItems]);
 
   // Notify parent of visibility state (cards loaded vs empty/disabled)
   useEffect(() => {
@@ -145,7 +150,7 @@ export function CampaignSponsoredRail({
     // Persist hide to backend
     if (token && card?.vendor_id) {
       try {
-        await hideVendor(token, card.vendor_id);
+        await hideVendor(apiRequest, card.vendor_id);
       } catch {
         // Already removed from UI — backend fail is non-critical
       }
@@ -158,7 +163,7 @@ export function CampaignSponsoredRail({
     setReducedFreq(newVal);
     if (token) {
       try {
-        await setReducedFrequency(token, newVal);
+        await setReducedFrequency(apiRequest, newVal);
       } catch {
         setReducedFreq(!newVal); // revert on failure
       }

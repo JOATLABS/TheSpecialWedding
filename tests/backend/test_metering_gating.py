@@ -1,25 +1,21 @@
 """Regression guards around the metering pipeline.
 
-Per ``METERING_AUDIT.md`` (2026-04-17), the metering **infrastructure** is
-fully wired end-to-end (wedding create/delete hooks, daily batch job,
-retry endpoint, plan model flags, plan editor UI), but every production
-code path is gated on ``plan.is_metered == True AND plan.meter_event_name``.
-The default seed config ships ``is_metered=False`` on every plan, so
-billing is effectively flat-rate today.
+Per the 2026-05-10 billing decision, the metering **infrastructure** is now
+the intended production billing model for canonical public plans. Wedding
+create/delete hooks, the daily batch job, retry endpoint, plan model flags, and
+plan editor UI all remain gated on ``plan.is_metered == True AND
+plan.meter_event_name``.
 
-The risk the audit flags is silently flipping metering on — either by
-accidentally editing ``scripts/seed_subscription_plans.py`` without also
-provisioning a Stripe Meter, or by weakening the gate in
-``app/api/wedding.py`` / ``app/api/billing_jobs.py``. Either break would
-leak real Stripe meter events without the rest of the billing story
-(price `usage_type="metered"`, meter_id, customer comms) being in place.
+The risk is drifting into a half-metered plan — for example, a seed edit that
+sets ``is_metered=True`` but forgets ``meter_event_name``, or a refactor that
+weakens Stripe MeterEvent idempotency behavior. This file contains unit-level
+guards that would fire immediately in CI:
 
 This file contains unit-level guards that would fire immediately in CI:
 
-1. **Seed default invariant** — every plan emitted by
-   ``scripts/seed_subscription_plans.py`` must ship ``is_metered=False``.
-   This catches the #1 drift signal from the audit: an over-eager seed
-   edit flipping billing mode without the coordinated Stripe work.
+1. **Seed default invariant** — every canonical plan emitted by
+   ``scripts/seed_subscription_plans.py`` must ship ``is_metered=True`` with
+   ``meter_event_name="wedding_active"``.
 2. **Meter-event identifier truncation** — ``StripeService.report_meter_event``
    must truncate the Stripe idempotency ``identifier`` to 100 chars (Stripe's
    hard limit). The guard protects against a refactor that drops ``[:100]``
@@ -122,32 +118,22 @@ def _load_seed_plans() -> list[dict]:
     return extracted
 
 
-def test_seed_plans_are_flat_by_default():
-    """Every default plan must ship with ``is_metered=False``.
-
-    Per METERING_AUDIT.md §3, flipping this on without also (a) creating a
-    Stripe ``billing.Meter``, (b) re-running ``sync_plan_to_stripe`` so the
-    Stripe price is re-created with ``usage_type="metered"``, and (c)
-    deciding what happens to ``max_weddings`` caps would break prod billing.
-
-    If this test fails, either:
-    - The default billing model was intentionally flipped to metered — update
-      this test + the audit doc + the seed doc together, OR
-    - Someone flipped a single plan by accident — revert it before merge.
-    """
+def test_seed_plans_are_metered_by_default():
+    """Every default plan must ship with metered ``wedding_active`` billing."""
     plans = _load_seed_plans()
     assert len(plans) >= 3, (
         "Seed catalog shrank below the audited 3-plan baseline "
         "(Boutique / Signature / Enterprise). Confirm this is intentional."
     )
 
-    metered = [p for p in plans if p.get("is_metered")]
-    assert metered == [], (
-        f"Seed plans drifted to metered: {[p['_id'] for p in metered]}. "
-        "See METERING_AUDIT.md §3 — the default config must stay flat until "
-        "Stripe Meter + sync_plan_to_stripe + max_weddings semantics are "
-        "worked out together."
+    non_metered = [p for p in plans if not p.get("is_metered")]
+    assert non_metered == [], (
+        f"Seed plans drifted away from metered billing: "
+        f"{[p['_id'] for p in non_metered]}. Canonical plans bill per active "
+        "wedding and must remain aligned with Stripe metered prices."
     )
+    for plan in plans:
+        assert plan.get("meter_event_name") == "wedding_active"
 
 
 def test_seed_plans_have_required_identity_fields():
@@ -157,15 +143,11 @@ def test_seed_plans_have_required_identity_fields():
     for plan in _load_seed_plans():
         assert plan.get("_id"), f"Plan missing _id: {plan}"
         assert plan.get("name"), f"Plan missing name: {plan}"
-        # A plan with meter_event_name set but is_metered=False is a
-        # half-configured state — flag it loudly. It's still gated off, but
-        # it signals someone started wiring metering and stopped.
-        if plan.get("meter_event_name"):
-            assert plan["is_metered"] is True, (
-                f"Plan {plan['_id']} sets meter_event_name={plan['meter_event_name']!r} "
-                "but is_metered is False. Either finish the metered plan setup "
-                "or clear meter_event_name — half-configured plans are a trap."
-            )
+        assert plan.get("is_metered") is True
+        assert plan.get("meter_event_name") == "wedding_active", (
+            f"Plan {plan['_id']} is missing the canonical wedding_active meter "
+            "event name."
+        )
 
 
 # ---------------------------------------------------------------------------

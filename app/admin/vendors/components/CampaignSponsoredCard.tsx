@@ -53,7 +53,7 @@ export function CampaignSponsoredCard({
   weddingName,
   canAddVendors = true,
 }: CampaignSponsoredCardProps) {
-  const { token } = useAdmin();
+  const { token, apiRequest } = useAdmin();
   const cardRef = useRef<HTMLDivElement>(null);
   const [clickId] = useState(generateClickId);
   const [addedToDirectory, setAddedToDirectory] = useState(false);
@@ -66,10 +66,11 @@ export function CampaignSponsoredCard({
 
     try {
       setAddError(null);
-      await addToDirectory(token, {
+      const result = await addToDirectory(apiRequest, {
         campaign_id: card.campaign_id,
         click_id: clickId,
       });
+      if (!result) return;
       setAddedToDirectory(true);
     } catch (err: any) {
       const msg = err?.message || 'Could not add vendor';

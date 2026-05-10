@@ -323,6 +323,8 @@ export const SaasLandingPage: React.FC = () => {
         description: 'For new planners onboarding their first weddings.',
         price_monthly: 29,
         price_yearly: 290,
+        billing_model: 'metered',
+        is_metered: true,
         trial_days: 30,
         is_featured: false,
         is_active: true,
@@ -334,6 +336,8 @@ export const SaasLandingPage: React.FC = () => {
         description: 'Most popular plan with full automation features.',
         price_monthly: 59,
         price_yearly: 590,
+        billing_model: 'metered',
+        is_metered: true,
         trial_days: 30,
         is_featured: true,
         is_active: true,
@@ -345,6 +349,8 @@ export const SaasLandingPage: React.FC = () => {
         description: 'For high-volume wedding planning firms.',
         price_monthly: 149,
         price_yearly: 1490,
+        billing_model: 'metered',
+        is_metered: true,
         trial_days: 30,
         is_featured: false,
         is_active: true,
@@ -696,7 +702,11 @@ export const SaasLandingPage: React.FC = () => {
                   <p className="mt-3 text-sm leading-relaxed text-slate-600">{plan.description}</p>
                   <div className="mt-6 flex items-baseline gap-2 text-slate-900">
                     <span className="text-4xl font-semibold">${plan.price_monthly}</span>
-                    <span className="text-sm text-slate-500">/month</span>
+                    <span className="text-sm text-slate-500">
+                      {plan.is_metered || plan.billing_model === 'metered'
+                        ? '/active wedding/mo'
+                        : '/month'}
+                    </span>
                   </div>
                   {plan.trial_days ? (
                     <p className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">

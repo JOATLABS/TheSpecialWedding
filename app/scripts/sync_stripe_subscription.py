@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from app.core.database import init_database, mongo  # noqa: E402
 from app.core.settings import settings  # noqa: E402
+from app.constants.billing import plan_billing_model  # noqa: E402
 from app.models.subscription import normalize_subscription_status  # noqa: E402
 
 
@@ -158,6 +159,10 @@ async def sync(email: str):
         "features": matched_plan.get("features", {}),
         "price_monthly": matched_plan.get("price_monthly", 0),
         "price_yearly": matched_plan.get("price_yearly"),
+        "billing_model": plan_billing_model(matched_plan),
+        "is_metered": bool(matched_plan.get("is_metered", False)),
+        "meter_event_name": matched_plan.get("meter_event_name"),
+        "meter_id": matched_plan.get("meter_id"),
         "snapshot_date": now,
     }
 
