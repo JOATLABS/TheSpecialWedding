@@ -133,9 +133,10 @@ The platform requires these environment variables (set via `.env` or Coolify das
 | `MONGODB_URL` | MongoDB connection string |
 | `SECRET_KEY` | JWT signing key (32+ chars, not a default) |
 | `CORS_ORIGINS` | Allowed origins (comma-separated) |
-| `NEXT_PUBLIC_API_BASE_URL` | Backend API URL for frontend |
+| `NEXT_PUBLIC_API_BASE_URL` | Public backend API fallback for server-side frontend calls and deploy tooling |
 | `FRONTEND_URL` | Frontend URL for generated links |
-| `INTERNAL_API_BASE_URL` | Server-side API URL used by the frontend container for SSR/data fetches |
+| `INTERNAL_API_BASE_URL` | Runtime backend URL used by the frontend container for SSR/data fetches and `/api/proxy` |
+| `BACKEND_SERVICE_URL` | Optional explicit runtime target for `/api/proxy` in split-service deployments |
 | `TWILIO_ACCOUNT_SID` | Twilio account SID |
 | `TWILIO_AUTH_TOKEN` | Twilio auth token |
 | `TWILIO_MESSAGING_SERVICE_SID` | Twilio messaging service |

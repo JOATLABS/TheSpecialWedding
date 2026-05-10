@@ -16,6 +16,9 @@ COPY . .
 # Build-time env vars used only for server-side evaluation during `next build`.
 # The runtime browser API base is resolved dynamically from the current host so
 # the same image can move from staging to production without a rebuild.
+# The runtime /api/proxy target is read when the server handles requests, not
+# at build time. Configure INTERNAL_API_BASE_URL or BACKEND_SERVICE_URL on the
+# deployed frontend service; do not add BACKEND_SERVICE_URL as a build ARG.
 ARG FRONTEND_URL
 ENV FRONTEND_URL=${FRONTEND_URL}
 
