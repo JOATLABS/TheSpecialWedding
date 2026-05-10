@@ -38,10 +38,7 @@ function WeddingContent({ isClone, wedding, images, onCelebrateClick, onRequestH
   return (
     <div className="relative z-10">
       {/* Hero */}
-      <ThemedHeroSection
-        wedding={wedding}
-        onCelebrateClick={isClone ? undefined : onCelebrateClick}
-      />
+      <ThemedHeroSection wedding={wedding} />
 
       {/* RSVP */}
       <SectionWrapper id={isClone ? undefined : "rsvp"}>
@@ -50,6 +47,21 @@ function WeddingContent({ isClone, wedding, images, onCelebrateClick, onRequestH
           <p className="text-lg text-gray-700 dark:text-gray-200 mb-6 text-center">
             {wedding.rsvp_config?.greeting || "Join us in celebrating our special day! Please let us know if you'll be attending."}
           </p>
+          <div className="mb-6 text-center">
+            {isClone ? (
+              <span className="inline-flex items-center justify-center rounded-full px-6 py-3 text-sm sm:text-base font-semibold text-white theme-bg-accent">
+                Celebrate with us | RSVP Here
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={onCelebrateClick}
+                className="inline-flex items-center justify-center rounded-full px-6 py-3 text-sm sm:text-base font-semibold text-white theme-bg-accent transition-all duration-300 hover:scale-105 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-wedding-rose"
+              >
+                Celebrate with us | RSVP Here
+              </button>
+            )}
+          </div>
           <RSVPHelpBlock
             rsvpConfig={wedding.rsvp_config}
             onRequestHelp={isClone ? undefined : onRequestHelp}

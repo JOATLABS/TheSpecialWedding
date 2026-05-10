@@ -51,6 +51,7 @@ VERIFIER_MODULES = [
     "testbed.verify_planner_two_stage_toast",
     "testbed.verify_homepage_starter_pack_lead_magnet",
     "testbed.verify_form_idempotency_submit",
+    "testbed.verify_guest_help_sms_inbox_lifecycle",
 ]
 
 
@@ -69,6 +70,7 @@ CLEANUP_MODULES = [
     "testbed.cleanup_planner_two_stage_toast_state",
     "testbed.cleanup_homepage_starter_pack_lead_magnet_state",
     "testbed.cleanup_form_idempotency_submit_state",
+    "testbed.cleanup_guest_help_sms_inbox_state",
 ]
 
 

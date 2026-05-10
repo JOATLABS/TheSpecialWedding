@@ -13,6 +13,7 @@ from app.core.cache import CacheKeys, cache
 from app.core.database import mongo
 from app.services.sms_service import SMSService
 from app.utils.contact_sanitizer import sanitize_phone
+from app.utils.support_inbox_links import build_support_inbox_path
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,15 @@ class GuestHelpRequestService:
         self.guests_collection = mongo.get_guest_collection()
         self.support_tickets_collection = mongo.db["support_tickets"]
         self.sms_service_factory = SMSService
+        self.notification_service_factory = self._default_notification_service
+
+    @staticmethod
+    def _default_notification_service():
+        from app.services.planner_notification_service import (
+            planner_notification_service,
+        )
+
+        return planner_notification_service
 
     @staticmethod
     def _normalize_phone_e164(phone: str) -> Optional[str]:
@@ -259,6 +269,38 @@ class GuestHelpRequestService:
                 "Guest help acknowledgment SMS failed for ticket %s: %s",
                 ticket_id,
                 ack_status.get("error"),
+            )
+
+        try:
+            from app.models.planner_notification import PlannerNotificationTypes
+
+            action_url = build_support_inbox_path(
+                conversation="sms_support",
+                ticket_id=str(ticket_id),
+                wedding_id=wedding_id,
+            )
+            notification_service = self.notification_service_factory()
+            await notification_service.create_notification(
+                planner_id=assigned_to,
+                notification_type=PlannerNotificationTypes.GUEST_MESSAGE,
+                title="Guest Requested Help",
+                message=f"{full_name} requested help for {couple_names}.",
+                wedding_id=wedding_id,
+                metadata={
+                    "guest_name": full_name,
+                    "guest_id": ticket.get("guest_id"),
+                    "ticket_id": str(ticket_id),
+                    "origin": "public_help_form",
+                    "source": "sms_support",
+                },
+                priority="high",
+                action_url=action_url,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Guest help notification failed for ticket %s: %s",
+                ticket_id,
+                exc,
             )
 
         return {

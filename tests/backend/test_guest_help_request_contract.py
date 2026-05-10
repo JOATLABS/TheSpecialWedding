@@ -49,23 +49,40 @@ class FakeSMSService:
         return "twilio"
 
 
+class FakeNotificationService:
+    def __init__(self) -> None:
+        self.created: list[dict] = []
+
+    async def create_notification(self, **kwargs) -> dict:
+        self.created.append(kwargs)
+        return {"id": "notification-1"}
+
+
 def make_service(
     *,
     wedding: dict | None,
     guest: dict | None = None,
     sms_service: FakeSMSService | None = None,
-) -> tuple[GuestHelpRequestService, FakeCollection, FakeCollection, FakeSMSService]:
+) -> tuple[
+    GuestHelpRequestService,
+    FakeCollection,
+    FakeCollection,
+    FakeSMSService,
+    FakeNotificationService,
+]:
     service = GuestHelpRequestService()
     wedding_collection = FakeCollection(wedding)
     guest_collection = FakeCollection(guest)
     ticket_collection = FakeCollection()
     sms = sms_service or FakeSMSService()
+    notification_service = FakeNotificationService()
     service.weddings_collection = wedding_collection
     service.guests_collection = guest_collection
     service.support_tickets_collection = ticket_collection
     service.sms_service_factory = lambda: sms
+    service.notification_service_factory = lambda: notification_service
     service._memory_rate_limits.clear()
-    return service, guest_collection, ticket_collection, sms
+    return service, guest_collection, ticket_collection, sms, notification_service
 
 
 @pytest.mark.asyncio
@@ -83,7 +100,7 @@ async def test_public_guest_help_request_creates_planner_scoped_sms_ticket_and_a
         "wedding_id": "wedding-1",
         "name": "Ayo Guest",
     }
-    service, guest_collection, ticket_collection, sms = make_service(
+    service, guest_collection, ticket_collection, sms, notifications = make_service(
         wedding=wedding, guest=guest
     )
 
@@ -121,6 +138,13 @@ async def test_public_guest_help_request_creates_planner_scoped_sms_ticket_and_a
             "Thanks Ayo Guest. Reply to this text with your question for Peace & Emmanuel's planner. They will respond from the wedding inbox.",
         )
     ]
+    assert notifications.created
+    assert notifications.created[0]["planner_id"] == "planner@example.com"
+    assert notifications.created[0]["metadata"]["ticket_id"] == result["ticket_id"]
+    assert (
+        notifications.created[0]["action_url"]
+        == f"/admin/communications/inbox?conversation=sms_support&ticket_id={result['ticket_id']}&wedding_id=wedding-1"
+    )
 
 
 @pytest.mark.asyncio
@@ -130,7 +154,9 @@ async def test_public_guest_help_request_fails_closed_without_planner_owner() ->
         "slug": "peace-emmanuel",
         "couple_names": "Peace & Emmanuel",
     }
-    service, _guest_collection, ticket_collection, sms = make_service(wedding=wedding)
+    service, _guest_collection, ticket_collection, sms, _notifications = make_service(
+        wedding=wedding
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         await service.create_help_request(
@@ -153,7 +179,7 @@ async def test_public_guest_help_request_records_ticket_when_sms_ack_fails() -> 
         "couple_names": "Peace & Emmanuel",
         "assigned_planner_email": "planner@example.com",
     }
-    service, _guest_collection, ticket_collection, sms = make_service(
+    service, _guest_collection, ticket_collection, sms, _notifications = make_service(
         wedding=wedding,
         sms_service=FakeSMSService(success=False),
     )
@@ -180,7 +206,13 @@ async def test_public_guest_help_request_rate_limits_duplicate_slug_phone() -> N
         "couple_names": "Peace & Emmanuel",
         "assigned_planner_email": "planner@example.com",
     }
-    service, _guest_collection, ticket_collection, _sms = make_service(wedding=wedding)
+    (
+        service,
+        _guest_collection,
+        ticket_collection,
+        _sms,
+        _notifications,
+    ) = make_service(wedding=wedding)
     service.max_help_requests_per_window = 1
 
     await service.create_help_request(

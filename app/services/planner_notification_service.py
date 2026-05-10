@@ -177,6 +177,21 @@ class PlannerNotificationService:
                 lambda t: t.exception() if not t.cancelled() and t.exception() else None
             )
 
+            try:
+                counts = await self.get_notification_count(planner_id)
+                count_task = asyncio.create_task(
+                    sse_manager.broadcast_to_user(
+                        planner_id, "notification-count", counts
+                    )
+                )
+                count_task.add_done_callback(
+                    lambda t: (
+                        t.exception() if not t.cancelled() and t.exception() else None
+                    )
+                )
+            except Exception:
+                logger.debug("Unable to broadcast notification count after create")
+
             return {
                 "id": str(result.inserted_id),
                 "message": "Notification created successfully",
