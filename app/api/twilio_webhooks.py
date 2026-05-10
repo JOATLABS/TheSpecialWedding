@@ -953,7 +953,6 @@ async def handle_twilio_incoming_message(
         wedding_id = None
         assigned_planner_email = None
         planner_name = None
-        planner_support_phone = None
 
         if guest and guest.get("wedding_id"):
             wedding_id = guest["wedding_id"]
@@ -970,7 +969,6 @@ async def handle_twilio_incoming_message(
                         planner_name = planner.get("company_name") or planner.get(
                             "email"
                         )
-                        planner_support_phone = planner.get("support_phone")
 
         # Import Twilio SMS service for sending responses
         from app.services.sms_service import SMSService
@@ -1042,11 +1040,11 @@ async def handle_twilio_incoming_message(
 
         # Handle HELP messages
         elif body in ["HELP", "INFO"]:
-            # Build HELP response
-            if planner_support_phone:
-                help_msg = f"Wedding reminders from {wedding_name}. Reply STOP to unsubscribe. For support, call {planner_support_phone}. Msg&data rates may apply."
-            else:
-                help_msg = f"Wedding reminders from {wedding_name}. Reply STOP to unsubscribe. For support, visit thespecialwedding.io/support. Msg&data rates may apply."
+            help_msg = (
+                f"Wedding reminders from {wedding_name}. Reply with your question "
+                "here and the planner will respond by text. Reply STOP to "
+                "unsubscribe. Msg&data rates may apply."
+            )
             sms_service.send_sms(from_number, help_msg)
 
             # Create help ticket for planner
@@ -1110,10 +1108,10 @@ async def handle_twilio_incoming_message(
             contact_info = (
                 f"your wedding planner at {planner_name}" if planner_name else "us"
             )
-            if planner_support_phone:
-                support_msg = f"Thanks for your message! {contact_info.capitalize()} will respond soon. For urgent matters, call {planner_support_phone}."
-            else:
-                support_msg = f"Thanks for your message! {contact_info.capitalize()} will respond soon."
+            support_msg = (
+                f"Thanks for your message! {contact_info.capitalize()} will respond "
+                "soon in this text thread."
+            )
             sms_service.send_sms(from_number, support_msg)
 
             # Notify wedding planner
@@ -1282,8 +1280,8 @@ async def _notify_planner_help_request(
             </div>
 
             <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                <p style="margin: 0;">The guest received an automated response with your support information.
-                They may be reaching out to you directly.</p>
+                <p style="margin: 0;">The guest received an automated response asking them to reply
+                in the same text thread. Please respond from the communications inbox.</p>
             </div>
 
             <div style="margin: 30px 0;">

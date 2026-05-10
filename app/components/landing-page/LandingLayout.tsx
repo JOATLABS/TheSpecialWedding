@@ -18,7 +18,9 @@ import TermsModal from '@/components/TermsModal';
 import PrivacyModal from '@/components/PrivacyModal';
 import RequestRSVPLinkModal from '@/components/RequestRSVPLinkModal';
 import RSVPModal from '@/components/RSVPModal';
+import GuestHelpRequestModal from '@/components/GuestHelpRequestModal';
 import { resolveMediaUrl } from '@/utils/mediaUrl';
+import { RSVPHelpBlock } from '@/components/landing-page/RSVPHelpBlock';
 
 /* ═══════════════════════════════════════════════════════════
    Wedding page content — rendered as primary + lightweight clone
@@ -29,9 +31,10 @@ interface WeddingContentProps {
   wedding: LandingLayoutProps['wedding'];
   images: LandingLayoutProps['images'];
   onCelebrateClick?: () => void;
+  onRequestHelp?: () => void;
 }
 
-function WeddingContent({ isClone, wedding, images, onCelebrateClick }: WeddingContentProps) {
+function WeddingContent({ isClone, wedding, images, onCelebrateClick, onRequestHelp }: WeddingContentProps) {
   return (
     <div className="relative z-10">
       {/* Hero */}
@@ -47,17 +50,10 @@ function WeddingContent({ isClone, wedding, images, onCelebrateClick }: WeddingC
           <p className="text-lg text-gray-700 dark:text-gray-200 mb-6 text-center">
             {wedding.rsvp_config?.greeting || "Join us in celebrating our special day! Please let us know if you'll be attending."}
           </p>
-          <div className="space-y-4 text-center">
-            <p className="text-gray-600 dark:text-gray-300">
-              {wedding.rsvp_config?.help_text || "Check your phone for your personal invitation link, or contact the couple directly."}
-            </p>
-            <div className="inline-flex text-white px-6 py-3 rounded-lg theme-bg-accent">
-              <div>
-                <p className="font-semibold">Need help?</p>
-                <p className="text-sm">Call us at {wedding.rsvp_config?.phone_numbers?.join(' or ') || "+1 877-780-4236"}</p>
-              </div>
-            </div>
-          </div>
+          <RSVPHelpBlock
+            rsvpConfig={wedding.rsvp_config}
+            onRequestHelp={isClone ? undefined : onRequestHelp}
+          />
         </GlassCard>
       </SectionWrapper>
 
@@ -271,6 +267,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, g
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showRSVPLinkModal, setShowRSVPLinkModal] = useState(false);
+  const [showGuestHelpModal, setShowGuestHelpModal] = useState(false);
   const [manualRSVPModalOpen, setManualRSVPModalOpen] = useState(false);
   const [dismissedAutoOpenToken, setDismissedAutoOpenToken] = useState<string | null>(null);
   const [loopHeight, setLoopHeight] = useState(0);
@@ -320,6 +317,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, g
                 }
                 setShowRSVPLinkModal(true);
               }}
+              onRequestHelp={() => setShowGuestHelpModal(true)}
             />
           )}
         </InfiniteScrollWrapper>
@@ -357,6 +355,13 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, g
       <RequestRSVPLinkModal
         isOpen={showRSVPLinkModal}
         onClose={() => setShowRSVPLinkModal(false)}
+        slug={wedding.slug}
+        coupleName={wedding.couple_names}
+        themeConfig={wedding.theme_config}
+      />
+      <GuestHelpRequestModal
+        isOpen={showGuestHelpModal}
+        onClose={() => setShowGuestHelpModal(false)}
         slug={wedding.slug}
         coupleName={wedding.couple_names}
         themeConfig={wedding.theme_config}

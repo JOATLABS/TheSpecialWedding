@@ -583,6 +583,11 @@ class ResendEmailService:
                         you can add your phone number when you RSVP.
                     </p>
 
+                    <p style="text-align: center; color: #666; font-size: 14px;">
+                        Need help with your invitation? Reply <strong>HELP</strong> to a wedding text message,
+                        or use the <strong>Get Help</strong> button on the wedding website so the planner can text you.
+                    </p>
+
                     <p>We look forward to celebrating with you!</p>
 
                     <p>With love,<br>{couple_names}</p>

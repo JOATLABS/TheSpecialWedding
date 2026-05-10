@@ -982,7 +982,7 @@ export default function CommunicationsRemindersView({
  if (lastAppliedTemplateRef.current === templateKey) return;
 
  setCustomMessage(
- `Hi ${guest.name}, you're invited to our wedding! Please RSVP at: ${window.location.origin}/${selectedWeddingData.slug}/invite/${guest.token}`
+ `Hi ${guest.name}, you're invited to our wedding! Please RSVP at: ${window.location.origin}/${selectedWeddingData.slug}/invite/${guest.token} Need help? Reply HELP to wedding texts or use Get Help on the wedding website.`
  );
  lastAppliedTemplateRef.current = templateKey;
  }, [activeTab, guestByToken, requestedTemplate, selectedGuests, selectedWeddingData]);

@@ -53,6 +53,7 @@ from app.api.gallery_admin import router as gallery_admin_router
 from app.api.gallery_public import router as gallery_public_router
 from app.api.guest import router as guest_router
 from app.api.guest_export import router as guest_export_router
+from app.api.guest_help import router as guest_help_router
 from app.api.guest_memories import router as guest_memories_router
 from app.api.guest_verification import router as guest_verification_router
 
@@ -833,6 +834,7 @@ app.include_router(
 app.include_router(saas_config_router, prefix="/saas", tags=["Subscription"])
 app.include_router(testimonials_router, prefix="/saas", tags=["Testimonials"])
 app.include_router(public_contact_router, tags=["Sales"])
+app.include_router(guest_help_router, tags=["Guest"])
 app.include_router(guest_verification_router, tags=["Guest"])
 app.include_router(forms_router, tags=["Forms"])  # Legacy + public form endpoints
 app.include_router(

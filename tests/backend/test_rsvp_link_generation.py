@@ -7,6 +7,7 @@ instead of the legacy /{slug}/invite/{token} route.
 These tests use source inspection to avoid importing the full service stack
 (which requires a live MongoDB connection).
 """
+
 from __future__ import annotations
 
 import os
@@ -18,19 +19,24 @@ _SERVICES_DIR = Path(__file__).resolve().parents[2] / "app" / "services"
 _EXPORT_SRC = (_SERVICES_DIR / "guest_export_service.py").read_text()
 _VERIFY_SRC = (_SERVICES_DIR / "guest_verification_service.py").read_text()
 _REMINDER_SRC = (_SERVICES_DIR / "reminder_utilities.py").read_text()
+_REMINDER_TWILIO_SRC = (_SERVICES_DIR / "reminder_service_twilio.py").read_text()
+_REMINDER_TELNYX_SRC = (_SERVICES_DIR / "reminder_utilities_telnyx.py").read_text()
+_EMAIL_SRC = (_SERVICES_DIR / "email_service_resend.py").read_text()
+_TWILIO_WEBHOOK_SRC = (
+    Path(__file__).resolve().parents[2] / "app" / "api" / "twilio_webhooks.py"
+).read_text()
 
 
 # ---------------------------------------------------------------------------
 # URL-building logic (mirrors the production implementation, stdlib only)
 # ---------------------------------------------------------------------------
 
+
 def _build_otp_url(frontend_url: str, slug: str, token: str) -> str:
     """Reference implementation matching what the services now generate."""
     base = frontend_url.rstrip("/")
     return (
-        f"{base}/otp/verify"
-        f"?slug={quote(slug, safe='')}"
-        f"&token={quote(token, safe='')}"
+        f"{base}/otp/verify?slug={quote(slug, safe='')}&token={quote(token, safe='')}"
     )
 
 
@@ -52,6 +58,7 @@ def _assert_no_legacy_invite_pattern(source: str, file_name: str) -> None:
 # ---------------------------------------------------------------------------
 # Direct logic tests (no heavy imports)
 # ---------------------------------------------------------------------------
+
 
 def test_otp_url_basic():
     url = _build_otp_url("https://example.io", "summer-wedding", "abc123")
@@ -82,6 +89,7 @@ def test_otp_url_with_default_fallback():
 # ---------------------------------------------------------------------------
 # Source-inspection tests — verify each file was updated correctly
 # ---------------------------------------------------------------------------
+
 
 def test_guest_export_service_uses_otp_route_in_source():
     assert "/otp/verify" in _EXPORT_SRC, (
@@ -123,3 +131,28 @@ def test_reminder_utilities_no_legacy_invite_route_in_source():
 
 def test_reminder_utilities_imports_quote():
     assert "from urllib.parse import quote" in _REMINDER_SRC
+
+
+def test_lost_link_sms_default_includes_help_instructions():
+    assert "Reply HELP" in _VERIFY_SRC
+    assert "use Get Help on the wedding website" in _VERIFY_SRC
+
+
+def test_bulk_sms_defaults_include_help_instructions_without_custom_templates():
+    for source in (_REMINDER_SRC, _REMINDER_TWILIO_SRC, _REMINDER_TELNYX_SRC):
+        assert "if custom_message" in source
+        assert "Reply HELP" in source
+        assert "use Get Help on the wedding website" in source
+
+
+def test_default_rsvp_email_includes_help_instructions():
+    assert "Need help with your invitation?" in _EMAIL_SRC
+    assert "Get Help" in _EMAIL_SRC
+
+
+def test_sms_help_auto_reply_routes_back_to_text_thread_not_phone_call():
+    assert "Reply with your question " in _TWILIO_WEBHOOK_SRC
+    assert "the planner will respond by text" in _TWILIO_WEBHOOK_SRC
+    assert "Please respond from the communications inbox" in _TWILIO_WEBHOOK_SRC
+    assert "For support, call" not in _TWILIO_WEBHOOK_SRC
+    assert "For urgent matters, call" not in _TWILIO_WEBHOOK_SRC

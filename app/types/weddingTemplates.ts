@@ -16,6 +16,8 @@ export interface WeddingTemplate {
     rsvp_config: {
       greeting: string;
       help_text: string;
+      hide_phone_numbers?: boolean;
+      help_button_label?: string;
     };
     our_story: {
       text: string;
@@ -45,7 +47,9 @@ export const WEDDING_TEMPLATES: WeddingTemplate[] = [
     default_content: {
       rsvp_config: {
         greeting: "Join us in celebrating our special day! Please let us know if you'll be attending.",
-        help_text: "Check your phone for your personal invitation link, or contact us directly."
+        help_text: "Check your phone for your personal invitation link. If you need help, use the Get Help button and our planner will text you.",
+        hide_phone_numbers: true,
+        help_button_label: "Get Help"
       },
       our_story: {
         text: "Share your love story here...",

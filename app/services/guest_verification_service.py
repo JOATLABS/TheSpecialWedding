@@ -1093,7 +1093,11 @@ class GuestVerificationService:
                     )
 
                     twilio_service = TwilioReminderService()
-                    message = f"Hi {guest_name}! Here's your personal RSVP link for {couple_names}'s wedding: {rsvp_url}"
+                    message = (
+                        f"Hi {guest_name}! Here's your personal RSVP link for "
+                        f"{couple_names}'s wedding: {rsvp_url} Need help? Reply HELP "
+                        "to this text or use Get Help on the wedding website."
+                    )
                     # Use digits_only for Twilio - it will add +1 prefix for E.164 format
                     result = twilio_service._send_sms(digits_only, message)
                     send_success = result.get("status") == "success"
@@ -1186,6 +1190,10 @@ class GuestVerificationService:
                                     <p style="color: #94a3b8; font-size: 14px; margin: 30px 0 0;">
                                         Or copy this link: <br>
                                         <a href="{rsvp_url}" style="color: #64748b; word-break: break-all;">{rsvp_url}</a>
+                                    </p>
+                                    <p style="color: #64748b; font-size: 14px; line-height: 1.6; margin: 30px 0 0;">
+                                        Need help with your invitation? Reply <strong>HELP</strong> to a wedding text message,
+                                        or use the <strong>Get Help</strong> button on the wedding website so the planner can text you from the message inbox.
                                     </p>
                                 </td>
                             </tr>
