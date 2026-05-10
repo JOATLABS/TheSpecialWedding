@@ -289,7 +289,9 @@ async def update_wedding_admin(
 
     existing_wedding = await wedding_service.get_wedding(wedding_id)
     previous_slug = existing_wedding.get("slug")
-    should_invalidate_privacy = "privacy_settings" in wedding or "slug" in wedding
+    should_invalidate_privacy = (
+        "privacy_settings" in wedding or "slug" in wedding or "rsvp_config" in wedding
+    )
 
     # Add update metadata
     wedding["updated_by"] = current_user.email

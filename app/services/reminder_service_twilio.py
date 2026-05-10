@@ -468,7 +468,10 @@ class TwilioRSVPReminderHelper:
                     "{name}", guest.get("name", "")
                 )
             else:
-                message = f"You're invited! RSVP here: {url}"
+                message = (
+                    f"You're invited! RSVP here: {url} Need help? Reply HELP to this "
+                    "text or use Get Help on the wedding website."
+                )
 
             # Sanitize and normalize phone to E.164 format
             phone = normalize_phone_e164(phone)
