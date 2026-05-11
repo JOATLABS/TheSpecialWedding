@@ -118,25 +118,29 @@ export const blogPosts = {
         <h3 className="text-xl font-semibold text-white mt-8">For growing teams</h3>
 
         <p>
-          Enterprise is built for planning firms managing multiple weddings with teams: unlimited weddings, unlimited guests, 10 staff seats, white-label branding, API access, dedicated support, custom integrations, and expanded AI usage.
+          Enterprise is built for planning firms and franchises: unlimited weddings, unlimited guests, 20 staff seats, white-label branding, API access, dedicated success manager, custom integrations, and expanded AI usage.
         </p>
 
-        <h3 className="text-xl font-semibold text-white mt-8">The three plans</h3>
+        <h3 className="text-xl font-semibold text-white mt-8">The four plans</h3>
 
         <p>
-          <strong>Boutique ($29/month):</strong> Up to 3 active weddings, 150 guests per wedding, guest management, seating, day-of timelines, contracts, and 100 AI credits per month. Perfect for solo planners getting their operating system in place.
-        </p>
-
-        <p>
-          <strong>Signature ($59/month):</strong> Up to 10 active weddings, 350 guests per wedding, 3 staff seats, vendor collaboration, guest memory QR uploads, and 300 AI credits per month. Perfect for established solo planners or small teams.
+          <strong>Solo (free):</strong> Try us with your first client. One wedding lifetime, up to 50 guests, branded wedding website, RSVP system, basic timeline builder, 1GB storage. Perfect for testing whether we're a fit before committing.
         </p>
 
         <p>
-          <strong>Enterprise ($149/month):</strong> Unlimited weddings and guests, 10 staff seats, priority support, advanced analytics, API access, and 1000 AI credits per month. Perfect for planning firms scaling across many events.
+          <strong>Boutique ($49/month):</strong> Up to 10 weddings/month, 200 guests per wedding, vendor management, seating orchestration, QR check-in & live counts, automated reminders, calendar sync, and 300 AI credits per month. Perfect for independent planners running their solo practice.
         </p>
 
         <p>
-          All self-serve plans include a 30-day free trial with no credit card required, plus live support on business days.
+          <strong>Signature ($149/month):</strong> Up to 30 weddings/month, 500 guests per wedding, 5 staff seats, vendor-collaboration workspaces, cross-wedding analytics, custom domain, and 1,500 AI credits per month. Perfect for agencies running a team of planners.
+        </p>
+
+        <p>
+          <strong>Enterprise ($399/month):</strong> Unlimited weddings and guests, 20 staff seats, white-label branding, API access plus webhooks, dedicated success manager, custom integrations, and 5,000 AI credits per month. Perfect for franchises and large agencies scaling across many planners.
+        </p>
+
+        <p>
+          Solo is free permanently (capped at one lifetime wedding). Paid plans include a 14-day free trial — Enterprise gets 30 — with no credit card required.
         </p>
 
         <h3 className="text-xl font-semibold text-white mt-8">Why now?</h3>

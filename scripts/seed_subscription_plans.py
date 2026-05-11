@@ -253,13 +253,133 @@ def _build_recurring(interval: str, plan: dict, meter_id: str | None) -> dict:
     return config
 
 
-def create_stripe_product_and_prices(plan: dict) -> dict:
-    """Create Stripe product, meter (if metered), and prices. Return IDs."""
+def _stripe_price_matches(
+    price, expected_cents: int, interval: str, is_metered: bool, meter_id: str | None
+) -> bool:
+    """Return True iff ``price`` matches the seed's expected configuration.
+
+    Mirrors the comparison in ``app/services/stripe_service.py::ensure_price``
+    — keep them aligned. If either side drifts, ``testbed/verify_seed_price_
+    refresh_e2e.py`` will catch it.
+    """
+    if not price.recurring or price.recurring.interval != interval:
+        return False
+    if price.unit_amount != expected_cents:
+        return False
+    if price.currency != "usd":
+        return False
+    price_is_metered = price.recurring.usage_type == "metered"
+    if price_is_metered != is_metered:
+        return False
+    if is_metered and meter_id:
+        if getattr(price.recurring, "meter", None) != meter_id:
+            return False
+    return True
+
+
+def _ensure_seed_price(
+    product_id: str,
+    plan: dict,
+    interval: str,
+    amount: float,
+    existing_price_id: str | None,
+    meter_id: str | None,
+) -> str | None:
+    """Create-or-reuse a Stripe Price honoring immutability.
+
+    Stripe Prices are immutable on ``unit_amount`` / ``currency`` / ``product``.
+    Per Stripe's "Change the price of existing subscriptions" guide, the only
+    valid update is: create a new Price, then deactivate the old one (existing
+    subscriptions keep working — they're grandfathered until explicitly moved).
+
+    Without this check, a pricing-strategy refresh that flips ``price_monthly``
+    from 29 → 49 would leave Mongo carrying $49 but ``stripe_price_id_monthly``
+    pointing at the OLD $29 Stripe Price. New Checkout sessions would be
+    charged the wrong amount.
+    """
+    if amount is None:
+        return None
+
+    expected_cents = int(amount * 100)
+    is_metered = bool(plan.get("is_metered"))
+    plan_id = plan["_id"]
+
+    # Try to reuse the recorded price first — fastest path, avoids the
+    # Price.list round trip when nothing has drifted.
+    if existing_price_id:
+        try:
+            existing = stripe.Price.retrieve(existing_price_id)
+            if _stripe_price_matches(
+                existing, expected_cents, interval, is_metered, meter_id
+            ):
+                return existing_price_id
+        except StripeError as exc:
+            print(
+                f"  [WARN] Could not retrieve recorded price {existing_price_id}: {exc}"
+            )
+            existing_price_id = None
+
+    # Fallback discovery: scan active prices on this product for a match (handles
+    # the case where Mongo doesn't have a price id yet but Stripe does — e.g.
+    # the plan was previously seeded via a different code path).
+    if not existing_price_id:
+        try:
+            for price in stripe.Price.list(
+                product=product_id, active=True
+            ).auto_paging_iter():
+                if _stripe_price_matches(
+                    price, expected_cents, interval, is_metered, meter_id
+                ):
+                    return price.id
+        except StripeError as exc:
+            print(f"  [WARN] Could not list prices on product {product_id}: {exc}")
+
+    # No match — create a new Price.
+    new_price = stripe.Price.create(
+        product=product_id,
+        unit_amount=expected_cents,
+        currency="usd",
+        recurring=_build_recurring(interval, plan, meter_id),  # type: ignore
+        metadata={"plan_id": plan_id, "interval": f"{interval}ly"},
+    )
+    metered_tag = " [METERED]" if is_metered else ""
+    print(
+        f"  [CREATED] {interval.title()} price: {new_price.id} "
+        f"(${amount}/{interval[:2]}){metered_tag}"
+    )
+
+    # Deactivate the old Price so it stops surfacing as the active default
+    # for new Checkout sessions. Existing subscriptions on it are unaffected
+    # (Stripe keeps charging archived prices for grandfathered subs).
+    if existing_price_id:
+        try:
+            stripe.Price.modify(existing_price_id, active=False)
+            print(
+                f"  [ARCHIVED] Old {interval} price {existing_price_id} marked inactive"
+            )
+        except StripeError as exc:
+            print(f"  [WARN] Could not deactivate old price {existing_price_id}: {exc}")
+
+    return new_price.id
+
+
+def create_stripe_product_and_prices(
+    plan: dict, existing_mongo: dict | None = None
+) -> dict:
+    """Create Stripe product, meter (if metered), and prices. Return IDs.
+
+    When ``existing_mongo`` is provided, the helper honors the recorded
+    ``stripe_price_id_*`` fields and creates new Prices on mismatch (per the
+    Stripe immutability contract — see ``_ensure_seed_price``). Without that
+    argument the helper still works for first-time creation, but it can't
+    detect a price refresh against an already-deployed product.
+    """
     if not STRIPE_CONFIGURED or not stripe:
         return {}
 
     plan_id = plan["_id"]
     plan_name = plan["name"]
+    existing_mongo = existing_mongo or {}
 
     meter_id = _provision_meter_if_needed(plan)
     if plan.get("is_metered") and not meter_id:
@@ -268,97 +388,100 @@ def create_stripe_product_and_prices(plan: dict) -> dict:
             f"{plan.get('meter_event_name')!r}; aborting seed before creating "
             "a flat Stripe Price by accident."
         )
-    is_metered = bool(plan.get("is_metered"))
 
-    try:
-        existing_products = stripe.Product.search(
-            query=f"metadata['plan_id']:'{plan_id}'"
-        )
-        if existing_products.data:
-            product = existing_products.data[0]
-            print(f"  [EXISTS] Stripe product: {product.id}")
-
-            prices = stripe.Price.list(product=product.id, active=True)
-            monthly_price = None
-            yearly_price = None
-
-            for price in prices.data:
-                if not price.recurring:
-                    continue
-                price_is_metered = price.recurring.usage_type == "metered"
-                if price_is_metered != bool(is_metered):
-                    continue
-                if price.recurring.interval == "month":
-                    monthly_price = price.id
-                elif price.recurring.interval == "year":
-                    yearly_price = price.id
-
-            result = {
-                "stripe_product_id": product.id,
-                "stripe_price_id_monthly": monthly_price,
-                "stripe_price_id_yearly": yearly_price,
-            }
-            if meter_id:
-                result["meter_id"] = meter_id
-            if monthly_price and yearly_price:
-                return result
-            print(
-                "  [INFO] Some prices missing or shape changed — creating to backfill"
-            )
-            product_id = product.id
-        else:
+    # 1. Resolve the Stripe Product — reuse if Mongo has a recorded id and
+    # it's retrievable, otherwise fall back to metadata search, otherwise
+    # create.
+    # Track the live product (for the modify step below) plus its id.
+    existing_product = None
+    product_id = existing_mongo.get("stripe_product_id")
+    if product_id:
+        try:
+            existing_product = stripe.Product.retrieve(product_id)
+        except StripeError:
             product_id = None
-    except StripeError as e:
-        print(f"[WARN] Error searching Stripe products: {e}")
-        product_id = None
 
-    try:
-        if not product_id:
+    if not product_id:
+        try:
+            search = stripe.Product.search(query=f"metadata['plan_id']:'{plan_id}'")
+            if search.data:
+                existing_product = search.data[0]
+                product_id = existing_product.id
+                print(f"  [EXISTS] Stripe product: {product_id}")
+        except StripeError as exc:
+            print(f"  [WARN] Error searching Stripe products: {exc}")
+
+    expected_name = f"The Special Wedding - {plan_name}"
+    expected_description = plan.get("description", f"{plan_name} subscription plan")
+
+    if not product_id:
+        try:
             product = stripe.Product.create(
-                name=f"The Special Wedding - {plan_name}",
-                description=plan.get("description", f"{plan_name} subscription plan"),
+                name=expected_name,
+                description=expected_description,
                 metadata={"plan_id": plan_id, "source": "seed_script"},
             )
             product_id = product.id
             print(f"  [CREATED] Stripe product: {product_id}")
+        except StripeError as exc:
+            print(f"  [ERROR] Stripe error creating product: {exc}")
+            return {"meter_id": meter_id} if meter_id else {}
+    elif existing_product is not None:
+        # Refresh the Stripe Product's name/description if the seed dict has
+        # changed since the product was first created. Customer-visible on
+        # hosted Checkout summaries and on the Stripe Dashboard. Skipping
+        # this is what kept "Plan for new planners onboarding their first
+        # weddings" on prod products long after the seed copy was rewritten.
+        updates: dict = {}
+        if getattr(existing_product, "name", None) != expected_name:
+            updates["name"] = expected_name
+        if getattr(existing_product, "description", None) != expected_description:
+            updates["description"] = expected_description
+        if updates:
+            try:
+                stripe.Product.modify(product_id, **updates)
+                print(
+                    f"  [REFRESHED] Stripe product {product_id} updated: "
+                    f"{', '.join(updates.keys())}"
+                )
+            except StripeError as exc:
+                # Non-fatal — product is still usable, name/description
+                # just stays stale. Log and continue.
+                print(f"  [WARN] Could not modify Stripe product {product_id}: {exc}")
 
-        new_monthly_price = stripe.Price.create(
-            product=product_id,
-            unit_amount=int(plan["price_monthly"] * 100),
-            currency="usd",
-            recurring=_build_recurring("month", plan, meter_id),  # type: ignore
-            metadata={"plan_id": plan_id, "interval": "monthly"},
+    # 2. Ensure monthly + yearly Prices honoring immutability.
+    try:
+        monthly_price_id = _ensure_seed_price(
+            product_id,
+            plan,
+            "month",
+            plan["price_monthly"],
+            existing_mongo.get("stripe_price_id_monthly"),
+            meter_id,
         )
-        metered_tag = " [METERED]" if is_metered else ""
-        print(
-            f"  [CREATED] Monthly price: {new_monthly_price.id} "
-            f"(${plan['price_monthly']}/mo){metered_tag}"
+        yearly_price_id = _ensure_seed_price(
+            product_id,
+            plan,
+            "year",
+            plan["price_yearly"],
+            existing_mongo.get("stripe_price_id_yearly"),
+            meter_id,
         )
-
-        new_yearly_price = stripe.Price.create(
-            product=product_id,
-            unit_amount=int(plan["price_yearly"] * 100),
-            currency="usd",
-            recurring=_build_recurring("year", plan, meter_id),  # type: ignore
-            metadata={"plan_id": plan_id, "interval": "yearly"},
-        )
-        print(
-            f"  [CREATED] Yearly price: {new_yearly_price.id} "
-            f"(${plan['price_yearly']}/yr){metered_tag}"
-        )
-
-        result = {
+    except StripeError as exc:
+        print(f"  [ERROR] Stripe error ensuring prices: {exc}")
+        return {
             "stripe_product_id": product_id,
-            "stripe_price_id_monthly": new_monthly_price.id,
-            "stripe_price_id_yearly": new_yearly_price.id,
+            **({"meter_id": meter_id} if meter_id else {}),
         }
-        if meter_id:
-            result["meter_id"] = meter_id
-        return result
 
-    except StripeError as e:
-        print(f"  [ERROR] Stripe error creating product/prices: {e}")
-        return {"meter_id": meter_id} if meter_id else {}
+    result = {
+        "stripe_product_id": product_id,
+        "stripe_price_id_monthly": monthly_price_id,
+        "stripe_price_id_yearly": yearly_price_id,
+    }
+    if meter_id:
+        result["meter_id"] = meter_id
+    return result
 
 
 def _seed_billing_model(plan: dict | None) -> str:
@@ -686,8 +809,11 @@ for plan in plans:
     # Create Stripe products if configured (idempotent - checks existing first).
     # Inactive plans are intentionally hidden by root admin and should not
     # create fresh sellable Stripe Prices during a rolling deploy.
+    # Pass existing_plan so the helper can honor recorded Stripe IDs and
+    # detect unit_amount drift (see _ensure_seed_price for the immutability
+    # contract this enforces).
     stripe_ids = (
-        create_stripe_product_and_prices(plan_for_sync)
+        create_stripe_product_and_prices(plan_for_sync, existing_plan)
         if STRIPE_CONFIGURED and plan_for_sync.get("is_active", True)
         else {}
     )
@@ -696,8 +822,25 @@ for plan in plans:
     plan_with_stripe = {**plan_for_sync, **stripe_ids}
 
     # ATOMIC upsert: prevents race conditions when multiple containers start simultaneously
-    # $setOnInsert: only set these fields if document is newly created
-    # $set: always update these fields
+    #
+    # Field placement rules (2026-05-10 strategy refresh):
+    #
+    # $set — strategy-controlled fields. Every redeploy carries the current
+    # seed values into Mongo. This is what fixes the "Mongo holds $29 but the
+    # seed declares $49" drift problem. Trade-off: ad-hoc admin price edits
+    # via the saas admin UI get reverted on the next deploy. If a one-off
+    # price experiment is needed, do it under a NEW plan id, not by editing
+    # an existing canonical plan.
+    #
+    # $setOnInsert — admin display toggles. The admin saas page allows
+    # hiding a plan or rearranging order; those choices must survive deploys
+    # because they're operator decisions, not strategy.
+    #
+    # Why max_weddings_lifetime sits in $set: without it, the Solo lifetime
+    # cap silently doesn't write to Mongo, and `_live_wedding_count_lifetime`
+    # is never invoked (the branch in subscription_service reads the flag
+    # from plan_snapshot). Free Solo planners would be able to create →
+    # delete → create indefinitely, bypassing the "1 wedding lifetime" cap.
     result = collection.update_one(
         {"_id": plan_id},
         {
@@ -706,20 +849,7 @@ for plan in plans:
                     "created_at", datetime.now(timezone.utc)
                 ),
                 "created_by": plan_with_stripe.get("created_by", "system"),
-                "name": plan_with_stripe["name"],
-                "description": plan_with_stripe.get("description"),
-                "price_monthly": plan_with_stripe["price_monthly"],
-                "price_yearly": plan_with_stripe.get("price_yearly"),
-                "trial_days": plan_with_stripe.get("trial_days", 0),
-                "max_weddings": plan_with_stripe.get("max_weddings"),
-                "max_guests_per_wedding": plan_with_stripe.get(
-                    "max_guests_per_wedding"
-                ),
-                "ai_credits_monthly": plan_with_stripe.get("ai_credits_monthly"),
-                "storage_gb": plan_with_stripe.get("storage_gb"),
-                "staff_seats": plan_with_stripe.get("staff_seats"),
-                "features": plan_with_stripe.get("features", {}),
-                "features_list": plan_with_stripe.get("features_list", []),
+                # Admin display toggles — survive deploys.
                 "is_active": plan_with_stripe.get("is_active", True),
                 "is_featured": plan_with_stripe.get("is_featured", False),
                 "sort_order": plan_with_stripe.get("sort_order", 0),
@@ -728,10 +858,30 @@ for plan in plans:
                 ),
             },
             "$set": {
-                "billing_model": plan_with_stripe.get(
-                    "billing_model", BILLING_MODEL_METERED
+                # Strategy fields — refreshed on every deploy.
+                "name": plan_with_stripe["name"],
+                "description": plan_with_stripe.get("description"),
+                "price_monthly": plan_with_stripe["price_monthly"],
+                "price_yearly": plan_with_stripe.get("price_yearly"),
+                "trial_days": plan_with_stripe.get("trial_days", 0),
+                "max_weddings": plan_with_stripe.get("max_weddings"),
+                "max_weddings_lifetime": plan_with_stripe.get(
+                    "max_weddings_lifetime", False
                 ),
-                "is_metered": plan_with_stripe.get("is_metered", True),
+                "max_guests_per_wedding": plan_with_stripe.get(
+                    "max_guests_per_wedding"
+                ),
+                "ai_credits_monthly": plan_with_stripe.get("ai_credits_monthly"),
+                "storage_gb": plan_with_stripe.get("storage_gb"),
+                "staff_seats": plan_with_stripe.get("staff_seats"),
+                "features": plan_with_stripe.get("features", {}),
+                "features_list": plan_with_stripe.get("features_list", []),
+                # Billing model — defaults track the 2026-05-09 strategy
+                # (flat unless a plan deliberately opts in to metered).
+                "billing_model": plan_with_stripe.get(
+                    "billing_model", BILLING_MODEL_FLAT_RATE
+                ),
+                "is_metered": plan_with_stripe.get("is_metered", False),
                 # Metered config — these MUST be in $set or the seed will
                 # silently drop them on update, leaving plans in a half-
                 # configured state. See METERING_GAP_SCENARIOS_2026-05-04.md
