@@ -9,9 +9,14 @@ BILLING_MODEL_FLAT_RATE = "flat_rate"
 BILLING_MODEL_METERED = "metered"
 
 CANONICAL_PUBLIC_PLAN_IDS = frozenset(
-    {"plan_boutique", "plan_signature", "plan_enterprise"}
+    {"plan_solo", "plan_boutique", "plan_signature", "plan_enterprise"}
 )
-CANONICAL_PUBLIC_PLAN_BILLING_MODEL = BILLING_MODEL_METERED
+# 2026-05-09 pricing strategy refresh: shipped plans are flat. The metering
+# hardening infrastructure (stripe_meter_helpers, ensure_stripe_meter,
+# assert_meter_config) stays available — a plan can be flipped to metered
+# per-plan by setting is_metered=True + meter_event_name. The canonical
+# default just reflects what we actually ship today.
+CANONICAL_PUBLIC_PLAN_BILLING_MODEL = BILLING_MODEL_FLAT_RATE
 CANONICAL_PUBLIC_PLAN_METER_EVENT_NAME = "wedding_active"
 
 METERED_PLAN_MANAGEMENT_FLAG = "TSW_ENABLE_METERED_PLAN_MANAGEMENT"

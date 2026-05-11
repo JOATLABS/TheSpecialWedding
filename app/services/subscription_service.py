@@ -336,6 +336,10 @@ class SubscriptionService:
             plan_snapshot = {
                 "plan_name": plan.get("name"),
                 "max_weddings": plan.get("max_weddings", 1),
+                # Lifetime cap flag — must survive into the snapshot so Solo
+                # planners can't get re-grandfathered onto a non-lifetime cap
+                # if the plan is later edited.
+                "max_weddings_lifetime": bool(plan.get("max_weddings_lifetime", False)),
                 "max_guests_per_wedding": plan.get("max_guests_per_wedding", 100),
                 "ai_credits_monthly": plan.get("ai_credits_monthly", 10),
                 "ai_credit_overage_price": plan.get(
@@ -908,6 +912,35 @@ class SubscriptionService:
         }
         return await self.weddings_collection.count_documents(active_query)
 
+    async def _live_wedding_count_lifetime(self, user_id: str) -> int:
+        """LIFETIME wedding count — INCLUDES soft-deleted weddings.
+
+        Used for plans with ``max_weddings_lifetime=True`` (e.g., the Solo
+        free tier). The cap is enforced against every wedding the planner
+        has EVER created, including ones they soft-deleted. This prevents
+        the "create, delete, repeat" loop that would let a free planner
+        run unlimited weddings against a "1 lifetime" cap.
+
+        Mirrors ``_live_wedding_count`` for owner-query construction; the
+        only difference is the absence of the ``deleted_at`` filter.
+
+        See ``docs/analysis/METERING_IMPLEMENTATION_2026-05-04.md`` for the
+        decision to enforce lifetime caps for the Solo tier.
+        """
+        user = await self.users_collection.find_one(
+            {"_id": normalize_query_id(user_id)},
+            {"email": 1},
+        )
+        user_email = user.get("email") if user else None
+        owner_query = build_wedding_owner_query(
+            planner_id=user_id, planner_email=user_email
+        )
+        if not owner_query:
+            return 0
+        # NO deleted_at filter — every wedding the planner has ever owned
+        # counts against the lifetime cap.
+        return await self.weddings_collection.count_documents(owner_query)
+
     async def get_usage_stats(self, user_id: str) -> dict:
         """Get current usage statistics for user.
 
@@ -984,16 +1017,32 @@ class SubscriptionService:
                 # counter. ``get_usage_stats`` already reconciles the
                 # returned dict, but we re-query here to keep this method
                 # independently correct — if someone ever stubs or bypasses
-                # ``get_usage_stats``, the cap must still hold. The extra
-                # round-trip is negligible versus a false-positive cap.
-                current = await self._live_wedding_count(user_id)
+                # ``get_usage_stats``, the cap must still hold.
+                #
+                # Lifetime branch (Solo tier and similar): cap counts every
+                # wedding ever created, including soft-deleted ones, so a
+                # planner can't game a "1 wedding free" limit by deleting
+                # and recreating. See ``_live_wedding_count_lifetime``.
+                use_lifetime_cap = bool(limits_source.get("max_weddings_lifetime"))
+                if use_lifetime_cap:
+                    current = await self._live_wedding_count_lifetime(user_id)
+                else:
+                    current = await self._live_wedding_count(user_id)
                 limit = limits_source.get("max_weddings", 1)
                 if limit != -1 and current + requested_amount > limit:
+                    msg_suffix = (
+                        " (lifetime cap — deleted weddings still count)"
+                        if use_lifetime_cap
+                        else ""
+                    )
                     return {
                         "allowed": False,
                         "current_usage": current,
                         "limit": limit,
-                        "message": f"Wedding limit exceeded. Plan allows {limit} weddings, you have {current}",
+                        "message": (
+                            f"Wedding limit exceeded. Plan allows {limit} "
+                            f"weddings, you have {current}{msg_suffix}"
+                        ),
                     }
             elif resource_type == "ai_credits":
                 # Soft cap with overage. Live-query the usage log so we

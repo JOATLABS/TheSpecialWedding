@@ -1447,9 +1447,12 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  is_featured: plan?.is_featured || false,
  is_active: plan?.is_active !== false,
  display_order: plan?.display_order ?? plan?.sort_order ?? 0,
- // Metered billing configuration
- is_metered: (plan as any)?.is_metered !== false,
- meter_event_name: (plan as any)?.meter_event_name || 'wedding_active',
+ // Metered billing configuration.
+ // 2026-05-09: defaults flipped to flat. New plans default to flat-rate
+ // billing — match the new pricing strategy. Operator can flip to metered
+ // per-plan by checking the box.
+ is_metered: (plan as any)?.is_metered === true,
+ meter_event_name: (plan as any)?.meter_event_name || '',
  meter_id: (plan as any)?.meter_id || '',
  features: buildPlanFeatureState(plan?.features),
  features_list_text: formatFeatureListInput(plan?.features_list),
