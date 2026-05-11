@@ -1,22 +1,32 @@
 """
 Seed Subscription Plans Script
 Creates default subscription plans in MongoDB and corresponding products/prices in Stripe.
-Runs on container startup via Dockerfile.coolify.
+Runs on container startup via the runtime bootstrap script.
 """
 
+from pathlib import Path
 import os
 import sys
 from datetime import datetime, timezone
 
-from dotenv import load_dotenv
+REPO_ROOT = Path(__file__).resolve().parents[1]
+repo_root_str = str(REPO_ROOT)
+if repo_root_str not in sys.path:
+    sys.path.insert(0, repo_root_str)
 
-from app.constants.billing import (
+from dotenv import load_dotenv  # noqa: E402
+
+from app.constants.billing import (  # noqa: E402
     BILLING_MODEL_FLAT_RATE,
     BILLING_MODEL_METERED,
     CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
     PLAN_BILLING_MODEL_MIGRATION_FLAG,
     plan_billing_model_migration_enabled,
 )
+
+if os.getenv("SEED_SUBSCRIPTION_PLANS_IMPORT_CHECK_ONLY") == "1":
+    print("[OK] seed subscription import contract satisfied")
+    sys.exit(0)
 
 # Load environment variables
 load_dotenv()
@@ -91,7 +101,7 @@ ADMIN_MUTABLE_PLAN_FIELDS = (
 # This handles cases where plans were created through both seed script and API endpoints.
 canonical_ids = {"plan_boutique", "plan_signature", "plan_enterprise"}
 all_existing = list(collection.find({}))
-seen_names = {}
+seen_names: dict[str, str] = {}
 duplicates_removed = 0
 
 for plan in all_existing:
@@ -168,6 +178,13 @@ try:
 
     METER_HELPERS_AVAILABLE = True
 except ImportError as e:
+
+    def assert_meter_config(*args, **kwargs) -> None:
+        pass  # type: ignore
+
+    def ensure_stripe_meter(*args, **kwargs) -> str:
+        return ""  # type: ignore
+
     METER_HELPERS_AVAILABLE = False
     print(
         f"[WARN] Could not import meter helpers ({e}); metered plans cannot be provisioned"
@@ -309,7 +326,7 @@ def create_stripe_product_and_prices(plan: dict) -> dict:
             product=product_id,
             unit_amount=int(plan["price_monthly"] * 100),
             currency="usd",
-            recurring=_build_recurring("month", plan, meter_id),
+            recurring=_build_recurring("month", plan, meter_id),  # type: ignore
             metadata={"plan_id": plan_id, "interval": "monthly"},
         )
         metered_tag = " [METERED]" if is_metered else ""
@@ -322,7 +339,7 @@ def create_stripe_product_and_prices(plan: dict) -> dict:
             product=product_id,
             unit_amount=int(plan["price_yearly"] * 100),
             currency="usd",
-            recurring=_build_recurring("year", plan, meter_id),
+            recurring=_build_recurring("year", plan, meter_id),  # type: ignore
             metadata={"plan_id": plan_id, "interval": "yearly"},
         )
         print(

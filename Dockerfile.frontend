@@ -1,6 +1,6 @@
 # =============================================================================
 # FRONTEND DOCKERFILE - Next.js (separate container for K8s)
-# Optimized multi-stage build with standalone output
+# Optimized multi-stage build for standard Next.js runtime
 # =============================================================================
 FROM node:20-alpine AS builder
 
@@ -22,8 +22,10 @@ COPY . .
 ARG FRONTEND_URL
 ENV FRONTEND_URL=${FRONTEND_URL}
 
-# Build Next.js with standalone output
-RUN npm run build
+# Build Next.js application, then remove caches that should never ship in the
+# runtime image.
+RUN npm run build \
+    && rm -rf .next/cache .next/trace .next/trace-build .next/diagnostics
 
 # Prune dev dependencies
 RUN npm prune --omit=dev
