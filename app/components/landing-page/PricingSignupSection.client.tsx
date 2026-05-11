@@ -105,7 +105,7 @@ export function PricingSignupSection({ pricing, theme }: Props) {
             Start small, then scale the studio.
           </h2>
         </div>
-        <div className="grid gap-3 sm:gap-5 lg:grid-cols-3">
+        <div className="grid gap-3 sm:gap-5 md:grid-cols-2 lg:grid-cols-4">
           {displayPricing.map((tier) => (
             <article
               key={tier.id}

@@ -1,17 +1,41 @@
 """
 Seed Knowledge Base with platform documentation articles.
-Run once on first deployment to populate KB for planners.
+Run on deployment to keep official KB content aligned with strategy.
 
 Usage:
     python -m app.scripts.seed_knowledge_base
 
 Or call seed_knowledge_base() from app startup.
+
+Refresh behavior:
+- New articles (slug not in Mongo) are always inserted.
+- Existing articles where ``is_official=True`` and the content differs from
+  the seed are refreshed only when ``KB_SEED_REFRESH_OFFICIAL=1`` is set.
+  Otherwise a ``[DRIFT]`` warning is printed so operators have visibility.
+- Articles where an admin has set ``is_official=False`` are never touched —
+  that's the explicit opt-out path.
+
+Why this design (2026-05-10): The seeder used to be skip-if-exists, which
+meant pricing-refresh content updates never propagated to production —
+stale article bodies stayed in Mongo indefinitely. But blindly upserting
+would clobber any admin edits made through the admin UI. The env flag
+gives operators a one-shot align deploy without auto-clobbering on every
+boot. See the parallel design in scripts/seed_subscription_plans.py.
 """
 
 import asyncio
+import os
 from datetime import datetime, timezone
 
 from app.core.database import mongo
+
+_REFRESH_FLAG = "KB_SEED_REFRESH_OFFICIAL"
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
+def _refresh_enabled() -> bool:
+    return os.getenv(_REFRESH_FLAG, "").strip().lower() in _TRUTHY
+
 
 SEED_ARTICLES = [
     {
@@ -434,7 +458,14 @@ Welcome to Special Wedding! This guide covers everything about your trial period
 
 ## Your Free Trial
 
-When you sign up, you get a **30-day free trial** on the plan you selected. During your trial you have full access to all features included in your plan — no limitations.
+Solo is **permanently free** — no trial clock, no credit card. You get one lifetime wedding to try the platform.
+
+Paid plans include a free trial when you upgrade from Solo or sign up directly on a paid tier:
+
+- **Boutique** and **Signature**: 14-day free trial
+- **Enterprise**: 30-day free trial
+
+During the trial you have full access to all features included in your plan — no limitations.
 
 ### What's included in your trial?
 
@@ -444,16 +475,18 @@ When you sign up, you get a **30-day free trial** on the plan you selected. Duri
 - Send invitations and manage RSVPs
 - Access the seating chart, budget tracker, and timeline builder
 
-### Trial timeline
+### Trial timeline (14-day trial — Boutique & Signature)
 
 | When | What happens |
 |---|---|
 | **Day 1** | Trial starts — full access to your plan |
-| **Day 24** | You'll receive an email reminder that your trial ends in 7 days |
-| **Day 28** | A 3-day countdown begins with daily email reminders |
-| **Day 29** | "2 days left" reminder + in-app banner |
-| **Day 30** | "Last day" reminder |
-| **Day 31** | Trial ends — account moves to upgrade page |
+| **Day 8** | You'll receive an email reminder that your trial ends in 7 days |
+| **Day 12** | A 3-day countdown begins with daily email reminders |
+| **Day 13** | "2 days left" reminder + in-app banner |
+| **Day 14** | "Last day" reminder |
+| **Day 15** | Trial ends — account moves to upgrade page |
+
+(Enterprise's 30-day trial follows the same pattern with reminders starting 7 days before the end.)
 
 ### What happens when my trial ends?
 
@@ -467,39 +500,54 @@ When you sign up, you get a **30-day free trial** on the plan you selected. Duri
 
 ## Subscription Plans
 
-Special Wedding offers three plans to match your business:
+Special Wedding offers four plans to match your business:
 
-### Boutique — $29/month
-Perfect for solo planners just getting started.
-- Up to 3 weddings
-- 150 guests per wedding
-- Guest & RSVP manager
-- Email invitations
-- Wedding website
-- Timeline builder
-- 100 AI credits/month
+### Solo — Free
+Try us with your first client. One wedding, on us.
+- 1 wedding (lifetime cap)
+- Up to 50 guests
+- Guest list & RSVP system
+- Branded wedding website
+- Basic timeline builder
+- 1GB storage
 
-### Signature — $59/month *(Most Popular)*
-For growing businesses that need more power.
-- Up to 10 weddings
-- 350 guests per wedding
-- Everything in Boutique, plus:
+### Boutique — $49/month
+For independent planners running their solo practice.
+- Up to 10 weddings/month
+- Up to 200 guests per wedding
+- AI-powered timeline & vendor matching
+- Vendor management
 - Seating orchestration
-- Guest memories QR uploads
+- QR check-in & live counts
 - Automated reminders
-- Vendor collaboration
+- Calendar sync (Google, Outlook)
 - 300 AI credits/month
-- Priority support
+- 25GB storage
+- Email support
 
-### Enterprise — $149/month
-For established agencies managing high volumes.
+### Signature — $149/month *(Most Popular)*
+For agencies running a team of planners.
+- Up to 30 weddings/month
+- Up to 500 guests per wedding
+- Everything in Boutique, plus:
+- Team collaboration (5 staff seats)
+- Vendor-collaboration workspaces
+- Cross-wedding analytics & revenue tracking
+- Custom domain (app.yourbrand.com)
+- 1,500 AI credits/month
+- 100GB storage
+- Priority support (12h response)
+
+### Enterprise — $399/month
+For large agencies, franchises, and white-label partners.
 - Unlimited weddings & guests
 - Everything in Signature, plus:
-- White-label branding
-- API access
-- 1000 AI credits/month
-- 10 staff seats
-- Dedicated support
+- White-label branding (your brand, no Special Wedding mentions)
+- API access + webhooks
+- 20 staff seats
+- 5,000 AI credits/month
+- 500GB storage
+- Dedicated success manager
 - Custom integrations
 
 ---
@@ -589,23 +637,76 @@ async def seed_knowledge_base(
 ):
     """
     Seed the knowledge base with official platform documentation.
-    Skips articles that already exist (by slug) to avoid duplicates.
+
+    - New articles (by slug): always inserted.
+    - Existing official articles with drifted content: refresh only when
+      the ``KB_SEED_REFRESH_OFFICIAL`` env flag is truthy. Otherwise log
+      ``[DRIFT]`` and skip.
+    - Existing articles where ``is_official=False``: never touched
+      (admin opted them out of seed management).
     """
     collection = mongo.db["kb_articles"]
     inserted = 0
-    skipped = 0
+    refreshed = 0
+    drift_skipped = 0
+    admin_owned_skipped = 0
+    in_sync_skipped = 0
+    refresh = _refresh_enabled()
 
     for article_data in SEED_ARTICLES:
-        # Check if article with this slug already exists
         existing = await collection.find_one({"slug": article_data["slug"]})
-        if existing:
-            skipped += 1
-            continue
-
         now = datetime.now(timezone.utc)
         content = article_data.get("content", "")
         word_count = len(content.split()) if isinstance(content, str) and content else 0
 
+        if existing:
+            # Admin opted out of seed management for this article.
+            if existing.get("is_official") is False:
+                admin_owned_skipped += 1
+                continue
+
+            content_diff = (
+                existing.get("content") != article_data["content"]
+                or existing.get("title") != article_data["title"]
+                or existing.get("excerpt") != article_data["excerpt"]
+            )
+            if not content_diff:
+                in_sync_skipped += 1
+                continue
+
+            if not refresh:
+                print(
+                    f"[DRIFT] kb_articles[{article_data['slug']!r}] content differs "
+                    f"from seed. Set {_REFRESH_FLAG}=1 on next deploy to align."
+                )
+                drift_skipped += 1
+                continue
+
+            # Refresh: $set strategy fields, leave admin-owned bookkeeping alone.
+            await collection.update_one(
+                {"_id": existing["_id"]},
+                {
+                    "$set": {
+                        "title": article_data["title"],
+                        "content": article_data["content"],
+                        "excerpt": article_data["excerpt"],
+                        "category": article_data["category"],
+                        "tags": article_data["tags"],
+                        "is_official": True,
+                        "order": article_data.get("order", existing.get("order", 0)),
+                        "estimated_read_minutes": article_data.get(
+                            "estimated_read_minutes", max(1, word_count // 200)
+                        ),
+                        "updated_at": now,
+                        "updated_by": admin_email,
+                    }
+                },
+            )
+            refreshed += 1
+            print(f"[REFRESH] kb_articles[{article_data['slug']!r}] content updated")
+            continue
+
+        # Fresh insert.
         doc = {
             "title": article_data["title"],
             "slug": article_data["slug"],
@@ -634,14 +735,21 @@ async def seed_knowledge_base(
             "created_by": admin_email,
             "updated_by": admin_email,
         }
-
         await collection.insert_one(doc)
         inserted += 1
 
     print(
-        f"KB Seed complete: {inserted} articles inserted, {skipped} skipped (already exist)"
+        f"KB Seed complete: {inserted} inserted, {refreshed} refreshed, "
+        f"{drift_skipped} drift-skipped, {in_sync_skipped} in-sync, "
+        f"{admin_owned_skipped} admin-owned (is_official=False)"
     )
-    return {"inserted": inserted, "skipped": skipped}
+    return {
+        "inserted": inserted,
+        "refreshed": refreshed,
+        "drift_skipped": drift_skipped,
+        "in_sync_skipped": in_sync_skipped,
+        "admin_owned_skipped": admin_owned_skipped,
+    }
 
 
 # Allow running directly
