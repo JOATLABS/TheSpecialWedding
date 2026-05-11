@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 
 from app.constants.billing import (
     BILLING_MODEL_METERED,
-    CANONICAL_PUBLIC_PLAN_METER_EVENT_NAME,
 )
 
 
@@ -122,16 +121,32 @@ class SubscriptionPlanModel(BaseModel):
         BILLING_MODEL_METERED,
         description="Canonical billing model for this plan: flat_rate or metered",
     )
-    is_metered: bool = Field(True, description="Whether this plan uses metered billing")
+    # 2026-05-09: defaults flipped to match the new flat pricing strategy.
+    # The metering hardening infrastructure stays available — set is_metered=True
+    # and meter_event_name on a per-plan basis to opt that plan into metered
+    # billing. See docs/analysis/METERING_IMPLEMENTATION_2026-05-04.md.
+    is_metered: bool = Field(
+        False, description="Whether this plan uses metered billing"
+    )
     meter_event_name: Optional[str] = Field(
-        CANONICAL_PUBLIC_PLAN_METER_EVENT_NAME,
-        description="Stripe Meter Event Name for usage reporting",
+        None,
+        description="Stripe Meter Event Name for usage reporting (required if is_metered)",
     )
     meter_id: Optional[str] = Field(None, description="Stripe Meter ID")
 
     # Features and Limits
     max_weddings: int = Field(
         1, description="Maximum weddings allowed (-1 for unlimited)"
+    )
+    max_weddings_lifetime: bool = Field(
+        False,
+        description=(
+            "If True, max_weddings is enforced against the LIFETIME count "
+            "(including soft-deleted weddings), so users can't game the cap "
+            "by delete-then-recreate. Used for free/trial tiers like Solo. "
+            "If False (default), max_weddings is enforced against currently "
+            "active weddings only (the historical behavior)."
+        ),
     )
     max_guests_per_wedding: int = Field(
         100, description="Maximum guests per wedding (-1 for unlimited)"
@@ -373,10 +388,13 @@ class CreateSubscriptionPlanRequest(BaseModel):
     description: Optional[str] = None
     price_monthly: float
     price_yearly: Optional[float] = None
-    is_metered: bool = True
-    meter_event_name: Optional[str] = CANONICAL_PUBLIC_PLAN_METER_EVENT_NAME
+    # 2026-05-09: defaults flipped to flat. Operator can flip per-plan via the
+    # admin UI when ready to switch a specific plan to metered billing.
+    is_metered: bool = False
+    meter_event_name: Optional[str] = None
     meter_id: Optional[str] = None
     max_weddings: int = 1
+    max_weddings_lifetime: bool = False
     max_guests_per_wedding: int = 100
     ai_credits_monthly: int = 10
     storage_gb: int = 1
@@ -400,6 +418,7 @@ class UpdateSubscriptionPlanRequest(BaseModel):
     meter_event_name: Optional[str] = None
     meter_id: Optional[str] = None
     max_weddings: Optional[int] = None
+    max_weddings_lifetime: Optional[bool] = None
     max_guests_per_wedding: Optional[int] = None
     ai_credits_monthly: Optional[int] = None
     storage_gb: Optional[int] = None

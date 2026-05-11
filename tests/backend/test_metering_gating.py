@@ -118,36 +118,55 @@ def _load_seed_plans() -> list[dict]:
     return extracted
 
 
-def test_seed_plans_are_metered_by_default():
-    """Every default plan must ship with metered ``wedding_active`` billing."""
+def test_seed_plans_are_flat_by_default():
+    """Every default plan must ship with FLAT billing (is_metered=False).
+
+    2026-05-09: pricing strategy refresh — seed plans are flat. The metering
+    hardening infrastructure stays available; flipping a plan to metered is
+    a deliberate per-plan edit + redeploy. See
+    docs/analysis/METERING_IMPLEMENTATION_2026-05-04.md.
+
+    If this test fails, either:
+    - A plan was intentionally flipped to metered → update this test and the
+      strategy doc together, OR
+    - A plan was accidentally flipped to metered → revert before merge.
+    """
     plans = _load_seed_plans()
-    assert len(plans) >= 3, (
-        "Seed catalog shrank below the audited 3-plan baseline "
-        "(Boutique / Signature / Enterprise). Confirm this is intentional."
+    assert len(plans) >= 4, (
+        "Seed catalog shrank below the 4-plan baseline "
+        "(Solo / Boutique / Signature / Enterprise). Confirm this is intentional."
     )
 
-    non_metered = [p for p in plans if not p.get("is_metered")]
-    assert non_metered == [], (
-        f"Seed plans drifted away from metered billing: "
-        f"{[p['_id'] for p in non_metered]}. Canonical plans bill per active "
-        "wedding and must remain aligned with Stripe metered prices."
+    metered = [p for p in plans if p.get("is_metered")]
+    assert metered == [], (
+        f"Seed plans drifted to metered billing: {[p['_id'] for p in metered]}. "
+        "The 2026-05-09 pricing strategy ships all plans flat. If you intend "
+        "to switch a specific plan to metered, update this test alongside the "
+        "seed change."
     )
-    for plan in plans:
-        assert plan.get("meter_event_name") == "wedding_active"
 
 
 def test_seed_plans_have_required_identity_fields():
-    """Sanity: guard against a seed edit that removes `_id` / name and
-    silently drifts plan provisioning. The metered invariant above means
-    nothing if the plan list is empty or incoherent."""
+    """Sanity: guard against a seed edit that removes `_id` / name.
+
+    Also flags the half-configured state where a flat plan has a meter
+    event name set — that combination signals someone started wiring
+    metering and stopped. Better to clear meter_event_name or finish
+    the flip than leave it in the half state.
+    """
     for plan in _load_seed_plans():
         assert plan.get("_id"), f"Plan missing _id: {plan}"
         assert plan.get("name"), f"Plan missing name: {plan}"
-        assert plan.get("is_metered") is True
-        assert plan.get("meter_event_name") == "wedding_active", (
-            f"Plan {plan['_id']} is missing the canonical wedding_active meter "
-            "event name."
-        )
+        # Half-configured guard: if meter_event_name is set, is_metered
+        # must be True. The inverse (is_metered=True with no event_name)
+        # is rejected at preflight by sync_plan_to_stripe.
+        if plan.get("meter_event_name"):
+            assert plan.get("is_metered") is True, (
+                f"Plan {plan['_id']} sets meter_event_name="
+                f"{plan['meter_event_name']!r} but is_metered is False. "
+                "Either finish the metered setup or clear meter_event_name "
+                "— half-configured plans are a trap."
+            )
 
 
 # ---------------------------------------------------------------------------
