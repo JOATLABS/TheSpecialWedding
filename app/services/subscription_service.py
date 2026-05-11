@@ -37,8 +37,16 @@ class SubscriptionService:
         self.weddings_collection = mongo.db["weddings"]
 
     def _normalize_plan_billing_fields(self, plan_data: dict) -> None:
-        """Derive billing_model and fail closed on incomplete metered config."""
-        plan_data["is_metered"] = bool(plan_data.get("is_metered", True))
+        """Derive billing_model and fail closed on incomplete metered config.
+
+        2026-05-09 pricing strategy refresh: new plans default to FLAT
+        (is_metered=False). Flipping a plan to metered is a deliberate
+        per-plan edit — set is_metered=True and provide meter_event_name.
+        The Pydantic CreateSubscriptionPlanRequest model already defaults
+        to False; this default protects against callsites that hand-build
+        a dict and omit the flag.
+        """
+        plan_data["is_metered"] = bool(plan_data.get("is_metered", False))
         plan_data["billing_model"] = plan_billing_model(plan_data)
 
         if not plan_data["is_metered"]:
