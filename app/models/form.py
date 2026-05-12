@@ -24,6 +24,21 @@ class FieldType(str, Enum):
     SCALE = "scale"
 
 
+class FormDistributionStatus(str, Enum):
+    """Lifecycle of a single FormDistribution row.
+
+    Forward transitions only: SENDING -> SENT -> OPENED -> CLICKED -> SUBMITTED.
+    FAILED is terminal at any point in the flow.
+    """
+
+    SENDING = "sending"
+    SENT = "sent"
+    OPENED = "opened"
+    CLICKED = "clicked"
+    SUBMITTED = "submitted"
+    FAILED = "failed"
+
+
 class ValidationRule(BaseModel):
     type: str = Field(
         ...,
@@ -31,6 +46,75 @@ class ValidationRule(BaseModel):
     )
     value: Union[str, int, bool] = Field(..., description="Validation value")
     message: Optional[str] = Field(None, description="Custom validation error message")
+
+
+_VALID_CONDITION_OPERATORS = frozenset(
+    {"equals", "not_equals", "in", "not_in", "contains", "is_empty", "is_not_empty"}
+)
+_FIELD_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+
+
+def _validate_conditional_logic(value: Any) -> Optional[Dict[str, Any]]:
+    """Pydantic field validator for ``FormField.conditional_logic``.
+
+    Accepts ``None`` / empty dicts (= no rule). When a rule is present we
+    require it to be well-formed: ``{show_when: {all|any: [conditions...]}}``
+    where each condition has a valid ``field_id`` and a known
+    ``operator``. Anything else raises so a planner sees the typo at
+    save-time instead of silently shipping a form with a non-functional
+    hide rule.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("conditional_logic must be an object")
+    if not value:
+        return None
+
+    show_when = value.get("show_when")
+    if show_when is None:
+        # Currently we only support show_when; anything else is unknown.
+        raise ValueError(
+            "conditional_logic must be of the form {show_when: {all|any: [...]}}"
+        )
+    if not isinstance(show_when, dict):
+        raise ValueError("conditional_logic.show_when must be an object")
+
+    if "all" in show_when and "any" in show_when:
+        raise ValueError("conditional_logic.show_when cannot use both 'all' and 'any'")
+    combinator = "all" if "all" in show_when else "any" if "any" in show_when else None
+    if combinator is None:
+        raise ValueError(
+            "conditional_logic.show_when must specify either 'all' or 'any'"
+        )
+
+    conditions = show_when[combinator]
+    if not isinstance(conditions, list) or not conditions:
+        raise ValueError(
+            f"conditional_logic.show_when.{combinator} must be a non-empty list"
+        )
+
+    for idx, cond in enumerate(conditions):
+        if not isinstance(cond, dict):
+            raise ValueError(f"conditional_logic condition {idx} must be an object")
+        field_id = cond.get("field_id")
+        operator = cond.get("operator")
+        if not isinstance(field_id, str) or not _FIELD_ID_PATTERN.match(field_id):
+            raise ValueError(f"conditional_logic condition {idx} has invalid field_id")
+        if operator not in _VALID_CONDITION_OPERATORS:
+            raise ValueError(
+                f"conditional_logic condition {idx} has unknown operator "
+                f"'{operator}' — allowed: {sorted(_VALID_CONDITION_OPERATORS)}"
+            )
+        # ``in`` / ``not_in`` need a list value; the runtime evaluator
+        # also tolerates this, but failing fast at save-time is friendlier.
+        if operator in ("in", "not_in") and not isinstance(cond.get("value"), list):
+            raise ValueError(
+                f"conditional_logic condition {idx} operator '{operator}' "
+                "requires a list value"
+            )
+
+    return value
 
 
 class FormField(BaseModel):
@@ -50,6 +134,11 @@ class FormField(BaseModel):
         None, description="Show/hide conditions"
     )
     order: int = Field(default=0, description="Field display order")
+
+    @field_validator("conditional_logic")
+    @classmethod
+    def validate_conditional_logic(cls, v):
+        return _validate_conditional_logic(v)
 
     @field_validator("id")
     @classmethod
@@ -305,6 +394,14 @@ class FormModel(BaseModel):
 class FormResponse(BaseModel):
     id: Optional[str] = Field(None, alias="_id", description="Response ID")
     form_id: str = Field(..., description="Form ID")
+    distribution_id: Optional[str] = Field(
+        None,
+        description=(
+            "FK to FormDistribution. Set when the response was submitted via "
+            "a per-recipient email link, enabling reliable joins for "
+            "'who has not responded yet' analytics independent of email match."
+        ),
+    )
     responses: Dict[str, Any] = Field(
         ..., description="Field responses keyed by field ID"
     )
@@ -354,11 +451,50 @@ class FormDistribution(BaseModel):
     submitted_at: Optional[datetime] = Field(
         None, description="Form submitted timestamp"
     )
-    status: str = Field(
-        default="sent",
-        description="Distribution status: sent, opened, clicked, submitted",
+    status: FormDistributionStatus = Field(
+        default=FormDistributionStatus.SENT,
+        description=(
+            "Distribution lifecycle: sending -> sent -> opened -> clicked "
+            "-> submitted. Failed is terminal. Validated as an enum so a "
+            "typo can't slip through and silently break analytics queries."
+        ),
     )
     email_id: Optional[str] = Field(None, description="Email service provider ID")
+    access_token_hash: Optional[str] = Field(
+        None,
+        description=(
+            "HMAC-SHA256 hash of the per-recipient access token. The raw "
+            "token is only ever exposed in the email link; submissions must "
+            "present it for verification."
+        ),
+    )
+    token_expires_at: Optional[datetime] = Field(
+        None, description="When the access token expires (default 30 days from send)."
+    )
+    send_reminder: bool = Field(
+        default=False,
+        description="Whether to send a single reminder email N days after send if unsubmitted.",
+    )
+    reminder_days: int = Field(
+        default=7,
+        description="Days after sent_at to wait before sending a reminder.",
+    )
+    reminder_subject: Optional[str] = Field(
+        None, description="Subject line snapshot for the reminder email."
+    )
+    reminder_message: Optional[str] = Field(
+        None, description="Body message snapshot for the reminder email."
+    )
+    reminder_sender_name: Optional[str] = Field(
+        None, description="From-name snapshot for the reminder email."
+    )
+    reminder_sent_at: Optional[datetime] = Field(
+        None, description="When the reminder was last sent."
+    )
+    reminder_count: int = Field(
+        default=0,
+        description="How many reminders have been sent for this distribution.",
+    )
 
     class Config:
         populate_by_name = True
@@ -491,6 +627,84 @@ class SubmitFormRequest(BaseModel):
     responses: Dict[str, Any] = Field(..., description="Form field responses")
     submitted_by_email: Optional[str] = Field(None, description="Submitter email")
     submitted_by_name: Optional[str] = Field(None, description="Submitter name")
+    distribution_id: Optional[str] = Field(
+        None,
+        description=(
+            "Optional FormDistribution ID supplied by per-recipient email "
+            "links (e.g. via the ?dist= query param). When present and valid "
+            "for the form, it is persisted on the response and used to mark "
+            "the matching distribution as submitted instead of the email-match "
+            "fallback."
+        ),
+    )
+    access_token: Optional[str] = Field(
+        None,
+        description=(
+            "Raw per-recipient access token from the email link "
+            "(?t=...). When supplied alongside distribution_id, the server "
+            "verifies it against the stored hash, enforces expiry, and "
+            "rejects a second submission for the same distribution."
+        ),
+    )
+    idempotency_key: Optional[str] = Field(
+        None,
+        description=(
+            "Client-generated UUID-ish token, stable for the lifetime "
+            "of one form-fill session. When supplied, the server "
+            "deduplicates retries: a network drop mid-submit followed "
+            "by a client retry returns the original response instead "
+            "of inserting a duplicate row. Cleared on successful "
+            "submit confirmation."
+        ),
+    )
+
+    @field_validator("distribution_id")
+    @classmethod
+    def validate_distribution_id(cls, v):
+        if v is None:
+            return v
+        if not isinstance(v, str):
+            return None
+        trimmed = v.strip()
+        if not trimmed:
+            return None
+        if len(trimmed) > 64 or not re.match(r"^[a-zA-Z0-9_-]+$", trimmed):
+            raise ValueError("Invalid distribution_id")
+        return trimmed
+
+    @field_validator("access_token")
+    @classmethod
+    def validate_access_token(cls, v):
+        if v is None:
+            return v
+        if not isinstance(v, str):
+            return None
+        trimmed = v.strip()
+        if not trimmed:
+            return None
+        if len(trimmed) > 256 or not re.match(r"^[a-zA-Z0-9_-]+$", trimmed):
+            raise ValueError("Invalid access_token")
+        return trimmed
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def validate_idempotency_key(cls, v):
+        if v is None:
+            return v
+        if not isinstance(v, str):
+            return None
+        trimmed = v.strip()
+        if not trimmed:
+            return None
+        # 8 to 128 chars; URL-safe alphabet matches our token pattern
+        # and accepts standard UUIDv4 strings (36 chars with hyphens).
+        if (
+            len(trimmed) < 8
+            or len(trimmed) > 128
+            or not re.match(r"^[a-zA-Z0-9_-]+$", trimmed)
+        ):
+            raise ValueError("Invalid idempotency_key")
+        return trimmed
 
     @field_validator("responses")
     @classmethod

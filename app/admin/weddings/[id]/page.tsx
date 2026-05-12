@@ -149,10 +149,13 @@ export default function WeddingDetailsPage() {
  // Initialize default values if not present
  setWedding({
  ...wedding,
- rsvp_config: wedding.rsvp_config || {
+ rsvp_config: {
  greeting: "Join us in celebrating our special day! Please let us know if you'll be attending.",
- help_text: "Check your phone for your personal invitation link, or contact us directly.",
- phone_numbers: ["(405) 529-6088", "(405) 708-1076"]
+ help_text: "Check your phone for your personal invitation link. If you need help, use the Get Help button and our planner will text you.",
+ phone_numbers: ["(405) 529-6088", "(405) 708-1076"],
+ hide_phone_numbers: true,
+ help_button_label: "Get Help",
+ ...(wedding.rsvp_config || {})
  },
  privacy_settings: normalizePrivacySettingsForMode(
  wedding.privacy_settings,
@@ -1076,6 +1079,42 @@ const addEvent = () => {
  rows={2}
  />
  </div>
+
+ <div>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+ Help Button Label
+ </label>
+ <input
+ type="text"
+ value={wedding.rsvp_config.help_button_label || 'Get Help'}
+ onChange={(e) => setWedding({
+ ...wedding,
+ rsvp_config: { ...wedding.rsvp_config!, help_button_label: e.target.value }
+ })}
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+ maxLength={40}
+ />
+ </div>
+
+ <label className="flex items-start gap-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-slate-800/70 p-4">
+ <input
+ type="checkbox"
+ checked={wedding.rsvp_config.hide_phone_numbers ?? true}
+ onChange={(e) => setWedding({
+ ...wedding,
+ rsvp_config: { ...wedding.rsvp_config!, hide_phone_numbers: e.target.checked }
+ })}
+ className="mt-1 h-4 w-4 rounded border-gray-300 text-wedding-rose focus:ring-wedding-rose"
+ />
+ <span>
+ <span className="block text-sm font-medium text-gray-800 dark:text-gray-100">
+ Hide public phone numbers
+ </span>
+ <span className="mt-1 block text-sm text-gray-500 dark:text-gray-400">
+ When enabled, guests see the help button instead of planner phone numbers. Stored numbers remain available if you choose to show them later.
+ </span>
+ </span>
+ </label>
 
  <div>
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

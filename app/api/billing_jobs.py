@@ -75,13 +75,11 @@ async def process_daily_usage_check():
                 }
             )
 
-            # 3. Check if billing is needed
-            # We need to know the current billing period start/end for the subscription.
+            # 3. Check if billing is needed.
             # Shared helper: see app/utils/period_parsing.py and
             # docs/analysis/METERING_GAP_SCENARIOS_2026-05-04.md §C5.
             current_period_start = coerce_period_start(sub.get("current_period_start"))
             if not current_period_start:
-                # If missing or unparseable, skip this subscription's batch.
                 continue
 
             async for wedding in weddings:
@@ -115,12 +113,7 @@ async def process_daily_usage_check():
                     )
 
                     if result.get("status") == "success":
-                        # SS4: retry-aware update. Daily batch is the
-                        # safety-net for failed real-time hooks; a
-                        # silent Mongo failure here would re-fire next
-                        # day with a different idempotency key (still
-                        # billing_job_*, but different period suffix at
-                        # month boundaries) → double-billing.
+                        # SS4: retry helper — see meter_state.py.
                         await update_wedding_meter_state(
                             mongo.db["weddings"],
                             wedding["_id"],

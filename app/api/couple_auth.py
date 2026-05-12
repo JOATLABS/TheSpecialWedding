@@ -315,12 +315,95 @@ async def setup_couple_password(data: CoupleSetupPasswordRequest, response: Resp
 
     logger.info(f"Couple account setup completed: {couple['email']}")
 
+    # Stage 2 of the two-stage wedding-checklist nudge: now that the
+    # couple has accepted the portal invite, surface a toast on the
+    # planner UI carrying the seeded couple_intake form_id so they
+    # can one-click "Send checklist" without navigating anywhere.
+    #
+    # Debounce: skip if the planner already manually sent that form to
+    # this couple's email (i.e. a form_distributions row already
+    # exists). Best-effort — wrapped so any failure here cannot break
+    # the couple's account-setup completion.
+    try:
+        await _dispatch_couple_portal_accepted_notification(updated_couple)
+    except Exception as notify_exc:  # pragma: no cover - defensive
+        logger.warning(
+            "couple_portal_accepted notification failed for %s "
+            "(setup still succeeded): %s",
+            couple.get("email"),
+            notify_exc,
+        )
+
     return {
         "message": "Account setup complete! Welcome to your wedding portal.",
         "access_token": access_token,
         "token_type": "bearer",
         "couple": _serialize_couple_payload(updated_couple),
     }
+
+
+async def _dispatch_couple_portal_accepted_notification(couple: dict) -> None:
+    """Resolve the planner's seeded couple_intake form id, debounce
+    against an already-sent distribution, and dispatch the Stage 2
+    notification.
+    """
+    # Notification fan-out queries SSE channels + team_members.owner_email
+    # by email, so the recipient identifier MUST be the planner email,
+    # not an ObjectId-style planner_id. Prefer planner_email; only fall
+    # back to other id fields when no email is on the doc (legacy rows).
+    planner_email = (couple.get("planner_email") or "").lower().strip() or None
+    planner_id = planner_email or (
+        couple.get("planner_id") or couple.get("assigned_planner_id")
+    )
+    if not planner_id:
+        return
+
+    couple_email = (couple.get("email") or "").lower().strip() or None
+    couple_names = couple.get("couple_names") or couple.get("display_name")
+    wedding_id = couple.get("wedding_id")
+
+    seeded_form_id: Optional[str] = None
+    if planner_email:
+        seeded_doc = await mongo.db["forms"].find_one(
+            {
+                "created_by": planner_email,
+                "seeded_from_catalog": True,
+                "catalog_template_id": "couple_intake",
+            },
+            {"_id": 1},
+        )
+        if seeded_doc:
+            seeded_form_id = str(seeded_doc["_id"])
+
+            # Debounce: if the planner already manually sent the seeded
+            # checklist to this couple's email, skip the toast. The
+            # signal is presence of a form_distributions row.
+            if couple_email:
+                already_sent = await mongo.db["form_distributions"].find_one(
+                    {
+                        "form_id": seeded_form_id,
+                        "recipient_email": couple_email,
+                    }
+                )
+                if already_sent:
+                    logger.info(
+                        "Suppressing couple_portal_accepted toast for %s — "
+                        "checklist already sent",
+                        couple_email,
+                    )
+                    return
+
+    from app.services.planner_notification_service import (
+        planner_notification_service,
+    )
+
+    await planner_notification_service.notify_couple_portal_accepted(
+        planner_id=str(planner_id),
+        wedding_id=str(wedding_id) if wedding_id else None,
+        couple_email=couple_email or "",
+        couple_names=couple_names,
+        seeded_form_id=seeded_form_id,
+    )
 
 
 @router.post("/couple/login", tags=["Couple Auth"])

@@ -1,5 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.constants.billing import (
+    CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
+    plan_billing_model,
+)
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     require_admin_or_planner,
@@ -303,17 +307,13 @@ async def sync_plans_to_stripe(
     Manually sync all existing subscription plans to Stripe Products/Prices.
     Useful if you added Stripe credentials after creating plans.
     """
-    from app.services.stripe_service import stripe_service
-
     plans = await subscription_service.list_plans(include_inactive=True)
     synced_count = 0
     errors = []
 
     for plan in plans:
         try:
-            stripe_data = stripe_service.sync_plan_to_stripe(plan)
-            # Update local DB with new IDs
-            await subscription_service.update_plan(plan["_id"], stripe_data)
+            await subscription_service.update_plan(plan["_id"], {})
             synced_count += 1
         except Exception as e:
             errors.append(f"Plan {plan.get('name', 'Unknown')}: {str(e)}")
@@ -326,56 +326,72 @@ async def seed_default_subscription_plans(
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """Seed default subscription plans - ROOT_ADMIN only.
-    Plans match the container seed script (scripts/seed_subscription_plans.py).
+
+    Manual fallback for situations where the container boot seed didn't
+    fire. Plans here MUST match ``scripts/seed_subscription_plans.py``;
+    drift between the two is how the 2026-05-09 pricing refresh ended up
+    half-applied. If the seed script changes, mirror it here in the same
+    PR. Long-term fix: extract the plan dicts to a shared constants module.
     """
     default_plans = [
+        # ============================================================
+        # SOLO — free tier, 1 ACTIVE wedding at a time
+        # ============================================================
         {
-            "name": "Boutique",
-            "description": "For new planners onboarding their first weddings",
-            "price_monthly": 29,
-            "price_yearly": 290,
-            "max_weddings": 3,
-            "max_guests_per_wedding": 150,
-            "ai_credits_monthly": 100,
-            "storage_gb": 10,
+            "name": "Solo",
+            "description": "Try us with your first client. One wedding, on us.",
+            "price_monthly": 0,
+            "price_yearly": 0,
+            "trial_days": 0,
+            "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
+            "is_metered": False,
+            "max_weddings": 1,
+            "max_weddings_lifetime": False,
+            "max_guests_per_wedding": 50,
+            "ai_credits_monthly": 0,
+            "storage_gb": 1,
             "staff_seats": 1,
             "features": {
                 "guest_management": True,
                 "email_invitations": True,
+                "rsvp_system": True,
                 "wedding_website": True,
                 "timeline_builder": True,
-                "basic_analytics": True,
-                "vendor_management": False,
-                "seating_orchestration": False,
-                "ai_features": True,
             },
             "features_list": [
-                "Up to 3 weddings",
-                "150 guests per wedding",
-                "Guest & RSVP manager",
-                "Email invitations",
-                "Wedding website",
-                "Timeline builder",
-                "100 AI credits/month",
+                "1 wedding to try us out",
+                "Up to 50 guests",
+                "Guest list & RSVP system",
+                "Branded wedding website",
+                "Basic timeline builder",
+                "1GB storage",
             ],
             "is_featured": False,
             "is_active": True,
-            "display_order": 1,
-            "sort_order": 1,
+            "display_order": 0,
+            "sort_order": 0,
         },
+        # ============================================================
+        # BOUTIQUE — $49/mo, the solo planner running their business
+        # ============================================================
         {
-            "name": "Signature",
-            "description": "Most popular plan with full automation features",
-            "price_monthly": 59,
-            "price_yearly": 590,
-            "max_weddings": 10,
-            "max_guests_per_wedding": 350,
+            "name": "Boutique",
+            "description": "For independent planners running their solo practice. Unlimited weddings, no caps.",
+            "price_monthly": 49,
+            "price_yearly": 490,
+            "trial_days": 30,
+            "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
+            "is_metered": False,
+            "max_weddings": -1,
+            "max_weddings_lifetime": False,
+            "max_guests_per_wedding": -1,
             "ai_credits_monthly": 300,
-            "storage_gb": 50,
-            "staff_seats": 3,
+            "storage_gb": 25,
+            "staff_seats": 1,
             "features": {
                 "guest_management": True,
                 "email_invitations": True,
+                "rsvp_system": True,
                 "wedding_website": True,
                 "timeline_builder": True,
                 "basic_analytics": True,
@@ -383,40 +399,103 @@ async def seed_default_subscription_plans(
                 "seating_orchestration": True,
                 "ai_features": True,
                 "qr_checkin": True,
-                "guest_memories": True,
                 "automated_reminders": True,
+                "calendar_sync": True,
+                "payment_processing": True,
+            },
+            "features_list": [
+                "Unlimited weddings",
+                "Unlimited guests",
+                "AI-powered timeline & vendor matching",
+                "Vendor management",
+                "Seating orchestration",
+                "QR check-in & live counts",
+                "Automated reminders",
+                "Calendar sync (Google, Outlook)",
+                "300 AI credits/month",
+                "25GB storage",
+                "Email support",
+            ],
+            "is_featured": False,
+            "is_active": True,
+            "display_order": 1,
+            "sort_order": 1,
+        },
+        # ============================================================
+        # SIGNATURE — $149/mo (featured), team-of-planners agency
+        # ============================================================
+        {
+            "name": "Signature",
+            "description": "For agencies running a team of planners. Everything in Boutique, plus team seats and agency-grade reporting.",
+            "price_monthly": 149,
+            "price_yearly": 1490,
+            "trial_days": 30,
+            "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
+            "is_metered": False,
+            "max_weddings": -1,
+            "max_weddings_lifetime": False,
+            "max_guests_per_wedding": -1,
+            "ai_credits_monthly": 1500,
+            "storage_gb": 100,
+            "staff_seats": 5,
+            "features": {
+                "guest_management": True,
+                "email_invitations": True,
+                "rsvp_system": True,
+                "wedding_website": True,
+                "timeline_builder": True,
+                "basic_analytics": True,
+                "vendor_management": True,
+                "seating_orchestration": True,
+                "ai_features": True,
+                "qr_checkin": True,
+                "automated_reminders": True,
+                "calendar_sync": True,
+                "payment_processing": True,
                 "vendor_collaboration": True,
+                "advanced_analytics": True,
+                "custom_domain": True,
                 "priority_support": True,
             },
             "features_list": [
-                "Up to 10 weddings",
-                "350 guests per wedding",
+                "Unlimited weddings",
+                "Unlimited guests",
                 "Everything in Boutique",
-                "Seating orchestration",
-                "Guest memories QR uploads",
-                "Automated reminders",
-                "Vendor collaboration",
-                "300 AI credits/month",
-                "Priority support",
+                "Team collaboration (5 staff seats)",
+                "Vendor-collaboration workspaces",
+                "Cross-wedding analytics & revenue tracking",
+                "Custom domain (app.yourbrand.com)",
+                "1,500 AI credits/month",
+                "100GB storage",
+                "Priority support (12h response)",
+                "Group onboarding session",
             ],
             "is_featured": True,
             "is_active": True,
             "display_order": 2,
             "sort_order": 2,
         },
+        # ============================================================
+        # ENTERPRISE — $399/mo, white-label / franchise tier
+        # ============================================================
         {
             "name": "Enterprise",
-            "description": "For agencies and high-volume wedding planners",
-            "price_monthly": 149,
-            "price_yearly": 1490,
+            "description": "For franchises and white-label partners. Your brand, our platform, dedicated success.",
+            "price_monthly": 399,
+            "price_yearly": 3990,
+            "trial_days": 30,
+            "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
+            "is_metered": False,
             "max_weddings": -1,
+            "max_weddings_lifetime": False,
             "max_guests_per_wedding": -1,
-            "ai_credits_monthly": 1000,
-            "storage_gb": 200,
-            "staff_seats": 10,
+            "ai_credits_monthly": 5000,
+            "storage_gb": 500,
+            "staff_seats": 20,
             "features": {
                 "guest_management": True,
                 "email_invitations": True,
+                "rsvp_system": True,
                 "wedding_website": True,
                 "timeline_builder": True,
                 "basic_analytics": True,
@@ -425,9 +504,11 @@ async def seed_default_subscription_plans(
                 "seating_orchestration": True,
                 "ai_features": True,
                 "qr_checkin": True,
-                "guest_memories": True,
                 "automated_reminders": True,
+                "calendar_sync": True,
+                "payment_processing": True,
                 "vendor_collaboration": True,
+                "custom_domain": True,
                 "priority_support": True,
                 "white_label": True,
                 "api_access": True,
@@ -437,11 +518,12 @@ async def seed_default_subscription_plans(
                 "Unlimited weddings",
                 "Unlimited guests",
                 "Everything in Signature",
-                "White-label branding",
-                "API access",
-                "1000 AI credits/month",
-                "10 staff seats",
-                "Dedicated support",
+                "White-label (your brand, no Special Wedding mentions)",
+                "API access + webhooks",
+                "20 staff seats",
+                "5,000 AI credits/month",
+                "500GB storage",
+                "Dedicated success manager",
                 "Custom integrations",
             ],
             "is_featured": False,
@@ -505,6 +587,8 @@ async def get_public_subscription_plans():
                 "description": plan.get("description"),
                 "price_monthly": plan.get("price_monthly", 0),
                 "price_yearly": plan.get("price_yearly"),
+                "billing_model": plan.get("billing_model") or plan_billing_model(plan),
+                "is_metered": bool(plan.get("is_metered", False)),
                 "max_weddings": plan.get("max_weddings", 1),
                 "max_guests_per_wedding": plan.get("max_guests_per_wedding", 100),
                 "ai_credits_monthly": plan.get("ai_credits_monthly", 10),
@@ -534,12 +618,17 @@ async def get_public_subscription_plan(plan_id: str):
         "description": plan.get("description"),
         "price_monthly": plan["price_monthly"],
         "price_yearly": plan.get("price_yearly"),
+        "billing_model": plan.get("billing_model") or plan_billing_model(plan),
+        "is_metered": bool(plan.get("is_metered", False)),
         "max_weddings": plan["max_weddings"],
         "max_guests_per_wedding": plan["max_guests_per_wedding"],
         "ai_credits_monthly": plan["ai_credits_monthly"],
         "storage_gb": plan["storage_gb"],
         "staff_seats": plan["staff_seats"],
         "features": plan.get("features", {}),
+        "features_list": plan.get("features_list", []),
         "is_featured": plan.get("is_featured", False),
+        "trial_days": plan.get("trial_days", 0),
+        "display_order": plan.get("display_order", plan.get("sort_order", 0)),
     }
     return public_plan

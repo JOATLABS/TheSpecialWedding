@@ -2,84 +2,84 @@
 """Adversarial E2E driver for the metered-seed scriptable provisioning.
 
 Companion to ``verify_planner_metered_lifecycle.py`` — that driver covers
-the runtime billing lifecycle (E1-E5: create, second create, delete,
-retry-pending, badge UX) once metering is on. **This** driver covers the
-provisioning side: the seed script, ``ensure_stripe_meter``, and
-``assert_meter_config`` against a real Stripe test account.
+the runtime billing lifecycle once metering is on. **This** driver covers
+the provisioning side: ``ensure_stripe_meter`` and ``assert_meter_config``
+against a real Stripe test account.
+
+DESIGN NOTE — why this driver does NOT subprocess the seed
+==========================================================
+
+Live verification on 2026-05-08 02:17 surfaced a fundamental design flaw
+in an earlier version of this driver: it tried to flip Mongo state to
+``is_metered=True`` then run ``scripts/seed_subscription_plans.py`` and
+expect the seed to provision the meter.
+
+That doesn't work. The seed script is **intentionally** the source of
+truth for plan config — it iterates its hardcoded ``plans = [...]`` list
+and overwrites Mongo via ``$set``. So any test-time Mongo flip is
+silently reverted on the next seed run.
+
+Operators flip plans by editing ``seed_subscription_plans.py`` and
+redeploying. That's a deploy-shape integration test, not something a
+testbed driver can simulate without a code edit + redeploy cycle.
+
+So this driver tests the **HELPERS** directly — ``ensure_stripe_meter``,
+``assert_meter_config``, and ``stripe_service.sync_plan_to_stripe`` —
+which are what the seed and runtime both use. The "does the seed
+correctly call the helpers when given a metered plan" question is
+covered by:
+
+* Unit tests in ``tests/backend/test_metering_hardening.py`` (source-level
+  guards, mock-driven flow tests)
+* The ``test_seed_is_hardcoded_source_of_truth_for_plan_config`` test
+  that pins the seed's intentional design
 
 Adversarial scenarios (each is a phase):
 
-* **S1 — fresh seed.** Run the seed against a clean Mongo plan catalog; verify
-  the Stripe Meter exists on Stripe with the canonical config (sum +
-  by_id + stripe_customer_id + value), Stripe Prices have
-  ``recurring.usage_type=metered``, and Mongo carries
-  ``meter_event_name`` + ``meter_id``.
+* **S1 — fresh meter provisioning.** Call ``ensure_stripe_meter`` directly.
+  Verify Stripe-side meter exists with canonical config; verify
+  ``assert_meter_config`` validates it.
 
-* **S2 — idempotent re-seed.** Run the seed a second time. Assert NO new
-  Meter created (same id), NO new Product, NO new Prices. The
-  ``Meter.list`` count for the event_name stays at 1.
+* **S2 — idempotent re-provisioning.** Call ``ensure_stripe_meter`` again.
+  Same meter id returned. ``Meter.list`` count for event_name stays at 1.
 
-* **S3 — stale meter_id recovery.** Set ``plan.meter_id`` in Mongo to a
-  fabricated ``mtr_DELETED`` id. Run the seed. Assert:
-  - The seed's preflight (``assert_meter_config``) raises clearly.
-  - The seed falls through to ``ensure_stripe_meter`` and provisions a
-    fresh meter with the canonical config.
-  - Mongo's ``meter_id`` is updated to the new id.
+* **S3 — stale meter_id rejection.** Call ``assert_meter_config`` with a
+  fabricated id. Expect ``ValueError("not found")``. Then re-call
+  ``ensure_stripe_meter`` and verify it returns a (different) valid id.
 
-* **S4 — half-configured plan rejection.** Set ``plan.is_metered=True``
-  but ``plan.meter_event_name=None`` in Mongo (simulates partial admin
-  edit). Run ``stripe_service.sync_plan_to_stripe`` directly. Assert
-  HTTPException 400 with a message that mentions ``meter_event_name``.
+* **S4 — half-configured plan rejection.** Call
+  ``stripe_service.sync_plan_to_stripe`` with ``is_metered=True`` and
+  ``meter_event_name=None``. Expect HTTPException 400.
 
-* **S5 — wrong-aggregation meter blocked.** Manually create a Stripe
-  Meter with ``formula=count`` (the wrong shape). Set ``plan.meter_id``
-  to that meter. Run the seed. Assert preflight rejects with a message
-  mentioning ``"must be 'sum'"``.
+* **S5 — wrong-aggregation meter blocked.** Manually create a Stripe Meter
+  with ``formula=count``. Call ``assert_meter_config(that_meter_id)``.
+  Expect ``ValueError`` mentioning "must be 'sum'". Cleanup the hostile
+  meter.
 
-* **S6 — flat→metered migration.** Start with a flat plan in Mongo.
-  Update the seed dict to flip ``is_metered=True`` + add
-  ``meter_event_name``. Run the seed. Assert:
-  - A new Stripe Price is created with ``usage_type=metered``.
-  - The old flat Price is deactivated.
-  - Mongo carries the new Price IDs.
-  - **Existing customers on the old flat price are NOT auto-migrated**
-    (this is the documented product gap from
-    METERING_REVIEW_2026-05-04_PART2.md §7-#3).
+* **S6 — flat→metered Stripe Price migration.** Call
+  ``stripe_service.sync_plan_to_stripe`` directly with a plan dict
+  carrying an existing flat ``stripe_price_id_*``. Verify a NEW metered
+  price is created and the old flat price is deactivated.
 
-* **S7 — cross-period reversal (lifecycle hand-off).** Create a wedding
-  in period A (clock advance), advance clock past period boundary,
-  delete the wedding in period B. Read
-  ``stripe.billing.MeterEventSummary`` for both periods. Document
-  whether the negative cycle total in period B clamps to 0 or
-  produces a real credit. (This is the open product question #2 from
-  the review — pin Stripe's actual behavior here.)
-
-Skip discipline: like the lifecycle driver, this exits 0 cleanly when no
-plan is metered in the live catalog (S1 cannot be run against a flat-
-only catalog). Phases S3/S4/S5/S6 set up the metered state themselves
-when needed; S7 hands off to the existing lifecycle driver after a clock
-advance.
+Skip discipline: each phase is independent. Set ``METERED_E2E_PHASES`` to
+a comma-separated subset to run only specific phases.
 
 Usage::
 
-    # Run all phases (interactive — pauses at checkpoints)
+    # All phases (interactive — pauses at checkpoints)
     python testbed/verify_metered_seed_e2e.py
 
-    # Pin a clock id across runs
-    METERED_E2E_CLOCK_ID=clock_xxx python testbed/verify_metered_seed_e2e.py
-
-    # Unattended (CI-shaped)
-    TESTBED_NON_INTERACTIVE=1 python testbed/verify_metered_seed_e2e.py
-
-    # Run only specific phases
+    # Specific phases
     METERED_E2E_PHASES=S1,S2 python testbed/verify_metered_seed_e2e.py
+
+    # Unattended
+    TESTBED_NON_INTERACTIVE=1 python testbed/verify_metered_seed_e2e.py
 """
 
 from __future__ import annotations
 
 import logging
 import os
-import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -94,24 +94,15 @@ from app.services.stripe_meter_helpers import (
     METER_EVENT_NAME_WEDDING_ACTIVE,
     METER_VALUE_KEY,
     assert_meter_config,
+    ensure_stripe_meter,
 )
 from testbed.harness import Harness
 
 logger = logging.getLogger(__name__)
 
 DRIVER_NAME = "verify_metered_seed_e2e"
-
-# Reusable clock for cross-period scenarios. Pin via env after first run.
-TEST_CLOCK_NAME = "metered-seed-e2e"
-TEST_CLOCK_ID = os.getenv("METERED_E2E_CLOCK_ID")
-
-# Plan we'll exercise. Signature is the standard "metered candidate" from
-# the seed catalog (per METERING_AUDIT.md §3 it was always intended to be
-# the featured plan, so flipping it metered is the natural test bed).
 TARGET_PLAN_ID = "plan_signature"
-
-# Phases — set METERED_E2E_PHASES env to comma-separated subset.
-ALL_PHASES = ("S1", "S2", "S3", "S4", "S5", "S6", "S7")
+ALL_PHASES = ("S1", "S2", "S3", "S4", "S5", "S6")
 
 
 # =============================================================================
@@ -130,30 +121,11 @@ def _selected_phases() -> list[str]:
     return selected
 
 
-def _run_seed_subprocess(h: Harness) -> tuple[int, str, str]:
-    """Run scripts/seed_subscription_plans.py as a subprocess. Returns
-    (returncode, stdout, stderr). The seed inherits STRIPE_* env from the
-    parent so it hits the same Stripe test account."""
-    repo_root = Path(__file__).resolve().parent.parent
-    script = repo_root / "scripts" / "seed_subscription_plans.py"
-    h.log.info(f"  Running: python {script}")
-    proc = subprocess.run(
-        [sys.executable, str(script)],
-        cwd=str(repo_root),
-        env={**os.environ, "STRIPE_ENABLED": "true"},
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    return proc.returncode, proc.stdout, proc.stderr
-
-
 def _read_plan(h: Harness, plan_id: str) -> Optional[dict]:
     return h.mongo["subscription_plans"].find_one({"_id": plan_id})
 
 
 def _list_meters_for_event(event_name: str) -> list[dict]:
-    """Return all active meters matching the event_name (should be 0 or 1)."""
     matches = []
     try:
         meters = stripe.billing.Meter.list(status="active", limit=100)
@@ -165,119 +137,41 @@ def _list_meters_for_event(event_name: str) -> list[dict]:
     return matches
 
 
-def _find_metered_price_for_plan(plan: dict) -> Optional[dict]:
-    """Look up the active metered Price for the plan's product, if any."""
-    product_id = plan.get("stripe_product_id")
-    if not product_id:
-        return None
-    try:
-        prices = stripe.Price.list(product=product_id, active=True, limit=10)
-        for p in prices.auto_paging_iter():
-            if p.recurring and p.recurring.usage_type == "metered":
-                return {
-                    "id": p.id,
-                    "interval": p.recurring.interval,
-                    "meter": getattr(p.recurring, "meter", None),
-                }
-    except stripe.error.StripeError as exc:
-        logger.warning(f"Price.list failed for {product_id}: {exc}")
-    return None
-
-
-def _find_active_prices_for_plan(plan: dict) -> list[dict]:
-    """Return ALL active prices on the plan's product."""
-    product_id = plan.get("stripe_product_id")
-    if not product_id:
-        return []
-    try:
-        prices = stripe.Price.list(product=product_id, active=True, limit=20)
-        return [
-            {
-                "id": p.id,
-                "interval": p.recurring.interval if p.recurring else None,
-                "usage_type": p.recurring.usage_type if p.recurring else None,
-                "meter": getattr(p.recurring, "meter", None) if p.recurring else None,
-            }
-            for p in prices.auto_paging_iter()
-        ]
-    except stripe.error.StripeError as exc:
-        logger.warning(f"Price.list failed: {exc}")
-        return []
-
-
 # =============================================================================
 # Phases
 # =============================================================================
 
 
-def phase_s1_fresh_seed(h: Harness) -> None:
-    """S1: Run the seed; expect provisioning of meter + metered prices."""
-    h.phase("S1_FRESH_SEED", "Seed runs cleanly; meter + metered prices provisioned")
-
-    # Pre-flip the plan dict in Mongo to is_metered=True so the seed's
-    # $set block sees it. This simulates the operator having committed
-    # the "flip is_metered=True" edit to seed_subscription_plans.py
-    # without us having to actually edit the file in the test.
-    flip_result = h.mongo["subscription_plans"].update_one(
-        {"_id": TARGET_PLAN_ID},
-        {
-            "$set": {
-                "is_metered": True,
-                "meter_event_name": METER_EVENT_NAME_WEDDING_ACTIVE,
-                "meter_id": None,  # let the seed provision
-            }
-        },
-    )
-    h.log.info(
-        f"  Pre-flipped {TARGET_PLAN_ID} to metered (matched={flip_result.matched_count})"
+def phase_s1_fresh_meter_provisioning(h: Harness) -> None:
+    """S1: ensure_stripe_meter creates (or finds) the canonical meter."""
+    h.phase(
+        "S1_FRESH_METER",
+        "Provision meter via ensure_stripe_meter directly (NOT via seed subprocess)",
     )
 
-    rc, stdout, stderr = _run_seed_subprocess(h)
-    h.log.info(f"  Seed exit code: {rc}")
-    h.log.info(f"  Seed stdout (last 500): ...{stdout[-500:]}")
-    if stderr:
-        h.log.info(f"  Seed stderr (last 500): ...{stderr[-500:]}")
-    assert rc == 0, f"S1: seed failed with exit code {rc}"
-
-    # Verify Stripe-side state
-    meters = _list_meters_for_event(METER_EVENT_NAME_WEDDING_ACTIVE)
-    assert len(meters) >= 1, (
-        f"S1: expected at least 1 meter for event_name={METER_EVENT_NAME_WEDDING_ACTIVE!r}, "
-        f"found {len(meters)}. Check seed stdout for [METER] lines."
+    meter_id = ensure_stripe_meter(
+        event_name=METER_EVENT_NAME_WEDDING_ACTIVE,
+        display_name="Signature (wedding_active) — testbed",
     )
-    meter_id = meters[0]["id"]
-    h.log.info(f"  ✅ Meter exists: {meter_id}")
+    h.log.info(f"  ✅ Meter id returned: {meter_id}")
+    assert meter_id and meter_id.startswith("mtr_"), (
+        f"S1: expected mtr_… id, got {meter_id!r}"
+    )
 
-    # Preflight assert_meter_config — it should pass now
+    # Verify on Stripe side
+    matches = _list_meters_for_event(METER_EVENT_NAME_WEDDING_ACTIVE)
+    assert len(matches) >= 1, (
+        f"S1: Stripe Meter.list returned {len(matches)} meters for "
+        f"event_name={METER_EVENT_NAME_WEDDING_ACTIVE!r}; expected ≥1"
+    )
+    h.log.info(f"  ✅ Stripe-side: {len(matches)} active meter(s) for event_name")
+
+    # Verify canonical config
     try:
         assert_meter_config(meter_id)
-        h.log.info("  ✅ Meter config matches canonical shape")
+        h.log.info("  ✅ assert_meter_config validates the canonical shape")
     except ValueError as exc:
         raise AssertionError(f"S1: meter exists but is misconfigured: {exc}")
-
-    # Verify Mongo-side state
-    plan = _read_plan(h, TARGET_PLAN_ID)
-    assert plan, f"S1: plan {TARGET_PLAN_ID!r} disappeared from Mongo"
-    assert plan.get("meter_event_name") == METER_EVENT_NAME_WEDDING_ACTIVE, (
-        f"S1: meter_event_name not persisted; this is the CC3 bug coming back. "
-        f"Got {plan.get('meter_event_name')!r}"
-    )
-    assert plan.get("meter_id") == meter_id, (
-        f"S1: meter_id not persisted to Mongo. Expected {meter_id}, got {plan.get('meter_id')}"
-    )
-    h.log.info("  ✅ Mongo carries meter_event_name and meter_id")
-
-    # Verify metered Price exists
-    metered_price = _find_metered_price_for_plan(plan)
-    assert metered_price, (
-        f"S1: no metered Price found on product {plan.get('stripe_product_id')!r}. "
-        f"Stripe-side billing won't engage."
-    )
-    assert metered_price["meter"] == meter_id, (
-        f"S1: metered Price references wrong meter. "
-        f"Expected {meter_id}, got {metered_price['meter']}"
-    )
-    h.log.info(f"  ✅ Metered Price exists: {metered_price['id']} → meter {meter_id}")
 
     h.checkpoint(
         "S1_PROVISIONED",
@@ -286,102 +180,84 @@ def phase_s1_fresh_seed(h: Harness) -> None:
             f"  - aggregation: {METER_AGGREGATION_FORMULA!r}",
             f"  - customer_mapping.event_payload_key: {METER_CUSTOMER_MAPPING_KEY!r}",
             f"  - value_settings.event_payload_key: {METER_VALUE_KEY!r}",
-            "Stripe Dashboard → Products → Signature: a metered Price exists",
-            f"Mongo: subscription_plans.{TARGET_PLAN_ID} has meter_event_name and meter_id",
+            f"meter_id: {meter_id}",
         ],
     )
 
 
-def phase_s2_idempotent_reseed(h: Harness) -> None:
-    """S2: Re-run the seed. No new resources should be created."""
-    h.phase("S2_IDEMPOTENT_RESEED", "Re-running seed is a no-op for Stripe resources")
+def phase_s2_idempotent_reprovisioning(h: Harness) -> None:
+    """S2: second call returns same id; meter count stays at 1."""
+    h.phase("S2_IDEMPOTENT", "ensure_stripe_meter is idempotent (SS1 fix in action)")
 
-    plan_before = _read_plan(h, TARGET_PLAN_ID)
-    assert plan_before, "S2: target plan must exist (run S1 first)"
+    count_before = len(_list_meters_for_event(METER_EVENT_NAME_WEDDING_ACTIVE))
+    h.log.info(f"  Pre-call: {count_before} meter(s) for event_name")
 
-    meter_count_before = len(_list_meters_for_event(METER_EVENT_NAME_WEDDING_ACTIVE))
-    prices_before = _find_active_prices_for_plan(plan_before)
-    h.log.info(
-        f"  Pre-reseed: {meter_count_before} meter(s), "
-        f"{len(prices_before)} active price(s) for product"
+    meter_id_1 = ensure_stripe_meter(event_name=METER_EVENT_NAME_WEDDING_ACTIVE)
+    meter_id_2 = ensure_stripe_meter(event_name=METER_EVENT_NAME_WEDDING_ACTIVE)
+
+    count_after = len(_list_meters_for_event(METER_EVENT_NAME_WEDDING_ACTIVE))
+    h.log.info(f"  Post-call: {count_after} meter(s); ids {meter_id_1} == {meter_id_2}")
+
+    assert meter_id_1 == meter_id_2, (
+        f"S2: ensure_stripe_meter returned DIFFERENT ids for back-to-back "
+        f"calls: {meter_id_1!r} vs {meter_id_2!r}. SS1 idempotency_key broken."
+    )
+    assert count_after == count_before or count_after == 1, (
+        f"S2: meter count grew from {count_before} to {count_after}. "
+        f"Either ensure_stripe_meter created a duplicate, or another "
+        f"meter exists for this event_name from a prior test run."
     )
 
-    rc, stdout, stderr = _run_seed_subprocess(h)
-    assert rc == 0, f"S2: seed failed with exit code {rc}"
+    h.log.info("  ✅ Idempotent: same id returned, no duplicate created")
 
-    meter_count_after = len(_list_meters_for_event(METER_EVENT_NAME_WEDDING_ACTIVE))
-    plan_after = _read_plan(h, TARGET_PLAN_ID)
-    prices_after = _find_active_prices_for_plan(plan_after)
-    h.log.info(
-        f"  Post-reseed: {meter_count_after} meter(s), "
-        f"{len(prices_after)} active price(s)"
+
+def phase_s3_stale_meter_id_rejection(h: Harness) -> None:
+    """S3: assert_meter_config rejects a fabricated/deleted id."""
+    h.phase(
+        "S3_STALE_METER_ID",
+        "assert_meter_config rejects nonexistent meter_id with clear message",
     )
 
-    assert meter_count_after == meter_count_before, (
-        f"S2: meter count grew from {meter_count_before} to {meter_count_after} — "
-        f"ensure_stripe_meter is creating duplicates."
+    fake_id = "mtr_DELETED_BY_TEST_DOES_NOT_EXIST"
+    raised = False
+    try:
+        assert_meter_config(fake_id)
+    except ValueError as exc:
+        raised = True
+        h.log.info(f"  ✅ Rejected with: {exc}")
+        assert "not found" in str(exc), (
+            f"S3: rejection message should say 'not found'; got {exc}"
+        )
+
+    assert raised, f"S3: assert_meter_config({fake_id!r}) did not raise"
+
+    # Verify recovery: ensure_stripe_meter still works after the bad lookup
+    real_id = ensure_stripe_meter(event_name=METER_EVENT_NAME_WEDDING_ACTIVE)
+    assert real_id and real_id != fake_id, (
+        f"S3: ensure_stripe_meter recovery returned bad id {real_id!r}"
     )
-    assert plan_after.get("meter_id") == plan_before.get("meter_id"), (
-        "S2: meter_id changed across reseeds — should be stable."
-    )
-    assert plan_after.get("stripe_price_id_monthly") == plan_before.get(
-        "stripe_price_id_monthly"
-    ), "S2: monthly Price ID changed — ensure_price detected a false mismatch"
-    assert plan_after.get("stripe_price_id_yearly") == plan_before.get(
-        "stripe_price_id_yearly"
-    ), "S2: yearly Price ID changed across reseeds"
-
-    h.log.info("  ✅ Idempotent: no duplicate meter, no new prices, IDs stable")
-
-
-def phase_s3_stale_meter_id_recovery(h: Harness) -> None:
-    """S3: Set plan.meter_id to a fake/deleted id, re-run the seed.
-    Expect the seed's `_provision_meter_if_needed` fallback to kick in
-    via assert_meter_config raising → ensure_stripe_meter."""
-    h.phase("S3_STALE_METER_ID", "Stale meter_id triggers re-provisioning")
-
-    fake_id = "mtr_DELETED_BY_TEST"
-    h.mongo["subscription_plans"].update_one(
-        {"_id": TARGET_PLAN_ID},
-        {"$set": {"meter_id": fake_id}},
-    )
-    h.log.info(f"  Set {TARGET_PLAN_ID}.meter_id = {fake_id!r} (fabricated)")
-
-    rc, stdout, _ = _run_seed_subprocess(h)
-    assert rc == 0, f"S3: seed should not crash on stale meter_id; rc={rc}"
-
-    # Look for the seed's recovery log line
-    assert "Existing meter_id" in stdout or "is invalid" in stdout, (
-        "S3: expected seed to log invalidation of stale meter_id; "
-        "check scripts/seed_subscription_plans.py:_provision_meter_if_needed"
-    )
-
-    plan = _read_plan(h, TARGET_PLAN_ID)
-    assert plan.get("meter_id") and plan["meter_id"] != fake_id, (
-        f"S3: meter_id was not refreshed; Mongo still has {plan.get('meter_id')!r}"
-    )
-    # Real meter id should validate
-    assert_meter_config(plan["meter_id"])
-    h.log.info(f"  ✅ Recovered: meter_id = {plan['meter_id']}")
+    h.log.info(f"  ✅ Recovery via ensure_stripe_meter: {real_id}")
 
 
 def phase_s4_half_configured_rejection(h: Harness) -> None:
-    """S4: is_metered=True with meter_event_name=None should be rejected
-    by sync_plan_to_stripe (existing behavior, but pin it)."""
-    h.phase("S4_HALF_CONFIGURED", "sync_plan_to_stripe rejects half-configured plan")
+    """S4: sync_plan_to_stripe rejects is_metered=True with no meter_event_name."""
+    h.phase(
+        "S4_HALF_CONFIGURED",
+        "sync_plan_to_stripe rejects half-configured metered plan",
+    )
 
     from fastapi.exceptions import HTTPException
 
     from app.services.stripe_service import stripe_service
 
     bad_plan = {
-        "_id": "plan_test_half_config",
+        "_id": "plan_test_half_config_DO_NOT_PERSIST",
         "name": "Test Half Config",
         "description": "Should never be created",
         "price_monthly": 99,
         "price_yearly": 990,
         "is_metered": True,
-        "meter_event_name": None,  # the bug
+        "meter_event_name": None,
     }
 
     raised = False
@@ -389,28 +265,29 @@ def phase_s4_half_configured_rejection(h: Harness) -> None:
         stripe_service.sync_plan_to_stripe(bad_plan)
     except HTTPException as exc:
         raised = True
-        h.log.info(f"  ✅ Rejected with {exc.status_code}: {exc.detail}")
+        h.log.info(f"  ✅ Rejected with HTTP {exc.status_code}: {exc.detail}")
         assert exc.status_code == 400
-        assert (
-            "meter_id" in str(exc.detail).lower()
-            or "meter_event_name" in str(exc.detail).lower()
-        ), f"S4: rejection message should mention meter fields; got {exc.detail}"
+        # Either error message is acceptable — the point is fail-fast
+        msg = str(exc.detail).lower()
+        assert "meter_id" in msg or "meter_event_name" in msg, (
+            f"S4: rejection message should mention meter fields; got {exc.detail}"
+        )
 
     assert raised, "S4: expected HTTPException for half-configured plan"
 
 
 def phase_s5_wrong_aggregation_blocked(h: Harness) -> None:
-    """S5: A meter created with formula=count must be rejected by
-    assert_meter_config. This covers the operator who hand-creates a
-    meter in the Stripe Dashboard with the wrong aggregation."""
-    h.phase("S5_WRONG_AGGREGATION", "Count meter rejected at preflight")
+    """S5: assert_meter_config rejects a meter created with formula=count."""
+    h.phase(
+        "S5_WRONG_AGGREGATION",
+        "Hostile meter (formula=count) rejected at preflight",
+    )
 
-    # Create a hostile meter with the WRONG aggregation
     hostile_event = "wedding_active_HOSTILE_TEST"
+    hostile_id: Optional[str] = None
     try:
-        # Clean up any prior run's hostile meter first
-        existing = _list_meters_for_event(hostile_event)
-        for m in existing:
+        # Best-effort cleanup of any prior hostile meter
+        for m in _list_meters_for_event(hostile_event):
             try:
                 stripe.billing.Meter.deactivate(m["id"])
             except stripe.error.StripeError:
@@ -438,149 +315,91 @@ def phase_s5_wrong_aggregation_blocked(h: Harness) -> None:
     except ValueError as exc:
         raised = True
         h.log.info(f"  ✅ assert_meter_config rejected: {exc}")
-        assert "must be 'sum'" in str(exc), f"unexpected rejection reason: {exc}"
+        assert "must be 'sum'" in str(exc), f"S5: unexpected reason: {exc}"
 
     assert raised, "S5: assert_meter_config accepted a count-aggregation meter"
 
-    # Cleanup the hostile meter
+    # Cleanup
     try:
         stripe.billing.Meter.deactivate(hostile_id)
-        h.log.info("  Cleaned up hostile meter")
+        h.log.info("  ✅ Hostile meter deactivated")
     except stripe.error.StripeError:
         pass
 
 
 def phase_s6_flat_to_metered_migration(h: Harness) -> None:
-    """S6: Flip plan flat→metered via seed; verify new metered Price
-    created and old flat Price deactivated. The CRITICAL caveat:
-    existing customers on the old flat price are NOT migrated."""
-    h.phase("S6_FLAT_TO_METERED", "Flip plan flat→metered; old prices deactivated")
-
-    # Reset the target plan to flat, drop meter fields, and let the seed
-    # re-create flat prices from scratch so we have a clean migration test.
-    h.mongo["subscription_plans"].update_one(
-        {"_id": TARGET_PLAN_ID},
-        {
-            "$set": {
-                "is_metered": False,
-                "meter_event_name": None,
-                "meter_id": None,
-                "stripe_price_id_monthly": None,
-                "stripe_price_id_yearly": None,
-            }
-        },
+    """S6: sync_plan_to_stripe deactivates old flat price, creates metered."""
+    h.phase(
+        "S6_FLAT_TO_METERED",
+        "sync_plan_to_stripe migrates flat price → metered price",
     )
-    rc1, _, _ = _run_seed_subprocess(h)
-    assert rc1 == 0, "S6 setup: seed-as-flat failed"
-    plan_flat = _read_plan(h, TARGET_PLAN_ID)
-    flat_monthly_price = plan_flat.get("stripe_price_id_monthly")
-    h.log.info(f"  Reset to flat: monthly Price = {flat_monthly_price}")
 
-    # Now flip to metered via Mongo (the operator's seed-edit equivalent)
-    h.mongo["subscription_plans"].update_one(
-        {"_id": TARGET_PLAN_ID},
-        {
-            "$set": {
-                "is_metered": True,
-                "meter_event_name": METER_EVENT_NAME_WEDDING_ACTIVE,
-            }
-        },
-    )
-    rc2, _, _ = _run_seed_subprocess(h)
-    assert rc2 == 0, "S6: seed-as-metered failed"
+    from app.services.stripe_service import stripe_service
 
-    plan_metered = _read_plan(h, TARGET_PLAN_ID)
-    metered_monthly_price = plan_metered.get("stripe_price_id_monthly")
-    h.log.info(f"  Flipped to metered: monthly Price = {metered_monthly_price}")
+    # Read the live Signature plan from Mongo (it's the seed-default flat)
+    plan = _read_plan(h, TARGET_PLAN_ID)
+    assert plan, f"S6: target plan {TARGET_PLAN_ID!r} not found in Mongo"
+    flat_monthly = plan.get("stripe_price_id_monthly")
+    h.log.info(f"  Current Signature monthly price: {flat_monthly}")
 
-    assert metered_monthly_price != flat_monthly_price, (
-        "S6: monthly Price ID didn't change after flat→metered flip — "
-        "either ensure_price didn't detect the mismatch, or the flip didn't take."
+    # Get a real meter_id (provisioned in S1 or now)
+    meter_id = ensure_stripe_meter(event_name=METER_EVENT_NAME_WEDDING_ACTIVE)
+
+    # Build a hypothetical metered version of the plan dict and call
+    # sync_plan_to_stripe directly. We do NOT persist this to Mongo —
+    # that would be a real production change. We just want to verify
+    # the helper does the right thing on the Stripe side.
+    metered_plan = {
+        **plan,
+        "is_metered": True,
+        "meter_event_name": METER_EVENT_NAME_WEDDING_ACTIVE,
+        "meter_id": meter_id,
+    }
+
+    h.log.info("  Calling stripe_service.sync_plan_to_stripe with metered config…")
+    try:
+        result = stripe_service.sync_plan_to_stripe(metered_plan)
+    except Exception as exc:
+        raise AssertionError(f"S6: sync_plan_to_stripe failed: {exc}")
+
+    new_monthly = result.get("stripe_price_id_monthly")
+    h.log.info(f"  New monthly price returned: {new_monthly}")
+    assert new_monthly and new_monthly != flat_monthly, (
+        f"S6: new monthly price ID didn't change. "
+        f"flat={flat_monthly}, new={new_monthly}"
     )
 
     # Verify the new Price has metered config
-    new_price = stripe.Price.retrieve(metered_monthly_price)
+    new_price = stripe.Price.retrieve(new_monthly)
     assert new_price.recurring.usage_type == "metered", (
-        f"S6: new Price {metered_monthly_price} is not metered: "
-        f"usage_type={new_price.recurring.usage_type}"
+        f"S6: new Price {new_monthly} usage_type={new_price.recurring.usage_type}"
     )
-    h.log.info("  ✅ New monthly Price is metered with the right meter_id")
+    assert getattr(new_price.recurring, "meter", None) == meter_id, (
+        f"S6: new Price meter doesn't match: {new_price.recurring}"
+    )
+    h.log.info(f"  ✅ New monthly Price is metered, references {meter_id}")
 
-    # Verify the old flat Price was deactivated
-    old_price = stripe.Price.retrieve(flat_monthly_price)
+    # Verify old flat Price is deactivated
+    old_price = stripe.Price.retrieve(flat_monthly)
     assert not old_price.active, (
-        f"S6: old flat Price {flat_monthly_price} was NOT deactivated; "
-        f"existing customers on it would still bill at flat rate. "
-        f"Check stripe_service.ensure_price's deactivation branch."
+        f"S6: old flat Price {flat_monthly} is still active. "
+        f"Existing customers on it would still bill flat."
     )
-    h.log.info(f"  ✅ Old flat Price {flat_monthly_price} is now inactive")
+    h.log.info(f"  ✅ Old flat Price {flat_monthly} is now inactive")
 
     h.checkpoint(
         "S6_MIGRATION_DONE",
         expectations=[
-            "New metered Price is the active billing target for new checkouts",
-            "Old flat Price is inactive (not deleted, just inactive)",
-            "**CAVEAT:** Existing Stripe Subscriptions still reference the old "
-            "Price. They will keep billing flat until manually swapped via "
-            "stripe.Subscription.modify. This is the open product question #3 "
-            "in METERING_REVIEW_2026-05-04_PART2.md §7.",
-        ],
-    )
-
-
-def phase_s7_cross_period_handoff(h: Harness) -> None:
-    """S7: Cross-period reversal verification.
-
-    Rather than reimplementing the lifecycle here, this phase prints the
-    hand-off command for `verify_planner_metered_lifecycle.py` extended
-    with a clock-advance, plus a Stripe MeterEventSummary readback
-    template so the operator can confirm Stripe agrees with the cycle
-    totals.
-    """
-    h.phase("S7_CROSS_PERIOD_HANDOFF", "Cross-period reversal — hand off to lifecycle")
-
-    h.log.info(
-        """
-  This phase is documentation. The cross-period reversal scenario
-  (create wedding in month A, delete in month B) is best exercised
-  via the lifecycle driver with a clock advance. Run:
-
-      METERED_CLOCK_ID=<your_clock> \\
-          python testbed/verify_planner_metered_lifecycle.py
-
-  Then advance the clock past the period boundary in the Stripe
-  Dashboard (or programmatically) and re-run the delete phase.
-
-  After the cross-period delete, read Stripe's MeterEventSummary for
-  both periods to confirm the cycle totals:
-
-      import stripe
-      summary_a = stripe.billing.MeterEventSummary.list(
-          customer=customer_id,
-          meter=meter_id,
-          start_time=int(period_a_start.timestamp()),
-          end_time=int(period_a_end.timestamp()),
-      )
-      summary_b = stripe.billing.MeterEventSummary.list(
-          customer=customer_id,
-          meter=meter_id,
-          start_time=int(period_b_start.timestamp()),
-          end_time=int(period_b_end.timestamp()),
-      )
-
-  Pin Stripe's actual behavior: does period B's negative cycle total
-  produce a credit on the invoice, or clamp to 0? This is open product
-  question #2 in METERING_REVIEW_2026-05-04_PART2.md §7. Document the
-  answer and decide whether to switch to MeterEventAdjustment for
-  in-window cancellations.
-"""
-    )
-
-    h.checkpoint(
-        "S7_HANDOFF_LOGGED",
-        expectations=[
-            "You've reviewed the hand-off and have a plan for the cross-period test",
-            "You've decided how to verify Stripe's negative-cycle behavior",
+            "New metered Price would be the active billing target for new checkouts",
+            "Old flat Price is inactive",
+            "**CAVEAT (SS2):** existing Stripe Subscriptions still reference "
+            "the old Price. They will keep billing flat until manually swapped "
+            "via stripe.Subscription.modify. This is the open product question "
+            "in METERING_GAP_SCENARIOS_2026-05-04.md §SS2.",
+            "**Mongo NOT updated**: this phase exercised the Stripe side only. "
+            "The plan_signature doc in your dev DB still shows is_metered=False. "
+            "To actually flip the plan in production, edit "
+            "scripts/seed_subscription_plans.py and redeploy.",
         ],
     )
 
@@ -591,23 +410,27 @@ def phase_s7_cross_period_handoff(h: Harness) -> None:
 
 
 PHASE_MAP = {
-    "S1": phase_s1_fresh_seed,
-    "S2": phase_s2_idempotent_reseed,
-    "S3": phase_s3_stale_meter_id_recovery,
+    "S1": phase_s1_fresh_meter_provisioning,
+    "S2": phase_s2_idempotent_reprovisioning,
+    "S3": phase_s3_stale_meter_id_rejection,
     "S4": phase_s4_half_configured_rejection,
     "S5": phase_s5_wrong_aggregation_blocked,
     "S6": phase_s6_flat_to_metered_migration,
-    "S7": phase_s7_cross_period_handoff,
 }
 
 
 def main() -> int:
     h = Harness(driver_name=DRIVER_NAME)
-    h.banner("VERIFY — Metered Seed E2E (adversarial provisioning)")
+    h.banner("VERIFY — Metered Seed E2E (helpers-direct, NOT via seed subprocess)")
     h.preflight()
 
     selected = _selected_phases()
     h.log.info(f"  Phases: {selected}")
+    h.log.info(
+        "  Design note: this driver tests the HELPERS directly. The seed script "
+        "is intentionally hardcoded source-of-truth for plan config and ignores "
+        "Mongo overrides — see METERING_IMPLEMENTATION_2026-05-04.md S1-fix lesson."
+    )
 
     for phase_name in selected:
         phase_fn = PHASE_MAP[phase_name]
@@ -621,7 +444,6 @@ def main() -> int:
             raise
 
     h.banner("VERIFY — Metered Seed E2E COMPLETE ✅")
-    h.log.info("  All selected adversarial phases passed.")
     return 0
 
 

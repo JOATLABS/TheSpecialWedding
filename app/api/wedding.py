@@ -155,11 +155,9 @@ async def create_wedding(
                 )
 
                 if plan and plan.get("is_metered") and plan.get("meter_event_name"):
-                    # Use the shared helper — fixes a latent local-timezone bug
-                    # (the prior inline implementation coerced naive datetimes
-                    # to local rather than UTC). See
-                    # docs/analysis/METERING_GAP_SCENARIOS_2026-05-04.md §C5
-                    # and app/utils/period_parsing.py.
+                    # Shared helper — fixes a latent local-timezone bug.
+                    # See METERING_GAP_SCENARIOS_2026-05-04.md §C5 and
+                    # app/utils/period_parsing.py.
                     current_period_start = coerce_period_start(
                         sub.get("current_period_start")
                     )
@@ -201,13 +199,10 @@ async def create_wedding(
                             },
                             identifier=idempotency_key,
                         )
-                        # Use the retry helper for both branches — see
-                        # METERING_GAP_SCENARIOS_2026-05-04.md §SS4. The
-                        # success branch is the dangerous one: if its
-                        # write fails silently and we don't retry, the
-                        # next daily batch will fire a DUPLICATE meter
-                        # event (different idempotency-key prefix; Stripe
-                        # won't dedupe across prefixes) → double-billing.
+                        # SS4: retry helper — silent Mongo failure on the
+                        # success branch leads to double-billing on the
+                        # next daily batch run (different idempotency-key
+                        # prefix → Stripe doesn't dedupe).
                         if meter_result.get("status") == "success":
                             await update_wedding_meter_state(
                                 mongo.db["weddings"],
@@ -247,6 +242,36 @@ async def create_wedding(
         wedding_id=str(wedding_data.get("_id", "")),
     )
 
+    # Stage 1 of the two-stage wedding-checklist nudge: surface a
+    # toast to the planner reminding them to invite the couple to
+    # their portal next. Best-effort — a notification failure must
+    # never block wedding creation.
+    try:
+        from app.services.planner_notification_service import (
+            planner_notification_service,
+        )
+
+        # PlannerNotificationService keys SSE channels, bell rows, and the
+        # team-fanout query by planner email — passing an ObjectId-style
+        # `assigned_planner_id` here drops the toast on the floor.
+        # Prefer email fields; fall back to the authenticated user's
+        # email so we never end up with a non-email identifier.
+        planner_id_for_notify = (
+            wedding_data.get("assigned_planner_email")
+            or wedding_data.get("owner_email")
+            or wedding_data.get("created_by")
+            or current_user.email
+        )
+        await planner_notification_service.notify_wedding_created(
+            planner_id=str(planner_id_for_notify),
+            wedding_id=str(wedding_data.get("_id", "")),
+            couple_names=wedding_data.get("couple_names"),
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(
+            "wedding_created notification failed (creation succeeded): %s", exc
+        )
+
     return result
 
 
@@ -264,7 +289,9 @@ async def update_wedding_admin(
 
     existing_wedding = await wedding_service.get_wedding(wedding_id)
     previous_slug = existing_wedding.get("slug")
-    should_invalidate_privacy = "privacy_settings" in wedding or "slug" in wedding
+    should_invalidate_privacy = (
+        "privacy_settings" in wedding or "slug" in wedding or "rsvp_config" in wedding
+    )
 
     # Add update metadata
     wedding["updated_by"] = current_user.email
@@ -388,11 +415,7 @@ async def delete_wedding_admin(
                             identifier=idempotency_key,
                         )
                         reversal_success = reverse_result.get("status") == "success"
-                        # SS4: retry helper for the reversal-state write.
-                        # Same divergence risk as the create-success path —
-                        # if Mongo doesn't get the meter_reversed_period
-                        # marker, a re-fired reversal would credit the
-                        # customer twice for the same delete.
+                        # SS4: retry helper for the reversal write.
                         await update_wedding_meter_state(
                             mongo.db["weddings"],
                             normalize_query_id(wedding_id),

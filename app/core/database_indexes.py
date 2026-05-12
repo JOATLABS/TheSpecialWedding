@@ -2211,41 +2211,14 @@ async def create_calendar_indexes():
             name="idx_calendar_connections_provider_account",
             background=True,
         )
-        # Legacy Google-era unique index (keyed on provider_account_email +
-        # calendar_id). The new Aurinko schema keys on aurinko_account_id +
-        # aurinko_calendar_id, so drop the old one if present.
-        try:
-            await calendar_connections.drop_index(
-                "idx_calendar_connections_user_account_calendar"
-            )
-        except Exception as drop_exc:
-            message = str(drop_exc).lower()
-            if "ns not found" not in message and "index not found" not in message:
-                logger.debug(
-                    "Could not drop legacy idx_calendar_connections_user_account_calendar: %s",
-                    drop_exc,
-                )
-        # Canonical uniqueness for the Aurinko-keyed schema: one row per
-        # (planner owner, workspace user, Aurinko account, Aurinko calendar).
         await calendar_connections.create_index(
             [
-                ("owner_planner_id", ASCENDING),
                 ("user_id", ASCENDING),
-                ("aurinko_account_id", ASCENDING),
-                ("aurinko_calendar_id", ASCENDING),
+                ("provider_account_email", ASCENDING),
+                ("calendar_id", ASCENDING),
             ],
-            name="idx_calendar_connections_aurinko_compound",
+            name="idx_calendar_connections_user_account_calendar",
             unique=True,
-            background=True,
-        )
-        # Webhook-handler lookup: calendar_webhook_service.handle_event_change
-        # resolves connection by (aurinko_account_id, aurinko_calendar_id).
-        await calendar_connections.create_index(
-            [
-                ("aurinko_account_id", ASCENDING),
-                ("aurinko_calendar_id", ASCENDING),
-            ],
-            name="idx_calendar_connections_aurinko_lookup",
             background=True,
         )
 

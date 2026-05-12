@@ -20,6 +20,7 @@ class StorageTarget(str, Enum):
     GUEST_MEDIA = "guest_media"
     AD_ASSETS = "ad_assets"
     BLOG_ASSETS = "blog_assets"
+    FORM_UPLOADS = "form_uploads"
 
 
 @dataclass(frozen=True)
@@ -210,6 +211,12 @@ class MediaStorage:
                 target=normalized,
                 bucket_name=settings.blog_media_bucket_name,
                 public_domain=settings.normalized_blog_media_domain,
+            )
+        if normalized == StorageTarget.FORM_UPLOADS:
+            return StorageTargetConfig(
+                target=normalized,
+                bucket_name=settings.form_uploads_bucket_name,
+                public_domain=settings.normalized_form_uploads_domain,
             )
         raise ValueError(f"Unsupported storage target: {target}")
 

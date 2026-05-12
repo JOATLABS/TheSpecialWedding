@@ -3,6 +3,7 @@ import Image from "next/image";
 import { DeferredHomeEffects } from "./components/landing-page/DeferredHomeEffects.client";
 import { FeatureShowcase } from "./components/landing-page/FeatureShowcase.client";
 import { PricingSignupSection } from "./components/landing-page/PricingSignupSection.client";
+import HomepageTemplatesBand from "./components/saas/HomepageTemplatesBand";
 import SaasNav from "./components/saas/SaasNav";
 import type { ThemeConfig } from "./types/wedding";
 
@@ -33,23 +34,59 @@ const defaultTheme: ThemeConfig = {
   font_style: "elegant",
 };
 
+// IMPORTANT: keep in sync with scripts/seed_subscription_plans.py and
+// app/api/subscription_management.py::seed_default_subscription_plans.
+// The client-side <PricingSignupSection> fetches /public/subscription-plans
+// and swaps this fallback out after ~800ms, but server-rendered HTML uses
+// THIS array — which means crawlers, social share previews, and the
+// first-paint flash all read from here. Stale values here = stale SEO.
 const fallbackPricing: PricingTier[] = [
+  {
+    id: "plan_solo",
+    name: "Solo",
+    tagline: "Try us with your first client. One wedding, on us.",
+    price: "$0",
+    period: "/month",
+    features: [
+      "1 wedding to try us out",
+      "Up to 50 guests",
+      "Guest list & RSVP system",
+      "Branded wedding website",
+      "Basic timeline builder",
+      "1GB storage",
+    ],
+    cta: "Start free",
+  },
   {
     id: "plan_boutique",
     name: "Boutique",
-    tagline: "For solo planners onboarding their first weddings.",
-    price: "$29",
+    tagline: "For independent planners running their solo practice. Unlimited weddings, no caps.",
+    price: "$49",
     period: "/month",
-    features: ["Up to 3 weddings", "150 guests per wedding", "Guest and RSVP manager", "100 AI credits/month"],
-    cta: "Start Boutique",
+    features: [
+      "Unlimited weddings",
+      "Unlimited guests",
+      "AI-powered timeline & vendor matching",
+      "Seating orchestration",
+      "QR check-in & live counts",
+      "300 AI credits/month",
+    ],
+    cta: "Choose Boutique",
   },
   {
     id: "plan_signature",
     name: "Signature",
-    tagline: "For planners managing a growing calendar.",
-    price: "$59",
+    tagline: "For agencies running a team of planners. Everything in Boutique, plus team seats and agency-grade reporting.",
+    price: "$149",
     period: "/month",
-    features: ["Up to 10 weddings", "350 guests per wedding", "Vendor collaboration", "300 AI credits/month"],
+    features: [
+      "Unlimited weddings",
+      "Unlimited guests",
+      "Team collaboration (5 staff seats)",
+      "Vendor-collaboration workspaces",
+      "Custom domain",
+      "1,500 AI credits/month",
+    ],
     cta: "Choose Signature",
     popular: true,
     savings: "Most popular",
@@ -57,10 +94,17 @@ const fallbackPricing: PricingTier[] = [
   {
     id: "plan_enterprise",
     name: "Enterprise",
-    tagline: "For teams that need scale, support, and control.",
-    price: "$149",
+    tagline: "For franchises and white-label partners. Your brand, our platform, dedicated success.",
+    price: "$399",
     period: "/month",
-    features: ["Unlimited weddings", "Unlimited guests", "10 staff seats", "Dedicated support"],
+    features: [
+      "Unlimited weddings",
+      "Unlimited guests",
+      "White-label branding",
+      "API access + webhooks",
+      "20 staff seats",
+      "Dedicated success manager",
+    ],
     cta: "Go Enterprise",
   },
 ];
@@ -193,6 +237,8 @@ export default function HomePage() {
         </div>
       </section>
 
+      <HomepageTemplatesBand />
+
       <SectionBridge label="See what's inside" />
 
       <section id="showcase" className="scroll-mt-28 bg-slate-950 px-5 py-8 sm:px-8 sm:py-10 lg:px-12">
@@ -255,7 +301,10 @@ export default function HomePage() {
       <footer className="border-t border-white/10 bg-black px-6 py-10 text-sm text-slate-400 sm:px-8 lg:px-12">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <p>&copy; {year} The Special Wedding. All rights reserved.</p>
-          <div className="flex gap-5">
+          <div className="flex flex-wrap gap-5">
+            <Link href="/resources?tab=templates" className="hover:text-white">
+              Free templates
+            </Link>
             <Link href="/privacy" className="hover:text-white">
               Privacy
             </Link>

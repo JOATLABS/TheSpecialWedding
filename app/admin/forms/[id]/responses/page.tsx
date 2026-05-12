@@ -1,12 +1,17 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { fetchFormResponsesCsv } from '@/services/formExport';
 import { formsApi } from '@/services/formsApi';
 import { formatDate, formatDateTime } from '@/utils/dateFormat';
+
+// Server-side cap on /admin/forms/{id}/responses?limit=… per the API.
+// Anything larger is silently truncated, so the UI must paginate via
+// repeated calls with ``skip`` rather than asking for more in one shot.
+const PAGE_SIZE = 500;
 
 interface FormResponse {
  id: string;
@@ -15,6 +20,8 @@ interface FormResponse {
  submitted_by_name?: string;
  submitted_at: string;
  ip_address?: string;
+ /** Set when the response came from a per-recipient email link. */
+ distribution_id?: string | null;
 }
 
 interface FormField {
@@ -43,6 +50,12 @@ export default function FormResponsesPage() {
 
  const [form, setForm] = useState<Form | null>(null);
  const [responses, setResponses] = useState<FormResponse[]>([]);
+ // Pagination envelope — a planner with > 500 submissions used to be
+ // silently capped at the first page. Track total + has_more so the
+ // UI exposes a Load more button and a truthful count.
+ const [totalResponses, setTotalResponses] = useState<number | null>(null);
+ const [hasMoreResponses, setHasMoreResponses] = useState(false);
+ const [loadingMore, setLoadingMore] = useState(false);
  const [loading, setLoading] = useState(true);
  const [error, setError] = useState('');
  const [selectedResponse, setSelectedResponse] = useState<FormResponse | null>(null);
@@ -56,41 +69,67 @@ export default function FormResponsesPage() {
 
  const baseUrl = getApiBaseUrl();
 
+ const fetchResponsesPage = useCallback(
+ async (skip: number) => {
+ const res = await fetch(
+ `${baseUrl}/admin/forms/${formId}/responses?skip=${skip}&limit=${PAGE_SIZE}`,
+ {
+ headers: {
+ Authorization: `Bearer ${token}`,
+ 'Content-Type': 'application/json',
+ },
+ },
+ );
+ if (!res.ok) {
+ throw new Error(`Failed to load responses (${res.status})`);
+ }
+ const data = await res.json();
+ // Tolerate pre-paginated legacy responses that returned a bare
+ // array — treat as a single complete page.
+ if (Array.isArray(data)) {
+ return {
+ items: data as FormResponse[],
+ total: data.length,
+ has_more: false,
+ };
+ }
+ const items: FormResponse[] = data?.items || [];
+ const total = typeof data?.total === 'number' ? data.total : items.length;
+ const has_more = Boolean(data?.has_more);
+ return { items, total, has_more };
+ },
+ [baseUrl, formId, token],
+ );
+
  useEffect(() => {
  if (!token || !formId) return;
 
  const fetchFormAndResponses = async () => {
  try {
- // Fetch form details and responses in parallel
- const [formResponse, responsesResponse] = await Promise.all([
+ const [formResponse, firstPage] = await Promise.all([
  fetch(`${baseUrl}/admin/forms/${formId}`, {
  headers: {
- 'Authorization': `Bearer ${token}`,
+ Authorization: `Bearer ${token}`,
  'Content-Type': 'application/json',
  },
  }),
- fetch(`${baseUrl}/admin/forms/${formId}/responses`, {
- headers: {
- 'Authorization': `Bearer ${token}`,
- 'Content-Type': 'application/json',
- },
- })
+ fetchResponsesPage(0),
  ]);
 
- if (formResponse.ok && responsesResponse.ok) {
+ if (!formResponse.ok) {
+ setError('Failed to load form or responses');
+ return;
+ }
  const formData = await formResponse.json();
- const responsesData = await responsesResponse.json();
-
  setForm(formData);
- setResponses(responsesData);
+ setResponses(firstPage.items);
+ setTotalResponses(firstPage.total);
+ setHasMoreResponses(firstPage.has_more);
 
  try {
  await formsApi.markScopeViewed(token, formId, 'responses', formData.submission_count);
  } catch (viewError) {
  console.warn('Failed to record response view', viewError);
- }
- } else {
- setError('Failed to load form or responses');
  }
  } catch (error) {
  setError('Failed to load data');
@@ -100,7 +139,23 @@ export default function FormResponsesPage() {
  };
 
  fetchFormAndResponses();
- }, [token, formId, baseUrl]);
+ }, [token, formId, baseUrl, fetchResponsesPage]);
+
+ const loadMoreResponses = useCallback(async () => {
+ if (loadingMore || !hasMoreResponses) return;
+ setLoadingMore(true);
+ try {
+ const nextPage = await fetchResponsesPage(responses.length);
+ setResponses((prev) => [...prev, ...nextPage.items]);
+ setTotalResponses(nextPage.total);
+ setHasMoreResponses(nextPage.has_more);
+ } catch (err) {
+ const msg = err instanceof Error ? err.message : 'Failed to load more responses';
+ setError(msg);
+ } finally {
+ setLoadingMore(false);
+ }
+ }, [fetchResponsesPage, hasMoreResponses, loadingMore, responses.length]);
 
  const downloadCSV = async () => {
  if (!form || !token) return;
@@ -175,6 +230,25 @@ export default function FormResponsesPage() {
 
  case 'phone':
  return <a href={`tel:${value}`} className="text-blue-600 hover:underline">{value}</a>;
+
+ case 'file_upload':
+ if (value && typeof value === 'object' && 'url' in value) {
+ const upload = value as { url: string; filename?: string; content_type?: string; size_bytes?: number };
+ const sizeKb = typeof upload.size_bytes === 'number' ? Math.round(upload.size_bytes / 1024) : null;
+ return (
+ <a
+ href={upload.url}
+ target="_blank"
+ rel="noopener noreferrer"
+ className="text-blue-600 hover:underline"
+ title={upload.content_type || ''}
+ >
+ {upload.filename || 'attachment'}
+ {sizeKb !== null ? ` (${sizeKb} KB)` : ''}
+ </a>
+ );
+ }
+ return <span className="text-gray-400 italic">No file</span>;
 
  case 'textarea':
  return (
@@ -279,7 +353,11 @@ export default function FormResponsesPage() {
  <span className="mx-2">•</span>
  <span>{form.settings.title}</span>
  <span className="mx-2">•</span>
- <span className="font-medium">{responses.length} responses</span>
+ <span className="font-medium">
+ {totalResponses !== null && totalResponses > responses.length
+ ? `${responses.length} of ${totalResponses} responses loaded`
+ : `${totalResponses ?? responses.length} responses`}
+ </span>
  </div>
  </div>
  </div>
@@ -327,8 +405,11 @@ export default function FormResponsesPage() {
  </div>
  </div>
 
- <div className="text-sm text-gray-500 dark:text-gray-400">
- Showing {filteredAndSortedResponses.length} of {responses.length} responses
+ <div className="text-sm text-gray-500 dark:text-gray-400" data-testid="responses-count-summary">
+ Showing {filteredAndSortedResponses.length} of {responses.length} loaded
+ {totalResponses !== null && totalResponses > responses.length && (
+ <> · {totalResponses - responses.length} more available</>
+ )}
  </div>
  </div>
 
@@ -374,6 +455,18 @@ export default function FormResponsesPage() {
  </div>
 
  {/* Responses Table */}
+ {hasMoreResponses && (
+ <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-4 py-2 text-sm mb-3">
+ Search and date filters apply only to the {responses.length} responses
+ already loaded.{' '}
+ {totalResponses !== null && totalResponses > responses.length && (
+ <>
+ {totalResponses - responses.length} more available — use Load more
+ below to bring them in, or Export CSV for the full set.
+ </>
+ )}
+ </div>
+ )}
  <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border dark:border-slate-700 overflow-hidden">
  <div className="overflow-x-auto">
  <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
@@ -458,6 +551,23 @@ export default function FormResponsesPage() {
  </table>
  </div>
  </div>
+ {hasMoreResponses && (
+ <div className="mt-4 flex items-center justify-center">
+ <button
+ type="button"
+ onClick={loadMoreResponses}
+ disabled={loadingMore}
+ data-testid="load-more-responses"
+ className="px-5 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors"
+ >
+ {loadingMore
+ ? 'Loading more…'
+ : totalResponses !== null
+ ? `Load more (${Math.min(PAGE_SIZE, totalResponses - responses.length)} of ${totalResponses - responses.length} remaining)`
+ : 'Load more'}
+ </button>
+ </div>
+ )}
  </>
  )}
  </div>

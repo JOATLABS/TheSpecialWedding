@@ -1,26 +1,11 @@
-"""Unit tests for the metering-hardening fixes.
+"""Unit tests for the metering-hardening fixes — SS1, C2, SS4, C5.
 
-Covers four gap-scenario closures:
-
-* **SS1** — ``ensure_stripe_meter`` passes ``idempotency_key`` to
-  ``Meter.create``, preventing duplicate meters when concurrent seed
-  runs race during a rolling deploy.
-* **C2** — ``ensure_stripe_meter`` validates an existing match via
-  ``assert_meter_config`` before returning, refusing to silently bind
-  to a misconfigured meter.
-* **SS4** — ``update_wedding_meter_state`` retries once on Mongo failure
-  and emits a grep-able ``STRIPE_MONGO_DIVERGENCE`` log on persistent
-  failure.
-* **C5** — ``coerce_period_start`` handles the four input shapes
-  (string-with-Z, naive datetime, aware datetime, None/garbage) and —
-  importantly — defaults naive datetimes to **UTC** rather than the
-  process's local timezone, fixing a latent bug in the prior inline
-  parser in ``app/api/wedding.py``.
+Each fix has at least one test that's been mutation-validated: deliberately
+breaking the fix in code makes the test fail with a meaningful message.
 
 References:
-
-* docs/analysis/METERING_GAP_SCENARIOS_2026-05-04.md (the full gap doc)
-* docs/analysis/METERING_REVIEW_2026-05-04_PART2.md §C5, §SS1, §SS4
+* docs/analysis/METERING_GAP_SCENARIOS_2026-05-04.md (the gap doc)
+* docs/analysis/METERING_IMPLEMENTATION_2026-05-04.md (mutation-test proof)
 """
 
 from __future__ import annotations
@@ -41,11 +26,6 @@ os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("MONGO_URI", "mongodb://localhost:27017")
 os.environ.setdefault("STRIPE_SECRET_KEY", "sk_test_unit")
-
-
-# ---------------------------------------------------------------------------
-# Test helpers
-# ---------------------------------------------------------------------------
 
 
 def _meter(
@@ -79,18 +59,16 @@ def _listing(*meters):
 
 
 def test_ss1_meter_create_passes_idempotency_key():
-    """Concurrent seed runs (e.g., rolling deploy) must share an
-    idempotency key so Stripe's 24h cache returns the same meter id
-    rather than creating duplicates. Pin the key shape."""
+    """Concurrent seed runs (rolling deploy) must share idempotency_key
+    so Stripe's 24h cache returns the same meter id."""
     from app.services.stripe_meter_helpers import ensure_stripe_meter
 
-    listing = _listing()  # empty — forces create path
     new_meter = _meter(meter_id="mtr_just_created")
 
     with (
         patch(
             "app.services.stripe_meter_helpers.stripe.billing.Meter.list",
-            return_value=listing,
+            return_value=_listing(),
         ),
         patch(
             "app.services.stripe_meter_helpers.stripe.billing.Meter.create",
@@ -105,22 +83,18 @@ def test_ss1_meter_create_passes_idempotency_key():
         "SS1 fix missing — Meter.create must pass idempotency_key. "
         "Without it, concurrent seed runs create duplicate meters."
     )
-    assert kwargs["idempotency_key"] == "ensure_stripe_meter_wedding_active", (
-        f"idempotency_key shape changed; expected the event_name-keyed form. "
-        f"Got {kwargs['idempotency_key']!r}"
-    )
+    assert kwargs["idempotency_key"] == "ensure_stripe_meter_wedding_active"
 
 
 def test_ss1_idempotency_key_differs_per_event_name():
-    """Different event_names must get different idempotency keys —
-    otherwise distinct meters would collide on the cache."""
+    """Distinct meters must get distinct idempotency keys."""
     from app.services.stripe_meter_helpers import ensure_stripe_meter
 
-    captured_keys = []
+    captured = []
 
     def fake_create(**kwargs):
-        captured_keys.append(kwargs.get("idempotency_key"))
-        m = _meter(meter_id=f"mtr_for_{kwargs['event_name']}")
+        captured.append(kwargs.get("idempotency_key"))
+        m = _meter(meter_id=f"mtr_{kwargs['event_name']}")
         m.event_name = kwargs["event_name"]
         return m
 
@@ -137,9 +111,7 @@ def test_ss1_idempotency_key_differs_per_event_name():
         ensure_stripe_meter("wedding_active")
         ensure_stripe_meter("api_calls")
 
-    assert len(set(captured_keys)) == 2, (
-        f"Different event_names produced the same idempotency_key: {captured_keys}"
-    )
+    assert len(set(captured)) == 2, f"Same key for distinct events: {captured}"
 
 
 # ===========================================================================
@@ -148,54 +120,45 @@ def test_ss1_idempotency_key_differs_per_event_name():
 
 
 def test_c2_existing_misconfigured_meter_is_not_silently_returned():
-    """If Meter.list finds a matching meter that has the wrong formula,
-    ensure_stripe_meter must NOT return it. It must raise so the
-    operator gets a clear signal that the meter needs fixing."""
+    """A matching but misconfigured meter must raise, not be returned."""
     from app.services.stripe_meter_helpers import ensure_stripe_meter
 
-    bad_existing = _meter(meter_id="mtr_bad", formula="count")
-    listing = _listing(bad_existing)
+    bad = _meter(meter_id="mtr_bad", formula="count")
 
     with (
         patch(
             "app.services.stripe_meter_helpers.stripe.billing.Meter.list",
-            return_value=listing,
+            return_value=_listing(bad),
         ),
         patch(
             "app.services.stripe_meter_helpers.stripe.billing.Meter.retrieve",
-            return_value=bad_existing,
+            return_value=bad,
         ),
         patch(
             "app.services.stripe_meter_helpers.stripe.billing.Meter.create"
         ) as mock_create,
     ):
-        # The original ValueError from assert_meter_config bubbles up
-        # unchanged; the "invalid config" framing lives in the helper's
-        # log line, not the exception message. Match the underlying
-        # rejection reason instead.
+        # The original ValueError from assert_meter_config bubbles up.
         with pytest.raises(ValueError, match="must be 'sum'"):
             ensure_stripe_meter("wedding_active")
 
-    # And critically: no fresh meter was created.
     mock_create.assert_not_called()
 
 
 def test_c2_existing_valid_meter_is_returned_without_create():
-    """The happy path of C2: a matching existing meter that IS valid
-    is returned without calling Meter.create. Idempotency contract."""
+    """Matching valid meter is returned; no new create call."""
     from app.services.stripe_meter_helpers import ensure_stripe_meter
 
-    good_existing = _meter(meter_id="mtr_good")
-    listing = _listing(good_existing)
+    good = _meter(meter_id="mtr_good")
 
     with (
         patch(
             "app.services.stripe_meter_helpers.stripe.billing.Meter.list",
-            return_value=listing,
+            return_value=_listing(good),
         ),
         patch(
             "app.services.stripe_meter_helpers.stripe.billing.Meter.retrieve",
-            return_value=good_existing,
+            return_value=good,
         ),
         patch(
             "app.services.stripe_meter_helpers.stripe.billing.Meter.create"
@@ -214,7 +177,6 @@ def test_c2_existing_valid_meter_is_returned_without_create():
 
 @pytest.mark.asyncio
 async def test_ss4_update_succeeds_on_first_attempt():
-    """Happy path: Mongo update succeeds, retry helper returns True."""
     from app.utils.meter_state import update_wedding_meter_state
 
     coll = MagicMock()
@@ -232,18 +194,14 @@ async def test_ss4_update_succeeds_on_first_attempt():
 
 @pytest.mark.asyncio
 async def test_ss4_update_retries_once_on_failure_then_succeeds():
-    """Transient blip: first attempt raises, second succeeds. Helper
-    must retry — this is the SS4 contract."""
+    """Transient blip: first raises, second succeeds. Retry contract."""
     from app.utils.meter_state import update_wedding_meter_state
 
     coll = MagicMock()
     result_obj = MagicMock()
     result_obj.matched_count = 1
     coll.update_one = AsyncMock(
-        side_effect=[
-            ConnectionError("transient blip"),
-            result_obj,
-        ]
+        side_effect=[ConnectionError("transient blip"), result_obj]
     )
 
     ok = await update_wedding_meter_state(
@@ -256,8 +214,7 @@ async def test_ss4_update_retries_once_on_failure_then_succeeds():
 
 @pytest.mark.asyncio
 async def test_ss4_update_returns_false_after_persistent_failure(caplog):
-    """Both attempts fail. Helper returns False AND emits a grep-able
-    STRIPE_MONGO_DIVERGENCE log — operators can alert on that prefix."""
+    """Both attempts fail → False AND grep-able STRIPE_MONGO_DIVERGENCE log."""
     import logging
 
     from app.utils.meter_state import update_wedding_meter_state
@@ -278,21 +235,17 @@ async def test_ss4_update_returns_false_after_persistent_failure(caplog):
         "STRIPE_MONGO_DIVERGENCE log prefix for ops alerting."
     )
     assert any("test_persistent_fail" in r.getMessage() for r in error_logs), (
-        "Failure log must include the context label so the operator "
-        "can trace which call site diverged."
+        "Failure log must include the context label."
     )
 
 
 @pytest.mark.asyncio
 async def test_ss4_returns_false_when_no_document_matched():
-    """Mongo accepts the update but matched_count=0 (wedding row was
-    deleted between read and update). Treat as failure — helper returns
-    False so the caller can log accordingly."""
     from app.utils.meter_state import update_wedding_meter_state
 
     coll = MagicMock()
     result_obj = MagicMock()
-    result_obj.matched_count = 0  # no document matched
+    result_obj.matched_count = 0
     coll.update_one = AsyncMock(return_value=result_obj)
 
     ok = await update_wedding_meter_state(
@@ -303,23 +256,19 @@ async def test_ss4_returns_false_when_no_document_matched():
 
 
 # ===========================================================================
-# C5 — coerce_period_start
+# C5 — coerce_period_start with the source-level guard from mutation pass
 # ===========================================================================
 
 
 def test_c5_parses_iso_string_with_z_suffix():
-    """Stripe sends ISO 8601 with Z suffix for UTC. The parser must
-    handle that exact shape."""
     from app.utils.period_parsing import coerce_period_start
 
     result = coerce_period_start("2026-04-15T12:34:56Z")
     assert result is not None
-    assert result.tzinfo is not None
     assert result.utcoffset() == timedelta(0)
 
 
 def test_c5_parses_iso_string_with_explicit_offset():
-    """ISO with +00:00 offset — semantically equivalent to Z."""
     from app.utils.period_parsing import coerce_period_start
 
     result = coerce_period_start("2026-04-15T12:34:56+00:00")
@@ -328,21 +277,15 @@ def test_c5_parses_iso_string_with_explicit_offset():
 
 
 def test_c5_naive_datetime_assumed_utc_not_local():
-    """The bug fix: a naive datetime from Mongo must be tagged as UTC,
-    NOT as the process's local timezone. The previous inline parser in
-    wedding.py used the local timezone — silently wrong on non-UTC
-    servers.
+    """The bug fix: naive datetime tagged as UTC, not local timezone.
 
-    This test must catch the bug REGARDLESS of host timezone. On a UTC
-    host, the buggy ``datetime.now(timezone.utc).astimezone().tzinfo``
-    coincidentally resolves to ``timezone.utc`` and the assertion below
-    would pass with the buggy code. To prove the helper isn't taking
-    that code path, the companion test
-    ``test_c5_naive_datetime_uses_utc_constant_not_runtime_local``
-    asserts on the source code itself — see below."""
+    On a UTC host, the buggy ``datetime.now(timezone.utc).astimezone().tzinfo``
+    accidentally produces a UTC tzinfo too — but it's a NEW instance, not
+    the singleton, so ``is timezone.utc`` (object identity) catches it.
+    Companion source-level test below catches the bug regardless of host TZ."""
     from app.utils.period_parsing import coerce_period_start
 
-    naive = datetime(2026, 4, 15, 12, 34, 56)  # no tzinfo
+    naive = datetime(2026, 4, 15, 12, 34, 56)
     result = coerce_period_start(naive)
 
     assert result is not None
@@ -354,25 +297,13 @@ def test_c5_naive_datetime_assumed_utc_not_local():
 
 
 def test_c5_naive_datetime_uses_utc_constant_not_runtime_local():
-    """Host-tz-independent guard: assert the helper source uses
-    ``timezone.utc`` directly, NOT ``datetime.now(...).astimezone(...)``.
+    """Host-tz-independent guard from the mutation pass — asserts the
+    helper source uses ``timezone.utc`` directly, NOT the buggy
+    ``datetime.now(timezone.utc).astimezone().tzinfo`` chain.
 
-    Why this exists: the assertion in
-    ``test_c5_naive_datetime_assumed_utc_not_local`` checks the OUTPUT
-    of the helper. On a UTC host (production!), the buggy
-    ``datetime.now(timezone.utc).astimezone().tzinfo`` pattern
-    accidentally produces ``timezone.utc`` because the local tz IS UTC.
-    The output check would PASS even with the bug, on a UTC host.
-
-    This test catches the bug at the SOURCE level — if anyone reverts
-    to the buggy pattern, the static check fails immediately, regardless
-    of where the test runs.
-
-    Trade-off acknowledged: source-level checks are brittle to legitimate
-    refactors. This one is narrowly scoped to the specific anti-pattern
-    that bit us. If the helper is restructured (e.g., split into smaller
-    functions), update this test to track the new shape.
-    """
+    The output-level assertion above happens to catch the bug via object
+    identity, but a refactor to ``==`` instead of ``is`` would silently
+    pass on UTC hosts. This source-level check fires regardless."""
     import ast
     import inspect
 
@@ -380,25 +311,19 @@ def test_c5_naive_datetime_uses_utc_constant_not_runtime_local():
 
     src = inspect.getsource(period_parsing)
     tree = ast.parse(src)
-
-    # Walk function bodies only — skip docstrings and module-level
-    # constants/comments. The bug pattern is referenced in this module's
-    # docstring as documentation; we only care about executable code.
     bad_chain = "datetime.now(timezone.utc).astimezone().tzinfo"
 
     def _check_node(node):
-        # ast.unparse normalizes whitespace; check the executable form.
         try:
-            body_src = ast.unparse(node)
+            return bad_chain in ast.unparse(node)
         except Exception:
             return False
-        return bad_chain in body_src
 
     bad_uses = []
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            # Strip the docstring before scanning the body
             body_nodes = node.body
+            # Skip the docstring (which legitimately mentions the bug).
             if (
                 body_nodes
                 and isinstance(body_nodes[0], ast.Expr)
@@ -415,11 +340,8 @@ def test_c5_naive_datetime_uses_utc_constant_not_runtime_local():
         f"period_parsing.py reintroduced the buggy local-tz coercion "
         f"pattern {bad_chain!r} in function(s): {bad_uses}. This works "
         f"accidentally on UTC hosts but breaks on any other timezone. "
-        f"Use timezone.utc directly. See METERING_GAP_SCENARIOS §C5 "
-        f"and the historical bug in app/api/wedding.py:174."
+        f"See METERING_GAP_SCENARIOS §C5."
     )
-
-    # Positive assertion: the canonical fix uses timezone.utc directly.
     assert "tzinfo=timezone.utc" in src, (
         "period_parsing.py no longer uses `tzinfo=timezone.utc` for the "
         "naive-datetime coercion. If you intentionally restructured, "
@@ -428,13 +350,10 @@ def test_c5_naive_datetime_uses_utc_constant_not_runtime_local():
 
 
 def test_c5_aware_non_utc_datetime_normalized_to_utc():
-    """If a datetime carries a non-UTC tz, normalize. Future-proofing
-    against any path that sets a local-time tz."""
     from app.utils.period_parsing import coerce_period_start
 
     plus_five = timezone(timedelta(hours=5))
     aware = datetime(2026, 4, 15, 17, 34, 56, tzinfo=plus_five)
-    # 17:34 in +05:00 == 12:34 UTC
     result = coerce_period_start(aware)
     assert result is not None
     assert result.utcoffset() == timedelta(0)
@@ -442,8 +361,6 @@ def test_c5_aware_non_utc_datetime_normalized_to_utc():
 
 
 def test_c5_returns_none_on_missing_value():
-    """None / empty string must NOT raise. Callers treat None as
-    'skip the period check', which is safer than guessing."""
     from app.utils.period_parsing import coerce_period_start
 
     assert coerce_period_start(None) is None
@@ -452,15 +369,13 @@ def test_c5_returns_none_on_missing_value():
 
 
 def test_c5_returns_none_on_unparseable_string():
-    """Garbage strings shouldn't blow up the metering hook."""
     from app.utils.period_parsing import coerce_period_start
 
     assert coerce_period_start("not-a-date") is None
-    assert coerce_period_start("2026-13-99") is None  # invalid month
+    assert coerce_period_start("2026-13-99") is None
 
 
 def test_c5_returns_none_on_unexpected_type():
-    """If something weird sneaks in (int, dict), don't raise."""
     from app.utils.period_parsing import coerce_period_start
 
     assert coerce_period_start(12345) is None
@@ -469,10 +384,69 @@ def test_c5_returns_none_on_unexpected_type():
 
 
 def test_c5_already_utc_aware_passes_through():
-    """An already-UTC-aware datetime should round-trip unchanged
-    (semantically; tzinfo identity is OK to differ)."""
     from app.utils.period_parsing import coerce_period_start
 
     already = datetime(2026, 4, 15, 12, 0, 0, tzinfo=timezone.utc)
     result = coerce_period_start(already)
     assert result == already
+
+
+# ===========================================================================
+# S1 lesson — the seed script is hardcoded source-of-truth for plan config
+#
+# Pin the assumption that bit us in live verification: the seed iterates
+# its hardcoded `plans = [...]` list, NOT Mongo. Anyone who tries to
+# "fix" the seed to read from Mongo would change this contract — and
+# break the testbed driver's design (which calls helpers directly
+# rather than expecting seed-from-Mongo). See live verification log
+# 2026-05-08 02:17:55 — S1 phase failed because the seed overwrote the
+# Mongo state the test setup wrote.
+# ===========================================================================
+
+
+def test_seed_preserves_admin_mutable_plan_config_but_owns_billing_shape():
+    """The seed script bootstraps canonical plans and enforces billing shape.
+
+    This test scans the seed source for Mongo reads that would drive the
+    seed catalog. The legitimate Mongo reads are the dedup pass at startup,
+    loading an existing plan so root-admin price/features/visibility changes
+    are preserved, and the billing-model transition guard that checks whether
+    active subscriptions would be stranded on old Stripe Prices.
+    """
+    from pathlib import Path
+
+    seed_path = Path(PROJECT_ROOT) / "scripts" / "seed_subscription_plans.py"
+    src = seed_path.read_text()
+
+    # The dedup pass at startup reads collection.find({}). The transition
+    # guard may read one existing plan to compare billing_model, but NO Mongo
+    # state should drive which plans or fields are seeded.
+    forbidden_patterns = [
+        # Iterating Mongo to choose what to seed:
+        "for plan in collection.find",
+    ]
+
+    for pattern in forbidden_patterns:
+        assert pattern not in src, (
+            f"scripts/seed_subscription_plans.py contains {pattern!r}. "
+            f"The seed is intentionally hardcoded source-of-truth for "
+            f"plan config. Reading Mongo to drive seeding would break "
+            f"the testbed driver's design assumption that the seed "
+            f"won't respect Mongo overrides. See "
+            f"docs/analysis/METERING_IMPLEMENTATION_2026-05-04.md "
+            f"for the live verification log that pinned this."
+        )
+
+    # Positive assertion: the seed iterates a hardcoded list.
+    assert "for plan in plans:" in src, (
+        "Seed no longer iterates the hardcoded `plans` list. If the "
+        "iteration shape changed, update this test."
+    )
+    assert "_build_effective_seed_plan(plan, existing_plan)" in src
+    assert (
+        "_guard_seed_billing_model_transition(plan_id, existing_plan, plan_for_sync)"
+        in src
+    )
+    assert '"price_monthly": plan_with_stripe["price_monthly"]' in src
+    assert '"features": plan_with_stripe.get("features", {})' in src
+    assert '"billing_model": plan_with_stripe.get(' in src

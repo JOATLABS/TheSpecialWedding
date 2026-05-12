@@ -53,23 +53,33 @@ def _coerce_datetime(value: Any) -> Optional[datetime]:
     return None
 
 
-def _verify_signature_hmac_sha256_hex(
-    *, raw_body: bytes, signature_header: str, secret: str
+def _verify_aurinko_signature(
+    *,
+    raw_body: bytes,
+    signature_header: str,
+    timestamp_header: str,
+    secret: str,
 ) -> bool:
-    """Default verifier — HMAC-SHA256 of the raw body, hex-encoded.
+    """Verify an Aurinko webhook signature.
 
-    This is a STRATEGY SEAM. Aurinko's actual notification-validation spec
-    lives at docs.aurinko.io/unified-apis/webhooks-api in the "Notification
-    Validation" section. Once that spec is read, swap this function (or
-    replace ``CalendarWebhookService.verify_signature`` to call a different
-    one) without touching the rest of the file.
+    Per docs.aurinko.io/unified-apis/webhooks-api/authentication:
 
-    Common alternatives to plan for:
-    * Base64 digest instead of hex.
-    * "v1=...,t=..." composite header (Stripe-style) → split + verify.
-    * Concatenation of timestamp + body before HMAC (replay-protected).
+        base_string = "v0:{timestamp}:{raw_body}"
+        signature   = HMAC-SHA256(signing_secret, base_string).hex()
+
+    - Timestamp comes from ``X-Aurinko-Request-Timestamp`` (unix seconds).
+    - Signature comes from ``X-Aurinko-Signature`` (hex-encoded HMAC).
+    - The raw body MUST be the exact, unparsed bytes — any re-serialization
+      (json.dumps round-trip, framework body re-encoding) will reorder keys
+      or normalize whitespace and the hash will diverge.
+    - Compare in constant time to prevent timing attacks.
+
+    ``secret`` is the *Signing secret* shown on the Aurinko app dashboard,
+    NOT the client secret. Confusing the two will silently fail every
+    delivery.
     """
-    expected = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+    base_string = b"v0:" + timestamp_header.strip().encode("utf-8") + b":" + raw_body
+    expected = hmac.new(secret.encode("utf-8"), base_string, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature_header.strip())
 
 
@@ -84,32 +94,76 @@ class CalendarWebhookService:
     # -------- signature ---------------------------------------------------
 
     def verify_signature(
-        self, raw_body: bytes, signature_header: Optional[str]
+        self,
+        raw_body: bytes,
+        signature_header: Optional[str],
+        timestamp_header: Optional[str] = None,
     ) -> bool:
         """Verify Aurinko signature on a webhook delivery.
 
-        Delegates to a strategy function so the algorithm can be swapped
-        once Aurinko's exact spec is known. See module-level docstring on
-        ``_verify_signature_hmac_sha256_hex``.
+        Per Aurinko's Notification Validation spec, signature is over
+        ``v0:{timestamp}:{raw_body}`` so the timestamp MUST be supplied
+        (otherwise this is a no-op that always rejects). The 3-arg form
+        keeps backward compatibility with the older single-arg signature
+        check that ignores the timestamp — that path is for backfill
+        deliveries that pre-date the timestamp header and is treated as
+        unverifiable.
         """
         secret = settings.AURINKO_WEBHOOK_SECRET
         if not secret:
             return False
         if not signature_header:
             return False
-        return _verify_signature_hmac_sha256_hex(
+        if not timestamp_header:
+            # No timestamp = cannot reconstruct the base string. Reject.
+            return False
+        return _verify_aurinko_signature(
             raw_body=raw_body,
             signature_header=signature_header,
+            timestamp_header=timestamp_header,
             secret=secret,
         )
 
-    def is_within_replay_window(self, delivery_timestamp: Optional[datetime]) -> bool:
+    def is_within_replay_window(
+        self, delivery_timestamp: Optional[datetime | int | str]
+    ) -> bool:
+        """Reject deliveries older than CALENDAR_WEBHOOK_REPLAY_WINDOW_SECONDS.
+
+        Accepts the timestamp in any form Aurinko might deliver it:
+        * datetime (legacy) — when callers pre-parse the value.
+        * int / numeric string — unix seconds from
+          X-Aurinko-Request-Timestamp.
+        * ISO-8601 string — when it appears inside the payload body
+          (some Aurinko delivery types include it there).
+        ``None`` is treated as permissible because not every delivery
+        carries a timestamp and rejecting forces Aurinko into a permanent
+        retry loop — we still rely on signature + dedupe for safety.
+        """
         if delivery_timestamp is None:
             return True
+        ts: Optional[datetime]
+        if isinstance(delivery_timestamp, datetime):
+            ts = delivery_timestamp
+        elif isinstance(delivery_timestamp, (int, float)):
+            try:
+                ts = datetime.fromtimestamp(float(delivery_timestamp), tz=UTC)
+            except (OverflowError, OSError, ValueError):
+                return True
+        else:
+            value = str(delivery_timestamp).strip()
+            if not value:
+                return True
+            # Try unix seconds first (Aurinko header is decimal seconds).
+            try:
+                ts = datetime.fromtimestamp(float(value), tz=UTC)
+            except (OverflowError, OSError, ValueError):
+                ts = _coerce_datetime(value)
+        if ts is None:
+            return True
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=UTC)
         now = datetime.now(UTC)
-        if delivery_timestamp.tzinfo is None:
-            delivery_timestamp = delivery_timestamp.replace(tzinfo=UTC)
-        delta = abs((now - delivery_timestamp).total_seconds())
+        delta = abs((now - ts).total_seconds())
         return delta <= settings.CALENDAR_WEBHOOK_REPLAY_WINDOW_SECONDS
 
     async def is_duplicate_delivery(self, delivery_id: str) -> bool:
@@ -286,7 +340,11 @@ class CalendarWebhookService:
                     }
                 },
             )
-            return {"matched": True, "task_id": str(task_object_id), "change": "deleted"}
+            return {
+                "matched": True,
+                "task_id": str(task_object_id),
+                "change": "deleted",
+            }
 
         update_doc: dict[str, Any] = {
             "external_conflict_status": ExternalConflictStatus.PENDING_REVIEW.value,
@@ -333,7 +391,9 @@ class CalendarWebhookService:
         else:
             update_doc["external_last_modified_at"] = now
 
-        await self.tasks_collection.update_one({"_id": task_object_id}, {"$set": update_doc})
+        await self.tasks_collection.update_one(
+            {"_id": task_object_id}, {"$set": update_doc}
+        )
         return {"matched": True, "task_id": str(task_object_id), "change": change_type}
 
 

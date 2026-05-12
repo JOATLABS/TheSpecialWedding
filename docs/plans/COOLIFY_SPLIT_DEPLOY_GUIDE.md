@@ -128,8 +128,9 @@ Required for both `frontend-prod` and `frontend-staging`:
 
 Important note:
 
-- The frontend image is now runtime-portable. Browser API calls resolve from the current hostname, so the same image can move from staging to production.
-- `INTERNAL_API_BASE_URL` is still important for **server-rendered** fetches. In split-service deployments this should point at the backend reachable from the frontend container.
+- The frontend image is now runtime-portable. Browser API calls stay on `/api/proxy`, and that runtime route resolves the backend target from frontend service env vars instead of a build-time rewrite.
+- Runtime proxy precedence is `BACKEND_SERVICE_URL` → `INTERNAL_API_BASE_URL` → `NEXT_PUBLIC_API_BASE_URL` → derived from `FRONTEND_URL`.
+- `INTERNAL_API_BASE_URL` is important for **server-rendered** fetches and `/api/proxy`. In split-service deployments this should point at the backend reachable from the frontend container.
 
 Use one of these patterns:
 
@@ -140,12 +141,14 @@ Examples:
 
 - production frontend:
   - `FRONTEND_URL=https://thespecialwedding.io`
-  - `INTERNAL_API_BASE_URL=https://api.thespecialwedding.io`
+  - preferred: `INTERNAL_API_BASE_URL=http://backend-prod:8000`
+  - acceptable: `INTERNAL_API_BASE_URL=https://api.thespecialwedding.io`
 - staging frontend:
   - `FRONTEND_URL=https://staging.thespecialwedding.io`
-  - `INTERNAL_API_BASE_URL=https://api.staging.thespecialwedding.io`
+  - preferred: `INTERNAL_API_BASE_URL=http://backend-staging:8000`
+  - acceptable: `INTERNAL_API_BASE_URL=https://api.staging.thespecialwedding.io`
 
-`NEXT_PUBLIC_API_BASE_URL` is no longer the deployment-critical knob for browser routing in this split-service setup. It can still be set if you want explicit public override behavior, but it is no longer required for staging-first promotion.
+`NEXT_PUBLIC_API_BASE_URL` is no longer the deployment-critical knob for browser routing in this split-service setup. It is still required by current deploy workflow verification and useful as a public fallback, but `/api/proxy` should normally resolve from `BACKEND_SERVICE_URL` or `INTERNAL_API_BASE_URL`.
 
 ### Backend app variables
 

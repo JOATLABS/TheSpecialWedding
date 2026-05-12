@@ -14,6 +14,8 @@ interface SubscriptionPlan {
   description: string;
   price_monthly: number;
   price_yearly: number;
+  billing_model?: string;
+  is_metered?: boolean;
   max_weddings: number;
   max_guests_per_wedding: number;
   ai_credits_monthly: number;
@@ -169,7 +171,10 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
     }
 
     const price = isYearly ? plan.price_yearly || plan.price_monthly * 12 : plan.price_monthly;
-    const suffix = isYearly ? '/year' : '/month';
+    const isMetered = plan.is_metered || plan.billing_model === 'metered';
+    const suffix = isMetered
+      ? (isYearly ? '/active wedding/year' : '/active wedding/month')
+      : (isYearly ? '/year' : '/month');
     return `$${price}${suffix}`;
   };
 

@@ -791,12 +791,20 @@ Contract Reference: {{contract_number}}`,
                           System
                         </span>
                       )}
+                      {!template.service_category && (
+                        <span className="px-2 py-0.5 text-xs bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 rounded-full">
+                          Universal
+                        </span>
+                      )}
                     </div>
                     <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">
                       {template.name}
                     </h3>
                     <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2">
-                      {template.description || `Template for ${getCategoryLabel(template.service_category)} services`}
+                      {template.description ||
+                        (template.service_category
+                          ? `Template for ${getCategoryLabel(template.service_category)} services`
+                          : 'Universal template — applies to any vendor type')}
                     </p>
                     <div className="mt-3 flex items-center gap-2 text-xs text-gray-400">
                       <span>{template.sections.length} sections</span>

@@ -110,10 +110,19 @@ interface SMSResponse {
   sent_at?: string;
 }
 
+interface SMSGuestMessage {
+  message: string;
+  sender_name?: string;
+  received_at?: string;
+  message_sid?: string;
+  phone?: string;
+}
+
 interface SMSSupportTicket {
   _id: string;
   phone: string;
   message: string;
+  guest_messages?: SMSGuestMessage[];
   guest_id?: string | null;
   guest_name?: string | null;
   wedding_id?: string | null;
@@ -211,7 +220,14 @@ interface InboxItem {
 function getLatestSmsActivity(ticket: SMSSupportTicket): string {
   const responses = ticket.responses || [];
   const latestResponse = responses[responses.length - 1];
-  return latestResponse?.sent_at || ticket.updated_at || ticket.created_at;
+  const guestMessages = ticket.guest_messages || [];
+  const latestGuestMessage = guestMessages[guestMessages.length - 1];
+  const latestResponseTime = latestResponse?.sent_at ? new Date(latestResponse.sent_at).getTime() : 0;
+  const latestGuestTime = latestGuestMessage?.received_at ? new Date(latestGuestMessage.received_at).getTime() : 0;
+  if (latestGuestTime > latestResponseTime) {
+    return latestGuestMessage?.received_at || ticket.updated_at || ticket.created_at;
+  }
+  return latestResponse?.sent_at || latestGuestMessage?.received_at || ticket.updated_at || ticket.created_at;
 }
 
 function getSmsDisplayName(ticket: SMSSupportTicket): string {
@@ -221,10 +237,15 @@ function getSmsDisplayName(ticket: SMSSupportTicket): string {
 function getSmsPreview(ticket: SMSSupportTicket): string {
   const responses = ticket.responses || [];
   const latestResponse = responses[responses.length - 1];
-  if (latestResponse?.message) {
+  const guestMessages = ticket.guest_messages || [];
+  const latestGuestMessage = guestMessages[guestMessages.length - 1];
+  const latestResponseTime = latestResponse?.sent_at ? new Date(latestResponse.sent_at).getTime() : 0;
+  const latestGuestTime = latestGuestMessage?.received_at ? new Date(latestGuestMessage.received_at).getTime() : 0;
+  if (latestResponse?.message && latestResponseTime >= latestGuestTime) {
     return `You: ${latestResponse.message}`;
   }
-  return `${getSmsDisplayName(ticket)}: ${ticket.message}`;
+  const guestMessage = latestGuestMessage?.message || ticket.message;
+  return `${getSmsDisplayName(ticket)}: ${guestMessage}`;
 }
 
 function getPublicSupportComments(ticket: PlannerSupportTicket): SupportComment[] {
@@ -308,7 +329,7 @@ export default function CommunicationsInboxView() {
   const [replyText, setReplyText] = useState('');
   const [showReply, setShowReply] = useState(false);
   const [sending, setSending] = useState(false);
-  const [markSmsResolved, setMarkSmsResolved] = useState(true);
+  const [markSmsResolved, setMarkSmsResolved] = useState(false);
 
   const [listWidthPercent, setListWidthPercent] = useState(40);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -794,7 +815,7 @@ export default function CommunicationsInboxView() {
     setSelectedItem(item);
     setShowReply(false);
     setReplyText('');
-    setMarkSmsResolved(true);
+    setMarkSmsResolved(false);
     setMobileShowDetail(true);
     setSelectedEmailDetail(null);
     setSelectedSmsTicketDetail(null);
@@ -1325,22 +1346,36 @@ export default function CommunicationsInboxView() {
 
     const isResolved = ['resolved', 'closed'].includes(selectedSmsTicketDetail.status);
     const guestDisplayName = getSmsDisplayName(selectedSmsTicketDetail);
+    const inboundMessages = selectedSmsTicketDetail.guest_messages?.length
+      ? selectedSmsTicketDetail.guest_messages
+      : [{
+          message: selectedSmsTicketDetail.message,
+          sender_name: guestDisplayName,
+          received_at: selectedSmsTicketDetail.created_at,
+        }];
     const responseThread = [
-      {
-        id: `sms-inbound-${selectedSmsTicketDetail._id}`,
-        content: selectedSmsTicketDetail.message,
-        senderName: guestDisplayName,
+      ...inboundMessages.map((message, index) => ({
+        id: `sms-inbound-${index}-${message.message_sid || message.received_at || index}`,
+        content: message.message,
+        senderName: message.sender_name || guestDisplayName,
         isSelf: false,
-        timestamp: selectedSmsTicketDetail.created_at,
-      },
+        timestamp: message.received_at,
+        order: index,
+      })),
       ...(selectedSmsTicketDetail.responses || []).map((response, index) => ({
         id: `sms-response-${index}-${response.sent_at || index}`,
         content: response.message,
         senderName: response.sent_by_name || response.sent_by || 'Planner',
         isSelf: (response.sent_by || '').toLowerCase() === currentUserEmail,
         timestamp: response.sent_at,
+        order: inboundMessages.length + index,
       })),
-    ];
+    ].sort((a, b) => {
+      const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      if (timeA !== timeB) return timeA - timeB;
+      return a.order - b.order;
+    });
 
     return (
       <>

@@ -2,6 +2,7 @@
 
 import logging
 import random
+import re
 from datetime import datetime, timedelta, timezone
 
 from bson.objectid import ObjectId
@@ -324,35 +325,106 @@ class OTPService:
             "We couldn't send your verification code. Please try again in a few minutes.",
         )
 
+    @staticmethod
+    def _normalize_contact_value(value: object) -> str:
+        return value.strip() if isinstance(value, str) else ""
+
+    @classmethod
+    def _phone_variants(cls, value: object) -> list[str]:
+        normalized = cls._normalize_contact_value(value)
+        variants: list[str] = []
+
+        def add(candidate: str) -> None:
+            if candidate and candidate not in variants:
+                variants.append(candidate)
+
+        add(normalized)
+
+        digits_only = re.sub(r"\D", "", normalized)
+        if digits_only:
+            add(digits_only)
+
+            if len(digits_only) == 10:
+                add(f"1{digits_only}")
+                add(f"+1{digits_only}")
+            elif len(digits_only) == 11 and digits_only.startswith("1"):
+                national_number = digits_only[1:]
+                add(f"+{digits_only}")
+                add(national_number)
+                add(f"+1{national_number}")
+            elif normalized.startswith("+") or len(digits_only) > 11:
+                add(f"+{digits_only}")
+
+        if normalized.startswith("+"):
+            add(normalized[1:])
+
+        return variants
+
+    @classmethod
+    def _build_contact_lookup_query(cls, wedding_id: str, contact: str) -> dict:
+        normalized_contact = cls._normalize_contact_value(contact)
+        return {
+            "wedding_id": wedding_id,
+            "$or": [
+                {"phone": {"$in": cls._phone_variants(normalized_contact)}},
+                {
+                    "email": {
+                        "$regex": f"^{re.escape(normalized_contact)}$",
+                        "$options": "i",
+                    }
+                },
+            ],
+        }
+
+    @classmethod
+    def _guest_phone_matches_contact(cls, guest: dict, contact: str) -> bool:
+        guest_phone = cls._normalize_contact_value(guest.get("phone"))
+        if not guest_phone:
+            return False
+
+        return bool(
+            set(cls._phone_variants(guest_phone)) & set(cls._phone_variants(contact))
+        )
+
+    @classmethod
+    def _guest_email_matches_contact(cls, guest: dict, contact: str) -> bool:
+        guest_email = cls._normalize_contact_value(guest.get("email"))
+        normalized_contact = cls._normalize_contact_value(contact)
+        return bool(
+            guest_email
+            and normalized_contact
+            and guest_email.lower() == normalized_contact.lower()
+        )
+
+    @classmethod
+    def _format_phone_for_sms(cls, phone: object) -> str:
+        normalized_phone = cls._normalize_contact_value(phone)
+        digits_only = re.sub(r"\D", "", normalized_phone)
+
+        if len(digits_only) == 10:
+            return f"+1{digits_only}"
+        if len(digits_only) == 11 and digits_only.startswith("1"):
+            return f"+{digits_only}"
+        if normalized_phone.startswith("+") and digits_only:
+            return f"+{digits_only}"
+        if digits_only:
+            return f"+{digits_only}"
+
+        return normalized_phone
+
     async def verify_otp(self, wedding_id: str, contact: str, otp_code: str) -> dict:
         """
         Verify OTP by contact (phone/email) for a specific wedding.
         Returns dict with success status, guest info, and auth method.
         """
-        # Normalize phone number for comparison
-        normalized_contact = contact.strip()
-        if normalized_contact.startswith("+"):
-            # Also try without the + prefix
-            contact_variants = [normalized_contact, normalized_contact[1:]]
-            # Try with and without country code
-            if normalized_contact.startswith("+1"):
-                contact_variants.append(normalized_contact[2:])
-        else:
-            contact_variants = [
-                normalized_contact,
-                f"+{normalized_contact}",
-                f"+1{normalized_contact}",
-            ]
+        normalized_contact = self._normalize_contact_value(contact)
+        otp_clean = self._normalize_contact_value(otp_code)
+        if not normalized_contact or not otp_clean:
+            return {"success": False, "error": "Invalid input"}
 
         # Find guest by contact (phone or email) and wedding_id
         guest = await self.guest_collection.find_one(
-            {
-                "wedding_id": wedding_id,
-                "$or": [
-                    {"phone": {"$in": contact_variants}},
-                    {"email": normalized_contact},
-                ],
-            }
+            self._build_contact_lookup_query(wedding_id, normalized_contact)
         )
 
         if not guest:
@@ -363,8 +435,6 @@ class OTPService:
 
         guest_id = str(guest["_id"])
 
-        # Verify OTP code (strip whitespace from input)
-        otp_clean = otp_code.strip()
         record = await self.otp_collection.find_one(
             {
                 "guest_id": guest_id,
@@ -379,7 +449,9 @@ class OTPService:
 
             # Determine auth method
             auth_method = (
-                "phone_otp" if guest.get("phone") in contact_variants else "email_otp"
+                "phone_otp"
+                if self._guest_phone_matches_contact(guest, normalized_contact)
+                else "email_otp"
             )
 
             return {
@@ -460,28 +532,17 @@ class OTPService:
 
         Security: Rate limited to prevent OTP spam attacks.
         """
-        # Normalize phone number for comparison
-        normalized_contact = contact.strip()
-        if normalized_contact.startswith("+"):
-            contact_variants = [normalized_contact, normalized_contact[1:]]
-            if normalized_contact.startswith("+1"):
-                contact_variants.append(normalized_contact[2:])
-        else:
-            contact_variants = [
-                normalized_contact,
-                f"+{normalized_contact}",
-                f"+1{normalized_contact}",
-            ]
+        normalized_contact = self._normalize_contact_value(contact)
+        if not normalized_contact:
+            return {
+                "success": False,
+                "error": "Contact is required",
+                "error_code": "invalid_input",
+            }
 
         # Find guest by contact (phone or email) and wedding_id
         guest = await self.guest_collection.find_one(
-            {
-                "wedding_id": wedding_id,
-                "$or": [
-                    {"phone": {"$in": contact_variants}},
-                    {"email": normalized_contact},
-                ],
-            }
+            self._build_contact_lookup_query(wedding_id, normalized_contact)
         )
 
         if not guest:
@@ -525,7 +586,11 @@ class OTPService:
                         }
 
         # Determine contact type for OTP record
-        is_phone_contact = guest.get("phone") and guest.get("phone") in contact_variants
+        is_phone_contact = self._guest_phone_matches_contact(guest, normalized_contact)
+        is_email_contact = self._guest_email_matches_contact(guest, normalized_contact)
+        if not is_phone_contact and not is_email_contact:
+            return {"success": False, "error": "No valid contact method found"}
+
         contact_type = "phone" if is_phone_contact else "email"
 
         # Generate and store OTP with contact type
@@ -537,9 +602,7 @@ class OTPService:
         # Determine contact type and send appropriately
         if is_phone_contact:
             # Send via SMS
-            phone = guest.get("phone")
-            if not phone.startswith("+"):
-                phone = f"+1{phone}"
+            phone = self._format_phone_for_sms(guest.get("phone"))
 
             twilio_service = self._get_twilio_service()
             if not twilio_service:
@@ -574,13 +637,14 @@ class OTPService:
                     ),
                 }
 
-        elif guest.get("email") == normalized_contact:
+        elif is_email_contact:
             # Send via email
+            to_email = self._normalize_contact_value(guest.get("email"))
             html_content = self._generate_otp_email_html(
                 otp, guest.get("name", "Guest")
             )
             result = await self.email_service.send_email(
-                to_email=normalized_contact,
+                to_email=to_email or normalized_contact,
                 subject="Your RSVP Verification Code",
                 html_content=html_content,
                 email_type="otp",

@@ -7,14 +7,11 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import PageHeader from '../../components/PageHeader';
 import TaskModal from './components/TaskModal';
-import CalendarConnect from './components/CalendarConnect';
+import GoogleCalendarConnect from './components/GoogleCalendarConnect';
 import {
-  acceptExternalChange,
-  approveCoupleBooking,
   CalendarConnection,
   CATEGORY_LABELS,
   createCalendarMutationIntent,
-  declineCoupleBooking,
   deleteMeeting,
   deleteTask,
   getSharedCalendarView,
@@ -25,7 +22,6 @@ import {
   listTeamMembers,
   PlannerTask,
   PRIORITY_CONFIG,
-  rejectExternalChange,
   SharedCalendarEvent,
   TeamMemberSummary,
   WeddingSummary,
@@ -50,7 +46,7 @@ const MONTH_NAMES = [
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 type ViewMode = 'calendar' | 'list';
-type SourceFilter = 'all' | 'internal_task' | 'internal_meeting' | 'external';
+type SourceFilter = 'all' | 'internal_task' | 'internal_meeting' | 'external_google';
 type VisibilityFilter = 'all' | 'details' | 'busy_only';
 
 const PANEL_CLASS =
@@ -81,7 +77,7 @@ function buildCalendarDays(year: number, month: number) {
 }
 
 function eventTone(event: SharedCalendarEvent) {
-  if (event.source_type === 'external') {
+  if (event.source_type === 'external_google') {
     return 'border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-700/80 dark:text-slate-100';
   }
   if (event.source_type === 'internal_meeting') {
@@ -96,7 +92,7 @@ function eventTone(event: SharedCalendarEvent) {
 }
 
 function eventDisplayTitle(event: SharedCalendarEvent) {
-  if (event.source_type === 'external' && event.visibility_mode === 'busy_only') {
+  if (event.source_type === 'external_google' && event.visibility_mode === 'busy_only') {
     return 'Busy';
   }
   return event.title || 'Untitled item';
@@ -371,14 +367,8 @@ export default function PlannerCalendarPage() {
   const openExistingItem = async (event: SharedCalendarEvent) => {
     if (!token) return;
 
-    if (event.source_type === 'external') {
-      const providerLabel =
-        'external_provider' in event &&
-        typeof event.external_provider === 'string' &&
-        event.external_provider.trim().length > 0
-          ? `External ${event.external_provider.trim()} events`
-          : 'External calendar events';
-      toast.message(`${providerLabel} are read-only here. Change sharing or sync settings from the connection panel.`);
+    if (event.source_type === 'external_google') {
+      toast.message('External Google events are read-only here. Change sharing or sync settings from the connection panel.');
       return;
     }
     if (event.source_type === 'internal_task' && !canManageGeneralTasks) {
@@ -440,95 +430,6 @@ export default function PlannerCalendarPage() {
         ? current.filter((value) => value !== staffId)
         : [...current, staffId]
     );
-  };
-
-  const eventsNeedingReview = useMemo(
-    () =>
-      events.filter((event) => {
-        if (event.source_type !== 'internal_meeting') return false;
-        const status = event.details?.external_conflict_status;
-        return status === 'pending_review' || status === 'auto_accepted';
-      }),
-    [events],
-  );
-
-  const eventsAwaitingApproval = useMemo(
-    () =>
-      events.filter(
-        (event) =>
-          event.source_type === 'internal_meeting' &&
-          event.details?.meeting_status === 'pending_approval',
-      ),
-    [events],
-  );
-
-  const eventVersion = (event: SharedCalendarEvent): number => {
-    const raw = event.details?.version;
-    return typeof raw === 'number' && Number.isFinite(raw) ? raw : 1;
-  };
-
-  const handleAcceptExternalChange = async (event: SharedCalendarEvent) => {
-    if (!token) return;
-    try {
-      await acceptExternalChange(
-        token,
-        event.id,
-        eventVersion(event),
-        createCalendarMutationIntent(),
-      );
-      toast.success('External change accepted.');
-      await refreshAll();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to accept change');
-    }
-  };
-
-  const handleRejectExternalChange = async (event: SharedCalendarEvent) => {
-    if (!token) return;
-    try {
-      await rejectExternalChange(
-        token,
-        event.id,
-        eventVersion(event),
-        createCalendarMutationIntent(),
-      );
-      toast.success('External change rejected; canonical state pushed back.');
-      await refreshAll();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to reject change');
-    }
-  };
-
-  const handleApproveCoupleBooking = async (event: SharedCalendarEvent) => {
-    if (!token) return;
-    try {
-      await approveCoupleBooking(
-        token,
-        event.id,
-        eventVersion(event),
-        createCalendarMutationIntent(),
-      );
-      toast.success('Booking approved and synced to your calendar.');
-      await refreshAll();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to approve booking');
-    }
-  };
-
-  const handleDeclineCoupleBooking = async (event: SharedCalendarEvent) => {
-    if (!token) return;
-    try {
-      await declineCoupleBooking(
-        token,
-        event.id,
-        eventVersion(event),
-        createCalendarMutationIntent(),
-      );
-      toast.success('Booking declined.');
-      await refreshAll();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to decline booking');
-    }
   };
 
   const goToPreviousMonth = () => {
@@ -607,7 +508,7 @@ export default function PlannerCalendarPage() {
           <p className="mt-3 text-3xl font-semibold text-slate-900 dark:text-slate-100">
             {
               events.filter(
-                (event) => event.source_type === 'external' && event.visibility_mode === 'busy_only'
+                (event) => event.source_type === 'external_google' && event.visibility_mode === 'busy_only'
               ).length
             }
           </p>
@@ -618,118 +519,7 @@ export default function PlannerCalendarPage() {
         </div>
       </div>
 
-      {(eventsAwaitingApproval.length > 0 || eventsNeedingReview.length > 0) && (
-        <section className={`${PANEL_CLASS} p-5 space-y-4`}>
-          {eventsAwaitingApproval.length > 0 && (
-            <div>
-              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                Couple booking requests ({eventsAwaitingApproval.length})
-              </h3>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                These bookings will not land on your calendar or send a couple invite until you approve them.
-              </p>
-              <ul className="mt-3 space-y-2">
-                {eventsAwaitingApproval.map((event) => (
-                  <li
-                    key={`approval-${event.id}`}
-                    className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 text-sm dark:border-amber-900 dark:bg-amber-950/30 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div>
-                      <div className="font-medium text-slate-900 dark:text-slate-100">
-                        {event.title || 'Untitled meeting'}
-                      </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400">
-                        {event.start_date ? formatDateTime(event.start_date) : '—'}
-                        {event.assigned_user_emails?.length
-                          ? ` • with ${event.assigned_user_emails[0]}`
-                          : ''}
-                      </div>
-                    </div>
-                    {canEditMeetings && (
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleApproveCoupleBooking(event)}
-                          className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeclineCoupleBooking(event)}
-                          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/60"
-                        >
-                          Decline
-                        </button>
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {eventsNeedingReview.length > 0 && (
-            <div>
-              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                External calendar changes ({eventsNeedingReview.length})
-              </h3>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Someone changed these meetings directly in their external calendar. Accept to apply
-                the change here, or reject to push your canonical state back.
-              </p>
-              <ul className="mt-3 space-y-2">
-                {eventsNeedingReview.map((event) => {
-                  const detail = event.details ?? {};
-                  const externalStart = detail.external_start_date as string | undefined;
-                  const externalTitle = detail.external_title as string | undefined;
-                  return (
-                    <li
-                      key={`conflict-${event.id}`}
-                      className="flex flex-col gap-2 rounded-xl border border-rose-200 bg-rose-50/60 px-4 py-3 text-sm dark:border-rose-900 dark:bg-rose-950/30 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div>
-                        <div className="font-medium text-slate-900 dark:text-slate-100">
-                          {event.title || 'Untitled meeting'}
-                        </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400">
-                          {event.start_date ? formatDateTime(event.start_date) : '—'} (current)
-                        </div>
-                        {(externalStart || externalTitle) && (
-                          <div className="text-xs text-rose-700 dark:text-rose-300">
-                            External: {externalTitle || event.title}
-                            {externalStart ? ` • ${formatDateTime(externalStart)}` : ''}
-                          </div>
-                        )}
-                      </div>
-                      {canEditMeetings && (
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleAcceptExternalChange(event)}
-                            className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
-                          >
-                            Accept
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRejectExternalChange(event)}
-                            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/60"
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
-        </section>
-      )}
-
-      <CalendarConnect
+      <GoogleCalendarConnect
         connections={connections}
         staffOptions={staffOptions}
         weddings={weddings}
@@ -824,7 +614,7 @@ export default function PlannerCalendarPage() {
                 <option value="all">All sources</option>
                 <option value="internal_task">Internal tasks</option>
                 <option value="internal_meeting">Internal meetings</option>
-                <option value="external">External calendars</option>
+                <option value="external_google">Google calendars</option>
               </select>
 
               <select
@@ -1020,10 +810,8 @@ export default function PlannerCalendarPage() {
                       <span className={`rounded-full border px-2 py-1 text-[11px] font-medium ${eventTone(event)}`}>
                         {event.source_type === 'internal_meeting'
                           ? 'Meeting'
-                          : event.source_type === 'external'
-                          ? (event.external_provider
-                              ? event.external_provider.charAt(0).toUpperCase() + event.external_provider.slice(1)
-                              : 'External')
+                          : event.source_type === 'external_google'
+                          ? 'Google'
                           : 'Task'}
                       </span>
                     </div>

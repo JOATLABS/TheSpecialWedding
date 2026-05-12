@@ -1,26 +1,53 @@
 """
 Seed Subscription Plans Script
 Creates default subscription plans in MongoDB and corresponding products/prices in Stripe.
-Runs on container startup via Dockerfile.coolify.
-
-Metered-plan provisioning lives here too: when a plan dict has
-``is_metered=True`` and ``meter_event_name`` set, the script calls
-``ensure_stripe_meter`` to idempotently provision the Stripe Billing Meter
-before creating the Product/Price pair. The Price is then created with
-``recurring.usage_type=metered`` and ``recurring.meter=<meter_id>`` so
-``stripe.billing.MeterEvent.create`` calls actually drive billing.
-
-The shared helpers in ``app/services/stripe_meter_helpers`` are a tiny
-mongo-independent module so this script can import them without dragging
-in the full async service layer. See METERING_REVIEW_2026-05-04_PART2.md
-§5 for the rationale.
+Runs on container startup via the runtime bootstrap script.
 """
 
+from pathlib import Path
 import os
 import sys
 from datetime import datetime, timezone
 
-from dotenv import load_dotenv
+REPO_ROOT = Path(__file__).resolve().parents[1]
+repo_root_str = str(REPO_ROOT)
+if repo_root_str not in sys.path:
+    sys.path.insert(0, repo_root_str)
+
+from dotenv import load_dotenv  # noqa: E402
+
+from app.constants.billing import (  # noqa: E402
+    BILLING_MODEL_FLAT_RATE,
+    BILLING_MODEL_METERED,
+    CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
+    PLAN_BILLING_MODEL_MIGRATION_FLAG,
+    plan_billing_model_migration_enabled,
+)
+
+# ---------------------------------------------------------------------------
+# SEED_VERSION — bump this string on every strategy refresh that should win
+# over admin UI edits made BEFORE this date. The seed's per-field $set is
+# gated on (seed_version > admin_overrides[field]) — see _filter_set_for_admin_overrides
+# below. Use an ISO-8601 UTC timestamp so comparisons are unambiguous.
+#
+# When to bump:
+#   - You're changing canonical seed values (price, name, features, caps, etc.)
+#     and want the change to land EVEN IF an admin previously tweaked that
+#     field via /admin/saas.
+#
+# When NOT to bump:
+#   - Plumbing / refactor changes that don't alter the strategy values.
+#   - Stripe-side-only changes (those go through stripe_service helpers).
+#
+# Companion: app/services/subscription_service.update_plan writes per-field
+# timestamps to plan["admin_overrides"][<field>] every time an admin edits.
+# Together: bump SEED_VERSION → admin edits older than the bump are
+# superseded; admin edits newer than the bump survive future deploys.
+SEED_VERSION = "2026-05-12T00:00:00+00:00"
+
+if os.getenv("SEED_SUBSCRIPTION_PLANS_IMPORT_CHECK_ONLY") == "1":
+    print("[OK] seed subscription import contract satisfied")
+    sys.exit(0)
 
 # Load environment variables
 load_dotenv()
@@ -71,12 +98,31 @@ except (ConnectionFailure, ServerSelectionTimeoutError) as e:
 db = client[db_name]
 collection = db["subscription_plans"]
 
+ADMIN_MUTABLE_PLAN_FIELDS = (
+    "name",
+    "description",
+    "price_monthly",
+    "price_yearly",
+    "trial_days",
+    "max_weddings",
+    "max_guests_per_wedding",
+    "ai_credits_monthly",
+    "storage_gb",
+    "staff_seats",
+    "features",
+    "features_list",
+    "is_active",
+    "is_featured",
+    "sort_order",
+    "display_order",
+)
+
 # ---- Deduplication cleanup ----
 # Remove duplicate plans (same name, different IDs) keeping the canonical _id.
 # This handles cases where plans were created through both seed script and API endpoints.
 canonical_ids = {"plan_boutique", "plan_signature", "plan_enterprise"}
 all_existing = list(collection.find({}))
-seen_names = {}
+seen_names: dict[str, str] = {}
 duplicates_removed = 0
 
 for plan in all_existing:
@@ -130,11 +176,7 @@ stripe_enabled = os.getenv("STRIPE_ENABLED", "false").lower() == "true"
 
 if STRIPE_AVAILABLE and stripe and stripe_secret and stripe_enabled:
     stripe.api_key = stripe_secret
-    # Pin the Stripe API version. Mirrored in
-    # app/services/stripe_service.py — keep both in sync. The seed and the
-    # runtime must use the same version so MeterEvent / Meter behavior is
-    # identical between container-startup provisioning and request-time
-    # meter event reporting.
+    # Mirror app/services/stripe_service.py — keep both in sync.
     stripe.api_version = "2026-04-22.dahlia"
     STRIPE_CONFIGURED = True
     print(
@@ -147,9 +189,7 @@ else:
     elif not stripe_secret:
         print("[WARN] STRIPE_SECRET_KEY not set, skipping Stripe integration")
 
-# Import meter helpers. These have ZERO mongo dependencies, so importing
-# them at container-startup time (before the FastAPI app boots) is safe —
-# see app/services/stripe_meter_helpers.py module docstring.
+# Import meter helpers — zero mongo deps so safe at container startup.
 try:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from app.services.stripe_meter_helpers import (  # noqa: E402
@@ -159,6 +199,13 @@ try:
 
     METER_HELPERS_AVAILABLE = True
 except ImportError as e:
+
+    def assert_meter_config(*args, **kwargs) -> None:
+        pass  # type: ignore
+
+    def ensure_stripe_meter(*args, **kwargs) -> str:
+        return ""  # type: ignore
+
     METER_HELPERS_AVAILABLE = False
     print(
         f"[WARN] Could not import meter helpers ({e}); metered plans cannot be provisioned"
@@ -168,9 +215,8 @@ except ImportError as e:
 def _provision_meter_if_needed(plan: dict) -> str | None:
     """Idempotently provision a Stripe Meter for a metered plan.
 
-    Returns the meter_id if the plan is metered (and Stripe is configured),
-    otherwise None. If the plan already has ``meter_id`` set, the existing
-    value is validated via ``assert_meter_config`` and returned.
+    Returns the meter_id if the plan is metered (and Stripe configured),
+    otherwise None.
     """
     if not plan.get("is_metered") or not plan.get("meter_event_name"):
         return None
@@ -205,11 +251,7 @@ def _provision_meter_if_needed(plan: dict) -> str | None:
         print(f"  [ERROR] Could not provision meter for {event_name!r}: {e}")
         return None
     except ValueError as e:
-        # ensure_stripe_meter raises ValueError when an existing meter is
-        # found but misconfigured. We intentionally do NOT auto-fix this —
-        # silently replacing the meter would orphan prior events. The
-        # operator must intervene in the Stripe Dashboard. See
-        # METERING_GAP_SCENARIOS_2026-05-04.md §C2.
+        # Existing meter found but misconfigured — manual intervention.
         print(f"  [ERROR] Existing meter for {event_name!r} is misconfigured: {e}")
         print(
             "  [ACTION] Operator must fix or deactivate the meter in the "
@@ -219,12 +261,12 @@ def _provision_meter_if_needed(plan: dict) -> str | None:
 
 
 def _build_recurring(interval: str, plan: dict, meter_id: str | None) -> dict:
-    """Build the ``recurring`` config for a Stripe Price.
-
-    Flat plans → ``{interval: ...}``. Metered plans get
-    ``usage_type=metered`` and ``meter=<id>`` so meter events drive billing.
-    See https://docs.stripe.com/billing/subscriptions/usage-based/recording-usage.
-    """
+    """Build the ``recurring`` config for a Stripe Price."""
+    if plan.get("is_metered") and not meter_id:
+        raise RuntimeError(
+            f"Metered plan {plan.get('_id')} requires a Stripe meter before "
+            "Stripe Price creation."
+        )
     config: dict = {"interval": interval}
     if plan.get("is_metered") and meter_id:
         config["usage_type"] = "metered"
@@ -232,161 +274,483 @@ def _build_recurring(interval: str, plan: dict, meter_id: str | None) -> dict:
     return config
 
 
-def create_stripe_product_and_prices(plan: dict) -> dict:
+def _stripe_price_matches(
+    price, expected_cents: int, interval: str, is_metered: bool, meter_id: str | None
+) -> bool:
+    """Return True iff ``price`` matches the seed's expected configuration.
+
+    Mirrors the comparison in ``app/services/stripe_service.py::ensure_price``
+    — keep them aligned. If either side drifts, ``testbed/verify_seed_price_
+    refresh_e2e.py`` will catch it.
+    """
+    if not price.recurring or price.recurring.interval != interval:
+        return False
+    if price.unit_amount != expected_cents:
+        return False
+    if price.currency != "usd":
+        return False
+    price_is_metered = price.recurring.usage_type == "metered"
+    if price_is_metered != is_metered:
+        return False
+    if is_metered and meter_id:
+        if getattr(price.recurring, "meter", None) != meter_id:
+            return False
+    return True
+
+
+def _ensure_seed_price(
+    product_id: str,
+    plan: dict,
+    interval: str,
+    amount: float,
+    existing_price_id: str | None,
+    meter_id: str | None,
+) -> str | None:
+    """Create-or-reuse a Stripe Price honoring immutability.
+
+    Stripe Prices are immutable on ``unit_amount`` / ``currency`` / ``product``.
+    Per Stripe's "Change the price of existing subscriptions" guide, the only
+    valid update is: create a new Price, then deactivate the old one (existing
+    subscriptions keep working — they're grandfathered until explicitly moved).
+
+    Without this check, a pricing-strategy refresh that flips ``price_monthly``
+    from 29 → 49 would leave Mongo carrying $49 but ``stripe_price_id_monthly``
+    pointing at the OLD $29 Stripe Price. New Checkout sessions would be
+    charged the wrong amount.
+    """
+    if amount is None:
+        return None
+
+    expected_cents = int(amount * 100)
+    is_metered = bool(plan.get("is_metered"))
+    plan_id = plan["_id"]
+
+    # Try to reuse the recorded price first — fastest path, avoids the
+    # Price.list round trip when nothing has drifted.
+    if existing_price_id:
+        try:
+            existing = stripe.Price.retrieve(existing_price_id)
+            if _stripe_price_matches(
+                existing, expected_cents, interval, is_metered, meter_id
+            ):
+                return existing_price_id
+        except StripeError as exc:
+            print(
+                f"  [WARN] Could not retrieve recorded price {existing_price_id}: {exc}"
+            )
+            existing_price_id = None
+
+    # Fallback discovery: scan active prices on this product for a match (handles
+    # the case where Mongo doesn't have a price id yet but Stripe does — e.g.
+    # the plan was previously seeded via a different code path).
+    if not existing_price_id:
+        try:
+            for price in stripe.Price.list(
+                product=product_id, active=True
+            ).auto_paging_iter():
+                if _stripe_price_matches(
+                    price, expected_cents, interval, is_metered, meter_id
+                ):
+                    return price.id
+        except StripeError as exc:
+            print(f"  [WARN] Could not list prices on product {product_id}: {exc}")
+
+    # No match — create a new Price.
+    new_price = stripe.Price.create(
+        product=product_id,
+        unit_amount=expected_cents,
+        currency="usd",
+        recurring=_build_recurring(interval, plan, meter_id),  # type: ignore
+        metadata={"plan_id": plan_id, "interval": f"{interval}ly"},
+    )
+    metered_tag = " [METERED]" if is_metered else ""
+    print(
+        f"  [CREATED] {interval.title()} price: {new_price.id} "
+        f"(${amount}/{interval[:2]}){metered_tag}"
+    )
+
+    # Deactivate the old Price so it stops surfacing as the active default
+    # for new Checkout sessions. Existing subscriptions on it are unaffected
+    # (Stripe keeps charging archived prices for grandfathered subs).
+    if existing_price_id:
+        try:
+            stripe.Price.modify(existing_price_id, active=False)
+            print(
+                f"  [ARCHIVED] Old {interval} price {existing_price_id} marked inactive"
+            )
+        except StripeError as exc:
+            print(f"  [WARN] Could not deactivate old price {existing_price_id}: {exc}")
+
+    return new_price.id
+
+
+def create_stripe_product_and_prices(
+    plan: dict, existing_mongo: dict | None = None
+) -> dict:
     """Create Stripe product, meter (if metered), and prices. Return IDs.
 
-    Metered plans get a properly configured ``recurring.usage_type=metered``
-    price linked to the Stripe Meter. This is the single seed-time path that
-    matches what ``app/services/stripe_service.sync_plan_to_stripe`` does at
-    runtime — keep them aligned.
+    When ``existing_mongo`` is provided, the helper honors the recorded
+    ``stripe_price_id_*`` fields and creates new Prices on mismatch (per the
+    Stripe immutability contract — see ``_ensure_seed_price``). Without that
+    argument the helper still works for first-time creation, but it can't
+    detect a price refresh against an already-deployed product.
     """
     if not STRIPE_CONFIGURED or not stripe:
         return {}
 
     plan_id = plan["_id"]
     plan_name = plan["name"]
+    existing_mongo = existing_mongo or {}
 
-    # 1. Provision the meter first (no-op for flat plans). This must happen
-    #    BEFORE price creation because metered prices reference the meter ID.
     meter_id = _provision_meter_if_needed(plan)
-    is_metered = plan.get("is_metered") and meter_id is not None
-
-    # 2. Check if product already exists by metadata
-    try:
-        existing_products = stripe.Product.search(
-            query=f"metadata['plan_id']:'{plan_id}'"
+    if plan.get("is_metered") and not meter_id:
+        raise RuntimeError(
+            f"Metered plan {plan_id} requires a valid Stripe Meter for "
+            f"{plan.get('meter_event_name')!r}; aborting seed before creating "
+            "a flat Stripe Price by accident."
         )
-        if existing_products.data:
-            product = existing_products.data[0]
-            print(f"  [EXISTS] Stripe product: {product.id}")
 
-            # Get existing prices and verify metering shape matches plan
-            prices = stripe.Price.list(product=product.id, active=True)
-            monthly_price = None
-            yearly_price = None
-
-            for price in prices.data:
-                if not price.recurring:
-                    continue
-                # Reject prices whose metered-ness no longer matches the
-                # plan's intent — caller will create a fresh price below.
-                price_is_metered = price.recurring.usage_type == "metered"
-                if price_is_metered != bool(is_metered):
-                    continue
-                if price.recurring.interval == "month":
-                    monthly_price = price.id
-                elif price.recurring.interval == "year":
-                    yearly_price = price.id
-
-            result = {
-                "stripe_product_id": product.id,
-                "stripe_price_id_monthly": monthly_price,
-                "stripe_price_id_yearly": yearly_price,
-            }
-            if meter_id:
-                result["meter_id"] = meter_id
-            # If a price was missing or stale-shape, fall through to create
-            # the missing one(s) using the same product.
-            if monthly_price and yearly_price:
-                return result
-            print(
-                "  [INFO] Some prices missing or shape changed — creating to backfill"
-            )
-            # Use the existing product going forward.
-            product_id = product.id
-        else:
+    # 1. Resolve the Stripe Product — reuse if Mongo has a recorded id and
+    # it's retrievable, otherwise fall back to metadata search, otherwise
+    # create.
+    # Track the live product (for the modify step below) plus its id.
+    existing_product = None
+    product_id = existing_mongo.get("stripe_product_id")
+    if product_id:
+        try:
+            existing_product = stripe.Product.retrieve(product_id)
+        except StripeError:
             product_id = None
-    except StripeError as e:
-        print(f"[WARN] Error searching Stripe products: {e}")
-        product_id = None
 
-    # 3. Create product if not found
-    try:
-        if not product_id:
+    if not product_id:
+        try:
+            search = stripe.Product.search(query=f"metadata['plan_id']:'{plan_id}'")
+            if search.data:
+                existing_product = search.data[0]
+                product_id = existing_product.id
+                print(f"  [EXISTS] Stripe product: {product_id}")
+        except StripeError as exc:
+            print(f"  [WARN] Error searching Stripe products: {exc}")
+
+    expected_name = f"The Special Wedding - {plan_name}"
+    expected_description = plan.get("description", f"{plan_name} subscription plan")
+
+    if not product_id:
+        try:
             product = stripe.Product.create(
-                name=f"The Special Wedding - {plan_name}",
-                description=plan.get("description", f"{plan_name} subscription plan"),
+                name=expected_name,
+                description=expected_description,
                 metadata={"plan_id": plan_id, "source": "seed_script"},
             )
             product_id = product.id
             print(f"  [CREATED] Stripe product: {product_id}")
+        except StripeError as exc:
+            print(f"  [ERROR] Stripe error creating product: {exc}")
+            return {"meter_id": meter_id} if meter_id else {}
+    elif existing_product is not None:
+        # Refresh the Stripe Product's name/description if the seed dict has
+        # changed since the product was first created. Customer-visible on
+        # hosted Checkout summaries and on the Stripe Dashboard. Skipping
+        # this is what kept "Plan for new planners onboarding their first
+        # weddings" on prod products long after the seed copy was rewritten.
+        updates: dict = {}
+        if getattr(existing_product, "name", None) != expected_name:
+            updates["name"] = expected_name
+        if getattr(existing_product, "description", None) != expected_description:
+            updates["description"] = expected_description
+        if updates:
+            try:
+                stripe.Product.modify(product_id, **updates)
+                print(
+                    f"  [REFRESHED] Stripe product {product_id} updated: "
+                    f"{', '.join(updates.keys())}"
+                )
+            except StripeError as exc:
+                # Non-fatal — product is still usable, name/description
+                # just stays stale. Log and continue.
+                print(f"  [WARN] Could not modify Stripe product {product_id}: {exc}")
 
-        # 4. Create monthly price (metered-aware)
-        new_monthly_price = stripe.Price.create(
-            product=product_id,
-            unit_amount=int(plan["price_monthly"] * 100),  # Convert to cents
-            currency="usd",
-            recurring=_build_recurring("month", plan, meter_id),
-            metadata={"plan_id": plan_id, "interval": "monthly"},
+    # 2. Ensure monthly + yearly Prices honoring immutability.
+    try:
+        monthly_price_id = _ensure_seed_price(
+            product_id,
+            plan,
+            "month",
+            plan["price_monthly"],
+            existing_mongo.get("stripe_price_id_monthly"),
+            meter_id,
         )
-        metered_tag = " [METERED]" if is_metered else ""
-        print(
-            f"  [CREATED] Monthly price: {new_monthly_price.id} "
-            f"(${plan['price_monthly']}/mo){metered_tag}"
+        yearly_price_id = _ensure_seed_price(
+            product_id,
+            plan,
+            "year",
+            plan["price_yearly"],
+            existing_mongo.get("stripe_price_id_yearly"),
+            meter_id,
         )
-
-        # 5. Create yearly price (metered-aware)
-        new_yearly_price = stripe.Price.create(
-            product=product_id,
-            unit_amount=int(plan["price_yearly"] * 100),  # Convert to cents
-            currency="usd",
-            recurring=_build_recurring("year", plan, meter_id),
-            metadata={"plan_id": plan_id, "interval": "yearly"},
-        )
-        print(
-            f"  [CREATED] Yearly price: {new_yearly_price.id} "
-            f"(${plan['price_yearly']}/yr){metered_tag}"
-        )
-
-        result = {
+    except StripeError as exc:
+        print(f"  [ERROR] Stripe error ensuring prices: {exc}")
+        return {
             "stripe_product_id": product_id,
-            "stripe_price_id_monthly": new_monthly_price.id,
-            "stripe_price_id_yearly": new_yearly_price.id,
+            **({"meter_id": meter_id} if meter_id else {}),
         }
-        if meter_id:
-            result["meter_id"] = meter_id
-        return result
 
-    except StripeError as e:
-        print(f"  [ERROR] Stripe error creating product/prices: {e}")
-        # Even on failure, return any meter_id we provisioned so it gets
-        # persisted to Mongo and the next run can reuse it.
-        return {"meter_id": meter_id} if meter_id else {}
+    result = {
+        "stripe_product_id": product_id,
+        "stripe_price_id_monthly": monthly_price_id,
+        "stripe_price_id_yearly": yearly_price_id,
+    }
+    if meter_id:
+        result["meter_id"] = meter_id
+    return result
+
+
+def _seed_billing_model(plan: dict | None) -> str:
+    if plan and plan.get("is_metered"):
+        return BILLING_MODEL_METERED
+    return BILLING_MODEL_FLAT_RATE
+
+
+def _build_effective_seed_plan(seed_plan: dict, existing_plan: dict | None) -> dict:
+    """Compute the values to write to Mongo for this plan.
+
+    Version-anchored admin-override logic (2026-05-12 refresh):
+
+    For each admin-mutable strategy field, prefer the SEED value EXCEPT when
+    the admin has edited that field AFTER ``SEED_VERSION`` — in that case
+    preserve the admin's edit. ``existing_plan["admin_overrides"]`` is a
+    dict keyed by field name with ISO-8601 timestamps, written by
+    ``subscription_service.update_plan`` on every admin edit.
+
+    Why version-anchored: a pure "always preserve admin edits" rule (the
+    pre-2026-05-12 behavior) means strategy refreshes never land. A pure
+    "always seed wins" rule clobbers admin tweaks every deploy. Anchoring
+    the comparison to ``SEED_VERSION`` (a manually-bumped constant) gives
+    operators an explicit "the strategy has changed" signal that supersedes
+    older admin edits while still letting fresh admin edits survive future
+    deploys.
+    """
+    if not existing_plan:
+        return dict(seed_plan)
+
+    effective = dict(seed_plan)
+    admin_overrides = existing_plan.get("admin_overrides") or {}
+
+    try:
+        seed_version_dt = datetime.fromisoformat(SEED_VERSION)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"SEED_VERSION ({SEED_VERSION!r}) must be a valid ISO-8601 "
+            f"timestamp; got error: {exc}"
+        )
+
+    for field in ADMIN_MUTABLE_PLAN_FIELDS:
+        if field not in existing_plan:
+            continue
+        admin_edit_at = admin_overrides.get(field)
+        # Coerce to comparable datetime — accepts both datetime objects
+        # (from Mongo) and ISO strings (from JSON round-trips).
+        if isinstance(admin_edit_at, str):
+            try:
+                admin_edit_at_dt = datetime.fromisoformat(admin_edit_at)
+            except ValueError:
+                admin_edit_at_dt = None
+        else:
+            admin_edit_at_dt = admin_edit_at
+
+        # Pymongo's sync MongoClient (used by this seed script) does NOT
+        # default to tz_aware=True, so datetimes round-tripped through Mongo
+        # come back naive. seed_version_dt is timezone-aware (parsed from
+        # "+00:00"). Comparing naive to aware raises TypeError. We assume
+        # naive = UTC (which is how update_plan writes them) and re-attach
+        # the timezone to keep the comparison legal.
+        if admin_edit_at_dt is not None and admin_edit_at_dt.tzinfo is None:
+            admin_edit_at_dt = admin_edit_at_dt.replace(tzinfo=timezone.utc)
+
+        if admin_edit_at_dt and admin_edit_at_dt > seed_version_dt:
+            # Admin edited this field AFTER the current SEED_VERSION cutoff
+            # — preserve their edit. Operators can override this by bumping
+            # SEED_VERSION on the next deploy.
+            effective[field] = existing_plan[field]
+            print(
+                f"  [PRESERVE] {field} = {existing_plan[field]!r} (admin edit "
+                f"at {admin_edit_at_dt.isoformat()} > SEED_VERSION {SEED_VERSION})"
+            )
+        # else: seed value wins (the seed_plan default already in `effective`).
+
+    if existing_plan.get("meter_id"):
+        effective["meter_id"] = existing_plan["meter_id"]
+
+    # 2026-05-09: seed owns the billing-model shape — use whatever the seed
+    # plan declares. Previously this forced is_metered=True; now plans ship
+    # flat by default and a per-plan override can flip a specific plan to
+    # metered. See METERING_IMPLEMENTATION_2026-05-04.md.
+    effective["billing_model"] = seed_plan.get(
+        "billing_model", CANONICAL_PUBLIC_PLAN_BILLING_MODEL
+    )
+    effective["is_metered"] = bool(seed_plan.get("is_metered", False))
+    # meter_event_name is optional — only required when is_metered=True.
+    effective["meter_event_name"] = seed_plan.get("meter_event_name")
+    return effective
+
+
+def _guard_seed_billing_model_transition(
+    plan_id: str, existing_plan: dict | None, next_plan: dict
+) -> None:
+    if not existing_plan:
+        return
+
+    previous_model = _seed_billing_model(existing_plan)
+    next_model = _seed_billing_model(next_plan)
+    if previous_model == next_model:
+        return
+
+    active_subscriptions = db["user_subscriptions"].count_documents(
+        {"plan_id": plan_id, "status": {"$in": ["active", "trial", "trial_expiring"]}}
+    )
+    if active_subscriptions and not plan_billing_model_migration_enabled():
+        print(
+            f"  [ERROR] Refusing to change {plan_id} from {previous_model} to "
+            f"{next_model} while {active_subscriptions} active subscriptions "
+            "exist."
+        )
+        print(
+            "  [ACTION] Existing Stripe subscriptions remain on old Stripe "
+            "prices. Run an explicit subscription-item migration, then set "
+            f"{PLAN_BILLING_MODEL_MIGRATION_FLAG}=true for that operator run."
+        )
+        sys.exit(1)
 
 
 # Define plans
+#
+# 2026-05-12 pricing strategy refresh (per docs/specs/PRICING_STRATEGY_2026-05.md):
+#   - Solo (free): 1 ACTIVE wedding (deletable; can have many over time)
+#   - Boutique ($49/mo): UNLIMITED weddings, UNLIMITED guests, 1 seat — solo paid practitioner
+#   - Signature ($149/mo): UNLIMITED weddings, UNLIMITED guests, 5 seats — agency / small team
+#   - Enterprise ($399/mo): UNLIMITED weddings, UNLIMITED guests, 20 seats — white-label / API
+#
+# Differentiation is by CAPABILITY (team seats, white-label, API, dedicated SM), NOT volume.
+# Trial = uniform 30 days across all paid plans. Solo is permanently free.
+# All plans are FLAT (is_metered=False). The metering hardening shipped 2026-05-04
+# is available infrastructure — flip is_metered=True + add meter_event_name on any
+# plan to switch to per-wedding billing.
+#
+# See docs/analysis/METERING_IMPLEMENTATION_2026-05-04.md for the metering option.
 plans = [
+    # ============================================================
+    # SOLO — free tier, lifetime 1 wedding, no AI
+    # Purpose: "try us with your first client" — drives upgrade
+    # ============================================================
     {
-        "_id": "plan_boutique",
-        "name": "Boutique",
-        "description": "For new planners onboarding their first weddings",
-        "price_monthly": 29,
-        "price_yearly": 290,  # ~2 months free
-        "trial_days": 30,
+        "_id": "plan_solo",
+        "name": "Solo",
+        "description": "Try us with your first client. One wedding, on us.",
+        "price_monthly": 0,
+        "price_yearly": 0,
+        "trial_days": 0,
         "is_metered": False,
-        "max_weddings": 3,
-        "max_guests_per_wedding": 150,
-        "ai_credits_monthly": 100,
-        "storage_gb": 10,
+        "max_weddings": 1,
+        # Active-count cap (NOT lifetime): planner can delete a wedding and
+        # create another. Per-PR 2026-05-12 strategy refresh, we accept the
+        # mild create→delete→re-create cost in exchange for less surprising
+        # behavior. Upgrade pressure comes from the 50-guest cap and the
+        # 1-active-wedding-at-a-time ceiling, not from a lifetime gate.
+        "max_weddings_lifetime": False,
+        "max_guests_per_wedding": 50,
+        "ai_credits_monthly": 0,
+        "storage_gb": 1,
         "staff_seats": 1,
         "features": {
             "guest_management": True,
             "email_invitations": True,
+            "rsvp_system": True,
+            "wedding_website": True,
+            "timeline_builder": True,
+            "basic_analytics": False,
+            "vendor_management": False,
+            "seating_orchestration": False,
+            "ai_features": False,
+            "qr_checkin": False,
+            "automated_reminders": False,
+            "calendar_sync": False,
+            "payment_processing": False,
+            "vendor_collaboration": False,
+            "advanced_analytics": False,
+            "custom_domain": False,
+            "priority_support": False,
+            "white_label": False,
+            "api_access": False,
+            "dedicated_support": False,
+        },
+        "features_list": [
+            "1 wedding to try us out",
+            "Up to 50 guests",
+            "Guest list & RSVP system",
+            "Branded wedding website",
+            "Basic timeline builder",
+            "1GB storage",
+        ],
+        "is_active": True,
+        "is_featured": False,
+        "sort_order": 0,
+        "display_order": 0,
+        "created_by": "system",
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    },
+    # ============================================================
+    # BOUTIQUE — $49/mo, the solo planner running their business
+    # ============================================================
+    {
+        "_id": "plan_boutique",
+        "name": "Boutique",
+        "description": "For independent planners running their solo practice. Unlimited weddings, no caps.",
+        "price_monthly": 49,
+        "price_yearly": 490,  # 10x monthly
+        "trial_days": 30,
+        "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
+        "is_metered": False,
+        "max_weddings": -1,  # Unlimited (cap removed 2026-05-12)
+        "max_weddings_lifetime": False,
+        "max_guests_per_wedding": -1,  # Unlimited (cap removed 2026-05-12)
+        "ai_credits_monthly": 300,
+        "storage_gb": 25,
+        "staff_seats": 1,
+        "features": {
+            "guest_management": True,
+            "email_invitations": True,
+            "rsvp_system": True,
             "wedding_website": True,
             "timeline_builder": True,
             "basic_analytics": True,
-            "vendor_management": False,
-            "seating_orchestration": False,
+            "vendor_management": True,
+            "seating_orchestration": True,
             "ai_features": True,
+            "qr_checkin": True,
+            "automated_reminders": True,
+            "calendar_sync": True,
+            "payment_processing": True,
+            "vendor_collaboration": False,
+            "advanced_analytics": False,
+            "custom_domain": False,
+            "priority_support": False,
+            "white_label": False,
+            "api_access": False,
+            "dedicated_support": False,
         },
         "features_list": [
-            "Up to 3 weddings",
-            "150 guests per wedding",
-            "Guest & RSVP manager",
-            "Email invitations",
-            "Wedding website",
-            "Timeline builder",
-            "100 AI credits/month",
+            "Unlimited weddings",
+            "Unlimited guests",
+            "AI-powered timeline & vendor matching",
+            "Vendor management",
+            "Seating orchestration",
+            "QR check-in & live counts",
+            "Automated reminders",
+            "Calendar sync (Google, Outlook)",
+            "300 AI credits/month",
+            "25GB storage",
+            "Email support",
         ],
         "is_active": True,
         "is_featured": False,
@@ -399,19 +763,22 @@ plans = [
     {
         "_id": "plan_signature",
         "name": "Signature",
-        "description": "Most popular plan with full automation features",
-        "price_monthly": 59,
-        "price_yearly": 590,  # ~2 months free
+        "description": "For agencies running a team of planners. Everything in Boutique, plus team seats and agency-grade reporting.",
+        "price_monthly": 149,
+        "price_yearly": 1490,  # 10x monthly
         "trial_days": 30,
+        "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
         "is_metered": False,
-        "max_weddings": 10,
-        "max_guests_per_wedding": 350,
-        "ai_credits_monthly": 300,
-        "storage_gb": 50,
-        "staff_seats": 3,
+        "max_weddings": -1,  # Unlimited (cap removed 2026-05-12)
+        "max_weddings_lifetime": False,
+        "max_guests_per_wedding": -1,  # Unlimited (cap removed 2026-05-12)
+        "ai_credits_monthly": 1500,
+        "storage_gb": 100,
+        "staff_seats": 5,
         "features": {
             "guest_management": True,
             "email_invitations": True,
+            "rsvp_system": True,
             "wedding_website": True,
             "timeline_builder": True,
             "basic_analytics": True,
@@ -420,19 +787,28 @@ plans = [
             "ai_features": True,
             "qr_checkin": True,
             "automated_reminders": True,
+            "calendar_sync": True,
+            "payment_processing": True,
             "vendor_collaboration": True,
+            "advanced_analytics": True,
+            "custom_domain": True,
             "priority_support": True,
+            "white_label": False,
+            "api_access": False,
+            "dedicated_support": False,
         },
         "features_list": [
-            "Up to 10 weddings",
-            "350 guests per wedding",
+            "Unlimited weddings",
+            "Unlimited guests",
             "Everything in Boutique",
-            "Seating orchestration",
-            "QR check-in & live counts",
-            "Automated reminders",
-            "Vendor collaboration",
-            "300 AI credits/month",
-            "Priority support",
+            "Team collaboration (5 staff seats)",
+            "Vendor-collaboration workspaces",
+            "Cross-wedding analytics & revenue tracking",
+            "Custom domain (app.yourbrand.com)",
+            "1,500 AI credits/month",
+            "100GB storage",
+            "Priority support (12h response)",
+            "Group onboarding session",
         ],
         "is_active": True,
         "is_featured": True,
@@ -445,19 +821,22 @@ plans = [
     {
         "_id": "plan_enterprise",
         "name": "Enterprise",
-        "description": "For agencies and high-volume wedding planners",
-        "price_monthly": 149,
-        "price_yearly": 1490,  # ~2 months free
+        "description": "For franchises and white-label partners. Your brand, our platform, dedicated success.",
+        "price_monthly": 399,
+        "price_yearly": 3990,  # ~2 months free
         "trial_days": 30,
+        "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
         "is_metered": False,
         "max_weddings": -1,  # Unlimited
+        "max_weddings_lifetime": False,
         "max_guests_per_wedding": -1,  # Unlimited
-        "ai_credits_monthly": 1000,
-        "storage_gb": 200,
-        "staff_seats": 10,
+        "ai_credits_monthly": 5000,
+        "storage_gb": 500,
+        "staff_seats": 20,
         "features": {
             "guest_management": True,
             "email_invitations": True,
+            "rsvp_system": True,
             "wedding_website": True,
             "timeline_builder": True,
             "basic_analytics": True,
@@ -467,7 +846,10 @@ plans = [
             "ai_features": True,
             "qr_checkin": True,
             "automated_reminders": True,
+            "calendar_sync": True,
+            "payment_processing": True,
             "vendor_collaboration": True,
+            "custom_domain": True,
             "priority_support": True,
             "white_label": True,
             "api_access": True,
@@ -477,11 +859,12 @@ plans = [
             "Unlimited weddings",
             "Unlimited guests",
             "Everything in Signature",
-            "White-label branding",
-            "API access",
-            "1000 AI credits/month",
-            "10 staff seats",
-            "Dedicated support",
+            "White-label (your brand, no Special Wedding mentions)",
+            "API access + webhooks",
+            "20 staff seats",
+            "5,000 AI credits/month",
+            "500GB storage",
+            "Dedicated success manager",
             "Custom integrations",
         ],
         "is_active": True,
@@ -504,16 +887,45 @@ skipped = 0
 for plan in plans:
     plan_id = plan["_id"]
     print(f"\n[PLAN] Processing: {plan['name']} - ${plan['price_monthly']}/month")
+    existing_plan = collection.find_one({"_id": plan_id})
+    plan_for_sync = _build_effective_seed_plan(plan, existing_plan)
+    _guard_seed_billing_model_transition(plan_id, existing_plan, plan_for_sync)
 
-    # Create Stripe products if configured (idempotent - checks existing first)
-    stripe_ids = create_stripe_product_and_prices(plan) if STRIPE_CONFIGURED else {}
+    # Create Stripe products if configured (idempotent - checks existing first).
+    # Inactive plans are intentionally hidden by root admin and should not
+    # create fresh sellable Stripe Prices during a rolling deploy.
+    # Pass existing_plan so the helper can honor recorded Stripe IDs and
+    # detect unit_amount drift (see _ensure_seed_price for the immutability
+    # contract this enforces).
+    stripe_ids = (
+        create_stripe_product_and_prices(plan_for_sync, existing_plan)
+        if STRIPE_CONFIGURED and plan_for_sync.get("is_active", True)
+        else {}
+    )
 
     # Merge Stripe IDs into plan
-    plan_with_stripe = {**plan, **stripe_ids}
+    plan_with_stripe = {**plan_for_sync, **stripe_ids}
 
     # ATOMIC upsert: prevents race conditions when multiple containers start simultaneously
-    # $setOnInsert: only set these fields if document is newly created
-    # $set: always update these fields
+    #
+    # Field placement rules (2026-05-10 strategy refresh):
+    #
+    # $set — strategy-controlled fields. Every redeploy carries the current
+    # seed values into Mongo. This is what fixes the "Mongo holds $29 but the
+    # seed declares $49" drift problem. Trade-off: ad-hoc admin price edits
+    # via the saas admin UI get reverted on the next deploy. If a one-off
+    # price experiment is needed, do it under a NEW plan id, not by editing
+    # an existing canonical plan.
+    #
+    # $setOnInsert — admin display toggles. The admin saas page allows
+    # hiding a plan or rearranging order; those choices must survive deploys
+    # because they're operator decisions, not strategy.
+    #
+    # Why max_weddings_lifetime sits in $set: without it, the Solo lifetime
+    # cap silently doesn't write to Mongo, and `_live_wedding_count_lifetime`
+    # is never invoked (the branch in subscription_service reads the flag
+    # from plan_snapshot). Free Solo planners would be able to create →
+    # delete → create indefinitely, bypassing the "1 wedding lifetime" cap.
     result = collection.update_one(
         {"_id": plan_id},
         {
@@ -522,20 +934,25 @@ for plan in plans:
                     "created_at", datetime.now(timezone.utc)
                 ),
                 "created_by": plan_with_stripe.get("created_by", "system"),
+                # Admin display toggles — survive deploys.
+                "is_active": plan_with_stripe.get("is_active", True),
+                "is_featured": plan_with_stripe.get("is_featured", False),
+                "sort_order": plan_with_stripe.get("sort_order", 0),
+                "display_order": plan_with_stripe.get(
+                    "display_order", plan_with_stripe.get("sort_order", 0)
+                ),
             },
             "$set": {
+                # Strategy fields — refreshed on every deploy.
                 "name": plan_with_stripe["name"],
                 "description": plan_with_stripe.get("description"),
                 "price_monthly": plan_with_stripe["price_monthly"],
                 "price_yearly": plan_with_stripe.get("price_yearly"),
-                "is_metered": plan_with_stripe.get("is_metered", False),
-                # Metered config — these MUST be in $set or the seed will
-                # silently drop them on update, leaving plans in a half-
-                # configured state (is_metered=True with no event_name).
-                # See METERING_REVIEW_2026-05-04_PART2.md §1 (CC3).
-                "meter_event_name": plan_with_stripe.get("meter_event_name"),
-                "meter_id": plan_with_stripe.get("meter_id"),
+                "trial_days": plan_with_stripe.get("trial_days", 0),
                 "max_weddings": plan_with_stripe.get("max_weddings"),
+                "max_weddings_lifetime": plan_with_stripe.get(
+                    "max_weddings_lifetime", False
+                ),
                 "max_guests_per_wedding": plan_with_stripe.get(
                     "max_guests_per_wedding"
                 ),
@@ -544,12 +961,18 @@ for plan in plans:
                 "staff_seats": plan_with_stripe.get("staff_seats"),
                 "features": plan_with_stripe.get("features", {}),
                 "features_list": plan_with_stripe.get("features_list", []),
-                "is_active": plan_with_stripe.get("is_active", True),
-                "is_featured": plan_with_stripe.get("is_featured", False),
-                "sort_order": plan_with_stripe.get("sort_order", 0),
-                "display_order": plan_with_stripe.get(
-                    "display_order", plan_with_stripe.get("sort_order", 0)
+                # Billing model — defaults track the 2026-05-09 strategy
+                # (flat unless a plan deliberately opts in to metered).
+                "billing_model": plan_with_stripe.get(
+                    "billing_model", BILLING_MODEL_FLAT_RATE
                 ),
+                "is_metered": plan_with_stripe.get("is_metered", False),
+                # Metered config — these MUST be in $set or the seed will
+                # silently drop them on update, leaving plans in a half-
+                # configured state. See METERING_GAP_SCENARIOS_2026-05-04.md
+                # §CC3 (the structural bug that made setup feel manual).
+                "meter_event_name": plan_with_stripe.get("meter_event_name"),
+                "meter_id": plan_with_stripe.get("meter_id"),
                 "updated_at": datetime.now(timezone.utc),
                 # Only update Stripe IDs if we have them (field names must match codebase convention)
                 **(

@@ -29,6 +29,7 @@ from app.models.vendor_contracts import (
     CreateVendorContractRevisionRequest,
     CreateVendorContractTemplateRequest,
     CreateVendorPaymentMilestonesRequest,
+    DuplicateVendorContractRequest,
     RecordVendorMilestonePaymentRequest,
     SendVendorContractRequest,
     UpdateVendorContractRequest,
@@ -315,6 +316,33 @@ async def create_contract_revision(
         copy_terms_and_conditions=data.copy_terms_and_conditions,
         copy_cancellation_policy=data.copy_cancellation_policy,
         copy_custom_clauses=data.copy_custom_clauses,
+    )
+
+
+@router.post("/contracts/{contract_id}/duplicate", tags=["Contracts"])
+async def duplicate_contract(
+    contract_id: str,
+    data: DuplicateVendorContractRequest,
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
+):
+    """Clone a contract into a new draft root contract (independent lineage).
+
+    Optionally retargets the duplicate to a different wedding or vendor;
+    when retargeted, denormalized vendor fields are refreshed and form
+    submission linkage is dropped.
+    """
+    enforce_team_permission(current_user, "manage_vendors")
+    return await vendor_service.duplicate_contract(
+        contract_id=contract_id,
+        created_by=current_user.email,
+        new_contract_title=data.new_contract_title,
+        target_wedding_id=data.target_wedding_id,
+        target_vendor_profile_id=data.target_vendor_profile_id,
+        copy_sections=data.copy_sections,
+        copy_terms_and_conditions=data.copy_terms_and_conditions,
+        copy_cancellation_policy=data.copy_cancellation_policy,
+        copy_custom_clauses=data.copy_custom_clauses,
+        copy_attachments=data.copy_attachments,
     )
 
 

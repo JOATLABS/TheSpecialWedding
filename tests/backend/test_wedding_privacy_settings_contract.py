@@ -219,6 +219,54 @@ def test_verify_wedding_page_access_honors_public_password_and_private_modes():
     assert private_result["contact"] == "guest@example.com"
 
 
+def test_private_guest_otp_request_accepts_pydantic_none_values():
+    email_service = _build_privacy_service(
+        {
+            "_id": "wed_private",
+            "slug": "james-and-mel",
+            "privacy_settings": {"privacy_mode": "private"},
+        }
+    )
+    email_result = asyncio.run(
+        email_service.verify_wedding_page_access(
+            "james-and-mel",
+            {
+                "token": None,
+                "phone": None,
+                "email": " guest@example.com ",
+                "contact": None,
+                "otp_code": None,
+            },
+        )
+    )
+    assert email_result["otp_required"] is True
+    assert email_result["contact"] == "guest@example.com"
+    assert email_result["contact_type"] == "email"
+
+    phone_service = _build_privacy_service(
+        {
+            "_id": "wed_private",
+            "slug": "james-and-mel",
+            "privacy_settings": {"privacy_mode": "private"},
+        }
+    )
+    phone_result = asyncio.run(
+        phone_service.verify_wedding_page_access(
+            "james-and-mel",
+            {
+                "token": None,
+                "phone": " (555) 123-4567 ",
+                "email": None,
+                "contact": None,
+                "otp_code": None,
+            },
+        )
+    )
+    assert phone_result["otp_required"] is True
+    assert phone_result["contact"] == "(555) 123-4567"
+    assert phone_result["contact_type"] == "phone"
+
+
 def test_update_wedding_admin_invalidates_old_and_new_privacy_slugs(monkeypatch):
     current_user = SimpleNamespace(
         is_team_member=False,

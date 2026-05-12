@@ -391,7 +391,7 @@ class SMSResponseModel(BaseModel):
         description="SMS response message (max 1600 chars)",
     )
     mark_resolved: bool = Field(
-        default=True, description="Mark ticket as resolved after sending"
+        default=False, description="Mark ticket as resolved after sending"
     )
 
 
@@ -533,7 +533,7 @@ async def get_sms_tickets(
     cursor = (
         mongo.db["support_tickets"]
         .find(query)
-        .sort("created_at", -1)
+        .sort([("updated_at", -1), ("created_at", -1)])
         .skip(skip)
         .limit(limit)
     )
@@ -679,7 +679,13 @@ async def respond_to_sms_ticket(
                 "message_id": result.get("message_id"),
             }
         },
-        "$set": {"updated_at": now, "is_read": True},
+        "$set": {
+            "updated_at": now,
+            "is_read": True,
+            "last_response_at": now,
+            "last_message_preview": response_data.message[:160],
+            "last_message_direction": "outbound",
+        },
     }
 
     # Set first response time if this is the first response

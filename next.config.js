@@ -26,33 +26,6 @@ const remotePatterns = [
 ].filter(Boolean)
 
 const nextConfig = {
-  // Proxy API requests to backend
-  // - Coolify (single container): proxies to localhost:8000
-  // - Kubernetes (separate containers): proxies to backend K8s service
-  async rewrites() {
-    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
-
-    // Skip rewrites if frontend calls the API directly via public domain
-    if (apiBaseUrl.includes('api.thespecialwedding')) {
-      return [];
-    }
-
-    // K8s: backend service is at http://backend.wedding-app.svc.cluster.local:8000
-    // Coolify: backend is at http://localhost:8000 in same container
-    const backendUrl = process.env.BACKEND_SERVICE_URL || 'http://localhost:8000';
-
-    if (process.env.NODE_ENV === 'production') {
-      return [
-        {
-          source: '/api/proxy/:path*',
-          destination: `${backendUrl}/:path*`,
-        },
-      ];
-    }
-
-    return [];
-  },
-
   images: {
     formats: ['image/avif', 'image/webp'],
     remotePatterns,

@@ -163,7 +163,7 @@ export default function PayoutsCard() {
       );
       setIsStartingOnboarding(false);
     }
-  }, [token]);
+  }, [selectedCountry, token]);
 
   // ===== Render =====
 

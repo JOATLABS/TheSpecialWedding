@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
 
+from app.constants.roles import is_wedding_planner_role
 from app.core.cache import CacheKeys, cache
 from app.core.database import mongo
 from app.core.events import EventFactory, event_bus
@@ -1251,6 +1252,33 @@ class UserManagementService:
                     user_id=str(user["_id"]),
                     user={**user, "email_verified": True, "is_active": True},
                 )
+
+            # Phase D: Seed the catalog of pre-built form templates so a
+            # newly-verified planner sees 9 ready-to-send forms in their
+            # workspace from second one. Best-effort — wrapped so any
+            # seeder failure (Mongo blip, malformed catalog entry) cannot
+            # block account verification. Idempotent on re-run.
+            if is_wedding_planner_role(user.get("role")):
+                try:
+                    from app.services.form_service import FormService
+
+                    seed_result = (
+                        await FormService().seed_catalog_templates_for_planner(
+                            user["email"]
+                        )
+                    )
+                    self.logger.info(
+                        "Catalog seed for verified planner %s: %s",
+                        user["email"],
+                        seed_result,
+                    )
+                except Exception as seed_exc:  # pragma: no cover - defensive
+                    self.logger.warning(
+                        "Catalog seed failed for %s (verification still succeeded): %s",
+                        user["email"],
+                        seed_exc,
+                    )
+
             return {
                 "message": "Email verified successfully! Your account is now active. You can log in.",
                 "email": user["email"],
@@ -1755,6 +1783,37 @@ class UserManagementService:
                 await event_bus.publish(event)
             except Exception as e:
                 self.logger.warning("Failed to publish email changed event: %s", e)
+
+            # Phase D parity: a planner whose email changes should still
+            # have the catalog seeded under the new email. The cascade
+            # above rewrites forms.created_by from old → new, so already-
+            # seeded planners are no-ops here (idempotent via the
+            # seeded_from_catalog markers). The case this catches is the
+            # admin-onboarded planner who never went through verify_email
+            # originally — their new email becomes their canonical
+            # identity and we ensure the catalog is present.
+            if is_wedding_planner_role(user.get("role")):
+                try:
+                    from app.services.form_service import FormService
+
+                    seed_result = (
+                        await FormService().seed_catalog_templates_for_planner(
+                            new_email
+                        )
+                    )
+                    self.logger.info(
+                        "Catalog seed for planner email change %s -> %s: %s",
+                        old_email,
+                        new_email,
+                        seed_result,
+                    )
+                except Exception as seed_exc:
+                    self.logger.warning(
+                        "Catalog seed on email-change failed for %s -> %s: %s",
+                        old_email,
+                        new_email,
+                        seed_exc,
+                    )
 
             return {
                 "message": "Email address changed successfully",

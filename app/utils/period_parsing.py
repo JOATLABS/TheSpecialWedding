@@ -9,8 +9,8 @@ Why this is its own module
 ==========================
 
 Per ``project_subscription_lifecycle_bug_patterns`` (2026-04-25), divergent
-period-boundary parsing has historically caused real metering bugs in this
-codebase. Two prior implementations existed in parallel:
+period-boundary parsing has historically caused real metering bugs. Two
+prior implementations existed in parallel:
 
 * ``app/api/wedding.py`` coerced naive datetimes using
   ``datetime.now(timezone.utc).astimezone().tzinfo`` — which returns the
@@ -27,14 +27,12 @@ docs/analysis/METERING_GAP_SCENARIOS_2026-05-04.md §C5.
 Contract
 ========
 
-* Input: any of ``str`` (ISO 8601 with optional Z suffix), ``datetime``
-  (naive or aware), or ``None`` / unparseable input.
+* Input: ``str`` (ISO 8601 with optional Z suffix), ``datetime`` (naive
+  or aware), or ``None`` / unparseable input.
 * Output: an aware ``datetime`` in UTC, or ``None`` if input was missing
   or unparseable.
 * Naive datetimes are assumed to be UTC. Mongo stores datetimes as UTC by
   convention; trusting that is safer than guessing local.
-
-Stable across the next "we got bitten by timezones again" incident.
 """
 
 from __future__ import annotations
@@ -57,19 +55,16 @@ def coerce_period_start(value: Any) -> Optional[datetime]:
 
     Returns:
         A timezone-aware ``datetime`` in UTC, or ``None`` if the value
-        was missing or could not be parsed. Callers should treat
-        ``None`` as "skip this billing period check" rather than
-        "before all time."
+        was missing or could not be parsed. Callers should treat ``None``
+        as "skip this billing period check" rather than "before all time."
 
     Behavior:
         * ``None`` / empty → ``None``.
         * ``str`` parseable as ISO 8601 (handling trailing ``Z``) →
           aware UTC datetime.
         * ``str`` unparseable → ``None`` and a logged warning.
-        * Naive ``datetime`` → tagged as UTC (matches Mongo storage
-          convention).
-        * Aware ``datetime`` → returned unchanged if already UTC; else
-          converted to UTC.
+        * Naive ``datetime`` → tagged as UTC (matches Mongo convention).
+        * Aware ``datetime`` → returned in UTC (converted if needed).
     """
     if value is None:
         return None
@@ -88,7 +83,6 @@ def coerce_period_start(value: Any) -> Optional[datetime]:
             )
             return None
 
-    # Must be a datetime by now.
     if not isinstance(value, datetime):
         logger.warning(
             "coerce_period_start: unexpected type %s for value %r",

@@ -9,7 +9,7 @@ original, so Stripe won't dedupe → **customer is double-billed**.
 
 This module wraps the post-meter-event Mongo write with:
 
-* one immediate retry on failure (covers transient network blips)
+* one immediate retry on failure (covers transient blips)
 * on persistent failure: logs to an explicit ``STRIPE_MONGO_DIVERGENCE``
   error stream so the divergence is grep-able / alertable
 
@@ -36,28 +36,21 @@ async def update_wedding_meter_state(
 
     The retry exists because the success-path write (after a meter event
     landed at Stripe) is the dangerous failure mode: dropping it leads
-    to silent double-billing on the next daily-batch run. One immediate
-    retry handles transient blips; persistent failure surfaces via a
-    grep-able log line that operators can alert on.
+    to silent double-billing on the next daily-batch run.
 
     Args:
         weddings_collection: Motor async collection handle for
             ``mongo.db["weddings"]``. Passed in (rather than imported)
             so callers can inject test doubles.
-        wedding_id: The wedding's ``_id``, in whatever shape Mongo
-            expects — typically a string for this codebase, but
-            ``ObjectId`` is supported transparently.
+        wedding_id: The wedding's ``_id``.
         set_fields: Fields to set. Will be wrapped in ``{"$set": ...}``.
         context: Descriptive label that appears in failure logs. Use
-            something like ``"wedding_create_success"`` or
-            ``"wedding_delete_reversal_success"`` so operators can
+            something like ``"wedding_create_success"`` so operators can
             trace which call site diverged.
 
     Returns:
         ``True`` if Mongo matched at least one document on either
-        attempt. ``False`` if both attempts failed — the caller should
-        decide whether to surface the failure further (e.g., raise
-        HTTP 500 or just continue and let the operator reconcile).
+        attempt. ``False`` if both attempts failed.
     """
     for attempt in (1, 2):
         try:
@@ -75,12 +68,9 @@ async def update_wedding_meter_state(
                     context,
                     exc,
                 )
-                # Brief jitter so any transient settles before the retry.
                 await asyncio.sleep(0.1)
             else:
-                # SECOND failure — Stripe state may be ahead of Mongo.
-                # The grep-able prefix is intentional: ops should alert on
-                # any line containing STRIPE_MONGO_DIVERGENCE.
+                # Grep-able prefix for ops alerting.
                 logger.error(
                     "STRIPE_MONGO_DIVERGENCE wedding_id=%r context=%r "
                     "set_fields=%r — Mongo update failed twice: %s. "

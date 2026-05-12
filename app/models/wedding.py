@@ -160,12 +160,18 @@ class RSVPConfigModel(BaseModel):
         description="RSVP greeting message",
     )
     help_text: str = Field(
-        default="Check your phone for your personal invitation link, or contact us directly.",
+        default="Check your phone for your personal invitation link. If you need help, use the Get Help button and our planner will text you.",
         description="RSVP help text",
     )
     phone_numbers: List[str] = Field(
         default_factory=lambda: ["(319) 529-6088", "(405) 708-1076"],
         description="Contact phone numbers",
+    )
+    hide_phone_numbers: bool = Field(
+        default=True, description="Hide planner phone numbers on the public RSVP page"
+    )
+    help_button_label: str = Field(
+        default="Get Help", description="Public RSVP help button label"
     )
 
 
@@ -345,6 +351,8 @@ class WeddingModel(BaseModel):
                     "greeting": "Join us in celebrating our special day!",
                     "help_text": "Contact us if you need help",
                     "phone_numbers": ["(319) 529-6088", "(405) 708-1076"],
+                    "hide_phone_numbers": True,
+                    "help_button_label": "Get Help",
                 },
                 "registries": [
                     {

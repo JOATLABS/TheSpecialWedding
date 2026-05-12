@@ -14,13 +14,6 @@ export default function GoogleCalendarHelpPage() {
         <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-8 text-sm leading-7 text-slate-700 shadow-sm">
           <p>Planner owners and permitted team members can connect Google calendars.</p>
           <p>
-            The Google connection is brokered through our calendar aggregator (Aurinko).
-            Aurinko holds the Google OAuth credentials on our behalf; The Special Wedding
-            stores only an aggregator-account access token and does not store Google OAuth
-            tokens directly. The same product surface also supports Microsoft 365, iCloud,
-            and Exchange via the same aggregator.
-          </p>
-          <p>
             Shared team visibility is opt-in per connection. Personal external calendars are
             busy/free only by default and show full details only when the planner owner
             enables detail sharing for that connection.
@@ -87,10 +80,9 @@ export default function GoogleCalendarHelpPage() {
             </div>
           </dl>
           <p>
-            Disconnect at any time from your workspace settings; the aggregator-side grant
-            for that account is revoked (which terminates the underlying Google OAuth grant
-            held by the aggregator) and the local connection record is removed. Full data
-            deletion instructions are at{' '}
+            Disconnect at any time from your workspace settings; we revoke the OAuth grant
+            with Google and remove the connection record. Full data deletion instructions
+            are at{' '}
             <a className="underline" href="/google-data-deletion">
               /google-data-deletion
             </a>

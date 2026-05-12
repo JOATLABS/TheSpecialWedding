@@ -35,13 +35,3 @@ os.environ.setdefault("GUEST_MEDIA_DOMAIN", "https://guest-media.test.example.co
 os.environ.setdefault("AD_MEDIA_DOMAIN", "https://ads.test.example.com")
 os.environ.setdefault("BLOG_MEDIA_DOMAIN", "https://blogs.test.example.com")
 os.environ.setdefault("ENVIRONMENT", "test")
-os.environ.setdefault("AURINKO_CLIENT_ID", "test-aurinko-client-id")
-os.environ.setdefault("AURINKO_CLIENT_SECRET", "test-aurinko-client-secret")
-os.environ.setdefault("AURINKO_APP_ID", "test-aurinko-app-id")
-os.environ.setdefault("AURINKO_API_KEY", "test-aurinko-api-key")
-os.environ.setdefault("AURINKO_WEBHOOK_SECRET", "test-webhook-secret")
-os.environ.setdefault("AURINKO_OAUTH_STATE_SIGNING_KEY", "test-state-signing-key")
-os.environ.setdefault(
-    "AURINKO_REDIRECT_URI", "http://localhost:3000/admin/planner/calendar/callback"
-)
-os.environ.setdefault("TOKEN_ENCRYPTION_KEY", "test-token-encryption-key")

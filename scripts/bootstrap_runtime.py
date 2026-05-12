@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -18,10 +19,26 @@ COMMANDS: list[list[str]] = [
 ]
 
 
+def bootstrap_env() -> dict[str, str]:
+    env = os.environ.copy()
+    root = str(ROOT)
+    existing_pythonpath = env.get("PYTHONPATH")
+    pythonpath_entries = [root]
+    if existing_pythonpath:
+        pythonpath_entries.extend(
+            entry
+            for entry in existing_pythonpath.split(os.pathsep)
+            if entry and entry != root
+        )
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
+    return env
+
+
 def main() -> int:
+    env = bootstrap_env()
     for command in COMMANDS:
         print(f"[bootstrap] running: {' '.join(command)}", flush=True)
-        subprocess.run(command, cwd=ROOT, check=True)
+        subprocess.run(command, cwd=ROOT, check=True, env=env)
     return 0
 
 
