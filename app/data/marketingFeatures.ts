@@ -42,7 +42,6 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     description:
       "A wedding is rarely one block on one calendar. Configure the rehearsal, ceremony, reception, brunch, and cultural events with dates, venues, times, attire, and order-of-events. The planner timeline, couple portal, reminders, and public slug all read from the same event-day record, so a time change updates the guest-facing schedule instead of becoming another PDF you have to resend.",
     ai: false,
-    blogSlug: 'real-time-planning-not-email-tag',
   },
   {
     id: 'couple-portal',
@@ -54,7 +53,6 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     description:
       "Nine months out, your couple texts for the fourth time: 'what time is cocktail hour again?' Because the answer lives in a Google Doc they can't find, a venue email they've archived, and a timeline PDF you sent in January. The Couple Portal ends that loop. Couples log into the same record you work in — dashboard, timeline, payments, forms, inbox, meetings, push notifications. They maintain their own registry URLs and FAQ entries (rendered on both the portal and the public microsite). They annotate events and order-of-events with threaded, status-tracked notes you reply to in place. They submit forms on their schedule. The inbound texts stop because the answer is always live on the record they're already reading.",
     ai: false,
-    blogSlug: 'why-your-couples-stop-texting-you',
   },
   {
     id: 'wedding-website',
@@ -66,7 +64,6 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     description:
       "Booking a couple used to mean another $200/yr Squarespace site, another login, another place the schedule can go stale. Not here. The second a wedding exists in your dashboard, its public microsite is live: theme colors, fonts, the couple's story, wedding party, event schedule, gallery, RSVP flow, and guest memory uploads. Every surface reads the same record you write to — so the website can never drift from the plan. The wedding-website builder category, for this couple, ceases to exist.",
     ai: false,
-    blogSlug: 'the-built-in-wedding-website',
   },
   {
     id: 'wedding-configuration',
@@ -177,7 +174,6 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     description:
       "The vendor directory is the planner's source record for the people and companies behind each wedding. Browse public vendor listings, save private contacts to your studio rolodex, attach documents, record notes, compare quotes, and launch the contract canvas when a vendor agreement needs to become a couple-facing signature and payment flow. The directory is not just a list of names; it is the vendor memory that keeps contracts, files, payouts, and collaboration history from disappearing into email.",
     ai: true,
-    blogSlug: 'your-vendor-network-inside-the-platform',
   },
   {
     id: 'knowledge-base',

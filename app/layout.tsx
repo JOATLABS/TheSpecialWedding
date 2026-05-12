@@ -24,7 +24,7 @@ export const metadata: Metadata = {
     default: 'Wedding Planner Software & CRM for Pros — The Special Wedding',
     template: '%s | The Special Wedding',
   },
-  description: 'Wedding planning software & CRM built for professional planners. Manage guests, RSVPs, seating, vendor contracts, budgets, day-of timelines, and a live couple portal — replacing HoneyBook, Aisle Planner, and Squarespace. Starts at $29/mo.',
+  description: 'Wedding planning software & CRM built for professional planners. Manage guests, RSVPs, seating, vendor contracts, budgets, day-of timelines, and a live couple portal — replacing HoneyBook, Aisle Planner, and Squarespace. Free to start.',
   keywords: ['wedding planner software', 'wedding planning business software', 'event planner CRM', 'wedding vendor management', 'guest management for planners', 'wedding seating chart tool', 'HoneyBook alternative', 'Aisle Planner alternative'],
   authors: [{ name: 'The Special Wedding' }],
   creator: 'The Special Wedding',

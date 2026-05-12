@@ -7,7 +7,6 @@ import CoupleSidebar, { type CoupleSection } from '../components/CoupleSidebar';
 import CoupleTopHeader from '../components/CoupleTopHeader';
 import CoupleOnboardingModal from '../components/CoupleOnboardingModal';
 import CoupleMemoriesSection from '../components/CoupleMemoriesSection';
-import SlotPicker from './components/SlotPicker';
 import { useCoupleSSE } from '@/couple/hooks/useCoupleSSE';
 import PageHeader from '@/components/ui/PageHeader';
 import MessageBubble from '@/components/ui/MessageBubble';
@@ -28,9 +27,9 @@ import {
   coupleFetch,
   extractApiErrorMessage,
   logoutCoupleSession,
+  resolveCoupleSessionFailure,
 } from '@/couple/lib/auth';
 import { useCoupleAuth } from '@/contexts/CoupleAuthContext';
-import { useCoupleSessionExpiryHandler } from '@/couple/hooks/useCoupleSessionExpiryHandler';
 import { getWeddingEventLabel } from '@/utils/weddingEvents';
 import {
   type CoupleThreadMessage,
@@ -288,6 +287,29 @@ const COUPLE_SECTIONS: CoupleSection[] = [
 
 function isCoupleSection(value: string | null): value is CoupleSection {
   return Boolean(value && COUPLE_SECTIONS.includes(value as CoupleSection));
+}
+
+function useCoupleSessionExpiryHandler() {
+  const { expireSession } = useCoupleAuth();
+
+  return useCallback(
+    async (
+      response: Response,
+      options?: {
+        blockedFallback?: string;
+        unauthenticatedFallback?: string;
+      },
+    ) => {
+      const failure = await resolveCoupleSessionFailure(response, options);
+      if (!failure) {
+        return false;
+      }
+
+      await expireSession(failure.message);
+      return true;
+    },
+    [expireSession],
+  );
 }
 
 // ============================================================================
@@ -1769,8 +1791,6 @@ function MeetingsSection({ archived }: { archived: boolean }) {
           This wedding is archived, so meeting scheduling is paused. Archived portals do not show active meeting links.
         </div>
       )}
-
-      {!archived && <SlotPicker />}
 
       {loadingMeetings ? (
         <div className="flex items-center justify-center py-16">

@@ -87,11 +87,36 @@ class InviteDeliveryMode(str, Enum):
 class MeetingLifecycleStatus(str, Enum):
     """Lifecycle state for canonical meeting records."""
 
-    PENDING_APPROVAL = "pending_approval"
     SCHEDULED = "scheduled"
     RESCHEDULED = "rescheduled"
     CANCELLED = "cancelled"
     COMPLETED = "completed"
+
+
+class ExternalConflictStatus(str, Enum):
+    """Tri-state badge for an internal task whose external projection has
+    diverged from canonical.
+
+    NONE — projections are in sync; UI shows no badge.
+    PENDING_REVIEW — webhook or drift-check observed an external edit; the
+        planner must explicitly accept the external change or overwrite with
+        canonical via the resolve endpoints.
+    RESOLVED — last divergence was acknowledged; the row is in-sync as of
+        external_last_modified_at. Held briefly for audit visibility.
+    """
+
+    NONE = "none"
+    PENDING_REVIEW = "pending_review"
+    RESOLVED = "resolved"
+
+
+class ExternalConflictSource(str, Enum):
+    """Which mechanism detected the conflict — useful for observability
+    when triaging drift between webhook + polling code paths."""
+
+    WEBHOOK = "webhook"
+    DRIFT_CHECK = "drift_check"
+    MANUAL = "manual"
 
 
 def attach_timezone_if_naive(
@@ -194,25 +219,6 @@ class PlannerTaskModel(BaseModel):
         default_factory=list, description="File attachment URLs"
     )
 
-    # Snapshot of last seen external state — written by calendar_webhook_service
-    # when an external change is detected. Canonical fields (start_date,
-    # end_date, title, description, etc.) are NOT silently overwritten; the
-    # planner UI reads external_conflict_status to render a "modified
-    # externally" badge until accepted or rejected.
-    external_start_date: Optional[datetime] = None
-    external_end_date: Optional[datetime] = None
-    external_title: Optional[str] = None
-    external_description: Optional[str] = None
-    external_location: Optional[str] = None
-    external_last_modified_at: Optional[datetime] = None
-    external_conflict_status: str = Field(default="none")
-    external_conflict_source: Optional[str] = None
-    external_conflict_detected_at: Optional[datetime] = None
-
-    # True when the row was created by a couple's self-service booking from
-    # the couples portal, false (default) for planner-initiated items.
-    created_by_couple: bool = Field(default=False)
-
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     version: int = Field(default=1, ge=1)
@@ -220,23 +226,44 @@ class PlannerTaskModel(BaseModel):
         None, description="When task was completed"
     )
 
+    # ---------------- External-conflict tracking ----------------
+    # Populated by the Aurinko webhook handler (process_event_change_async)
+    # and the drift-check job when an external edit diverges from canonical.
+    # The planner UI surfaces a "modified externally" badge until accept or
+    # reject is invoked; canonical fields are NOT silently overwritten.
+    external_conflict_status: str = Field(
+        default=ExternalConflictStatus.NONE.value,
+        description="Tri-state badge — none / pending_review / resolved",
+    )
+    external_conflict_source: Optional[str] = Field(
+        default=None,
+        description="Which mechanism detected the divergence (webhook/drift_check/manual)",
+    )
+    external_conflict_detected_at: Optional[datetime] = Field(
+        default=None, description="When the most recent divergence was observed"
+    )
+    external_last_modified_at: Optional[datetime] = Field(
+        default=None,
+        description="Provider-reported lastModifiedDateTime for the linked event",
+    )
+    external_start_date: Optional[datetime] = Field(
+        default=None, description="External event start (if snapshot fetched)"
+    )
+    external_end_date: Optional[datetime] = Field(
+        default=None, description="External event end (if snapshot fetched)"
+    )
+    external_title: Optional[str] = Field(
+        default=None, description="External event subject/title (if snapshot fetched)"
+    )
+    external_description: Optional[str] = Field(
+        default=None, description="External event body preview (if snapshot fetched)"
+    )
+    external_location: Optional[str] = Field(
+        default=None, description="External event location (if snapshot fetched)"
+    )
+
     class Config:
         populate_by_name = True
-
-
-class ExternalConflictStatus(str, Enum):
-    """Status of an externally detected change against canonical task state."""
-
-    NONE = "none"
-    PENDING_REVIEW = "pending_review"
-    AUTO_ACCEPTED = "auto_accepted"
-
-
-class ExternalConflictSource(str, Enum):
-    """Where an external change was learned from."""
-
-    WEBHOOK = "webhook"
-    POLL = "poll"
 
 
 class CalendarEventCreate(BaseModel):
@@ -406,11 +433,9 @@ class CalendarEventUpdate(BaseModel):
 
 
 class CalendarSyncStatus(BaseModel):
-    """Status of the user's external calendar connection (via Aurinko)."""
+    """Status of Google Calendar connection for a user."""
 
-    connected: bool = Field(
-        ..., description="Whether an external calendar is connected"
-    )
+    connected: bool = Field(..., description="Whether Google Calendar is connected")
     calendar_id: Optional[str] = Field(None, description="Connected calendar ID")
     last_sync: Optional[datetime] = Field(None, description="Last sync timestamp")
     sync_enabled: bool = Field(

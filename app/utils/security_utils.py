@@ -4,6 +4,7 @@ Security utilities for input sanitization, validation, and XSS prevention
 
 import html
 import logging
+import os
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -439,6 +440,17 @@ class FormSecurityValidator:
                     if opt and isinstance(opt, str)
                 ]
 
+        # Preserve conditional_logic when present. The shape is validated
+        # upstream by Pydantic (FormField._validate_conditional_logic in
+        # app/models/form.py), so by the time we reach this sanitizer the
+        # blob is either ``None`` or a structurally-valid show_when rule.
+        # Dropping it here used to make catalog templates with conditional
+        # rules behave inconsistently — auto-seeded copies kept the rules
+        # while /forms/from-template copies rendered every field
+        # unconditionally. Pass it through verbatim instead.
+        if field.get("conditional_logic") is not None:
+            sanitized["conditional_logic"] = field["conditional_logic"]
+
         return sanitized
 
     @staticmethod
@@ -481,6 +493,21 @@ class FormSecurityValidator:
                     if isinstance(value, str) and InputSanitizer.validate_email(value):
                         sanitized[field_id] = value.lower().strip()
 
+                elif field_type == "phone":
+                    # E.164-tolerant: accept digits, spaces, dashes, parens,
+                    # leading +. Cap at 32 chars (E.164 max is 15, but we
+                    # tolerate formatting noise). Require at least 7
+                    # actual digits — the previous shape allowed pure
+                    # punctuation strings ("-------", "(   )") through.
+                    if isinstance(value, str):
+                        candidate = value.strip()
+                        if (
+                            len(candidate) <= 32
+                            and re.fullmatch(r"\+?[\d\s\-().]{7,32}", candidate)
+                            and sum(ch.isdigit() for ch in candidate) >= 7
+                        ):
+                            sanitized[field_id] = candidate
+
                 elif field_type in ["number", "rating", "scale"]:
                     if isinstance(value, (int, float)):
                         sanitized[field_id] = value
@@ -510,6 +537,23 @@ class FormSecurityValidator:
                         except ValueError:
                             pass  # Skip invalid dates
 
+                elif field_type == "file_upload":
+                    # The submission body carries either the bare file_id
+                    # string or a dict {file_id: ...}. Real validation
+                    # against the form_uploads collection happens later in
+                    # FormService.submit_form_response — here we just keep
+                    # the reference shape intact for that step.
+                    if isinstance(value, str):
+                        sanitized[field_id] = InputSanitizer.sanitize_text(value, 100)
+                    elif isinstance(value, dict) and isinstance(
+                        value.get("file_id"), str
+                    ):
+                        sanitized[field_id] = {
+                            "file_id": InputSanitizer.sanitize_text(
+                                value["file_id"], 100
+                            )
+                        }
+
             except Exception as e:
                 logger.warning(f"Error sanitizing field {field_id}: {str(e)}")
                 continue  # Skip problematic fields
@@ -522,10 +566,16 @@ class SecurityHeaders:
 
     @staticmethod
     def get_form_security_headers() -> Dict[str, str]:
-        """
-        Get security headers for form responses
-        Returns:
-            Dictionary of security headers
+        """Get hardening headers for public form responses.
+
+        Notable: ``script-src 'self'`` (no ``'unsafe-inline'``). This API
+        endpoint returns JSON, so inline scripts have no business in the
+        response anyway, and removing the directive closes the main
+        browser-side XSS guard. ``style-src 'self' 'unsafe-inline'`` is
+        retained because a few first-party styles still ship inline; that
+        narrow allowance is much lower-risk than inline scripts.
+        ``object-src 'none'`` and ``base-uri 'self'`` block the two
+        legacy script-injection pivots that aren't covered by script-src.
         """
         return {
             "X-Content-Type-Options": "nosniff",
@@ -534,36 +584,35 @@ class SecurityHeaders:
             "Referrer-Policy": "strict-origin-when-cross-origin",
             "Content-Security-Policy": (
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline'; "
+                "script-src 'self'; "
                 "style-src 'self' 'unsafe-inline'; "
                 "img-src 'self' data: https:; "
                 "font-src 'self'; "
                 "connect-src 'self'; "
+                "object-src 'none'; "
+                "base-uri 'self'; "
                 "frame-ancestors 'none'"
             ),
         }
 
 
 class RateLimitTracker:
-    """Simple in-memory rate limiting tracker"""
+    """Process-local rate limit tracker.
+
+    Used as a fallback when Redis is unavailable. Counts are kept in
+    memory per replica, so a deploy of N replicas effectively multiplies
+    the configured limit by N. Production should always run with
+    ``RedisRateLimitTracker`` configured via ``REDIS_URL``; this class
+    exists so unit tests and one-replica dev environments don't depend
+    on Redis being up.
+    """
 
     def __init__(self):
         self._requests = {}
 
     def check_rate_limit(self, key: str, limit: int, window_seconds: int) -> bool:
-        """
-        Check if request is within rate limit
-
-        Args:
-            key: Unique identifier (IP, user email, etc.)
-            limit: Maximum requests allowed
-            window_seconds: Time window in seconds
-        Returns:
-            True if within limit, False otherwise
-        """
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(seconds=window_seconds)
-        # Clean old entries
         if key in self._requests:
             self._requests[key] = [
                 timestamp for timestamp in self._requests[key] if timestamp > cutoff
@@ -571,14 +620,84 @@ class RateLimitTracker:
         else:
             self._requests[key] = []
 
-        # Check current count
         if len(self._requests[key]) >= limit:
             return False
 
-        # Add current request
         self._requests[key].append(now)
         return True
 
 
-# Global rate limiter instance
-rate_limiter = RateLimitTracker()
+class RedisRateLimitTracker:
+    """Redis-backed token-bucket-ish rate limiter.
+
+    Uses a single ``INCR`` plus ``EXPIRE`` per (key, window) bucket so
+    counts are shared across all API replicas. Bucketing rounds the
+    current time down to the nearest ``window_seconds`` boundary, which
+    is good enough for abuse mitigation (no floating eviction) and
+    avoids the round-trip cost of a sorted-set sliding window. Falls
+    back to the in-memory tracker on any Redis error so a Redis blip
+    can never take the whole API down.
+    """
+
+    def __init__(self, redis_client, fallback: "RateLimitTracker"):
+        self._redis = redis_client
+        self._fallback = fallback
+
+    def check_rate_limit(self, key: str, limit: int, window_seconds: int) -> bool:
+        if window_seconds <= 0 or limit <= 0:
+            return True
+        now_bucket = int(datetime.now(timezone.utc).timestamp() // window_seconds)
+        redis_key = f"rl:{key}:{window_seconds}:{now_bucket}"
+        try:
+            pipe = self._redis.pipeline()
+            pipe.incr(redis_key)
+            # EXPIRE with NX-like semantics: setting expiry on every
+            # increment is idempotent and slightly wasteful but cheap.
+            pipe.expire(redis_key, window_seconds)
+            count, _ = pipe.execute()
+            return int(count) <= limit
+        except Exception as exc:
+            logger.warning(
+                "Redis rate limiter unavailable, falling back to in-memory "
+                "(key=%s): %s",
+                key,
+                exc,
+            )
+            return self._fallback.check_rate_limit(key, limit, window_seconds)
+
+
+def _build_rate_limiter():
+    """Construct the singleton rate limiter.
+
+    Picks Redis when ``REDIS_URL`` is set and a connection succeeds,
+    otherwise falls back to the in-process tracker. The returned
+    instance is the public ``rate_limiter`` symbol used everywhere; the
+    swap is invisible to callers.
+    """
+    fallback = RateLimitTracker()
+    redis_url = os.environ.get("REDIS_URL")
+    if not redis_url:
+        return fallback
+    try:
+        import redis as _redis
+
+        client = _redis.Redis.from_url(
+            redis_url, socket_connect_timeout=2, socket_timeout=2
+        )
+        # Eagerly check connectivity so a bad URL fails at import time
+        # rather than on first request.
+        client.ping()
+        logger.info("Rate limiter using Redis (%s)", redis_url)
+        return RedisRateLimitTracker(client, fallback=fallback)
+    except Exception as exc:
+        logger.warning(
+            "Redis unavailable, using in-process rate limiter (per-replica): %s",
+            exc,
+        )
+        return fallback
+
+
+# Global rate limiter instance. Redis-backed when REDIS_URL is set and
+# reachable, otherwise an in-process tracker that's still safe for
+# single-replica deployments.
+rate_limiter = _build_rate_limiter()

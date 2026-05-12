@@ -103,7 +103,10 @@ function getConfiguredApiBaseUrl(): string {
     return normalizeBaseUrl(internalUrl);
   }
 
-  const publicUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+  // Bracket notation prevents Next.js from statically replacing this with the
+  // literal value at build time, keeping the API URL out of the client bundle.
+  // This function is server-side only; the browser path returns '/api/proxy' first.
+  const publicUrl = (process.env['NEXT_PUBLIC_API_BASE_URL'] as string | undefined)?.trim();
   if (publicUrl) {
     return normalizeBaseUrl(publicUrl);
   }
@@ -120,20 +123,67 @@ function getConfiguredApiBaseUrl(): string {
   throw new Error(errorMsg);
 }
 
+function assertValidProxyBackend(apiBase: string, frontendOrigin?: string): void {
+  let apiUrl: URL;
+  try {
+    apiUrl = new URL(apiBase);
+  } catch {
+    throw new Error(`Proxy backend URL is invalid. Resolved value: ${apiBase}`);
+  }
+
+  if (apiUrl.protocol !== 'http:' && apiUrl.protocol !== 'https:') {
+    throw new Error(
+      `Proxy backend URL must use http or https. Resolved value: ${apiBase}`,
+    );
+  }
+
+  if (!frontendOrigin) {
+    return;
+  }
+
+  let appUrl: URL;
+  try {
+    appUrl = new URL(frontendOrigin);
+  } catch {
+    throw new Error(`Frontend origin is invalid. Resolved value: ${frontendOrigin}`);
+  }
+
+  if (apiUrl.origin === appUrl.origin) {
+    throw new Error(
+      `Proxy backend URL must not point at the frontend origin (${appUrl.origin}). ` +
+        'Configure BACKEND_SERVICE_URL or INTERNAL_API_BASE_URL to a backend service URL.',
+    );
+  }
+}
+
+/**
+ * Get the backend target used by the runtime `/api/proxy` route.
+ *
+ * `BACKEND_SERVICE_URL` is an explicit proxy override for split-service
+ * runtimes. When it is absent, reuse the server API fallback chain so existing
+ * Coolify `INTERNAL_API_BASE_URL` settings also drive browser proxy traffic.
+ */
+export function getProxyBackendBaseUrl(frontendOrigin?: string): string {
+  const backendUrl = process.env.BACKEND_SERVICE_URL?.trim();
+  const apiBase = backendUrl ? normalizeBaseUrl(backendUrl) : getConfiguredApiBaseUrl();
+  assertValidProxyBackend(apiBase, frontendOrigin);
+  return apiBase;
+}
+
 /**
  * Get the API base URL.
  *
- * In split-service deployments, the frontend image must be environment-neutral
- * so the same SHA can be promoted from staging to production. Browser callers
- * therefore derive the API host from the current origin, while server-side
- * callers use the deployment env vars.
+ * In the browser, always returns the relative path '/api/proxy' so that all
+ * API calls are routed through the runtime `/api/proxy` route. This keeps the API
+ * subdomain invisible to crawlers and out of the client bundle.
+ *
+ * On the server (SSR/RSC/sitemap/etc.) uses deployment env vars so that
+ * server-side fetches reach the backend directly without a round trip through
+ * the public proxy.
  */
 export function getApiBaseUrl(): string {
   if (typeof window !== 'undefined') {
-    const derived = deriveApiOrigin(window.location.protocol, window.location.hostname);
-    if (derived) {
-      return normalizeBaseUrl(derived);
-    }
+    return '/api/proxy';
   }
 
   return getConfiguredApiBaseUrl();

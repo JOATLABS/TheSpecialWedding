@@ -40,23 +40,23 @@ class Settings:
             raise ValueError(f"{url_name} environment variable is not configured")
         return value
 
-    # Calendar aggregator integration (Aurinko)
-    AURINKO_API_KEY: Optional[str] = os.getenv("AURINKO_API_KEY")
-    AURINKO_APP_ID: Optional[str] = os.getenv("AURINKO_APP_ID")
-    AURINKO_CLIENT_ID: Optional[str] = os.getenv("AURINKO_CLIENT_ID")
-    AURINKO_CLIENT_SECRET: Optional[str] = os.getenv("AURINKO_CLIENT_SECRET")
-    AURINKO_WEBHOOK_SECRET: Optional[str] = os.getenv("AURINKO_WEBHOOK_SECRET")
-    AURINKO_API_BASE_URL: str = os.getenv(
-        "AURINKO_API_BASE_URL", "https://api.aurinko.io/v1"
+    # Google Calendar Integration
+    GOOGLE_CLIENT_ID: Optional[str] = os.getenv("GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET: Optional[str] = os.getenv("GOOGLE_CLIENT_SECRET")
+    GOOGLE_REDIRECT_URI: Optional[str] = os.getenv("GOOGLE_REDIRECT_URI")
+    GOOGLE_OAUTH_STATE_SIGNING_KEY: Optional[str] = os.getenv(
+        "GOOGLE_OAUTH_STATE_SIGNING_KEY"
     )
-    AURINKO_OAUTH_STATE_SIGNING_KEY: Optional[str] = os.getenv(
-        "AURINKO_OAUTH_STATE_SIGNING_KEY"
-    )
-    AURINKO_REDIRECT_URI: Optional[str] = os.getenv("AURINKO_REDIRECT_URI")
     TOKEN_ENCRYPTION_KEY: Optional[str] = os.getenv("TOKEN_ENCRYPTION_KEY")
-    CALENDAR_DEFAULT_TIMEZONE: str = os.getenv("CALENDAR_DEFAULT_TIMEZONE", "UTC")
-    CALENDAR_WEBHOOK_REPLAY_WINDOW_SECONDS: int = int(
-        os.getenv("CALENDAR_WEBHOOK_REPLAY_WINDOW_SECONDS", "300")
+    GOOGLE_CALENDAR_DEFAULT_TIMEZONE: str = os.getenv(
+        "GOOGLE_CALENDAR_DEFAULT_TIMEZONE", "UTC"
+    )
+    GOOGLE_APP_PUBLIC_HOME_URL: Optional[str] = os.getenv("GOOGLE_APP_PUBLIC_HOME_URL")
+    GOOGLE_APP_PRIVACY_URL: Optional[str] = os.getenv("GOOGLE_APP_PRIVACY_URL")
+    GOOGLE_APP_TERMS_URL: Optional[str] = os.getenv("GOOGLE_APP_TERMS_URL")
+    GOOGLE_APP_SUPPORT_URL: Optional[str] = os.getenv("GOOGLE_APP_SUPPORT_URL")
+    GOOGLE_APP_DATA_DELETION_URL: Optional[str] = os.getenv(
+        "GOOGLE_APP_DATA_DELETION_URL"
     )
     CALENDAR_SHARED_EVENTS_CACHE_SECONDS: int = int(
         os.getenv("CALENDAR_SHARED_EVENTS_CACHE_SECONDS", "60")
@@ -88,24 +88,58 @@ class Settings:
         os.getenv("CALENDAR_DRIFT_CHECK_INTERVAL_MINUTES", "30")
     )
 
-    # Aurinko scopes requested when starting the OAuth connect flow.
-    # Calendar.ReadWrite supersedes Calendar.Read — requesting both is
-    # redundant and clutters the consent screen, so we ask only for
-    # ReadWrite. ``AccountInfo.Read`` was previously included for the
-    # identity call at /am/accounts/me, but Aurinko's scope parser
-    # rejects it as unknown ("Unable to parse Scopes"). The /am/accounts/me
-    # call appears to work on the base account-token grant without an
-    # explicit scope — if a future error surfaces a missing identity
-    # scope, the canonical name needs to come from the Aurinko docs page
-    # at docs.aurinko.io/authentication/authentication-scopes.
-    AURINKO_SCOPES: list = [
-        "Calendar.ReadWrite",
+    # Scopes needed for calendar read/write access
+    GOOGLE_CALENDAR_SCOPES: list = [
+        "https://www.googleapis.com/auth/calendar.events",
+        "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+        "https://www.googleapis.com/auth/userinfo.email",
     ]
 
     # Web Push Notification Service (VAPID)
     VAPID_PUBLIC_KEY: Optional[str] = os.getenv("VAPID_PUBLIC_KEY")
     VAPID_PRIVATE_KEY: Optional[str] = os.getenv("VAPID_PRIVATE_KEY")
     VAPID_EMAIL: str = os.getenv("VAPID_EMAIL", "mailto:admin@thespecialwedding.io")
+
+    # ==================== Aurinko (multi-provider calendar) ====================
+    # Aurinko is the unified-mailbox layer that brokers OAuth + tokens for
+    # Google, Office 365, iCloud, and EWS/Exchange under a single API. Account
+    # tokens are exchanged via the platform basic-auth (client_id/client_secret)
+    # and stored encrypted on calendar_connections rows. Webhook payloads are
+    # signed with the dashboard "Signing secret" (NOT the client secret) — see
+    # docs.aurinko.io/unified-apis/webhooks-api/authentication for the spec.
+    AURINKO_API_BASE_URL: str = os.getenv(
+        "AURINKO_API_BASE_URL", "https://api.aurinko.io"
+    )
+    AURINKO_APP_ID: Optional[str] = os.getenv("AURINKO_APP_ID")
+    AURINKO_CLIENT_ID: Optional[str] = os.getenv("AURINKO_CLIENT_ID")
+    AURINKO_CLIENT_SECRET: Optional[str] = os.getenv("AURINKO_CLIENT_SECRET")
+    AURINKO_API_KEY: Optional[str] = os.getenv("AURINKO_API_KEY")
+    # Signature verification key (dashboard "Signing secret"). MUST NOT be the
+    # client secret — clobbering this with the client secret will silently fail
+    # every webhook signature check.
+    AURINKO_WEBHOOK_SECRET: Optional[str] = os.getenv("AURINKO_WEBHOOK_SECRET")
+    AURINKO_REDIRECT_URI: Optional[str] = os.getenv("AURINKO_REDIRECT_URI")
+    AURINKO_OAUTH_STATE_SIGNING_KEY: Optional[str] = os.getenv(
+        "AURINKO_OAUTH_STATE_SIGNING_KEY"
+    )
+    # Comma-separated provider list passed to the hosted-auth URL as
+    # serviceType=Google,Office365,iCloud,EWS. Order is preserved for the
+    # provider selector UI Aurinko renders.
+    AURINKO_SCOPES: str = os.getenv(
+        "AURINKO_SCOPES",
+        "Calendar.Read,Calendar.ReadWrite",
+    )
+    AURINKO_SERVICE_TYPES: str = os.getenv(
+        "AURINKO_SERVICE_TYPES",
+        "Google,Office365,iCloud,EWS",
+    )
+    # Maximum age (in seconds) of an Aurinko webhook delivery before we treat
+    # it as a replay. 300s = 5 minutes is the industry-standard window
+    # (Stripe, Slack, GitHub all use 5 min). Header timestamp is sourced from
+    # X-Aurinko-Request-Timestamp.
+    CALENDAR_WEBHOOK_REPLAY_WINDOW_SECONDS: int = int(
+        os.getenv("CALENDAR_WEBHOOK_REPLAY_WINDOW_SECONDS", "300")
+    )
 
 
 settings = Settings()

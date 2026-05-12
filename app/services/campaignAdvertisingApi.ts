@@ -8,7 +8,11 @@
  */
 
 import { getApiBaseUrl } from '@/utils/env';
-import { redirectOnBillingBlock } from '@/utils/adminApiAuthGuard';
+import {
+  adminGet,
+  adminMutation,
+  type AdminApiRequest,
+} from '@/services/adminApiRequest';
 
 const API_BASE = getApiBaseUrl();
 
@@ -422,6 +426,8 @@ export interface PipelineStatus {
 export interface ExportResponse {
   dataset: string;
   date_range: string;
+  total?: number;
+  returned?: number;
   row_count: number;
   rows: any[];
 }
@@ -472,12 +478,8 @@ function authenticatedGet(path: string, token: string, params?: Record<string, s
   });
 }
 
-async function handleResponse<T>(response: Response, errorPrefix: string): Promise<T> {
+async function handlePortalResponse<T>(response: Response, errorPrefix: string): Promise<T> {
   if (!response.ok) {
-    // Centralized 402 → /admin/planner/billing redirect. See
-    // AGENTS.md → "Known Open Issues" item 5. The throw below still fires
-    // but the page unloads before any UI can render the error.
-    redirectOnBillingBlock(response);
     const error = await response.json().catch(() => ({}));
     throw new Error(error.detail?.message || error.detail || `${errorPrefix}`);
   }
@@ -498,7 +500,7 @@ export async function createCampaign(
     headers: jsonHeaders(token),
     body: JSON.stringify(data),
   });
-  return handleResponse<AdCampaign>(response, 'Failed to create campaign');
+  return handlePortalResponse<AdCampaign>(response, 'Failed to create campaign');
 }
 
 /** List vendor's campaigns with optional filters */
@@ -507,7 +509,7 @@ export async function listVendorCampaigns(
   params?: { status?: string; limit?: number; skip?: number }
 ): Promise<AdCampaign[]> {
   const response = await authenticatedGet('/portal/ads/campaigns', token, params);
-  return handleResponse<AdCampaign[]>(response, 'Failed to fetch campaigns');
+  return handlePortalResponse<AdCampaign[]>(response, 'Failed to fetch campaigns');
 }
 
 /** Get a single campaign by ID */
@@ -516,7 +518,7 @@ export async function getVendorCampaign(
   campaignId: string
 ): Promise<AdCampaign> {
   const response = await authenticatedGet(`/portal/ads/campaigns/${campaignId}`, token);
-  return handleResponse<AdCampaign>(response, 'Failed to fetch campaign');
+  return handlePortalResponse<AdCampaign>(response, 'Failed to fetch campaign');
 }
 
 /** Update a campaign (draft/rejected only) */
@@ -530,7 +532,7 @@ export async function updateCampaign(
     headers: jsonHeaders(token),
     body: JSON.stringify(data),
   });
-  return handleResponse<AdCampaign>(response, 'Failed to update campaign');
+  return handlePortalResponse<AdCampaign>(response, 'Failed to update campaign');
 }
 
 /** Delete a campaign (draft only) */
@@ -542,7 +544,7 @@ export async function deleteCampaign(
     method: 'DELETE',
     headers: authHeaders(token),
   });
-  return handleResponse<{ message: string }>(response, 'Failed to delete campaign');
+  return handlePortalResponse<{ message: string }>(response, 'Failed to delete campaign');
 }
 
 /** Submit campaign for review */
@@ -554,7 +556,7 @@ export async function submitCampaignForReview(
     method: 'POST',
     headers: authHeaders(token),
   });
-  return handleResponse<AdCampaign>(response, 'Failed to submit campaign');
+  return handlePortalResponse<AdCampaign>(response, 'Failed to submit campaign');
 }
 
 /** Pause an active campaign */
@@ -566,7 +568,7 @@ export async function pauseVendorCampaign(
     method: 'POST',
     headers: authHeaders(token),
   });
-  return handleResponse<AdCampaign>(response, 'Failed to pause campaign');
+  return handlePortalResponse<AdCampaign>(response, 'Failed to pause campaign');
 }
 
 /** Get campaign performance stats */
@@ -576,7 +578,7 @@ export async function getCampaignStats(
   days?: number
 ): Promise<CampaignStatsResponse> {
   const response = await authenticatedGet(`/portal/ads/campaigns/${campaignId}/stats`, token, { days });
-  return handleResponse<CampaignStatsResponse>(response, 'Failed to fetch campaign stats');
+  return handlePortalResponse<CampaignStatsResponse>(response, 'Failed to fetch campaign stats');
 }
 
 /** Add a creative to a campaign */
@@ -590,7 +592,7 @@ export async function createCreative(
     headers: jsonHeaders(token),
     body: JSON.stringify(data),
   });
-  return handleResponse<AdCreative>(response, 'Failed to create creative');
+  return handlePortalResponse<AdCreative>(response, 'Failed to create creative');
 }
 
 /** List creatives for a campaign */
@@ -599,7 +601,7 @@ export async function listCreatives(
   campaignId: string
 ): Promise<AdCreative[]> {
   const response = await authenticatedGet(`/portal/ads/campaigns/${campaignId}/creatives`, token);
-  return handleResponse<AdCreative[]>(response, 'Failed to fetch creatives');
+  return handlePortalResponse<AdCreative[]>(response, 'Failed to fetch creatives');
 }
 
 /** Update a creative */
@@ -613,7 +615,7 @@ export async function updateCreative(
     headers: jsonHeaders(token),
     body: JSON.stringify(data),
   });
-  return handleResponse<AdCreative>(response, 'Failed to update creative');
+  return handlePortalResponse<AdCreative>(response, 'Failed to update creative');
 }
 
 /** Set a creative as the primary creative for its campaign */
@@ -626,7 +628,7 @@ export async function setPrimaryCreative(
     buildUrl(`/portal/ads/campaigns/${campaignId}/creatives/${creativeId}/set-primary`),
     { method: 'POST', headers: authHeaders(token) }
   );
-  return handleResponse<AdCreative>(response, 'Failed to set primary creative');
+  return handlePortalResponse<AdCreative>(response, 'Failed to set primary creative');
 }
 
 /** Request a vendor-scoped upload contract for ad portal media. */
@@ -639,7 +641,7 @@ export async function requestVendorMediaUpload(
     headers: jsonHeaders(token),
     body: JSON.stringify(data),
   });
-  return handleResponse<VendorMediaUploadResponse>(response, 'Failed to create upload URL');
+  return handlePortalResponse<VendorMediaUploadResponse>(response, 'Failed to create upload URL');
 }
 
 /** Upload a vendor media file and return the persisted upload contract. */
@@ -675,13 +677,13 @@ export async function getVendorLeads(
   params?: { status?: string; lead_type?: string; limit?: number; skip?: number }
 ): Promise<any[]> {
   const response = await authenticatedGet('/portal/ads/leads', token, params);
-  return handleResponse<any[]>(response, 'Failed to fetch leads');
+  return handlePortalResponse<any[]>(response, 'Failed to fetch leads');
 }
 
 /** Get vendor billing summary */
 export async function getVendorBilling(token: string): Promise<BillingSummaryResponse> {
   const response = await authenticatedGet('/portal/ads/billing', token);
-  return handleResponse<BillingSummaryResponse>(response, 'Failed to fetch billing');
+  return handlePortalResponse<BillingSummaryResponse>(response, 'Failed to fetch billing');
 }
 
 // =============================================================================
@@ -690,176 +692,183 @@ export async function getVendorBilling(token: string): Promise<BillingSummaryRes
 
 /** Get the campaign review queue */
 export async function getAdminReviewQueue(
-  token: string,
+  apiRequest: AdminApiRequest,
   params?: { status?: string; limit?: number; skip?: number }
-): Promise<AdCampaign[]> {
-  const response = await authenticatedGet(
+): Promise<AdCampaign[] | undefined> {
+  return adminGet<AdCampaign[]>(
+    apiRequest,
     '/admin/ads/campaigns/review',
-    token,
     { status: params?.status ?? 'pending_review', ...params },
   );
-  return handleResponse<AdCampaign[]>(response, 'Failed to fetch review queue');
 }
 
 /** Get review queue status counts */
-export async function getAdminReviewCounts(token: string): Promise<ReviewCounts> {
-  const response = await authenticatedGet('/admin/ads/campaigns/review/counts', token);
-  return handleResponse<ReviewCounts>(response, 'Failed to fetch review counts');
+export async function getAdminReviewCounts(apiRequest: AdminApiRequest): Promise<ReviewCounts | undefined> {
+  return adminGet<ReviewCounts>(apiRequest, '/admin/ads/campaigns/review/counts');
 }
 
 /** Approve a campaign */
 export async function approveCampaign(
-  token: string,
+  apiRequest: AdminApiRequest,
   campaignId: string,
   data?: ReviewDecisionRequest
-): Promise<AdCampaign> {
-  const response = await fetch(buildUrl(`/admin/ads/campaigns/${campaignId}/approve`), {
-    method: 'PUT',
-    headers: jsonHeaders(token),
-    body: JSON.stringify(data || {}),
-  });
-  return handleResponse<AdCampaign>(response, 'Failed to approve campaign');
+): Promise<AdCampaign | undefined> {
+  return adminMutation<AdCampaign>(
+    apiRequest,
+    'PUT',
+    `/admin/ads/campaigns/${campaignId}/approve`,
+    data || {},
+  );
 }
 
 /** Reject a campaign */
 export async function rejectCampaign(
-  token: string,
+  apiRequest: AdminApiRequest,
   campaignId: string,
   data?: ReviewDecisionRequest
-): Promise<AdCampaign> {
-  const response = await fetch(buildUrl(`/admin/ads/campaigns/${campaignId}/reject`), {
-    method: 'PUT',
-    headers: jsonHeaders(token),
-    body: JSON.stringify(data || {}),
-  });
-  return handleResponse<AdCampaign>(response, 'Failed to reject campaign');
+): Promise<AdCampaign | undefined> {
+  return adminMutation<AdCampaign>(
+    apiRequest,
+    'PUT',
+    `/admin/ads/campaigns/${campaignId}/reject`,
+    data || {},
+  );
 }
 
 /** Request changes on a campaign */
 export async function requestCampaignChanges(
-  token: string,
+  apiRequest: AdminApiRequest,
   campaignId: string,
   data: { review_notes: string }
-): Promise<AdCampaign> {
-  const response = await fetch(buildUrl(`/admin/ads/campaigns/${campaignId}/request-changes`), {
-    method: 'PUT',
-    headers: jsonHeaders(token),
-    body: JSON.stringify(data),
-  });
-  return handleResponse<AdCampaign>(response, 'Failed to request changes');
+): Promise<AdCampaign | undefined> {
+  return adminMutation<AdCampaign>(
+    apiRequest,
+    'PUT',
+    `/admin/ads/campaigns/${campaignId}/request-changes`,
+    data,
+  );
 }
 
 /** Get creative review queue */
 export async function getCreativeReviewQueue(
-  token: string,
+  apiRequest: AdminApiRequest,
   params?: { limit?: number; skip?: number }
-): Promise<AdCreative[]> {
-  const response = await authenticatedGet('/admin/ads/campaigns/review/creatives', token, params);
-  return handleResponse<AdCreative[]>(response, 'Failed to fetch creative review queue');
+): Promise<AdCreative[] | undefined> {
+  return adminGet<AdCreative[]>(
+    apiRequest,
+    '/admin/ads/campaigns/review/creatives',
+    params,
+  );
 }
 
 /** Approve a creative */
 export async function approveCreative(
-  token: string,
+  apiRequest: AdminApiRequest,
   creativeId: string,
   data?: ReviewDecisionRequest
-): Promise<AdCreative> {
-  const response = await fetch(
-    buildUrl(`/admin/ads/campaigns/review/creatives/${creativeId}/approve`),
-    { method: 'PUT', headers: jsonHeaders(token), body: JSON.stringify(data || {}) }
+): Promise<AdCreative | undefined> {
+  return adminMutation<AdCreative>(
+    apiRequest,
+    'PUT',
+    `/admin/ads/campaigns/review/creatives/${creativeId}/approve`,
+    data || {},
   );
-  return handleResponse<AdCreative>(response, 'Failed to approve creative');
 }
 
 /** Reject a creative */
 export async function rejectCreative(
-  token: string,
+  apiRequest: AdminApiRequest,
   creativeId: string,
   data?: ReviewDecisionRequest
-): Promise<AdCreative> {
-  const response = await fetch(
-    buildUrl(`/admin/ads/campaigns/review/creatives/${creativeId}/reject`),
-    { method: 'PUT', headers: jsonHeaders(token), body: JSON.stringify(data || {}) }
+): Promise<AdCreative | undefined> {
+  return adminMutation<AdCreative>(
+    apiRequest,
+    'PUT',
+    `/admin/ads/campaigns/review/creatives/${creativeId}/reject`,
+    data || {},
   );
-  return handleResponse<AdCreative>(response, 'Failed to reject creative');
 }
 
 /** List all campaigns (admin view with filters) */
 export async function getAdminCampaigns(
-  token: string,
+  apiRequest: AdminApiRequest,
   params?: { status?: string; vendor_id?: string; limit?: number; skip?: number }
-): Promise<AdCampaign[]> {
-  const response = await authenticatedGet('/admin/ads/campaigns/', token, params);
-  return handleResponse<AdCampaign[]>(response, 'Failed to fetch campaigns');
+): Promise<AdCampaign[] | undefined> {
+  return adminGet<AdCampaign[]>(apiRequest, '/admin/ads/campaigns/', params);
 }
 
 /** Admin pause a campaign */
 export async function adminPauseCampaign(
-  token: string,
+  apiRequest: AdminApiRequest,
   campaignId: string,
   reason?: string
-): Promise<AdCampaign> {
-  const response = await fetch(buildUrl(`/admin/ads/campaigns/${campaignId}/pause`), {
-    method: 'PUT',
-    headers: jsonHeaders(token),
-    body: JSON.stringify({ reason }),
-  });
-  return handleResponse<AdCampaign>(response, 'Failed to pause campaign');
+): Promise<AdCampaign | undefined> {
+  return adminMutation<AdCampaign>(
+    apiRequest,
+    'PUT',
+    `/admin/ads/campaigns/${campaignId}/pause`,
+    { reason },
+  );
 }
 
 /** Admin deactivate a campaign */
 export async function adminDeactivateCampaign(
-  token: string,
+  apiRequest: AdminApiRequest,
   campaignId: string,
   reason?: string
-): Promise<AdCampaign> {
-  const response = await fetch(buildUrl(`/admin/ads/campaigns/${campaignId}/deactivate`), {
-    method: 'PUT',
-    headers: jsonHeaders(token),
-    body: JSON.stringify({ reason }),
-  });
-  return handleResponse<AdCampaign>(response, 'Failed to deactivate campaign');
+): Promise<AdCampaign | undefined> {
+  return adminMutation<AdCampaign>(
+    apiRequest,
+    'PUT',
+    `/admin/ads/campaigns/${campaignId}/deactivate`,
+    { reason },
+  );
 }
 
 /** Get revenue and engagement summary */
 export async function getAdminRevenue(
-  token: string,
+  apiRequest: AdminApiRequest,
   days?: number
-): Promise<RevenueResponse> {
-  const response = await authenticatedGet('/admin/ads/campaigns/revenue', token, { days });
-  return handleResponse<RevenueResponse>(response, 'Failed to fetch revenue data');
+): Promise<RevenueResponse | undefined> {
+  return adminGet<RevenueResponse>(apiRequest, '/admin/ads/campaigns/revenue', { days });
 }
 
 /** Get planner feedback on ads */
 export async function getAdminFeedback(
-  token: string,
+  apiRequest: AdminApiRequest,
   params?: { limit?: number; skip?: number }
-): Promise<PlannerFeedbackEntry[]> {
-  const response = await authenticatedGet('/admin/ads/campaigns/feedback', token, params);
-  return handleResponse<PlannerFeedbackEntry[]>(response, 'Failed to fetch feedback');
+): Promise<PlannerFeedbackEntry[] | undefined> {
+  return adminGet<PlannerFeedbackEntry[]>(
+    apiRequest,
+    '/admin/ads/campaigns/feedback',
+    params,
+  );
 }
 
 /** Get fraud signals */
 export async function getAdminFraudSignals(
-  token: string,
+  apiRequest: AdminApiRequest,
   params?: { status?: string; limit?: number; skip?: number }
-): Promise<AdFraudSignal[]> {
-  const response = await authenticatedGet('/admin/ads/campaigns/fraud-signals', token, params);
-  return handleResponse<AdFraudSignal[]>(response, 'Failed to fetch fraud signals');
+): Promise<AdFraudSignal[] | undefined> {
+  return adminGet<AdFraudSignal[]>(
+    apiRequest,
+    '/admin/ads/campaigns/fraud-signals',
+    params,
+  );
 }
 
 /** Update a fraud signal */
 export async function updateFraudSignal(
-  token: string,
+  apiRequest: AdminApiRequest,
   signalId: string,
   data: { status: string; notes?: string }
-): Promise<AdFraudSignal> {
-  const response = await fetch(buildUrl(`/admin/ads/campaigns/fraud-signals/${signalId}`), {
-    method: 'PUT',
-    headers: jsonHeaders(token),
-    body: JSON.stringify(data),
-  });
-  return handleResponse<AdFraudSignal>(response, 'Failed to update fraud signal');
+): Promise<AdFraudSignal | undefined> {
+  return adminMutation<AdFraudSignal>(
+    apiRequest,
+    'PUT',
+    `/admin/ads/campaigns/fraud-signals/${signalId}`,
+    data,
+  );
 }
 
 /** Bulk-create vendor accounts */
@@ -886,20 +895,20 @@ export interface BulkVendorResult {
 }
 
 export async function bulkCreateVendors(
-  token: string,
+  apiRequest: AdminApiRequest,
   vendors: BulkVendorEntry[]
-): Promise<BulkVendorResult> {
-  const response = await fetch(buildUrl('/admin/ads/campaigns/vendors/bulk'), {
-    method: 'POST',
-    headers: jsonHeaders(token),
-    body: JSON.stringify(vendors),
-  });
-  return handleResponse<BulkVendorResult>(response, 'Failed to bulk create vendors');
+): Promise<BulkVendorResult | undefined> {
+  return adminMutation<BulkVendorResult>(
+    apiRequest,
+    'POST',
+    '/admin/ads/campaigns/vendors/bulk',
+    vendors,
+  );
 }
 
 /** Get vendor accounts with advanced filtering */
 export async function getAdminVendorAccounts(
-  token: string,
+  apiRequest: AdminApiRequest,
   params?: {
     status?: string;
     category?: string;
@@ -912,9 +921,17 @@ export async function getAdminVendorAccounts(
     limit?: number;
     skip?: number;
   }
-): Promise<{ vendors: VendorAccountSummary[]; total: number; page: number; page_size: number }> {
-  const response = await authenticatedGet('/admin/ads/campaigns/vendors', token, params);
-  const payload = await handleResponse<{ items?: RawVendorAccountSummary[]; total?: number; limit?: number; skip?: number }>(response, 'Failed to fetch vendor accounts');
+): Promise<{ vendors: VendorAccountSummary[]; total: number; page: number; page_size: number } | undefined> {
+  const payload = await adminGet<{
+    items?: RawVendorAccountSummary[];
+    total?: number;
+    limit?: number;
+    skip?: number;
+  }>(apiRequest, '/admin/ads/campaigns/vendors', params);
+
+  if (!payload) {
+    return undefined;
+  }
 
   const vendors = (payload.items || []).map((vendor): VendorAccountSummary => ({
     vendor_id: vendor.vendor_id || vendor._id || '',
@@ -944,45 +961,42 @@ export async function getAdminVendorAccounts(
 }
 
 /** Get platform advertising config */
-export async function getAdminConfig(token: string): Promise<PlatformConfig> {
-  const response = await authenticatedGet('/admin/ads/config', token);
-  return handleResponse<PlatformConfig>(response, 'Failed to fetch config');
+export async function getAdminConfig(apiRequest: AdminApiRequest): Promise<PlatformConfig | undefined> {
+  return adminGet<PlatformConfig>(apiRequest, '/admin/ads/config');
 }
 
 /** Update platform advertising config */
 export async function updateAdminConfig(
-  token: string,
+  apiRequest: AdminApiRequest,
   updates: Partial<PlatformConfig>
-): Promise<PlatformConfig> {
-  const response = await fetch(buildUrl('/admin/ads/config'), {
-    method: 'PUT',
-    headers: jsonHeaders(token),
-    body: JSON.stringify(updates),
-  });
-  return handleResponse<PlatformConfig>(response, 'Failed to update config');
+): Promise<PlatformConfig | undefined> {
+  return adminMutation<PlatformConfig>(
+    apiRequest,
+    'PUT',
+    '/admin/ads/config',
+    updates,
+  );
 }
 
 /** Get data pipeline status */
-export async function getAdminPipelineStatus(token: string): Promise<PipelineStatus> {
-  const response = await authenticatedGet('/admin/ads/config/pipeline', token);
-  return handleResponse<PipelineStatus>(response, 'Failed to fetch pipeline status');
+export async function getAdminPipelineStatus(apiRequest: AdminApiRequest): Promise<PipelineStatus | undefined> {
+  return adminGet<PipelineStatus>(apiRequest, '/admin/ads/config/pipeline');
 }
 
 /** Export advertising data */
 export async function exportAdminData(
-  token: string,
+  apiRequest: AdminApiRequest,
   dataset: string,
   dateRange: string = 'last_30_days',
   format: string = 'json',
   limit: number = 1000
-): Promise<ExportResponse> {
-  const response = await authenticatedGet('/admin/ads/config/export', token, {
+): Promise<ExportResponse | undefined> {
+  return adminGet<ExportResponse>(apiRequest, '/admin/ads/config/export', {
     dataset,
     date_range: dateRange,
     format,
     limit,
   });
-  return handleResponse<ExportResponse>(response, 'Failed to export data');
 }
 
 // =============================================================================
@@ -991,37 +1005,30 @@ export async function exportAdminData(
 
 /** Get sponsored cards for the planner's vendor rail */
 export async function getSponsoredCards(
-  token: string,
+  apiRequest: AdminApiRequest,
   params?: { location?: string; categories?: string; limit?: number }
-): Promise<SponsoredCardsResponse> {
-  const response = await authenticatedGet('/planner/ads/sponsored-cards', token, params);
-  return handleResponse<SponsoredCardsResponse>(response, 'Failed to fetch sponsored cards');
+): Promise<SponsoredCardsResponse | undefined> {
+  return adminGet<SponsoredCardsResponse>(
+    apiRequest,
+    '/planner/ads/sponsored-cards',
+    params,
+  );
 }
 
 /** Add a vendor from an ad campaign to the planner's directory */
 export async function addToDirectory(
-  token: string,
+  apiRequest: AdminApiRequest,
   data: AddToDirectoryRequest
-): Promise<any> {
-  const response = await fetch(buildUrl('/planner/ads/add-to-directory'), {
-    method: 'POST',
-    headers: jsonHeaders(token),
-    body: JSON.stringify(data),
-  });
-  return handleResponse<any>(response, 'Failed to add vendor to directory');
+): Promise<any | undefined> {
+  return adminMutation<any>(apiRequest, 'POST', '/planner/ads/add-to-directory', data);
 }
 
 /** Request a quote from a vendor via an ad campaign */
 export async function requestQuote(
-  token: string,
+  apiRequest: AdminApiRequest,
   data: RequestQuoteRequest
-): Promise<any> {
-  const response = await fetch(buildUrl('/planner/ads/request-quote'), {
-    method: 'POST',
-    headers: jsonHeaders(token),
-    body: JSON.stringify(data),
-  });
-  return handleResponse<any>(response, 'Failed to request quote');
+): Promise<any | undefined> {
+  return adminMutation<any>(apiRequest, 'POST', '/planner/ads/request-quote', data);
 }
 
 /** AI-generate a personalized quote request draft */
@@ -1041,24 +1048,27 @@ export interface DraftQuoteResponse {
 }
 
 export async function draftQuote(
-  token: string,
+  apiRequest: AdminApiRequest,
   data: DraftQuoteRequest
-): Promise<DraftQuoteResponse> {
-  const response = await fetch(buildUrl('/planner/ads/draft-quote'), {
-    method: 'POST',
-    headers: jsonHeaders(token),
-    body: JSON.stringify(data),
-  });
-  return handleResponse<DraftQuoteResponse>(response, 'Failed to generate quote draft');
+): Promise<DraftQuoteResponse | undefined> {
+  return adminMutation<DraftQuoteResponse>(
+    apiRequest,
+    'POST',
+    '/planner/ads/draft-quote',
+    data,
+  );
 }
 
 /** Check if a campaign's vendor is already in the planner's directory */
 export async function getDirectoryStatus(
-  token: string,
+  apiRequest: AdminApiRequest,
   campaignId: string
-): Promise<DirectoryStatusResponse> {
-  const response = await authenticatedGet('/planner/ads/directory-status', token, { campaign_id: campaignId });
-  return handleResponse<DirectoryStatusResponse>(response, 'Failed to check directory status');
+): Promise<DirectoryStatusResponse | undefined> {
+  return adminGet<DirectoryStatusResponse>(
+    apiRequest,
+    '/planner/ads/directory-status',
+    { campaign_id: campaignId },
+  );
 }
 
 // =============================================================================
@@ -1073,59 +1083,46 @@ export interface PlannerAdPreferences {
 }
 
 /** Get planner's ad preferences */
-export async function getAdPreferences(token: string): Promise<PlannerAdPreferences> {
-  const response = await authenticatedGet('/planner/ads/preferences', token);
-  return handleResponse<PlannerAdPreferences>(response, 'Failed to fetch ad preferences');
+export async function getAdPreferences(apiRequest: AdminApiRequest): Promise<PlannerAdPreferences | undefined> {
+  return adminGet<PlannerAdPreferences>(apiRequest, '/planner/ads/preferences');
 }
 
 /** Hide a specific vendor from the sponsored rail */
-export async function hideVendor(token: string, vendorId: string): Promise<any> {
-  const response = await fetch(buildUrl('/planner/ads/preferences/hide-vendor'), {
-    method: 'POST',
-    headers: jsonHeaders(token),
-    body: JSON.stringify({ vendor_id: vendorId }),
+export async function hideVendor(apiRequest: AdminApiRequest, vendorId: string): Promise<any | undefined> {
+  return adminMutation(apiRequest, 'POST', '/planner/ads/preferences/hide-vendor', {
+    vendor_id: vendorId,
   });
-  return handleResponse(response, 'Failed to hide vendor');
 }
 
 /** Unhide a previously hidden vendor */
-export async function unhideVendor(token: string, vendorId: string): Promise<any> {
-  const response = await fetch(buildUrl('/planner/ads/preferences/unhide-vendor'), {
-    method: 'POST',
-    headers: jsonHeaders(token),
-    body: JSON.stringify({ vendor_id: vendorId }),
+export async function unhideVendor(apiRequest: AdminApiRequest, vendorId: string): Promise<any | undefined> {
+  return adminMutation(apiRequest, 'POST', '/planner/ads/preferences/unhide-vendor', {
+    vendor_id: vendorId,
   });
-  return handleResponse(response, 'Failed to unhide vendor');
 }
 
 /** Suppress a vendor category from the sponsored rail */
-export async function suppressCategory(token: string, category: string): Promise<any> {
-  const response = await fetch(buildUrl('/planner/ads/preferences/suppress-category'), {
-    method: 'POST',
-    headers: jsonHeaders(token),
-    body: JSON.stringify({ category }),
+export async function suppressCategory(apiRequest: AdminApiRequest, category: string): Promise<any | undefined> {
+  return adminMutation(apiRequest, 'POST', '/planner/ads/preferences/suppress-category', {
+    category,
   });
-  return handleResponse(response, 'Failed to suppress category');
 }
 
 /** Unsuppress a vendor category */
-export async function unsuppressCategory(token: string, category: string): Promise<any> {
-  const response = await fetch(buildUrl('/planner/ads/preferences/unsuppress-category'), {
-    method: 'POST',
-    headers: jsonHeaders(token),
-    body: JSON.stringify({ category }),
+export async function unsuppressCategory(apiRequest: AdminApiRequest, category: string): Promise<any | undefined> {
+  return adminMutation(apiRequest, 'POST', '/planner/ads/preferences/unsuppress-category', {
+    category,
   });
-  return handleResponse(response, 'Failed to unsuppress category');
 }
 
 /** Toggle reduced ad frequency */
-export async function setReducedFrequency(token: string, reducedFrequency: boolean): Promise<any> {
-  const response = await fetch(buildUrl('/planner/ads/preferences/frequency'), {
-    method: 'PUT',
-    headers: jsonHeaders(token),
-    body: JSON.stringify({ reduced_frequency: reducedFrequency }),
+export async function setReducedFrequency(
+  apiRequest: AdminApiRequest,
+  reducedFrequency: boolean,
+): Promise<any | undefined> {
+  return adminMutation(apiRequest, 'PUT', '/planner/ads/preferences/frequency', {
+    reduced_frequency: reducedFrequency,
   });
-  return handleResponse(response, 'Failed to update ad frequency');
 }
 
 // =============================================================================
@@ -1291,96 +1288,87 @@ export interface FreeTierStatus {
 
 /** Set campaign-level free tier */
 export async function setCampaignFreeTier(
-  token: string,
+  apiRequest: AdminApiRequest,
   campaignId: string,
   body: { is_free: boolean; reason?: string },
-): Promise<AdCampaign> {
-  const res = await fetch(`${API_BASE}/admin/ads/campaigns/${campaignId}/free-tier`, {
-    method: 'PUT',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to set free tier');
-  return res.json();
+): Promise<AdCampaign | undefined> {
+  return adminMutation<AdCampaign>(
+    apiRequest,
+    'PUT',
+    `/admin/ads/campaigns/${campaignId}/free-tier`,
+    body,
+  );
 }
 
 /** Set vendor-level free tier */
 export async function setVendorFreeTier(
-  token: string,
+  apiRequest: AdminApiRequest,
   vendorId: string,
   body: { is_free: boolean; reason?: string; expires_at?: string },
-): Promise<FreeTierStatus> {
-  const res = await fetch(`${API_BASE}/admin/ads/campaigns/vendors/${vendorId}/free-tier`, {
-    method: 'PUT',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to set vendor free tier');
-  return res.json();
+): Promise<FreeTierStatus | undefined> {
+  return adminMutation<FreeTierStatus>(
+    apiRequest,
+    'PUT',
+    `/admin/ads/campaigns/vendors/${vendorId}/free-tier`,
+    body,
+  );
 }
 
 /** Get vendor free tier status */
 export async function getVendorFreeTierStatus(
-  token: string,
+  apiRequest: AdminApiRequest,
   vendorId: string,
-): Promise<FreeTierStatus> {
-  const res = await fetch(`${API_BASE}/admin/ads/campaigns/vendors/${vendorId}/free-tier`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to get free tier status');
-  return res.json();
+): Promise<FreeTierStatus | undefined> {
+  return adminGet<FreeTierStatus>(
+    apiRequest,
+    `/admin/ads/campaigns/vendors/${vendorId}/free-tier`,
+  );
 }
 
 /** List all free tier vendors */
-export async function listFreeTierVendors(token: string): Promise<FreeTierStatus[]> {
-  const res = await fetch(`${API_BASE}/admin/ads/campaigns/free-tier-vendors`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to list free tier vendors');
-  return res.json();
+export async function listFreeTierVendors(apiRequest: AdminApiRequest): Promise<FreeTierStatus[] | undefined> {
+  return adminGet<FreeTierStatus[]>(
+    apiRequest,
+    '/admin/ads/campaigns/free-tier-vendors',
+  );
 }
 
 /** Update CPL pricing on a campaign */
 export async function updateCampaignCPLPricing(
-  token: string,
+  apiRequest: AdminApiRequest,
   campaignId: string,
   body: { cpl_quote_request?: number; cpl_directory_add?: number },
-): Promise<{ status: string }> {
-  const res = await fetch(`${API_BASE}/admin/ads/campaigns/${campaignId}/cpl-pricing`, {
-    method: 'PUT',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to update pricing');
-  return res.json();
+): Promise<{ status: string } | undefined> {
+  return adminMutation<{ status: string }>(
+    apiRequest,
+    'PUT',
+    `/admin/ads/campaigns/${campaignId}/cpl-pricing`,
+    body,
+  );
 }
 
 /** Get campaign billing summary */
 export async function getCampaignBilling(
-  token: string,
+  apiRequest: AdminApiRequest,
   campaignId: string,
-): Promise<CampaignBillingSummary> {
-  const res = await fetch(`${API_BASE}/admin/ads/campaigns/${campaignId}/billing`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to get campaign billing');
-  return res.json();
+): Promise<CampaignBillingSummary | undefined> {
+  return adminGet<CampaignBillingSummary>(
+    apiRequest,
+    `/admin/ads/campaigns/${campaignId}/billing`,
+  );
 }
 
 /** Get individual lead charges for a campaign */
 export async function getCampaignLeadCharges(
-  token: string,
+  apiRequest: AdminApiRequest,
   campaignId: string,
   params?: { limit?: number; skip?: number },
-): Promise<LeadCharge[]> {
-  const sp = new URLSearchParams();
-  if (params?.limit) sp.set('limit', params.limit.toString());
-  if (params?.skip) sp.set('skip', params.skip.toString());
-  const res = await fetch(`${API_BASE}/admin/ads/campaigns/${campaignId}/lead-charges?${sp}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to get lead charges');
-  return res.json();
+): Promise<LeadCharge[] | undefined> {
+  return adminGet<LeadCharge[]>(
+    apiRequest,
+    `/admin/ads/campaigns/${campaignId}/lead-charges`,
+    params,
+  );
 }
 
 
@@ -1393,8 +1381,7 @@ export async function getVendorBillingSummary(token: string): Promise<VendorBill
   const res = await fetch(`${API_BASE}/portal/ads/billing`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error('Failed to get billing summary');
-  return res.json();
+  return handlePortalResponse<VendorBillingSummary>(res, 'Failed to get billing summary');
 }
 
 /** Get vendor billing charges (vendor portal) */
@@ -1409,8 +1396,7 @@ export async function getVendorBillingCharges(
   const res = await fetch(`${API_BASE}/portal/ads/billing/charges?${sp}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error('Failed to get billing charges');
-  return res.json();
+  return handlePortalResponse<LeadCharge[]>(res, 'Failed to get billing charges');
 }
 
 // =============================================================================
@@ -1419,41 +1405,38 @@ export async function getVendorBillingCharges(
 
 /** Approve a pending vendor account. Sends temp password email. */
 export async function approveVendorAccount(
-  token: string,
+  apiRequest: AdminApiRequest,
   vendorId: string,
-): Promise<{ vendor_id: string; status: string; message: string }> {
-  const res = await fetch(`${API_BASE}/admin/ads/campaigns/vendors/${vendorId}/approve`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-  });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to approve vendor');
-  return res.json();
+): Promise<{ vendor_id: string; status: string; message: string } | undefined> {
+  return adminMutation<{ vendor_id: string; status: string; message: string }>(
+    apiRequest,
+    'POST',
+    `/admin/ads/campaigns/vendors/${vendorId}/approve`,
+  );
 }
 
 /** Suspend an active vendor account. Pauses all their campaigns. */
 export async function suspendVendorAccount(
-  token: string,
+  apiRequest: AdminApiRequest,
   vendorId: string,
   reason: string = '',
-): Promise<{ vendor_id: string; status: string; campaigns_paused: number; message: string }> {
-  const res = await fetch(`${API_BASE}/admin/ads/campaigns/vendors/${vendorId}/suspend`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ reason }),
-  });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to suspend vendor');
-  return res.json();
+): Promise<{ vendor_id: string; status: string; campaigns_paused: number; message: string } | undefined> {
+  return adminMutation<{ vendor_id: string; status: string; campaigns_paused: number; message: string }>(
+    apiRequest,
+    'POST',
+    `/admin/ads/campaigns/vendors/${vendorId}/suspend`,
+    { reason },
+  );
 }
 
 /** Reactivate a suspended vendor account. Campaigns remain paused. */
 export async function reactivateVendorAccount(
-  token: string,
+  apiRequest: AdminApiRequest,
   vendorId: string,
-): Promise<{ vendor_id: string; status: string; message: string }> {
-  const res = await fetch(`${API_BASE}/admin/ads/campaigns/vendors/${vendorId}/reactivate`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-  });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to reactivate vendor');
-  return res.json();
+): Promise<{ vendor_id: string; status: string; message: string } | undefined> {
+  return adminMutation<{ vendor_id: string; status: string; message: string }>(
+    apiRequest,
+    'POST',
+    `/admin/ads/campaigns/vendors/${vendorId}/reactivate`,
+  );
 }

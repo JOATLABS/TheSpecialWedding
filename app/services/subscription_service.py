@@ -5,7 +5,15 @@ from typing import List, Optional
 import stripe
 from fastapi import HTTPException
 
+from app.constants.billing import (
+    PLAN_BILLING_MODEL_MIGRATION_FLAG,
+    CANONICAL_PUBLIC_PLAN_METER_EVENT_NAME,
+    CANONICAL_PUBLIC_PLAN_IDS,
+    plan_billing_model,
+    plan_billing_model_migration_enabled,
+)
 from app.core.database import mongo
+from app.models.subscription import ACTIVE_SUBSCRIPTION_STATUSES
 from app.services.couple_lifecycle_service import (
     COUPLE_PORTAL_STATE_REVOKED,
     couple_lifecycle_service,
@@ -28,11 +36,71 @@ class SubscriptionService:
         self.users_collection = mongo.get_users_collection()
         self.weddings_collection = mongo.db["weddings"]
 
+    def _normalize_plan_billing_fields(self, plan_data: dict) -> None:
+        """Derive billing_model and fail closed on incomplete metered config.
+
+        2026-05-09 pricing strategy refresh: new plans default to FLAT
+        (is_metered=False). Flipping a plan to metered is a deliberate
+        per-plan edit — set is_metered=True and provide meter_event_name.
+        The Pydantic CreateSubscriptionPlanRequest model already defaults
+        to False; this default protects against callsites that hand-build
+        a dict and omit the flag.
+        """
+        plan_data["is_metered"] = bool(plan_data.get("is_metered", False))
+        plan_data["billing_model"] = plan_billing_model(plan_data)
+
+        if not plan_data["is_metered"]:
+            if plan_data.get("meter_event_name") == "":
+                plan_data["meter_event_name"] = None
+            if plan_data.get("meter_id") == "":
+                plan_data["meter_id"] = None
+            return
+
+        meter_event_name = str(
+            plan_data.get("meter_event_name") or CANONICAL_PUBLIC_PLAN_METER_EVENT_NAME
+        ).strip()
+        if not meter_event_name:
+            raise HTTPException(
+                status_code=400,
+                detail="Metered plans require a non-empty meter_event_name.",
+            )
+
+        meter_id = str(plan_data.get("meter_id") or "").strip()
+        plan_data["meter_event_name"] = meter_event_name
+        plan_data["meter_id"] = meter_id or None
+
+    async def _guard_billing_model_transition(
+        self, plan_id: str, existing_plan: dict, merged_plan: dict
+    ) -> None:
+        previous_model = plan_billing_model(existing_plan)
+        next_model = plan_billing_model(merged_plan)
+        if previous_model == next_model:
+            return
+
+        active_subscriptions = await self.subscriptions_collection.count_documents(
+            {
+                "plan_id": plan_id,
+                "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)},
+            }
+        )
+        if active_subscriptions and not plan_billing_model_migration_enabled():
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Cannot change billing model for {plan_id} while "
+                    f"{active_subscriptions} active subscriptions exist. "
+                    "Existing Stripe subscriptions keep old Stripe prices; "
+                    f"set {PLAN_BILLING_MODEL_MIGRATION_FLAG}=true only "
+                    "while running an explicit subscription-item migration."
+                ),
+            )
+
     # Subscription Plan Management (ROOT_ADMIN only)
     async def create_plan(self, plan_data: dict, creator_email: str) -> dict:
         """Create a new subscription plan"""
         try:
             plan_data["_id"] = f"plan_{plan_data['name'].lower().replace(' ', '_')}"
+            self._normalize_plan_billing_fields(plan_data)
             plan_data["created_by"] = creator_email
             plan_data["created_at"] = datetime.now(timezone.utc)
             plan_data["updated_at"] = datetime.now(timezone.utc)
@@ -47,6 +115,8 @@ class SubscriptionService:
             try:
                 stripe_data = stripe_service.sync_plan_to_stripe(plan_data)
                 plan_data.update(stripe_data)
+            except HTTPException:
+                raise
             except Exception as e:
                 # Log but don't block creation if stripe fails?
                 # Better to fail so we don't have inconsistent state
@@ -98,15 +168,63 @@ class SubscriptionService:
                 status_code=500, detail=f"Error retrieving plan: {str(e)}"
             )
 
+    # Fields that should record an admin-override timestamp when edited
+    # via update_plan. These are the strategy fields the seed would
+    # otherwise refresh on every deploy. Tracking the edit timestamp lets
+    # the seed gate refreshes on SEED_VERSION > admin_overrides[field].
+    # See scripts/seed_subscription_plans.py::SEED_VERSION for the seed side.
+    _ADMIN_OVERRIDE_TRACKED_FIELDS = frozenset(
+        {
+            "name",
+            "description",
+            "price_monthly",
+            "price_yearly",
+            "trial_days",
+            "max_weddings",
+            "max_weddings_lifetime",
+            "max_guests_per_wedding",
+            "ai_credits_monthly",
+            "storage_gb",
+            "staff_seats",
+            "features",
+            "features_list",
+            "is_active",
+            "is_featured",
+            "sort_order",
+            "display_order",
+        }
+    )
+
     async def update_plan(self, plan_id: str, update_data: dict) -> dict:
-        """Update subscription plan"""
+        """Update subscription plan.
+
+        Records per-field timestamps in ``admin_overrides`` for every
+        strategy field touched by this update. The container-boot seed
+        consults those timestamps against its ``SEED_VERSION`` constant —
+        admin edits made AFTER the current ``SEED_VERSION`` survive future
+        deploys; admin edits older than the next ``SEED_VERSION`` bump get
+        superseded by the seed's declared strategy. See
+        ``scripts/seed_subscription_plans.py::_build_effective_seed_plan``
+        for the consumer side of this contract.
+        """
         try:
             # Remove protected fields
             protected_fields = ["_id", "created_at", "created_by"]
             for field in protected_fields:
                 update_data.pop(field, None)
 
-            update_data["updated_at"] = datetime.now(timezone.utc)
+            now = datetime.now(timezone.utc)
+            update_data["updated_at"] = now
+
+            # Snapshot which strategy fields this update is touching so we
+            # can record per-field admin-override timestamps below. Skip
+            # fields whose value matches the existing doc (a no-op write
+            # shouldn't create the impression of a fresh admin override).
+            tracked_edits = {
+                field
+                for field in list(update_data.keys())
+                if field in self._ADMIN_OVERRIDE_TRACKED_FIELDS
+            }
 
             # Retrieve existing plan to merge with update data for Stripe sync
             existing_plan = await self.plans_collection.find_one({"_id": plan_id})
@@ -115,19 +233,52 @@ class SubscriptionService:
                     status_code=404, detail="Subscription plan not found"
                 )
 
+            # Drop tracking for fields whose value matches the existing doc.
+            tracked_edits = {
+                field
+                for field in tracked_edits
+                if existing_plan.get(field) != update_data.get(field)
+            }
+
             merged_plan = {**existing_plan, **update_data}
+            self._normalize_plan_billing_fields(merged_plan)
+            await self._guard_billing_model_transition(
+                plan_id, existing_plan, merged_plan
+            )
+            update_data["billing_model"] = merged_plan["billing_model"]
+            update_data["is_metered"] = merged_plan["is_metered"]
+            if update_data.get("is_metered") is False:
+                update_data["meter_event_name"] = None
+                update_data["meter_id"] = None
+            else:
+                if "meter_event_name" in update_data or merged_plan["is_metered"]:
+                    update_data["meter_event_name"] = merged_plan.get(
+                        "meter_event_name"
+                    )
+                if "meter_id" in update_data or merged_plan["is_metered"]:
+                    update_data["meter_id"] = merged_plan.get("meter_id")
 
             # Sync to Stripe
             try:
                 stripe_data = stripe_service.sync_plan_to_stripe(merged_plan)
                 update_data.update(stripe_data)
+            except HTTPException:
+                raise
             except Exception as e:
                 raise HTTPException(
                     status_code=500, detail=f"Failed to sync plan to Stripe: {str(e)}"
                 )
 
+            # Build dot-notation admin_overrides writes. MongoDB interprets
+            # "admin_overrides.<field>" as a nested $set, leaving other keys
+            # in admin_overrides untouched — exactly what we want when a
+            # different field is being edited.
+            mongo_set = {**update_data}
+            for field in tracked_edits:
+                mongo_set[f"admin_overrides.{field}"] = now
+
             await self.plans_collection.update_one(
-                {"_id": plan_id}, {"$set": update_data}
+                {"_id": plan_id}, {"$set": mongo_set}
             )
 
             return {"message": "Subscription plan updated successfully"}
@@ -170,6 +321,22 @@ class SubscriptionService:
                     logger.warning(
                         f"Failed to archive Stripe product {stripe_product_id}: {e}"
                     )
+
+            if plan_id in CANONICAL_PUBLIC_PLAN_IDS:
+                await self.plans_collection.update_one(
+                    {"_id": plan_id},
+                    {
+                        "$set": {
+                            "is_active": False,
+                            "deleted_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(timezone.utc),
+                        }
+                    },
+                )
+                return {
+                    "message": "Subscription plan archived successfully",
+                    "stripe_archived": bool(stripe_product_id),
+                }
 
             result = await self.plans_collection.delete_one({"_id": plan_id})
 
@@ -240,6 +407,10 @@ class SubscriptionService:
             plan_snapshot = {
                 "plan_name": plan.get("name"),
                 "max_weddings": plan.get("max_weddings", 1),
+                # Lifetime cap flag — must survive into the snapshot so Solo
+                # planners can't get re-grandfathered onto a non-lifetime cap
+                # if the plan is later edited.
+                "max_weddings_lifetime": bool(plan.get("max_weddings_lifetime", False)),
                 "max_guests_per_wedding": plan.get("max_guests_per_wedding", 100),
                 "ai_credits_monthly": plan.get("ai_credits_monthly", 10),
                 "ai_credit_overage_price": plan.get(
@@ -251,6 +422,10 @@ class SubscriptionService:
                 "features": plan.get("features", {}),
                 "price_monthly": plan.get("price_monthly", 0),
                 "price_yearly": plan.get("price_yearly"),
+                "billing_model": plan_billing_model(plan),
+                "is_metered": bool(plan.get("is_metered", False)),
+                "meter_event_name": plan.get("meter_event_name"),
+                "meter_id": plan.get("meter_id"),
                 "stripe_price_id_monthly": plan.get("stripe_price_id_monthly"),
                 "stripe_price_id_yearly": plan.get("stripe_price_id_yearly"),
                 "snapshot_date": now,
@@ -808,6 +983,35 @@ class SubscriptionService:
         }
         return await self.weddings_collection.count_documents(active_query)
 
+    async def _live_wedding_count_lifetime(self, user_id: str) -> int:
+        """LIFETIME wedding count — INCLUDES soft-deleted weddings.
+
+        Used for plans with ``max_weddings_lifetime=True`` (e.g., the Solo
+        free tier). The cap is enforced against every wedding the planner
+        has EVER created, including ones they soft-deleted. This prevents
+        the "create, delete, repeat" loop that would let a free planner
+        run unlimited weddings against a "1 lifetime" cap.
+
+        Mirrors ``_live_wedding_count`` for owner-query construction; the
+        only difference is the absence of the ``deleted_at`` filter.
+
+        See ``docs/analysis/METERING_IMPLEMENTATION_2026-05-04.md`` for the
+        decision to enforce lifetime caps for the Solo tier.
+        """
+        user = await self.users_collection.find_one(
+            {"_id": normalize_query_id(user_id)},
+            {"email": 1},
+        )
+        user_email = user.get("email") if user else None
+        owner_query = build_wedding_owner_query(
+            planner_id=user_id, planner_email=user_email
+        )
+        if not owner_query:
+            return 0
+        # NO deleted_at filter — every wedding the planner has ever owned
+        # counts against the lifetime cap.
+        return await self.weddings_collection.count_documents(owner_query)
+
     async def get_usage_stats(self, user_id: str) -> dict:
         """Get current usage statistics for user.
 
@@ -884,16 +1088,32 @@ class SubscriptionService:
                 # counter. ``get_usage_stats`` already reconciles the
                 # returned dict, but we re-query here to keep this method
                 # independently correct — if someone ever stubs or bypasses
-                # ``get_usage_stats``, the cap must still hold. The extra
-                # round-trip is negligible versus a false-positive cap.
-                current = await self._live_wedding_count(user_id)
+                # ``get_usage_stats``, the cap must still hold.
+                #
+                # Lifetime branch (Solo tier and similar): cap counts every
+                # wedding ever created, including soft-deleted ones, so a
+                # planner can't game a "1 wedding free" limit by deleting
+                # and recreating. See ``_live_wedding_count_lifetime``.
+                use_lifetime_cap = bool(limits_source.get("max_weddings_lifetime"))
+                if use_lifetime_cap:
+                    current = await self._live_wedding_count_lifetime(user_id)
+                else:
+                    current = await self._live_wedding_count(user_id)
                 limit = limits_source.get("max_weddings", 1)
                 if limit != -1 and current + requested_amount > limit:
+                    msg_suffix = (
+                        " (lifetime cap — deleted weddings still count)"
+                        if use_lifetime_cap
+                        else ""
+                    )
                     return {
                         "allowed": False,
                         "current_usage": current,
                         "limit": limit,
-                        "message": f"Wedding limit exceeded. Plan allows {limit} weddings, you have {current}",
+                        "message": (
+                            f"Wedding limit exceeded. Plan allows {limit} "
+                            f"weddings, you have {current}{msg_suffix}"
+                        ),
                     }
             elif resource_type == "ai_credits":
                 # Soft cap with overage. Live-query the usage log so we

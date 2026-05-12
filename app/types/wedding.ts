@@ -54,6 +54,8 @@ export interface RSVPConfig {
   greeting: string;
   help_text: string;
   phone_numbers: string[];
+  hide_phone_numbers?: boolean;
+  help_button_label?: string;
 }
 
 export interface ThemeConfig {

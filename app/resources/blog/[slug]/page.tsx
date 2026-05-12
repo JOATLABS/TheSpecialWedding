@@ -12,9 +12,19 @@ import {
   allowStaticFallback,
   type PublicBlogApiArticle,
 } from '../../resourcesShared';
+import {
+  MARKETING_TEMPLATES,
+  getMarketingTemplates,
+} from '../../templates/manifest';
 
 function getArticleData(apiArticle: PublicBlogApiArticle | null, slug: string) {
   const fallback = allowStaticFallback ? blogPosts[slug as BlogPostKey] : undefined;
+  // The static `blogPosts` map is the source of truth for related templates,
+  // even when the API supplies the article body, because the API model does
+  // not yet carry a `related_templates` column. Keying off the slug keeps
+  // the link surface stable across API and fallback rendering paths.
+  const staticPost = blogPosts[slug as BlogPostKey];
+  const relatedTemplates = staticPost?.relatedTemplates ?? [];
 
   if (apiArticle) {
     return {
@@ -29,6 +39,7 @@ function getArticleData(apiArticle: PublicBlogApiArticle | null, slug: string) {
       ogImage: apiArticle.og_image || apiArticle.card_image || null,
       authorName: apiArticle.author_name || 'The Special Wedding',
       fallbackContent: null as ReactNode | null,
+      relatedTemplates,
     };
   }
 
@@ -45,6 +56,7 @@ function getArticleData(apiArticle: PublicBlogApiArticle | null, slug: string) {
       ogImage: null,
       authorName: 'The Special Wedding',
       fallbackContent: fallback.content,
+      relatedTemplates,
     };
   }
 
@@ -82,6 +94,9 @@ export default async function BlogPostPage({
     ? article.ogImage
     : `https://thespecialwedding.io/api/og?type=blog&slug=${encodeURIComponent(slug)}`;
 
+  const relatedTemplateRecords = getMarketingTemplates(article.relatedTemplates);
+  const hasRelatedTemplates = relatedTemplateRecords.length > 0;
+
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'BlogPosting',
@@ -109,6 +124,21 @@ export default async function BlogPostPage({
       '@type': 'WebPage',
       '@id': `https://thespecialwedding.io/resources/blog/${slug}`,
     },
+    // Topical-cluster signal: emit `mentions` ONLY when the post
+    // actually references specific templates. Emitting a generic
+    // CollectionPage fallback when there are no related templates is
+    // semantically wrong — the post doesn't mention the templates tab
+    // any more than any other unrelated page on the site — and Google
+    // can flag it as keyword stuffing.
+    ...(hasRelatedTemplates
+      ? {
+          mentions: relatedTemplateRecords.map((t) => ({
+            '@type': 'CreativeWork',
+            name: t.name,
+            url: `https://thespecialwedding.io/resources?tab=templates#${t.id}`,
+          })),
+        }
+      : {}),
   };
 
   return (
@@ -167,6 +197,73 @@ export default async function BlogPostPage({
         ) : (
           <p className="italic text-slate-500">Article content is not available.</p>
         )}
+
+        {/* Related free templates — internal link surface for SEO. */}
+        <section
+          aria-labelledby="related-templates-heading"
+          data-testid="blog-related-templates"
+          className="mt-16 rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8"
+        >
+          {hasRelatedTemplates ? (
+            <>
+              <h2
+                id="related-templates-heading"
+                className="text-xl font-semibold text-white"
+              >
+                Related free templates
+              </h2>
+              <p className="mt-2 text-sm text-slate-400">
+                Pair this post with a template you can hand to your couples or vendors today.
+              </p>
+              <ul className="mt-6 grid gap-4 sm:grid-cols-2">
+                {relatedTemplateRecords.map((template) => (
+                  <li key={template.id}>
+                    <Link
+                      href={`/resources?tab=templates#${template.id}`}
+                      className="block h-full rounded-xl border border-white/10 bg-slate-900/60 p-5 transition hover:border-wedding-rose/60 hover:bg-slate-900"
+                      data-testid="blog-related-template-link"
+                    >
+                      <span className="block text-xs font-semibold uppercase tracking-wide text-wedding-rose">
+                        {template.category}
+                      </span>
+                      <span className="mt-2 block text-base font-semibold text-white">
+                        {template.name}
+                      </span>
+                      <span className="mt-2 block text-sm text-slate-400">
+                        {template.description}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href="/resources?tab=templates"
+                className="mt-6 inline-block text-sm font-medium text-wedding-rose hover:text-wedding-blush"
+              >
+                Browse all {MARKETING_TEMPLATES.length} free templates →
+              </Link>
+            </>
+          ) : (
+            <>
+              <h2
+                id="related-templates-heading"
+                className="text-xl font-semibold text-white"
+              >
+                Free wedding planner templates
+              </h2>
+              <p className="mt-2 text-sm text-slate-400">
+                Skip the blank page — these templates ship with the form fields you actually need.
+              </p>
+              <Link
+                href="/resources?tab=templates"
+                className="mt-4 inline-block text-sm font-medium text-wedding-rose hover:text-wedding-blush"
+                data-testid="blog-related-template-link"
+              >
+                Browse all {MARKETING_TEMPLATES.length} free templates →
+              </Link>
+            </>
+          )}
+        </section>
       </article>
 
       {/* Footer */}

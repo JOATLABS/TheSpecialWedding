@@ -3,7 +3,9 @@ from pathlib import Path
 import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
+from starlette.routing import Match
 
+from app.api.guest_verification import router as guest_verification_router
 from app.dependencies.guest_access import (
     GUEST_ACCESS_COOKIE_NAME,
     create_guest_access_session_token,
@@ -83,6 +85,28 @@ def test_guest_landing_page_uses_session_exchange_instead_of_browser_storage() -
     assert "fetchGuestSessionAccess(slug)" in landing_page
     assert "sessionStorage" not in landing_page
     assert "rsvp_token_" not in landing_page
+
+
+def test_guest_session_route_precedes_token_catchall() -> None:
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/weddings/guest-access/session/josh-and-esther",
+        "root_path": "",
+        "headers": [],
+        "query_string": b"",
+        "server": ("testserver", 80),
+        "scheme": "http",
+        "client": ("testclient", 50000),
+    }
+
+    for route in guest_verification_router.routes:
+        match, _ = route.matches(scope)
+        if match == Match.FULL:
+            assert route.endpoint.__name__ == "get_wedding_with_session_access"
+            return
+
+    pytest.fail("No guest access session route matched the session URL")
 
 
 def test_guest_session_endpoints_and_token_redaction_are_pinned() -> None:

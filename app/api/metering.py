@@ -103,11 +103,9 @@ async def retry_pending_meter_events(
                 )
                 if meter_result.get("status") == "success":
                     succeeded += 1
-                    # SS4: retry-aware Mongo write. The retry endpoint is
-                    # the operator's recovery path; if THIS write fails
-                    # silently, the operator will think it cleared and
-                    # the next batch will re-fire (different idempotency
-                    # key prefix → double-bill).
+                    # SS4: retry helper — silent failure here would
+                    # leave operator thinking retry cleared when it
+                    # didn't, leading to next-batch double-bill.
                     await update_wedding_meter_state(
                         mongo.db["weddings"],
                         wedding.get("_id"),

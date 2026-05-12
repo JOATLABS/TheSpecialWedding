@@ -1,6 +1,5 @@
 /**
- * Calendar API client for planner scheduling, shared calendars, and external
- * calendar connections (Google / 365 / iCloud / Exchange via Aurinko).
+ * Calendar API client for planner scheduling, shared calendars, and Google connections.
  */
 import { getApiBaseUrl } from '@/utils/env';
 
@@ -129,7 +128,6 @@ export interface CalendarConnection {
   is_shared_in_team_view: boolean;
   details_visibility: VisibilityMode;
   sync_enabled: boolean;
-  couple_booking_auto_confirm?: boolean;
   connection_status: ConnectionStatus | string;
   token_expiry?: string | null;
   last_sync_at?: string | null;
@@ -160,19 +158,9 @@ export interface CalendarSyncStatusItem {
   updated_at?: string | null;
 }
 
-export type CalendarProviderLabel =
-  | 'google'
-  | 'office365'
-  | 'outlook'
-  | 'exchange'
-  | 'icloud'
-  | 'zoho'
-  | 'unknown';
-
 export interface SharedCalendarEvent {
   id: string;
-  source_type: 'internal_task' | 'internal_meeting' | 'external' | string;
-  external_provider?: CalendarProviderLabel | string | null;
+  source_type: 'internal_task' | 'internal_meeting' | 'external_google' | string;
   title?: string | null;
   start_date?: string | null;
   end_date?: string | null;
@@ -204,7 +192,7 @@ export interface MeetingUpsertResponse {
   invite_status: Array<Record<string, unknown>>;
 }
 
-export interface CalendarAuthUrlResponse {
+export interface GoogleAuthUrlResponse {
   auth_url: string;
   message: string;
 }
@@ -421,7 +409,7 @@ export async function deleteTask(token: string, taskId: string): Promise<void> {
   });
 }
 
-export async function syncTaskToProvider(token: string, taskId: string): Promise<PlannerTask> {
+export async function syncTaskToGoogle(token: string, taskId: string): Promise<PlannerTask> {
   return authFetch<PlannerTask>(token, `/admin/planner/calendar/tasks/${taskId}/sync`, {
     method: 'POST',
   });
@@ -478,22 +466,22 @@ export async function listCalendarConnections(token: string): Promise<CalendarCo
   return authFetch<CalendarConnection[]>(token, '/admin/planner/calendar/connections');
 }
 
-export async function beginCalendarConnect(token: string): Promise<CalendarAuthUrlResponse> {
-  return authFetch<CalendarAuthUrlResponse>(
+export async function beginGoogleCalendarConnect(token: string): Promise<GoogleAuthUrlResponse> {
+  return authFetch<GoogleAuthUrlResponse>(
     token,
-    '/admin/planner/calendar/connections/provider/connect',
+    '/admin/planner/calendar/connections/google/connect',
     { method: 'POST' }
   );
 }
 
-export async function completeCalendarCallback(
+export async function completeGoogleCalendarCallback(
   token: string,
   code: string,
   state: string
 ): Promise<Record<string, unknown>> {
   return authFetch<Record<string, unknown>>(
     token,
-    `/admin/planner/calendar/connections/provider/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
+    `/admin/planner/calendar/connections/google/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
   );
 }
 
@@ -513,7 +501,6 @@ export async function updateCalendarConnection(
       | 'details_visibility'
       | 'sync_enabled'
       | 'is_default_write_target'
-      | 'couple_booking_auto_confirm'
     >
   >
 ): Promise<CalendarConnection> {
@@ -663,98 +650,6 @@ export async function syncMeeting(
       method: 'POST',
     }
   );
-}
-
-export interface ExternalChangeResolutionResponse {
-  meeting_id: string;
-  external_conflict_status: string;
-  version: number;
-  invite_status?: Array<Record<string, unknown>>;
-  sync_status?: CalendarSyncStatusItem[];
-}
-
-export async function acceptExternalChange(
-  token: string,
-  meetingId: string,
-  expectedVersion: number,
-  mutationIntent: string
-): Promise<ExternalChangeResolutionResponse> {
-  const basePath = `/admin/planner/calendar/meetings/${meetingId}/external-change/accept`;
-  const path = `${basePath}${buildQuery({ expected_version: String(expectedVersion) })}`;
-  return authFetch<ExternalChangeResolutionResponse>(token, path, {
-    method: 'POST',
-    headers: {
-      'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'POST', basePath, {
-        meeting_id: meetingId,
-        expected_version: expectedVersion,
-      }),
-    },
-  });
-}
-
-export async function rejectExternalChange(
-  token: string,
-  meetingId: string,
-  expectedVersion: number,
-  mutationIntent: string
-): Promise<ExternalChangeResolutionResponse> {
-  const basePath = `/admin/planner/calendar/meetings/${meetingId}/external-change/reject`;
-  const path = `${basePath}${buildQuery({ expected_version: String(expectedVersion) })}`;
-  return authFetch<ExternalChangeResolutionResponse>(token, path, {
-    method: 'POST',
-    headers: {
-      'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'POST', basePath, {
-        meeting_id: meetingId,
-        expected_version: expectedVersion,
-      }),
-    },
-  });
-}
-
-export interface CoupleBookingApprovalResponse {
-  meeting_id: string;
-  meeting_status: string;
-  version: number;
-  sync_status?: CalendarSyncStatusItem[];
-  invite_status?: Array<Record<string, unknown>>;
-}
-
-export async function approveCoupleBooking(
-  token: string,
-  meetingId: string,
-  expectedVersion: number,
-  mutationIntent: string
-): Promise<CoupleBookingApprovalResponse> {
-  const basePath = `/admin/planner/calendar/meetings/${meetingId}/approve-couple-booking`;
-  const path = `${basePath}${buildQuery({ expected_version: String(expectedVersion) })}`;
-  return authFetch<CoupleBookingApprovalResponse>(token, path, {
-    method: 'POST',
-    headers: {
-      'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'POST', basePath, {
-        meeting_id: meetingId,
-        expected_version: expectedVersion,
-      }),
-    },
-  });
-}
-
-export async function declineCoupleBooking(
-  token: string,
-  meetingId: string,
-  expectedVersion: number,
-  mutationIntent: string
-): Promise<CoupleBookingApprovalResponse> {
-  const basePath = `/admin/planner/calendar/meetings/${meetingId}/decline-couple-booking`;
-  const path = `${basePath}${buildQuery({ expected_version: String(expectedVersion) })}`;
-  return authFetch<CoupleBookingApprovalResponse>(token, path, {
-    method: 'POST',
-    headers: {
-      'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'POST', basePath, {
-        meeting_id: meetingId,
-        expected_version: expectedVersion,
-      }),
-    },
-  });
 }
 
 export async function getMeetingSyncStatus(

@@ -3,14 +3,14 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
-import { completeCalendarCallback } from '@/services/calendarApi';
+import { completeGoogleCalendarCallback } from '@/services/calendarApi';
 
-export default function CalendarCallbackPage() {
+export default function GoogleCalendarCallbackPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { token, isLoading } = useAdmin();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
-  const [message, setMessage] = useState('Processing calendar connection...');
+  const [message, setMessage] = useState('Processing your calendar connection...');
 
   useEffect(() => {
     if (isLoading) return;
@@ -45,7 +45,7 @@ export default function CalendarCallbackPage() {
       }
 
       try {
-        const result = await completeCalendarCallback(token, code, state);
+        const result = await completeGoogleCalendarCallback(token, code, state);
 
         if (cancelled) return;
 
@@ -60,7 +60,7 @@ export default function CalendarCallbackPage() {
         }
 
         setStatus('error');
-        setMessage(String(result.message || 'Failed to connect calendar.'));
+        setMessage(String(result.message || 'Failed to connect your calendar.'));
       } catch (err) {
         if (cancelled) return;
         setStatus('error');
@@ -101,9 +101,9 @@ export default function CalendarCallbackPage() {
         </div>
 
         <h1 className="text-center text-xl font-semibold text-slate-900 dark:text-slate-100">
-          {status === 'loading' && 'Connecting calendar'}
-          {status === 'success' && 'Calendar connected'}
-          {status === 'error' && 'Connection failed'}
+          {status === 'loading' && 'Connecting your calendar'}
+          {status === 'success' && 'Calendar Connected'}
+          {status === 'error' && 'Connection Failed'}
         </h1>
 
         <p className="mt-3 text-center text-sm leading-6 text-slate-500 dark:text-slate-400">{message}</p>

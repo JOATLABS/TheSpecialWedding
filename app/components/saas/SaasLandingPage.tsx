@@ -315,14 +315,31 @@ export const SaasLandingPage: React.FC = () => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const initialPlanSet = useRef(false);  // Track if initial plan selection has been made
 
+  // IMPORTANT: keep in sync with scripts/seed_subscription_plans.py. Used
+  // as fallback only — live data comes from /public/subscription-plans.
   const defaultPlans: SubscriptionPlan[] = useMemo(
     () => [
       {
+        _id: 'plan_solo',
+        name: 'Solo',
+        description: 'Try us with your first client. One wedding, on us.',
+        price_monthly: 0,
+        price_yearly: 0,
+        billing_model: 'flat_rate',
+        is_metered: false,
+        trial_days: 0,
+        is_featured: false,
+        is_active: true,
+        display_order: 0,
+      },
+      {
         _id: 'plan_boutique',
         name: 'Boutique',
-        description: 'For new planners onboarding their first weddings.',
-        price_monthly: 29,
-        price_yearly: 290,
+        description: 'For independent planners running their solo practice. Unlimited weddings, no caps.',
+        price_monthly: 49,
+        price_yearly: 490,
+        billing_model: 'flat_rate',
+        is_metered: false,
         trial_days: 30,
         is_featured: false,
         is_active: true,
@@ -331,9 +348,11 @@ export const SaasLandingPage: React.FC = () => {
       {
         _id: 'plan_signature',
         name: 'Signature',
-        description: 'Most popular plan with full automation features.',
-        price_monthly: 59,
-        price_yearly: 590,
+        description: 'For agencies running a team of planners. Everything in Boutique, plus team seats and agency-grade reporting.',
+        price_monthly: 149,
+        price_yearly: 1490,
+        billing_model: 'flat_rate',
+        is_metered: false,
         trial_days: 30,
         is_featured: true,
         is_active: true,
@@ -342,9 +361,11 @@ export const SaasLandingPage: React.FC = () => {
       {
         _id: 'plan_enterprise',
         name: 'Enterprise',
-        description: 'For high-volume wedding planning firms.',
-        price_monthly: 149,
-        price_yearly: 1490,
+        description: 'For franchises and white-label partners. Your brand, our platform, dedicated success.',
+        price_monthly: 399,
+        price_yearly: 3990,
+        billing_model: 'flat_rate',
+        is_metered: false,
         trial_days: 30,
         is_featured: false,
         is_active: true,
@@ -696,7 +717,11 @@ export const SaasLandingPage: React.FC = () => {
                   <p className="mt-3 text-sm leading-relaxed text-slate-600">{plan.description}</p>
                   <div className="mt-6 flex items-baseline gap-2 text-slate-900">
                     <span className="text-4xl font-semibold">${plan.price_monthly}</span>
-                    <span className="text-sm text-slate-500">/month</span>
+                    <span className="text-sm text-slate-500">
+                      {plan.is_metered || plan.billing_model === 'metered'
+                        ? '/active wedding/mo'
+                        : '/month'}
+                    </span>
                   </div>
                   {plan.trial_days ? (
                     <p className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">

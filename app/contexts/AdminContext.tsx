@@ -739,21 +739,34 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             //     consume the JSON body before falling through to the helper
             //     so the team-member branch can preserve the backend detail.
             if (response.status === 402) {
+                let paymentBody: any = null;
+                try {
+                    paymentBody = await response.clone().json();
+                } catch {
+                    paymentBody = null;
+                }
+
+                const detail = paymentBody?.detail;
+                const nonBillingCode =
+                    typeof detail === 'object' && detail !== null
+                        ? detail.error
+                        : paymentBody?.error;
+                if (nonBillingCode === 'insufficient_credits') {
+                    const message =
+                        (typeof detail === 'object' && detail?.message) ||
+                        paymentBody?.message ||
+                        'Insufficient AI credits.';
+                    throw new Error(message);
+                }
+
                 if (isTeamMemberRole(userProfile)) {
                     let reason = DEFAULT_TEAM_MEMBER_BLOCK_REASON;
-                    try {
-                        const data = await response.clone().json();
-                        if (
-                            data &&
-                            typeof data.detail === 'string' &&
-                            data.detail.trim()
-                        ) {
-                            reason = data.detail;
-                        }
-                    } catch {
-                        // Body wasn't JSON or had no detail — fall back to
-                        // the default phrasing. Better than swallowing the
-                        // 402 silently.
+                    if (
+                        paymentBody &&
+                        typeof paymentBody.detail === 'string' &&
+                        paymentBody.detail.trim()
+                    ) {
+                        reason = paymentBody.detail;
                     }
                     logout({
                         message: reason,

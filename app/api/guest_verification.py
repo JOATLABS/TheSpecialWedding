@@ -132,6 +132,34 @@ async def get_wedding_privacy_info(slug: str):
         )
 
 
+@router.get("/weddings/guest-access/session/{slug}", tags=["Guest"])
+async def get_wedding_with_session_access(slug: str, request: Request):
+    """
+    Get wedding and guest data from the guest access session cookie.
+    """
+    try:
+        session = get_guest_access_session(request, slug=slug)
+        result = await verification_service.get_session_access(
+            slug=slug,
+            wedding_id=session.wedding_id,
+            guest_id=session.guest_id,
+            auth_method=session.auth_method,
+            otp_verified=session.otp_verified,
+        )
+
+        return {
+            "wedding": result["wedding"],
+            "guest": result.get("guest"),
+            "rsvp": result.get("rsvp"),
+            "auth_method": result.get("auth_method"),
+            "otp_verified": result.get("otp_verified", False),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Guest session error: {str(e)}")
+
+
 @router.get("/weddings/guest-access/{slug}/{token}", tags=["Guest"])
 async def get_wedding_with_token_access(slug: str, token: str):
     """
@@ -197,34 +225,6 @@ async def exchange_wedding_token_access(slug: str, token: str, response: Respons
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Token exchange error: {str(e)}")
-
-
-@router.get("/weddings/guest-access/session/{slug}", tags=["Guest"])
-async def get_wedding_with_session_access(slug: str, request: Request):
-    """
-    Get wedding and guest data from the guest access session cookie.
-    """
-    try:
-        session = get_guest_access_session(request, slug=slug)
-        result = await verification_service.get_session_access(
-            slug=slug,
-            wedding_id=session.wedding_id,
-            guest_id=session.guest_id,
-            auth_method=session.auth_method,
-            otp_verified=session.otp_verified,
-        )
-
-        return {
-            "wedding": result["wedding"],
-            "guest": result.get("guest"),
-            "rsvp": result.get("rsvp"),
-            "auth_method": result.get("auth_method"),
-            "otp_verified": result.get("otp_verified", False),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Guest session error: {str(e)}")
 
 
 @router.post("/guests/request-rsvp-link", tags=["Guest"])

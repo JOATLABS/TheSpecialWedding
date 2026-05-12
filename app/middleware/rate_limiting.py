@@ -95,6 +95,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             ),
             "/couple/setup-password": ("couple_setup_password", 5, 60),
             "/public/register": ("public_register", 3, 60),
+            "/guests/help-request": ("guest_help_request", 5, 60),
             "/api/v1/vendors/signup": ("vendor_signup", 3, 60),
             "/reset-password": ("password_reset", 3, 60),
             "/forgot-password": ("password_reset", 3, 60),

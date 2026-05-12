@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
+import type { AdminApiRequest } from '@/services/adminApiRequest';
 import { useRouter } from 'next/navigation';
 import PageHeader from '../components/PageHeader';
 import { Card } from '@/components/ui/Card';
@@ -98,7 +99,7 @@ const ADS_PANEL_CLASS =
 // =============================================================================
 
 export default function AdminAdsPage() {
-  const { token, userProfile } = useAdmin();
+  const { apiRequest, userProfile } = useAdmin();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>('creative-review');
 
@@ -146,11 +147,11 @@ export default function AdminAdsPage() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'creative-review' && <CreativeReviewTab token={token!} />}
-      {activeTab === 'campaigns' && <CampaignMonitorTab token={token!} />}
-      {activeTab === 'revenue' && <RevenueDashboardTab token={token!} />}
-      {activeTab === 'vendors' && <VendorAccountsTab token={token!} />}
-      {activeTab === 'feedback' && <PlannerFeedbackTab token={token!} />}
+      {activeTab === 'creative-review' && <CreativeReviewTab apiRequest={apiRequest} />}
+      {activeTab === 'campaigns' && <CampaignMonitorTab apiRequest={apiRequest} />}
+      {activeTab === 'revenue' && <RevenueDashboardTab apiRequest={apiRequest} />}
+      {activeTab === 'vendors' && <VendorAccountsTab apiRequest={apiRequest} />}
+      {activeTab === 'feedback' && <PlannerFeedbackTab apiRequest={apiRequest} />}
     </div>
   );
 }
@@ -221,7 +222,7 @@ function LoadingSpinner() {
 // Tab 1: Creative Review
 // =============================================================================
 
-function CreativeReviewTab({ token }: { token: string }) {
+function CreativeReviewTab({ apiRequest }: { apiRequest: AdminApiRequest }) {
   const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
   const [creatives, setCreatives] = useState<AdCreative[]>([]);
   const [counts, setCounts] = useState<ReviewCounts | null>(null);
@@ -234,10 +235,13 @@ function CreativeReviewTab({ token }: { token: string }) {
     try {
       setLoading(true);
       const [queue, queueCounts, creativeQueue] = await Promise.all([
-        getAdminReviewQueue(token, { status: reviewFilter, limit: 50 }),
-        getAdminReviewCounts(token),
-        getCreativeReviewQueue(token, { limit: 50 }),
+        getAdminReviewQueue(apiRequest, { status: reviewFilter, limit: 50 }),
+        getAdminReviewCounts(apiRequest),
+        getCreativeReviewQueue(apiRequest, { limit: 50 }),
       ]);
+      if (!queue || !queueCounts || !creativeQueue) {
+        return;
+      }
       setCampaigns(Array.isArray(queue) ? queue : (queue as any).items ?? []);
       setCounts(queueCounts);
       setCreatives(Array.isArray(creativeQueue) ? creativeQueue : (creativeQueue as any).items ?? []);
@@ -246,7 +250,7 @@ function CreativeReviewTab({ token }: { token: string }) {
     } finally {
       setLoading(false);
     }
-  }, [token, reviewFilter]);
+  }, [apiRequest, reviewFilter]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -255,14 +259,17 @@ function CreativeReviewTab({ token }: { token: string }) {
       setActionLoading(campaignId);
       const notes = reviewNotes[campaignId] || '';
       if (action === 'approve') {
-        await approveCampaign(token, campaignId, { review_notes: notes || undefined });
+        const result = await approveCampaign(apiRequest, campaignId, { review_notes: notes || undefined });
+        if (!result) return;
         toast.success('Campaign approved');
       } else if (action === 'reject') {
-        await rejectCampaign(token, campaignId, { review_notes: notes || undefined });
+        const result = await rejectCampaign(apiRequest, campaignId, { review_notes: notes || undefined });
+        if (!result) return;
         toast.success('Campaign rejected');
       } else {
         if (!notes.trim()) { toast.error('Please add review notes for change requests'); return; }
-        await requestCampaignChanges(token, campaignId, { review_notes: notes });
+        const result = await requestCampaignChanges(apiRequest, campaignId, { review_notes: notes });
+        if (!result) return;
         toast.success('Changes requested');
       }
       loadData();
@@ -277,10 +284,12 @@ function CreativeReviewTab({ token }: { token: string }) {
     try {
       setActionLoading(creativeId);
       if (action === 'approve') {
-        await approveCreative(token, creativeId);
+        const result = await approveCreative(apiRequest, creativeId);
+        if (!result) return;
         toast.success('Creative approved');
       } else {
-        await rejectCreative(token, creativeId);
+        const result = await rejectCreative(apiRequest, creativeId);
+        if (!result) return;
         toast.success('Creative rejected');
       }
       loadData();
@@ -457,7 +466,7 @@ function CreativeReviewTab({ token }: { token: string }) {
 // Tab 2: Campaign Monitor
 // =============================================================================
 
-function CampaignMonitorTab({ token }: { token: string }) {
+function CampaignMonitorTab({ apiRequest }: { apiRequest: AdminApiRequest }) {
   const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
   const [fraudSignals, setFraudSignals] = useState<AdFraudSignal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -469,9 +478,12 @@ function CampaignMonitorTab({ token }: { token: string }) {
     try {
       setLoading(true);
       const [campaignData, fraudData] = await Promise.all([
-        getAdminCampaigns(token, { status: statusFilter || undefined, limit: 100 }),
-        getAdminFraudSignals(token, { status: 'pending', limit: 20 }),
+        getAdminCampaigns(apiRequest, { status: statusFilter || undefined, limit: 100 }),
+        getAdminFraudSignals(apiRequest, { status: 'pending', limit: 20 }),
       ]);
+      if (!campaignData || !fraudData) {
+        return;
+      }
       setCampaigns(Array.isArray(campaignData) ? campaignData : (campaignData as any).items ?? []);
       setFraudSignals(Array.isArray(fraudData) ? fraudData : (fraudData as any).items ?? []);
     } catch (err: any) {
@@ -479,14 +491,15 @@ function CampaignMonitorTab({ token }: { token: string }) {
     } finally {
       setLoading(false);
     }
-  }, [token, statusFilter]);
+  }, [apiRequest, statusFilter]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   const handlePause = async (id: string) => {
     try {
       setActionLoading(id);
-      await adminPauseCampaign(token, id, 'Admin paused');
+      const result = await adminPauseCampaign(apiRequest, id, 'Admin paused');
+      if (!result) return;
       toast.success('Campaign paused');
       loadData();
     } catch (err: any) { toast.error(err.message); }
@@ -496,7 +509,8 @@ function CampaignMonitorTab({ token }: { token: string }) {
   const handleDeactivate = async (id: string) => {
     try {
       setActionLoading(id);
-      await adminDeactivateCampaign(token, id, 'Admin deactivated');
+      const result = await adminDeactivateCampaign(apiRequest, id, 'Admin deactivated');
+      if (!result) return;
       toast.success('Campaign deactivated');
       loadData();
     } catch (err: any) { toast.error(err.message); }
@@ -505,7 +519,8 @@ function CampaignMonitorTab({ token }: { token: string }) {
 
   const handleFraudUpdate = async (signalId: string, status: string) => {
     try {
-      await updateFraudSignal(token, signalId, { status });
+      const result = await updateFraudSignal(apiRequest, signalId, { status });
+      if (!result) return;
       toast.success('Signal updated');
       loadData();
     } catch (err: any) { toast.error(err.message); }
@@ -514,7 +529,8 @@ function CampaignMonitorTab({ token }: { token: string }) {
   const handleToggleFreeTier = async (id: string, isCurrentlyFree: boolean) => {
     try {
       setActionLoading(id);
-      await setCampaignFreeTier(token, id, { is_free: !isCurrentlyFree });
+      const result = await setCampaignFreeTier(apiRequest, id, { is_free: !isCurrentlyFree });
+      if (!result) return;
       toast.success(!isCurrentlyFree ? 'Campaign set to free tier' : 'Campaign removed from free tier');
       loadData();
     } catch (err: any) { toast.error(err.message); }
@@ -674,7 +690,7 @@ function CampaignMonitorTab({ token }: { token: string }) {
 // Tab 3: Revenue Dashboard
 // =============================================================================
 
-function RevenueDashboardTab({ token }: { token: string }) {
+function RevenueDashboardTab({ apiRequest }: { apiRequest: AdminApiRequest }) {
   const [revenue, setRevenue] = useState<RevenueResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [days, setDays] = useState(30);
@@ -684,26 +700,32 @@ function RevenueDashboardTab({ token }: { token: string }) {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await getAdminRevenue(token, days);
+      const data = await getAdminRevenue(apiRequest, days);
+      if (!data) {
+        return;
+      }
       setRevenue(data);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
       setLoading(false);
     }
-  }, [token, days]);
+  }, [apiRequest, days]);
 
   const loadFreeTierVendors = useCallback(async () => {
     try {
       setFreeTierLoading(true);
-      const data = await listFreeTierVendors(token);
+      const data = await listFreeTierVendors(apiRequest);
+      if (!data) {
+        return;
+      }
       setFreeTierVendors(Array.isArray(data) ? data : (data as any).items ?? []);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
       setFreeTierLoading(false);
     }
-  }, [token]);
+  }, [apiRequest]);
 
   useEffect(() => { loadData(); }, [loadData]);
   useEffect(() => { loadFreeTierVendors(); }, [loadFreeTierVendors]);
@@ -814,7 +836,7 @@ function RevenueDashboardTab({ token }: { token: string }) {
 // Tab 4: Vendor Accounts
 // =============================================================================
 
-function VendorAccountsTab({ token }: { token: string }) {
+function VendorAccountsTab({ apiRequest }: { apiRequest: AdminApiRequest }) {
   const [vendors, setVendors] = useState<VendorAccountSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -823,21 +845,25 @@ function VendorAccountsTab({ token }: { token: string }) {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await getAdminVendorAccounts(token, { status: statusFilter || undefined, limit: 100 });
+      const data = await getAdminVendorAccounts(apiRequest, { status: statusFilter || undefined, limit: 100 });
+      if (!data) {
+        return;
+      }
       setVendors(data.vendors ?? []);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
       setLoading(false);
     }
-  }, [token, statusFilter]);
+  }, [apiRequest, statusFilter]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   const handleToggleFreeTier = async (vendorId: string, isCurrentlyFree: boolean) => {
     try {
       setActionLoading(vendorId);
-      await setVendorFreeTier(token, vendorId, { is_free: !isCurrentlyFree, reason: 'Admin override' });
+      const result = await setVendorFreeTier(apiRequest, vendorId, { is_free: !isCurrentlyFree, reason: 'Admin override' });
+      if (!result) return;
       toast.success(!isCurrentlyFree ? 'Vendor set to free tier' : 'Vendor removed from free tier');
       loadData();
     } catch (err: any) { toast.error(err.message); }
@@ -847,7 +873,8 @@ function VendorAccountsTab({ token }: { token: string }) {
   const handleApprove = async (vendorId: string) => {
     try {
       setActionLoading(vendorId);
-      await approveVendorAccount(token, vendorId);
+      const result = await approveVendorAccount(apiRequest, vendorId);
+      if (!result) return;
       toast.success('Vendor approved! Temporary password emailed.');
       loadData();
     } catch (err: any) { toast.error(err.message); }
@@ -859,7 +886,8 @@ function VendorAccountsTab({ token }: { token: string }) {
     if (reason === null) return; // cancelled
     try {
       setActionLoading(vendorId);
-      const result = await suspendVendorAccount(token, vendorId, reason);
+      const result = await suspendVendorAccount(apiRequest, vendorId, reason);
+      if (!result) return;
       toast.success(`Vendor suspended. ${result.campaigns_paused} campaign(s) paused.`);
       loadData();
     } catch (err: any) { toast.error(err.message); }
@@ -869,7 +897,8 @@ function VendorAccountsTab({ token }: { token: string }) {
   const handleReactivate = async (vendorId: string) => {
     try {
       setActionLoading(vendorId);
-      await reactivateVendorAccount(token, vendorId);
+      const result = await reactivateVendorAccount(apiRequest, vendorId);
+      if (!result) return;
       toast.success('Vendor reactivated. Campaigns remain paused.');
       loadData();
     } catch (err: any) { toast.error(err.message); }
@@ -992,21 +1021,24 @@ function VendorAccountsTab({ token }: { token: string }) {
 // Tab 6: Planner Feedback
 // =============================================================================
 
-function PlannerFeedbackTab({ token }: { token: string }) {
+function PlannerFeedbackTab({ apiRequest }: { apiRequest: AdminApiRequest }) {
   const [feedback, setFeedback] = useState<PlannerFeedbackEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await getAdminFeedback(token, { limit: 50 });
+      const data = await getAdminFeedback(apiRequest, { limit: 50 });
+      if (!data) {
+        return;
+      }
       setFeedback(Array.isArray(data) ? data : (data as any).items ?? []);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [apiRequest]);
 
   useEffect(() => { loadData(); }, [loadData]);
 

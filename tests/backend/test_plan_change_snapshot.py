@@ -121,6 +121,13 @@ LOAD_BEARING_SNAPSHOT_KEYS = {
     "staff_seats",
 }
 
+BILLING_MODEL_SNAPSHOT_KEYS = {
+    "billing_model",
+    "is_metered",
+    "meter_event_name",
+    "meter_id",
+}
+
 
 SNAPSHOT_SITES = [
     "app/services/subscription_service.py",
@@ -152,6 +159,28 @@ def test_plan_snapshot_sites_include_load_bearing_keys(rel_path):
             f"keys {sorted(missing)}. Without them, check_usage_limits falls "
             "back to the current plan and the grandfather contract is broken. "
             "See subscription_service.py:669-671."
+        )
+
+
+@pytest.mark.parametrize("rel_path", SNAPSHOT_SITES)
+def test_plan_snapshot_sites_include_billing_model_keys(rel_path):
+    """Every snapshot writer must preserve billing model fields.
+
+    If metering is deliberately enabled later, active subscriptions need a
+    grandfather record that says whether they started on flat-rate or metered
+    billing. Without this, a plan-catalog flip can strand old subscriptions on
+    flat Stripe prices while live wedding hooks start emitting meter events.
+    """
+    path = Path(PROJECT_ROOT) / rel_path
+    occurrences = _find_plan_snapshot_keys(path)
+    assert occurrences, f"{rel_path}: no plan_snapshot literals found"
+
+    for idx, keys in enumerate(occurrences):
+        missing = BILLING_MODEL_SNAPSHOT_KEYS - keys
+        assert not missing, (
+            f"{rel_path} (snapshot literal #{idx + 1}): missing billing model "
+            f"keys {sorted(missing)}. Snapshots must preserve flat vs metered "
+            "state for grandfathering before metering can ever be enabled."
         )
 
 

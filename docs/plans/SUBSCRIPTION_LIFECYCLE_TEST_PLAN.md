@@ -12,7 +12,7 @@ Verify planner-facing subscription lifecycle behavior end-to-end, using real Str
 
 1. **Trial lifecycle** — what the system does across the 30-day trial, the 7-day warning window, and the trial-end boundary.
 2. **Active monthly subscription lifecycle** — what the planner sees and what the system enforces across wedding count (0 / 1 / 2+), AI credit consumption, cancellation, and plan up/downgrade.
-3. **Metering scoping clarification** — explicit assertion of whether today's plans are flat-priced or metered, matching the state described in `METERING_AUDIT.md`, so nothing in this plan pretends usage-based billing is live when it is not.
+3. **Metering scoping clarification** — explicit assertion that today's canonical public plans are metered on `wedding_active`, matching the state described in `METERING_AUDIT.md`.
 
 Non-goals for this round: vendor billing, ad billing, team-member seats beyond the already-verified gate, couple-portal flows.
 
@@ -25,11 +25,11 @@ Already in repo, reuse as-is:
 - `testbed/verify_team_member_gate_via_test_clock.py` — reference template for phase structure, pause-on-ENTER checkpointing, Stripe clock re-use, Mongo linking, PM swap, webhook settle wait.
 - `testbed/test_trial_with_test_clock.py` — existing trial driver, 584 lines. Good bones for webhook phase verification but predates the PR1 gate conventions (no explicit per-checkpoint Chrome pause, no identity isolation via `+tag@` emails). Will be **wrapped**, not replaced.
 - `testbed/cleanup_team_member_gate_verify_state.py` — reset script shape to mirror for each new scenario.
-- `scripts/seed_subscription_plans.py` — plans reference: Boutique (`max_weddings=3`, `ai_credits_monthly=100`), Signature (`max_weddings=10`, `ai_credits_monthly=300`), Enterprise (`max_weddings=-1`, `ai_credits_monthly=1000`). All `is_metered=False` in default seed.
+- `scripts/seed_subscription_plans.py` — plans reference: Boutique (`max_weddings=3`, `ai_credits_monthly=100`), Signature (`max_weddings=10`, `ai_credits_monthly=300`), Enterprise (`max_weddings=-1`, `ai_credits_monthly=1000`). All canonical plans seed `is_metered=True` with `meter_event_name="wedding_active"`.
 - `app/utils/subscription_decorators.py` — `enforce_subscription_limit(resource_type, amount)` raises **402** when exceeded; `check_feature_access(feature_name)` raises **402** when feature not in plan. These are the gate points the tests need to exercise, not the UI banners.
 - `app/services/subscription_service.py::check_usage_limits` (lines 652–723) — authoritative limit logic. Reads `plan_snapshot` first (grandfathered limits), falls back to current plan. Tests must confirm both paths.
 - `app/services/trial_expiration_service.py` — batch job that stamps `subscription_status="expired"` on users whose `trial_end_date < now`. Triggered via internal endpoint/cron, not Stripe webhook.
-- `METERING_AUDIT.md` — authoritative source for "what metering actually does today." Any metered-plan test must follow the audit's noted preconditions: a Stripe Meter resource, prices with `usage_type="metered"`, and a plan with `is_metered=True, meter_event_name` populated.
+- `METERING_AUDIT.md` — authoritative source for "what metering actually does today." Metered-plan tests must verify a Stripe Meter resource, prices with `usage_type="metered"`, and explicit migration handling for any existing flat Stripe subscription items.
 
 Identities to provision in `staging` GitHub environment (currently only planner + couple smokes exist — see `CLAUDE.md` → "Deployment follow-ups"):
 
@@ -80,9 +80,9 @@ All three sub-matrices are run against **Boutique** (`max_weddings=3`) as the ca
 
 | # | Checkpoint | Asserts |
 |---|---|---|
-| B1.1 | Create wedding #1 | `usage.weddings_count==1`, if plan `is_metered==False` → no `stripe.billing.MeterEvent.create` call (gated in `app/api/wedding.py:140-244`), `meter_pending` stays unset. |
+| B1.1 | Create wedding #1 | `usage.weddings_count==1`; canonical metered plans report `stripe.billing.MeterEvent.create` with `wedding_active` unless Stripe reporting fails and sets `meter_pending=True`. |
 | B1.2 | Monthly renewal | Wedding count preserved, AI credits reset. |
-| B1.3 | Delete the wedding | Cascade delete + `cascade_delete_service.py` touches `data_access_suspended_at` correctly; `meter_reversed_period` flag not set because plan is flat. Counter decremented. |
+| B1.3 | Delete the wedding | Cascade delete + `cascade_delete_service.py` touches `data_access_suspended_at` correctly; metered plans set `meter_reversed_period` after the reversal event. Counter decremented. |
 | B1.4 | Recreate with same couple after delete | Must not double-bill in metered mode; idempotency key `wedding_create_{wedding_id}_{customer_id}_{YYYY-MM}` prevents duplicates (per `METERING_AUDIT.md` 2.4). Recreate-in-same-period test only meaningful when `is_metered=True` — scoped to Scenario D. |
 
 **B.2 — Two weddings under cap (Boutique allows 3)**
@@ -175,7 +175,7 @@ These are code-level gaps that the scripted drivers will exercise but that deser
 3. **`tests/backend/test_trial_expiration_service.py`** — mock clock to `trial_end_date + 1s`; assert status flips to `expired` and `is_active` stays `True` (enforces `trial_expiration_service.py:57-61` invariant that expired planners can still reach billing).
 4. **`tests/backend/test_plan_change_snapshot.py`** — assert `plan_snapshot` is updated on upgrade, and pin the current behavior on downgrade-while-over-cap (this is the open question in D2).
 5. **`tests/unit/subscriptionStatus.test.ts`** (already exists) — extend with `canceled`-state rendering so D4 frontend behavior has a fast test.
-6. **`tests/backend/test_metering_gating.py`** — assert that when `is_metered=False`, wedding create does **not** invoke `report_meter_event` (today's state per `METERING_AUDIT.md`). Prevents a silent regression where someone flips the default and usage-bills existing customers.
+6. **`tests/backend/test_metering_gating.py`** — assert canonical seed plans remain metered on `wedding_active` and that Stripe MeterEvent idempotency behavior stays safe for retries.
 
 ---
 

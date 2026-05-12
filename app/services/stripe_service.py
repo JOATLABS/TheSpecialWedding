@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 from stripe import InvalidRequestError, SignatureVerificationError, StripeError
 
+from app.constants.billing import plan_billing_model
 from app.core.database import mongo
 from app.core.settings import settings
 from app.models.subscription import SubscriptionStatus, normalize_subscription_status
@@ -61,9 +62,8 @@ if settings.stripe_enabled and settings.stripe_secret_key:
     stripe.api_key = settings.stripe_secret_key
     # Pin the API version so MeterEvent / MeterEventAdjustment / Meter
     # behavior does not drift on Stripe-side default changes between
-    # SDK upgrades. Matches the SDK 15.1.0 default
-    # (stripe._api_version._ApiVersion.CURRENT). Bump intentionally when
-    # the codebase adopts a newer API behavior. Mirrored in
+    # SDK upgrades. Matches the SDK 15.1.0 default. Bump intentionally
+    # when the codebase adopts a newer API behavior. Mirrored in
     # scripts/seed_subscription_plans.py — keep both in sync.
     stripe.api_version = "2026-04-22.dahlia"
 else:
@@ -240,8 +240,8 @@ class StripeService:
             # Dashboard with the wrong aggregation formula or payload key
             # mappings would cause every meter event to be silently
             # rejected (or, worse on Count/Last, silently overbill on
-            # delete-reversals). See METERING_REVIEW_2026-05-04_PART2.md
-            # §5 (CC2) and stripe_meter_helpers.assert_meter_config.
+            # delete-reversals). See METERING_GAP_SCENARIOS_2026-05-04.md
+            # §C2 and stripe_meter_helpers.assert_meter_config.
             if is_metered and meter_id:
                 try:
                     assert_meter_config(meter_id)
@@ -941,6 +941,10 @@ class StripeService:
                             "features": plan.get("features", {}),
                             "price_monthly": plan.get("price_monthly", 0),
                             "price_yearly": plan.get("price_yearly"),
+                            "billing_model": plan_billing_model(plan),
+                            "is_metered": bool(plan.get("is_metered", False)),
+                            "meter_event_name": plan.get("meter_event_name"),
+                            "meter_id": plan.get("meter_id"),
                             "stripe_price_id_monthly": plan.get(
                                 "stripe_price_id_monthly"
                             ),
@@ -1826,6 +1830,10 @@ class StripeService:
                     "features": plan.get("features", {}),
                     "price_monthly": plan.get("price_monthly", 0),
                     "price_yearly": plan.get("price_yearly"),
+                    "billing_model": plan_billing_model(plan),
+                    "is_metered": bool(plan.get("is_metered", False)),
+                    "meter_event_name": plan.get("meter_event_name"),
+                    "meter_id": plan.get("meter_id"),
                     "stripe_price_id_monthly": plan.get("stripe_price_id_monthly"),
                     "stripe_price_id_yearly": plan.get("stripe_price_id_yearly"),
                     "snapshot_date": datetime.now(timezone.utc),

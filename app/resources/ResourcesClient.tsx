@@ -12,6 +12,10 @@ import {
   faqs,
 } from './resourcesShared';
 import type { BlogPost } from './resourcesShared';
+import TemplatesClient from './templates/TemplatesClient';
+import { MARKETING_TEMPLATES } from './templates/manifest';
+
+type ResourcesTab = 'blog' | 'templates' | 'faq';
 
 const CARD_GRADIENTS: Record<string, string> = {
   Business: 'from-amber-600/30 to-orange-800/20',
@@ -177,15 +181,17 @@ function FAQItem({
 }
 
 interface ResourcesClientProps {
+  initialTab?: ResourcesTab;
   initialBlogPosts: BlogPost[];
   initialBlogUnavailable?: boolean;
 }
 
 export default function ResourcesClient({
+  initialTab = 'blog',
   initialBlogPosts,
   initialBlogUnavailable = false,
 }: ResourcesClientProps) {
-  const [activeTab, setActiveTab] = useState<'blog' | 'faq'>('blog');
+  const [activeTab, setActiveTab] = useState<ResourcesTab>(initialTab);
   const [blogFilter, setBlogFilter] = useState('All');
   const [faqFilter, setFaqFilter] = useState('All');
   const [openFaqIdx, setOpenFaqIdx] = useState<number | null>(0);
@@ -284,11 +290,28 @@ export default function ResourcesClient({
   const featured = filteredPosts.find((post) => post.featured);
   const regularPosts = filteredPosts.filter((post) => !post.featured);
 
+  const activateTab = (tab: ResourcesTab) => {
+    setActiveTab(tab);
+    setSelectedPost(null);
+    setSelectedPostData(null);
+
+    if (typeof window !== 'undefined') {
+      const nextUrl = tab === 'blog' ? '/resources' : `/resources?tab=${tab}`;
+      window.history.replaceState(null, '', nextUrl);
+    }
+  };
+
   useEffect(() => {
     if (rightPanelRef.current && selectedPost) {
       rightPanelRef.current.scrollTop = 0;
     }
   }, [selectedPost]);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+    setSelectedPost(null);
+    setSelectedPostData(null);
+  }, [initialTab]);
 
   useEffect(() => {
     if (initialBlogUnavailable && initialBlogPosts.length === 0) {
@@ -317,7 +340,7 @@ export default function ResourcesClient({
               Resources for professional planners
             </h1>
             <p className="mx-auto mt-4 max-w-xl text-base text-slate-300">
-              Pricing strategies, workflow tips, industry trends, and answers to every question.
+              Pricing strategies, workflow tips, free templates, and answers to every question.
             </p>
           </div>
         </section>
@@ -327,11 +350,7 @@ export default function ResourcesClient({
         <div className="flex gap-1 border-b border-white/10">
           <button
             type="button"
-            onClick={() => {
-              setActiveTab('blog');
-              setSelectedPost(null);
-              setSelectedPostData(null);
-            }}
+            onClick={() => activateTab('blog')}
             className={`border-b-2 px-6 py-3 text-sm font-semibold transition ${
               activeTab === 'blog'
                 ? 'border-wedding-rose text-wedding-rose'
@@ -342,11 +361,18 @@ export default function ResourcesClient({
           </button>
           <button
             type="button"
-            onClick={() => {
-              setActiveTab('faq');
-              setSelectedPost(null);
-              setSelectedPostData(null);
-            }}
+            onClick={() => activateTab('templates')}
+            className={`border-b-2 px-6 py-3 text-sm font-semibold transition ${
+              activeTab === 'templates'
+                ? 'border-wedding-rose text-wedding-rose'
+                : 'border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            Templates
+          </button>
+          <button
+            type="button"
+            onClick={() => activateTab('faq')}
             className={`border-b-2 px-6 py-3 text-sm font-semibold transition ${
               activeTab === 'faq'
                 ? 'border-wedding-rose text-wedding-rose'
@@ -603,6 +629,26 @@ export default function ResourcesClient({
               </div>
             </div>
           )}
+        </section>
+      )}
+
+      {activeTab === 'templates' && (
+        <section className="mx-auto max-w-6xl px-6 py-10 sm:px-10">
+          <div className="mb-10 max-w-3xl">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-wedding-rose">
+              Free download
+            </p>
+            <h2 className="mt-3 text-3xl font-semibold text-white">
+              Templates wedding planners can use today
+            </h2>
+            <p className="mt-3 text-sm leading-7 text-slate-300 sm:text-base">
+              Nine production-ready PDFs for intake, timelines, vendor onboarding,
+              guest needs, shot lists, and day-of contacts. Each download is emailed
+              to the address entered in the modal.
+            </p>
+          </div>
+
+          <TemplatesClient templates={MARKETING_TEMPLATES} surface="dark" />
         </section>
       )}
 

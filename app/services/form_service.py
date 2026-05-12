@@ -1,39 +1,361 @@
+import hashlib
+import hmac
 import html
 import logging
 import os
+import secrets
 import uuid
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
 
 from app.core.database import mongo
+from app.core.settings import settings
 from app.models.form import (
     CreateFormRequest,
     DuplicateFormRequest,
+    FormDistributionStatus,
+    FormField,
+    FormType,
     SendFormRequest,
     SubmitFormRequest,
     UpdateFormRequest,
 )
 from app.services.email_service_resend import ResendEmailService
+from app.services.form_upload_service import FormUploadService
 from app.utils.csv_export import CSVSecurityError, FormResponseCSVExporter
+from app.utils.form_conditional_logic import (
+    filter_responses_to_visible,
+    is_field_visible,
+)
 from app.utils.security_utils import FormSecurityValidator, InputSanitizer, rate_limiter
 
 logger = logging.getLogger(__name__)
 
 
 class FormService:
+    # How long a per-recipient form access token is valid for. Mirrors the
+    # contract token expiry to keep the planner mental model consistent.
+    DEFAULT_FORM_TOKEN_TTL_DAYS = 30
+
+    # Item 6 (audit fix): caps for ``send_form_reminders`` so a single
+    # daily tick can't blow through the Resend rate limit. Overflow is
+    # deferred to the next scheduler tick (24h later) — acceptable for a
+    # reminder workflow.
+    REMINDER_BUDGET_PER_TICK = 200
+    REMINDER_BUDGET_PER_PLANNER = 50
+
     def __init__(self):
         self.forms_collection = mongo.get_forms_collection()
         self.responses_collection = mongo.db["form_responses"]
         self.distributions_collection = mongo.db["form_distributions"]
         self.wedding_collection = mongo.db["weddings"]
         self.email_service = ResendEmailService()
+        self.upload_service = FormUploadService()
+
+    # ------------------------------------------------------------------
+    # Per-recipient access tokens
+    # ------------------------------------------------------------------
+
+    def _hash_form_access_token(self, raw_token: str) -> str:
+        secret_key = settings.secret_key
+        if not secret_key:
+            raise RuntimeError("SECRET_KEY is required for form token hashing")
+
+        return hmac.new(
+            secret_key.encode("utf-8"),
+            raw_token.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+    def _verify_form_access_token(self, raw_token: str, stored_hash: str) -> bool:
+        if not raw_token or not stored_hash:
+            return False
+        return hmac.compare_digest(self._hash_form_access_token(raw_token), stored_hash)
+
+    def _issue_form_access_token(self) -> tuple[str, str, datetime]:
+        raw_token = secrets.token_urlsafe(32)
+        token_hash = self._hash_form_access_token(raw_token)
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            days=self.DEFAULT_FORM_TOKEN_TTL_DAYS
+        )
+        return raw_token, token_hash, expires_at
+
+    async def backfill_form_type_from_template_type(self) -> Dict[str, int]:
+        """T1 migration: copy ``template_type`` to ``form_type`` for any
+        document missing the canonical discriminator.
+
+        Idempotent — running twice is harmless. Returns the number of
+        documents updated. Designed to be called once from a deploy hook
+        or invoked manually via an admin endpoint.
+        """
+        result = await self.forms_collection.update_many(
+            {
+                "form_type": {"$in": [None, ""]},
+                "template_type": {"$exists": True, "$nin": [None, ""]},
+            },
+            [
+                {"$set": {"form_type": "$template_type"}},
+            ],
+        )
+        # Documents missing both fields fall back to "general".
+        result_default = await self.forms_collection.update_many(
+            {"form_type": {"$in": [None, ""]}},
+            {"$set": {"form_type": FormType.GENERAL.value}},
+        )
+        total = int(getattr(result, "modified_count", 0) or 0) + int(
+            getattr(result_default, "modified_count", 0) or 0
+        )
+        if total:
+            logger.info("Backfilled form_type on %s legacy form docs", total)
+        return {
+            "from_template_type": int(getattr(result, "modified_count", 0) or 0),
+            "from_default": int(getattr(result_default, "modified_count", 0) or 0),
+            "total": total,
+        }
+
+    async def seed_catalog_templates_for_planner(
+        self, planner_email: str
+    ) -> Dict[str, int]:
+        """Phase D: Auto-load the static template catalog into a planner's
+        workspace on first verification.
+
+        Idempotent — each seeded form is stamped with
+        ``seeded_from_catalog=True`` and ``catalog_template_id=<id>``, so
+        rerunning the method (e.g. an email-verification retry) creates
+        zero duplicates. Each catalog template materialises as a real
+        ``forms`` document owned by the planner with
+        ``submission_count=0``, ``is_active=True``, and a properly hashed
+        ``planner_state`` key — exactly what would happen if the planner
+        had clicked "Use template" 9 times manually.
+
+        Best-effort: any catalog parse error is logged but never raises,
+        so a malformed template (which catalog tests should already
+        catch) cannot block account verification.
+
+        Returns: ``{seeded, skipped, total}``.
+        """
+        from app.services.form_template_catalog import FORM_TEMPLATES
+
+        if not planner_email:
+            return {"seeded": 0, "skipped": 0, "total": 0}
+
+        normalized_email = planner_email.lower().strip()
+        if not normalized_email:
+            return {"seeded": 0, "skipped": 0, "total": 0}
+
+        existing_seeded_ids = set()
+        try:
+            cursor = self.forms_collection.find(
+                {
+                    "created_by": normalized_email,
+                    "seeded_from_catalog": True,
+                },
+                {"catalog_template_id": 1},
+            )
+            existing = await cursor.to_list(length=None)
+            existing_seeded_ids = {
+                doc.get("catalog_template_id")
+                for doc in existing
+                if doc.get("catalog_template_id")
+            }
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "Failed to enumerate existing seeded templates for %s: %s",
+                normalized_email,
+                exc,
+            )
+
+        now = datetime.now(timezone.utc)
+        planner_state_key = self._planner_state_key(normalized_email)
+        seeded = 0
+        skipped = 0
+
+        for template in FORM_TEMPLATES:
+            template_id = template.get("id")
+            if not template_id:
+                continue
+            if template_id in existing_seeded_ids:
+                skipped += 1
+                continue
+
+            try:
+                # Parse fields through the same Pydantic model the runtime
+                # uses so a corrupt template never lands in Mongo. The
+                # catalog test suite asserts this passes for every entry.
+                fields_payload = [
+                    FormField.model_validate(field).model_dump()
+                    for field in template.get("fields", [])
+                ]
+            except Exception as exc:
+                logger.warning(
+                    "Skipping catalog template %s for %s — field validation failed: %s",
+                    template_id,
+                    normalized_email,
+                    exc,
+                )
+                skipped += 1
+                continue
+
+            form_id = f"form_seed_{template_id}_{uuid.uuid4().hex[:12]}"
+            form_doc: Dict[str, Any] = {
+                "_id": form_id,
+                "name": template.get("name") or template_id,
+                "form_type": template.get("category") or FormType.GENERAL.value,
+                # Item 7 (audit cleanup): legacy template_type is no longer
+                # written. form_type carries the canonical discriminator;
+                # the backfill helper handles existing pre-migration docs.
+                "settings": {
+                    "title": template.get("name") or template_id,
+                    "description": template.get("description", ""),
+                    "submit_button_text": "Submit",
+                    "success_message": "Thank you for your submission!",
+                    "allow_multiple_submissions": False,
+                    "collect_email": True,
+                    "is_public": True,
+                    "requires_auth": False,
+                },
+                "fields": fields_payload,
+                "created_by": normalized_email,
+                "wedding_id": None,
+                "is_active": True,
+                "created_at": now,
+                "updated_at": now,
+                "submission_count": 0,
+                "planner_state": {
+                    planner_state_key: {
+                        "last_viewed_submission_count": 0,
+                        "last_viewed_responses_at": None,
+                        "last_viewed_analytics_at": None,
+                    }
+                },
+                # Phase D markers — power idempotence + future analytics
+                # ("how many planners actually use the seeded templates?").
+                "seeded_from_catalog": True,
+                "catalog_template_id": template_id,
+                "catalog_seeded_at": now,
+            }
+            try:
+                await self.forms_collection.insert_one(form_doc)
+                seeded += 1
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning(
+                    "Failed to seed catalog template %s for %s: %s",
+                    template_id,
+                    normalized_email,
+                    exc,
+                )
+                skipped += 1
+
+        if seeded:
+            logger.info(
+                "Seeded %s catalog templates for planner %s (skipped %s)",
+                seeded,
+                normalized_email,
+                skipped,
+            )
+        return {
+            "seeded": seeded,
+            "skipped": skipped,
+            "total": len(FORM_TEMPLATES),
+        }
+
+    async def get_seeded_form_id(
+        self,
+        catalog_template_id: str,
+        *,
+        created_by: str,
+        owner_alias_emails: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Resolve the planner's catalog-seeded form id for a given
+        catalog template (Chunk 4 of the wedding-checklist nudge).
+
+        The frontend toast that fires when a couple accepts the portal
+        invite needs to map ``couple_intake`` (the catalog id, stable
+        across all planners) to the actual ``form_id`` Mongo assigned
+        when Phase D seeded the template into this planner's
+        workspace. Without this lookup the toast can't render an
+        action button.
+
+        - Whitelists ``catalog_template_id`` against FORM_TEMPLATES
+          (400 on unknown — defence against probing).
+        - Owner-scoped via ``_build_creator_query`` so a team member
+          inherits the parent planner's seed.
+        - Returns 404 with a benign body when the planner has no
+          seeded form (legacy account or planner deleted the seed).
+        """
+        from app.services.form_template_catalog import FORM_TEMPLATES
+
+        valid_ids = {t.get("id") for t in FORM_TEMPLATES}
+        if catalog_template_id not in valid_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="Unknown catalog template id",
+            )
+
+        creator_query = self._build_creator_query(created_by, owner_alias_emails)
+        query: Dict[str, Any] = dict(creator_query)
+        query["seeded_from_catalog"] = True
+        query["catalog_template_id"] = catalog_template_id
+
+        doc = await self.forms_collection.find_one(query, {"_id": 1, "name": 1})
+        if not doc:
+            raise HTTPException(status_code=404, detail="No seeded template found")
+        return {"form_id": str(doc["_id"]), "name": doc.get("name") or ""}
 
     @staticmethod
     def _planner_state_key(email: str) -> str:
+        """Deterministic, collision-safe key for ``planner_state`` field paths.
+
+        The previous implementation was ``email.replace(".", "_")``, which
+        collided ``alice.smith@x`` with ``alice_smith@x`` and lost view
+        state across distinct planners. We replace it with a SHA256 hex
+        digest of the lowercased email so the keyspace is dot-free
+        (Mongo nested-path requirement), case-insensitive, and
+        collision-free.
+
+        ``_legacy_planner_state_key`` is the old format and is consulted
+        as a fallback in read paths so existing documents keep working
+        across deploys; the next write under the new key tombstones the
+        legacy entry via a ``$unset`` so the migration is incremental.
+        """
+        if not email:
+            return "anonymous"
+        normalized = email.strip().lower()
+        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        return f"u_{digest}"
+
+    @staticmethod
+    def _legacy_planner_state_key(email: str) -> str:
         return email.replace(".", "_")
+
+    def _read_planner_state(
+        self, planner_state: Dict[str, Any], email: str
+    ) -> Dict[str, Any]:
+        """Read a planner's state entry, transparently falling back to
+        legacy key shapes for un-migrated docs.
+
+        Lookup order: new SHA256 key, legacy ``email.replace('.', '_')``,
+        bare email (used by some seed paths). The first match wins; any
+        write path will tombstone the legacy entry on next save.
+        """
+        if not isinstance(planner_state, dict):
+            return {}
+        new_key = self._planner_state_key(email)
+        if new_key in planner_state:
+            return planner_state[new_key] or {}
+        legacy_key = self._legacy_planner_state_key(email)
+        if legacy_key in planner_state:
+            return planner_state[legacy_key] or {}
+        # Bare-email fallback: some pre-existing seed data and integration
+        # paths used the raw email (with dots intact) as the field name —
+        # which Mongo only accepts at the top level of a planner_state
+        # subdocument. Honoring it here keeps in-flight data readable.
+        if email and email in planner_state:
+            return planner_state[email] or {}
+        return {}
 
     @staticmethod
     def _normalize_owner_alias_emails(
@@ -120,12 +442,21 @@ class FormService:
             form_doc = {
                 "_id": form_id,
                 "name": InputSanitizer.sanitize_text(sanitized_data["name"], 100),
-                "form_type": sanitized_data.get("form_type", "general"),
                 "settings": sanitized_data["settings"],
                 "fields": sanitized_data["fields"],
                 "created_by": creator_email,
                 "wedding_id": sanitized_data.get("wedding_id"),
-                "template_type": sanitized_data.get("template_type"),
+                # T1: form_type is the canonical discriminator. We backfill
+                # from legacy template_type on creation so existing clients
+                # that still post template_type don't lose the label, then
+                # default to "general" when neither is supplied. The legacy
+                # template_type field is no longer written (Item 7) — reads
+                # still tolerate it via the migration helper.
+                "form_type": (
+                    sanitized_data.get("form_type")
+                    or sanitized_data.get("template_type")
+                    or FormType.GENERAL.value
+                ),
                 "is_active": True,
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
@@ -139,6 +470,19 @@ class FormService:
             result = await self.forms_collection.insert_one(form_doc)
 
             if result.inserted_id:
+                # T2: audit log entry includes the actor (the team
+                # member who acted on behalf of the planner) so the
+                # planner-state already-stored value becomes a real
+                # accountability surface.
+                logger.info(
+                    "form_created form_id=%s owner=%s actor=%s wedding_id=%s "
+                    "form_type=%s",
+                    form_id,
+                    creator_email,
+                    form_doc.get("created_by_actor") or creator_email,
+                    sanitized_data.get("wedding_id"),
+                    form_doc["form_type"],
+                )
                 return {"id": form_id, "message": "Form created successfully"}
             else:
                 raise HTTPException(status_code=500, detail="Failed to create form")
@@ -238,14 +582,13 @@ class FormService:
                 unread = 0
 
                 if viewer_key:
+                    # Read via the dual-key helper (new SHA256 key first,
+                    # legacy email-replace key as fallback) so existing
+                    # docs keep their state across the migration.
                     state = (
-                        planner_state.get(viewer_key)
-                        or (
-                            planner_state.get(raw_viewer_email)
-                            if raw_viewer_email
-                            else {}
-                        )
-                        or {}
+                        self._read_planner_state(planner_state, raw_viewer_email or "")
+                        if raw_viewer_email
+                        else (planner_state.get(viewer_key) or {})
                     )
                     last_seen = int(state.get("last_viewed_submission_count", 0) or 0)
                     unread = max(submission_total - last_seen, 0)
@@ -520,62 +863,177 @@ class FormService:
 
             sent_count = 0
             failed_count = 0
+            skipped_count = 0
+            # Per-recipient detail (Batch 4 — P6 audit fix). Lets the
+            # planner UI render a "3 of 50 bounced — see which" view
+            # instead of just an aggregate count.
+            per_recipient: List[Dict[str, Any]] = []
 
             for recipient_email in send_data.recipient_emails:
                 try:
-                    # Create distribution record
+                    normalized_recipient = (recipient_email or "").strip().lower()
+                    if not normalized_recipient:
+                        continue
+
+                    # Distribution dedup (Batch 1 — P1/P3 audit fix). If a
+                    # distribution already exists for (form_id, recipient_email)
+                    # AND it has a live (unexpired) token AND it has not
+                    # been submitted yet, skip — the planner has already
+                    # sent this recipient the form. Stops double-sends
+                    # when the planner re-clicks "Send" or the action-
+                    # button toast races with a manual send.
+                    existing = await self.distributions_collection.find_one(
+                        {
+                            "form_id": form_id,
+                            "recipient_email": normalized_recipient,
+                        }
+                    )
+                    if existing and existing.get("submitted_at") is None:
+                        # Only treat the prior row as a live duplicate
+                        # when it actually represents a usable invitation
+                        # — i.e. an email was successfully delivered AND
+                        # the access token is still valid. A failed send,
+                        # an expired token, or a row whose email never
+                        # left the queue should fall through so the
+                        # planner can manually recover from the bounce
+                        # without bumping into a "skipped_duplicate".
+                        delivered = int(existing.get("email_sends") or 0) > 0
+                        token_expires_at = existing.get("token_expires_at")
+                        token_live = False
+                        if token_expires_at is not None:
+                            if token_expires_at.tzinfo is None:
+                                token_expires_at = token_expires_at.replace(
+                                    tzinfo=timezone.utc
+                                )
+                            token_live = token_expires_at > datetime.now(timezone.utc)
+                        if delivered and token_live:
+                            skipped_count += 1
+                            per_recipient.append(
+                                {
+                                    "email": normalized_recipient,
+                                    "distribution_id": str(existing["_id"]),
+                                    "status": "skipped_duplicate",
+                                    "error": (
+                                        "Recipient already has an open form invitation"
+                                    ),
+                                }
+                            )
+                            continue
+
+                    # Create distribution record + per-recipient access token
                     distribution_id = str(uuid.uuid4())
+                    raw_token, token_hash, token_expires_at = (
+                        self._issue_form_access_token()
+                    )
                     distribution_doc = {
                         "_id": distribution_id,
                         "form_id": form_id,
-                        "recipient_email": recipient_email,
+                        "recipient_email": normalized_recipient,
                         "wedding_id": send_data.wedding_id,
                         "sent_at": datetime.now(timezone.utc),
-                        "status": "sending",
+                        "status": FormDistributionStatus.SENDING.value,
+                        "access_token_hash": token_hash,
+                        "token_expires_at": token_expires_at,
+                        # Snapshot reminder context so the scheduler can
+                        # re-send without re-reading the form doc, and so
+                        # later edits to the form's email settings don't
+                        # retroactively change reminder behaviour for
+                        # already-sent distributions.
+                        "send_reminder": bool(send_data.email_settings.send_reminder),
+                        "reminder_days": int(send_data.email_settings.reminder_days),
+                        "reminder_subject": send_data.email_settings.subject,
+                        "reminder_message": send_data.email_settings.message,
+                        "reminder_sender_name": send_data.email_settings.sender_name,
+                        "reminder_sent_at": None,
+                        "reminder_count": 0,
                     }
+
+                    # Per-recipient URL carries the distribution_id (join key)
+                    # AND a one-time access token (?t=). The token is verified
+                    # at submit-time so the link cannot be replayed once
+                    # consumed and cannot be guessed without the email.
+                    recipient_form_url = (
+                        f"{form_url}?dist={distribution_id}&t={raw_token}"
+                    )
 
                     # Generate personalized email content
                     email_html = self._generate_form_email_html(
                         form_title=form["settings"]["title"],
                         form_description=form["settings"].get("description", ""),
-                        form_url=form_url,
+                        form_url=recipient_form_url,
                         sender_name=send_data.email_settings.sender_name,
                         custom_message=send_data.email_settings.message,
                     )
 
                     # Send email
+                    delivery_error: Optional[str] = None
                     if self.email_service.configured:
                         email_result = await self.email_service.send_email(
-                            to_email=recipient_email,
+                            to_email=normalized_recipient,
                             subject=send_data.email_settings.subject,
                             html_content=email_html,
                             from_name=send_data.email_settings.sender_name,
                         )
 
                         if email_result.get("success"):
-                            distribution_doc["status"] = "sent"
+                            distribution_doc["status"] = (
+                                FormDistributionStatus.SENT.value
+                            )
                             distribution_doc["email_id"] = email_result.get("email_id")
+                            distribution_doc["email_sends"] = 1
+                            distribution_doc["email_send_failures"] = 0
                             sent_count += 1
                         else:
-                            distribution_doc["status"] = "failed"
+                            distribution_doc["status"] = (
+                                FormDistributionStatus.FAILED.value
+                            )
+                            distribution_doc["email_sends"] = 0
+                            distribution_doc["email_send_failures"] = 1
+                            delivery_error = (
+                                email_result.get("error")
+                                or "Email service rejected the recipient"
+                            )
                             failed_count += 1
                     else:
-                        distribution_doc["status"] = "failed"
+                        distribution_doc["status"] = FormDistributionStatus.FAILED.value
+                        distribution_doc["email_sends"] = 0
+                        distribution_doc["email_send_failures"] = 1
+                        delivery_error = "Email service not configured"
                         failed_count += 1
 
                     # Save distribution record
                     await self.distributions_collection.insert_one(distribution_doc)
+                    per_recipient.append(
+                        {
+                            "email": normalized_recipient,
+                            "distribution_id": distribution_id,
+                            "status": distribution_doc["status"],
+                            "error": delivery_error,
+                        }
+                    )
 
                 except Exception as email_error:
                     logging.error(
                         f"Failed to send form to {recipient_email}: {str(email_error)}"
                     )
                     failed_count += 1
+                    per_recipient.append(
+                        {
+                            "email": (recipient_email or "").strip().lower(),
+                            "distribution_id": None,
+                            "status": "failed",
+                            "error": str(email_error),
+                        }
+                    )
 
             return {
                 "sent": sent_count,
                 "failed": failed_count,
+                "skipped_duplicates": skipped_count,
                 "form_url": form_url,
+                # Per-recipient detail so the planner UI can render a
+                # bounce / dedup report instead of just aggregate counts.
+                "recipients": per_recipient,
                 "message": f"Form sent to {sent_count} recipients",
             }
 
@@ -586,6 +1044,239 @@ class FormService:
             raise HTTPException(
                 status_code=500, detail=f"Failed to send form: {str(e)}"
             )
+
+    async def _planner_subscription_active(self, planner_email: str) -> bool:
+        """Return True if the planner's subscription is in the active
+        set (active / trial / trial_expiring). False on missing user,
+        explicit blocked status, or any lookup error (fail-closed for
+        outbound email).
+        """
+        try:
+            from app.models.subscription import (
+                ACTIVE_SUBSCRIPTION_STATUSES,
+                normalize_subscription_status,
+            )
+
+            user = await mongo.db["users"].find_one(
+                {"email": planner_email}, {"subscription_status": 1, "is_active": 1}
+            )
+            if not user:
+                return False
+            if user.get("is_active") is False:
+                return False
+            normalized = normalize_subscription_status(user.get("subscription_status"))
+            return normalized in ACTIVE_SUBSCRIPTION_STATUSES
+        except Exception as exc:
+            logger.warning(
+                "Subscription-state lookup failed for %s; failing closed: %s",
+                planner_email,
+                exc,
+            )
+            return False
+
+    async def send_form_reminders(
+        self, *, now: Optional[datetime] = None
+    ) -> Dict[str, int]:
+        """Send a one-shot reminder email per overdue, unsubmitted distribution.
+
+        A distribution is eligible iff its snapshot at send-time enabled
+        reminders, no response has been submitted yet, no reminder has
+        previously been sent, the access token is still within its TTL,
+        and (now - sent_at) >= reminder_days. Each reminder rotates the
+        access token so the new email link is fresh and the prior link
+        is invalidated — same security model as the original send.
+
+        Designed to be called by a daily scheduler. Returns a small
+        ``{sent, skipped, failed}`` summary for logging.
+        """
+        if now is None:
+            now = datetime.now(timezone.utc)
+
+        frontend_url = os.getenv("FRONTEND_URL")
+        if not frontend_url:
+            logger.warning("FRONTEND_URL not set — skipping form reminder pass")
+            return {"sent": 0, "skipped": 0, "failed": 0}
+
+        eligible_cursor = self.distributions_collection.find(
+            {
+                "send_reminder": True,
+                "submitted_at": None,
+                "reminder_sent_at": None,
+                "status": {
+                    "$in": [
+                        FormDistributionStatus.SENT.value,
+                        FormDistributionStatus.OPENED.value,
+                        FormDistributionStatus.CLICKED.value,
+                    ]
+                },
+            }
+        )
+        candidates = await eligible_cursor.to_list(length=None)
+
+        sent = 0
+        skipped = 0
+        failed = 0
+
+        # Item 6 (audit fix): bound a single scheduler tick so a planner
+        # with 1000 due reminders cannot drain the Resend rate limit in
+        # one pass. ``REMINDER_BUDGET_PER_TICK`` is the global ceiling;
+        # ``REMINDER_BUDGET_PER_PLANNER`` keeps a single planner from
+        # monopolising the tick. Overflow is logged and deferred — the
+        # next daily scheduler run picks up the remaining candidates.
+        sent_per_planner: Dict[str, int] = {}
+        deferred_for_budget = 0
+
+        # Per-tick cache: a single planner with N due distributions only
+        # needs ONE subscription-state lookup, not N. The tick is a single
+        # synchronous pass — the planner's subscription state can't change
+        # between rows — so caching is safe and bounded by distinct
+        # planners on the page.
+        subscription_cache: Dict[str, bool] = {}
+
+        async def _is_subscription_active(email: str) -> bool:
+            cached = subscription_cache.get(email)
+            if cached is not None:
+                return cached
+            active = await self._planner_subscription_active(email)
+            subscription_cache[email] = active
+            return active
+
+        for distribution in candidates:
+            distribution_id = distribution.get("_id")
+            try:
+                if sent >= self.REMINDER_BUDGET_PER_TICK:
+                    deferred_for_budget += 1
+                    continue
+
+                # Skip if reminder window not yet reached.
+                sent_at = distribution.get("sent_at")
+                if not sent_at:
+                    skipped += 1
+                    continue
+                if sent_at.tzinfo is None:
+                    sent_at = sent_at.replace(tzinfo=timezone.utc)
+                reminder_days = int(distribution.get("reminder_days", 7))
+                if (now - sent_at) < timedelta(days=reminder_days):
+                    skipped += 1
+                    continue
+
+                # Skip if the access token has already expired — a stale
+                # link in a reminder helps no one.
+                token_expires_at = distribution.get("token_expires_at")
+                if token_expires_at:
+                    if token_expires_at.tzinfo is None:
+                        token_expires_at = token_expires_at.replace(tzinfo=timezone.utc)
+                    if token_expires_at < now:
+                        skipped += 1
+                        continue
+
+                form = await self.forms_collection.find_one(
+                    {"_id": distribution.get("form_id")}
+                )
+                if not form or not form.get("is_active", True):
+                    skipped += 1
+                    continue
+
+                planner_email = (form.get("created_by") or "").lower().strip()
+
+                # P7 audit fix: subscription-state gate. A planner whose
+                # subscription is past_due / canceled / expired must not
+                # have reminders go out under their brand — they can no
+                # longer reply to the recipient. We check the user row's
+                # ``subscription_status`` field (the canonical store —
+                # subscription writes mirror onto the user doc; see
+                # subscription_service.py:355) and skip when it isn't in
+                # the active set. Failure to resolve the user (e.g. the
+                # planner deleted their account) also skips.
+                if planner_email and not await _is_subscription_active(planner_email):
+                    skipped += 1
+                    continue
+
+                # Per-planner budget gate. A planner with 800 due
+                # reminders shouldn't crowd out 4 other planners' due
+                # reminders in the same tick.
+                if (
+                    sent_per_planner.get(planner_email, 0)
+                    >= self.REMINDER_BUDGET_PER_PLANNER
+                ):
+                    deferred_for_budget += 1
+                    continue
+
+                # Rotate the token so the new email link is fresh and the
+                # original link stops working (prevents stale-link
+                # confusion if the recipient kept it open).
+                raw_token, token_hash, new_expires_at = self._issue_form_access_token()
+                reminder_form_url = (
+                    f"{frontend_url}/forms/{distribution['form_id']}"
+                    f"?dist={distribution_id}&t={raw_token}"
+                )
+
+                subject_base = distribution.get("reminder_subject") or form.get(
+                    "settings", {}
+                ).get("title", "Form")
+                reminder_subject = f"Reminder: {subject_base}"
+                custom_message = distribution.get("reminder_message") or ""
+                sender_name = distribution.get("reminder_sender_name") or ""
+
+                email_html = self._generate_form_email_html(
+                    form_title=form["settings"]["title"],
+                    form_description=form["settings"].get("description", ""),
+                    form_url=reminder_form_url,
+                    sender_name=sender_name,
+                    custom_message=custom_message,
+                )
+
+                if self.email_service.configured:
+                    email_result = await self.email_service.send_email(
+                        to_email=distribution["recipient_email"],
+                        subject=reminder_subject,
+                        html_content=email_html,
+                        from_name=sender_name,
+                    )
+                else:
+                    email_result = {"success": False}
+
+                if email_result.get("success"):
+                    await self.distributions_collection.update_one(
+                        {"_id": distribution_id},
+                        {
+                            "$set": {
+                                "access_token_hash": token_hash,
+                                "token_expires_at": new_expires_at,
+                                "reminder_sent_at": now,
+                            },
+                            "$inc": {"reminder_count": 1},
+                        },
+                    )
+                    sent += 1
+                    sent_per_planner[planner_email] = (
+                        sent_per_planner.get(planner_email, 0) + 1
+                    )
+                else:
+                    failed += 1
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.error(
+                    "Reminder send failed for distribution %s: %s",
+                    distribution_id,
+                    exc,
+                )
+                failed += 1
+
+        if sent or failed or deferred_for_budget:
+            logger.info(
+                "Form reminder pass complete: sent=%d skipped=%d failed=%d "
+                "deferred_for_budget=%d",
+                sent,
+                skipped,
+                failed,
+                deferred_for_budget,
+            )
+        return {
+            "sent": sent,
+            "skipped": skipped,
+            "failed": failed,
+            "deferred_for_budget": deferred_for_budget,
+        }
 
     async def submit_form_response(
         self,
@@ -632,9 +1323,74 @@ class FormService:
                 logger.warning(f"Invalid form response for form {form_id}: {str(e)}")
                 raise HTTPException(status_code=400, detail="Invalid response data")
 
-            # Validate required fields
+            # Drop values for fields hidden by conditional_logic so stale data
+            # from a temporarily-shown branch can't be persisted.
+            sanitized_responses = filter_responses_to_visible(
+                form["fields"], sanitized_responses
+            )
+
+            # Resolve FILE_UPLOAD field values to verified upload metadata.
+            # FILE_UPLOAD requires a tokenized link (we need the
+            # distribution_id to scope the lookup); the response value
+            # must be a file_id that was actually issued by store_upload
+            # for this same form + distribution.
+            file_upload_field_ids = {
+                field["id"]
+                for field in form["fields"]
+                if field.get("type") == "file_upload"
+            }
+            if file_upload_field_ids:
+                for field_id in list(sanitized_responses.keys()):
+                    if field_id not in file_upload_field_ids:
+                        continue
+                    raw_value = sanitized_responses[field_id]
+                    file_id = (
+                        raw_value
+                        if isinstance(raw_value, str)
+                        else (
+                            raw_value.get("file_id")
+                            if isinstance(raw_value, dict)
+                            else None
+                        )
+                    )
+                    if not file_id:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="File upload reference is invalid",
+                        )
+                    if not response_data.distribution_id:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="File upload requires the original form link",
+                        )
+                    upload_record = (
+                        await self.upload_service.get_upload_for_form_distribution(
+                            file_id=file_id,
+                            form_id=form_id,
+                            distribution_id=response_data.distribution_id,
+                        )
+                    )
+                    if not upload_record or upload_record.get("field_id") != field_id:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Unrecognized file upload",
+                        )
+                    sanitized_responses[field_id] = {
+                        "file_id": upload_record["_id"],
+                        "filename": upload_record.get("filename"),
+                        "content_type": upload_record.get("content_type"),
+                        "size_bytes": upload_record.get("size_bytes"),
+                        "url": upload_record.get("url"),
+                    }
+
+            # Validate required fields, skipping any whose conditional_logic
+            # makes them hidden under the current responses.
             for field in form["fields"]:
-                if field["required"] and field["id"] not in sanitized_responses:
+                if not field.get("required"):
+                    continue
+                if not is_field_visible(field, sanitized_responses):
+                    continue
+                if field["id"] not in sanitized_responses:
                     raise HTTPException(
                         status_code=400,
                         detail=f"Required field '{html.escape(field['label'])}' is missing",
@@ -657,6 +1413,80 @@ class FormService:
                     response_data.submitted_by_name, 100
                 )
 
+            # Resolve the optional distribution_id hint from the per-recipient
+            # link. Two paths:
+            #   1. Tokenized path (distribution_id + access_token both supplied):
+            #      strict verification — wrong token -> 403, expired -> 410,
+            #      already submitted -> 409. Single-submission is enforced
+            #      per-distribution regardless of the form's
+            #      allow_multiple_submissions flag.
+            #   2. Hint-only path (distribution_id only, no token):
+            #      kept for the Item 3 query-param flow; bad ids silently
+            #      dropped without penalty so the submission still proceeds.
+            resolved_distribution_id: Optional[str] = None
+            if response_data.distribution_id:
+                distribution_match = await self.distributions_collection.find_one(
+                    {"_id": response_data.distribution_id, "form_id": form_id}
+                )
+                if not distribution_match:
+                    if response_data.access_token:
+                        # A token was supplied for an unknown distribution —
+                        # treat as forbidden, not a benign typo. Structured
+                        # detail (R6 audit) lets the frontend distinguish
+                        # this from a generic 403 and surface a friendly
+                        # "this link was refreshed by your planner" screen.
+                        raise HTTPException(
+                            status_code=403,
+                            detail={
+                                "message": "Invalid form access link",
+                                "reason": "token_rotated_or_revoked",
+                            },
+                        )
+                    logger.info(
+                        "Ignoring distribution_id %s on submission to form %s "
+                        "(no matching distribution row)",
+                        response_data.distribution_id,
+                        form_id,
+                    )
+                else:
+                    if response_data.access_token:
+                        stored_hash = distribution_match.get("access_token_hash")
+                        if not stored_hash or not self._verify_form_access_token(
+                            response_data.access_token, stored_hash
+                        ):
+                            raise HTTPException(
+                                status_code=403,
+                                detail={
+                                    "message": "Invalid form access link",
+                                    "reason": "token_rotated_or_revoked",
+                                },
+                            )
+                        token_expires_at = distribution_match.get("token_expires_at")
+                        if token_expires_at:
+                            # Mongo can return naive datetimes; assume UTC.
+                            if token_expires_at.tzinfo is None:
+                                token_expires_at = token_expires_at.replace(
+                                    tzinfo=timezone.utc
+                                )
+                            if token_expires_at < datetime.now(timezone.utc):
+                                raise HTTPException(
+                                    status_code=410,
+                                    detail="This form access link has expired",
+                                )
+                    # Item 4 (audit fix): single-submission per distribution
+                    # is enforced whenever a recognised distribution_id is
+                    # supplied, regardless of whether a token was also
+                    # supplied or whether the submitter provided an email.
+                    # Previously this lived inside the access_token branch,
+                    # which meant a hint-only (no-token) replay against a
+                    # submitted distribution slipped through silently.
+                    if distribution_match.get("submitted_at"):
+                        raise HTTPException(
+                            status_code=409,
+                            detail="A response has already been submitted with this link",
+                        )
+                    resolved_distribution_id = response_data.distribution_id
+
             # Check if multiple submissions are allowed
             if not form["settings"].get("allow_multiple_submissions", False):
                 if submitted_by_email:
@@ -668,6 +1498,31 @@ class FormService:
                             status_code=400,
                             detail="You have already submitted a response to this form",
                         )
+
+            # Submit-idempotency lookup (R3 audit fix). When the client
+            # supplies an idempotency_key (a stable per-form-fill UUID),
+            # a network-blip-then-retry returns the original
+            # success response instead of inserting a duplicate row.
+            # Key validation already applied via SubmitFormRequest model.
+            idempotency_key = response_data.idempotency_key
+            if idempotency_key:
+                existing_response = await self.responses_collection.find_one(
+                    {"form_id": form_id, "idempotency_key": idempotency_key}
+                )
+                if existing_response:
+                    success_message = form["settings"].get(
+                        "success_message", "Thank you for your submission!"
+                    )
+                    redirect_url = form["settings"].get("redirect_url")
+                    safe_redirect_url = None
+                    if redirect_url and InputSanitizer.validate_url(redirect_url):
+                        safe_redirect_url = redirect_url
+                    return {
+                        "id": str(existing_response["_id"]),
+                        "message": html.escape(success_message),
+                        "redirect_url": safe_redirect_url,
+                        "duplicate_of_idempotent_request": True,
+                    }
 
             # Create response document with sanitized data
             response_id = str(uuid.uuid4())
@@ -683,6 +1538,8 @@ class FormService:
             response_doc = {
                 "_id": response_id,
                 "form_id": form_id,
+                "distribution_id": resolved_distribution_id,
+                "idempotency_key": idempotency_key,
                 "responses": sanitized_responses,
                 "submitted_by_email": submitted_by_email,
                 "submitted_by_name": submitted_by_name,
@@ -709,14 +1566,28 @@ class FormService:
                     },
                 )
 
-                # Update distribution status if applicable
-                if submitted_by_email:
+                # Update distribution status. Prefer the explicit
+                # distribution_id from the per-recipient link; fall back to
+                # email-match for legacy / non-tokenized flows.
+                distribution_query: Optional[Dict[str, Any]] = None
+                if resolved_distribution_id:
+                    distribution_query = {
+                        "_id": resolved_distribution_id,
+                        "form_id": form_id,
+                    }
+                elif submitted_by_email:
+                    distribution_query = {
+                        "form_id": form_id,
+                        "recipient_email": submitted_by_email,
+                    }
+
+                if distribution_query is not None:
                     await self.distributions_collection.update_one(
-                        {"form_id": form_id, "recipient_email": submitted_by_email},
+                        distribution_query,
                         {
                             "$set": {
                                 "submitted_at": datetime.now(timezone.utc),
-                                "status": "submitted",
+                                "status": FormDistributionStatus.SUBMITTED.value,
                             }
                         },
                     )
@@ -727,16 +1598,11 @@ class FormService:
                     f"email={submitted_by_email}, ip={safe_ip}"
                 )
 
-                # Notify planner about the form submission
-                await self._notify_planner_form_submission(
-                    form=form,
-                    submitter_name=submitted_by_name
-                    or submitted_by_email
-                    or "Anonymous",
-                    form_id=form_id,
-                )
-
-                # Sanitize response message to prevent XSS
+                # Item 8 (audit cleanup): sanitize the response payload
+                # BEFORE dispatching downstream notifications so any future
+                # consumer that logs / forwards the message sees the safe
+                # version. The notify path doesn't currently consume
+                # success_message, but the ordering invariant is the point.
                 success_message = form["settings"].get(
                     "success_message", "Thank you for your submission!"
                 )
@@ -746,6 +1612,15 @@ class FormService:
                 safe_redirect_url = None
                 if redirect_url and InputSanitizer.validate_url(redirect_url):
                     safe_redirect_url = redirect_url
+
+                # Notify planner about the form submission
+                await self._notify_planner_form_submission(
+                    form=form,
+                    submitter_name=submitted_by_name
+                    or submitted_by_email
+                    or "Anonymous",
+                    form_id=form_id,
+                )
 
                 return {
                     "id": response_id,
@@ -763,14 +1638,29 @@ class FormService:
                 status_code=500, detail=f"Failed to submit response: {str(e)}"
             )
 
+    # Hard ceiling on a single page so a buggy ``limit=999999999`` still
+    # bounds memory.
+    RESPONSE_PAGE_MAX_LIMIT = 500
+    RESPONSE_PAGE_DEFAULT_LIMIT = 100
+
     async def get_form_responses(
         self,
         form_id: str,
         created_by: str,
         *,
         owner_alias_emails: Optional[List[str]] = None,
-    ) -> List[Dict[str, Any]]:
-        """Get all responses for a form"""
+        skip: int = 0,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Get a page of responses for a form, with total count.
+
+        Pagination is required at scale: a viral RSVP with 50k responses
+        would otherwise OOM the API process. Callers without explicit
+        ``limit`` get ``RESPONSE_PAGE_DEFAULT_LIMIT`` rows; ``limit`` is
+        capped at ``RESPONSE_PAGE_MAX_LIMIT``. The return shape is now
+        ``{items, total, skip, limit, has_more}`` so existing callers
+        get a clear migration signal at the type-checker.
+        """
         try:
             # Verify user owns the form
             await self.get_form(
@@ -779,18 +1669,34 @@ class FormService:
                 owner_alias_emails=owner_alias_emails,
             )
 
+            effective_skip = max(int(skip or 0), 0)
+            requested_limit = (
+                int(limit) if limit is not None else self.RESPONSE_PAGE_DEFAULT_LIMIT
+            )
+            effective_limit = max(1, min(requested_limit, self.RESPONSE_PAGE_MAX_LIMIT))
+
+            query: Dict[str, Any] = {"form_id": form_id}
+            total = await self.responses_collection.count_documents(query)
+
             responses = (
-                await self.responses_collection.find({"form_id": form_id})
+                await self.responses_collection.find(query)
                 .sort("submitted_at", -1)
-                .to_list(length=None)
+                .skip(effective_skip)
+                .limit(effective_limit)
+                .to_list(length=effective_limit)
             )
 
-            # Format responses
             for response in responses:
                 response["id"] = response["_id"]
                 response.pop("_id", None)
 
-            return responses
+            return {
+                "items": responses,
+                "total": total,
+                "skip": effective_skip,
+                "limit": effective_limit,
+                "has_more": effective_skip + len(responses) < total,
+            }
 
         except HTTPException:
             raise
@@ -799,6 +1705,175 @@ class FormService:
             raise HTTPException(
                 status_code=500, detail=f"Failed to fetch responses: {str(e)}"
             )
+
+    async def iter_form_responses(
+        self,
+        form_id: str,
+        *,
+        max_total: Optional[int] = None,
+        page_size: int = 500,
+        submitted_from: Optional[datetime] = None,
+        submitted_to: Optional[datetime] = None,
+    ):
+        """Async-iterate every response for a form in bounded pages.
+
+        Used by the CSV exporter so we never load the full collection
+        into memory. ``max_total`` short-circuits the iteration once
+        that many rows have been yielded — convenient for capping
+        export size.
+
+        Item 1 (audit fix): ``submitted_from`` / ``submitted_to`` are
+        applied at the Mongo query layer so the CSV export's
+        ``date_from`` / ``date_to`` request parameters actually filter
+        the dataset (previously parsed but never applied — see audit).
+        Both bounds are inclusive; either may be omitted.
+
+        Caller is responsible for ownership verification before
+        invoking.
+        """
+        skip = 0
+        yielded = 0
+        page_size = max(1, min(int(page_size), self.RESPONSE_PAGE_MAX_LIMIT))
+
+        query: Dict[str, Any] = {"form_id": form_id}
+        if submitted_from or submitted_to:
+            range_clause: Dict[str, Any] = {}
+            if submitted_from is not None:
+                range_clause["$gte"] = submitted_from
+            if submitted_to is not None:
+                range_clause["$lte"] = submitted_to
+            query["submitted_at"] = range_clause
+
+        while True:
+            page = (
+                await self.responses_collection.find(query)
+                .sort("submitted_at", -1)
+                .skip(skip)
+                .limit(page_size)
+                .to_list(length=page_size)
+            )
+            if not page:
+                return
+            for row in page:
+                row["id"] = row["_id"]
+                row.pop("_id", None)
+                yield row
+                yielded += 1
+                if max_total is not None and yielded >= max_total:
+                    return
+            if len(page) < page_size:
+                return
+            skip += page_size
+
+    async def check_form_distribution_link(
+        self,
+        form_id: str,
+        distribution_id: str,
+        access_token: str,
+    ) -> Dict[str, Any]:
+        """Public, unauthenticated check for a per-recipient form link.
+
+        Returns ``{valid, expired, already_submitted, recipient_name}`` so
+        the public form page can decide whether to render the form, show
+        an "already responded" message, or show "link expired" — without
+        ever leaking distribution data to bad tokens (404 instead).
+        """
+        if not (form_id and distribution_id and access_token):
+            raise HTTPException(status_code=400, detail="Invalid form access link")
+
+        distribution = await self.distributions_collection.find_one(
+            {"_id": distribution_id, "form_id": form_id}
+        )
+        if not distribution:
+            # Indistinguishable from a wrong token to prevent enumeration.
+            raise HTTPException(status_code=404, detail="Form access link not found")
+
+        stored_hash = distribution.get("access_token_hash")
+        if not stored_hash or not self._verify_form_access_token(
+            access_token, stored_hash
+        ):
+            raise HTTPException(status_code=404, detail="Form access link not found")
+
+        expired = False
+        token_expires_at = distribution.get("token_expires_at")
+        if token_expires_at:
+            if token_expires_at.tzinfo is None:
+                token_expires_at = token_expires_at.replace(tzinfo=timezone.utc)
+            expired = token_expires_at < datetime.now(timezone.utc)
+
+        already_submitted = distribution.get("submitted_at") is not None
+
+        # Best-effort: record the click on first valid hit
+        if not already_submitted and not expired and not distribution.get("clicked_at"):
+            await self.distributions_collection.update_one(
+                {"_id": distribution_id, "form_id": form_id},
+                {
+                    "$set": {
+                        "clicked_at": datetime.now(timezone.utc),
+                        "status": FormDistributionStatus.CLICKED.value,
+                    }
+                },
+            )
+
+        return {
+            "valid": not expired and not already_submitted,
+            "expired": expired,
+            "already_submitted": already_submitted,
+            "recipient_name": distribution.get("recipient_name"),
+            "recipient_email": distribution.get("recipient_email"),
+        }
+
+    async def get_form_distributions(
+        self,
+        form_id: str,
+        created_by: str,
+        *,
+        owner_alias_emails: Optional[List[str]] = None,
+        status: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """List distribution rows for a form with their submission state.
+
+        Powers the "who has not responded" surface: each row carries the
+        recipient, the timeline (sent/opened/clicked/submitted), and the
+        joinable distribution_id that responses now persist.
+        """
+        try:
+            # Ownership check piggybacks on get_form
+            await self.get_form(
+                form_id,
+                created_by,
+                owner_alias_emails=owner_alias_emails,
+            )
+
+            query: Dict[str, Any] = {"form_id": form_id}
+            if status:
+                try:
+                    # Single source of truth for the status vocabulary —
+                    # invalid values now raise the same 400 they used to,
+                    # but we get type-checker support for callers.
+                    query["status"] = FormDistributionStatus(status).value
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400, detail="Invalid distribution status filter"
+                    )
+
+            distributions = (
+                await self.distributions_collection.find(query)
+                .sort("sent_at", -1)
+                .to_list(length=None)
+            )
+
+            for dist in distributions:
+                dist["id"] = dist["_id"]
+                dist.pop("_id", None)
+
+            return distributions
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logging.error(f"Error fetching form distributions: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to fetch distributions")
 
     async def mark_form_viewed(
         self,
@@ -866,9 +1941,7 @@ class FormService:
 
         total_submissions = int(form.get("submission_count", 0) or 0)
         planner_state = form.get("planner_state", {}) or {}
-        existing_state = (
-            planner_state.get(state_key) or planner_state.get(normalized_email) or {}
-        )
+        existing_state = self._read_planner_state(planner_state, normalized_email)
         unread_after_update = max(
             total_submissions
             - int(existing_state.get("last_viewed_submission_count", 0) or 0),
@@ -890,8 +1963,16 @@ class FormService:
         if scope == "analytics":
             update_fields[f"planner_state.{state_key}.last_viewed_analytics_at"] = now
 
+        # Tombstone the legacy key if we read state from it. We avoid
+        # repeated $unset for already-migrated docs by guarding on the
+        # presence of the legacy key in the loaded planner_state.
+        update_payload: Dict[str, Any] = {"$set": update_fields}
+        legacy_key = self._legacy_planner_state_key(normalized_email)
+        if legacy_key != state_key and legacy_key in planner_state:
+            update_payload["$unset"] = {f"planner_state.{legacy_key}": ""}
+
         await self.forms_collection.update_one(
-            {"_id": sanitized_form_id}, {"$set": update_fields}, upsert=False
+            {"_id": sanitized_form_id}, update_payload, upsert=False
         )
 
         return {
@@ -1101,20 +2182,15 @@ class FormService:
             if not form:
                 raise HTTPException(status_code=404, detail="Form not found")
 
-            # Get all responses for the form
-            responses = await self.get_form_responses(
-                form_id,
-                created_by,
-                owner_alias_emails=owner_alias_emails,
-            )
-
-            # Validate date parameters
+            # Item 1 (audit fix): parse and validate the date filters
+            # FIRST so they actually scope the exported dataset. The
+            # previous order parsed them after iter_form_responses had
+            # already streamed every row — making the filter dead code.
             parsed_date_from = None
             parsed_date_to = None
 
             if date_from:
                 try:
-                    # Support various date formats
                     date_from = InputSanitizer.sanitize_text(date_from, 50)
                     parsed_date_from = datetime.fromisoformat(
                         date_from.replace("Z", "+00:00")
@@ -1139,7 +2215,6 @@ class FormService:
                         detail="Invalid date_to format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
                     )
 
-            # Validate date range
             if (
                 parsed_date_from
                 and parsed_date_to
@@ -1148,6 +2223,38 @@ class FormService:
                 raise HTTPException(
                     status_code=400, detail="date_from cannot be after date_to"
                 )
+
+            # Stream the form's responses page-by-page so even a 50k-row
+            # form doesn't OOM the API process during export. The hard
+            # ``max_export_size`` cap below is enforced by the iterator's
+            # ``max_total`` parameter, and the full count is computed
+            # cheaply server-side via count_documents so we can surface
+            # honest truncation metadata.
+            #
+            # Both the count and the iterator share the same date-range
+            # filter so total_response_count reflects what the user
+            # actually requested, not the full collection.
+            max_export_size = 10000
+            count_query: Dict[str, Any] = {"form_id": form_id}
+            if parsed_date_from or parsed_date_to:
+                range_clause: Dict[str, Any] = {}
+                if parsed_date_from is not None:
+                    range_clause["$gte"] = parsed_date_from
+                if parsed_date_to is not None:
+                    range_clause["$lte"] = parsed_date_to
+                count_query["submitted_at"] = range_clause
+            total_response_count = await self.responses_collection.count_documents(
+                count_query
+            )
+            responses: List[Dict[str, Any]] = []
+            async for row in self.iter_form_responses(
+                form_id,
+                max_total=max_export_size,
+                page_size=500,
+                submitted_from=parsed_date_from,
+                submitted_to=parsed_date_to,
+            ):
+                responses.append(row)
 
             # Log export attempt for security audit
             logger.info(
@@ -1160,13 +2267,23 @@ class FormService:
                 logger.info(f"No responses to export for form {form_id}")
                 # Still generate empty CSV with headers
 
-            # Limit export size to prevent DoS
-            max_export_size = 10000  # Maximum number of responses to export
-            if len(responses) > max_export_size:
+            # Truncation metadata. ``total_response_count`` was computed
+            # via count_documents above (cheap server-side aggregation,
+            # date-filter-aware), while ``responses`` is capped at
+            # max_export_size by iter_form_responses, so no in-memory
+            # slicing is needed.
+            truncated = total_response_count > max_export_size
+            truncated_count = total_response_count - max_export_size if truncated else 0
+            if truncated:
                 logger.warning(
-                    f"Export size limited: {len(responses)} responses truncated to {max_export_size}"
+                    "Export size limited: %s responses truncated to %s for form %s "
+                    "(user=%s); %s rows omitted from CSV",
+                    total_response_count,
+                    max_export_size,
+                    form_id,
+                    created_by,
+                    truncated_count,
                 )
-                responses = responses[:max_export_size]
 
             # Prepare export options
             export_options = {
@@ -1182,12 +2299,18 @@ class FormService:
                 form_data=form, responses=responses, options=export_options
             )
 
-            # Add additional metadata
+            # Add additional metadata. Surfacing truncation lets the
+            # planner UI render an honest banner ("Exported 10,000 of
+            # 47,832 responses") instead of silently dropping data.
             export_result.update(
                 {
                     "form_id": form_id,
                     "form_name": form.get("name", "Unknown Form"),
                     "exported_by": exported_by or created_by,
+                    "total_response_count": total_response_count,
+                    "truncated": truncated,
+                    "truncated_count": truncated_count,
+                    "max_export_size": max_export_size,
                     "request_params": {
                         "date_from": date_from,
                         "date_to": date_to,

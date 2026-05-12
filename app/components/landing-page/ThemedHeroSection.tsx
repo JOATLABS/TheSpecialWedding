@@ -7,7 +7,6 @@ import { formatDate } from '@/utils/dateFormat';
 
 interface ThemedHeroSectionProps {
   wedding: Wedding;
-  onCelebrateClick?: () => void;
 }
 
 // Helper to lighten a hex color for dark mode
@@ -19,17 +18,15 @@ function lightenColor(hex: string, percent: number): string {
   return `#${(r << 16 | g << 8 | b).toString(16).padStart(6, '0')}`;
 }
 
-export const ThemedHeroSection: React.FC<ThemedHeroSectionProps> = ({ wedding, onCelebrateClick }) => {
+export const ThemedHeroSection: React.FC<ThemedHeroSectionProps> = ({ wedding }) => {
   const theme = wedding.theme_config;
 
   const primaryColor = theme?.primary_color || '#1e3a5f';
   const secondaryColor = theme?.secondary_color || '#d4af37';
-  const accentColor = theme?.accent_color || '#c8847e';
 
   // Lighter versions for dark mode – higher values for better readability
   const lightPrimary = lightenColor(primaryColor, 0.6);
   const lightSecondary = lightenColor(secondaryColor, 0.55);
-  const lightAccent = lightenColor(accentColor, 0.45);
 
   // Format all event dates
   const formattedDates = (() => {
@@ -95,9 +92,6 @@ export const ThemedHeroSection: React.FC<ThemedHeroSectionProps> = ({ wedding, o
         :global(.dark) .hero-divider {
           background-color: ${lightSecondary};
         }
-        :global(.dark) .hero-celebrate-btn {
-          background-color: ${lightAccent};
-        }
       `}</style>
 
       <GlassCard
@@ -120,20 +114,6 @@ export const ThemedHeroSection: React.FC<ThemedHeroSectionProps> = ({ wedding, o
             {formattedDates}
           </p>
         )}
-        <div className="mt-8 sm:mt-12">
-          <button
-            onClick={onCelebrateClick}
-            className="inline-block px-6 py-3 rounded-full transition-all duration-300 hover:scale-105 hover:shadow-lg cursor-pointer"
-            style={{
-              backgroundColor: accentColor,
-              color: '#ffffff'
-            }}
-          >
-            <span className="text-sm sm:text-base font-medium text-white">
-              Celebrate with us
-            </span>
-          </button>
-        </div>
       </GlassCard>
     </section>
   );

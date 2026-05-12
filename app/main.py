@@ -14,7 +14,7 @@ from fastapi.encoders import ENCODERS_BY_TYPE
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.admin_activity import router as admin_activity_router
@@ -53,6 +53,7 @@ from app.api.gallery_admin import router as gallery_admin_router
 from app.api.gallery_public import router as gallery_public_router
 from app.api.guest import router as guest_router
 from app.api.guest_export import router as guest_export_router
+from app.api.guest_help import router as guest_help_router
 from app.api.guest_memories import router as guest_memories_router
 from app.api.guest_verification import router as guest_verification_router
 
@@ -67,7 +68,6 @@ from app.api.otp import router as otp_router
 from app.api.packages import router as packages_router
 from app.api.planner_ad_interactions import router as planner_ad_interactions_router
 from app.api.planner_ad_preferences import router as planner_ad_preferences_router
-from app.api.calendar_webhooks import router as calendar_webhooks_router
 from app.api.planner_calendar import router as planner_calendar_router
 from app.api.planner_metrics import router as planner_metrics_router
 from app.api.planner_notifications import router as planner_notifications_router
@@ -381,6 +381,48 @@ async def _monthly_billing_scheduler():
             await asyncio.sleep(3600)
 
 
+async def _form_reminder_scheduler():
+    """
+    Background task that sends single-shot reminder emails for unsubmitted
+    form distributions whose ``reminder_days`` window has elapsed. Runs
+    daily at 9:00 AM UTC and is leader-elected like the other schedulers
+    so multiple replicas don't double-send.
+    """
+    from app.services.form_service import FormService
+
+    while True:
+        try:
+            # Calculate seconds until next 9:00 AM UTC.
+            now = datetime.now(timezone.utc)
+            next_run = now.replace(hour=9, minute=0, second=0, microsecond=0)
+            if now >= next_run:
+                next_run += timedelta(days=1)
+            wait_seconds = (next_run - now).total_seconds()
+            logger.info(
+                f"Form reminder scheduler: next run at {next_run.isoformat()} "
+                f"({wait_seconds / 3600:.1f}h from now)"
+            )
+            await asyncio.sleep(wait_seconds)
+
+            form_service = FormService()
+            result = await form_service.send_form_reminders()
+            if result.get("sent") or result.get("failed"):
+                logger.info(
+                    "Form reminder pass: sent=%s skipped=%s failed=%s",
+                    result.get("sent"),
+                    result.get("skipped"),
+                    result.get("failed"),
+                )
+
+        except asyncio.CancelledError:
+            logger.info("Form reminder scheduler shutting down")
+            raise
+        except Exception as e:
+            logger.error(f"Form reminder scheduler error: {e}", exc_info=True)
+            # Wait an hour and retry on transient failures.
+            await asyncio.sleep(3600)
+
+
 async def _guest_media_maintenance_scheduler():
     """
     Background task that drains durable guest media work:
@@ -423,6 +465,7 @@ async def lifespan(app: FastAPI):
     rollup_task: asyncio.Task | None = None
     billing_task: asyncio.Task | None = None
     guest_media_task: asyncio.Task | None = None
+    form_reminder_task: asyncio.Task | None = None
     scheduler_heartbeat_task: asyncio.Task | None = None
     scheduler_holder_id: str | None = None
 
@@ -524,9 +567,11 @@ async def lifespan(app: FastAPI):
             rollup_task = asyncio.create_task(_nightly_rollup_scheduler())
             billing_task = asyncio.create_task(_monthly_billing_scheduler())
             guest_media_task = asyncio.create_task(_guest_media_maintenance_scheduler())
+            form_reminder_task = asyncio.create_task(_form_reminder_scheduler())
             scheduler_heartbeat_task = asyncio.create_task(
                 _scheduler_leadership_heartbeat(
-                    scheduler_holder_id, [rollup_task, billing_task, guest_media_task]
+                    scheduler_holder_id,
+                    [rollup_task, billing_task, guest_media_task, form_reminder_task],
                 )
             )
             logger.info(
@@ -545,6 +590,7 @@ async def lifespan(app: FastAPI):
             rollup_task,
             billing_task,
             guest_media_task,
+            form_reminder_task,
         ]:
             if task and not task.done():
                 task.cancel()
@@ -553,6 +599,7 @@ async def lifespan(app: FastAPI):
             rollup_task,
             billing_task,
             guest_media_task,
+            form_reminder_task,
         ]:
             if not task:
                 continue
@@ -565,15 +612,6 @@ async def lifespan(app: FastAPI):
 
         # Stop SSE Redis listener
         await sse_manager.stop_redis_listener()
-
-        # Close the shared Aurinko httpx client so connections aren't leaked
-        # across reloads.
-        try:
-            from app.services.calendar_provider_service import close_aurinko_http_client
-
-            await close_aurinko_http_client()
-        except Exception as exc:
-            logger.warning("Failed to close Aurinko HTTP client: %s", exc)
 
         # Drain the audit-log buffer before the DB connection closes.
         # ``shutdown()`` is idempotent — the ``finally`` block below
@@ -796,7 +834,7 @@ app.include_router(
 app.include_router(saas_config_router, prefix="/saas", tags=["Subscription"])
 app.include_router(testimonials_router, prefix="/saas", tags=["Testimonials"])
 app.include_router(public_contact_router, tags=["Sales"])
-app.include_router(calendar_webhooks_router, tags=["Calendar Webhooks"])
+app.include_router(guest_help_router, tags=["Guest"])
 app.include_router(guest_verification_router, tags=["Guest"])
 app.include_router(forms_router, tags=["Forms"])  # Legacy + public form endpoints
 app.include_router(
@@ -963,6 +1001,11 @@ def build_root_response(config) -> dict[str, object]:
     if config.api_docs_enabled:
         response["docs_url"] = "/docs"
     return response
+
+
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt():
+    return PlainTextResponse("User-agent: *\nDisallow: /\n")
 
 
 @app.get("/", tags=["Health"])

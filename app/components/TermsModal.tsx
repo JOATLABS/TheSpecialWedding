@@ -81,11 +81,14 @@ export default function TermsModal({
                     the couple portal plus optional email/ICS delivery from the platform.
                   </p>
 
-                  <h4>Google Calendar connections</h4>
+                  <h4>External calendar connections</h4>
                   <p>
-                    By connecting Google Calendar, a user authorizes the app to manage calendar
-                    projections for the connected calendars according to the sharing, visibility,
-                    and writable-target settings configured in the planner workspace.
+                    Calendar connections are brokered by our integration provider Aurinko, which
+                    handles OAuth with the upstream provider (Google Calendar, Microsoft 365 /
+                    Outlook, iCloud, or Exchange/EWS). By connecting a calendar, a user authorizes
+                    the app to manage calendar projections for the connected calendars according
+                    to the sharing, visibility, and writable-target settings configured in the
+                    planner workspace.
                   </p>
 
                   <p>

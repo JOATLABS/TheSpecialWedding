@@ -5,6 +5,7 @@ import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
+from urllib.parse import quote
 
 from bson.objectid import ObjectId
 from fastapi import HTTPException
@@ -642,14 +643,16 @@ class GuestVerificationService:
             if privacy_mode == "private":
                 # OTP verification (replaces name/phone verification)
                 # Check if this is an OTP verification
-                otp_code = verification_data.get("otp_code")
-                contact = verification_data.get("contact", "").strip()
+                otp_code = self._sanitize_input(
+                    verification_data.get("otp_code") or "", "otp", max_length=10
+                )
+                contact = self._sanitize_input(
+                    verification_data.get("contact") or "",
+                    "contact",
+                    max_length=100,
+                )
 
                 if otp_code and contact:
-                    # Sanitize inputs
-                    otp_code = self._sanitize_input(otp_code, "otp", max_length=10)
-                    contact = self._sanitize_input(contact, "contact", max_length=100)
-
                     # Verify OTP
                     try:
                         otp_result = await self.otp_service.verify_otp(
@@ -694,8 +697,16 @@ class GuestVerificationService:
                         )
 
                 # Method 3: Request OTP (when phone/email provided without code)
-                phone = verification_data.get("phone", "").strip()
-                email = verification_data.get("email", "").strip()
+                phone = self._sanitize_input(
+                    verification_data.get("phone") or "",
+                    "contact",
+                    max_length=100,
+                )
+                email = self._sanitize_input(
+                    verification_data.get("email") or "",
+                    "contact",
+                    max_length=100,
+                )
 
                 if phone or email:
                     # Return special response indicating OTP should be sent
@@ -1062,8 +1073,14 @@ class GuestVerificationService:
                     "message": "If you're on the guest list, you'll receive your RSVP link shortly.",
                 }
 
-            frontend_url = os.getenv("FRONTEND_URL", "https://thespecialwedding.io")
-            rsvp_url = f"{frontend_url}/{slug}/invite/{token}"
+            frontend_url = os.getenv(
+                "FRONTEND_URL", "https://thespecialwedding.io"
+            ).rstrip("/")
+            rsvp_url = (
+                f"{frontend_url}/otp/verify"
+                f"?slug={quote(slug, safe='')}"
+                f"&token={quote(token, safe='')}"
+            )
             couple_names = wedding.get("couple_names", "the couple")
             guest_name = guest.get("name", "Guest")
 
@@ -1076,7 +1093,11 @@ class GuestVerificationService:
                     )
 
                     twilio_service = TwilioReminderService()
-                    message = f"Hi {guest_name}! Here's your personal RSVP link for {couple_names}'s wedding: {rsvp_url}"
+                    message = (
+                        f"Hi {guest_name}! Here's your personal RSVP link for "
+                        f"{couple_names}'s wedding: {rsvp_url} Need help? Reply HELP "
+                        "to this text or use Get Help on the wedding website."
+                    )
                     # Use digits_only for Twilio - it will add +1 prefix for E.164 format
                     result = twilio_service._send_sms(digits_only, message)
                     send_success = result.get("status") == "success"
@@ -1169,6 +1190,10 @@ class GuestVerificationService:
                                     <p style="color: #94a3b8; font-size: 14px; margin: 30px 0 0;">
                                         Or copy this link: <br>
                                         <a href="{rsvp_url}" style="color: #64748b; word-break: break-all;">{rsvp_url}</a>
+                                    </p>
+                                    <p style="color: #64748b; font-size: 14px; line-height: 1.6; margin: 30px 0 0;">
+                                        Need help with your invitation? Reply <strong>HELP</strong> to a wedding text message,
+                                        or use the <strong>Get Help</strong> button on the wedding website so the planner can text you from the message inbox.
                                     </p>
                                 </td>
                             </tr>

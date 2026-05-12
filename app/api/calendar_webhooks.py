@@ -26,6 +26,7 @@ Notes:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from datetime import datetime
@@ -90,7 +91,14 @@ async def aurinko_webhook(
     signature = request.headers.get("X-Aurinko-Signature") or request.headers.get(
         "X-Webhook-Signature"
     )
-    if not calendar_webhook_service.verify_signature(raw_body, signature):
+    # X-Aurinko-Request-Timestamp is the unix-seconds value Aurinko signs
+    # alongside the body. Per the spec the signature is over
+    # ``v0:{timestamp}:{raw_body}`` — without the timestamp the hash cannot
+    # be reconstructed.
+    timestamp_header = request.headers.get("X-Aurinko-Request-Timestamp")
+    if not calendar_webhook_service.verify_signature(
+        raw_body, signature, timestamp_header
+    ):
         # 401 keeps Aurinko retrying — appropriate for transient secret-rotation
         # races. Sustained 401s indicate a verifier mismatch (see SKILL note in
         # calendar_webhook_service.verify_signature).
@@ -105,20 +113,32 @@ async def aurinko_webhook(
     if not isinstance(payload, dict):
         raise HTTPException(status_code=422, detail="Webhook payload must be an object")
 
-    delivery_id = (
+    # Aurinko does NOT include a deliveryId in webhook payloads (verified
+    # against docs.aurinko.io/unified-apis/webhooks-api — the documented
+    # body shape is {subscription, resource, accountId, payloads[]} with
+    # no top-level delivery id). To dedupe, we derive a stable key from
+    # the signed-request timestamp + body hash. Two genuine retries from
+    # Aurinko hit the same key; two distinct events differ in body bytes.
+    explicit_delivery_id = (
         payload.get("deliveryId")
         or payload.get("delivery_id")
-        or payload.get("id")
         or request.headers.get("X-Aurinko-Delivery-Id")
     )
-    delivery_timestamp = _coerce_datetime(
+    if explicit_delivery_id:
+        delivery_id: str = str(explicit_delivery_id)
+    else:
+        body_digest = hashlib.sha256(raw_body).hexdigest()
+        subscription_part = str(payload.get("subscription") or "no-sub")
+        ts_part = (timestamp_header or "no-ts").strip()
+        delivery_id = f"aurinko:{subscription_part}:{ts_part}:{body_digest}"
+
+    # Replay window is enforced against the signed timestamp (header) — the
+    # value the signature actually covers. Falling back to a payload-internal
+    # timestamp would let an attacker who captures one delivery resubmit it
+    # any number of times outside the window.
+    delivery_timestamp: Any = timestamp_header or _coerce_datetime(
         payload.get("timestamp") or payload.get("time")
     )
-
-    if not delivery_id:
-        # Without a delivery id we cannot dedupe — refuse permanently rather
-        # than risk processing the same change twice on retry.
-        raise HTTPException(status_code=422, detail="Webhook missing delivery id")
 
     # Replay-window and dedupe checks short-circuit with 200 (success) so
     # Aurinko stops retrying.
@@ -136,7 +156,30 @@ async def aurinko_webhook(
         )
         items = payload.get("payloads")
 
-        if not aurinko_account_id or not aurinko_calendar_id or not isinstance(items, list):
+        # Lifecycle events (subscription health) arrive in the same delivery
+        # channel but carry ``lifecycleEvent`` instead of ``payloads`` — see
+        # https://docs.aurinko.io/unified-apis/webhooks-api ("Lifecycle events").
+        # Ack 200 so Aurinko stops retrying; the polling drift-check job will
+        # repair any lapsed subscription when credentials are refreshed.
+        lifecycle_event = payload.get("lifecycleEvent")
+        if lifecycle_event and not isinstance(items, list):
+            await calendar_webhook_service.mark_delivery_processed(str(delivery_id))
+            logger.info(
+                "Aurinko lifecycle event ack 200: delivery=%s event=%s "
+                "account=%s resource=%s err=%s",
+                delivery_id,
+                lifecycle_event,
+                aurinko_account_id or "<unknown>",
+                resource or "<unknown>",
+                payload.get("error"),
+            )
+            return Response(status_code=200)
+
+        if (
+            not aurinko_account_id
+            or not aurinko_calendar_id
+            or not isinstance(items, list)
+        ):
             raise HTTPException(
                 status_code=422,
                 detail="Webhook missing accountId, resource, or payloads array",

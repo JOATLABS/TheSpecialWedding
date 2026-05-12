@@ -84,7 +84,7 @@ function scheduleIdleWork(callback: () => void, timeout = 2500) {
 }
 
 export default function WeddingPlannerDashboard() {
- const { token, userProfile, fetchUserProfile, expireSession } = useAdmin();
+ const { token, userProfile, fetchUserProfile, apiRequest } = useAdmin();
  const router = useRouter();
  const [weddings, setWeddings] = useState<Wedding[]>([]);
  const [stats, setStats] = useState<RSVPStats>({ total_guests: 0, total_plus_ones_allowed: 0, total_plus_ones_submitted: 0, confirmed: 0, confirmed_plus_ones_allowed: 0, confirmed_plus_ones_submitted: 0, declined: 0, pending: 0, pending_plus_ones_allowed: 0 });
@@ -127,17 +127,8 @@ export default function WeddingPlannerDashboard() {
  const controller = new AbortController();
  metricsAbortRef.current = controller;
  try {
- const baseUrl = getApiBaseUrl();
- const response = await fetch(`${baseUrl}/admin/planner/metrics?include_revenue=false`, {
- headers: {
- 'Authorization': `Bearer ${token}`,
- 'Content-Type': 'application/json',
- },
- signal: controller.signal,
- });
-
- if (response.ok) {
- const data = await response.json();
+ const data = await apiRequest<any>('/admin/planner/metrics?include_revenue=false');
+ if (data) {
  setWeddings(data.weddings);
  setStats({
  total_guests: data.summary.total_guests,
@@ -151,11 +142,8 @@ export default function WeddingPlannerDashboard() {
  pending_plus_ones_allowed: data.summary.pending_plus_ones_allowed || 0,
  });
  setRecentActivity(data.recent_activity);
- } else if (response.status === 401) {
- expireSession();
- return;
  } else {
- setError('Failed to fetch dashboard data');
+ return;
  }
  } catch (error) {
  if (error instanceof DOMException && error.name === 'AbortError') {
@@ -169,7 +157,7 @@ export default function WeddingPlannerDashboard() {
  metricsInFlightRef.current = false;
  setLoading(false);
  }
- }, [expireSession, token]);
+ }, [apiRequest, token]);
 
  const loadEngagementSignals = useCallback(async () => {
    if (!token || engagementLoadedRef.current) {
@@ -177,13 +165,16 @@ export default function WeddingPlannerDashboard() {
    }
 
    try {
-     const data = await fetchEngagementSignals(token);
+     const data = await fetchEngagementSignals(apiRequest);
+     if (!data) {
+       return;
+     }
      engagementLoadedRef.current = true;
      setEngagementSignals(data.signals);
    } catch (err) {
      console.error('[Planner] Failed to load engagement signals:', err);
    }
- }, [token]);
+ }, [apiRequest, token]);
 
  // Fetch AI insights for selected wedding
  const fetchAIInsights = useCallback(async (weddingId: string, forceRefresh = false) => {

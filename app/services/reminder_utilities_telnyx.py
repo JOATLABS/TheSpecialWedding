@@ -68,7 +68,10 @@ class TelnyxRSVPReminderHelper:
                 # Replace {name} placeholder with guest name if present
                 message = message.replace("{name}", guest.get("name", ""))
             else:
-                message = f"You're invited! RSVP here: {url}"
+                message = (
+                    f"You're invited! RSVP here: {url} Need help? Reply HELP to this "
+                    "text or use Get Help on the wedding website."
+                )
 
             # Ensure phone number is in E.164 format
             if not phone.startswith("+"):

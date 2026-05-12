@@ -19,7 +19,8 @@ is no third caller — keep it that way.
 
 References:
 
-* docs/analysis/METERING_REVIEW_2026-05-04_PART2.md §5 (CC1, CC2, HH1)
+* docs/analysis/METERING_GAP_SCENARIOS_2026-05-04.md (gap analysis driving
+  the SS1 idempotency_key + C2 validate-on-existing-match fixes)
 * https://docs.stripe.com/api/billing/meter (canonical Meter config)
 * https://docs.stripe.com/billing/subscriptions/usage-based/meters/configure
 """
@@ -47,45 +48,28 @@ logger = logging.getLogger(__name__)
 METER_AGGREGATION_FORMULA = "sum"
 """Required Stripe Meter ``default_aggregation.formula``.
 
-The wedding-delete hook in ``app/api/wedding.py:386`` emits ``value="-1"``
+The wedding-delete hook in ``app/api/wedding.py`` emits ``value="-1"``
 to "reverse" a prior ``+1`` event. The negative-value reversal nets
 correctly *only* on a Sum meter — Count and Last would silently break
-billing. Stripe does also expose ``MeterEventAdjustment`` for explicit
-within-24h cancellations; that's a separate code path discussed in the
-review doc, not this helper's concern.
+billing.
 """
 
 METER_CUSTOMER_MAPPING_KEY = "stripe_customer_id"
 """Required ``customer_mapping.event_payload_key``.
 
 Every ``MeterEvent.create`` call in this codebase sends customer
-attribution under the ``stripe_customer_id`` payload key. A meter created
-with a different mapping key would cause Stripe to reject every event
-silently.
+attribution under the ``stripe_customer_id`` payload key.
 """
 
 METER_VALUE_KEY = "value"
-"""Required ``value_settings.event_payload_key``.
-
-The numeric quantity (typically ``"1"`` or ``"-1"``) is sent under the
-``value`` key.
-"""
+"""Required ``value_settings.event_payload_key``."""
 
 # ---------------------------------------------------------------------------
 # Canonical event names
-#
-# Centralized so the admin form, the seed script, the runtime hooks, and the
-# tests all reference the same string. See METERING_REVIEW_2026-05-04 §M1.
 # ---------------------------------------------------------------------------
 
 METER_EVENT_NAME_WEDDING_ACTIVE = "wedding_active"
-"""The canonical event name for per-active-wedding billing.
-
-Must match (a) what the admin form puts in ``plan.meter_event_name``,
-(b) what ``app/api/wedding.py`` passes to ``report_meter_event``, and
-(c) the meter's ``event_name`` in Stripe. ``ensure_stripe_meter()`` below
-guarantees Stripe-side consistency for any caller using this string.
-"""
+"""The canonical event name for per-active-wedding billing."""
 
 
 # ---------------------------------------------------------------------------
@@ -100,43 +84,43 @@ def ensure_stripe_meter(
     """Idempotently provision a Stripe Billing Meter.
 
     Searches active meters by ``event_name``. Returns the existing meter ID
-    if found; otherwise creates a new meter with the canonical config:
+    if found AND it has the canonical config; otherwise creates a new meter.
 
-    * ``default_aggregation.formula = "sum"``
-    * ``customer_mapping = {type: "by_id", event_payload_key: "stripe_customer_id"}``
-    * ``value_settings = {event_payload_key: "value"}``
+    Two SS-tier fixes are wired into this function:
+
+    * **C2 (validate on existing match):** when ``Meter.list`` returns a
+      matching meter, we call ``assert_meter_config`` before returning. A
+      misconfigured existing meter raises ``ValueError`` rather than
+      silently binding to a broken meter. The seed catches this and prints
+      an actionable operator message.
+
+    * **SS1 (idempotency_key on Meter.create):** ``Meter.create`` is called
+      with a deterministic ``idempotency_key``. Concurrent seed runs (e.g.,
+      multi-container rolling deploys) share Stripe's 24h idempotency
+      cache and all get the same meter id — no duplicates.
 
     Args:
         event_name: Stripe meter event name. Must match
             ``plan.meter_event_name`` byte-for-byte downstream.
         display_name: Human-readable name shown in the Stripe Dashboard.
-            Defaults to ``event_name`` title-cased with underscores
-            replaced by spaces (``"wedding_active"`` → ``"Wedding Active"``).
+            Defaults to title-cased ``event_name`` (``"wedding_active"``
+            → ``"Wedding Active"``).
 
     Returns:
-        Stripe Meter ID, e.g. ``"mtr_..."``.
+        Stripe Meter ID (``"mtr_..."``).
 
     Raises:
-        StripeError: ``Meter.create`` failed and no existing meter was found.
-            Callers in HTTP contexts should wrap this in HTTPException.
+        StripeError: ``Meter.create`` failed.
+        ValueError: An existing meter matched the event_name but has
+            invalid config. Caller must fix in the Stripe Dashboard.
     """
     # 1. Search for existing meter by event_name.
-    #
-    # ``auto_paging_iter`` walks past the per-page limit; without it, an
-    # account with >100 active meters could miss a match. Failing the list
-    # call is non-fatal — we fall through to ``Meter.create`` and rely on
-    # the idempotency_key (step 2) to keep concurrent calls from
-    # producing duplicates.
     try:
         meters = stripe.billing.Meter.list(status="active", limit=100)
         for meter in meters.auto_paging_iter():
             if getattr(meter, "event_name", None) != event_name:
                 continue
-            # C2 fix: don't silently bind to a misconfigured existing
-            # meter. Validate before returning. If the meter is broken,
-            # we raise loudly — replacing it automatically would orphan
-            # any prior meter events. See METERING_GAP_SCENARIOS_2026-05-04.md
-            # §C2.
+            # C2: don't silently bind to a misconfigured existing meter.
             try:
                 assert_meter_config(meter.id)
             except ValueError as exc:
@@ -157,7 +141,6 @@ def ensure_stripe_meter(
             )
             return meter.id
     except StripeError as exc:
-        # Don't hard-fail on transient list errors — let create attempt below.
         logger.warning(
             "Meter.list failed during ensure_stripe_meter(%r): %s. "
             "Falling through to Meter.create.",
@@ -167,14 +150,10 @@ def ensure_stripe_meter(
 
     # 2. Create a new meter with the canonical config.
     #
-    # SS1 fix: pass an idempotency_key so concurrent seed runs (e.g.,
-    # multi-container rolling deploys) share Stripe's 24h idempotency
-    # cache. The first call creates the meter; subsequent calls with the
-    # same key get the cached response — no duplicates. The 24h cache
-    # window is well beyond any realistic deploy duration; reuses past
-    # 24h are harmless because the Meter.list step above will find the
-    # existing meter and skip Meter.create entirely. See
-    # METERING_GAP_SCENARIOS_2026-05-04.md §SS1.
+    # SS1: idempotency_key keyed by event_name. Concurrent seeds within
+    # Stripe's 24h idempotency cache window share the response → no
+    # duplicates. After 24h, Meter.list above finds the existing meter
+    # so we never reach create.
     if not display_name:
         display_name = event_name.replace("_", " ").title()
 
@@ -200,25 +179,17 @@ def ensure_stripe_meter(
 def assert_meter_config(meter_id: str) -> None:
     """Verify a live Stripe Meter matches the codebase's required shape.
 
-    Raises ``ValueError`` with an explicit message on any mismatch. Callers
-    in HTTP contexts should catch and wrap as ``HTTPException(400, ...)``.
-
     Three things must be true:
 
-    1. ``default_aggregation.formula == "sum"`` — the reversal pattern in
-       ``app/api/wedding.py`` (``value="-1"``) only nets correctly on Sum.
-    2. ``customer_mapping.event_payload_key == "stripe_customer_id"`` —
-       every meter event sends customer attribution under this key.
-    3. ``value_settings.event_payload_key == "value"`` — every meter event
-       sends the numeric quantity under this key.
-
-    Args:
-        meter_id: A ``"mtr_..."`` ID, typically pulled from
-            ``plan.meter_id``.
+    1. ``default_aggregation.formula == "sum"`` — the reversal pattern
+       in ``app/api/wedding.py`` (``value="-1"``) only nets correctly
+       on Sum.
+    2. ``customer_mapping.event_payload_key == "stripe_customer_id"``.
+    3. ``value_settings.event_payload_key == "value"``.
 
     Raises:
-        ValueError: The meter exists but is misconfigured.
-        ValueError: The meter ID does not exist on the account.
+        ValueError: meter is misconfigured or doesn't exist. Callers
+            in HTTP contexts should wrap as ``HTTPException(400, ...)``.
     """
     try:
         meter = stripe.billing.Meter.retrieve(meter_id)

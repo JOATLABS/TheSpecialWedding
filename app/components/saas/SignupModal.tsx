@@ -12,6 +12,8 @@ interface SubscriptionPlan {
   description: string;
   price_monthly: number;
   price_yearly: number;
+  billing_model?: string;
+  is_metered?: boolean;
   max_weddings: number;
   max_guests_per_wedding: number;
   trial_days?: number;
@@ -22,57 +24,95 @@ interface SubscriptionPlan {
   display_order?: number;
 }
 
+// IMPORTANT: keep in sync with scripts/seed_subscription_plans.py and the
+// fallback in app/page.tsx. This list is only used until the /public/
+// subscription-plans fetch resolves; once that lands, the modal renders
+// from the live Mongo data.
 const FALLBACK_PLANS: SubscriptionPlan[] = [
+  {
+    _id: 'plan_solo',
+    name: 'Solo',
+    description: 'Try us with your first client. One wedding, on us.',
+    price_monthly: 0,
+    price_yearly: 0,
+    billing_model: 'flat_rate',
+    is_metered: false,
+    trial_days: 0,
+    max_weddings: 1,
+    max_guests_per_wedding: 50,
+    features_list: [
+      '1 wedding to try us out',
+      'Up to 50 guests',
+      'Guest list & RSVP system',
+      'Branded wedding website',
+      'Basic timeline builder',
+      '1GB storage',
+    ],
+    features: {},
+    is_featured: false,
+    display_order: 0,
+  },
   {
     _id: 'plan_boutique',
     name: 'Boutique',
-    description: 'For new planners',
-    price_monthly: 29,
-    price_yearly: 290,
+    description: 'For independent planners running their solo practice. Unlimited weddings, no caps.',
+    price_monthly: 49,
+    price_yearly: 490,
+    billing_model: 'flat_rate',
+    is_metered: false,
     trial_days: 30,
-    max_weddings: 3,
-    max_guests_per_wedding: 150,
+    max_weddings: -1,
+    max_guests_per_wedding: -1,
     features_list: [
-      'Up to 3 weddings',
-      '150 guests per wedding',
-      'Guest & RSVP manager',
-      'Email invitations',
-      'Wedding website',
-      'Timeline builder',
-      '100 AI credits/month',
+      'Unlimited weddings',
+      'Unlimited guests',
+      'AI-powered timeline & vendor matching',
+      'Vendor management',
+      'Seating orchestration',
+      'QR check-in & live counts',
+      'Automated reminders',
+      '300 AI credits/month',
+      '25GB storage',
     ],
     features: {},
-    is_featured: false
+    is_featured: false,
+    display_order: 1,
   },
   {
     _id: 'plan_signature',
     name: 'Signature',
-    description: 'Most popular',
-    price_monthly: 59,
-    price_yearly: 590,
+    description: 'For agencies running a team of planners. Everything in Boutique, plus team seats and agency-grade reporting.',
+    price_monthly: 149,
+    price_yearly: 1490,
+    billing_model: 'flat_rate',
+    is_metered: false,
     trial_days: 30,
-    max_weddings: 10,
-    max_guests_per_wedding: 350,
+    max_weddings: -1,
+    max_guests_per_wedding: -1,
     features_list: [
-      'Up to 10 weddings',
-      '350 guests per wedding',
+      'Unlimited weddings',
+      'Unlimited guests',
       'Everything in Boutique',
-      'Seating orchestration',
-      'Guest memories QR uploads',
-      'Automated reminders',
-      'Vendor collaboration',
-      '300 AI credits/month',
+      'Team collaboration (5 staff seats)',
+      'Vendor-collaboration workspaces',
+      'Cross-wedding analytics',
+      'Custom domain',
+      '1,500 AI credits/month',
+      '100GB storage',
       'Priority support',
     ],
     features: {},
-    is_featured: true
+    is_featured: true,
+    display_order: 2,
   },
   {
     _id: 'plan_enterprise',
     name: 'Enterprise',
-    description: 'For high-volume wedding planning firms',
-    price_monthly: 149,
-    price_yearly: 1490,
+    description: 'For franchises and white-label partners. Your brand, our platform, dedicated success.',
+    price_monthly: 399,
+    price_yearly: 3990,
+    billing_model: 'flat_rate',
+    is_metered: false,
     trial_days: 30,
     max_weddings: -1,
     max_guests_per_wedding: -1,
@@ -81,14 +121,15 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
       'Unlimited guests',
       'Everything in Signature',
       'White-label branding',
-      'API access',
-      '1000 AI credits/month',
-      '10 staff seats',
-      'Dedicated support',
-      'Custom integrations',
+      'API access + webhooks',
+      '20 staff seats',
+      '5,000 AI credits/month',
+      '500GB storage',
+      'Dedicated success manager',
     ],
     features: {},
-    is_featured: false
+    is_featured: false,
+    display_order: 3,
   }
 ];
 
@@ -110,10 +151,27 @@ type FormValues = {
   acceptTerms: boolean;
 };
 
+function getBillingUnitLabel(plan: SubscriptionPlan | null | undefined, interval: 'monthly' | 'yearly') {
+  const isMetered = plan?.is_metered || plan?.billing_model === 'metered';
+  if (isMetered) {
+    return interval === 'yearly' ? 'active wedding / year' : 'active wedding / month';
+  }
+  return interval === 'yearly' ? 'year' : 'month';
+}
+
+function getCompactBillingUnit(plan: SubscriptionPlan | null | undefined) {
+  return plan?.is_metered || plan?.billing_model === 'metered' ? 'active wedding/mo' : 'mo';
+}
+
 export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selectedPlanId }) => {
   const apiBaseUrl = getApiBaseUrl();
   const [plans, setPlans] = useState<SubscriptionPlan[]>(FALLBACK_PLANS);
-  const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(FALLBACK_PLANS[1]);
+  // Default to the featured plan (Signature) so the modal opens on the
+  // recommended option when no specific plan was clicked. Falls back to
+  // the first plan if no featured one is found.
+  const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(
+    FALLBACK_PLANS.find((p) => p.is_featured) ?? FALLBACK_PLANS[0]
+  );
   const [billingInterval, setBillingInterval] = useState<'monthly' | 'yearly'>('monthly');
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -321,7 +379,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
 
               <div className="bg-white/10 rounded-xl p-4 mb-4">
                 <div className="text-3xl font-bold">${displayPrice}</div>
-                <div className="text-sm text-indigo-200">per {billingInterval === 'yearly' ? 'year' : 'month'}</div>
+                <div className="text-sm text-indigo-200">per {getBillingUnitLabel(selectedPlan, billingInterval)}</div>
                 {selectedPlan?.trial_days ? (
                   <div className="mt-1 text-xs font-medium text-emerald-200">
                     {selectedPlan.trial_days}-day free trial · no card required
@@ -347,7 +405,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
               className="w-full mt-4 px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/30"
             >
               {plans.map(plan => (
-                <option key={plan._id} value={plan._id} className="text-slate-900">{plan.name} - ${plan.price_monthly}/mo</option>
+                <option key={plan._id} value={plan._id} className="text-slate-900">{plan.name} - ${plan.price_monthly}/{getCompactBillingUnit(plan)}</option>
               ))}
             </select>
           </div>
@@ -383,7 +441,11 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
               </div>
               <div className="text-right">
                 <div className="text-lg font-bold text-white">${displayPrice}</div>
-                <div className="text-[10px] text-slate-400">/{billingInterval === 'yearly' ? 'yr' : 'mo'}</div>
+                <div className="text-[10px] text-slate-400">
+                  /{selectedPlan?.is_metered || selectedPlan?.billing_model === 'metered'
+                    ? billingInterval === 'yearly' ? 'active wedding/yr' : 'active wedding/mo'
+                    : billingInterval === 'yearly' ? 'yr' : 'mo'}
+                </div>
               </div>
             </div>
 

@@ -39,10 +39,9 @@ class CalendarEventSyncModel(BaseModel):
     target_user_id: Optional[str] = None
     target_user_email: Optional[str] = None
     calendar_connection_id: Optional[str] = None
-    # Default UNKNOWN — actual provider is written from the owning connection
-    # at sync-row insert time. Aurinko fans out to Google / Office365 / iCloud
-    # / EWS / Zoho, so a Google-only default would silently lie about coverage
-    # for any row inserted before the connection's provider is resolved.
+    # Default to UNKNOWN, not GOOGLE — Aurinko fans out to four+ providers and
+    # a sync row may be written before the provider id is known. The drift-
+    # check job backfills the real provider id from the owning connection.
     provider: str = Field(default=CalendarProvider.UNKNOWN.value)
     calendar_id: Optional[str] = None
     external_event_id: Optional[str] = None
