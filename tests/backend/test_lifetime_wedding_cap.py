@@ -90,10 +90,16 @@ def test_solo_seed_plan_has_lifetime_cap_enabled():
             break
 
     assert solo_plan is not None, "Solo plan not found in seed script"
-    assert solo_plan["max_weddings_lifetime"] is True, (
-        "Solo tier MUST have max_weddings_lifetime=True. Without it, the "
-        "'1 wedding lifetime' free tier becomes gameable: create, delete, "
-        "create indefinitely. See METERING_IMPLEMENTATION_2026-05-04.md."
+    # 2026-05-12 strategy refresh: Solo uses ACTIVE-count, not lifetime.
+    # Planners can delete a wedding and create another — the upgrade
+    # pressure comes from the 1-active-at-a-time cap + 50-guest cap,
+    # not from a lifetime gate. The lifetime branch still exists in
+    # subscription_service and is tested below — this assertion just
+    # pins that Solo currently uses active-count.
+    assert solo_plan["max_weddings_lifetime"] is False, (
+        "Solo tier currently ships with max_weddings_lifetime=False (active "
+        "count). If you flipped it to True, update this assertion AND the "
+        "docs/specs/PRICING_STRATEGY_*.md spec describing the decision."
     )
     assert solo_plan["max_weddings"] == 1, (
         f"Solo tier should cap at 1 wedding, got max_weddings={solo_plan['max_weddings']!r}"

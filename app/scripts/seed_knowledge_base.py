@@ -458,14 +458,9 @@ Welcome to Special Wedding! This guide covers everything about your trial period
 
 ## Your Free Trial
 
-Solo is **permanently free** — no trial clock, no credit card. You get one lifetime wedding to try the platform.
+Solo is **permanently free** — no trial clock, no credit card. You get one active wedding at a time to try the platform; finish or delete it and you can start another.
 
-Paid plans include a free trial when you upgrade from Solo or sign up directly on a paid tier:
-
-- **Boutique** and **Signature**: 14-day free trial
-- **Enterprise**: 30-day free trial
-
-During the trial you have full access to all features included in your plan — no limitations.
+All paid plans (Boutique, Signature, Enterprise) include a **30-day free trial**. During the trial you have full access to all features included in your plan — no limitations.
 
 ### What's included in your trial?
 
@@ -475,18 +470,16 @@ During the trial you have full access to all features included in your plan — 
 - Send invitations and manage RSVPs
 - Access the seating chart, budget tracker, and timeline builder
 
-### Trial timeline (14-day trial — Boutique & Signature)
+### Trial timeline (30 days)
 
 | When | What happens |
 |---|---|
 | **Day 1** | Trial starts — full access to your plan |
-| **Day 8** | You'll receive an email reminder that your trial ends in 7 days |
-| **Day 12** | A 3-day countdown begins with daily email reminders |
-| **Day 13** | "2 days left" reminder + in-app banner |
-| **Day 14** | "Last day" reminder |
-| **Day 15** | Trial ends — account moves to upgrade page |
-
-(Enterprise's 30-day trial follows the same pattern with reminders starting 7 days before the end.)
+| **Day 24** | You'll receive an email reminder that your trial ends in 7 days |
+| **Day 28** | A 3-day countdown begins with daily email reminders |
+| **Day 29** | "2 days left" reminder + in-app banner |
+| **Day 30** | "Last day" reminder |
+| **Day 31** | Trial ends — account moves to upgrade page |
 
 ### What happens when my trial ends?
 
@@ -500,11 +493,11 @@ During the trial you have full access to all features included in your plan — 
 
 ## Subscription Plans
 
-Special Wedding offers four plans to match your business:
+Special Wedding offers four plans. All paid plans include **unlimited weddings and unlimited guests** — what changes between them is team size, white-label capability, and support level.
 
 ### Solo — Free
 Try us with your first client. One wedding, on us.
-- 1 wedding (lifetime cap)
+- 1 active wedding at a time (delete to start another)
 - Up to 50 guests
 - Guest list & RSVP system
 - Branded wedding website
@@ -512,9 +505,9 @@ Try us with your first client. One wedding, on us.
 - 1GB storage
 
 ### Boutique — $49/month
-For independent planners running their solo practice.
-- Up to 10 weddings/month
-- Up to 200 guests per wedding
+For independent planners running their solo practice. Unlimited weddings, no caps.
+- Unlimited weddings
+- Unlimited guests
 - AI-powered timeline & vendor matching
 - Vendor management
 - Seating orchestration
@@ -526,9 +519,9 @@ For independent planners running their solo practice.
 - Email support
 
 ### Signature — $149/month *(Most Popular)*
-For agencies running a team of planners.
-- Up to 30 weddings/month
-- Up to 500 guests per wedding
+For agencies running a team of planners. Everything in Boutique, plus team seats and agency-grade reporting.
+- Unlimited weddings
+- Unlimited guests
 - Everything in Boutique, plus:
 - Team collaboration (5 staff seats)
 - Vendor-collaboration workspaces
@@ -539,8 +532,9 @@ For agencies running a team of planners.
 - Priority support (12h response)
 
 ### Enterprise — $399/month
-For large agencies, franchises, and white-label partners.
-- Unlimited weddings & guests
+For franchises and white-label partners. Your brand, our platform, dedicated success.
+- Unlimited weddings
+- Unlimited guests
 - Everything in Signature, plus:
 - White-label branding (your brand, no Special Wedding mentions)
 - API access + webhooks

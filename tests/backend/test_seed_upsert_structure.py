@@ -178,6 +178,163 @@ def test_admin_toggles_live_in_set_on_insert_not_set():
     )
 
 
+def test_seed_version_is_a_valid_iso_timestamp():
+    """SEED_VERSION must be parseable as an ISO-8601 datetime.
+
+    The seed's per-field admin-override gating compares the value against
+    ``admin_overrides[field]`` timestamps. If SEED_VERSION isn't a valid
+    timestamp, the seed will crash at runtime — catch it here in CI.
+    """
+    import ast as _ast
+    from datetime import datetime as _dt
+
+    seed_path = Path(PROJECT_ROOT) / "scripts" / "seed_subscription_plans.py"
+    tree = _ast.parse(seed_path.read_text())
+
+    seed_version_value = None
+    for node in tree.body:
+        if not isinstance(node, _ast.Assign):
+            continue
+        for target in node.targets:
+            if isinstance(target, _ast.Name) and target.id == "SEED_VERSION":
+                assert isinstance(node.value, _ast.Constant), (
+                    "SEED_VERSION must be a literal string constant."
+                )
+                seed_version_value = node.value.value
+                break
+
+    assert seed_version_value is not None, (
+        "SEED_VERSION constant not found in scripts/seed_subscription_plans.py. "
+        "It's required for the admin-override gating mechanism."
+    )
+    try:
+        parsed = _dt.fromisoformat(seed_version_value)
+    except ValueError as exc:
+        raise AssertionError(
+            f"SEED_VERSION={seed_version_value!r} is not valid ISO-8601: {exc}"
+        )
+    assert parsed.tzinfo is not None, (
+        f"SEED_VERSION={seed_version_value!r} must be timezone-aware "
+        "(UTC offset suffix like '+00:00') so comparisons against Mongo "
+        "datetimes are unambiguous."
+    )
+
+
+def test_paid_plans_declare_unlimited_weddings_and_guests():
+    """2026-05-12 strategy: Boutique/Signature/Enterprise have no volume caps.
+
+    If you intentionally re-add caps to a paid tier, update this test and
+    the strategy spec together. Mid-tier upgrade pressure must come from
+    capability fields (team seats, white-label, API), not from volume.
+    """
+    import ast as _ast
+
+    seed_path = Path(PROJECT_ROOT) / "scripts" / "seed_subscription_plans.py"
+    tree = _ast.parse(seed_path.read_text())
+
+    plans_node = None
+    for node in tree.body:
+        if isinstance(node, _ast.Assign):
+            targets = [t.id for t in node.targets if isinstance(t, _ast.Name)]
+            if "plans" in targets:
+                plans_node = node.value
+                break
+
+    assert plans_node is not None and isinstance(plans_node, _ast.List)
+
+    paid_ids = {"plan_boutique", "plan_signature", "plan_enterprise"}
+    seen = {}
+    for plan_dict_node in plans_node.elts:
+        if not isinstance(plan_dict_node, _ast.Dict):
+            continue
+        plan_id = None
+        max_weddings = None
+        max_guests = None
+        for k_node, v_node in zip(plan_dict_node.keys, plan_dict_node.values):
+            if not isinstance(k_node, _ast.Constant):
+                continue
+            if k_node.value == "_id" and isinstance(v_node, _ast.Constant):
+                plan_id = v_node.value
+            elif k_node.value == "max_weddings" and isinstance(v_node, _ast.Constant):
+                max_weddings = v_node.value
+            elif k_node.value == "max_weddings" and isinstance(v_node, _ast.UnaryOp):
+                # Handles `-1` parsed as UnaryOp(USub, Constant(1))
+                if isinstance(v_node.op, _ast.USub) and isinstance(
+                    v_node.operand, _ast.Constant
+                ):
+                    max_weddings = -v_node.operand.value
+            elif k_node.value == "max_guests_per_wedding" and isinstance(
+                v_node, _ast.Constant
+            ):
+                max_guests = v_node.value
+            elif k_node.value == "max_guests_per_wedding" and isinstance(
+                v_node, _ast.UnaryOp
+            ):
+                if isinstance(v_node.op, _ast.USub) and isinstance(
+                    v_node.operand, _ast.Constant
+                ):
+                    max_guests = -v_node.operand.value
+        if plan_id in paid_ids:
+            seen[plan_id] = {
+                "max_weddings": max_weddings,
+                "max_guests_per_wedding": max_guests,
+            }
+
+    assert set(seen.keys()) == paid_ids, (
+        f"Missing paid plans in seed: expected {paid_ids}, got {set(seen.keys())}"
+    )
+    for plan_id, caps in seen.items():
+        assert caps["max_weddings"] == -1, (
+            f"{plan_id} declares max_weddings={caps['max_weddings']!r}; "
+            "paid tiers must use -1 (unlimited) per 2026-05-12 strategy."
+        )
+        assert caps["max_guests_per_wedding"] == -1, (
+            f"{plan_id} declares max_guests_per_wedding={caps['max_guests_per_wedding']!r}; "
+            "paid tiers must use -1 (unlimited) per 2026-05-12 strategy."
+        )
+
+
+def test_paid_plans_have_uniform_30_day_trial():
+    """All paid plans get the same 30-day trial. Split trial lengths (14/14/30)
+    confused buyers and are no longer the design.
+    """
+    import ast as _ast
+
+    seed_path = Path(PROJECT_ROOT) / "scripts" / "seed_subscription_plans.py"
+    tree = _ast.parse(seed_path.read_text())
+
+    plans_node = None
+    for node in tree.body:
+        if isinstance(node, _ast.Assign):
+            targets = [t.id for t in node.targets if isinstance(t, _ast.Name)]
+            if "plans" in targets:
+                plans_node = node.value
+                break
+
+    paid_ids = {"plan_boutique", "plan_signature", "plan_enterprise"}
+    trial_days_by_plan = {}
+    for plan_dict_node in plans_node.elts:
+        if not isinstance(plan_dict_node, _ast.Dict):
+            continue
+        plan_id = None
+        trial_days = None
+        for k_node, v_node in zip(plan_dict_node.keys, plan_dict_node.values):
+            if not isinstance(k_node, _ast.Constant):
+                continue
+            if k_node.value == "_id" and isinstance(v_node, _ast.Constant):
+                plan_id = v_node.value
+            elif k_node.value == "trial_days" and isinstance(v_node, _ast.Constant):
+                trial_days = v_node.value
+        if plan_id in paid_ids:
+            trial_days_by_plan[plan_id] = trial_days
+
+    for plan_id, trial_days in trial_days_by_plan.items():
+        assert trial_days == 30, (
+            f"{plan_id} declares trial_days={trial_days!r}; paid plans must "
+            "use the uniform 30-day trial per 2026-05-12 strategy."
+        )
+
+
 def test_max_weddings_lifetime_is_written_to_mongo():
     """Pin the specific field that was silently missing entirely.
 

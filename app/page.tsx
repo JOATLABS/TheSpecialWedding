@@ -60,12 +60,12 @@ const fallbackPricing: PricingTier[] = [
   {
     id: "plan_boutique",
     name: "Boutique",
-    tagline: "For independent planners running their solo practice.",
+    tagline: "For independent planners running their solo practice. Unlimited weddings, no caps.",
     price: "$49",
     period: "/month",
     features: [
-      "Up to 10 weddings/month",
-      "Up to 200 guests per wedding",
+      "Unlimited weddings",
+      "Unlimited guests",
       "AI-powered timeline & vendor matching",
       "Seating orchestration",
       "QR check-in & live counts",
@@ -76,12 +76,12 @@ const fallbackPricing: PricingTier[] = [
   {
     id: "plan_signature",
     name: "Signature",
-    tagline: "For agencies running a team of planners.",
+    tagline: "For agencies running a team of planners. Everything in Boutique, plus team seats and agency-grade reporting.",
     price: "$149",
     period: "/month",
     features: [
-      "Up to 30 weddings/month",
-      "Up to 500 guests per wedding",
+      "Unlimited weddings",
+      "Unlimited guests",
       "Team collaboration (5 staff seats)",
       "Vendor-collaboration workspaces",
       "Custom domain",
@@ -94,7 +94,7 @@ const fallbackPricing: PricingTier[] = [
   {
     id: "plan_enterprise",
     name: "Enterprise",
-    tagline: "For large agencies, franchises, and white-label partners.",
+    tagline: "For franchises and white-label partners. Your brand, our platform, dedicated success.",
     price: "$399",
     period: "/month",
     features: [

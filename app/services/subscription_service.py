@@ -168,15 +168,63 @@ class SubscriptionService:
                 status_code=500, detail=f"Error retrieving plan: {str(e)}"
             )
 
+    # Fields that should record an admin-override timestamp when edited
+    # via update_plan. These are the strategy fields the seed would
+    # otherwise refresh on every deploy. Tracking the edit timestamp lets
+    # the seed gate refreshes on SEED_VERSION > admin_overrides[field].
+    # See scripts/seed_subscription_plans.py::SEED_VERSION for the seed side.
+    _ADMIN_OVERRIDE_TRACKED_FIELDS = frozenset(
+        {
+            "name",
+            "description",
+            "price_monthly",
+            "price_yearly",
+            "trial_days",
+            "max_weddings",
+            "max_weddings_lifetime",
+            "max_guests_per_wedding",
+            "ai_credits_monthly",
+            "storage_gb",
+            "staff_seats",
+            "features",
+            "features_list",
+            "is_active",
+            "is_featured",
+            "sort_order",
+            "display_order",
+        }
+    )
+
     async def update_plan(self, plan_id: str, update_data: dict) -> dict:
-        """Update subscription plan"""
+        """Update subscription plan.
+
+        Records per-field timestamps in ``admin_overrides`` for every
+        strategy field touched by this update. The container-boot seed
+        consults those timestamps against its ``SEED_VERSION`` constant —
+        admin edits made AFTER the current ``SEED_VERSION`` survive future
+        deploys; admin edits older than the next ``SEED_VERSION`` bump get
+        superseded by the seed's declared strategy. See
+        ``scripts/seed_subscription_plans.py::_build_effective_seed_plan``
+        for the consumer side of this contract.
+        """
         try:
             # Remove protected fields
             protected_fields = ["_id", "created_at", "created_by"]
             for field in protected_fields:
                 update_data.pop(field, None)
 
-            update_data["updated_at"] = datetime.now(timezone.utc)
+            now = datetime.now(timezone.utc)
+            update_data["updated_at"] = now
+
+            # Snapshot which strategy fields this update is touching so we
+            # can record per-field admin-override timestamps below. Skip
+            # fields whose value matches the existing doc (a no-op write
+            # shouldn't create the impression of a fresh admin override).
+            tracked_edits = {
+                field
+                for field in list(update_data.keys())
+                if field in self._ADMIN_OVERRIDE_TRACKED_FIELDS
+            }
 
             # Retrieve existing plan to merge with update data for Stripe sync
             existing_plan = await self.plans_collection.find_one({"_id": plan_id})
@@ -184,6 +232,13 @@ class SubscriptionService:
                 raise HTTPException(
                     status_code=404, detail="Subscription plan not found"
                 )
+
+            # Drop tracking for fields whose value matches the existing doc.
+            tracked_edits = {
+                field
+                for field in tracked_edits
+                if existing_plan.get(field) != update_data.get(field)
+            }
 
             merged_plan = {**existing_plan, **update_data}
             self._normalize_plan_billing_fields(merged_plan)
@@ -214,8 +269,16 @@ class SubscriptionService:
                     status_code=500, detail=f"Failed to sync plan to Stripe: {str(e)}"
                 )
 
+            # Build dot-notation admin_overrides writes. MongoDB interprets
+            # "admin_overrides.<field>" as a nested $set, leaving other keys
+            # in admin_overrides untouched — exactly what we want when a
+            # different field is being edited.
+            mongo_set = {**update_data}
+            for field in tracked_edits:
+                mongo_set[f"admin_overrides.{field}"] = now
+
             await self.plans_collection.update_one(
-                {"_id": plan_id}, {"$set": update_data}
+                {"_id": plan_id}, {"$set": mongo_set}
             )
 
             return {"message": "Subscription plan updated successfully"}

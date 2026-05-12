@@ -335,7 +335,7 @@ async def seed_default_subscription_plans(
     """
     default_plans = [
         # ============================================================
-        # SOLO — free tier, 1 lifetime wedding, drives upgrade
+        # SOLO — free tier, 1 ACTIVE wedding at a time
         # ============================================================
         {
             "name": "Solo",
@@ -346,7 +346,7 @@ async def seed_default_subscription_plans(
             "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
             "is_metered": False,
             "max_weddings": 1,
-            "max_weddings_lifetime": True,
+            "max_weddings_lifetime": False,
             "max_guests_per_wedding": 50,
             "ai_credits_monthly": 0,
             "storage_gb": 1,
@@ -376,15 +376,15 @@ async def seed_default_subscription_plans(
         # ============================================================
         {
             "name": "Boutique",
-            "description": "For independent planners running their solo practice.",
+            "description": "For independent planners running their solo practice. Unlimited weddings, no caps.",
             "price_monthly": 49,
             "price_yearly": 490,
-            "trial_days": 14,
+            "trial_days": 30,
             "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
             "is_metered": False,
-            "max_weddings": 10,
+            "max_weddings": -1,
             "max_weddings_lifetime": False,
-            "max_guests_per_wedding": 200,
+            "max_guests_per_wedding": -1,
             "ai_credits_monthly": 300,
             "storage_gb": 25,
             "staff_seats": 1,
@@ -404,8 +404,8 @@ async def seed_default_subscription_plans(
                 "payment_processing": True,
             },
             "features_list": [
-                "Up to 10 weddings/month",
-                "Up to 200 guests per wedding",
+                "Unlimited weddings",
+                "Unlimited guests",
                 "AI-powered timeline & vendor matching",
                 "Vendor management",
                 "Seating orchestration",
@@ -426,15 +426,15 @@ async def seed_default_subscription_plans(
         # ============================================================
         {
             "name": "Signature",
-            "description": "For agencies running a team of planners.",
+            "description": "For agencies running a team of planners. Everything in Boutique, plus team seats and agency-grade reporting.",
             "price_monthly": 149,
             "price_yearly": 1490,
-            "trial_days": 14,
+            "trial_days": 30,
             "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
             "is_metered": False,
-            "max_weddings": 30,
+            "max_weddings": -1,
             "max_weddings_lifetime": False,
-            "max_guests_per_wedding": 500,
+            "max_guests_per_wedding": -1,
             "ai_credits_monthly": 1500,
             "storage_gb": 100,
             "staff_seats": 5,
@@ -458,8 +458,8 @@ async def seed_default_subscription_plans(
                 "priority_support": True,
             },
             "features_list": [
-                "Up to 30 weddings/month",
-                "Up to 500 guests per wedding",
+                "Unlimited weddings",
+                "Unlimited guests",
                 "Everything in Boutique",
                 "Team collaboration (5 staff seats)",
                 "Vendor-collaboration workspaces",
@@ -480,7 +480,7 @@ async def seed_default_subscription_plans(
         # ============================================================
         {
             "name": "Enterprise",
-            "description": "For large agencies, franchises, and white-label partners.",
+            "description": "For franchises and white-label partners. Your brand, our platform, dedicated success.",
             "price_monthly": 399,
             "price_yearly": 3990,
             "trial_days": 30,

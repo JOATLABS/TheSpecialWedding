@@ -24,6 +24,27 @@ from app.constants.billing import (  # noqa: E402
     plan_billing_model_migration_enabled,
 )
 
+# ---------------------------------------------------------------------------
+# SEED_VERSION — bump this string on every strategy refresh that should win
+# over admin UI edits made BEFORE this date. The seed's per-field $set is
+# gated on (seed_version > admin_overrides[field]) — see _filter_set_for_admin_overrides
+# below. Use an ISO-8601 UTC timestamp so comparisons are unambiguous.
+#
+# When to bump:
+#   - You're changing canonical seed values (price, name, features, caps, etc.)
+#     and want the change to land EVEN IF an admin previously tweaked that
+#     field via /admin/saas.
+#
+# When NOT to bump:
+#   - Plumbing / refactor changes that don't alter the strategy values.
+#   - Stripe-side-only changes (those go through stripe_service helpers).
+#
+# Companion: app/services/subscription_service.update_plan writes per-field
+# timestamps to plan["admin_overrides"][<field>] every time an admin edits.
+# Together: bump SEED_VERSION → admin edits older than the bump are
+# superseded; admin edits newer than the bump survive future deploys.
+SEED_VERSION = "2026-05-12T00:00:00+00:00"
+
 if os.getenv("SEED_SUBSCRIPTION_PLANS_IMPORT_CHECK_ONLY") == "1":
     print("[OK] seed subscription import contract satisfied")
     sys.exit(0)
@@ -491,14 +512,62 @@ def _seed_billing_model(plan: dict | None) -> str:
 
 
 def _build_effective_seed_plan(seed_plan: dict, existing_plan: dict | None) -> dict:
-    """Preserve root-admin mutable config while enforcing billing shape."""
+    """Compute the values to write to Mongo for this plan.
+
+    Version-anchored admin-override logic (2026-05-12 refresh):
+
+    For each admin-mutable strategy field, prefer the SEED value EXCEPT when
+    the admin has edited that field AFTER ``SEED_VERSION`` — in that case
+    preserve the admin's edit. ``existing_plan["admin_overrides"]`` is a
+    dict keyed by field name with ISO-8601 timestamps, written by
+    ``subscription_service.update_plan`` on every admin edit.
+
+    Why version-anchored: a pure "always preserve admin edits" rule (the
+    pre-2026-05-12 behavior) means strategy refreshes never land. A pure
+    "always seed wins" rule clobbers admin tweaks every deploy. Anchoring
+    the comparison to ``SEED_VERSION`` (a manually-bumped constant) gives
+    operators an explicit "the strategy has changed" signal that supersedes
+    older admin edits while still letting fresh admin edits survive future
+    deploys.
+    """
     if not existing_plan:
         return dict(seed_plan)
 
     effective = dict(seed_plan)
+    admin_overrides = existing_plan.get("admin_overrides") or {}
+
+    try:
+        seed_version_dt = datetime.fromisoformat(SEED_VERSION)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"SEED_VERSION ({SEED_VERSION!r}) must be a valid ISO-8601 "
+            f"timestamp; got error: {exc}"
+        )
+
     for field in ADMIN_MUTABLE_PLAN_FIELDS:
-        if field in existing_plan:
+        if field not in existing_plan:
+            continue
+        admin_edit_at = admin_overrides.get(field)
+        # Coerce to comparable datetime — accepts both datetime objects
+        # (from Mongo) and ISO strings (from JSON round-trips).
+        if isinstance(admin_edit_at, str):
+            try:
+                admin_edit_at_dt = datetime.fromisoformat(admin_edit_at)
+            except ValueError:
+                admin_edit_at_dt = None
+        else:
+            admin_edit_at_dt = admin_edit_at
+
+        if admin_edit_at_dt and admin_edit_at_dt > seed_version_dt:
+            # Admin edited this field AFTER the current SEED_VERSION cutoff
+            # — preserve their edit. Operators can override this by bumping
+            # SEED_VERSION on the next deploy.
             effective[field] = existing_plan[field]
+            print(
+                f"  [PRESERVE] {field} = {existing_plan[field]!r} (admin edit "
+                f"at {admin_edit_at_dt.isoformat()} > SEED_VERSION {SEED_VERSION})"
+            )
+        # else: seed value wins (the seed_plan default already in `effective`).
 
     if existing_plan.get("meter_id"):
         effective["meter_id"] = existing_plan["meter_id"]
@@ -546,12 +615,14 @@ def _guard_seed_billing_model_transition(
 
 # Define plans
 #
-# 2026-05-09 pricing strategy refresh:
-#   - Solo (free): 1 wedding LIFETIME (never decrements on delete) — try-us tier
-#   - Boutique ($49/mo, 10 weddings): solo planner running their business
-#   - Signature ($149/mo, 30 weddings): agencies with a team
-#   - Enterprise ($399/mo, unlimited): white-label / franchises / API
+# 2026-05-12 pricing strategy refresh (per docs/specs/PRICING_STRATEGY_2026-05.md):
+#   - Solo (free): 1 ACTIVE wedding (deletable; can have many over time)
+#   - Boutique ($49/mo): UNLIMITED weddings, UNLIMITED guests, 1 seat — solo paid practitioner
+#   - Signature ($149/mo): UNLIMITED weddings, UNLIMITED guests, 5 seats — agency / small team
+#   - Enterprise ($399/mo): UNLIMITED weddings, UNLIMITED guests, 20 seats — white-label / API
 #
+# Differentiation is by CAPABILITY (team seats, white-label, API, dedicated SM), NOT volume.
+# Trial = uniform 30 days across all paid plans. Solo is permanently free.
 # All plans are FLAT (is_metered=False). The metering hardening shipped 2026-05-04
 # is available infrastructure — flip is_metered=True + add meter_event_name on any
 # plan to switch to per-wedding billing.
@@ -571,7 +642,12 @@ plans = [
         "trial_days": 0,
         "is_metered": False,
         "max_weddings": 1,
-        "max_weddings_lifetime": True,  # Lifetime cap — never decrements on delete
+        # Active-count cap (NOT lifetime): planner can delete a wedding and
+        # create another. Per-PR 2026-05-12 strategy refresh, we accept the
+        # mild create→delete→re-create cost in exchange for less surprising
+        # behavior. Upgrade pressure comes from the 50-guest cap and the
+        # 1-active-wedding-at-a-time ceiling, not from a lifetime gate.
+        "max_weddings_lifetime": False,
         "max_guests_per_wedding": 50,
         "ai_credits_monthly": 0,
         "storage_gb": 1,
@@ -620,15 +696,15 @@ plans = [
     {
         "_id": "plan_boutique",
         "name": "Boutique",
-        "description": "For independent planners running their solo practice.",
+        "description": "For independent planners running their solo practice. Unlimited weddings, no caps.",
         "price_monthly": 49,
-        "price_yearly": 490,  # ~2 months free
-        "trial_days": 14,
+        "price_yearly": 490,  # 10x monthly
+        "trial_days": 30,
         "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
         "is_metered": False,
-        "max_weddings": 10,
+        "max_weddings": -1,  # Unlimited (cap removed 2026-05-12)
         "max_weddings_lifetime": False,
-        "max_guests_per_wedding": 200,
+        "max_guests_per_wedding": -1,  # Unlimited (cap removed 2026-05-12)
         "ai_credits_monthly": 300,
         "storage_gb": 25,
         "staff_seats": 1,
@@ -655,8 +731,8 @@ plans = [
             "dedicated_support": False,
         },
         "features_list": [
-            "Up to 10 weddings/month",
-            "Up to 200 guests per wedding",
+            "Unlimited weddings",
+            "Unlimited guests",
             "AI-powered timeline & vendor matching",
             "Vendor management",
             "Seating orchestration",
@@ -678,15 +754,15 @@ plans = [
     {
         "_id": "plan_signature",
         "name": "Signature",
-        "description": "For agencies running a team of planners.",
+        "description": "For agencies running a team of planners. Everything in Boutique, plus team seats and agency-grade reporting.",
         "price_monthly": 149,
-        "price_yearly": 1490,  # ~2 months free
-        "trial_days": 14,
+        "price_yearly": 1490,  # 10x monthly
+        "trial_days": 30,
         "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
         "is_metered": False,
-        "max_weddings": 30,
+        "max_weddings": -1,  # Unlimited (cap removed 2026-05-12)
         "max_weddings_lifetime": False,
-        "max_guests_per_wedding": 500,
+        "max_guests_per_wedding": -1,  # Unlimited (cap removed 2026-05-12)
         "ai_credits_monthly": 1500,
         "storage_gb": 100,
         "staff_seats": 5,
@@ -713,8 +789,8 @@ plans = [
             "dedicated_support": False,
         },
         "features_list": [
-            "Up to 30 weddings/month",
-            "Up to 500 guests per wedding",
+            "Unlimited weddings",
+            "Unlimited guests",
             "Everything in Boutique",
             "Team collaboration (5 staff seats)",
             "Vendor-collaboration workspaces",
@@ -736,7 +812,7 @@ plans = [
     {
         "_id": "plan_enterprise",
         "name": "Enterprise",
-        "description": "For large agencies, franchises, and white-label partners.",
+        "description": "For franchises and white-label partners. Your brand, our platform, dedicated success.",
         "price_monthly": 399,
         "price_yearly": 3990,  # ~2 months free
         "trial_days": 30,
