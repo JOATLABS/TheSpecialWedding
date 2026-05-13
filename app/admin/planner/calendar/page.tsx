@@ -7,7 +7,9 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import PageHeader from '../../components/PageHeader';
 import TaskModal from './components/TaskModal';
-import GoogleCalendarConnect from './components/GoogleCalendarConnect';
+// CalendarConnect (multi-provider) is exported as the default from the legacy
+// GoogleCalendarConnect.tsx path; the file rename is a follow-up cleanup.
+import CalendarConnect from './components/GoogleCalendarConnect';
 import {
   CalendarConnection,
   CATEGORY_LABELS,
@@ -519,7 +521,7 @@ export default function PlannerCalendarPage() {
         </div>
       </div>
 
-      <GoogleCalendarConnect
+      <CalendarConnect
         connections={connections}
         staffOptions={staffOptions}
         weddings={weddings}
