@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
+import { buildGuestOtpVerifyUrl } from '@/utils/rsvpLinks';
 import { useAdmin } from '@/contexts/AdminContext';
 import {
  canSendReminders,
@@ -982,7 +983,7 @@ export default function CommunicationsRemindersView({
  if (lastAppliedTemplateRef.current === templateKey) return;
 
  setCustomMessage(
- `Hi ${guest.name}, you're invited to our wedding! Please RSVP at: ${window.location.origin}/${selectedWeddingData.slug}/invite/${guest.token} Need help? Reply HELP to wedding texts or use Get Help on the wedding website.`
+ `Hi ${guest.name}, you're invited to our wedding! Please RSVP at: ${buildGuestOtpVerifyUrl({ slug: selectedWeddingData.slug, token: guest.token })} Need help? Reply HELP to wedding texts or use Get Help on the wedding website.`
  );
  lastAppliedTemplateRef.current = templateKey;
  }, [activeTab, guestByToken, requestedTemplate, selectedGuests, selectedWeddingData]);
@@ -1306,7 +1307,7 @@ export default function CommunicationsRemindersView({
  <div className="p-6 bg-blue-50 rounded-lg">
  <h4 className="font-medium text-blue-900 mb-2">SMS Preview:</h4>
  <p className="text-blue-700 dark:text-blue-300 text-sm">
-        "{inviteMessage.replace('{url}', `${typeof window !== 'undefined' ? window.location.origin : ''}/${selectedWeddingData?.slug}/invite/[token]`).replace('{name}', '[Guest Name]')}"
+        "{inviteMessage.replace('{url}', selectedWeddingData?.slug ? buildGuestOtpVerifyUrl({ slug: selectedWeddingData.slug, token: '[token]' }) : '').replace('{name}', '[Guest Name]')}"
  </p>
  </div>
  )}

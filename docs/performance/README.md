@@ -58,9 +58,9 @@ Legacy local comparison utilities live in `/scripts/`:
 Live performance baseline tests live in `testbed/`:
 - `testbed/verify_metrics_snapshot_no_body.py` - Proves the scheduled metrics snapshot endpoint accepts the Cloudflare cron's no-body POST shape
 - `testbed/cleanup_metrics_snapshot_no_body_state.py` - Removes the inserted platform metrics snapshot
-- `testbed/verify_performance_baseline.py` - Seeds one paid planner with one wedding, measures blocking planner-dashboard backend endpoints, and writes a baseline JSON artifact
+- `testbed/verify_performance_baseline.py` - Seeds one paid planner with one wedding, measures blocking planner-dashboard backend endpoints, requires an environment-specific `PERF_BASELINE_COST_MODEL`, and writes a baseline JSON artifact with requests/sec/$ plus sessions/hour/$
 - `testbed/cleanup_performance_baseline_state.py` - Cleans the isolated plus-variant planner fixture
-- `testbed/performance_cost_model.example.json` - Example infrastructure-cost input for load-per-dollar calculations
+- `testbed/performance_cost_model.example.json` - Example infrastructure-cost input to copy and fill for a specific environment; the verifier intentionally rejects the example path as a real baseline
 - Future: `testbed/verify_pagespeed_public_homepage_baseline.py` should capture repeatable public homepage Lighthouse/PageSpeed artifacts
 
 Load testing inputs use:

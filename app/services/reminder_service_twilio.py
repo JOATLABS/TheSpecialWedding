@@ -11,6 +11,7 @@ from twilio.rest import Client  # type: ignore
 
 from app.core.database import mongo
 from app.utils.contact_sanitizer import normalize_phone_e164
+from app.utils.rsvp_links import build_guest_otp_url
 from app.utils.wedding_event_types import normalize_event_type
 
 # ---------------------------------------------------------------------------
@@ -461,7 +462,7 @@ class TwilioRSVPReminderHelper:
                 logger.info(f"Skipping {guest.get('name')} - opted out of SMS")
                 continue
 
-            url = f"{self.base_url}/{slug}/invite/{token}"
+            url = build_guest_otp_url(self.base_url, slug, token)
 
             if custom_message:
                 message = custom_message.replace("{url}", url).replace(

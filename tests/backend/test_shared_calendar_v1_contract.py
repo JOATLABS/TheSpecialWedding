@@ -1676,7 +1676,7 @@ async def test_shared_calendar_view_filters_external_connections_by_staff(
         staff_ids=["staff-1"],
     )
 
-    external_events = [
-        event for event in events if event["source_type"] == "external_google"
-    ]
+    # ``source_type`` is provider-neutral after the Aurinko multi-provider
+    # migration; the specific provider id moves to ``external_provider``.
+    external_events = [event for event in events if event["source_type"] == "external"]
     assert [event["id"] for event in external_events] == ["conn-staff-1"]

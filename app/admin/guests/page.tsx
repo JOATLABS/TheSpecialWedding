@@ -6,6 +6,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { useSSE } from '@/hooks/useSSE';
 import { BUILT_IN_WEDDING_EVENT_OPTIONS, getWeddingEventLabel, getWeddingEventOptions } from '@/utils/weddingEvents';
 import { getApiBaseUrl } from '@/utils/env';
+import { buildGuestOtpVerifyUrl } from '@/utils/rsvpLinks';
 import PageHeader from '../components/PageHeader';
 import WeddingPicker from '../components/WeddingPicker';
 import { MessageEnrichment } from '@/components/ui/MessageEnrichment';
@@ -913,9 +914,8 @@ export default function AdminGuestsPage() {
         : 'email';
 
     const wedding = weddings.find((w) => (w.id || w._id) === selectedWedding);
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const prefill = wedding?.slug
-      ? `Hi ${guest.name}, you're invited to our wedding! Please RSVP at: ${origin}/${wedding.slug}/invite/${guest.token}`
+      ? `Hi ${guest.name}, you're invited to our wedding! Please RSVP at: ${buildGuestOtpVerifyUrl({ slug: wedding.slug, token: guest.token })}`
       : `Hi ${guest.name}, just a friendly reminder to RSVP for our wedding.`;
 
     setReminderChannel(defaultChannel);

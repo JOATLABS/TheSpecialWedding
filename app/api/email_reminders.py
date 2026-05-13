@@ -19,6 +19,7 @@ from app.dependencies.auth_extended import (
 from app.services.email_service_resend import ResendEmailService
 from app.services.sse_manager import sse_manager
 from app.services.wedding_service import WeddingService
+from app.utils.rsvp_links import build_guest_otp_url
 from app.utils.response import dict_response
 
 logger = logging.getLogger(__name__)
@@ -218,7 +219,9 @@ async def send_individual_email_reminder(
     try:
         frontend_url = settings.get_required_url("FRONTEND_URL")
         couple_names = wedding.get("couple_names", "the couple")
-        rsvp_url = f"{frontend_url}/{payload.wedding_slug}/invite/{payload.guest_token}"
+        rsvp_url = build_guest_otp_url(
+            frontend_url, payload.wedding_slug, payload.guest_token
+        )
 
         subject = payload.custom_subject or f"Reminder: {couple_names}'s Wedding"
 
@@ -377,7 +380,11 @@ def preview_invitation_email(
         guest_name=guest_name,
         couple_names=couple_names,
         wedding_date=wedding_date,
-        rsvp_url=f"{frontend_url}/wedding/invite/preview-token" if frontend_url else "",
+        rsvp_url=(
+            build_guest_otp_url(frontend_url, "preview-wedding", "preview-token")
+            if frontend_url
+            else ""
+        ),
     )
 
     return {"html": html}
