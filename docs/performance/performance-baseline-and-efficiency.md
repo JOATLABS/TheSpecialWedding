@@ -77,6 +77,11 @@ testbed/cleanup_performance_baseline_state.py
 
 ## Cost Model
 
+Use an environment-specific monthly infrastructure cost model. The verifier no
+longer accepts the bundled example file as a real baseline input; copy it to an
+environment-specific path, replace the placeholder values with current monthly
+infrastructure costs, and point `PERF_BASELINE_COST_MODEL` at that file.
+
 Use monthly infrastructure cost only unless a report explicitly opts into variable vendor costs.
 
 Included by default:
@@ -101,6 +106,37 @@ successful_requests_per_second_per_dollar =
   (locust_requests_per_second - locust_failures_per_second)
   / monthly_infrastructure_usd
 ```
+
+The one-planner baseline artifact also records:
+
+```text
+dashboard_sessions_per_hour_per_dollar =
+  (3600 / measured_dashboard_backend_seconds)
+  / monthly_infrastructure_usd
+```
+
+## Rerun Flow After Performance Fixes
+
+Use the same cost model before and after a fix so load-per-dollar changes reflect
+application behavior rather than accounting drift.
+
+```bash
+cp testbed/performance_cost_model.example.json /tmp/tsw-staging-cost-model.json
+$EDITOR /tmp/tsw-staging-cost-model.json
+export PERF_BASELINE_COST_MODEL=/tmp/tsw-staging-cost-model.json
+export PERF_BASELINE_REPEATS=3
+
+python testbed/testbed.py up --with-frontend
+python testbed/verify_performance_baseline.py
+ls -t docs/performance/baselines/ | head
+python testbed/cleanup_performance_baseline_state.py
+python testbed/testbed.py down
+```
+
+Accepted baseline artifacts live under `docs/performance/baselines/`. Attach the
+new JSON artifact to the perf-fix review, compare `successful_requests_per_second_per_dollar`
+and `dashboard_sessions_per_hour_per_dollar` against the prior accepted artifact,
+and record the slowest remaining endpoint as the next bottleneck hypothesis.
 
 ## Recommendations
 

@@ -22,6 +22,20 @@ _REMINDER_SRC = (_SERVICES_DIR / "reminder_utilities.py").read_text()
 _REMINDER_TWILIO_SRC = (_SERVICES_DIR / "reminder_service_twilio.py").read_text()
 _REMINDER_TELNYX_SRC = (_SERVICES_DIR / "reminder_utilities_telnyx.py").read_text()
 _EMAIL_SRC = (_SERVICES_DIR / "email_service_resend.py").read_text()
+_API_EMAIL_REMINDERS_SRC = (
+    Path(__file__).resolve().parents[2] / "app" / "api" / "email_reminders.py"
+).read_text()
+_ADMIN_GUESTS_SRC = (
+    Path(__file__).resolve().parents[2] / "app" / "admin" / "guests" / "page.tsx"
+).read_text()
+_ADMIN_COMMUNICATIONS_REMINDERS_SRC = (
+    Path(__file__).resolve().parents[2]
+    / "app"
+    / "admin"
+    / "communications"
+    / "components"
+    / "CommunicationsRemindersView.tsx"
+).read_text()
 _TWILIO_WEBHOOK_SRC = (
     Path(__file__).resolve().parents[2] / "app" / "api" / "twilio_webhooks.py"
 ).read_text()
@@ -86,6 +100,21 @@ def test_otp_url_with_default_fallback():
     assert "token=fallback-token" in url
 
 
+def test_shared_guest_otp_url_helper_encodes_slug_and_token():
+    from app.utils.rsvp_links import build_guest_otp_url
+
+    url = build_guest_otp_url(
+        "https://thespecialwedding.io/",
+        "my wedding",
+        "tok en+1",
+    )
+
+    assert url == (
+        "https://thespecialwedding.io/otp/verify?slug=my%20wedding&token=tok%20en%2B1"
+    )
+    assert "/invite/" not in url
+
+
 # ---------------------------------------------------------------------------
 # Source-inspection tests — verify each file was updated correctly
 # ---------------------------------------------------------------------------
@@ -131,6 +160,39 @@ def test_reminder_utilities_no_legacy_invite_route_in_source():
 
 def test_reminder_utilities_imports_quote():
     assert "from urllib.parse import quote" in _REMINDER_SRC
+
+
+def test_email_and_sms_reminder_sources_do_not_generate_legacy_invite_links():
+    checked_sources = {
+        "email_service_resend.py": _EMAIL_SRC,
+        "email_reminders.py": _API_EMAIL_REMINDERS_SRC,
+        "reminder_service_twilio.py": _REMINDER_TWILIO_SRC,
+        "reminder_utilities_telnyx.py": _REMINDER_TELNYX_SRC,
+    }
+
+    for file_name, source in checked_sources.items():
+        assert "/otp/verify" in source or "build_guest_otp_url" in source, (
+            f"{file_name} must generate OTP RSVP links"
+        )
+        _assert_no_legacy_invite_pattern(source, file_name)
+
+
+def test_admin_guest_and_communications_prefills_use_production_safe_otp_links():
+    checked_sources = {
+        "app/admin/guests/page.tsx": _ADMIN_GUESTS_SRC,
+        "app/admin/communications/components/CommunicationsRemindersView.tsx": (
+            _ADMIN_COMMUNICATIONS_REMINDERS_SRC
+        ),
+    }
+
+    for file_name, source in checked_sources.items():
+        assert "/otp/verify" in source or "buildGuestOtpVerifyUrl" in source, (
+            f"{file_name} must preview OTP RSVP links"
+        )
+        _assert_no_legacy_invite_pattern(source, file_name)
+        assert "window.location.origin" not in source, (
+            f"{file_name} must not build guest RSVP links from browser origin"
+        )
 
 
 def test_lost_link_sms_default_includes_help_instructions():

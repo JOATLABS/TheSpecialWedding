@@ -12,6 +12,7 @@ unit test.
 
 Usage:
     python testbed/testbed.py up --with-frontend
+    export PERF_BASELINE_COST_MODEL=/path/to/environment-cost-model.json
     python testbed/verify_performance_baseline.py
     python testbed/cleanup_performance_baseline_state.py
 """
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import statistics
 import sys
 from dataclasses import dataclass
@@ -57,6 +59,8 @@ COST_MODEL_PATH = Path(
         str(TESTBED_DIR / "performance_cost_model.example.json"),
     )
 )
+EXAMPLE_COST_MODEL_PATH = TESTBED_DIR / "performance_cost_model.example.json"
+ARTIFACT_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -79,15 +83,45 @@ def _percentile_seconds(values_ms: list[float], percentile: float) -> float:
 
 
 def _load_cost_model() -> dict[str, Any]:
+    if COST_MODEL_PATH.resolve() == EXAMPLE_COST_MODEL_PATH.resolve():
+        raise ValueError(
+            "PERF_BASELINE_COST_MODEL must point to an environment-specific "
+            "monthly infrastructure cost model. Copy "
+            "testbed/performance_cost_model.example.json outside the example "
+            "path, fill in real costs, then export PERF_BASELINE_COST_MODEL."
+        )
+
     if not COST_MODEL_PATH.exists():
-        return {
-            "environment": "unconfigured",
-            "monthly_infrastructure_usd": 0,
-            "included_costs": [],
-            "excluded_variable_costs": ["sms", "email", "ai", "stripe_processing"],
-            "notes": f"Cost model file not found: {COST_MODEL_PATH}",
-        }
-    return json.loads(COST_MODEL_PATH.read_text())
+        raise ValueError(f"PERF_BASELINE_COST_MODEL file not found: {COST_MODEL_PATH}")
+
+    model = json.loads(COST_MODEL_PATH.read_text())
+    monthly_cost = float(model.get("monthly_infrastructure_usd") or 0)
+    if monthly_cost <= 0:
+        raise ValueError(
+            "PERF_BASELINE_COST_MODEL monthly_infrastructure_usd must be greater than 0"
+        )
+
+    model["monthly_infrastructure_usd"] = monthly_cost
+    model["source_path"] = str(COST_MODEL_PATH)
+    model.setdefault("included_costs", [])
+    model.setdefault(
+        "excluded_variable_costs", ["sms", "email", "ai", "stripe_processing"]
+    )
+    return model
+
+
+def _git_commit_sha() -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip() or None
+    except Exception:
+        return None
 
 
 def _timed_get(
@@ -172,6 +206,49 @@ def _efficiency(
     }
 
 
+def _build_baseline_payload(
+    *,
+    cost_model: dict[str, Any],
+    results: list[dict[str, Any]],
+    wedding_id: str,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "artifact_version": ARTIFACT_VERSION,
+        "generated_at": generated_at
+        or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "driver": DRIVER_NAME,
+        "commit_sha": _git_commit_sha(),
+        "environment": cost_model.get("environment", "unconfigured"),
+        "deployment": {
+            "mode": os.getenv("PERF_BASELINE_DEPLOYMENT_MODE", "testbed"),
+            "frontend_url": os.getenv("FRONTEND_URL"),
+            "api_base_url": os.getenv("INTERNAL_API_BASE_URL")
+            or os.getenv("NEXT_PUBLIC_API_BASE_URL"),
+            "backend_worker_count": os.getenv("WEB_CONCURRENCY")
+            or os.getenv("UVICORN_WORKERS"),
+            "redis_enabled": bool(os.getenv("REDIS_URL")),
+        },
+        "fixture": {
+            "planner_email": PLANNER_EMAIL,
+            "planner_count": 1,
+            "wedding_count": 1,
+            "wedding_id": wedding_id,
+            "guest_count": 50,
+        },
+        "cost_model": cost_model,
+        "endpoint_summaries": _summarize(results),
+        "raw_results": results,
+        "efficiency": _efficiency(results, cost_model),
+        "recommendation": (
+            "Use this artifact as the baseline before changing planner "
+            "dashboard loading behavior. Optimize the slowest blocking "
+            "endpoint first, then rerun this same testbed driver with the "
+            "same PERF_BASELINE_COST_MODEL."
+        ),
+    }
+
+
 def _seed_one_planner_one_wedding(h: Harness, admin_token: str) -> tuple[str, str]:
     h.phase("SEED", "create isolated paid planner and one wedding")
     h.delete_user_chain(PLANNER_EMAIL)
@@ -215,6 +292,7 @@ def _endpoint_plan(wedding_id: str) -> list[TimedEndpoint]:
 
 
 def main() -> int:
+    cost_model = _load_cost_model()
     h = Harness(driver_name=DRIVER_NAME)
     h.preflight()
     admin_token = h.get_admin_token()
@@ -246,28 +324,11 @@ def main() -> int:
             )
         return 1
 
-    cost_model = _load_cost_model()
-    payload = {
-        "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "driver": DRIVER_NAME,
-        "environment": cost_model.get("environment", "unconfigured"),
-        "fixture": {
-            "planner_email": PLANNER_EMAIL,
-            "planner_count": 1,
-            "wedding_count": 1,
-            "wedding_id": wedding_id,
-            "guest_count": 50,
-        },
-        "cost_model": cost_model,
-        "endpoint_summaries": _summarize(results),
-        "raw_results": results,
-        "efficiency": _efficiency(results, cost_model),
-        "recommendation": (
-            "Use this artifact as the baseline before changing planner "
-            "dashboard loading behavior. Optimize the slowest blocking "
-            "endpoint first, then rerun this same testbed driver."
-        ),
-    }
+    payload = _build_baseline_payload(
+        cost_model=cost_model,
+        results=results,
+        wedding_id=wedding_id,
+    )
 
     BASELINE_DIR.mkdir(parents=True, exist_ok=True)
     output = BASELINE_DIR / f"{_utc_slug()}-one-planner-one-wedding.json"

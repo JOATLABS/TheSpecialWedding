@@ -11,6 +11,17 @@ from app.models.calendar import VisibilityMode
 from app.services.google_calendar_service import google_calendar_service
 
 
+def _iso(value: Any) -> Optional[str]:
+    """Serialize datetime → ISO 8601 string; pass strings through; None stays
+    None. Used for external_* fields surfaced into ``details`` so JSON
+    responses don't need client-side datetime coercion."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
+
 class CalendarAggregationService:
     """Build a shared calendar feed for planner owners and team members."""
 
@@ -113,8 +124,46 @@ class CalendarAggregationService:
                 "meeting_status": task.get("meeting_status"),
                 "conference_url": task.get("conference_url"),
                 "invite_delivery_mode": task.get("invite_delivery_mode"),
+                # External-conflict snapshot (set by the Aurinko webhook /
+                # drift-check pipeline). The planner UI reads these to render
+                # the "modified externally" tray. Datetime fields are emitted
+                # as ISO strings so the JSON response from planner_calendar.py
+                # is renderable without client-side coercion.
+                "external_conflict_status": task.get("external_conflict_status"),
+                "external_conflict_source": task.get("external_conflict_source"),
+                "external_conflict_detected_at": _iso(
+                    task.get("external_conflict_detected_at")
+                ),
+                "external_start_date": _iso(task.get("external_start_date")),
+                "external_end_date": _iso(task.get("external_end_date")),
+                "external_title": task.get("external_title"),
+                "external_description": task.get("external_description"),
+                "external_location": task.get("external_location"),
+                "external_last_modified_at": _iso(
+                    task.get("external_last_modified_at")
+                ),
+                "version": task.get("version"),
             },
         }
+
+    @staticmethod
+    def _wants_external(source_types: Optional[list[str]]) -> bool:
+        """Whether external (Aurinko-brokered) events should be included.
+
+        - ``None`` / empty list → include external events (no filter applied).
+        - Contains canonical ``"external"`` → include.
+        - Contains ONLY non-"external" entries → exclude.
+
+        The legacy ``"external_google"`` label is intentionally NOT honored
+        as a request for external events — callers using it during the
+        multi-provider rollout are filtering by a stale label and should
+        update to ``"external"``. We treat any list without ``"external"``
+        as "internal-only" so a stale call doesn't accidentally serve
+        external events the planner didn't actually ask for.
+        """
+        if not source_types:
+            return True
+        return "external" in source_types
 
     def _normalize_external(self, event: dict, can_view_details: bool) -> dict:
         connection = event.get("_connection", {})
@@ -126,9 +175,15 @@ class CalendarAggregationService:
         )
         start_info = event.get("start", {})
         end_info = event.get("end", {})
+        # ``source_type`` is provider-neutral ("external") with the
+        # specific provider id surfaced via ``external_provider``. This
+        # replaces the legacy ``source_type='external_google'`` shape so
+        # the aggregation surface is consistent across Google, Office 365,
+        # iCloud, and Exchange/EWS connections served by Aurinko.
         return {
             "id": event.get("id"),
-            "source_type": "external_google",
+            "source_type": "external",
+            "external_provider": connection.get("provider") or "unknown",
             "title": event.get("summary") if show_details else "Busy",
             "start_date": start_info.get("dateTime") or start_info.get("date"),
             "end_date": end_info.get("dateTime") or end_info.get("date"),
@@ -186,7 +241,7 @@ class CalendarAggregationService:
         internal_events = [self._normalize_internal(row) for row in internal_rows]
 
         external_events: list[dict] = []
-        include_external = not source_types or "external_google" in source_types
+        include_external = self._wants_external(source_types)
         if include_external:
             connections = await google_calendar_service.list_connections(
                 owner_id=owner_id,
