@@ -175,6 +175,31 @@ async def aurinko_webhook(
             )
             return Response(status_code=200)
 
+        # Signal-mode deliveries (subscriptions created with
+        # ``detailLevel=signal``) arrive WITHOUT a ``payloads`` array — just
+        # the {subscription, resource, accountId} envelope as a "ping that
+        # something changed, fetch your own delta." We don't currently create
+        # signal subscriptions, but if anyone ever does, returning 422 here
+        # would PERMANENTLY UNSUBSCRIBE per Aurinko's 422 contract. Defensive
+        # branch: when payloads is absent but the envelope is otherwise valid
+        # (accountId + calendar resource present, no lifecycleEvent), ack 200
+        # and rely on the drift-check job to backfill the actual change.
+        if (
+            aurinko_account_id
+            and aurinko_calendar_id
+            and items is None
+            and not lifecycle_event
+        ):
+            await calendar_webhook_service.mark_delivery_processed(str(delivery_id))
+            logger.info(
+                "Aurinko signal-mode delivery ack 200 (no payloads): "
+                "delivery=%s account=%s calendar=%s",
+                delivery_id,
+                aurinko_account_id,
+                aurinko_calendar_id,
+            )
+            return Response(status_code=200)
+
         if (
             not aurinko_account_id
             or not aurinko_calendar_id

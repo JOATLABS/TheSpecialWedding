@@ -84,6 +84,7 @@ export default function SaasNav() {
               href="/#pricing"
               className="hidden md:inline-flex items-center rounded-full bg-wedding-rose px-4 py-2 text-sm font-semibold text-slate-900 shadow-md shadow-wedding-rose/30 transition hover:bg-wedding-blush"
             >
+              {/* SYNC-WITH-SEED: trial_days — update when SEED_VERSION bumps paid trial length */}
               Start 30-Day Trial
             </Link>
 
@@ -134,6 +135,7 @@ export default function SaasNav() {
                 href="/#pricing"
                 className="flex items-center justify-center rounded-full bg-wedding-rose px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-md shadow-wedding-rose/30 transition hover:bg-wedding-blush"
               >
+                {/* SYNC-WITH-SEED: trial_days — update when SEED_VERSION bumps paid trial length */}
                 Start 30-Day Trial
               </Link>
             </div>

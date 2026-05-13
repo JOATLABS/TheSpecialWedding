@@ -107,8 +107,13 @@ class Settings:
     # and stored encrypted on calendar_connections rows. Webhook payloads are
     # signed with the dashboard "Signing secret" (NOT the client secret) — see
     # docs.aurinko.io/unified-apis/webhooks-api/authentication for the spec.
+    # /v1 IS part of the base URL because AurinkoClient builds requests as
+    # ``f"{base_url}{path}"`` with paths like "/subscriptions",
+    # "/auth/authorize", "/calendars/{id}/events". Verified against the
+    # Aurinko API reference at apirefs.aurinko.io — canonical paths start
+    # with /v1 and the .env in this repo uses ``https://api.aurinko.io/v1``.
     AURINKO_API_BASE_URL: str = os.getenv(
-        "AURINKO_API_BASE_URL", "https://api.aurinko.io"
+        "AURINKO_API_BASE_URL", "https://api.aurinko.io/v1"
     )
     AURINKO_APP_ID: Optional[str] = os.getenv("AURINKO_APP_ID")
     AURINKO_CLIENT_ID: Optional[str] = os.getenv("AURINKO_CLIENT_ID")

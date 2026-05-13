@@ -104,6 +104,7 @@ export default function FeaturesPage() {
               href="#pricing"
               className="rounded-full bg-wedding-rose px-6 py-3 text-base font-semibold text-slate-900 shadow-lg shadow-wedding-rose/30 transition hover:bg-wedding-blush"
             >
+              {/* SYNC-WITH-SEED: trial_days */}
               Start 30-day trial
             </a>
             <Link
@@ -219,6 +220,7 @@ export default function FeaturesPage() {
             Replace 10+ subscriptions with one platform.
           </h2>
           <p className="mt-4 text-base text-slate-300">
+            {/* SYNC-WITH-SEED: trial_days */}
             Start a 30-day free trial today — no credit card required.
           </p>
           <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">

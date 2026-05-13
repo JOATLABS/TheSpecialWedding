@@ -226,6 +226,7 @@ export function FeatureShowcase() {
             </div>
 
             <Link href="#pricing" className="hidden text-sm font-semibold text-wedding-rose transition hover:text-wedding-blush sm:inline-flex">
+              {/* SYNC-WITH-SEED: trial_days */}
               Start 30-day trial
             </Link>
           </div>

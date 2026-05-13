@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import ElegantWeddingHero from './ElegantWeddingHero';
+import { umamiTrack } from '@/utils/umami';
 
 interface Feature {
   title: string;
@@ -76,9 +77,21 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
   useTheming = false,
   hero_image_position,
 }) => {
+  // Umami: wrap the auth-modal open callback so every hero CTA fires
+  // `hero_cta_clicked` with a `location` discriminator before opening the
+  // modal. Lets the funnel report show which surface drives intent.
+  const openAuthFrom = useCallback(
+    (location: 'header_book_demo' | 'hero_primary' | 'featured_plan_card') => () => {
+      umamiTrack('hero_cta_clicked', { location });
+      onAuthModalOpen();
+    },
+    [onAuthModalOpen],
+  );
+
   const statistics = config.statistics_enabled === false ? [] : (Array.isArray(config.statistics) ? config.statistics : []).slice(0, 3);
   const trustIndicators = (Array.isArray(config.trust_indicators) ? config.trust_indicators : []).slice(0, 3).length > 0
     ? (Array.isArray(config.trust_indicators) ? config.trust_indicators : []).slice(0, 3)
+    // SYNC-WITH-SEED: trial_days — update when SEED_VERSION bumps paid trial length
     : ['Free 30-day trial', 'No credit card required', 'Cancel anytime'];
   const primaryFeatureCallouts = useMemo(() => {
     if (config.features_enabled === false) {
@@ -146,7 +159,7 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
             </a>
             <button
               type="button"
-              onClick={onAuthModalOpen}
+              onClick={openAuthFrom('header_book_demo')}
               className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2 text-sm font-semibold text-slate-900 transition hover:shadow-lg"
               style={transitionStyle}
             >
@@ -179,7 +192,7 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
             <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-start">
               <button
                 type="button"
-                onClick={onAuthModalOpen}
+                onClick={openAuthFrom('hero_primary')}
                 className="inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-blue-500 via-sky-400 to-purple-500 px-8 py-3 text-base font-semibold text-white shadow-[0_20px_45px_-20px_rgba(59,130,246,0.8)] transition hover:translate-y-[-1px] hover:shadow-[0_30px_60px_-30px_rgba(56,189,248,0.9)] sm:w-auto"
                 style={transitionStyle}
               >
@@ -274,7 +287,7 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
                   ) : null}
                   <button
                     type="button"
-                    onClick={onAuthModalOpen}
+                    onClick={openAuthFrom('featured_plan_card')}
                     className="mt-5 inline-flex items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:shadow-lg"
                     style={transitionStyle}
                   >

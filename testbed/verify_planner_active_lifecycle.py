@@ -3,12 +3,26 @@
 Scenarios B + C + D — Planner Active Subscription Lifecycle (Live Verification)
 ================================================================================
 
-Pins end-to-end behavior for a *paying* planner on a flat-priced monthly plan:
+Pins end-to-end behavior for a *paying* planner on a flat-priced monthly plan
+under the 2026-05-12 strategy (unlimited weddings / unlimited guests across
+all paid tiers; differentiation by team seats, AI credits, white-label, API):
 
-  * Scenario B — wedding-count metering (0 / 1 / 2+ → cap at 4th).
-  * Scenario C — AI-credit gate, including the mid-month downgrade grandfather.
+  * Scenario B — paid plan is unlimited; pin that no wedding-count 402
+                 fires no matter how many weddings get created.
+  * Scenario C — AI-credit gate (soft-cap + overage), including the mid-
+                 month downgrade grandfather.
   * Scenario D — plan change, cancel-at-period-end, canceled-state access,
-                 resubscribe, and the past-due → recovery round-trip.
+                 resubscribe, and the past-due → recovery round-trip. The
+                 downgrade-grandfather signal shifted from comparing
+                 max_weddings (now -1 for both Boutique and Signature) to
+                 comparing ai_credits_monthly (still differs: 300 vs 1500).
+
+History: pre-2026-05-12, Boutique had a 3-wedding hard cap and Signature
+had 10. The driver's "cap-trip at N+1" assertions and the snapshot
+comparisons against those values were the load-bearing test logic. With
+unlimited paid plans, the cap-trip BEHAVIOR moved to unit tests
+(test_subscription_limits.py covers -1 unlimited and finite-cap branches
+both) and the live driver pins the "no 402 ever" inverse for paid tiers.
 
 Anchored to `docs/plans/SUBSCRIPTION_LIFECYCLE_TEST_PLAN.md` §3.2–§3.4. Follows
 the two-layer E2E rule from `CLAUDE.md`:
@@ -118,18 +132,25 @@ PLAN_SIGNATURE = "plan_signature"
 # Limits mirror scripts/seed_subscription_plans.py. Kept here so the assertion
 # strings are grep-visible from the driver header — if they drift from the
 # seed, the seed wins and these need updating.
-BOUTIQUE_MAX_WEDDINGS = 3
-BOUTIQUE_AI_CREDITS_MONTHLY = 100
-SIGNATURE_MAX_WEDDINGS = 10
-SIGNATURE_AI_CREDITS_MONTHLY = 300
+# 2026-05-12 strategy: paid tiers are unlimited weddings (max=-1).
+# AI credits remain the primary tier-differentiator signal in this driver.
+BOUTIQUE_MAX_WEDDINGS = -1  # unlimited
+BOUTIQUE_AI_CREDITS_MONTHLY = 300  # 2026-05-12 (was 100 pre-refresh)
+SIGNATURE_MAX_WEDDINGS = -1  # unlimited
+SIGNATURE_AI_CREDITS_MONTHLY = 1500  # 2026-05-12 (was 300 pre-refresh)
+# Probe count for Scenario B — how many weddings to create to prove
+# "unlimited" really means unlimited. Higher = stronger signal but slower
+# Stripe round-trips; 5 strikes a balance.
+SCENARIO_B_UNLIMITED_PROBE_COUNT = 5
 
-# Verbatim gate message from app/services/subscription_service.py (weddings
-# branch). Frontend regex matching breaks if this string is edited.
-EXPECTED_WEDDING_CAP_MSG = (
-    f"Wedding limit exceeded. Plan allows {BOUTIQUE_MAX_WEDDINGS} weddings, "
-    f"you have {BOUTIQUE_MAX_WEDDINGS}"
-)
-# AI credits are now soft-capped with metered overage — there is no hard-stop
+# Wedding-cap 402 message (pre-2026-05-12 strategy). Retained for historical
+# context — the message format is still pinned by unit tests against finite
+# cap values, but this driver's live planners use unlimited (-1) paid tiers
+# and never trip it. The expected format if it WERE to fire on a finite-cap
+# plan (e.g. Solo) is "Wedding limit exceeded. Plan allows N weddings, you
+# have N".
+#
+# AI credits are soft-capped with metered overage — there is no hard-stop
 # message. Going over plan returns allowed=True with an `overage` flag and the
 # accrued `overage_credits`/`overage_cost_cents`. See the check_usage_limits()
 # ai_credits branch for the response shape. Assertions below pin the new
@@ -450,52 +471,53 @@ def phase_active_one_wedding(
 
 
 def phase_active_wedding_cap(h: Harness, seed: PlannerSeed, planner_token: str) -> None:
-    """B2.1–B2.3 — Fill the Boutique cap with fresh weddings, 4th must return
-    402 with the verbatim gate message."""
-    h.phase("ACTIVE_WEDDING_CAP", "B2.1-B2.3 — fill cap to 3, 4th → 402")
+    """B2.1–B2.N — Paid plan is unlimited; pin no 402 fires.
 
-    # Seed from scratch each pass so we're not tangled with B1's state.
-    for i in range(BOUTIQUE_MAX_WEDDINGS):
+    Post-2026-05-12 strategy: Boutique paid plan has ``max_weddings=-1``
+    (unlimited). This phase used to verify a 402 trip at the 4th create;
+    now it verifies the inverse — that ``SCENARIO_B_UNLIMITED_PROBE_COUNT``
+    additional weddings all succeed with no 402. If a cap regression sneaks
+    back in, this phase fails fast on the first unexpected 402.
+
+    The hard-cap 402 message format and gate logic is still exercised by
+    unit tests in ``tests/backend/test_subscription_limits.py`` (which
+    mocks finite cap values to test the gate path). Solo's 1-wedding
+    active cap is covered by ``test_lifetime_wedding_cap.py``.
+    """
+    h.phase(
+        "ACTIVE_UNLIMITED",
+        f"B2 — paid plan unlimited; {SCENARIO_B_UNLIMITED_PROBE_COUNT} more weddings all succeed",
+    )
+
+    for i in range(SCENARIO_B_UNLIMITED_PROBE_COUNT):
         resp = _create_wedding(
             h,
             planner_token,
-            bride=f"Cap Bride {i + 1}",
-            groom=f"Cap Groom {i + 1}",
+            bride=f"Unlimited Bride {i + 1}",
+            groom=f"Unlimited Groom {i + 1}",
         )
         h.log.info(f"  create wedding #{i + 1} -> {resp.status_code}")
         assert resp.status_code in (200, 201), (
-            f"B2: wedding #{i + 1} within cap should succeed, got "
-            f"{resp.status_code}: {resp.text[:200]}"
+            f"B2: wedding #{i + 1} should succeed on UNLIMITED paid plan, "
+            f"got {resp.status_code}: {resp.text[:200]}\n"
+            "If this returned 402, the cap regression is back — paid plans "
+            "must allow unlimited weddings per the 2026-05-12 strategy."
         )
 
-    over_resp = _create_wedding(
-        h, planner_token, bride="Overflow Bride", groom="Overflow Groom"
-    )
-    try:
-        body = over_resp.json()
-    except Exception:
-        body = {"raw": over_resp.text[:400]}
-    h.log.info(f"  4th create -> {over_resp.status_code} body={body}")
-
-    assert over_resp.status_code == 402, (
-        f"B2.3: expected 402 on 4th wedding create, got {over_resp.status_code}: {body}"
-    )
-    detail = body.get("detail") if isinstance(body, dict) else None
-    assert detail == EXPECTED_WEDDING_CAP_MSG, (
-        f"Wedding-cap message drift: expected\n  {EXPECTED_WEDDING_CAP_MSG!r}\n"
-        f"got\n  {detail!r}\n"
-        "(frontend regex breaks if this string is edited — update "
-        "subscription_service.py:687 and the frontend matchers together.)"
+    h.log.info(
+        f"  ✅ {SCENARIO_B_UNLIMITED_PROBE_COUNT} weddings created on paid plan; "
+        "no 402 fired."
     )
 
     h.checkpoint(
-        "B2.3",
+        "B2",
         [
-            "Chrome: UI shows a planner-readable 'wedding limit reached'",
-            "  message when the 4th create is attempted, not a raw 402 dump.",
-            "Chrome devtools: 402 body detail matches the canonical string.",
-            "Chrome console: no uncaught exceptions on the 402.",
-            "Backend: 4th POST returned 402 with the canonical message ✅",
+            "Chrome: from /admin/planner, navigate to the weddings list.",
+            f"  All {SCENARIO_B_UNLIMITED_PROBE_COUNT}+ weddings should be visible —",
+            "  no 'limit reached' banner, no cap-specific upgrade prompt.",
+            "Chrome devtools: no 402 in the network tab for /admin/weddings.",
+            "Chrome console: no uncaught exceptions.",
+            "Backend: paid plan accepted all wedding creates ✅",
         ],
     )
 
@@ -740,8 +762,12 @@ def phase_plan_upgrade(
     )
     token = h.login(email, password)
 
-    # Fill 3 weddings so D2 can exercise "downgrade over cap" cleanly.
-    for i in range(BOUTIQUE_MAX_WEDDINGS):
+    # Pre-fill a handful of weddings so D2's downgrade has interesting
+    # state to act on. Both Boutique and Signature are unlimited so the
+    # count isn't load-bearing for cap-trip — it just establishes that
+    # weddings exist when D2's downgrade happens.
+    PRE_DOWNGRADE_WEDDING_COUNT = 3
+    for i in range(PRE_DOWNGRADE_WEDDING_COUNT):
         resp = _create_wedding(
             h, token, bride=f"Up Bride {i + 1}", groom=f"Up Groom {i + 1}"
         )
@@ -764,28 +790,38 @@ def phase_plan_upgrade(
         f"ai_credits_monthly={snapshot.get('ai_credits_monthly')!r}"
     )
 
+    # Post-2026-05-12: both Boutique and Signature have max_weddings=-1
+    # (unlimited), so comparing that field doesn't distinguish the tiers.
+    # AI credits remain the tier-differentiator (Boutique 300, Signature
+    # 1,500) — that's the load-bearing snapshot signal for the upgrade.
     assert snapshot.get("max_weddings") == SIGNATURE_MAX_WEDDINGS, (
         f"D1: plan_snapshot.max_weddings should be {SIGNATURE_MAX_WEDDINGS} "
-        f"after upgrade, got {snapshot.get('max_weddings')!r}"
+        f"(unlimited) after upgrade, got {snapshot.get('max_weddings')!r}"
+    )
+    assert snapshot.get("ai_credits_monthly") == SIGNATURE_AI_CREDITS_MONTHLY, (
+        f"D1: plan_snapshot.ai_credits_monthly should be "
+        f"{SIGNATURE_AI_CREDITS_MONTHLY} after upgrade, got "
+        f"{snapshot.get('ai_credits_monthly')!r}"
     )
 
-    # 4th wedding now allowed under Signature cap 10.
+    # Another wedding under Signature — succeeds on unlimited.
     resp = _create_wedding(
         h, token, bride="Post-Upgrade Bride", groom="Post-Upgrade Groom"
     )
     assert resp.status_code in (200, 201), (
-        f"D1: 4th wedding should succeed under Signature cap, got "
+        f"D1: wedding create should succeed on Signature (unlimited), got "
         f"{resp.status_code}: {resp.text[:200]}"
     )
 
     h.checkpoint(
         "D1",
         [
-            "Chrome: planner on the Signature plan can create wedding #4",
-            "  without a gate.",
+            "Chrome: planner on the Signature plan can create another wedding",
+            "  without a gate (Signature is unlimited).",
             "Chrome: billing page shows the upgrade + proration line item.",
-            "Backend: plan_snapshot upgraded to Signature limits ✅",
-            "Backend: 4th wedding create succeeds post-upgrade ✅",
+            "Backend: plan_snapshot.ai_credits_monthly upgraded to "
+            f"{SIGNATURE_AI_CREDITS_MONTHLY} ✅",
+            "Backend: post-upgrade wedding create succeeds ✅",
         ],
     )
     return seed, token
@@ -1103,17 +1139,17 @@ def main() -> int:
     h.log.info(f"  Primary planner    : {PLANNER_EMAIL}")
     h.log.info(f"  Downgrade planner  : {DOWNGRADE_PLANNER_EMAIL}")
     h.log.info(
-        f"  Boutique cap       : {BOUTIQUE_MAX_WEDDINGS} weddings / "
+        f"  Boutique           : weddings={BOUTIQUE_MAX_WEDDINGS} (unlimited) / "
         f"{BOUTIQUE_AI_CREDITS_MONTHLY} credits"
     )
     h.log.info(
-        f"  Signature cap      : {SIGNATURE_MAX_WEDDINGS} weddings / "
+        f"  Signature          : weddings={SIGNATURE_MAX_WEDDINGS} (unlimited) / "
         f"{SIGNATURE_AI_CREDITS_MONTHLY} credits"
     )
     h.log.info(
-        f"  Canonical gate msg:\n"
-        f"    weddings   → {EXPECTED_WEDDING_CAP_MSG}\n"
-        f"    ai_credits → (soft-cap, metered overage; no hard-stop message)"
+        "  Expected gate behavior:\n"
+        "    weddings   → no 402 trip on either paid plan (unlimited)\n"
+        "    ai_credits → (soft-cap, metered overage; no hard-stop message)"
     )
 
     h.preflight()

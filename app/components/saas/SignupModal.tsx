@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { ThemeConfig } from '@/types/wedding';
 import { getApiBaseUrl } from '@/utils/env';
+import { umamiTrack } from '@/utils/umami';
 
 interface SubscriptionPlan {
   _id: string;
@@ -224,6 +225,16 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
     };
   }, [isOpen]);
 
+  // Umami: top-of-funnel signal — modal opened (separate from pricing CTA
+  // click since the modal can be opened from other surfaces too).
+  useEffect(() => {
+    if (isOpen) {
+      umamiTrack('signup_modal_opened', {
+        selected_plan_id: selectedPlanId,
+      });
+    }
+  }, [isOpen, selectedPlanId]);
+
   useEffect(() => {
     const fetchPlans = async () => {
       try {
@@ -270,7 +281,14 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
 
     const isValid = await trigger(fieldsToValidate);
     if (isValid) {
-      if (step === 1) setStep(2);
+      if (step === 1) {
+        // Umami: intent signal — visitor cleared the email/password gate.
+        umamiTrack('signup_step_advanced', {
+          from_step: 1,
+          plan_id: selectedPlan?._id,
+        });
+        setStep(2);
+      }
     }
   };
 
@@ -306,6 +324,15 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
       const registerData = await registerResponse.json();
       toast.success('Account created! Redirecting to checkout...');
 
+      // Umami: primary conversion — account successfully created. Do not
+      // include PII (email, name); the plan id and billing interval are the
+      // signal we actually want in the funnel report.
+      umamiTrack('signup_registered', {
+        plan_id: selectedPlan?._id,
+        plan_name: selectedPlan?.name,
+        billing_interval: billingInterval,
+      });
+
       const checkoutResponse = await fetch(`${apiBaseUrl}/stripe/public/create-checkout-session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -322,6 +349,13 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
       if (checkoutResponse.ok) {
         const { checkout_session } = await checkoutResponse.json();
         if (checkout_session?.url) {
+          // Umami: secondary conversion — visitor is being handed to Stripe.
+          // Fires before the redirect so it lands in Umami even if the
+          // browser tears down the page mid-flight.
+          umamiTrack('signup_checkout_redirect', {
+            plan_id: selectedPlan?._id,
+            billing_interval: billingInterval,
+          });
           window.location.href = checkout_session.url;
           return;
         }

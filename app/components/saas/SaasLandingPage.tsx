@@ -145,9 +145,11 @@ export const SaasLandingPage: React.FC = () => {
     hero_title: "Welcome to Special Wedding",
     hero_subtitle: "Wedding Planning Made Simple",
     hero_description: "The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.",
+    // SYNC-WITH-SEED: trial_days — update when SEED_VERSION bumps paid trial length
     hero_cta_primary: "Start 30-Day Trial",
     contact_cta_label: 'Contact Sales',
     contact_url: process.env.NEXT_PUBLIC_CONTACT_URL || 'mailto:sales@thespecialwedding.io',
+    // SYNC-WITH-SEED: trial_days
     trust_indicators: ["Free 30-day trial", "No setup fees", "Cancel anytime"],
     // Modern hero defaults
     show_decorative_logo: false, // Use modern design by default

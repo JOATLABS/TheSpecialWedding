@@ -158,6 +158,7 @@ export const faqs: FAQ[] = [
   },
   {
     question: 'Do you offer a free trial?',
+    // SYNC-WITH-SEED: trial_days — update when SEED_VERSION bumps paid trial length
     answer:
       'Yes. All self-serve plans come with a 30-day free trial — no credit card required. You get full access to every feature in your chosen tier.',
     category: 'Pricing & Billing',

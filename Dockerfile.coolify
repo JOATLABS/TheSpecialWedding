@@ -27,6 +27,15 @@ COPY . .
 ARG NEXT_PUBLIC_API_BASE_URL
 ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
 
+# Umami Analytics (self-hosted on Coolify). NEXT_PUBLIC_* vars are baked into
+# the Next.js bundle at build time, so they must be passed as Coolify
+# build-time variables — not runtime env. Both must be set together; the
+# layout omits the tracker script if either is missing.
+ARG NEXT_PUBLIC_UMAMI_WEBSITE_ID
+ENV NEXT_PUBLIC_UMAMI_WEBSITE_ID=${NEXT_PUBLIC_UMAMI_WEBSITE_ID}
+ARG NEXT_PUBLIC_UMAMI_SRC
+ENV NEXT_PUBLIC_UMAMI_SRC=${NEXT_PUBLIC_UMAMI_SRC}
+
 # Build Next.js application
 RUN npm run build
 

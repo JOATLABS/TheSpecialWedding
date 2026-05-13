@@ -299,9 +299,18 @@ class StripeService:
                     try:
                         price = stripe.Price.retrieve(current_price_id)
 
-                        # Check basic fields
+                        # Check basic fields. ``price.active`` MUST be in the
+                        # match condition — Stripe rejects Subscription.create
+                        # with an inactive price (400 "The price specified is
+                        # inactive"), so reusing an archived price id here
+                        # produces a stale-Mongo state that breaks every new
+                        # subscription. If a previous run deactivated this
+                        # price (or it was archived externally), we treat the
+                        # config as "non-matching" and fall through to create
+                        # a fresh active price below.
                         matches = (
-                            price.unit_amount == amount_cents
+                            price.active
+                            and price.unit_amount == amount_cents
                             and price.currency == "usd"
                             and price.recurring
                             and price.recurring.interval == interval

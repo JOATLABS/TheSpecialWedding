@@ -41,6 +41,7 @@ from app.services.calendar_audit_service import calendar_audit_service
 from app.services.calendar_idempotency_service import calendar_idempotency_service
 from app.services.calendar_job_service import calendar_job_service
 from app.services.calendar_sync_service import calendar_sync_service
+from app.services.calendar_provider_service import calendar_provider_service
 from app.services.google_calendar_service import google_calendar_service
 from app.utils.query_validation import (
     calculate_pagination_params,
@@ -142,6 +143,33 @@ class GoogleCallbackResponse(BaseModel):
     connected: bool
     calendar_id: Optional[str] = None
     message: str
+
+
+class ProviderAuthUrlResponse(BaseModel):
+    """Aurinko hosted-auth URL response.
+
+    Same shape as ``GoogleAuthUrlResponse`` so the frontend can swap routes
+    incrementally without refactoring the response type.
+    """
+
+    auth_url: str
+    message: str
+
+
+class ProviderCallbackResponse(BaseModel):
+    """Response after the Aurinko hosted-auth callback.
+
+    Aurinko fans out a single OAuth flow to per-calendar connection rows, so
+    ``connections_created`` may be > 1. ``calendar_id`` carries the default
+    write target's id when one is established.
+    """
+
+    connected: bool
+    calendar_id: Optional[str] = None
+    connections_created: int = 0
+    redirect_to: Optional[str] = None
+    message: str
+    warning: Optional[str] = None
 
 
 class CalendarConnectionResponse(BaseModel):
@@ -863,6 +891,107 @@ async def google_connection_oauth_callback(
     return await google_oauth_callback(
         code=code, state=state, current_user=current_user
     )
+
+
+# ============================================================================
+# Aurinko (multi-provider) OAuth Endpoints
+# ============================================================================
+# These routes are the multi-provider replacement for the /google/* routes
+# above. They call ``calendar_provider_service`` which brokers OAuth + tokens
+# via Aurinko for Google, Office 365, iCloud, and Exchange/EWS.
+#
+# The legacy /google/* routes are intentionally kept in place during the
+# migration so existing frontend clients don't break. Once the planner UI is
+# switched over to ``/provider/*``, the legacy routes can be retired in a
+# follow-up.
+
+
+@router.get(
+    "/planner/calendar/provider/connect",
+    tags=["Planner Calendar"],
+    response_model=ProviderAuthUrlResponse,
+)
+async def get_provider_auth_url(
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("connect_personal_calendar")
+    ),
+) -> ProviderAuthUrlResponse:
+    """Build an Aurinko hosted-auth URL for the current planner/team member.
+
+    Aurinko renders a provider picker (Google / Office 365 / iCloud / EWS)
+    and handles the per-provider OAuth screens. After consent the user is
+    redirected back to ``AURINKO_REDIRECT_URI`` with ``code`` + ``state``,
+    which the frontend posts to ``/planner/calendar/connections/provider/callback``
+    below.
+    """
+    context = get_calendar_owner_identity(current_user)
+    auth_url = await calendar_provider_service.get_authorization_url(
+        user_id=context.get("user_id") or "",
+        user_email=context.get("user_email") or current_user.email,
+        owner_id=context.get("owner_id") or context.get("user_id") or "",
+        owner_email=context.get("owner_email") or current_user.email,
+    )
+    return ProviderAuthUrlResponse(
+        auth_url=auth_url,
+        message="Redirect the user to auth_url to connect their calendar",
+    )
+
+
+@router.get(
+    "/planner/calendar/connections/provider/callback",
+    tags=["Planner Calendar"],
+    response_model=ProviderCallbackResponse,
+)
+async def provider_oauth_callback(
+    code: str = Query(..., description="Authorization code from Aurinko"),
+    state: str = Query(..., description="Signed state from /provider/connect"),
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("connect_personal_calendar")
+    ),
+) -> ProviderCallbackResponse:
+    """Exchange the Aurinko callback code for an account token and persist
+    one ``calendar_connections`` row per writable calendar on the account.
+
+    The state JWT carries the planner/team-member identity that initiated
+    the flow; ``handle_oauth_callback`` validates it against the
+    authenticated user so an attacker can't redeem someone else's code.
+    """
+    context = get_calendar_owner_identity(current_user)
+    result = await calendar_provider_service.handle_oauth_callback(
+        code=code,
+        state=state,
+        current_user_context={
+            "user_id": context.get("user_id"),
+            "user_email": context.get("user_email"),
+        },
+    )
+    return ProviderCallbackResponse(
+        connected=bool(result.get("connected")),
+        calendar_id=result.get("calendar_id"),
+        connections_created=int(result.get("connections_created") or 0),
+        redirect_to=result.get("redirect_to"),
+        message=str(result.get("message") or ""),
+        warning=result.get("warning"),
+    )
+
+
+@router.delete(
+    "/planner/calendar/provider/disconnect",
+    tags=["Planner Calendar"],
+)
+async def disconnect_provider_calendar(
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("connect_personal_calendar")
+    ),
+) -> dict:
+    """Disconnect every Aurinko-brokered calendar for the current user.
+
+    Unsubscribes each per-calendar Aurinko subscription, revokes the
+    account token Aurinko-side, marks dependent sync rows as ORPHANED, and
+    deletes the local connection rows. Idempotent — re-running on an
+    already-disconnected user is a no-op.
+    """
+    return await calendar_provider_service.disconnect(current_user.email)
 
 
 @router.patch(
