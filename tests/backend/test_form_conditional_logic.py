@@ -50,7 +50,9 @@ from app.models.form import SubmitFormRequest  # noqa: E402
         (
             {
                 "show_when": {
-                    "all": [{"field_id": "diet", "operator": "equals", "value": "veg"}]
+                    "all": [
+                        {"field_id": "diet", "operator": "equals", "value": "veg"}
+                    ]
                 }
             },
             {"diet": "veg"},
@@ -60,7 +62,9 @@ from app.models.form import SubmitFormRequest  # noqa: E402
         (
             {
                 "show_when": {
-                    "all": [{"field_id": "diet", "operator": "equals", "value": "veg"}]
+                    "all": [
+                        {"field_id": "diet", "operator": "equals", "value": "veg"}
+                    ]
                 }
             },
             {"diet": "non-veg"},
@@ -120,12 +124,22 @@ from app.models.form import SubmitFormRequest  # noqa: E402
         ),
         # is_empty / is_not_empty
         (
-            {"show_when": {"all": [{"field_id": "notes", "operator": "is_not_empty"}]}},
+            {
+                "show_when": {
+                    "all": [
+                        {"field_id": "notes", "operator": "is_not_empty"}
+                    ]
+                }
+            },
             {"notes": "hi"},
             True,
         ),
         (
-            {"show_when": {"all": [{"field_id": "notes", "operator": "is_empty"}]}},
+            {
+                "show_when": {
+                    "all": [{"field_id": "notes", "operator": "is_empty"}]
+                }
+            },
             {"notes": ""},
             True,
         ),
@@ -205,7 +219,9 @@ def test_filter_responses_to_visible_drops_hidden_field_values():
             "required": False,
             "conditional_logic": {
                 "show_when": {
-                    "all": [{"field_id": "diet", "operator": "equals", "value": "veg"}]
+                    "all": [
+                        {"field_id": "diet", "operator": "equals", "value": "veg"}
+                    ]
                 }
             },
         },
@@ -388,7 +404,9 @@ async def test_submit_strips_hidden_field_values(configured_form_service):
     service, database = configured_form_service
     database["forms"].insert_one(_form_with_conditional())
 
-    request = SubmitFormRequest(responses={"diet": "non-veg", "veg_kind": "vegan"})
+    request = SubmitFormRequest(
+        responses={"diet": "non-veg", "veg_kind": "vegan"}
+    )
     result = await service.submit_form_response("form_1", request)
 
     response = database["form_responses"].find_one({"_id": result["id"]})
@@ -416,7 +434,9 @@ async def test_submit_accepts_full_branch_responses(configured_form_service):
     service, database = configured_form_service
     database["forms"].insert_one(_form_with_conditional())
 
-    request = SubmitFormRequest(responses={"diet": "veg", "veg_kind": "vegan"})
+    request = SubmitFormRequest(
+        responses={"diet": "veg", "veg_kind": "vegan"}
+    )
     result = await service.submit_form_response("form_1", request)
 
     response = database["form_responses"].find_one({"_id": result["id"]})

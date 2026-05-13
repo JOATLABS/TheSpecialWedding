@@ -128,9 +128,7 @@ async def main() -> None:
         "Tokenized submit lifecycle",
         [
             f"Open /forms/{form_id}?dist={first_dist}&t={first_token} (Guest A's link).",
-            "Submit. Expect a thank-you. The form_responses row should carry distribution_id="
-            + first_dist
-            + ".",
+            "Submit. Expect a thank-you. The form_responses row should carry distribution_id=" + first_dist + ".",
             "Refresh and submit again with the SAME link — expect a 409 'already submitted with this link' (Item 4 fix).",
             f"Visit /forms/{form_id}?dist={first_dist}&t=WRONG-TOKEN — expect 403 Invalid form access link.",
             f"Visit /forms/{form_id}?dist=NOT-A-REAL-ID&t={first_token} — expect 404.",
@@ -139,7 +137,7 @@ async def main() -> None:
             "Planner: open GET /admin/forms/{form_id}/distributions?status=submitted — confirm the SUBMITTED rows match.",
         ],
     )
-    print("  ↳ run cleanup: python testbed/cleanup_form_tokenized_submission_state.py")
+    print(f"  ↳ run cleanup: python testbed/cleanup_form_tokenized_submission_state.py")
 
 
 if __name__ == "__main__":

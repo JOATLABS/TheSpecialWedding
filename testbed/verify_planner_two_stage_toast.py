@@ -65,7 +65,9 @@ from testbed._form_lifecycle_common import (  # noqa: E402
 # ---------------------------------------------------------------------------
 
 PLANNER_EMAIL = TWO_STAGE_TOAST.email  # test_planner+toast_lifecycle@…
-PLANNER_B_EMAIL = "test_planner+toast_lifecycle_other@thespecialwedding.io"
+PLANNER_B_EMAIL = (
+    "test_planner+toast_lifecycle_other@thespecialwedding.io"
+)
 TEAM_FORMS_EMAIL = "test_team_forms+toast_lifecycle@thespecialwedding.io"
 TEAM_PORTAL_EMAIL = "test_team_portal+toast_lifecycle@thespecialwedding.io"
 TEAM_NEITHER_EMAIL = "test_team_neither+toast_lifecycle@thespecialwedding.io"
@@ -308,9 +310,7 @@ async def phase_seed() -> Dict[str, Any]:
 
 async def phase_checkpoint_1_stage1(state: Dict[str, Any]) -> None:
     banner("CHECKPOINT 1 — Stage 1 fires on wedding create")
-    print(
-        "  Driver action: invoke notify_wedding_created (mirrors POST /admin/weddings)."
-    )
+    print("  Driver action: invoke notify_wedding_created (mirrors POST /admin/weddings).")
 
     from app.services.planner_notification_service import (
         planner_notification_service,
@@ -398,17 +398,20 @@ async def phase_checkpoint_2_stage2(state: Dict[str, Any]) -> None:
     )
     assert_eq(
         "team[neither] Stage 2 row count delta (must NOT receive)",
-        await count_notif(TEAM_NEITHER_EMAIL, "couple_portal_accepted")
-        - before_neither,
+        await count_notif(TEAM_NEITHER_EMAIL, "couple_portal_accepted") - before_neither,
         0,
     )
 
     latest = await fetch_latest_notif(PLANNER_EMAIL, "couple_portal_accepted")
     assert_truthy("planner Stage 2 row exists", latest)
     metadata = (latest or {}).get("metadata") or {}
-    assert_eq("metadata.form_id", metadata.get("form_id"), state["seeded_form_id"])
+    assert_eq(
+        "metadata.form_id", metadata.get("form_id"), state["seeded_form_id"]
+    )
     assert_eq("metadata.couple_email", metadata.get("couple_email"), COUPLE_EMAIL)
-    assert_eq("metadata.couple_names", metadata.get("couple_names"), "Alex & Jordan")
+    assert_eq(
+        "metadata.couple_names", metadata.get("couple_names"), "Alex & Jordan"
+    )
     state["planner_stage2_id"] = str(latest["_id"]) if latest else None
 
     checkpoint_pause(
@@ -425,9 +428,7 @@ async def phase_checkpoint_2_stage2(state: Dict[str, Any]) -> None:
 
 async def phase_checkpoint_3_dedup(state: Dict[str, Any]) -> None:
     banner("CHECKPOINT 3 — Stage 2 dedup against existing form_distributions")
-    print(
-        "  Pre-seed a form_distributions row, fire Stage 2 again, expect NO new bell row."
-    )
+    print("  Pre-seed a form_distributions row, fire Stage 2 again, expect NO new bell row.")
 
     await insert_one(
         "form_distributions",
@@ -475,17 +476,11 @@ async def phase_checkpoint_3_dedup(state: Dict[str, Any]) -> None:
 
 
 async def phase_checkpoint_4_actioned(state: Dict[str, Any]) -> None:
-    banner(
-        "CHECKPOINT 4 — mark-actioned flips actioned_at + actioned_via_action_button"
-    )
-    print(
-        "  Driver action: mirror PUT /admin/planner/activity-notifications/{id}/actioned."
-    )
+    banner("CHECKPOINT 4 — mark-actioned flips actioned_at + actioned_via_action_button")
+    print("  Driver action: mirror PUT /admin/planner/activity-notifications/{id}/actioned.")
 
     if not state.get("planner_stage2_id"):
-        raise RuntimeError(
-            "Stage 2 notification id missing; cannot exercise mark-actioned."
-        )
+        raise RuntimeError("Stage 2 notification id missing; cannot exercise mark-actioned.")
 
     from app.services.planner_notification_service import (
         planner_notification_service,
@@ -502,11 +497,7 @@ async def phase_checkpoint_4_actioned(state: Dict[str, Any]) -> None:
 
     doc = await mongo.db["planner_notifications"].find_one({"_id": ObjectId(notif_id)})
     assert_truthy("planner Stage 2 doc still present", doc)
-    assert_eq(
-        "actioned_via_action_button",
-        (doc or {}).get("actioned_via_action_button"),
-        True,
-    )
+    assert_eq("actioned_via_action_button", (doc or {}).get("actioned_via_action_button"), True)
     assert_eq("is_read", (doc or {}).get("is_read"), True)
     assert_truthy("actioned_at populated", (doc or {}).get("actioned_at"))
     state["actioned_at_first"] = (doc or {}).get("actioned_at")
@@ -532,9 +523,7 @@ async def phase_checkpoint_5_ownership_gate(state: Dict[str, Any]) -> None:
 
     notif_id = state.get("planner_stage2_id")
     if not notif_id:
-        raise RuntimeError(
-            "Stage 2 notification id missing; cross-planner gate cannot run."
-        )
+        raise RuntimeError("Stage 2 notification id missing; cross-planner gate cannot run.")
 
     raised = False
     status = None
@@ -568,9 +557,7 @@ async def phase_checkpoint_6_idempotent(state: Dict[str, Any]) -> None:
 
     notif_id = state.get("planner_stage2_id")
     if not notif_id:
-        raise RuntimeError(
-            "Stage 2 notification id missing; idempotency check cannot run."
-        )
+        raise RuntimeError("Stage 2 notification id missing; idempotency check cannot run.")
 
     res = await planner_notification_service.mark_action_completed(
         notification_id=notif_id, planner_id=PLANNER_EMAIL
@@ -581,11 +568,7 @@ async def phase_checkpoint_6_idempotent(state: Dict[str, Any]) -> None:
     from bson import ObjectId
 
     doc = await mongo.db["planner_notifications"].find_one({"_id": ObjectId(notif_id)})
-    assert_eq(
-        "actioned_via_action_button still True",
-        (doc or {}).get("actioned_via_action_button"),
-        True,
-    )
+    assert_eq("actioned_via_action_button still True", (doc or {}).get("actioned_via_action_button"), True)
     assert_eq("is_read still True", (doc or {}).get("is_read"), True)
     assert_truthy("actioned_at still populated", (doc or {}).get("actioned_at"))
     # Document is allowed to either retain the original timestamp or
@@ -624,7 +607,7 @@ async def main() -> None:
     final_planner_stage2 = await count_notif(PLANNER_EMAIL, "couple_portal_accepted")
     print(f"  ↳ planner wedding_created rows: {final_planner}")
     print(f"  ↳ planner couple_portal_accepted rows: {final_planner_stage2}")
-    print("  ↳ run cleanup: python testbed/cleanup_planner_two_stage_toast_state.py")
+    print(f"  ↳ run cleanup: python testbed/cleanup_planner_two_stage_toast_state.py")
 
 
 if __name__ == "__main__":

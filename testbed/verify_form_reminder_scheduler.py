@@ -57,13 +57,7 @@ async def seed_form_and_due_distributions() -> tuple[str, list[str]]:
                 "requires_auth": False,
             },
             "fields": [
-                {
-                    "id": "name",
-                    "label": "Name",
-                    "type": "text",
-                    "required": True,
-                    "order": 1,
-                }
+                {"id": "name", "label": "Name", "type": "text", "required": True, "order": 1}
             ],
             "created_by": REMINDER.email,
             "is_active": True,
@@ -113,18 +107,14 @@ async def main() -> None:
 
     banner("VERIFY")
     print("Run the scheduler now:")
-    print(
-        '  python -c "import asyncio;'
-        " from app.services.form_service import FormService;"
-        ' print(asyncio.run(FormService().send_form_reminders()))"'
-    )
+    print("  python -c \"import asyncio;"
+          " from app.services.form_service import FormService;"
+          " print(asyncio.run(FormService().send_form_reminders()))\"")
     print("Expect: {'sent': 3, 'skipped': 0, 'failed': 0, 'deferred_for_budget': 0}")
     print()
     print("Then check:")
     print("  • All 3 form_distributions rows now have reminder_sent_at != None.")
-    print(
-        "  • access_token_hash has been ROTATED on each row (new value, original tokens 403)."
-    )
+    print("  • access_token_hash has been ROTATED on each row (new value, original tokens 403).")
     print("  • A second invocation returns sent=0 (idempotent — Phase 1 wave-3).")
 
     checkpoint_pause(
@@ -138,7 +128,7 @@ async def main() -> None:
             "(Item 6) Backdate a 4th distribution by hand and rerun with REMINDER_BUDGET_PER_TICK=2 — confirm deferred_for_budget=2.",
         ],
     )
-    print("  ↳ run cleanup: python testbed/cleanup_form_reminder_scheduler_state.py")
+    print(f"  ↳ run cleanup: python testbed/cleanup_form_reminder_scheduler_state.py")
 
 
 if __name__ == "__main__":

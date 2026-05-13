@@ -92,7 +92,8 @@ async def main() -> None:
         print(f"    • {collection}: {count} deleted")
     for collection, count in user_deleted.items():
         print(f"    • {collection}: {count} deleted")
-    print(f"    • marketing_leads ({RECIPIENT_EMAIL}): {recipient_marketing} deleted")
+    print(f"    • marketing_leads ({RECIPIENT_EMAIL}): "
+          f"{recipient_marketing} deleted")
 
 
 if __name__ == "__main__":

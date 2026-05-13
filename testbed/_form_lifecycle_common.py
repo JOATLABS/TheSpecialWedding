@@ -21,11 +21,12 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -154,7 +155,9 @@ async def purge_form_rows_for_planner(planner_email: str) -> Dict[str, int]:
     """
     mongo = get_async_mongo()
     forms_coll = mongo.db["forms"]
-    cursor = forms_coll.find({"created_by": planner_email}, {"_id": 1})
+    cursor = forms_coll.find(
+        {"created_by": planner_email}, {"_id": 1}
+    )
     form_ids: List[Any] = []
     async for doc in cursor:
         form_ids.append(doc["_id"])

@@ -460,7 +460,6 @@ Welcome to Special Wedding! This guide covers everything about your trial period
 
 Solo is **permanently free** — no trial clock, no credit card. You get one active wedding at a time to try the platform; finish or delete it and you can start another.
 
-<!-- SYNC-WITH-SEED: trial_days — update when SEED_VERSION bumps paid trial length -->
 All paid plans (Boutique, Signature, Enterprise) include a **30-day free trial**. During the trial you have full access to all features included in your plan — no limitations.
 
 ### What's included in your trial?
@@ -471,7 +470,6 @@ All paid plans (Boutique, Signature, Enterprise) include a **30-day free trial**
 - Send invitations and manage RSVPs
 - Access the seating chart, budget tracker, and timeline builder
 
-<!-- SYNC-WITH-SEED: trial_days — update Day X/Y/Z table rows if trial length changes -->
 ### Trial timeline (30 days)
 
 | When | What happens |

@@ -21,7 +21,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-import app.services.user_management_service as user_management_service_module  # noqa: E402
+import app.services.user_management_service as user_management_service_module
 
 
 class DummyEmailService:
@@ -34,9 +34,7 @@ def _matches(document, query):
         if isinstance(expected, dict):
             if "$ne" in expected and actual == expected["$ne"]:
                 return False
-            if "$gt" in expected and not (
-                actual is not None and actual > expected["$gt"]
-            ):
+            if "$gt" in expected and not (actual is not None and actual > expected["$gt"]):
                 return False
             continue
         if actual != expected:
@@ -167,9 +165,7 @@ def test_verify_email_change_seeds_catalog_for_new_email_when_planner(
         return None
 
     monkeypatch.setattr(svc, "_cascade_planner_email_change", _noop_cascade)
-    monkeypatch.setattr(
-        svc, "_invalidate_planner_email_caches", _noop_invalidate_caches
-    )
+    monkeypatch.setattr(svc, "_invalidate_planner_email_caches", _noop_invalidate_caches)
 
     import app.services.form_service as form_service_module
 
@@ -208,9 +204,7 @@ def test_verify_email_change_does_not_seed_for_non_planner_role(
         return None
 
     monkeypatch.setattr(svc, "_cascade_planner_email_change", _noop_cascade)
-    monkeypatch.setattr(
-        svc, "_invalidate_planner_email_caches", _noop_invalidate_caches
-    )
+    monkeypatch.setattr(svc, "_invalidate_planner_email_caches", _noop_invalidate_caches)
 
     import app.services.form_service as form_service_module
 
@@ -243,9 +237,7 @@ def test_verify_email_change_swallows_seed_failure(service, monkeypatch, fake_st
         return None
 
     monkeypatch.setattr(svc, "_cascade_planner_email_change", _noop_cascade)
-    monkeypatch.setattr(
-        svc, "_invalidate_planner_email_caches", _noop_invalidate_caches
-    )
+    monkeypatch.setattr(svc, "_invalidate_planner_email_caches", _noop_invalidate_caches)
 
     import app.services.form_service as form_service_module
 

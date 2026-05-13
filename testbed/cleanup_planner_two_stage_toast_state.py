@@ -44,7 +44,9 @@ async def _delete_form_distributions_for_planners() -> int:
     so a stranded distribution that lost its parent form still gets
     cleaned up."""
     mongo = get_async_mongo()
-    cursor = mongo.db["forms"].find({"created_by": {"$in": PLANNER_EMAILS}}, {"_id": 1})
+    cursor = mongo.db["forms"].find(
+        {"created_by": {"$in": PLANNER_EMAILS}}, {"_id": 1}
+    )
     form_ids = [doc["_id"] async for doc in cursor]
     deleted = 0
     if form_ids:
@@ -94,11 +96,15 @@ async def main() -> None:
     # The couple-portal lifecycle code uses ``couple_users`` for the
     # actual setup-password row. Sweep both spellings so a schema
     # rename can't strand state.
-    deleted["couple_users"] = await delete_many("couple_users", {"email": COUPLE_EMAIL})
+    deleted["couple_users"] = await delete_many(
+        "couple_users", {"email": COUPLE_EMAIL}
+    )
     deleted["user_subscriptions"] = await delete_many(
         "user_subscriptions", {"email": {"$in": ALL_USER_EMAILS}}
     )
-    deleted["users"] = await delete_many("users", {"email": {"$in": ALL_USER_EMAILS}})
+    deleted["users"] = await delete_many(
+        "users", {"email": {"$in": ALL_USER_EMAILS}}
+    )
 
     for collection, count in deleted.items():
         print(f"  - {collection}: {count} deleted")

@@ -112,7 +112,9 @@ async def test_notify_wedding_created_builds_couple_tab_action_url(
     assert captured["notification_type"] == "wedding_created"
     assert captured["wedding_id"] == "wedding-1"
     assert "Alex & Jamie" in captured["message"]
-    assert captured["action_url"] == ("/admin/planner/weddings/wedding-1?tab=couple")
+    assert captured["action_url"] == (
+        "/admin/planner/weddings/wedding-1?tab=couple"
+    )
 
 
 @pytest.mark.asyncio
@@ -149,7 +151,9 @@ async def test_notify_couple_portal_accepted_carries_form_metadata(
     # Must point at the canonical planner-side send route at
     # app/admin/forms/[id]/send/page.tsx — there is no
     # /admin/planner/forms/* route, so the older form would 404.
-    assert captured["action_url"].startswith("/admin/forms/form-seed-1/send")
+    assert captured["action_url"].startswith(
+        "/admin/forms/form-seed-1/send"
+    )
     assert "/admin/planner/forms" not in captured["action_url"]
     assert "prefill_email=couple%40example.com" in captured["action_url"]
 

@@ -137,7 +137,8 @@ def test_catalog_includes_each_lifecycle_stage():
     expected_at_least = {"intake", "timeline", "guest", "vendor", "creative"}
     missing = expected_at_least - categories
     assert not missing, (
-        f"catalog missing lifecycle categories: {missing}; present: {categories}"
+        f"catalog missing lifecycle categories: {missing}; "
+        f"present: {categories}"
     )
 
 

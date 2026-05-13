@@ -11,6 +11,8 @@ the project README.
 from __future__ import annotations
 
 import importlib.util
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -20,7 +22,9 @@ SCRIPT_PATH = PROJECT_ROOT / "scripts" / "create_indexes_p1_forms_and_ai.py"
 
 
 def _load_indexes_module():
-    spec = importlib.util.spec_from_file_location("_p1_index_migration", SCRIPT_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "_p1_index_migration", SCRIPT_PATH
+    )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -63,12 +67,15 @@ def test_team_members_owner_status_index_present(indexes):
     matches = [
         (collection, spec, kwargs)
         for collection, spec, kwargs in indexes
-        if collection == "team_members" and spec == [("owner_email", 1), ("status", 1)]
+        if collection == "team_members"
+        and spec == [("owner_email", 1), ("status", 1)]
     ]
     assert len(matches) == 1, "missing team_members owner+status index"
     _, _, kwargs = matches[0]
     assert kwargs.get("name") == "idx_owner_status"
-    assert "expireAfterSeconds" not in kwargs, "team_members index must not be TTL"
+    assert "expireAfterSeconds" not in kwargs, (
+        "team_members index must not be TTL"
+    )
 
 
 def test_form_distributions_recipient_dedup_index_present(indexes):
@@ -136,8 +143,7 @@ def test_marketing_leads_dedup_index_is_unique_sparse(indexes):
     matches = [
         (collection, spec, kwargs)
         for collection, spec, kwargs in indexes
-        if collection == "marketing_leads"
-        and spec == [("email", 1), ("template_id", 1)]
+        if collection == "marketing_leads" and spec == [("email", 1), ("template_id", 1)]
     ]
     assert len(matches) == 1, "missing or duplicated dedup index"
     _, _, kwargs = matches[0]

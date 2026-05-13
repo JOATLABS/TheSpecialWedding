@@ -91,7 +91,8 @@ def test_every_field_appears_in_html(template):
             continue
         escaped = _html.escape(label, quote=True)
         assert escaped in rendered, (
-            f"template {template['id']} missing field label {label!r} in rendered HTML"
+            f"template {template['id']} missing field label "
+            f"{label!r} in rendered HTML"
         )
 
 

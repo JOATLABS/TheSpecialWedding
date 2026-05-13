@@ -287,9 +287,7 @@ async def test_submit_with_distribution_id_for_other_form_is_dropped(
 ):
     """Cross-form distribution_id replay must not link a submission to the wrong form."""
     service, database = configured_form_service
-    database["forms"].insert_many(
-        [_form_doc(form_id="form_1"), _form_doc(form_id="form_2")]
-    )
+    database["forms"].insert_many([_form_doc(form_id="form_1"), _form_doc(form_id="form_2")])
     database["form_distributions"].insert_one(
         {
             "_id": "dist-other-form",
@@ -403,7 +401,9 @@ async def test_send_form_email_url_carries_distribution_id(configured_form_servi
     for sent in service.email_service.sent:
         html = sent["html_content"]
         recipient = sent["to_email"]
-        their_dist = next(d for d in distributions if d["recipient_email"] == recipient)
+        their_dist = next(
+            d for d in distributions if d["recipient_email"] == recipient
+        )
         assert f"?dist={their_dist['_id']}" in html
 
 
@@ -964,9 +964,7 @@ async def test_send_form_skips_recipient_with_open_distribution(
     )
     first = await service.send_form(
         "form_1",
-        SendFormRequest(
-            recipient_emails=["guest@example.com"], email_settings=settings
-        ),
+        SendFormRequest(recipient_emails=["guest@example.com"], email_settings=settings),
         "planner@example.com",
     )
     assert first["sent"] == 1
@@ -975,9 +973,7 @@ async def test_send_form_skips_recipient_with_open_distribution(
 
     second = await service.send_form(
         "form_1",
-        SendFormRequest(
-            recipient_emails=["guest@example.com"], email_settings=settings
-        ),
+        SendFormRequest(recipient_emails=["guest@example.com"], email_settings=settings),
         "planner@example.com",
     )
     assert second["sent"] == 0
@@ -998,9 +994,7 @@ async def test_send_form_dedup_does_not_block_resend_after_submission(
     )
     first = await service.send_form(
         "form_1",
-        SendFormRequest(
-            recipient_emails=["guest@example.com"], email_settings=settings
-        ),
+        SendFormRequest(recipient_emails=["guest@example.com"], email_settings=settings),
         "planner@example.com",
     )
     database["form_distributions"].update_one(
@@ -1010,9 +1004,7 @@ async def test_send_form_dedup_does_not_block_resend_after_submission(
 
     second = await service.send_form(
         "form_1",
-        SendFormRequest(
-            recipient_emails=["guest@example.com"], email_settings=settings
-        ),
+        SendFormRequest(recipient_emails=["guest@example.com"], email_settings=settings),
         "planner@example.com",
     )
     assert second["sent"] == 1
@@ -1041,9 +1033,7 @@ async def test_send_form_records_bounce_counters_on_distribution(
     assert result["failed"] == 1
     assert result["recipients"][0]["status"] == "failed"
     assert result["recipients"][0]["error"]
-    dist = database["form_distributions"].find_one(
-        {"recipient_email": "bounce@example.com"}
-    )
+    dist = database["form_distributions"].find_one({"recipient_email": "bounce@example.com"})
     assert dist is not None
     assert dist["email_sends"] == 0
     assert dist["email_send_failures"] == 1

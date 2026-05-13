@@ -52,9 +52,7 @@ async def main() -> None:
 
     leads = await count_documents("marketing_leads", {"email": VISITOR_EMAIL})
     print(f"  ↳ post-VERIFY marketing_leads count for visitor: {leads}")
-    print(
-        "  ↳ run cleanup: python testbed/cleanup_form_marketing_lead_capture_state.py"
-    )
+    print(f"  ↳ run cleanup: python testbed/cleanup_form_marketing_lead_capture_state.py")
 
 
 if __name__ == "__main__":
