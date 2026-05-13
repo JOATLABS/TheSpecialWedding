@@ -912,17 +912,23 @@ async def google_connection_oauth_callback(
     response_model=ProviderAuthUrlResponse,
 )
 async def get_provider_auth_url(
+    service_type: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional provider id to pre-select: one of 'google', 'office365', "
+            "'icloud', 'ews'. When omitted, Aurinko renders its own picker."
+        ),
+    ),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("connect_personal_calendar")
     ),
 ) -> ProviderAuthUrlResponse:
     """Build an Aurinko hosted-auth URL for the current planner/team member.
 
-    Aurinko renders a provider picker (Google / Office 365 / iCloud / EWS)
-    and handles the per-provider OAuth screens. After consent the user is
-    redirected back to ``AURINKO_REDIRECT_URI`` with ``code`` + ``state``,
-    which the frontend posts to ``/planner/calendar/connections/provider/callback``
-    below.
+    With ``service_type`` omitted the user gets Aurinko's provider picker
+    (Google / Office 365 / iCloud / EWS). Passing a provider id pre-selects
+    it so the user lands directly on that provider's OAuth screen — used by
+    the four per-provider buttons in the planner UI.
     """
     context = get_calendar_owner_identity(current_user)
     auth_url = await calendar_provider_service.get_authorization_url(
@@ -930,6 +936,7 @@ async def get_provider_auth_url(
         user_email=context.get("user_email") or current_user.email,
         owner_id=context.get("owner_id") or context.get("user_id") or "",
         owner_email=context.get("owner_email") or current_user.email,
+        provider=service_type,
     )
     return ProviderAuthUrlResponse(
         auth_url=auth_url,
@@ -1075,8 +1082,15 @@ async def delete_calendar_connection(
     connection_id: str,
     current_user: ExtendedAuthUser = Depends(require_calendar_access),
 ) -> dict:
-    """Disconnect one calendar connection, revoking provider access when appropriate."""
-    connection_doc = await google_calendar_service._get_connection_doc(connection_id)
+    """Disconnect one calendar connection, revoking provider access when appropriate.
+
+    Routes to ``calendar_provider_service`` (Aurinko) so the per-row teardown
+    actually unsubscribes the Aurinko subscription and revokes the account
+    token when this is the last row for the account. Pre-migration this
+    routed to ``google_calendar_service`` and silently no-op'd the Aurinko
+    side, leaving leaked subscriptions on Aurinko.
+    """
+    connection_doc = await calendar_provider_service.get_connection_doc(connection_id)
     current_context = get_calendar_owner_identity(current_user)
     is_owner = current_user.is_root_admin or current_user.is_wedding_planner
     can_manage_all = bool(
@@ -1095,7 +1109,7 @@ async def delete_calendar_connection(
         raise HTTPException(
             status_code=403, detail="Cannot disconnect this calendar connection"
         )
-    return await google_calendar_service.disconnect_connection(
+    return await calendar_provider_service.disconnect_connection(
         connection_id,
         actor_email=current_user.email,
         actor_role=current_user.role,

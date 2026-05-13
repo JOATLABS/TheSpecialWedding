@@ -153,9 +153,13 @@ def phase_d2_create_setup_intent(
         },
     )
     h.log.info(f"  SetupIntent created: {setup_intent.id}")
-    h.log.info(
-        f"  automatic_payment_methods: {dict(setup_intent.automatic_payment_methods or {})}"
-    )
+    # NOTE: Stripe response objects are ``StripeObject`` instances, not plain
+    # dicts. ``dict(stripe_obj)`` raises KeyError because iteration goes
+    # through positional ``__getitem__(0)`` instead of yielding (k, v) pairs.
+    # Use ``.to_dict()`` (which Stripe provides explicitly) or pull attributes.
+    apm = setup_intent.automatic_payment_methods
+    apm_repr = apm.to_dict() if apm is not None else {}
+    h.log.info(f"  automatic_payment_methods: {apm_repr}")
     h.log.info(f"  payment_method_types: {list(setup_intent.payment_method_types)}")
     return setup_intent
 
@@ -176,11 +180,17 @@ def phase_d3_pin_dynamic_methods_contract(
     """
     h.phase("D3_PIN_CONTRACT", "Pin: dynamic payment methods enabled")
 
-    apm = setup_intent.automatic_payment_methods or {}
-    assert apm.get("enabled") is True, (
+    apm = setup_intent.automatic_payment_methods
+    # ``StripeObject`` exposes fields via ``__getattr__``, NOT via .get():
+    # calling apm.get("enabled") raises AttributeError because the SDK
+    # doesn't define a `.get` method on StripeObject (it forwards attribute
+    # lookups to the underlying ``_data`` dict). Use ``getattr`` so a
+    # missing field yields the default instead of raising.
+    apm_enabled = getattr(apm, "enabled", False) if apm is not None else False
+    assert apm_enabled is True, (
         f"D3: automatic_payment_methods.enabled should be True, got "
-        f"{apm!r}. The fix at app/api/contracts.py:create_setup_intent "
-        "may have regressed."
+        f"enabled={apm_enabled!r}. The fix at "
+        "app/api/contracts.py:create_setup_intent may have regressed."
     )
     h.log.info("  ✅ automatic_payment_methods.enabled == True")
 
@@ -201,9 +211,12 @@ def phase_d3_pin_dynamic_methods_contract(
             f"  ✅ payment_method_types surfaces {len(pm_types)} methods: {pm_types!r}"
         )
 
-    metadata = dict(setup_intent.metadata or {})
-    assert metadata.get("action") == "contract_sign", (
-        f"D3: metadata.action should pass through; got {metadata!r}"
+    metadata = setup_intent.metadata
+    metadata_action = (
+        getattr(metadata, "action", None) if metadata is not None else None
+    )
+    assert metadata_action == "contract_sign", (
+        f"D3: metadata.action should pass through; got action={metadata_action!r}"
     )
     h.log.info("  ✅ metadata.action == 'contract_sign' (passes through)")
 
@@ -228,17 +241,17 @@ def phase_d4_negative_control(h: Harness, customer: stripe.Customer) -> None:
         },
     )
     h.log.info(f"  Legacy SetupIntent: {legacy_si.id}")
-    h.log.info(
-        f"  automatic_payment_methods: {dict(legacy_si.automatic_payment_methods or {})}"
-    )
+    apm = legacy_si.automatic_payment_methods
+    apm_repr = apm.to_dict() if apm is not None else None
+    h.log.info(f"  automatic_payment_methods: {apm_repr}")
     h.log.info(f"  payment_method_types: {list(legacy_si.payment_method_types)}")
 
-    apm = legacy_si.automatic_payment_methods
     # Stripe may return automatic_payment_methods={enabled: False} or None
     # depending on API version. Either way the surface is restricted.
-    assert apm is None or apm.get("enabled") is not True, (
+    apm_enabled = getattr(apm, "enabled", None) if apm is not None else None
+    assert apm_enabled is not True, (
         f"D4: legacy pattern should NOT have automatic_payment_methods enabled, "
-        f"got {dict(apm or {})!r}"
+        f"got enabled={apm_enabled!r} apm={apm_repr!r}"
     )
     h.log.info("  ✅ legacy pattern does NOT enable automatic_payment_methods")
 

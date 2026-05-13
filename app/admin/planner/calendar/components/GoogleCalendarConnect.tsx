@@ -1,9 +1,16 @@
 'use client';
 
+// NOTE: file name is still ``GoogleCalendarConnect.tsx`` for diff-minimization
+// during the multi-provider migration. The exported component is the
+// generic ``CalendarConnect`` — Aurinko brokers Google, Microsoft 365,
+// iCloud, and Exchange/EWS through a single hosted-auth surface. A follow-up
+// PR will rename the file once all imports are stable.
+
 import React, { useMemo, useState } from 'react';
 import {
-  beginGoogleCalendarConnect,
+  beginCalendarConnect,
   CalendarConnection,
+  type CalendarProviderId,
   disconnectCalendarConnection,
   healthcheckCalendarConnection,
   updateCalendarConnection,
@@ -24,7 +31,7 @@ interface StaffOption {
   role?: string;
 }
 
-interface GoogleCalendarConnectProps {
+interface CalendarConnectProps {
   connections: CalendarConnection[];
   staffOptions?: StaffOption[];
   weddings?: Array<{ id: string; couple_names: string }>;
@@ -131,13 +138,70 @@ function visibilityLabel(mode: string) {
   return mode === 'details' ? 'Full details' : 'Busy/free';
 }
 
-export default function GoogleCalendarConnect({
+/** Humanize the stored provider id ("google" / "office365" / "icloud" /
+ *  "ews") into the user-facing label shown under the account email when
+ *  Aurinko didn't return a friendly account-display name. */
+function providerAccountLabel(provider: string | undefined | null): string {
+  switch ((provider || '').toLowerCase()) {
+    case 'google':
+      return 'Google account';
+    case 'office365':
+      return 'Microsoft 365 account';
+    case 'icloud':
+      return 'iCloud account';
+    case 'ews':
+      return 'Exchange account';
+    default:
+      return 'Calendar account';
+  }
+}
+
+/** Per-provider button metadata. Each entry maps to an Aurinko ``serviceType``
+ *  the backend forwards to ``/v1/auth/authorize`` so the user lands on that
+ *  provider's OAuth screen without going through Aurinko's picker. */
+const PROVIDER_BUTTONS: Array<{
+  id: CalendarProviderId;
+  label: string;
+  /** Single-letter avatar used inside the button — keeps the visual neutral
+   *  (no provider logo lock-in) while still differentiating the four entries
+   *  at a glance. Brand color is intentionally left to the app's palette. */
+  avatar: string;
+  /** Short, one-line explanation surfaced as a tooltip / aria-label. */
+  description: string;
+}> = [
+  {
+    id: 'google',
+    label: 'Google',
+    avatar: 'G',
+    description: 'Connect a Google Workspace or personal Gmail calendar',
+  },
+  {
+    id: 'office365',
+    label: 'Microsoft 365',
+    avatar: 'M',
+    description: 'Connect a Microsoft 365 / Outlook.com calendar',
+  },
+  {
+    id: 'icloud',
+    label: 'iCloud',
+    avatar: 'iC',
+    description: 'Connect an iCloud calendar (requires an Apple ID app password)',
+  },
+  {
+    id: 'ews',
+    label: 'Exchange',
+    avatar: 'EX',
+    description: 'Connect an on-prem Exchange / EWS calendar',
+  },
+];
+
+export default function CalendarConnect({
   connections,
   staffOptions = [],
   weddings = [],
   loading = false,
   onRefresh,
-}: GoogleCalendarConnectProps) {
+}: CalendarConnectProps) {
   const { token } = useAdmin();
   const { confirm } = useConfirmDialog();
   const [activeAction, setActiveAction] = useState<string | null>(null);
@@ -183,17 +247,21 @@ export default function GoogleCalendarConnect({
     }
   };
 
-  const handleConnect = async () => {
+  const handleConnect = async (serviceType: CalendarProviderId) => {
     if (!token) return;
 
-    setActiveAction('connect');
+    setActiveAction(`connect:${serviceType}`);
     setError('');
     try {
-      const { auth_url } = await beginGoogleCalendarConnect(token);
+      const { auth_url } = await beginCalendarConnect(token, serviceType);
       window.location.href = auth_url;
     } catch (err) {
+      const providerLabel =
+        PROVIDER_BUTTONS.find((entry) => entry.id === serviceType)?.label ?? 'calendar';
       const message =
-        err instanceof Error ? err.message : 'Failed to start Google Calendar connection';
+        err instanceof Error
+          ? err.message
+          : `Failed to start ${providerLabel} connection`;
       setError(message);
       setActiveAction(null);
     }
@@ -203,9 +271,9 @@ export default function GoogleCalendarConnect({
     if (!token) return;
 
     const confirmed = await confirm({
-      title: 'Disconnect Google Calendar',
+      title: 'Disconnect calendar',
       message:
-        'Disconnect this calendar connection? Internal meetings stay in the platform, but external sync stops and Google access is revoked when applicable.',
+        'Disconnect this calendar connection? Internal meetings stay in the platform, but external sync stops and the provider’s access is revoked.',
       variant: 'warning',
       confirmText: 'Disconnect',
       cancelText: 'Cancel',
@@ -364,10 +432,11 @@ export default function GoogleCalendarConnect({
               </svg>
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Google Calendar Connections</h3>
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Calendar Connections</h3>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Shared view is opt-in per connection. Personal external calendars stay busy/free
-                only unless the owner enables full details.
+                Connect Google, Microsoft 365, iCloud, or Exchange/EWS calendars. Shared view is
+                opt-in per connection; personal external calendars stay busy/free only unless the
+                owner enables full details.
               </p>
             </div>
           </div>
@@ -381,20 +450,39 @@ export default function GoogleCalendarConnect({
           </div>
         </div>
 
-        <button
-          onClick={handleConnect}
-          disabled={activeAction === 'connect'}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
+        <div
+          className="grid w-full grid-cols-2 gap-2 lg:w-auto lg:grid-cols-4"
+          role="group"
+          aria-label="Connect calendar provider"
         >
-          {activeAction === 'connect' ? (
-            <>
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              Connecting...
-            </>
-          ) : (
-            'Connect Google Calendar'
-          )}
-        </button>
+          {PROVIDER_BUTTONS.map((provider) => {
+            const isLoading = activeAction === `connect:${provider.id}`;
+            const anyConnectInFlight =
+              activeAction?.startsWith('connect:') ?? false;
+            return (
+              <button
+                key={provider.id}
+                onClick={() => handleConnect(provider.id)}
+                disabled={anyConnectInFlight}
+                aria-label={provider.description}
+                title={provider.description}
+                className="group inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-800 transition hover:border-slate-400 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700/60"
+              >
+                {isLoading ? (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900 dark:border-slate-600 dark:border-t-slate-100" />
+                ) : (
+                  <span
+                    aria-hidden="true"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-100 text-xs font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200"
+                  >
+                    {provider.avatar}
+                  </span>
+                )}
+                <span>{isLoading ? 'Connecting…' : provider.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {error && (
@@ -419,8 +507,9 @@ export default function GoogleCalendarConnect({
                 <div>
                   <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{group.accountEmail}</h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {group.rows[0]?.provider_account_name || 'Google account'} •{' '}
-                    {group.rows[0]?.user_email || 'Workspace user'}
+                    {group.rows[0]?.provider_account_name ||
+                      providerAccountLabel(group.rows[0]?.provider)}{' '}
+                    • {group.rows[0]?.user_email || 'Workspace user'}
                   </p>
                 </div>
               </div>

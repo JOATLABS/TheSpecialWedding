@@ -170,12 +170,41 @@ class AurinkoClient:
         client = _get_aurinko_http_client()
         return await client.request(method, url, **kwargs)
 
+    # Provider id → Aurinko serviceType (exact strings from the
+    # /v1/auth/authorize enum at apirefs.aurinko.io). UNKNOWN means "let
+    # Aurinko render its provider picker" (all four supported values).
+    _PROVIDER_TO_SERVICE_TYPE = {
+        "google": "Google",
+        "office365": "Office365",
+        "icloud": "iCloud",
+        "ews": "EWS",
+    }
+    _DEFAULT_PICKER_SERVICE_TYPES = "Google,Office365,iCloud,EWS"
+
+    @classmethod
+    def resolve_service_type(cls, provider: Optional[str]) -> str:
+        """Map a planner-facing provider id (or None) to Aurinko's
+        ``serviceType`` query value.
+
+        - None / "" / unknown id  → "Google,Office365,iCloud,EWS" (Aurinko
+          renders the provider picker on its hosted-auth screen).
+        - "google" / "office365" / "icloud" / "ews" (case-insensitive)
+          → the single Aurinko-spec value, so the user lands directly on
+          that provider's OAuth screen.
+        """
+        if not provider:
+            return cls._DEFAULT_PICKER_SERVICE_TYPES
+        return cls._PROVIDER_TO_SERVICE_TYPE.get(
+            provider.strip().lower(), cls._DEFAULT_PICKER_SERVICE_TYPES
+        )
+
     async def authorize_url(
         self,
         *,
         scopes: list[str],
         return_url: str,
         state: str,
+        service_type: Optional[str] = None,
     ) -> str:
         """Build a hosted-auth URL the user is redirected to.
 
@@ -183,11 +212,22 @@ class AurinkoClient:
         return URL we own. Aurinko handles the per-provider OAuth screens and
         redirects the user back to our return URL with a ``code`` query
         parameter that we exchange for an account token.
+
+        ``service_type`` (optional) is forwarded as the ``serviceType`` query
+        param. Pass a single Aurinko-spec value ("Google", "Office365",
+        "iCloud", "EWS") to pre-select a provider and skip Aurinko's picker.
+        Pass None (default) to send the full picker list so Aurinko renders
+        its own provider chooser.
         """
         client_id, _ = self._platform_basic_auth()
-        # serviceType values match Aurinko's hosted-auth provider list. On-prem
-        # Exchange uses "EWS" (Exchange Web Services) — "Exchange" is silently
-        # dropped, which is why earlier hosted-auth screens did not offer it.
+        # Default: send the comma-separated full list so Aurinko shows its
+        # picker. Per-provider entry points pass a single value so the user
+        # lands directly on that provider's OAuth screen.
+        resolved_service_type = (
+            service_type or ""
+        ).strip() or self._DEFAULT_PICKER_SERVICE_TYPES
+        # On-prem Exchange uses "EWS" (Exchange Web Services) — "Exchange" is
+        # silently dropped.
         #
         # Scopes MUST be comma-separated. Aurinko's scope parser rejects
         # space-separated lists with `Unable to parse Scopes`, even though
@@ -196,7 +236,7 @@ class AurinkoClient:
         # comma is the safe canonical form.
         params = {
             "clientId": client_id,
-            "serviceType": "Google,Office365,iCloud,EWS",
+            "serviceType": resolved_service_type,
             "scopes": ",".join(scopes),
             "responseType": "code",
             "returnUrl": return_url,
@@ -838,8 +878,16 @@ class CalendarProviderService:
         owner_id: str,
         owner_email: str,
         redirect_to: Optional[str] = None,
+        provider: Optional[str] = None,
     ) -> str:
-        """Generate the Aurinko hosted-auth URL for a planner/team member."""
+        """Generate the Aurinko hosted-auth URL for a planner/team member.
+
+        ``provider`` (optional) is a planner-facing id ("google", "office365",
+        "icloud", "ews"). When set, the corresponding Aurinko ``serviceType``
+        value is forwarded so the user lands directly on that provider's
+        OAuth screen. When omitted, the full ``Google,Office365,iCloud,EWS``
+        list is sent and Aurinko renders its own picker.
+        """
         if not settings.AURINKO_REDIRECT_URI:
             raise HTTPException(
                 status_code=503,
@@ -860,10 +908,12 @@ class CalendarProviderService:
         scope_list = [
             s for s in re.split(r"[,\s]+", settings.AURINKO_SCOPES.strip()) if s
         ]
+        service_type = AurinkoClient.resolve_service_type(provider)
         return await self.client.authorize_url(
             scopes=scope_list,
             return_url=settings.AURINKO_REDIRECT_URI,
             state=state,
+            service_type=service_type,
         )
 
     async def handle_oauth_callback(

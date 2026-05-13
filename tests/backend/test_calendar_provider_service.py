@@ -282,6 +282,61 @@ async def test_authorize_url_uses_comma_separated_scopes() -> None:
 
 
 @pytest.mark.asyncio
+async def test_authorize_url_default_serviceType_is_picker_list() -> None:
+    """Without an explicit service_type, all four supported providers go in
+    the URL so Aurinko renders its own picker. This preserves the original
+    behavior — the picker is the entry point for clients that don't expose
+    per-provider buttons."""
+    client = AurinkoClient()
+    url = await client.authorize_url(
+        scopes=["Calendar.ReadWrite"],
+        return_url="http://localhost:3000/cb",
+        state="state-token",
+    )
+    assert "serviceType=Google%2COffice365%2CiCloud%2CEWS" in url
+
+
+@pytest.mark.asyncio
+async def test_authorize_url_passes_single_serviceType_when_set() -> None:
+    """When a per-provider button calls /provider/connect?service_type=google
+    we want Aurinko to skip its picker and jump straight to Google's OAuth
+    screen. That requires sending ONLY ``Google`` in serviceType, not the
+    full list."""
+    client = AurinkoClient()
+    url = await client.authorize_url(
+        scopes=["Calendar.ReadWrite"],
+        return_url="http://localhost:3000/cb",
+        state="state-token",
+        service_type="Google",
+    )
+    assert "serviceType=Google&" in url or url.endswith("serviceType=Google")
+    # Must NOT contain the rest of the picker list (Aurinko would still show
+    # the picker if it saw multiple values).
+    assert "Office365" not in url
+    assert "iCloud" not in url
+    assert "EWS" not in url
+
+
+def test_resolve_service_type_maps_planner_provider_ids_to_aurinko_enum() -> None:
+    """Planner-facing ids ("google"/"office365"/"icloud"/"ews") map to the
+    exact Aurinko serviceType enum values (case-sensitive)."""
+    assert AurinkoClient.resolve_service_type("google") == "Google"
+    assert AurinkoClient.resolve_service_type("GOOGLE") == "Google"
+    assert AurinkoClient.resolve_service_type("office365") == "Office365"
+    assert AurinkoClient.resolve_service_type("icloud") == "iCloud"
+    assert AurinkoClient.resolve_service_type("ews") == "EWS"
+
+
+def test_resolve_service_type_falls_back_to_picker_list_for_unknown_or_none() -> None:
+    """None, empty, or an unrecognized id sends the full picker list so the
+    user gets Aurinko's chooser instead of a 400/no-op."""
+    full_list = "Google,Office365,iCloud,EWS"
+    assert AurinkoClient.resolve_service_type(None) == full_list
+    assert AurinkoClient.resolve_service_type("") == full_list
+    assert AurinkoClient.resolve_service_type("bogus") == full_list
+
+
+@pytest.mark.asyncio
 async def test_get_authorization_url_parses_env_scopes_string() -> None:
     """The production callsite passes ``settings.AURINKO_SCOPES`` (a string)
     into ``client.authorize_url`` which expects ``list[str]``. Without the

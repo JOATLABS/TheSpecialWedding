@@ -3,9 +3,9 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
-import { completeGoogleCalendarCallback } from '@/services/calendarApi';
+import { completeCalendarCallback } from '@/services/calendarApi';
 
-export default function GoogleCalendarCallbackPage() {
+export default function CalendarCallbackPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { token, isLoading } = useAdmin();
@@ -45,7 +45,7 @@ export default function GoogleCalendarCallbackPage() {
       }
 
       try {
-        const result = await completeGoogleCalendarCallback(token, code, state);
+        const result = await completeCalendarCallback(token, code, state);
 
         if (cancelled) return;
 
