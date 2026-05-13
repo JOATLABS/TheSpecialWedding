@@ -13,7 +13,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import mongomock
 import pytest
@@ -533,9 +533,7 @@ async def test_submit_with_file_id_from_other_distribution_is_rejected(
 
 
 @pytest.mark.asyncio
-async def test_get_form_strips_underscore_id_from_public_response(
-    configured_form_service,
-):
+async def test_get_form_strips_underscore_id_from_public_response(configured_form_service):
     service, database = configured_form_service
     database["forms"].insert_one(_form_doc())
 

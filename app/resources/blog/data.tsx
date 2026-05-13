@@ -139,7 +139,6 @@ export const blogPosts = {
           <strong>Enterprise ($399/month):</strong> Everything in Signature plus white-label branding, API access plus webhooks, 20 staff seats, dedicated success manager, custom integrations, and 5,000 AI credits per month. Perfect for franchises and large agencies scaling across many planners.
         </p>
 
-        {/* SYNC-WITH-SEED: trial_days — update when SEED_VERSION bumps paid trial length */}
         <p>
           Solo is free permanently. All paid plans include a 30-day free trial with no credit card required.
         </p>

@@ -60,13 +60,7 @@ async def seed_oversize_form(count: int = 10_005) -> tuple[str, list[str]]:
                 "requires_auth": False,
             },
             "fields": [
-                {
-                    "id": "company_name",
-                    "label": "Company",
-                    "type": "text",
-                    "required": True,
-                    "order": 1,
-                }
+                {"id": "company_name", "label": "Company", "type": "text", "required": True, "order": 1}
             ],
             "created_by": CSV_TRUNCATION.email,
             "is_active": True,
@@ -136,7 +130,7 @@ async def main() -> None:
             "Retry with date_from=NOT-A-DATE → expect 400 'Invalid date_from format'.",
         ],
     )
-    print("  ↳ run cleanup: python testbed/cleanup_form_csv_export_truncation_state.py")
+    print(f"  ↳ run cleanup: python testbed/cleanup_form_csv_export_truncation_state.py")
 
 
 if __name__ == "__main__":

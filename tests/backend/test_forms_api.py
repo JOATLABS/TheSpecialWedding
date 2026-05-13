@@ -211,7 +211,6 @@ def test_planner_blank_form_creation_sanitises_payload(api_client):
     assert stored["submission_count"] == 0
 
     from app.services.form_service import FormService
-
     planner_state_key = FormService._planner_state_key("planner@example.com")
     planner_state = stored["planner_state"][planner_state_key]
     assert planner_state["last_viewed_submission_count"] == 0
@@ -228,7 +227,6 @@ def test_planner_cannot_update_view_state_for_other_form(api_client):
     owner_email = "owner@example.com"
     intruder_email = "intruder@example.com"
     from app.services.form_service import FormService
-
     planner_state_key = FormService._planner_state_key(owner_email)
 
     database["forms"].insert_one(
@@ -272,7 +270,6 @@ def test_planner_updates_own_view_state(api_client):
 
     planner_email = "planner@example.com"
     from app.services.form_service import FormService
-
     planner_state_key = FormService._planner_state_key(planner_email)
 
     database["forms"].insert_one(
@@ -316,7 +313,6 @@ def test_root_admin_can_mark_form_viewed(api_client):
 
     owner_email = "owner@example.com"
     from app.services.form_service import FormService
-
     planner_state_key = FormService._planner_state_key(owner_email)
 
     database["forms"].insert_one(
@@ -355,7 +351,6 @@ def test_root_admin_can_mark_form_viewed(api_client):
         stored["planner_state"][planner_state_key]["last_viewed_submission_count"] == 0
     )
     from app.services.form_service import FormService
-
     admin_key = FormService._planner_state_key(os.environ["ROOT_ADMIN_EMAIL"])
     assert stored["planner_state"][admin_key]["last_viewed_analytics_at"] is not None
 

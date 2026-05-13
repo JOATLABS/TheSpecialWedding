@@ -281,7 +281,9 @@ def api_client(monkeypatch):
 
     reload(fsm)
     monkeypatch.setattr(fsm, "mongo", _FakeMongo(database))
-    monkeypatch.setattr(fsm.rate_limiter, "check_rate_limit", lambda *a, **kw: True)
+    monkeypatch.setattr(
+        fsm.rate_limiter, "check_rate_limit", lambda *a, **kw: True
+    )
 
     import app.api.forms as forms_module
 

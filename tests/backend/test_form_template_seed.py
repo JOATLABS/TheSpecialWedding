@@ -19,6 +19,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict
 
 import mongomock
 import pytest
@@ -128,7 +129,9 @@ async def test_seed_writes_one_form_per_catalog_template(
 ):
     service, database = configured_form_service
 
-    result = await service.seed_catalog_templates_for_planner("planner@example.com")
+    result = await service.seed_catalog_templates_for_planner(
+        "planner@example.com"
+    )
 
     assert result["seeded"] == len(FORM_TEMPLATES)
     assert result["skipped"] == 0
@@ -165,7 +168,9 @@ async def test_seed_uses_hashed_planner_state_key(configured_form_service):
     await service.seed_catalog_templates_for_planner("alice.smith@example.com")
 
     expected_key = service._planner_state_key("alice.smith@example.com")
-    forms = list(database["forms"].find({"created_by": "alice.smith@example.com"}))
+    forms = list(
+        database["forms"].find({"created_by": "alice.smith@example.com"})
+    )
     for form in forms:
         assert expected_key in form["planner_state"]
 
@@ -183,8 +188,12 @@ async def test_seed_is_idempotent_on_repeat_call(configured_form_service):
     verification link gets clicked twice."""
     service, database = configured_form_service
 
-    first = await service.seed_catalog_templates_for_planner("planner@example.com")
-    second = await service.seed_catalog_templates_for_planner("planner@example.com")
+    first = await service.seed_catalog_templates_for_planner(
+        "planner@example.com"
+    )
+    second = await service.seed_catalog_templates_for_planner(
+        "planner@example.com"
+    )
 
     assert first["seeded"] == len(FORM_TEMPLATES)
     assert second["seeded"] == 0
@@ -239,7 +248,9 @@ async def test_seed_does_not_count_planner_authored_forms_as_seeded(
         }
     )
 
-    result = await service.seed_catalog_templates_for_planner("planner@example.com")
+    result = await service.seed_catalog_templates_for_planner(
+        "planner@example.com"
+    )
     # All catalog templates seeded — the manual form was unrelated.
     assert result["seeded"] == len(FORM_TEMPLATES)
 
@@ -273,7 +284,9 @@ async def test_seed_normalizes_email_case_and_whitespace(
     assert len(forms) == len(FORM_TEMPLATES)
 
     # Re-running with the *normalized* form is still idempotent.
-    second = await service.seed_catalog_templates_for_planner("alice@example.com")
+    second = await service.seed_catalog_templates_for_planner(
+        "alice@example.com"
+    )
     assert second["seeded"] == 0
 
 
@@ -329,7 +342,9 @@ async def test_seed_skips_template_with_invalid_fields(
         raising=True,
     )
 
-    result = await service.seed_catalog_templates_for_planner("planner@example.com")
+    result = await service.seed_catalog_templates_for_planner(
+        "planner@example.com"
+    )
     assert result["seeded"] == 0
     assert result["skipped"] == 1
     assert database["forms"].count_documents({}) == 0

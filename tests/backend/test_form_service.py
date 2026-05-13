@@ -354,7 +354,9 @@ async def test_create_form_preserves_conditional_logic_through_validator(form_se
 
     rule = {
         "show_when": {
-            "all": [{"field_id": "diet", "operator": "equals", "value": "vegetarian"}]
+            "all": [
+                {"field_id": "diet", "operator": "equals", "value": "vegetarian"}
+            ]
         }
     }
 

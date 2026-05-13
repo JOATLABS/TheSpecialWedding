@@ -37,7 +37,7 @@ async def main() -> None:
         "Public PDF preview lifecycle",
         [
             "curl -i https://app.thespecialwedding.io/public/form-templates/couple_intake/preview.pdf",
-            'Expect 200, Content-Type: application/pdf, Content-Disposition: inline; filename="couple_intake.pdf".',
+            "Expect 200, Content-Type: application/pdf, Content-Disposition: inline; filename=\"couple_intake.pdf\".",
             "Confirm the body starts with %PDF (magic bytes).",
             "Check the response headers for Cache-Control: public, max-age=300, must-revalidate.",
             "Make 60 successive calls in quick succession — the 61st should return 429 (rate limit).",
@@ -46,9 +46,7 @@ async def main() -> None:
             "Open the PDF in a viewer — confirm 'The Special Wedding' appears in the @page header and 'Made with thespecialwedding.io' in the footer.",
         ],
     )
-    print(
-        "  ↳ run cleanup: python testbed/cleanup_form_public_pdf_preview_state.py (no-op)"
-    )
+    print(f"  ↳ run cleanup: python testbed/cleanup_form_public_pdf_preview_state.py (no-op)")
 
 
 if __name__ == "__main__":

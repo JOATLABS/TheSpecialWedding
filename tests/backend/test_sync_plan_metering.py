@@ -54,9 +54,7 @@ def _mk_meter_obj(formula="sum", customer_key="stripe_customer_id", value_key="v
     return m
 
 
-def _mk_price(
-    price_id, amount_cents, interval, usage_type=None, meter_id=None, active=True
-):
+def _mk_price(price_id, amount_cents, interval, usage_type=None, meter_id=None, active=True):
     p = MagicMock()
     p.id = price_id
     p.active = active

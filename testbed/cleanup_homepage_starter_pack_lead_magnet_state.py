@@ -49,14 +49,10 @@ async def main() -> None:
     payload_deleted = await delete_many(
         "marketing_leads", {"recipient_name": XSS_PAYLOAD}
     )
-    print(
-        f"  • marketing_leads (recipient_name={XSS_PAYLOAD!r}): "
-        f"{payload_deleted} deleted"
-    )
-    print(
-        f"  ↳ total marketing_leads rows reaped: "
-        f"{total_email_deleted + payload_deleted}"
-    )
+    print(f"  • marketing_leads (recipient_name={XSS_PAYLOAD!r}): "
+          f"{payload_deleted} deleted")
+    print(f"  ↳ total marketing_leads rows reaped: "
+          f"{total_email_deleted + payload_deleted}")
 
 
 if __name__ == "__main__":

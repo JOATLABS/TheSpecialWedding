@@ -43,26 +43,6 @@ from app.constants.billing import (  # noqa: E402
 # timestamps to plan["admin_overrides"][<field>] every time an admin edits.
 # Together: bump SEED_VERSION → admin edits older than the bump are
 # superseded; admin edits newer than the bump survive future deploys.
-#
-# ---- STRATEGY REFRESH RUNBOOK ---------------------------------------------
-# When bumping SEED_VERSION, also grep for these markers and update any
-# hardcoded copy that should match the new strategy:
-#
-#   - `SYNC-WITH-SEED: trial_days` — ~10 CTAs, hero badges, KB body, blog
-#     copy, and FAQ answers that hardcode the paid trial length string
-#     (e.g. "30-day", "Free 30-day trial"). Search:
-#         git grep -nE "SYNC-WITH-SEED: trial_days"
-#
-#   - If you change Mongo to a metered model or add new caps, also sweep:
-#         git grep -nE "Unlimited weddings|Unlimited guests"
-#
-#   - If pricing dollar amounts change, also sweep:
-#         git grep -nE "\\\$49|\\\$149|\\\$399"
-#
-# The pricing card itself (`PricingSignupSection.client.tsx`,
-# `PricingSection.tsx`, `SignupModal.tsx`) reads `plan.trial_days` from
-# the API and DOES NOT need updating — those auto-pick up the seed value.
-# ---------------------------------------------------------------------------
 SEED_VERSION = "2026-05-12T00:00:00+00:00"
 
 if os.getenv("SEED_SUBSCRIPTION_PLANS_IMPORT_CHECK_ONLY") == "1":

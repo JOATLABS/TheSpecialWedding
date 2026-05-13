@@ -53,13 +53,7 @@ async def seed_form_with_responses(count: int) -> str:
                 "requires_auth": False,
             },
             "fields": [
-                {
-                    "id": "name",
-                    "label": "Name",
-                    "type": "text",
-                    "required": True,
-                    "order": 1,
-                }
+                {"id": "name", "label": "Name", "type": "text", "required": True, "order": 1}
             ],
             "created_by": PAGINATION.email,
             "is_active": True,
@@ -105,7 +99,7 @@ async def main() -> None:
             "Try limit=1000 → effective limit clamped at RESPONSE_PAGE_MAX_LIMIT (500) by FormService.get_form_responses.",
         ],
     )
-    print("  ↳ run cleanup: python testbed/cleanup_form_response_pagination_state.py")
+    print(f"  ↳ run cleanup: python testbed/cleanup_form_response_pagination_state.py")
 
 
 if __name__ == "__main__":

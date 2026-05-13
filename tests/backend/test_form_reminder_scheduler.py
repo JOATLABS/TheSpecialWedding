@@ -293,7 +293,9 @@ async def test_reminder_skipped_when_send_reminder_disabled(configured_form_serv
     service, database = configured_form_service
     database["forms"].insert_one(_form_doc())
     database["form_distributions"].insert_one(
-        _distribution_doc(distribution_id="d1", sent_days_ago=10, send_reminder=False)
+        _distribution_doc(
+            distribution_id="d1", sent_days_ago=10, send_reminder=False
+        )
     )
 
     result = await service.send_form_reminders()
@@ -346,9 +348,7 @@ async def test_reminder_url_contains_dist_and_fresh_token(
     assert "?dist=d1&t=" in html
     # Token rotation invalidates prior hash; the new hash in DB should
     # match the URL's token.
-    raw_token = (
-        html.split("&t=", 1)[1].split('"', 1)[0].split("&", 1)[0].split(" ", 1)[0]
-    )
+    raw_token = html.split("&t=", 1)[1].split('"', 1)[0].split("&", 1)[0].split(" ", 1)[0]
     raw_token = raw_token.split("'", 1)[0]
     stored = database["form_distributions"].find_one({"_id": "d1"})
     assert service._verify_form_access_token(raw_token, stored["access_token_hash"])
@@ -392,7 +392,9 @@ async def test_send_form_records_reminder_snapshot_on_each_distribution(
     )
     await service.send_form("form_1", request, "planner@example.com")
 
-    distributions = list(database["form_distributions"].find({"form_id": "form_1"}))
+    distributions = list(
+        database["form_distributions"].find({"form_id": "form_1"})
+    )
     assert len(distributions) == 1
     dist = distributions[0]
     assert dist["send_reminder"] is True

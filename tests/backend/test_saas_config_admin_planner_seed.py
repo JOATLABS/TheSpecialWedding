@@ -13,6 +13,7 @@ import asyncio
 import os
 import sys
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if PROJECT_ROOT not in sys.path:
@@ -120,5 +121,6 @@ def test_admin_create_wedding_planner_does_not_seed_when_email_collides(monkeypa
         raise AssertionError("Expected 400 collision response")
 
     assert seed_calls == [], (
-        f"Collision path must not invoke the seeder (seed_calls={seed_calls!r})"
+        "Collision path must not invoke the seeder "
+        f"(seed_calls={seed_calls!r})"
     )
