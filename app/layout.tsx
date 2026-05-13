@@ -86,7 +86,11 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
-  const cloudflareToken = process.env.NEXT_PUBLIC_CLOUDFLARE_ANALYTICS_TOKEN;
+  // Umami Analytics (self-hosted via Coolify).
+  // Website UUID comes from the Umami dashboard after the site is registered.
+  // Script URL points at the self-hosted instance (e.g. https://umami.thespecialwedding.io/script.js).
+  const umamiWebsiteId = process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID;
+  const umamiSrc = process.env.NEXT_PUBLIC_UMAMI_SRC;
 
   return (
     <html lang="en" className={`${inter.variable} ${playfairDisplay.variable}`}>
@@ -180,12 +184,12 @@ export default function RootLayout({
       <body suppressHydrationWarning>
         {children}
 
-        {/* Cloudflare Web Analytics - Traffic & performance (FREE, privacy-first, no cookies!) */}
-        {cloudflareToken && (
+        {/* Umami Analytics — self-hosted on Coolify, privacy-first, no cookies. */}
+        {umamiWebsiteId && umamiSrc && (
           <Script
-            defer
-            src='https://static.cloudflareinsights.com/beacon.min.js'
-            data-cf-beacon={JSON.stringify({ token: cloudflareToken })}
+            async
+            src={umamiSrc}
+            data-website-id={umamiWebsiteId}
             strategy="afterInteractive"
           />
         )}

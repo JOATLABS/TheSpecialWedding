@@ -43,6 +43,26 @@ from app.constants.billing import (  # noqa: E402
 # timestamps to plan["admin_overrides"][<field>] every time an admin edits.
 # Together: bump SEED_VERSION → admin edits older than the bump are
 # superseded; admin edits newer than the bump survive future deploys.
+#
+# ---- STRATEGY REFRESH RUNBOOK ---------------------------------------------
+# When bumping SEED_VERSION, also grep for these markers and update any
+# hardcoded copy that should match the new strategy:
+#
+#   - `SYNC-WITH-SEED: trial_days` — ~10 CTAs, hero badges, KB body, blog
+#     copy, and FAQ answers that hardcode the paid trial length string
+#     (e.g. "30-day", "Free 30-day trial"). Search:
+#         git grep -nE "SYNC-WITH-SEED: trial_days"
+#
+#   - If you change Mongo to a metered model or add new caps, also sweep:
+#         git grep -nE "Unlimited weddings|Unlimited guests"
+#
+#   - If pricing dollar amounts change, also sweep:
+#         git grep -nE "\\\$49|\\\$149|\\\$399"
+#
+# The pricing card itself (`PricingSignupSection.client.tsx`,
+# `PricingSection.tsx`, `SignupModal.tsx`) reads `plan.trial_days` from
+# the API and DOES NOT need updating — those auto-pick up the seed value.
+# ---------------------------------------------------------------------------
 SEED_VERSION = "2026-05-12T00:00:00+00:00"
 
 if os.getenv("SEED_SUBSCRIPTION_PLANS_IMPORT_CHECK_ONLY") == "1":
@@ -557,15 +577,6 @@ def _build_effective_seed_plan(seed_plan: dict, existing_plan: dict | None) -> d
                 admin_edit_at_dt = None
         else:
             admin_edit_at_dt = admin_edit_at
-
-        # Pymongo's sync MongoClient (used by this seed script) does NOT
-        # default to tz_aware=True, so datetimes round-tripped through Mongo
-        # come back naive. seed_version_dt is timezone-aware (parsed from
-        # "+00:00"). Comparing naive to aware raises TypeError. We assume
-        # naive = UTC (which is how update_plan writes them) and re-attach
-        # the timezone to keep the comparison legal.
-        if admin_edit_at_dt is not None and admin_edit_at_dt.tzinfo is None:
-            admin_edit_at_dt = admin_edit_at_dt.replace(tzinfo=timezone.utc)
 
         if admin_edit_at_dt and admin_edit_at_dt > seed_version_dt:
             # Admin edited this field AFTER the current SEED_VERSION cutoff

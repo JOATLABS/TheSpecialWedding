@@ -1,9 +1,10 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { startTransition, useEffect, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import type { ThemeConfig } from "@/types/wedding";
 import { getApiBaseUrl } from "@/utils/env";
+import { umamiTrack } from "@/utils/umami";
 
 const SignupModal = dynamic(() => import("@/components/saas/SignupModal").then((mod) => mod.SignupModal), {
   ssr: false,
@@ -51,6 +52,32 @@ export function PricingSignupSection({ pricing, theme }: Props) {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>(undefined);
 
+  // Umami: fire `pricing_viewed` once per session when the pricing section
+  // first scrolls into view. The ref guard keeps it from re-firing on
+  // subsequent scrolls, which would inflate the funnel-top number.
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const viewedRef = useRef(false);
+  useEffect(() => {
+    const node = sectionRef.current;
+    if (!node || viewedRef.current) return;
+    if (typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && !viewedRef.current) {
+            viewedRef.current = true;
+            umamiTrack("pricing_viewed");
+            observer.disconnect();
+            break;
+          }
+        }
+      },
+      { threshold: 0.35 },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const timeout = window.setTimeout(() => {
@@ -92,12 +119,18 @@ export function PricingSignupSection({ pricing, theme }: Props) {
   }, []);
 
   const openSignup = (planId: string) => {
+    const tier = displayPricing.find((p) => p.id === planId);
+    umamiTrack("pricing_cta_clicked", {
+      plan_id: planId,
+      plan_name: tier?.name,
+      is_popular: Boolean(tier?.popular),
+    });
     setSelectedPlanId(planId);
     setModalOpen(true);
   };
 
   return (
-    <section id="pricing" className="scroll-mt-28 bg-slate-950 px-5 py-10 sm:px-8 sm:py-16 lg:px-12">
+    <section ref={sectionRef} id="pricing" className="scroll-mt-28 bg-slate-950 px-5 py-10 sm:px-8 sm:py-16 lg:px-12">
       <div className="mx-auto max-w-7xl">
         <div className="mx-auto mb-7 max-w-3xl text-center sm:mb-10">
           <p className="text-sm font-semibold uppercase tracking-[0.28em] text-rose-200">Plans</p>

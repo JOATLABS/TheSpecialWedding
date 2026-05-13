@@ -165,3 +165,63 @@ def test_extract_calendar_id_handles_url_encoded_calendar() -> None:
         _extract_calendar_id("/calendars/user%40example.com/events")
         == "user@example.com"
     )
+
+
+# ============================================================================
+# Signal-mode delivery handling (defensive branch).
+# ============================================================================
+#
+# Aurinko subscriptions support ``detailLevel=signal`` which delivers a
+# webhook without a ``payloads`` array — the envelope is just
+# ``{subscription, resource, accountId}``. We don't currently create
+# signal subscriptions, but the handler must NOT 422 on them, because
+# Aurinko's 422 contract is "unsubscribe permanently." These tests pin the
+# defensive branch.
+
+
+def _signed_post(client, body_bytes: bytes, ts: str, secret: str):
+    """Helper: POST raw bytes with a valid Aurinko v0 signature header."""
+    import hmac as _hmac
+    import hashlib as _hashlib
+
+    base = b"v0:" + ts.encode("utf-8") + b":" + body_bytes
+    sig = _hmac.new(secret.encode("utf-8"), base, _hashlib.sha256).hexdigest()
+    return client.post(
+        "/api/calendar/webhooks/aurinko",
+        content=body_bytes,
+        headers={
+            "Content-Type": "application/json",
+            "X-Aurinko-Signature": sig,
+            "X-Aurinko-Request-Timestamp": ts,
+        },
+    )
+
+
+def test_signal_mode_envelope_is_accepted_without_payloads_array() -> None:
+    """If a signal-mode delivery ever lands, the handler ack-200s instead of
+    422-unsubscribing. Hits the real FastAPI route via TestClient with a
+    properly-signed body so the full handler runs. Requires a reachable
+    Mongo for the idempotency store; skip if not available rather than
+    fail (so unit-test runs without infra still pass the rest of this file)."""
+    import time as _time
+    import pytest as _pytest
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    secret = os.environ["AURINKO_WEBHOOK_SECRET"]
+    ts = str(int(_time.time()))
+    # Signal-mode envelope: no `payloads`, no `lifecycleEvent`.
+    body = (
+        b'{"subscription":1217,"resource":"/calendars/cal-abc/events","accountId":1532}'
+    )
+    try:
+        with TestClient(app) as client:
+            r = _signed_post(client, body, ts, secret)
+    except RuntimeError as exc:
+        if "MongoDB" in str(exc) or "Mongo" in str(exc):
+            _pytest.skip(f"Mongo not reachable in this env: {exc}")
+        raise
+    assert r.status_code == 200, (
+        f"signal-mode delivery must ack 200 to avoid the Aurinko 422-unsubscribe "
+        f"footgun. Got {r.status_code}: {r.text[:200]}"
+    )

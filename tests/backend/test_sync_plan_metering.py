@@ -54,9 +54,12 @@ def _mk_meter_obj(formula="sum", customer_key="stripe_customer_id", value_key="v
     return m
 
 
-def _mk_price(price_id, amount_cents, interval, usage_type=None, meter_id=None):
+def _mk_price(
+    price_id, amount_cents, interval, usage_type=None, meter_id=None, active=True
+):
     p = MagicMock()
     p.id = price_id
+    p.active = active
     p.unit_amount = amount_cents
     p.currency = "usd"
     p.recurring = MagicMock()
@@ -64,6 +67,64 @@ def _mk_price(price_id, amount_cents, interval, usage_type=None, meter_id=None):
     p.recurring.usage_type = usage_type or "licensed"
     p.recurring.meter = meter_id if meter_id else None
     return p
+
+
+def test_sync_recreates_price_when_existing_one_is_archived():
+    """An archived Stripe price (active=False) must NOT be reused even if all
+    other fields match. Stripe rejects Subscription.create with an inactive
+    price (400 'The price specified is inactive'), so reusing an archived id
+    here produces a stale-Mongo state that breaks every new subscription.
+    Regression caught 2026-05-12 via testbed/verify_aurinko_*.py."""
+    from unittest.mock import MagicMock as _MM, patch as _patch
+
+    service = _build_service()
+    plan = {
+        "_id": "plan_signature",
+        "name": "Signature",
+        "description": "Most popular",
+        "price_monthly": 59,
+        "price_yearly": 590,
+        "stripe_product_id": "prod_existing",
+        "stripe_price_id_monthly": "price_ARCHIVED_MO",
+        "stripe_price_id_yearly": "price_ARCHIVED_YR",
+        "is_metered": False,
+    }
+
+    # All fields match the desired config except ``active=False``. Pre-fix
+    # this would return the archived id; post-fix it must create a new price.
+    archived_monthly = _mk_price("price_ARCHIVED_MO", 5900, "month", active=False)
+    archived_yearly = _mk_price("price_ARCHIVED_YR", 59000, "year", active=False)
+    new_monthly = _mk_price("price_FRESH_MO", 5900, "month")
+    new_yearly = _mk_price("price_FRESH_YR", 59000, "year")
+
+    with (
+        _patch(
+            "app.services.stripe_service.stripe.Product.retrieve",
+            return_value=_MM(id="prod_existing"),
+        ),
+        _patch("app.services.stripe_service.stripe.Product.modify"),
+        _patch(
+            "app.services.stripe_service.stripe.Price.retrieve",
+            side_effect=[archived_monthly, archived_yearly],
+        ),
+        _patch(
+            "app.services.stripe_service.stripe.Price.create",
+            side_effect=[new_monthly, new_yearly],
+        ) as mock_price_create,
+        _patch("app.services.stripe_service.stripe.Price.modify") as mock_price_modify,
+    ):
+        result = service.sync_plan_to_stripe(plan)
+
+    # New prices were created (one for monthly, one for yearly)
+    assert mock_price_create.call_count == 2
+    # And the stale Mongo price ids were rotated to the new active ones
+    assert result["stripe_price_id_monthly"] == "price_FRESH_MO"
+    assert result["stripe_price_id_yearly"] == "price_FRESH_YR"
+    # The archived prices got Price.modify(active=False) called against them
+    # (a no-op on an already-archived price, but the code path still runs).
+    deactivated = {call.args[0] for call in mock_price_modify.call_args_list}
+    assert "price_ARCHIVED_MO" in deactivated
+    assert "price_ARCHIVED_YR" in deactivated
 
 
 def test_sync_flat_to_metered_deactivates_old_price_and_creates_new_metered():

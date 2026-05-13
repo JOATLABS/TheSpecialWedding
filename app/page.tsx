@@ -195,6 +195,7 @@ export default function HomePage() {
                 href="#pricing"
                 className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-950 shadow-xl shadow-rose-950/20 transition hover:-translate-y-0.5 hover:bg-rose-50"
               >
+                {/* SYNC-WITH-SEED: trial_days — update when SEED_VERSION bumps paid trial length */}
                 Start 30-day trial
               </Link>
               <Link

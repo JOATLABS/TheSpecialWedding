@@ -47,6 +47,7 @@ from app.api.couple_notification_stream import (
 )
 from app.api.couple_portal import router as couple_portal_router
 from app.api.email_reminders import router as email_reminder_router
+from app.api.calendar_webhooks import router as calendar_webhooks_router
 from app.api.email_webhooks import router as email_webhooks_router
 from app.api.forms import router as forms_router
 from app.api.gallery_admin import router as gallery_admin_router
@@ -866,6 +867,9 @@ app.include_router(email_webhooks_router, tags=["Webhooks"])  # Resend email web
 app.include_router(
     twilio_webhooks_router, tags=["Webhooks"]
 )  # Twilio SMS delivery webhooks
+app.include_router(
+    calendar_webhooks_router, tags=["Webhooks"]
+)  # Aurinko calendar-change webhooks at POST /api/calendar/webhooks/aurinko
 app.include_router(stripe_router, prefix="/stripe", tags=["Payments"])
 app.include_router(
     stripe_router, prefix="/api/stripe", tags=["Payments"]

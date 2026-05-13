@@ -223,10 +223,13 @@ class AurinkoClient:
         return response.json()
 
     async def get_account(self, account_token: str) -> dict[str, Any]:
-        """Fetch the connected account's identity info from Aurinko."""
-        response = await self._request(
-            "GET", "/am/accounts/me", account_token=account_token
-        )
+        """Fetch the connected account's identity info from Aurinko.
+
+        Endpoint: ``GET /v1/account`` (NOT /am/accounts/me — that path
+        resolves to /am/accounts/{id} with id="me" and 400s on the integer
+        parse). Verified live 2026-05-12 against api.aurinko.io.
+        """
+        response = await self._request("GET", "/account", account_token=account_token)
         response.raise_for_status()
         return response.json()
 
@@ -401,10 +404,21 @@ class AurinkoClient:
         response.raise_for_status()
 
     async def revoke_account(self, account_token: str) -> None:
-        """Disconnect the Aurinko account; idempotent."""
+        """Disconnect the Aurinko account; idempotent.
+
+        Endpoint: ``DELETE /v1/account`` (NOT /am/accounts/me — that path
+        is interpreted as /am/accounts/{id} where id="me" and 400s on the
+        integer parse). Verified live 2026-05-12 against api.aurinko.io.
+
+        Per docs (apirefs.aurinko.io/#tag/Account/operation/deleteAccount)
+        this deletes the Aurinko account record entirely. The lighter-touch
+        alternative ``DELETE /account/token`` revokes only the token +
+        provider auth, keeping the Aurinko account row — switch to that if
+        we ever want to preserve Aurinko-side history across reconnects.
+        """
         response = await self._request(
             "DELETE",
-            "/am/accounts/me",
+            "/account",
             account_token=account_token,
         )
         if response.status_code in (200, 204, 404):
@@ -838,8 +852,16 @@ class CalendarProviderService:
             owner_email=owner_email,
             redirect_to=redirect_to,
         )
+        # settings.AURINKO_SCOPES is a string (env values are strings). The
+        # client's authorize_url expects list[str] and does ','.join(scopes)
+        # — if we pass the raw string, ','.join iterates characters and
+        # produces 'C,a,l,e,n,d,a,r,...'. Split on whitespace OR comma so
+        # whatever form the env uses ("a b" or "a,b") parses correctly.
+        scope_list = [
+            s for s in re.split(r"[,\s]+", settings.AURINKO_SCOPES.strip()) if s
+        ]
         return await self.client.authorize_url(
-            scopes=settings.AURINKO_SCOPES,
+            scopes=scope_list,
             return_url=settings.AURINKO_REDIRECT_URI,
             state=state,
         )
@@ -888,7 +910,7 @@ class CalendarProviderService:
                 detail="Calendar aggregator did not return a usable account token",
             )
 
-        # Identity probe is best-effort. /am/accounts/me may require a scope
+        # Identity probe is best-effort. /v1/account may require a scope
         # we no longer request (Aurinko's catalog has no AccountInfo.Read
         # equivalent), in which case it 401s. We can still serve the connect
         # flow by falling back to the email returned at token-exchange time
@@ -899,7 +921,7 @@ class CalendarProviderService:
             account_info = await self.client.get_account(account_token)
         except Exception as exc:
             logger.warning(
-                "Aurinko /am/accounts/me probe failed; continuing with token-response "
+                "Aurinko /v1/account probe failed; continuing with token-response "
                 "+ state-JWT identity fallback: %s",
                 _redact_sensitive(exc),
             )

@@ -282,6 +282,65 @@ async def test_authorize_url_uses_comma_separated_scopes() -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_authorization_url_parses_env_scopes_string() -> None:
+    """The production callsite passes ``settings.AURINKO_SCOPES`` (a string)
+    into ``client.authorize_url`` which expects ``list[str]``. Without the
+    string→list parse the URL ends up with comma-joined CHARACTERS:
+    ``scopes=C,a,l,e,n,d,a,r,...``. Pin the production path so this can't
+    regress. .env may use either space or comma as separator."""
+    import os
+
+    # Patch the env var with a space-separated string (matches the repo's
+    # .env shape today). Then call get_authorization_url which reads it.
+    saved = os.environ.get("AURINKO_SCOPES")
+    saved_redirect = os.environ.get("AURINKO_REDIRECT_URI")
+    saved_signing = os.environ.get("AURINKO_OAUTH_STATE_SIGNING_KEY")
+    try:
+        os.environ["AURINKO_SCOPES"] = (
+            "Calendar.ReadWrite Mail.Read Mail.Send Contacts.ReadWrite"
+        )
+        os.environ["AURINKO_REDIRECT_URI"] = "http://localhost:3000/cb"
+        os.environ.setdefault("AURINKO_OAUTH_STATE_SIGNING_KEY", "sk")
+        # Reload settings so the patched env is picked up.
+        import importlib
+        from app.core import config as _config_mod
+
+        importlib.reload(_config_mod)
+        # Also reload the provider module so its module-level singleton
+        # reads the refreshed settings.
+        from app.services import calendar_provider_service as _cps_mod
+
+        importlib.reload(_cps_mod)
+        svc = _cps_mod.CalendarProviderService()
+        url = await svc.get_authorization_url(
+            user_id="u1",
+            user_email="u@example.com",
+            owner_id="o1",
+            owner_email="o@example.com",
+        )
+        # The scopes parameter should contain comma-joined scope NAMES, not
+        # comma-joined CHARACTERS. Look for at least one full scope name.
+        assert "Calendar.ReadWrite" in url, f"scope name not preserved: {url[:200]}"
+        # The bug signature: comma between every character.
+        assert "C,a,l,e,n,d,a,r" not in url, (
+            "regression: scopes string joined character-by-character"
+        )
+    finally:
+        if saved is None:
+            os.environ.pop("AURINKO_SCOPES", None)
+        else:
+            os.environ["AURINKO_SCOPES"] = saved
+        if saved_redirect is None:
+            os.environ.pop("AURINKO_REDIRECT_URI", None)
+        else:
+            os.environ["AURINKO_REDIRECT_URI"] = saved_redirect
+        if saved_signing is None:
+            os.environ.pop("AURINKO_OAUTH_STATE_SIGNING_KEY", None)
+        else:
+            os.environ["AURINKO_OAUTH_STATE_SIGNING_KEY"] = saved_signing
+
+
+@pytest.mark.asyncio
 async def test_create_event_uses_path_calendar_id() -> None:
     """Aurinko paths put calendarId in the URL, not as a query param."""
     recorder = _RecordingClient(_make_response(200, {"id": "evt-1"}))
