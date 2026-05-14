@@ -17,7 +17,7 @@ test.describe('Templates discovery surfaces', () => {
 
   test('mobile menu also omits a separate Free templates item', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/resources?tab=templates');
+    await page.goto('/resources/templates');
 
     const header = page.locator('header');
     await expect(header.getByRole('link', { name: 'Free templates' })).toHaveCount(0);
@@ -46,10 +46,28 @@ test.describe('Templates discovery surfaces', () => {
     await expect(page.getByRole('heading', { name: /Templates wedding planners can use today/i })).toBeVisible();
   });
 
-  test('legacy templates URL redirects into the Resources templates tab', async ({ page }) => {
+  test('templates URL is the stable indexable catalog page', async ({ page }) => {
     await page.goto('/resources/templates#order_of_events');
 
-    await expect(page).toHaveURL(/\/resources\?tab=templates#order_of_events$/);
-    await expect(page.getByRole('heading', { name: /Templates wedding planners can use today/i })).toBeVisible();
+    await expect(page).toHaveURL(/\/resources\/templates#order_of_events$/);
+    await expect(page.getByRole('heading', { name: /Free wedding planner templates/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Download as PDF' }).first()).toBeVisible();
+
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+      'href',
+      'https://thespecialwedding.io/resources/templates',
+    );
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute(
+      'content',
+      /index, follow/i,
+    );
+
+    const schemaText = await page.locator('script[type="application/ld+json"]').allTextContents();
+    expect(schemaText.join('\n')).toContain(
+      'https://thespecialwedding.io/resources/templates#template-list',
+    );
+    expect(schemaText.join('\n')).toContain(
+      'https://thespecialwedding.io/resources/templates#order_of_events',
+    );
   });
 });

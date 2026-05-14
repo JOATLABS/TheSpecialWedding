@@ -128,6 +128,8 @@ export interface CalendarConnection {
   is_shared_in_team_view: boolean;
   details_visibility: VisibilityMode;
   sync_enabled: boolean;
+  couple_booking_auto_confirm?: boolean;
+  conference_provider_default?: 'zoom' | 'teams' | 'webex' | null;
   connection_status: ConnectionStatus | string;
   token_expiry?: string | null;
   last_sync_at?: string | null;
@@ -482,6 +484,71 @@ export async function completeGoogleCalendarCallback(
   return authFetch<Record<string, unknown>>(
     token,
     `/admin/planner/calendar/connections/google/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
+  );
+}
+
+// ============================================================================
+// Aurinko (multi-provider) calendar connect/callback/disconnect.
+//
+// These hit /admin/planner/calendar/provider/* and replace the Google-only
+// pair above for the planner UI's new per-provider buttons. The legacy
+// /google/* functions remain so any other caller doesn't break mid-migration.
+// ============================================================================
+
+/** Planner-facing provider id pre-selected from a per-provider button. */
+export type CalendarProviderId = 'google' | 'office365' | 'icloud' | 'ews';
+
+export interface ProviderAuthUrlResponse {
+  auth_url: string;
+  message: string;
+}
+
+export interface ProviderCallbackResponse {
+  connected: boolean;
+  calendar_id?: string | null;
+  connections_created?: number;
+  redirect_to?: string | null;
+  message: string;
+  warning?: string | null;
+}
+
+/** Build an Aurinko hosted-auth URL. When ``serviceType`` is set, Aurinko
+ *  skips its picker and jumps to that provider's OAuth screen. When omitted
+ *  (or null), the user gets Aurinko's provider chooser. */
+export async function beginCalendarConnect(
+  token: string,
+  serviceType?: CalendarProviderId | null
+): Promise<ProviderAuthUrlResponse> {
+  const qs = serviceType ? `?service_type=${encodeURIComponent(serviceType)}` : '';
+  return authFetch<ProviderAuthUrlResponse>(
+    token,
+    `/admin/planner/calendar/provider/connect${qs}`
+  );
+}
+
+/** Exchange the ``code`` + ``state`` returned by Aurinko's callback for an
+ *  account token. Persists per-calendar connection rows server-side. */
+export async function completeCalendarCallback(
+  token: string,
+  code: string,
+  state: string
+): Promise<ProviderCallbackResponse> {
+  return authFetch<ProviderCallbackResponse>(
+    token,
+    `/admin/planner/calendar/connections/provider/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
+  );
+}
+
+/** Tear down every connected calendar for the current user (unsubscribes
+ *  per-calendar Aurinko subscriptions, revokes the account token, marks
+ *  dependent sync rows ORPHANED, deletes local connection rows). */
+export async function disconnectCalendar(
+  token: string
+): Promise<{ disconnected: boolean; message?: string }> {
+  return authFetch<{ disconnected: boolean; message?: string }>(
+    token,
+    '/admin/planner/calendar/provider/disconnect',
+    { method: 'DELETE' }
   );
 }
 

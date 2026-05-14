@@ -626,18 +626,34 @@ class Harness:
         """Resolve the monthly Stripe price_id for a plan.
 
         Reads from the ROOT_ADMIN endpoint (NOT /public/subscription-plans,
-        which deliberately sanitizes stripe_*_id fields). If the plan exists
-        in Mongo but has no stripe_price_id_monthly yet, calls the admin
-        sync endpoint once — it's idempotent — and retries.
+        which deliberately sanitizes stripe_*_id fields). Two failure modes
+        are handled by calling the admin sync endpoint and retrying:
+
+        1. Plan exists in Mongo but has no ``stripe_price_id_monthly`` yet.
+        2. Plan has a ``stripe_price_id_monthly`` but the referenced price
+           is INACTIVE on Stripe (Stripe prices are immutable — when the
+           pricing strategy changes, a new price is created and the old
+           one archived; the Mongo field can lag the archive).
+
+        ``/system/sync-plans-to-stripe`` is idempotent and refreshes
+        ``stripe_price_id_monthly`` to the currently-active price.
         """
         price = self._read_plan_price_monthly(admin_token, plan_id)
-        if price:
+
+        if price and self._is_stripe_price_active(price):
             return price
 
-        self.log.info(
-            f"  ⚠️ plan {plan_id} has no stripe_price_id_monthly — "
-            f"syncing all plans to Stripe and retrying…"
-        )
+        if price and not self._is_stripe_price_active(price):
+            self.log.info(
+                f"  ⚠️ plan {plan_id} stripe_price_id_monthly={price} is "
+                f"INACTIVE on Stripe — re-syncing plans to refresh the id…"
+            )
+        else:
+            self.log.info(
+                f"  ⚠️ plan {plan_id} has no stripe_price_id_monthly — "
+                f"syncing all plans to Stripe and retrying…"
+            )
+
         sync_resp = self.api_post("/system/sync-plans-to-stripe", token=admin_token)
         if sync_resp.status_code not in (200, 201):
             raise RuntimeError(
@@ -650,13 +666,36 @@ class Harness:
             self.log.warning(f"  ⚠️ sync reported errors: {sync_payload['errors']}")
 
         price = self._read_plan_price_monthly(admin_token, plan_id)
-        if price:
+        if price and self._is_stripe_price_active(price):
             return price
 
+        if price:
+            raise RuntimeError(
+                f"plan {plan_id} stripe_price_id_monthly={price} is still "
+                f"inactive after sync. The sync endpoint did not refresh the "
+                f"price id. Inspect /system/sync-plans-to-stripe handler and "
+                f"the plan's pricing-strategy snapshot."
+            )
         raise RuntimeError(
             f"No Stripe monthly price_id for plan {plan_id} even after sync — "
             f"check that the plan exists in Mongo and STRIPE_SECRET_KEY is correct."
         )
+
+    def _is_stripe_price_active(self, price_id: str) -> bool:
+        """Return True only if Stripe reports ``price.active == True``.
+
+        Stripe prices are immutable — once a price is archived, subscription
+        create/update with it returns 400 ``The price specified is
+        inactive.`` Pre-flighting with a lightweight Price.retrieve catches
+        the stale-Mongo case before we waste a Subscription.create round
+        trip.
+        """
+        try:
+            price = stripe.Price.retrieve(price_id)
+        except stripe.error.InvalidRequestError as exc:
+            self.log.warning(f"  ⚠️ Stripe Price.retrieve({price_id}) failed: {exc}")
+            return False
+        return bool(getattr(price, "active", False))
 
     def _read_plan_price_monthly(self, admin_token: str, plan_id: str) -> Optional[str]:
         resp = self.api_get(

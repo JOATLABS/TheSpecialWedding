@@ -22,6 +22,7 @@ from app.api.admin_auth import router as auth_router
 from app.api.admin_backup import router as backup_router
 from app.api.admin_campaigns import router as admin_campaigns_router
 from app.api.admin_import import router as import_router
+from app.api.admin_analytics import router as admin_analytics_router
 from app.api.admin_platform_config import router as admin_platform_config_router
 from app.api.admin_platform_metrics import router as admin_platform_metrics_router
 from app.api.admin_rsvp import router as admin_rsvp_router
@@ -47,6 +48,8 @@ from app.api.couple_notification_stream import (
 )
 from app.api.couple_portal import router as couple_portal_router
 from app.api.email_reminders import router as email_reminder_router
+from app.api.aurinko_redirector import router as aurinko_redirector_router
+from app.api.calendar_webhooks import router as calendar_webhooks_router
 from app.api.email_webhooks import router as email_webhooks_router
 from app.api.forms import router as forms_router
 from app.api.gallery_admin import router as gallery_admin_router
@@ -866,6 +869,14 @@ app.include_router(email_webhooks_router, tags=["Webhooks"])  # Resend email web
 app.include_router(
     twilio_webhooks_router, tags=["Webhooks"]
 )  # Twilio SMS delivery webhooks
+app.include_router(
+    calendar_webhooks_router, tags=["Webhooks"]
+)  # Aurinko calendar-change webhooks at POST /api/calendar/webhooks/aurinko
+app.include_router(
+    aurinko_redirector_router, tags=["Aurinko OAuth"]
+)  # Intermediate redirect for Aurinko's Google OAuth flow at
+#   GET /v1/auth/callback — DNS aurinko.thespecialwedding.io should
+#   CNAME to this host for prod (see docs.aurinko.io OAuth flow page).
 app.include_router(stripe_router, prefix="/stripe", tags=["Payments"])
 app.include_router(
     stripe_router, prefix="/api/stripe", tags=["Payments"]
@@ -957,6 +968,7 @@ admin_routers = [
     (notification_router, "Notifications"),
     (support_router, "Support"),
     (admin_platform_metrics_router, "ROOT_ADMIN"),
+    (admin_analytics_router, "ROOT_ADMIN"),
     (backup_router, "ROOT_ADMIN"),
     (admin_activity_router, "ROOT_ADMIN"),
     (billing_jobs_router, "Admin"),
@@ -1085,6 +1097,16 @@ async def add_cache_headers(request: Request, call_next):
             or path.startswith("/couple/")
             or path.startswith("/admin/")
             or path.startswith("/vendor-contract/")
+            # 2026-05-13: /subscription-plans is the ROOT_ADMIN-only admin
+            # CRUD surface for the plan catalog. The router lives at the
+            # root path (not /admin/) because the same module also exposes
+            # /public/subscription-plans; auth is gated per-route via
+            # require_root_admin. Without this branch the fall-through
+            # below assigned ``public, max-age=300``, letting the browser's
+            # HTTP cache serve a 5-minute-stale plan list right after an
+            # admin save — see app/admin/saas/page.tsx handleSavePlan
+            # post-save refetch which uses default fetch cache mode.
+            or path.startswith("/subscription-plans")
         ):
             # Dynamic API/portal endpoints.  When SAFE_GET_CACHE_ENABLED
             # is set, idempotent GET/HEAD responses get a short private

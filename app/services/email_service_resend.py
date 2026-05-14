@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, cast
 import resend
 
 from app.core.database import mongo
+from app.utils.rsvp_links import build_guest_otp_url
 from app.utils.contact_sanitizer import sanitize_email, validate_email_format
 
 logger = logging.getLogger(__name__)
@@ -182,11 +183,12 @@ class ResendEmailService:
         if not custom_subject:
             custom_subject = f"You're Invited - {from_name}"
 
-        base_url = os.getenv("FRONTEND_URL") or ""
+        base_url = os.getenv("FRONTEND_URL")
         if not base_url:
             logger.warning(
-                "FRONTEND_URL environment variable is not set - email links may not work"
+                "FRONTEND_URL environment variable is not set - falling back to production RSVP links"
             )
+            base_url = "https://thespecialwedding.io"
         sent = 0
         failed = 0
         skipped_no_email = 0
@@ -223,7 +225,7 @@ class ResendEmailService:
                 continue
 
             # Generate RSVP URL
-            rsvp_url = f"{base_url}/{wedding_slug}/invite/{token}"
+            rsvp_url = build_guest_otp_url(base_url, wedding_slug, token)
 
             # Use custom HTML or generate default
             if custom_html:

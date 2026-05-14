@@ -1385,10 +1385,18 @@ async def create_contract_setup_intent(token: str):
                 {"token": token}, {"$set": {"stripe_customer_id": customer_id}}
             )
 
-        # Create SetupIntent
+        # Create SetupIntent. We let Stripe pick payment methods dynamically
+        # from the Dashboard "Payment methods" settings rather than hardcoding
+        # ``payment_method_types=["card"]``. This matches Stripe's current
+        # integration guidelines (Payment Element + automatic_payment_methods)
+        # and surfaces wallets, BNPL, ACH, etc. when the merchant has enabled
+        # them. See: https://docs.stripe.com/payments/payment-methods/integration-options.md
+        # Mirror of the pattern at app/api/contracts.py update_payment_method
+        # SetupIntent below and at app/services/stripe_service.py:600
+        # (subscription Checkout Session creation).
         setup_intent = stripe.SetupIntent.create(
             customer=customer_id,
-            payment_method_types=["card"],
+            automatic_payment_methods={"enabled": True},
             metadata={
                 "contract_id": contract_id_str,
                 "contract_token": token,

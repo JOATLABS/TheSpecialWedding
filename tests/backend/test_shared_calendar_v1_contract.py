@@ -25,6 +25,7 @@ from app.models.calendar import CalendarEventCreate, CalendarEventUpdate
 from app.models.team_member import ROLE_PRESETS, resolve_team_permissions
 from app.services.calendar_aggregation_service import CalendarAggregationService
 from app.services.calendar_sync_service import CalendarSyncService
+from app.services.calendar_provider_service import calendar_provider_service
 from app.services.google_calendar_service import (
     GoogleCalendarService,
     google_calendar_service,
@@ -1521,15 +1522,20 @@ async def test_delete_schedule_item_syncs_preserves_rows_when_provider_delete_fa
     fake_syncs = FakeSyncCollection()
     cast(Any, service).syncs_collection = fake_syncs
 
-    async def fake_delete_google_event_for_connection(
+    async def fake_delete_event_for_connection(
         _connection_id: str, _external_event_id: str
     ) -> bool:
         return False
 
+    # Post-migration: calendar_sync_service now routes provider-event CRUD
+    # through ``calendar_provider_service`` (Aurinko). The pre-migration
+    # test patched the legacy ``google_calendar_service`` method — repoint
+    # to the active path so the failure-injection actually reaches the
+    # production call site.
     monkeypatch.setattr(
-        google_calendar_service,
-        "delete_google_event_for_connection",
-        fake_delete_google_event_for_connection,
+        calendar_provider_service,
+        "delete_event_for_connection",
+        fake_delete_event_for_connection,
     )
     with pytest.raises(HTTPException) as exc_info:
         await service.delete_schedule_item_syncs("task-1")
@@ -1579,9 +1585,12 @@ async def test_removed_target_cleanup_does_not_orphan_when_provider_delete_fails
         "get_sync_status",
         AsyncMock(return_value=[]),
     )
+    # See sibling test above — calendar_sync_service now routes through
+    # calendar_provider_service.delete_event_for_connection (post-Aurinko
+    # migration). Patch the active path so the failure-injection takes.
     monkeypatch.setattr(
-        google_calendar_service,
-        "delete_google_event_for_connection",
+        calendar_provider_service,
+        "delete_event_for_connection",
         AsyncMock(return_value=False),
     )
 
@@ -1641,7 +1650,7 @@ async def test_shared_calendar_view_filters_external_connections_by_staff(
             },
         ]
 
-    async def fake_fetch_google_events_for_connection(
+    async def fake_fetch_external_events_for_connection(
         connection_id: str, **_kwargs
     ) -> list[dict]:
         return [
@@ -1653,15 +1662,18 @@ async def test_shared_calendar_view_filters_external_connections_by_staff(
             }
         ]
 
+    # Post-migration: calendar_aggregation_service reads connections and
+    # external events via the Aurinko provider service. The legacy
+    # google_calendar_service is no longer called from build_shared_view.
     monkeypatch.setattr(
-        google_calendar_service,
+        calendar_provider_service,
         "list_connections",
         fake_list_connections,
     )
     monkeypatch.setattr(
-        google_calendar_service,
-        "fetch_google_events_for_connection",
-        fake_fetch_google_events_for_connection,
+        calendar_provider_service,
+        "fetch_external_events_for_connection",
+        fake_fetch_external_events_for_connection,
     )
 
     events = await service.build_shared_view(
@@ -1676,7 +1688,7 @@ async def test_shared_calendar_view_filters_external_connections_by_staff(
         staff_ids=["staff-1"],
     )
 
-    external_events = [
-        event for event in events if event["source_type"] == "external_google"
-    ]
+    # ``source_type`` is provider-neutral after the Aurinko multi-provider
+    # migration; the specific provider id moves to ``external_provider``.
+    external_events = [event for event in events if event["source_type"] == "external"]
     assert [event["id"] for event in external_events] == ["conn-staff-1"]

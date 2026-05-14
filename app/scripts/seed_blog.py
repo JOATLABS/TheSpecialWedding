@@ -99,6 +99,7 @@ Your couples' information and wedding details are some of the most sensitive dat
 
 ### Get Started Today
 
+<!-- SYNC-WITH-SEED: trial_days — update when SEED_VERSION bumps paid trial length -->
 Sign up for a free 30-day trial. No credit card required until the trial ends. You get full access to all features, unlimited weddings during the trial, and dedicated onboarding support to make sure you're set up for success.
 
 Stop managing your tools. Start managing your weddings.""",

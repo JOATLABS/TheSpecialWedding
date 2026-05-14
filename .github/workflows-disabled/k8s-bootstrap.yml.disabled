@@ -179,7 +179,6 @@ jobs:
             --from-literal=BACKUP_SECRET='${{ secrets.BACKUP_SECRET }}' \
             --from-literal=CRON_SECRET='${{ secrets.CRON_SECRET }}' \
             --from-literal=SENTRY_DSN='${{ secrets.SENTRY_DSN }}' \
-            --from-literal=GOOGLE_ANALYTICS_ID='${{ secrets.GOOGLE_ANALYTICS_ID }}' \
             --dry-run=client -o yaml | kubectl apply -f -
 
           echo "Backend secrets created/updated"

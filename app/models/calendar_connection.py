@@ -12,9 +12,20 @@ from app.models.calendar import VisibilityMode
 
 
 class CalendarProvider(str, Enum):
-    """Supported external calendar providers."""
+    """Supported external calendar providers.
 
+    Aurinko brokers four+ providers under a single OAuth/token surface, so the
+    column stores the resolved provider id. ``UNKNOWN`` is the default for new
+    rows that haven't yet been resolved (e.g. a sync row written before the
+    OAuth callback completes); the runtime backfills the real id from the
+    Aurinko ``serviceType`` once the calendar is known.
+    """
+
+    UNKNOWN = "unknown"
     GOOGLE = "google"
+    OFFICE365 = "office365"
+    ICLOUD = "icloud"
+    EWS = "ews"
 
 
 class CalendarConnectionStatus(str, Enum):
@@ -59,7 +70,11 @@ class CalendarConnectionModel(BaseModel):
     owner_planner_email: str
     user_id: str
     user_email: str
-    provider: str = Field(default=CalendarProvider.GOOGLE.value)
+    # Provider id (google/office365/icloud/ews) is resolved from the Aurinko
+    # ``serviceType`` returned with the account token. New rows are written
+    # with the resolved id; UNKNOWN is the default only for synthesized
+    # placeholder rows.
+    provider: str = Field(default=CalendarProvider.UNKNOWN.value)
     provider_account_email: str
     provider_account_name: Optional[str] = None
     calendar_id: str
@@ -81,8 +96,19 @@ class CalendarConnectionModel(BaseModel):
     is_shared_in_team_view: bool = False
     details_visibility: str = Field(default=VisibilityMode.BUSY_ONLY.value)
     sync_enabled: bool = True
+    couple_booking_auto_confirm: bool = True
+    # Per-calendar default conferencing provider for couple bookings.
+    # Valid values: "zoom" | "teams" | "webex" | None. The planner UI restricts
+    # the input; the model does not enum-enforce it. None means calendar-only;
+    # planner explicitly opts in to per-meeting conference auto-create via
+    # Aurinko ``startConference=true`` at booking time.
+    conference_provider_default: Optional[str] = None
     connection_status: str = Field(default=CalendarConnectionStatus.ACTIVE.value)
-    access_token_encrypted: str
+    # Legacy Google-only field. Aurinko-shape rows carry the equivalent on
+    # ``aurinko_access_token_encrypted`` instead; Google rows continue to
+    # populate this one. Optional so multi-provider rows validate cleanly
+    # without supplying a legacy field that's no longer their token home.
+    access_token_encrypted: Optional[str] = None
     refresh_token_encrypted: Optional[str] = None
     token_expiry: Optional[datetime] = None
     scope_version: Optional[str] = None
@@ -109,3 +135,8 @@ class CalendarConnectionUpdateRequest(BaseModel):
     is_shared_in_team_view: Optional[bool] = None
     details_visibility: Optional[str] = None
     sync_enabled: Optional[bool] = None
+    couple_booking_auto_confirm: Optional[bool] = None
+    # None means calendar-only; planner explicitly opts in to per-meeting
+    # conference auto-create via Aurinko ``startConference=true`` at booking
+    # time. Valid values: "zoom" | "teams" | "webex" | None (UI-restricted).
+    conference_provider_default: Optional[str] = None

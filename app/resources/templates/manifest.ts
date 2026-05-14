@@ -12,7 +12,8 @@
  *
  * Adding a template: add its row here AND in the Python catalog. The
  * `id` must match the Python catalog `id` so deep links to
- * `/resources?tab=templates#<id>` work.
+ * `/resources/templates#<id>` work. The Resources hub keeps a templates
+ * tab, but this stable path is the indexable public collection URL.
  */
 export interface MarketingTemplate {
   id: string;
