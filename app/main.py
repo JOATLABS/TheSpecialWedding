@@ -1190,7 +1190,10 @@ async def add_robots_headers(request: Request, call_next):
     if path in _NOINDEX_PATH_EXEMPT_EXACT:
         return response
 
-    if any(path == prefix or path.startswith(prefix + "/") for prefix in _NOINDEX_PATH_PREFIXES):
+    if any(
+        path == prefix or path.startswith(prefix + "/")
+        for prefix in _NOINDEX_PATH_PREFIXES
+    ):
         # ``noindex`` removes the URL from the index on next crawl.
         # ``nofollow`` tells Google not to follow links from these pages
         # (admin/couple/vendor surfaces leak internal route hints we
