@@ -92,22 +92,21 @@ def test_redirector_302s_to_aurinko_with_preserved_query() -> None:
 
     try:
         from app.main import app
+        with TestClient(app) as client:
+            r = client.get(
+                "/v1/auth/callback",
+                params={
+                    "code": "google-code-abc",
+                    "state": "our-state-xyz",
+                    "scope": "openid email profile",
+                    "authuser": "0",
+                },
+                follow_redirects=False,
+            )
     except RuntimeError as exc:
         if "Mongo" in str(exc) or "MongoDB" in str(exc):
             _pytest.skip(f"Mongo not reachable in this env: {exc}")
         raise
-
-    with TestClient(app) as client:
-        r = client.get(
-            "/v1/auth/callback",
-            params={
-                "code": "google-code-abc",
-                "state": "our-state-xyz",
-                "scope": "openid email profile",
-                "authuser": "0",
-            },
-            follow_redirects=False,
-        )
 
     assert r.status_code == 302, (
         f"expected 302 redirect, got {r.status_code}: {r.text[:200]}"
@@ -134,13 +133,12 @@ def test_redirector_302s_to_bare_aurinko_callback_when_no_query() -> None:
 
     try:
         from app.main import app
+        with TestClient(app) as client:
+            r = client.get("/v1/auth/callback", follow_redirects=False)
     except RuntimeError as exc:
         if "Mongo" in str(exc) or "MongoDB" in str(exc):
             _pytest.skip(f"Mongo not reachable in this env: {exc}")
         raise
-
-    with TestClient(app) as client:
-        r = client.get("/v1/auth/callback", follow_redirects=False)
 
     assert r.status_code == 302
     location = r.headers.get("location") or r.headers.get("Location")
