@@ -698,6 +698,10 @@ class CalendarProviderService:
     def __init__(self) -> None:
         self.connections_collection = mongo.get_calendar_connections_collection()
         self.syncs_collection = mongo.get_calendar_event_syncs_collection()
+        # Drafts hold the encrypted Aurinko account token + calendar list
+        # between OAuth callback and the picker-modal submission. See
+        # ``handle_oauth_callback`` / ``commit_calendar_selection``.
+        self.drafts_collection = mongo.get_calendar_connection_drafts_collection()
         self.tasks_collection = mongo.get_planner_tasks_collection()
         self.client = AurinkoClient()
         self._validate_security_configuration()
@@ -1207,12 +1211,224 @@ class CalendarProviderService:
         default_write_id = primary_writable_id or (
             writable_calendar_ids[0] if writable_calendar_ids else None
         )
-        seen_calendar_ids: list[str] = []
 
+        # Option B (deferred-creation): stash everything we need to
+        # materialize connection rows + webhook subscriptions in a draft
+        # row, then return the calendar list to the frontend's picker
+        # modal. The planner picks which calendars to actually sync; on
+        # POST /admin/planner/calendar/connections/select we drain the
+        # draft into per-calendar rows for the picked subset only.
+        # Un-picked calendars never get a row and never trigger a
+        # webhook-subscribe attempt — which is the root cause fix for
+        # the "Webhook subscription failed for N calendars" banner we
+        # saw with read-only iCal feeds (Cushion, Holidays, etc.).
+        picker_calendars: list[dict[str, Any]] = []
         for entry in calendars:
             calendar_id = entry.get("id") or entry.get("calendarId")
             if not calendar_id:
                 continue
+            is_writable = self._is_writable_calendar(entry)
+            picker_calendars.append(
+                {
+                    "aurinko_calendar_id": calendar_id,
+                    "name": (
+                        entry.get("name")
+                        or entry.get("summary")
+                        or entry.get("title")
+                        or calendar_id
+                    ),
+                    "access_role": entry.get("accessRole") or entry.get("access"),
+                    "is_writable": is_writable,
+                    "is_primary": bool(entry.get("primary")),
+                    "suggested_default_write": bool(
+                        is_writable and calendar_id == default_write_id
+                    ),
+                }
+            )
+
+        expires_at = now + timedelta(minutes=30)
+        await self.drafts_collection.update_one(
+            {"user_id": user_id, "aurinko_account_id": aurinko_account_id},
+            {
+                "$set": {
+                    "owner_planner_id": owner_id,
+                    "owner_planner_email": owner_email,
+                    "user_id": user_id,
+                    "user_email": user_email,
+                    "provider": provider_label,
+                    "provider_account_email": provider_account_email,
+                    "provider_account_name": provider_account_name,
+                    "aurinko_account_id": aurinko_account_id,
+                    "aurinko_access_token_encrypted": encrypted_token,
+                    # Full Aurinko-shape calendar payload for the commit step.
+                    "calendars_payload": list(calendars),
+                    "default_write_calendar_id": default_write_id,
+                    "redirect_to": state_payload.get("redirect_to"),
+                    "expires_at": expires_at,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {"created_at": now},
+            },
+            upsert=True,
+        )
+        draft = await self.drafts_collection.find_one(
+            {"user_id": user_id, "aurinko_account_id": aurinko_account_id}
+        )
+        draft_id = str(draft["_id"]) if draft else ""
+
+        return {
+            "connected": False,
+            "needs_selection": True,
+            "draft_id": draft_id,
+            "account_email": provider_account_email,
+            "account_name": provider_account_name,
+            "provider": provider_label,
+            "calendars": picker_calendars,
+            "redirect_to": state_payload.get("redirect_to"),
+            "message": (
+                f"Found {len(picker_calendars)} calendar(s) on "
+                f"{provider_account_email}. Pick which to sync."
+            ),
+        }
+
+    async def commit_calendar_selection(
+        self,
+        *,
+        draft_id: str,
+        user_id: str,
+        picks: list[dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Drain a draft into ``calendar_connections`` rows + webhook subs.
+
+        Loads the draft created during ``handle_oauth_callback``, then
+        for each picked calendar:
+          1. Creates / updates a ``calendar_connections`` row with the
+             same shape and defaults as the pre-Option-B flow.
+          2. Registers an Aurinko webhook subscription for writable
+             picks (read-only feeds skip the subscription per Aurinko's
+             /subscriptions semantics — they wouldn't accept it anyway).
+
+        Un-picked calendars are silently dropped — no rows, no
+        subscriptions. The draft is deleted on success (or left to
+        TTL-expire on partial failure so the picker can be retried).
+
+        ``picks`` shape per entry::
+
+            {
+                "aurinko_calendar_id": str,           # REQUIRED
+                "is_default_write_target": bool,     # optional override
+                "details_visibility": "details"|"busy_only",  # optional
+                "is_shared_in_team_view": bool,      # optional
+            }
+
+        Returns the same response shape the pre-Option-B
+        ``handle_oauth_callback`` used to return, so the existing
+        ``ProviderCallbackResponse`` model can carry it forward.
+        """
+        try:
+            draft_oid = ObjectId(draft_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail="Invalid draft id") from exc
+
+        # Guard: a planner must only be able to commit their OWN drafts.
+        # Without this filter, a leaked draft id would let any
+        # authenticated user activate someone else's connection.
+        draft = await self.drafts_collection.find_one(
+            {"_id": draft_oid, "user_id": user_id}
+        )
+        if draft is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "Calendar selection draft not found or expired. Please "
+                    "re-run the Connect calendar flow."
+                ),
+            )
+
+        aurinko_account_id = str(draft.get("aurinko_account_id") or "")
+        encrypted_token = draft.get("aurinko_access_token_encrypted")
+        account_token = self._decrypt_token(encrypted_token)
+        if not aurinko_account_id or not account_token:
+            await self.drafts_collection.delete_one({"_id": draft_oid})
+            raise HTTPException(
+                status_code=500,
+                detail="Draft token unreadable — please re-run Connect calendar.",
+            )
+
+        owner_id = str(draft.get("owner_planner_id") or "")
+        owner_email = str(draft.get("owner_planner_email") or "")
+        user_email = str(draft.get("user_email") or "")
+        provider_label = str(draft.get("provider") or "")
+        provider_account_email = str(draft.get("provider_account_email") or "")
+        provider_account_name = str(draft.get("provider_account_name") or "")
+        calendars = list(draft.get("calendars_payload") or [])
+        draft_default_write = draft.get("default_write_calendar_id")
+
+        # Index Aurinko's calendar payload by id so picks can join in.
+        calendars_by_id: dict[str, dict[str, Any]] = {}
+        for entry in calendars:
+            cid = entry.get("id") or entry.get("calendarId")
+            if cid:
+                calendars_by_id[str(cid)] = entry
+
+        # Picks → only keep those that reference a real calendar Aurinko
+        # returned. Drops any client-side tampering attempts.
+        picked_ids: list[str] = []
+        pick_overrides: dict[str, dict[str, Any]] = {}
+        for pick in picks or []:
+            cid = str(pick.get("aurinko_calendar_id") or "").strip()
+            if not cid or cid not in calendars_by_id:
+                continue
+            picked_ids.append(cid)
+            pick_overrides[cid] = pick
+
+        if not picked_ids:
+            # "Skip for now" path — just delete the draft and return a
+            # zero-rows success. The planner can re-open the picker from
+            # Settings later (future work). No webhook attempts, no row
+            # churn, no error toast.
+            await self.drafts_collection.delete_one({"_id": draft_oid})
+            return {
+                "connected": True,
+                "calendar_id": None,
+                "connections_created": 0,
+                "redirect_to": draft.get("redirect_to"),
+                "message": (
+                    "No calendars selected. You can connect calendars "
+                    "later from Settings."
+                ),
+                "warning": None,
+            }
+
+        now = datetime.now(UTC)
+
+        # Compute the effective default-write target from picks, falling
+        # back to the suggested one if the picker didn't flip anyone.
+        explicit_default_write = next(
+            (
+                cid
+                for cid in picked_ids
+                if pick_overrides.get(cid, {}).get("is_default_write_target")
+            ),
+            None,
+        )
+        effective_default_write = (
+            explicit_default_write
+            or (str(draft_default_write) if draft_default_write else None)
+            or next(
+                (
+                    cid
+                    for cid in picked_ids
+                    if self._is_writable_calendar(calendars_by_id[cid])
+                ),
+                None,
+            )
+        )
+
+        seen_calendar_ids: list[str] = []
+        for calendar_id in picked_ids:
+            entry = calendars_by_id[calendar_id]
+            override = pick_overrides.get(calendar_id, {})
             seen_calendar_ids.append(calendar_id)
             is_writable = self._is_writable_calendar(entry)
             connection_query = {
@@ -1233,20 +1449,17 @@ class CalendarProviderService:
                 "aurinko_calendar_id": calendar_id,
                 "aurinko_access_token_encrypted": encrypted_token,
                 "calendar_id": calendar_id,
-                "calendar_name": entry.get("name")
-                or entry.get("summary")
-                or entry.get("title")
-                or calendar_id,
+                "calendar_name": (
+                    entry.get("name")
+                    or entry.get("summary")
+                    or entry.get("title")
+                    or calendar_id
+                ),
                 "access_role": entry.get("accessRole") or entry.get("access"),
                 "is_writable": is_writable,
                 "is_primary": bool(entry.get("primary")),
                 "is_default_write_target": bool(
-                    is_writable
-                    and (
-                        existing_doc.get("is_default_write_target")
-                        if existing_doc is not None
-                        else calendar_id == default_write_id
-                    )
+                    is_writable and calendar_id == effective_default_write
                 ),
                 "scheduler_access_mode": self._normalize_scheduler_access_mode(
                     existing_doc.get("scheduler_access_mode")
@@ -1263,17 +1476,23 @@ class CalendarProviderService:
                     if existing_doc is not None
                     else []
                 ),
-                "is_shared_in_team_view": (
-                    existing_doc.get("is_shared_in_team_view", False)
-                    if existing_doc is not None
-                    else False
-                ),
-                "details_visibility": (
-                    existing_doc.get(
-                        "details_visibility", VisibilityMode.BUSY_ONLY.value
+                "is_shared_in_team_view": bool(
+                    override.get(
+                        "is_shared_in_team_view",
+                        existing_doc.get("is_shared_in_team_view", False)
+                        if existing_doc is not None
+                        else False,
                     )
-                    if existing_doc is not None
-                    else VisibilityMode.BUSY_ONLY.value
+                ),
+                "details_visibility": str(
+                    override.get(
+                        "details_visibility",
+                        existing_doc.get(
+                            "details_visibility", VisibilityMode.BUSY_ONLY.value
+                        )
+                        if existing_doc is not None
+                        else VisibilityMode.BUSY_ONLY.value,
+                    )
                 ),
                 "sync_enabled": (
                     existing_doc.get("sync_enabled", is_writable)
@@ -1353,12 +1572,12 @@ class CalendarProviderService:
                 "is_default_write_target": True,
             }
         )
-        if not existing_default and default_write_id:
+        if not existing_default and effective_default_write:
             await self.connections_collection.update_one(
                 {
                     "user_id": user_id,
                     "aurinko_account_id": aurinko_account_id,
-                    "aurinko_calendar_id": default_write_id,
+                    "aurinko_calendar_id": effective_default_write,
                     "is_writable": True,
                 },
                 {"$set": {"is_default_write_target": True, "updated_at": now}},
@@ -1465,18 +1684,23 @@ class CalendarProviderService:
                 "provider_account_email": provider_account_email,
                 "aurinko_account_id": aurinko_account_id,
                 "connections_created": len(seen_calendar_ids),
-                "default_write_calendar_id": default_write_id,
+                "default_write_calendar_id": effective_default_write,
+                "picked_via_modal": True,
             },
         )
+
+        # Draft is drained — delete so the unique (user_id,
+        # aurinko_account_id) index is free for the next reconnect.
+        await self.drafts_collection.delete_one({"_id": draft_oid})
 
         message = "Successfully connected calendar account"
         if webhook_warning:
             message = f"{message}. {webhook_warning}"
         return {
             "connected": True,
-            "calendar_id": default_write_id,
+            "calendar_id": effective_default_write,
             "connections_created": len(seen_calendar_ids),
-            "redirect_to": state_payload.get("redirect_to"),
+            "redirect_to": draft.get("redirect_to"),
             "message": message,
             "warning": webhook_warning,
         }

@@ -10,15 +10,23 @@ import TaskModal from './components/TaskModal';
 // CalendarConnect (multi-provider) is exported as the default from the legacy
 // GoogleCalendarConnect.tsx path; the file rename is a follow-up cleanup.
 import CalendarConnect from './components/GoogleCalendarConnect';
+import CalendarStatusPill from './components/CalendarStatusPill';
+import CalendarRightRail from './components/CalendarRightRail';
+import DaySlideOver from './components/DaySlideOver';
+import MetricStrip from './components/MetricStrip';
+import { createPortal } from 'react-dom';
+import { X } from 'lucide-react';
 import {
   CalendarConnection,
   CATEGORY_LABELS,
   createCalendarMutationIntent,
   deleteMeeting,
   deleteTask,
+  disconnectCalendarConnection,
   getSharedCalendarView,
   getStaffAvailability,
   getTask,
+  healthcheckCalendarConnection,
   listCalendarConnections,
   listPlannerWeddings,
   listTeamMembers,
@@ -127,6 +135,22 @@ export default function PlannerCalendarPage() {
   const [filterStaff, setFilterStaff] = useState<string>('all');
   const [filterSource, setFilterSource] = useState<SourceFilter>('all');
   const [filterVisibility, setFilterVisibility] = useState<VisibilityFilter>('all');
+
+  // Phase 3 redesign state.
+  // ``manageCalendarsOpen`` toggles the centered modal that wraps the
+  // full <CalendarConnect> management surface — opened from the
+  // CalendarStatusPill in the page header (popover footer link).
+  // ``settingsAutoOpenConnectionId`` deep-links from the popover's
+  // per-row Settings button into CalendarConnect's existing
+  // per-calendar Settings modal.
+  // ``daySlideOverIso`` (YYYY-MM-DD) controls the right-side
+  // slide-over panel that replaces the inline day breakdown when a
+  // grid cell is clicked.
+  const [manageCalendarsOpen, setManageCalendarsOpen] = useState(false);
+  const [settingsAutoOpenConnectionId, setSettingsAutoOpenConnectionId] = useState<
+    string | null
+  >(null);
+  const [daySlideOverIso, setDaySlideOverIso] = useState<string | null>(null);
 
   const canViewCalendar =
     !!userProfile &&
@@ -469,6 +493,76 @@ export default function PlannerCalendarPage() {
     currentMonth === today.getMonth() &&
     currentYear === today.getFullYear();
 
+  // ---------- Phase 3 redesign: status pill + slide-over wiring ----------
+
+  /** Deep-link from the status-pill popover into the per-calendar
+   *  Settings modal that lives inside <CalendarConnect>. We open the
+   *  manage-calendars modal AND pass the connection id as autoOpen so
+   *  the Settings popup appears immediately. */
+  const handleOpenConnectionSettings = useCallback(
+    (connection: CalendarConnection) => {
+      setSettingsAutoOpenConnectionId(connection.id);
+      setManageCalendarsOpen(true);
+    },
+    []
+  );
+
+  /** Manual healthcheck button on a popover row. Calls the existing
+   *  backend endpoint and refreshes connections so any new
+   *  ``last_error`` shows up in the popover. */
+  const handleCheckConnectionHealth = useCallback(
+    async (connection: CalendarConnection) => {
+      if (!token) return;
+      try {
+        await healthcheckCalendarConnection(token, connection.id);
+        toast.success('Healthcheck complete');
+        await refreshAll();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Healthcheck failed');
+      }
+    },
+    [refreshAll, token]
+  );
+
+  /** Disconnect a single connection from the popover. The teardown
+   *  endpoint already handles its own confirmation flow upstream; we
+   *  add a soft confirm here too because Disconnect is destructive. */
+  const handleDisconnectConnection = useCallback(
+    async (connection: CalendarConnection) => {
+      if (!token) return;
+      const ok = await confirm({
+        title: 'Disconnect calendar',
+        message: `Disconnect ${connection.calendar_name || connection.provider_account_email}? Synced events will be torn down.`,
+        variant: 'danger',
+        confirmText: 'Disconnect',
+        cancelText: 'Cancel',
+      });
+      if (!ok) return;
+      try {
+        await disconnectCalendarConnection(token, connection.id);
+        toast.success('Calendar disconnected');
+        await refreshAll();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to disconnect');
+      }
+    },
+    [confirm, refreshAll, token]
+  );
+
+  /** Day-cell click handler: opens the slide-over for that date.
+   *  Re-clicking the same day closes it; clicking a different day
+   *  re-targets the slide-over. */
+  const openDaySlideOver = useCallback((day: number) => {
+    const iso = new Date(Date.UTC(currentYear, currentMonth, day))
+      .toISOString()
+      .slice(0, 10);
+    setDaySlideOverIso((prev) => (prev === iso ? null : iso));
+  }, [currentMonth, currentYear]);
+
+  // ``upcomingEvents`` is already declared above (filtered-event-based
+  // memo) — we reuse that for the CalendarRightRail "Upcoming" tab so
+  // the filter chips on the calendar page apply consistently.
+
   if (!token || authLoading || !userProfile) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -482,57 +576,116 @@ export default function PlannerCalendarPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         title="Shared Planner Calendar"
-        description="Business-owned meetings, team visibility, and explicit Google calendar projections."
+        description="Business-owned meetings, team visibility, and explicit calendar projections."
       >
-        {canCreateItems && (
-          <button
-            onClick={() => openCreateModal(new Date())}
-            className={PRIMARY_BUTTON_CLASS}
-          >
-            New schedule item
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          <CalendarStatusPill
+            connections={connections}
+            onOpenSettings={handleOpenConnectionSettings}
+            onCheckHealth={handleCheckConnectionHealth}
+            onDisconnect={handleDisconnectConnection}
+          />
+          {canCreateItems && (
+            <button
+              onClick={() => openCreateModal(new Date())}
+              className={PRIMARY_BUTTON_CLASS}
+            >
+              New schedule item
+            </button>
+          )}
+        </div>
       </PageHeader>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className={`${PANEL_CLASS} p-5`}>
-          <p className="text-xs uppercase tracking-[0.24em] text-slate-400 dark:text-slate-500">Internal meetings</p>
-          <p className="mt-3 text-3xl font-semibold text-slate-900 dark:text-slate-100">
-            {events.filter((event) => event.source_type === 'internal_meeting').length}
-          </p>
-        </div>
-        <div className={`${PANEL_CLASS} p-5`}>
-          <p className="text-xs uppercase tracking-[0.24em] text-slate-400 dark:text-slate-500">Shared calendars</p>
-          <p className="mt-3 text-3xl font-semibold text-slate-900 dark:text-slate-100">
-            {connections.filter((connection) => connection.is_shared_in_team_view).length}
-          </p>
-        </div>
-        <div className={`${PANEL_CLASS} p-5`}>
-          <p className="text-xs uppercase tracking-[0.24em] text-slate-400 dark:text-slate-500">Busy/free imports</p>
-          <p className="mt-3 text-3xl font-semibold text-slate-900 dark:text-slate-100">
-            {
-              events.filter(
-                (event) => event.source_type === 'external_google' && event.visibility_mode === 'busy_only'
-              ).length
-            }
-          </p>
-        </div>
-        <div className={`${PANEL_CLASS} p-5`}>
-          <p className="text-xs uppercase tracking-[0.24em] text-slate-400 dark:text-slate-500">Visible items</p>
-          <p className="mt-3 text-3xl font-semibold text-slate-900 dark:text-slate-100">{filteredEvents.length}</p>
-        </div>
-      </div>
-
-      <CalendarConnect
-        connections={connections}
-        staffOptions={staffOptions}
-        weddings={weddings}
-        loading={loading}
-        onRefresh={refreshAll}
+      <MetricStrip
+        values={{
+          internalMeetings: events.filter(
+            (event) => event.source_type === 'internal_meeting'
+          ).length,
+          sharedCalendars: connections.filter((c) => c.is_shared_in_team_view).length,
+          busyFreeImports: events.filter(
+            (event) =>
+              String(event.source_type || '').startsWith('external') &&
+              event.visibility_mode === 'busy_only'
+          ).length,
+          visibleItems: filteredEvents.length,
+        }}
+        context={`${MONTH_NAMES[currentMonth]} ${currentYear}`}
       />
+
+      {/* Manage-all-calendars modal — hosts the full <CalendarConnect>
+          component. Triggered from the CalendarStatusPill popover.
+          When the popover's per-row Settings button calls
+          handleOpenConnectionSettings(conn), we set both the modal-open
+          flag AND the autoOpen id so the per-calendar Settings popup
+          inside <CalendarConnect> shows immediately. */}
+      {manageCalendarsOpen && typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div
+              className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm dark:bg-black/60"
+              onClick={() => {
+                setManageCalendarsOpen(false);
+                setSettingsAutoOpenConnectionId(null);
+              }}
+              aria-hidden
+            />
+            <div className="relative z-[61] mx-4 max-h-[88vh] w-full max-w-[960px] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+              <div className="sticky top-0 z-[62] flex items-center justify-between border-b border-slate-200 bg-white/95 px-6 py-4 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-wedding-rose">
+                    Manage calendars
+                  </p>
+                  <h2 className="font-heading text-xl text-slate-900 dark:text-slate-100">
+                    Connections &amp; settings
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setManageCalendarsOpen(false);
+                    setSettingsAutoOpenConnectionId(null);
+                  }}
+                  aria-label="Close manage calendars"
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="p-6">
+                <CalendarConnect
+                  connections={connections}
+                  staffOptions={staffOptions}
+                  weddings={weddings}
+                  loading={loading}
+                  onRefresh={refreshAll}
+                  autoOpenSettingsForConnectionId={settingsAutoOpenConnectionId}
+                  onSettingsClose={() => setSettingsAutoOpenConnectionId(null)}
+                />
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* Day-slide-over: replaces the inline day breakdown that used to
+          live in the right rail. Rendered as a portal overlay so it
+          floats over the grid without re-flowing it. */}
+      {daySlideOverIso && (
+        <DaySlideOver
+          selectedDateIso={daySlideOverIso}
+          events={events}
+          onClose={() => setDaySlideOverIso(null)}
+          onCreateTask={(iso) => openCreateModal(new Date(`${iso}T00:00:00`))}
+          onCreateMeeting={(iso) => openCreateModal(new Date(`${iso}T00:00:00`))}
+        />
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.95fr)]">
         <section className={PANEL_CLASS}>
@@ -656,19 +809,34 @@ export default function PlannerCalendarPage() {
                 </div>
 
                 <div className="grid grid-cols-7 gap-2">
-                  {calendarDays.map((day, index) => (
+                  {calendarDays.map((day, index) => {
+                    const cellIso = day
+                      ? new Date(Date.UTC(currentYear, currentMonth, day))
+                          .toISOString()
+                          .slice(0, 10)
+                      : null;
+                    const isSelected = Boolean(
+                      cellIso && cellIso === daySlideOverIso
+                    );
+                    const todayRing = day && isToday(day)
+                      ? 'ring-1 ring-slate-900/20 dark:ring-slate-100/20'
+                      : '';
+                    const selectedRing = isSelected
+                      ? 'ring-2 ring-wedding-rose'
+                      : '';
+                    return (
                     <div
                       key={`${day ?? 'empty'}-${index}`}
-                      onClick={() => day && canCreateItems && openCreateModal(new Date(Date.UTC(currentYear, currentMonth, day)))}
+                      onClick={() => day && openDaySlideOver(day)}
                       className={`min-h-[130px] rounded-2xl border p-2 transition ${
                         day
-                          ? 'cursor-pointer border-slate-200 bg-slate-50 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/60 dark:hover:border-slate-500'
+                          ? 'cursor-pointer border-slate-200 bg-slate-50 hover:border-wedding-rose/50 dark:border-slate-700 dark:bg-slate-900/60 dark:hover:border-wedding-rose/40'
                           : 'border-transparent bg-transparent'
-                      } ${day && isToday(day) ? 'ring-1 ring-slate-900/20 dark:ring-slate-100/20' : ''}`}
+                      } ${todayRing} ${selectedRing}`}
                     >
                       {day && (
                         <>
-                          <div className={`mb-2 text-sm font-semibold ${isToday(day) ? 'text-slate-900 dark:text-slate-100' : 'text-slate-500 dark:text-slate-400'}`}>
+                          <div className={`mb-2 text-sm font-semibold ${isToday(day) ? 'text-wedding-rose' : 'text-slate-500 dark:text-slate-400'}`}>
                             {day}
                           </div>
                           <div className="space-y-1.5">
@@ -705,7 +873,8 @@ export default function PlannerCalendarPage() {
                         </>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </>
             ) : (
@@ -772,164 +941,18 @@ export default function PlannerCalendarPage() {
           </div>
         </section>
 
-        <aside className="space-y-6">
-          <section className={`${PANEL_CLASS} p-5`}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Upcoming</h3>
-              <button
-                onClick={() => void refreshAll()}
-                className={`${SECONDARY_BUTTON_CLASS} text-xs font-medium`}
-              >
-                Refresh
-              </button>
-            </div>
-            <div className="mt-4 space-y-3">
-              {upcomingEvents.length === 0 ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400">No upcoming items in the current filtered view.</p>
-              ) : (
-                upcomingEvents.map((event) => (
-                  <button
-                    key={`upcoming-${event.id}`}
-                    onClick={() => void openExistingItem(event)}
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/60 dark:hover:border-slate-500"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-                          {eventDisplayTitle(event)}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          {event.start_date
-                            ? formatDateTime(
-                                event.start_date,
-                                {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  hour: event.all_day ? undefined : 'numeric',
-                                  minute: event.all_day ? undefined : '2-digit',
-                                },
-                                'en-US',
-                                DEFAULT_TIMEZONE
-                              )
-                            : 'Time TBD'}
-                        </p>
-                      </div>
-                      <span className={`rounded-full border px-2 py-1 text-[11px] font-medium ${eventTone(event)}`}>
-                        {event.source_type === 'internal_meeting'
-                          ? 'Meeting'
-                          : event.source_type === 'external_google'
-                          ? 'Google'
-                          : 'Task'}
-                      </span>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          </section>
-
-          <section className={`${PANEL_CLASS} p-5`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Availability</h3>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  Busy blocks and open windows for selected staff in this month.
-                </p>
-              </div>
-              <button
-                onClick={() => void loadAvailability()}
-                disabled={!canViewAvailability}
-                className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/60"
-              >
-                Refresh
-              </button>
-            </div>
-
-            {!canViewAvailability ? (
-              <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
-                Your role does not include team availability access.
-              </p>
-            ) : (
-              <>
-                <div className="mt-4 space-y-2">
-                  {staffOptions.map((staff) => (
-                    <label key={staff.id} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                      <input
-                        type="checkbox"
-                        checked={selectedAvailabilityStaffIds.includes(staff.id)}
-                        onChange={() => toggleAvailabilityStaff(staff.id)}
-                        className="h-4 w-4 rounded border-slate-300 text-slate-900 dark:border-slate-600 dark:bg-slate-800"
-                      />
-                      {staff.label}
-                    </label>
-                  ))}
-                </div>
-
-                <div className="mt-4 space-y-3">
-                  {!availability || availability.available_windows.length === 0 ? (
-                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                      No open windows found for the selected staff in this range.
-                    </p>
-                  ) : (
-                    availability.available_windows.slice(0, 5).map((window, index) => (
-                      <div
-                        key={`${window.start}-${index}`}
-                        className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-3 dark:border-emerald-900 dark:bg-emerald-950/40"
-                      >
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-200">
-                          Available window
-                        </p>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                          {formatDateTime(
-                            window.start,
-                            {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: 'numeric',
-                              minute: '2-digit',
-                            },
-                            'en-US',
-                            DEFAULT_TIMEZONE
-                          )}
-                        </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          until{' '}
-                          {formatDateTime(
-                            window.end,
-                            { hour: 'numeric', minute: '2-digit' },
-                            'en-US',
-                            DEFAULT_TIMEZONE
-                          )}
-                        </p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </>
-            )}
-          </section>
-
-          <section className={`${PANEL_CLASS} p-5`}>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Legend</h3>
-            <div className="mt-4 space-y-2 text-sm text-slate-600 dark:text-slate-300">
-              <div className="flex items-center gap-2">
-                <span className="inline-block h-3 w-3 rounded-full bg-blue-200 dark:bg-blue-400/70" />
-                Internal task
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="inline-block h-3 w-3 rounded-full bg-teal-200 dark:bg-teal-400/70" />
-                Internal meeting
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="inline-block h-3 w-3 rounded-full bg-slate-300 dark:bg-slate-500" />
-                External Google event
-              </div>
-              <p className="pt-2 text-xs leading-6 text-slate-500 dark:text-slate-400">
-                External calendars show busy/free only unless the connection enables full details.
-                Couples receive email plus ICS for meetings; they do not connect calendars in v1.
-              </p>
-            </div>
-          </section>
+        <aside className="min-h-[420px]">
+          <CalendarRightRail
+            upcoming={upcomingEvents}
+            availabilityWindows={availability?.available_windows ?? []}
+            availabilityLabel={
+              selectedAvailabilityStaffIds.length > 0
+                ? `For ${selectedAvailabilityStaffIds.length} selected staff`
+                : 'Select staff via the team filter'
+            }
+            onRefreshUpcoming={() => void refreshAll()}
+            onRefreshAvailability={canViewAvailability ? () => void loadAvailability() : undefined}
+          />
         </aside>
       </div>
 

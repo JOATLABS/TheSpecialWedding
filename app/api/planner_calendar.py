@@ -156,12 +156,35 @@ class ProviderAuthUrlResponse(BaseModel):
     message: str
 
 
+class ProviderCallbackCalendar(BaseModel):
+    """One row in the post-OAuth picker.
+
+    Surfaces just the fields the picker UI needs. The full Aurinko
+    payload stays in the backend draft and is replayed on
+    /connections/select.
+    """
+
+    aurinko_calendar_id: str
+    name: str
+    access_role: Optional[str] = None
+    is_writable: bool = False
+    is_primary: bool = False
+    suggested_default_write: bool = False
+
+
 class ProviderCallbackResponse(BaseModel):
     """Response after the Aurinko hosted-auth callback.
 
-    Aurinko fans out a single OAuth flow to per-calendar connection rows, so
-    ``connections_created`` may be > 1. ``calendar_id`` carries the default
-    write target's id when one is established.
+    Under Option B (deferred creation), the callback no longer creates
+    per-calendar rows directly. It returns a draft id + the calendar
+    list so the frontend can render the picker modal; the picker's
+    Submit then POSTs to /admin/planner/calendar/connections/select to
+    commit the planner's chosen subset.
+
+    The legacy fields (``connected``, ``calendar_id``,
+    ``connections_created``, ``message``, ``warning``) stay so the
+    server can also respond from /connections/select with the same
+    shape — the frontend distinguishes by checking ``needs_selection``.
     """
 
     connected: bool
@@ -170,6 +193,29 @@ class ProviderCallbackResponse(BaseModel):
     redirect_to: Optional[str] = None
     message: str
     warning: Optional[str] = None
+    # Option-B picker fields (set on the callback hop, cleared on commit):
+    needs_selection: bool = False
+    draft_id: Optional[str] = None
+    account_email: Optional[str] = None
+    account_name: Optional[str] = None
+    provider: Optional[str] = None
+    calendars: list[ProviderCallbackCalendar] = []
+
+
+class CalendarSelectionPick(BaseModel):
+    """One picker choice — sent in the body of /connections/select."""
+
+    aurinko_calendar_id: str
+    is_default_write_target: Optional[bool] = None
+    details_visibility: Optional[str] = None  # "details" | "busy_only"
+    is_shared_in_team_view: Optional[bool] = None
+
+
+class CalendarSelectionRequest(BaseModel):
+    """POST body for /admin/planner/calendar/connections/select."""
+
+    draft_id: str
+    picks: list[CalendarSelectionPick] = []
 
 
 class CalendarConnectionResponse(BaseModel):
@@ -974,6 +1020,7 @@ async def provider_oauth_callback(
             "user_email": context.get("user_email"),
         },
     )
+    raw_calendars = result.get("calendars") or []
     return ProviderCallbackResponse(
         connected=bool(result.get("connected")),
         calendar_id=result.get("calendar_id"),
@@ -981,6 +1028,60 @@ async def provider_oauth_callback(
         redirect_to=result.get("redirect_to"),
         message=str(result.get("message") or ""),
         warning=result.get("warning"),
+        needs_selection=bool(result.get("needs_selection")),
+        draft_id=result.get("draft_id"),
+        account_email=result.get("account_email"),
+        account_name=result.get("account_name"),
+        provider=result.get("provider"),
+        calendars=[ProviderCallbackCalendar(**entry) for entry in raw_calendars],
+    )
+
+
+@router.post(
+    "/planner/calendar/connections/select",
+    tags=["Planner Calendar"],
+    response_model=ProviderCallbackResponse,
+)
+async def commit_calendar_selection(
+    body: CalendarSelectionRequest,
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("connect_personal_calendar")
+    ),
+) -> ProviderCallbackResponse:
+    """Commit the planner's picker choices into ``calendar_connections``
+    rows + Aurinko webhook subscriptions.
+
+    Companion to the OAuth callback: after that endpoint stashes the
+    encrypted account token + calendar list in a draft, the frontend
+    renders a picker modal and POSTs the picks here. We only create
+    rows + subscriptions for the picked calendars — un-picked read-only
+    iCal feeds (Cushion, Holidays, etc.) never get a webhook-subscribe
+    attempt, which is the root cause fix for the 2026-05-13
+    "Webhook subscription failed for N calendars" banner.
+
+    Empty ``picks`` is the "Skip for now" path — the draft is deleted
+    and zero connection rows are created.
+    """
+    context = get_calendar_owner_identity(current_user)
+    user_id = str(context.get("user_id") or "")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="No authenticated user")
+
+    result = await calendar_provider_service.commit_calendar_selection(
+        draft_id=body.draft_id,
+        user_id=user_id,
+        picks=[pick.model_dump(exclude_none=True) for pick in body.picks],
+    )
+    return ProviderCallbackResponse(
+        connected=bool(result.get("connected")),
+        calendar_id=result.get("calendar_id"),
+        connections_created=int(result.get("connections_created") or 0),
+        redirect_to=result.get("redirect_to"),
+        message=str(result.get("message") or ""),
+        warning=result.get("warning"),
+        needs_selection=False,
+        draft_id=None,
+        calendars=[],
     )
 
 

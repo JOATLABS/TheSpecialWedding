@@ -1,9 +1,16 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
-import { completeCalendarCallback } from '@/services/calendarApi';
+import {
+  CalendarSelectionPick,
+  completeCalendarCallback,
+  ProviderCallbackCalendar,
+  ProviderCallbackResponse,
+  selectCalendars,
+} from '@/services/calendarApi';
+import CalendarPickerModal from './CalendarPickerModal';
 
 // Aurinko OAuth codes are single-use. React 18 dev StrictMode double-
 // invokes effects, which would POST the same code twice — the second
@@ -17,12 +24,78 @@ const inflightOrCompletedCodes = new Map<
   Promise<Awaited<ReturnType<typeof completeCalendarCallback>>>
 >();
 
+type CallbackStatus = 'loading' | 'picker' | 'success' | 'error';
+
 export default function CalendarCallbackPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { token, isLoading } = useAdmin();
-  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
+  const [status, setStatus] = useState<CallbackStatus>('loading');
   const [message, setMessage] = useState('Processing your calendar connection...');
+  // Picker payload from the OAuth callback step. We pass it down to the
+  // CalendarPickerModal which collects the planner's picks and calls
+  // back into ``handleSelection`` (Option B commit).
+  const [pickerPayload, setPickerPayload] = useState<{
+    draftId: string;
+    accountEmail: string | null;
+    accountName: string | null;
+    provider: string | null;
+    calendars: ProviderCallbackCalendar[];
+    redirectTo: string | null;
+  } | null>(null);
+  const [pickerSubmitting, setPickerSubmitting] = useState(false);
+  const [pickerError, setPickerError] = useState<string | null>(null);
+
+  const completeRedirect = useCallback(
+    (target?: string | null) => {
+      window.setTimeout(() => {
+        router.push(target || '/admin/planner/calendar');
+      }, 800);
+    },
+    [router]
+  );
+
+  const handleSelection = useCallback(
+    async (picks: CalendarSelectionPick[]) => {
+      if (!token || !pickerPayload) return;
+      setPickerSubmitting(true);
+      setPickerError(null);
+      try {
+        const result: ProviderCallbackResponse = await selectCalendars(
+          token,
+          pickerPayload.draftId,
+          picks
+        );
+        if (!result.connected) {
+          throw new Error(result.message || 'Failed to save calendar selection.');
+        }
+        setStatus('success');
+        const created = result.connections_created ?? 0;
+        setMessage(
+          created === 0
+            ? 'Connection skipped. You can pick calendars later from settings.'
+            : `Connected ${created} calendar${created === 1 ? '' : 's'}. Redirecting…`
+        );
+        completeRedirect(result.redirect_to ?? pickerPayload.redirectTo);
+      } catch (err) {
+        setPickerError(
+          err instanceof Error
+            ? err.message
+            : 'Could not save your calendar selection. Please retry.'
+        );
+      } finally {
+        setPickerSubmitting(false);
+      }
+    },
+    [completeRedirect, pickerPayload, token]
+  );
+
+  const handleSkip = useCallback(() => {
+    // "Skip for now" is the empty-picks path. We still POST so the
+    // backend deletes the draft cleanly; the TTL fallback is only for
+    // crash paths.
+    void handleSelection([]);
+  }, [handleSelection]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -72,13 +145,27 @@ export default function CalendarCallbackPage() {
 
         if (cancelled) return;
 
-        const connected = Boolean(result.connected);
-        if (connected) {
+        // Option B: backend returns ``needs_selection`` instead of
+        // creating rows immediately. Render the picker modal.
+        if (result.needs_selection && result.draft_id) {
+          setPickerPayload({
+            draftId: result.draft_id,
+            accountEmail: result.account_email ?? null,
+            accountName: result.account_name ?? null,
+            provider: result.provider ?? null,
+            calendars: result.calendars ?? [],
+            redirectTo: result.redirect_to ?? null,
+          });
+          setStatus('picker');
+          setMessage(result.message);
+          return;
+        }
+
+        // Legacy / failure paths.
+        if (result.connected) {
           setStatus('success');
-          setMessage('Calendar connected successfully. Redirecting to the planner calendar...');
-          window.setTimeout(() => {
-            router.push('/admin/planner/calendar');
-          }, 1500);
+          setMessage('Calendar connected successfully. Redirecting…');
+          completeRedirect(result.redirect_to ?? null);
           return;
         }
 
@@ -96,13 +183,30 @@ export default function CalendarCallbackPage() {
     return () => {
       cancelled = true;
     };
-  }, [isLoading, router, searchParams, token]);
+  }, [completeRedirect, isLoading, router, searchParams, token]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 dark:bg-slate-950">
+      {/* Picker modal overlays the page when the backend returns the
+          deferred-creation payload. The card below stays in the
+          background as visual context. */}
+      {status === 'picker' && pickerPayload && (
+        <CalendarPickerModal
+          draftId={pickerPayload.draftId}
+          accountEmail={pickerPayload.accountEmail}
+          accountName={pickerPayload.accountName}
+          provider={pickerPayload.provider}
+          calendars={pickerPayload.calendars}
+          submitting={pickerSubmitting}
+          errorMessage={pickerError}
+          onSubmit={handleSelection}
+          onSkip={handleSkip}
+        />
+      )}
+
       <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-700 dark:bg-slate-900">
         <div className="mb-6 flex justify-center">
-          {status === 'loading' && (
+          {(status === 'loading' || status === 'picker') && (
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900 dark:border-slate-600 dark:border-t-slate-100" />
             </div>
@@ -125,6 +229,7 @@ export default function CalendarCallbackPage() {
 
         <h1 className="text-center text-xl font-semibold text-slate-900 dark:text-slate-100">
           {status === 'loading' && 'Connecting your calendar'}
+          {status === 'picker' && 'Pick your calendars to continue'}
           {status === 'success' && 'Calendar Connected'}
           {status === 'error' && 'Connection Failed'}
         </h1>

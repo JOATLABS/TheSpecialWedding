@@ -503,6 +503,15 @@ export interface ProviderAuthUrlResponse {
   message: string;
 }
 
+export interface ProviderCallbackCalendar {
+  aurinko_calendar_id: string;
+  name: string;
+  access_role?: string | null;
+  is_writable: boolean;
+  is_primary: boolean;
+  suggested_default_write: boolean;
+}
+
 export interface ProviderCallbackResponse {
   connected: boolean;
   calendar_id?: string | null;
@@ -510,6 +519,21 @@ export interface ProviderCallbackResponse {
   redirect_to?: string | null;
   message: string;
   warning?: string | null;
+  /** Option-B picker fields — present on the OAuth callback hop, then
+   *  cleared on /connections/select. Branch on ``needs_selection``. */
+  needs_selection?: boolean;
+  draft_id?: string | null;
+  account_email?: string | null;
+  account_name?: string | null;
+  provider?: string | null;
+  calendars?: ProviderCallbackCalendar[];
+}
+
+export interface CalendarSelectionPick {
+  aurinko_calendar_id: string;
+  is_default_write_target?: boolean;
+  details_visibility?: 'details' | 'busy_only';
+  is_shared_in_team_view?: boolean;
 }
 
 /** Build an Aurinko hosted-auth URL. When ``serviceType`` is set, Aurinko
@@ -527,7 +551,10 @@ export async function beginCalendarConnect(
 }
 
 /** Exchange the ``code`` + ``state`` returned by Aurinko's callback for an
- *  account token. Persists per-calendar connection rows server-side. */
+ *  account token. Under Option B, this DOES NOT yet create per-calendar
+ *  connection rows; it returns a draft id + a calendar list for the
+ *  picker modal. The actual rows + Aurinko webhook subscriptions are
+ *  created when the picker submits to ``selectCalendars``. */
 export async function completeCalendarCallback(
   token: string,
   code: string,
@@ -536,6 +563,26 @@ export async function completeCalendarCallback(
   return authFetch<ProviderCallbackResponse>(
     token,
     `/admin/planner/calendar/connections/provider/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
+  );
+}
+
+/** Submit the planner's picker choices. The backend drains the draft
+ *  identified by ``draftId`` into ``calendar_connections`` rows (one
+ *  per picked calendar) and registers Aurinko webhook subscriptions
+ *  for writable picks. Empty ``picks`` is the "Skip for now" path —
+ *  the draft is deleted, zero rows are created. */
+export async function selectCalendars(
+  token: string,
+  draftId: string,
+  picks: CalendarSelectionPick[]
+): Promise<ProviderCallbackResponse> {
+  return authFetch<ProviderCallbackResponse>(
+    token,
+    `/admin/planner/calendar/connections/select`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ draft_id: draftId, picks }),
+    }
   );
 }
 
