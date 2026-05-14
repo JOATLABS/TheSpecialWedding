@@ -1131,6 +1131,78 @@ async def add_cache_headers(request: Request, call_next):
     return response
 
 
+# Paths that must never appear in a public search index.
+#
+# Background (2026-05-14 GSC "Some fixes failed" forensics):
+# Before this middleware existed, robots.txt Disallow'd these paths so
+# Googlebot couldn't crawl them — but Disallow only prevents *crawling*,
+# not *indexing*. Anything that had previously been indexed (or that had
+# inbound links Googlebot already knew about) stayed in the index as
+# "crawled, currently not indexed" / "discovered, currently not indexed"
+# entries. Re-submitting them for validation in Search Console fails
+# because the bot can't fetch them to confirm the fix.
+#
+# The correct two-step pattern is:
+#   1. Remove the path from robots.txt Disallow (so Googlebot CAN fetch it).
+#   2. Return ``X-Robots-Tag: noindex, nofollow`` on the response (so
+#      Google removes it from the index on re-crawl).
+# Once GSC reports the URLs as not-indexed, the path may optionally be
+# re-added to robots.txt Disallow for crawl-budget protection.
+#
+# See app/robots.ts for the matching robots.txt source — the two must
+# stay in lockstep or de-indexing stalls.
+_NOINDEX_PATH_PREFIXES = (
+    "/admin",
+    "/api",
+    "/otp",
+    "/setup-account",
+    "/reset-password",
+    "/forgot-password",
+    "/login",  # legacy; redirect target is /admin/login (already covered above)
+    "/token",
+    "/auth",
+    "/couple-portal",
+    "/couple/",  # couple workspace — gated by per-wedding token, not public
+    "/vendor-contract",
+)
+
+# Paths that LOOK like they would match a noindex prefix above but are
+# legitimately public marketing/legal/data-deletion pages that must stay
+# indexable.
+_NOINDEX_PATH_EXEMPT_EXACT = frozenset(
+    {
+        "/admin/login",  # public sign-in surface, intentionally indexable
+    }
+)
+
+
+@app.middleware("http")
+async def add_robots_headers(request: Request, call_next):
+    """Emit ``X-Robots-Tag: noindex, nofollow`` for non-public surfaces.
+
+    Pairs with ``app/robots.ts``. Disallow alone cannot remove a URL
+    from Google's index; this header is what actually de-indexes pages
+    that should never have been crawled in the first place.
+    """
+    response = await call_next(request)
+    path = request.url.path
+
+    if path in _NOINDEX_PATH_EXEMPT_EXACT:
+        return response
+
+    if any(
+        path == prefix or path.startswith(prefix + "/")
+        for prefix in _NOINDEX_PATH_PREFIXES
+    ):
+        # ``noindex`` removes the URL from the index on next crawl.
+        # ``nofollow`` tells Google not to follow links from these pages
+        # (admin/couple/vendor surfaces leak internal route hints we
+        # don't want shaping crawl frontier).
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
+
+    return response
+
+
 # Development-only endpoints
 if settings.is_development():
 

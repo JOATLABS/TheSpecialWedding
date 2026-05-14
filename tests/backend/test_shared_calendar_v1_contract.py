@@ -249,13 +249,23 @@ def test_google_service_requires_explicit_security_keys_in_production(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = GoogleCalendarService.__new__(GoogleCalendarService)
-    monkeypatch.setattr("app.core.config.settings.ENVIRONMENT", "production")
-    monkeypatch.setattr("app.core.config.settings.GOOGLE_CLIENT_ID", "client-id")
+    # Target app.services.google_calendar_service.settings (the settings object
+    # that _validate_security_configuration actually reads from). Patching
+    # app.core.config.settings does NOT work reliably because
+    # test_get_authorization_url_parses_env_scopes_string (in
+    # test_calendar_provider_service.py, which runs before this file) does
+    # importlib.reload(app.core.config), creating a NEW settings object in
+    # sys.modules. After that reload, app.core.config.settings != the object
+    # google_calendar_service.py holds (it imported settings before the reload).
+    # Patching the module-level reference in google_calendar_service itself
+    # is always correct regardless of reload state.
+    monkeypatch.setattr("app.services.google_calendar_service.settings.ENVIRONMENT", "production")
+    monkeypatch.setattr("app.services.google_calendar_service.settings.GOOGLE_CLIENT_ID", "client-id")
     monkeypatch.setattr(
-        "app.core.config.settings.GOOGLE_CLIENT_SECRET", "client-secret"
+        "app.services.google_calendar_service.settings.GOOGLE_CLIENT_SECRET", "client-secret"
     )
-    monkeypatch.setattr("app.core.config.settings.GOOGLE_OAUTH_STATE_SIGNING_KEY", None)
-    monkeypatch.setattr("app.core.config.settings.TOKEN_ENCRYPTION_KEY", None)
+    monkeypatch.setattr("app.services.google_calendar_service.settings.GOOGLE_OAUTH_STATE_SIGNING_KEY", None)
+    monkeypatch.setattr("app.services.google_calendar_service.settings.TOKEN_ENCRYPTION_KEY", None)
 
     with pytest.raises(RuntimeError) as exc_info:
         service._validate_security_configuration()
