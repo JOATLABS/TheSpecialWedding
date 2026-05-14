@@ -69,7 +69,7 @@ export default function HomepageTemplatesBand() {
                 Get all 9 templates &rarr;
               </button>
               <Link
-                href="/resources?tab=templates"
+                href="/resources/templates"
                 className="inline-flex items-center text-sm font-medium text-slate-300 underline-offset-4 transition hover:text-white hover:underline"
               >
                 Browse all templates

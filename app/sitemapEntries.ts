@@ -20,6 +20,15 @@ function validPublicSlug(slug: string): boolean {
   return PUBLIC_SLUG_PATTERN.test(slug);
 }
 
+function hasCanonicalSitemapUrl(url: string): boolean {
+  try {
+    const parsedUrl = new URL(url);
+    return parsedUrl.search === '' && parsedUrl.hash === '';
+  } catch {
+    return false;
+  }
+}
+
 export function buildSitemapEntries({
   baseUrl,
   now,
@@ -48,6 +57,12 @@ export function buildSitemapEntries({
     },
     {
       url: `${baseUrl}/resources`,
+      lastModified: now,
+      changeFrequency: 'weekly',
+      priority: 0.8,
+    },
+    {
+      url: `${baseUrl}/resources/templates`,
       lastModified: now,
       changeFrequency: 'weekly',
       priority: 0.8,
@@ -117,5 +132,7 @@ export function buildSitemapEntries({
       priority: 0.6,
     }));
 
-  return [...staticPages, ...comparePages, ...blogPages, ...vendorPages];
+  return [...staticPages, ...comparePages, ...blogPages, ...vendorPages].filter((entry) =>
+    hasCanonicalSitemapUrl(entry.url)
+  );
 }

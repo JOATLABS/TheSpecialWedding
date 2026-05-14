@@ -83,10 +83,36 @@ async def aurinko_webhook(
 ) -> Response:
     """Aurinko webhook receiver.
 
-    Verifies the signature, rejects replays older than the configured window,
-    deduplicates by delivery id, and ack-200s before dispatching each change
-    in ``payloads`` to a background task that resolves the snapshot.
+    Two delivery types arrive on this endpoint:
+
+    1. Notification URL Verification handshake (sent ONCE per subscription at
+       create time). Aurinko POSTs ``?validationToken={challenge}`` with
+       ``Content-Type: text/plain``. The endpoint MUST reply 200 with the
+       raw token as the plain-text body — see
+       docs.aurinko.io/unified-apis/webhooks-api/notification-url-verification.
+       If we 401 / 4xx / 5xx here, Aurinko refuses to create the subscription
+       and surfaces "Webhook subscription failed" upstream. Aurinko does NOT
+       sign the handshake (no v0 HMAC headers), so we cannot signature-check
+       it; the challenge token itself is the proof-of-receipt mechanism.
+    2. Regular change deliveries (post-handshake). These DO carry the
+       ``X-Aurinko-Request-Timestamp`` + ``X-Aurinko-Signature`` headers and
+       go through the full signature + replay + dedupe pipeline below.
     """
+    # Step 1 short-circuit: ``validationToken`` query param marks this as the
+    # subscription handshake. Echo it back as plain text per Aurinko spec.
+    validation_token = request.query_params.get("validationToken")
+    if validation_token:
+        logger.info(
+            "Aurinko subscription handshake accepted: echoing validationToken "
+            "(len=%d) as text/plain",
+            len(validation_token),
+        )
+        return Response(
+            content=validation_token,
+            status_code=200,
+            media_type="text/plain; charset=utf-8",
+        )
+
     raw_body = await request.body()
     signature = request.headers.get("X-Aurinko-Signature") or request.headers.get(
         "X-Webhook-Signature"

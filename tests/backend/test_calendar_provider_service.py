@@ -250,50 +250,76 @@ def _make_response(
 
 @pytest.mark.asyncio
 async def test_authorize_url_advertises_ews_not_exchange() -> None:
-    """Aurinko's hosted-auth provider id for on-prem Exchange is "EWS".
-    Sending "Exchange" silently drops the provider from the picker."""
-    client = AurinkoClient()
-    url = await client.authorize_url(
-        scopes=["Calendar.ReadWrite", "AccountInfo.Read"],
-        return_url="http://localhost:3000/cb",
-        state="state-token",
-    )
-    assert "serviceType=Google%2COffice365%2CiCloud%2CEWS" in url
-    assert "Exchange" not in url.split("serviceType=")[1].split("&")[0]
+    """Aurinko's hosted-auth provider id for on-prem Exchange is "EWS";
+    sending "Exchange" silently drops the provider. Pin that EWS is the
+    canonical spelling we use anywhere serviceType is built."""
+    # The exact serviceType value sent is whatever resolve_service_type
+    # produces; here the test verifies the EWS spelling is correct in the
+    # mapping, regardless of the default-fallback value.
+    assert AurinkoClient.resolve_service_type("ews") == "EWS"
+    assert "Exchange" not in {
+        AurinkoClient.resolve_service_type(p)
+        for p in ("google", "office365", "icloud", "ews")
+    }
 
 
 @pytest.mark.asyncio
-async def test_authorize_url_uses_comma_separated_scopes() -> None:
-    """Aurinko's scope parser rejects space-separated scope lists once the URL
-    has round-tripped through `+` encoding. Comma is the canonical separator;
-    pin it so we don't drift back to space and re-trigger ``badRequest:
-    Unable to parse Scopes`` from /v1/auth/authorize."""
+async def test_authorize_url_uses_space_separated_scopes() -> None:
+    """Aurinko's hosted-auth ``/v1/auth/authorize`` REQUIRES space-separated
+    scopes. Live-verified 2026-05-13 against api.aurinko.io:
+
+        comma-separated  → 400 "Unable to parse Scopes: ..."
+        space-separated  → 303 redirect (success)
+
+    This corrects an earlier comment + test in this file that pinned
+    comma-separated based on an untested assumption. Pin space-separated
+    here so we don't drift back to comma and re-trigger live OAuth failures.
+    """
     client = AurinkoClient()
     url = await client.authorize_url(
         scopes=["Calendar.ReadWrite", "Contacts.Read"],
         return_url="http://localhost:3000/cb",
         state="state-token",
     )
-    # Comma is URL-encoded to %2C inside a query value.
-    assert "scopes=Calendar.ReadWrite%2CContacts.Read" in url
-    # Make sure we never emit the space-separated form (encoded as `+` or %20).
-    assert "Calendar.ReadWrite+Contacts.Read" not in url
-    assert "Calendar.ReadWrite%20Contacts.Read" not in url
+    # Space is URL-encoded to `+` inside an httpx-built query value (or %20
+    # — either is accepted by Aurinko's parser; %2C is the broken form).
+    assert (
+        "scopes=Calendar.ReadWrite+Contacts.Read" in url
+        or "scopes=Calendar.ReadWrite%20Contacts.Read" in url
+    ), f"scopes must be space-separated (+ or %20). URL: {url}"
+    # Must NOT emit comma-separated — that's the form Aurinko rejects.
+    assert "Calendar.ReadWrite%2CContacts.Read" not in url
+    assert "Calendar.ReadWrite,Contacts.Read" not in url
 
 
 @pytest.mark.asyncio
-async def test_authorize_url_default_serviceType_is_picker_list() -> None:
-    """Without an explicit service_type, all four supported providers go in
-    the URL so Aurinko renders its own picker. This preserves the original
-    behavior — the picker is the entry point for clients that don't expose
-    per-provider buttons."""
+async def test_authorize_url_default_serviceType_falls_back_to_google() -> None:
+    """Aurinko's hosted-auth ``/v1/auth/authorize`` accepts a SINGLE
+    serviceType value only. Live-verified 2026-05-13:
+
+        serviceType=Google,Office365,iCloud,EWS  → 400 "customapi.notfound"
+        serviceType=Google                       → 303 redirect to Google OAuth
+
+    There is no native picker mode. The planner UI provides its own
+    four-button picker (one per provider). Without an explicit
+    service_type, we fall back to "Google" — a safe default that
+    produces a valid Aurinko URL instead of erroring out.
+
+    This corrects an earlier test that pinned the comma-separated
+    multi-value form (broken in prod, never live-tested).
+    """
     client = AurinkoClient()
     url = await client.authorize_url(
         scopes=["Calendar.ReadWrite"],
         return_url="http://localhost:3000/cb",
         state="state-token",
     )
-    assert "serviceType=Google%2COffice365%2CiCloud%2CEWS" in url
+    # Default → "Google" (single value).
+    assert "serviceType=Google&" in url or url.endswith("serviceType=Google"), (
+        f"default serviceType must be exactly 'Google' (single value). URL: {url}"
+    )
+    # Must NOT contain comma-separated multi-value form.
+    assert "%2C" not in url.split("serviceType=")[1].split("&")[0]
 
 
 @pytest.mark.asyncio
@@ -327,13 +353,16 @@ def test_resolve_service_type_maps_planner_provider_ids_to_aurinko_enum() -> Non
     assert AurinkoClient.resolve_service_type("ews") == "EWS"
 
 
-def test_resolve_service_type_falls_back_to_picker_list_for_unknown_or_none() -> None:
-    """None, empty, or an unrecognized id sends the full picker list so the
-    user gets Aurinko's chooser instead of a 400/no-op."""
-    full_list = "Google,Office365,iCloud,EWS"
-    assert AurinkoClient.resolve_service_type(None) == full_list
-    assert AurinkoClient.resolve_service_type("") == full_list
-    assert AurinkoClient.resolve_service_type("bogus") == full_list
+def test_resolve_service_type_falls_back_to_google_for_unknown_or_none() -> None:
+    """None, empty, or an unrecognized id resolves to "Google" — a single
+    valid Aurinko serviceType value. The previous fallback (comma-separated
+    multi-value) returned 400 "customapi.notfound" live; verified 2026-05-13.
+    Single-Google is the only safe default — caller can always re-init OAuth
+    to pick a different provider from the planner UI's per-provider buttons.
+    """
+    assert AurinkoClient.resolve_service_type(None) == "Google"
+    assert AurinkoClient.resolve_service_type("") == "Google"
+    assert AurinkoClient.resolve_service_type("bogus") == "Google"
 
 
 @pytest.mark.asyncio

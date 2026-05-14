@@ -560,8 +560,12 @@ const SaasAdminDashboard = () => {
  });
 
  if (response.ok) {
- // Refresh plans data
- const plansResponse = await fetch(`${baseUrl}/subscription-plans`, {
+ // Refresh plans data — MUST pass include_inactive=true here so that a
+ // plan the admin just toggled to Inactive does NOT disappear from the
+ // admin list view. The page-load fetch uses the same query param
+ // (see initial loadDashboardData()), and the admin list filter logic
+ // depends on is_active being a flag, not a presence test.
+ const plansResponse = await fetch(`${baseUrl}/subscription-plans?include_inactive=true`, {
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
@@ -1484,7 +1488,8 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  <div className="mb-4 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100">
  Billing model: {formData.is_metered ? `Metered (${formData.meter_event_name || 'wedding_active'})` : 'Flat-rate'}
  <span className="block text-xs text-blue-800 dark:text-blue-200">
- Metering is the production pricing model. Backend guards block unsafe flat-to-metered or metered-to-flat flips while active subscriptions exist.
+ {/* SYNC-WITH-SEED: pricing strategy — flat-rate is current default per 2026-05-09 refresh */}
+ Flat-rate is the current production pricing model. The metering infrastructure remains available — flip <strong>Enable metered billing</strong> below to opt this single plan into per-wedding billing. Backend guards block unsafe flat-to-metered or metered-to-flat flips while active subscriptions exist.
  </span>
  </div>
  <form onSubmit={handleSubmit} className="space-y-4">

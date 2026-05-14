@@ -128,6 +128,8 @@ export interface CalendarConnection {
   is_shared_in_team_view: boolean;
   details_visibility: VisibilityMode;
   sync_enabled: boolean;
+  couple_booking_auto_confirm?: boolean;
+  conference_provider_default?: 'zoom' | 'teams' | 'webex' | null;
   connection_status: ConnectionStatus | string;
   token_expiry?: string | null;
   last_sync_at?: string | null;

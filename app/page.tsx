@@ -153,6 +153,19 @@ const faqs = [
   },
 ];
 
+const faqPageJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: faqs.map((faq) => ({
+    '@type': 'Question',
+    name: faq.question,
+    acceptedAnswer: {
+      '@type': 'Answer',
+      text: faq.answer,
+    },
+  })),
+};
+
 const metrics = [
   { label: "Planner hours reclaimed", value: "18/wk" },
   { label: "Vendor follow-up lift", value: "42%" },
@@ -174,6 +187,10 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-slate-950 text-white">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqPageJsonLd) }}
+      />
       <SaasNav />
 
       <section className="relative isolate min-h-[92vh] overflow-hidden px-6 pt-28 sm:px-8 lg:px-12">
@@ -303,7 +320,7 @@ export default function HomePage() {
         <div className="mx-auto flex max-w-7xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <p>&copy; {year} The Special Wedding. All rights reserved.</p>
           <div className="flex flex-wrap gap-5">
-            <Link href="/resources?tab=templates" className="hover:text-white">
+            <Link href="/resources/templates" className="hover:text-white">
               Free templates
             </Link>
             <Link href="/privacy" className="hover:text-white">

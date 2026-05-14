@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 from app.core.database import mongo
 from app.models.calendar import VisibilityMode
-from app.services.google_calendar_service import google_calendar_service
+from app.services.calendar_provider_service import calendar_provider_service
 
 
 def _iso(value: Any) -> Optional[str]:
@@ -243,7 +243,7 @@ class CalendarAggregationService:
         external_events: list[dict] = []
         include_external = self._wants_external(source_types)
         if include_external:
-            connections = await google_calendar_service.list_connections(
+            connections = await calendar_provider_service.list_connections(
                 owner_id=owner_id,
                 current_user_id=current_user_id,
                 include_all_owner_connections=include_all_owner_connections,
@@ -261,7 +261,7 @@ class CalendarAggregationService:
 
             fetched_events = await asyncio.gather(
                 *[
-                    google_calendar_service.fetch_google_events_for_connection(
+                    calendar_provider_service.fetch_external_events_for_connection(
                         connection["id"],
                         time_min=start,
                         time_max=end,

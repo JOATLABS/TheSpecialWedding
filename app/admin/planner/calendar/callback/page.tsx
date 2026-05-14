@@ -5,6 +5,18 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { completeCalendarCallback } from '@/services/calendarApi';
 
+// Aurinko OAuth codes are single-use. React 18 dev StrictMode double-
+// invokes effects, which would POST the same code twice — the second
+// attempt returns 410 Gone and clobbers the success state from the
+// first call. This module-level cache survives the simulated remount
+// and lets us short-circuit duplicate attempts. Stores per-tab only;
+// hard reloads start fresh which is fine because the code in the URL
+// would already be redeemed (and Aurinko would 410 — caught below).
+const inflightOrCompletedCodes = new Map<
+  string,
+  Promise<Awaited<ReturnType<typeof completeCalendarCallback>>>
+>();
+
 export default function CalendarCallbackPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -45,7 +57,18 @@ export default function CalendarCallbackPage() {
       }
 
       try {
-        const result = await completeCalendarCallback(token, code, state);
+        // Dedupe by code — StrictMode in dev mounts this effect twice.
+        // Without this, both invocations POST to /provider/callback with
+        // the same single-use Aurinko code; the second hit returns 410
+        // and overwrites the first's success in the UI. Sharing the
+        // in-flight Promise means both effect runs observe the SAME
+        // resolution, so the second one cannot 410-clobber the first.
+        let exchange = inflightOrCompletedCodes.get(code);
+        if (!exchange) {
+          exchange = completeCalendarCallback(token, code, state);
+          inflightOrCompletedCodes.set(code, exchange);
+        }
+        const result = await exchange;
 
         if (cancelled) return;
 

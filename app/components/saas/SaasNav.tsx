@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Menu, X } from 'lucide-react';
@@ -17,6 +17,7 @@ export default function SaasNav() {
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const hasMounted = useRef(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -27,10 +28,12 @@ export default function SaasNav() {
 
   // Close mobile menu on route change
   useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      setMobileOpen(false);
-    });
-    return () => window.cancelAnimationFrame(frame);
+    if (!hasMounted.current) {
+      hasMounted.current = true;
+      return;
+    }
+
+    setMobileOpen(false);
   }, [pathname]);
 
   return (
