@@ -198,6 +198,8 @@ class CalendarConnectionResponse(BaseModel):
     is_shared_in_team_view: bool = False
     details_visibility: str = VisibilityMode.BUSY_ONLY.value
     sync_enabled: bool = False
+    couple_booking_auto_confirm: bool = True
+    conference_provider_default: Optional[str] = None
     connection_status: str
     token_expiry: Optional[datetime] = None
     last_sync_at: Optional[datetime] = None
@@ -991,14 +993,24 @@ async def disconnect_provider_calendar(
         require_calendar_permission("connect_personal_calendar")
     ),
 ) -> dict:
-    """Disconnect every Aurinko-brokered calendar for the current user.
+    """Disconnect every Aurinko-brokered calendar for the current user
+    *within the current workspace*.
 
     Unsubscribes each per-calendar Aurinko subscription, revokes the
     account token Aurinko-side, marks dependent sync rows as ORPHANED, and
     deletes the local connection rows. Idempotent — re-running on an
     already-disconnected user is a no-op.
+
+    Scoped by ``owner_planner_id`` so a team member with the same email
+    across multiple owner workspaces only disconnects calendars within
+    THIS workspace (cross-tenant safety).
     """
-    return await calendar_provider_service.disconnect(current_user.email)
+    context = get_calendar_owner_identity(current_user)
+    owner_planner_id = context.get("owner_id") or context.get("user_id") or ""
+    return await calendar_provider_service.disconnect(
+        current_user.email,
+        owner_planner_id=owner_planner_id,
+    )
 
 
 @router.patch(
@@ -1217,8 +1229,30 @@ async def get_staff_availability(
             busy_ranges.append((event_start, event_end))
     busy_ranges.sort(key=lambda row: row[0])
 
+    # Clip the window start to "now" so the past isn't reported as
+    # available. Without this, opening the calendar mid-month produced
+    # windows like "May 1 -> May 31" when today is already May 13 — the
+    # first half being walking through past time. `now` is computed in
+    # UTC to match the timezone-aware `start` query param.
+    now_utc = datetime.now(UTC)
+    if start.tzinfo is None:
+        # Defensive: callers should send tz-aware ISO strings, but if
+        # they don't, treat the naive value as UTC for the clip.
+        effective_start = max(start.replace(tzinfo=UTC), now_utc)
+    else:
+        effective_start = max(start, now_utc)
+    # If the whole requested window is in the past, return no windows.
+    if effective_start >= end:
+        return {
+            "staff_ids": staff_ids,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "busy_events": [_serialize_shared_event(event) for event in busy_events],
+            "available_windows": [],
+        }
+
     available_windows = []
-    cursor = start
+    cursor = effective_start
     for busy_start, busy_end in busy_ranges:
         if busy_start > cursor:
             available_windows.append(
@@ -2557,3 +2591,110 @@ async def get_meeting_sync_status(
         "meeting_id": meeting_id,
         "sync_status": await calendar_sync_service.get_sync_status(meeting_id),
     }
+
+
+# ============================================================================
+# Meeting resolution endpoints (phase 2 stubs)
+#
+# These four endpoints close the loop on external-change reconciliation and
+# couple-booking approval. They are wired now so the route surface is stable
+# for the planner UI work in flight; the bodies are deliberately stubs that
+# return 501 until the optimistic-concurrency + audit-trail implementation
+# lands in phase 2.
+#
+# Each endpoint takes a required ``expected_version`` query parameter — the
+# same optimistic-concurrency token ``update_meeting`` already enforces — so
+# a stale UI click cannot clobber a concurrent webhook write.
+# ============================================================================
+
+
+@router.post(
+    "/planner/calendar/meetings/{task_id}/accept-external-change",
+    tags=["Planner Calendar"],
+)
+async def accept_meeting_external_change(
+    task_id: str,
+    expected_version: int = Query(
+        ...,
+        description=(
+            "Optimistic-concurrency token. Bumped on every state transition. "
+            "Stale client clicks 409."
+        ),
+    ),
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
+) -> dict:
+    """[STUB] Accept the externally-modified version of this meeting as
+    canonical. Phase 2 implementation."""
+    raise HTTPException(
+        status_code=501,
+        detail="accept_meeting_external_change not implemented yet (phase 2)",
+    )
+
+
+@router.post(
+    "/planner/calendar/meetings/{task_id}/reject-external-change",
+    tags=["Planner Calendar"],
+)
+async def reject_meeting_external_change(
+    task_id: str,
+    expected_version: int = Query(
+        ...,
+        description=(
+            "Optimistic-concurrency token. Bumped on every state transition. "
+            "Stale client clicks 409."
+        ),
+    ),
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
+) -> dict:
+    """[STUB] Reject the externally-modified version and keep the canonical
+    meeting state. Phase 2 implementation."""
+    raise HTTPException(
+        status_code=501,
+        detail="reject_meeting_external_change not implemented yet (phase 2)",
+    )
+
+
+@router.post(
+    "/planner/calendar/meetings/{task_id}/approve-booking",
+    tags=["Planner Calendar"],
+)
+async def approve_couple_booking(
+    task_id: str,
+    expected_version: int = Query(
+        ...,
+        description=(
+            "Optimistic-concurrency token. Bumped on every state transition. "
+            "Stale client clicks 409."
+        ),
+    ),
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
+) -> dict:
+    """[STUB] Approve a couple-initiated booking request, transitioning the
+    meeting from pending_approval to scheduled. Phase 2 implementation."""
+    raise HTTPException(
+        status_code=501,
+        detail="approve_couple_booking not implemented yet (phase 2)",
+    )
+
+
+@router.post(
+    "/planner/calendar/meetings/{task_id}/decline-booking",
+    tags=["Planner Calendar"],
+)
+async def decline_couple_booking(
+    task_id: str,
+    expected_version: int = Query(
+        ...,
+        description=(
+            "Optimistic-concurrency token. Bumped on every state transition. "
+            "Stale client clicks 409."
+        ),
+    ),
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
+) -> dict:
+    """[STUB] Decline a couple-initiated booking request. Phase 2
+    implementation."""
+    raise HTTPException(
+        status_code=501,
+        detail="decline_couple_booking not implemented yet (phase 2)",
+    )

@@ -335,6 +335,55 @@ def test_paid_plans_have_uniform_30_day_trial():
         )
 
 
+def test_update_plan_clears_deleted_at_on_reactivation():
+    """Pin: ``subscription_service.update_plan`` must $unset ``deleted_at``
+    when the admin re-activates a soft-deleted plan.
+
+    Source-level AST guard. Without this, a plan that was soft-deleted via
+    delete_plan (which writes ``is_active=False`` AND ``deleted_at: <ts>``)
+    can be re-activated via the admin UI — but ``deleted_at`` stays set,
+    leaving the doc in a half-state. Any downstream filter that treats
+    ``deleted_at`` as authoritative would still consider the plan deleted.
+    """
+    import ast as _ast
+
+    src_path = Path(PROJECT_ROOT) / "app" / "services" / "subscription_service.py"
+    tree = _ast.parse(src_path.read_text())
+
+    # Find the update_plan async function definition.
+    update_plan_fn = None
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.AsyncFunctionDef) and node.name == "update_plan":
+            update_plan_fn = node
+            break
+
+    assert update_plan_fn is not None, (
+        "Could not locate `async def update_plan` in subscription_service.py. "
+        "If the function was renamed or moved, update this test."
+    )
+
+    # The cleanup must use $unset on deleted_at, guarded by the
+    # is_active=True + existing deleted_at conditions. We assert via
+    # AST.unparse() text inspection — looking for the canonical pattern.
+    fn_text = _ast.unparse(update_plan_fn)
+
+    # ast.unparse re-serializes with single quotes; check for both quote
+    # styles to be robust against the AST round-trip.
+    assert "'deleted_at'" in fn_text or '"deleted_at"' in fn_text, (
+        "update_plan no longer references 'deleted_at'. The re-activation "
+        "cleanup is missing — admin can no longer clear soft-delete markers."
+    )
+    assert "'$unset'" in fn_text or '"$unset"' in fn_text, (
+        "update_plan no longer uses $unset. Without it, deleted_at can't "
+        "be cleared on re-activation (using $set: {deleted_at: None} is a "
+        "different semantic that leaves the field present)."
+    )
+    assert "is_active" in fn_text and "True" in fn_text, (
+        "Cleanup must be gated on is_active=True so it only fires when the "
+        "admin is explicitly re-activating."
+    )
+
+
 def test_max_weddings_lifetime_is_written_to_mongo():
     """Pin the specific field that was silently missing entirely.
 

@@ -48,6 +48,10 @@ class PlannerNotificationTypes:
     COUPLE_PORTAL_ACCEPTED: Final[Literal["couple_portal_accepted"]] = (
         "couple_portal_accepted"
     )
+    # Couple has submitted a new booking request that needs the planner's approval
+    MEETING_BOOKING_REQUEST: Final[Literal["meeting_booking_request"]] = (
+        "meeting_booking_request"
+    )
 
 
 NotificationType = Literal[
@@ -67,6 +71,7 @@ NotificationType = Literal[
     "couple_note",
     "wedding_created",
     "couple_portal_accepted",
+    "meeting_booking_request",
 ]
 
 

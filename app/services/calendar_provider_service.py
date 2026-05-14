@@ -171,31 +171,37 @@ class AurinkoClient:
         return await client.request(method, url, **kwargs)
 
     # Provider id → Aurinko serviceType (exact strings from the
-    # /v1/auth/authorize enum at apirefs.aurinko.io). UNKNOWN means "let
-    # Aurinko render its provider picker" (all four supported values).
+    # /v1/auth/authorize enum at apirefs.aurinko.io).
     _PROVIDER_TO_SERVICE_TYPE = {
         "google": "Google",
         "office365": "Office365",
         "icloud": "iCloud",
         "ews": "EWS",
     }
-    _DEFAULT_PICKER_SERVICE_TYPES = "Google,Office365,iCloud,EWS"
+    # Aurinko's ``/v1/auth/authorize`` accepts a SINGLE serviceType value.
+    # Passing a comma-separated multi-value (e.g. "Google,Office365,...")
+    # returns 400 "customapi.notfound" — Aurinko looks up the literal
+    # string as a service type and fails. There is no native picker
+    # mode. The planner UI provides its own four-button picker (one
+    # button per provider), so the default-Google fallback below only
+    # fires when a caller forgets to pass a provider id.
+    _DEFAULT_SERVICE_TYPE = "Google"
 
     @classmethod
     def resolve_service_type(cls, provider: Optional[str]) -> str:
-        """Map a planner-facing provider id (or None) to Aurinko's
-        ``serviceType`` query value.
+        """Map a planner-facing provider id to Aurinko's ``serviceType``.
 
-        - None / "" / unknown id  → "Google,Office365,iCloud,EWS" (Aurinko
-          renders the provider picker on its hosted-auth screen).
         - "google" / "office365" / "icloud" / "ews" (case-insensitive)
           → the single Aurinko-spec value, so the user lands directly on
           that provider's OAuth screen.
+        - None / "" / unknown id → "Google" (safe fallback so the OAuth
+          flow doesn't error out — the planner can cancel from Google's
+          screen and re-initiate against a different provider).
         """
         if not provider:
-            return cls._DEFAULT_PICKER_SERVICE_TYPES
+            return cls._DEFAULT_SERVICE_TYPE
         return cls._PROVIDER_TO_SERVICE_TYPE.get(
-            provider.strip().lower(), cls._DEFAULT_PICKER_SERVICE_TYPES
+            provider.strip().lower(), cls._DEFAULT_SERVICE_TYPE
         )
 
     async def authorize_url(
@@ -220,24 +226,48 @@ class AurinkoClient:
         its own provider chooser.
         """
         client_id, _ = self._platform_basic_auth()
-        # Default: send the comma-separated full list so Aurinko shows its
-        # picker. Per-provider entry points pass a single value so the user
-        # lands directly on that provider's OAuth screen.
+        # Aurinko accepts a SINGLE serviceType value only. Live-verified
+        # 2026-05-13: passing a comma-separated multi-value returns 400
+        # "customapi.notfound" — Aurinko treats the whole string as a
+        # service-type lookup key and can't resolve it. Per-provider
+        # entry points pass one of {Google, Office365, iCloud, EWS};
+        # missing/unknown falls back to "Google" via resolve_service_type.
         resolved_service_type = (
             service_type or ""
-        ).strip() or self._DEFAULT_PICKER_SERVICE_TYPES
+        ).strip() or self._DEFAULT_SERVICE_TYPE
         # On-prem Exchange uses "EWS" (Exchange Web Services) — "Exchange" is
         # silently dropped.
         #
-        # Scopes MUST be comma-separated. Aurinko's scope parser rejects
-        # space-separated lists with `Unable to parse Scopes`, even though
-        # some doc snippets show `Mail.Read Mail.Send`. The space form likely
-        # works only when the URL never round-trips through `+` encoding;
-        # comma is the safe canonical form.
+        # Scopes MUST be space-separated. Live-verified 2026-05-13 against
+        # api.aurinko.io/v1/auth/authorize via three back-to-back probes
+        # with this app's clientId — results pinned here so future
+        # contributors don't have to re-derive them:
+        #
+        #   scopes=Calendar.Read+Calendar.ReadWrite       → returnUrl.invalid
+        #     (scopes accepted; the next validation step failed)
+        #   scopes=Calendar.ReadOnly+Calendar.ReadWrite   → "Unable to parse
+        #     Scopes" — the ".ReadOnly" suffix is NOT a real scope name
+        #     despite appearing in
+        #     docs.aurinko.io/authentication/google-oauth-setup
+        #   scopes=Calendar.Read,Calendar.ReadWrite       → "Unable to parse
+        #     Scopes" — comma delimiter is rejected despite appearing in
+        #     the docs.aurinko.io/authentication/authentication-scopes
+        #     curl example. Aurinko's docs are inconsistent across pages;
+        #     the LIVE API only matches the URL example in
+        #     account-oauth-flow.md.
+        #
+        # Canonical scope names (verified against the parser):
+        #   Mail.Read, Mail.ReadWrite, Mail.Drafts (plural!), Mail.Send,
+        #   Calendar.Read, Calendar.ReadWrite,
+        #   Contacts.Read, Contacts.ReadWrite,
+        #   Tasks.Read, Tasks.ReadWrite
+        #
+        # `+` and `%20` both encode space and are both accepted; httpx's
+        # QueryParams uses `+` which is fine.
         params = {
             "clientId": client_id,
             "serviceType": resolved_service_type,
-            "scopes": ",".join(scopes),
+            "scopes": " ".join(scopes),
             "responseType": "code",
             "returnUrl": return_url,
             "state": state,
@@ -438,6 +468,140 @@ class AurinkoClient:
             "DELETE",
             f"/subscriptions/{subscription_id}",
             account_token=account_token,
+        )
+        if response.status_code == 404:
+            return
+        response.raise_for_status()
+
+    async def list_booking_profiles(
+        self, *, account_token: str
+    ) -> list[dict[str, Any]]:
+        """List the Aurinko booking profiles available to this account.
+
+        Each profile is a planner-published "scheduling profile" (per-duration,
+        per-calendar set, per-availability-rules). Aurinko returns them under
+        /v1/book/account/profiles.
+
+        Returns the raw 'records' array; callers decide which profile is
+        canonical for a given couple-booking request.
+        """
+        response = await self._request(
+            "GET", "/book/account/profiles", account_token=account_token
+        )
+        response.raise_for_status()
+        body = response.json()
+        return body.get("records") or body.get("profiles") or []
+
+    async def get_availability(
+        self,
+        *,
+        account_token: str,
+        profile: str,
+        from_: datetime,
+        to: datetime,
+        duration_minutes: Optional[int] = None,
+    ) -> dict[str, Any]:
+        """Query Aurinko for free slots in [from_, to] for the given profile.
+
+        Aurinko endpoint: GET /v1/book/account/profiles/{profile}/availability
+        with `from` and `to` ISO timestamps. Optional `duration` (minutes) hints
+        the slot length when the profile supports multiple. Returns the raw
+        Aurinko response (slots list + metadata); the couple_booking_service
+        decides how many to surface to the planner.
+        """
+        params: dict[str, Any] = {
+            "from": from_.isoformat(),
+            "to": to.isoformat(),
+        }
+        if duration_minutes is not None:
+            params["duration"] = int(duration_minutes)
+        response = await self._request(
+            "GET",
+            f"/book/account/profiles/{quote(profile, safe='')}/availability",
+            account_token=account_token,
+            params=params,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def create_booking(
+        self,
+        *,
+        account_token: str,
+        profile: str,
+        start: datetime,
+        duration_minutes: int,
+        attendees: list[dict[str, Any]],
+        subject: Optional[str] = None,
+        notes: Optional[str] = None,
+        start_conference: bool = False,
+    ) -> dict[str, Any]:
+        """Create a booking on Aurinko for a chosen slot.
+
+        Endpoint: POST /v1/book/account/profiles/{profile}.
+        Aurinko will (a) write the event on the planner's connected calendar
+        via the underlying provider and (b) fire the /booking/{bookingId}
+        webhook lifecycle (see docs.aurinko.io/unified-apis/webhooks-api).
+        `start_conference=True` triggers Aurinko's conference auto-create
+        (Zoom/Teams/Webex depending on the planner's enabled Messaging
+        integrations on the Aurinko app dashboard).
+        """
+        body: dict[str, Any] = {
+            "start": start.isoformat(),
+            "duration": int(duration_minutes),
+            "attendees": attendees,
+        }
+        if subject is not None:
+            body["subject"] = subject
+        if notes is not None:
+            body["notes"] = notes
+        if start_conference:
+            body["startConference"] = True
+        response = await self._request(
+            "POST",
+            f"/book/account/profiles/{quote(profile, safe='')}",
+            account_token=account_token,
+            json_body=body,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def get_booking(
+        self, *, account_token: str, booking_id: str
+    ) -> dict[str, Any]:
+        """Fetch a booking by id.
+
+        Used to reconcile state after the /booking/{bookingId} webhook fires
+        (which delivers only id + bookingId — no snapshot). Endpoint:
+        GET /v1/book/account/bookings/{bookingId}.
+        """
+        response = await self._request(
+            "GET",
+            f"/book/account/bookings/{quote(booking_id, safe='')}",
+            account_token=account_token,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def cancel_booking(
+        self,
+        *,
+        account_token: str,
+        booking_id: str,
+        reason: Optional[str] = None,
+    ) -> None:
+        """Cancel an Aurinko booking. Idempotent — 404 treated as success.
+
+        Endpoint: DELETE /v1/book/account/bookings/{bookingId}.
+        """
+        params: dict[str, Any] = {}
+        if reason is not None:
+            params["reason"] = reason
+        response = await self._request(
+            "DELETE",
+            f"/book/account/bookings/{quote(booking_id, safe='')}",
+            account_token=account_token,
+            params=params or None,
         )
         if response.status_code == 404:
             return
@@ -1126,13 +1290,60 @@ class CalendarProviderService:
                 upsert=True,
             )
 
-        await self.connections_collection.delete_many(
-            {
-                "user_id": user_id,
-                "aurinko_account_id": aurinko_account_id,
-                "aurinko_calendar_id": {"$nin": seen_calendar_ids},
-            }
+        # Calendars that were present in a prior OAuth but are no longer
+        # returned by Aurinko (e.g. user removed the calendar from their
+        # provider) must be torn down completely: tear down each row's
+        # per-calendar Aurinko subscription, mark dependent event_syncs as
+        # ORPHANED, and only then delete the connection rows. Mirrors the
+        # teardown pattern in ``disconnect()``.
+        stale_filter = {
+            "user_id": user_id,
+            "aurinko_account_id": aurinko_account_id,
+            "aurinko_calendar_id": {"$nin": seen_calendar_ids},
+        }
+        stale_rows = await self.connections_collection.find(stale_filter).to_list(
+            length=None
         )
+        if stale_rows:
+            for stale_row in stale_rows:
+                stale_subscription_id = stale_row.get("aurinko_subscription_id")
+                if not stale_subscription_id:
+                    continue
+                stale_token = self._decrypt_token(
+                    stale_row.get("aurinko_access_token_encrypted")
+                )
+                if not stale_token:
+                    continue
+                try:
+                    await self.client.delete_subscription(
+                        account_token=stale_token,
+                        subscription_id=str(stale_subscription_id),
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Aurinko unsubscribe for stale calendar %s on account %s "
+                        "failed during reconnect teardown: %s",
+                        stale_row.get("aurinko_calendar_id"),
+                        aurinko_account_id,
+                        _redact_sensitive(exc),
+                    )
+            stale_connection_ids = [str(row["_id"]) for row in stale_rows]
+            if stale_connection_ids:
+                await self.syncs_collection.update_many(
+                    {"calendar_connection_id": {"$in": stale_connection_ids}},
+                    {
+                        "$set": {
+                            "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                            "last_error": "Calendar removed from provider",
+                            "last_error_category": "connection_disconnected",
+                            "retryable_error": False,
+                            "next_retry_at": None,
+                            "updated_at": now,
+                        },
+                        "$unset": {"calendar_connection_id": "", "calendar_id": ""},
+                    },
+                )
+        await self.connections_collection.delete_many(stale_filter)
 
         existing_default = await self.connections_collection.find_one(
             {
@@ -1346,6 +1557,7 @@ class CalendarProviderService:
             ),
             "sync_enabled": doc.get("sync_enabled", False),
             "couple_booking_auto_confirm": doc.get("couple_booking_auto_confirm", True),
+            "conference_provider_default": doc.get("conference_provider_default"),
             "connection_status": doc.get(
                 "connection_status", CalendarConnectionStatus.ERROR.value
             ),
@@ -1413,6 +1625,7 @@ class CalendarProviderService:
                 "details_visibility",
                 "sync_enabled",
                 "couple_booking_auto_confirm",
+                "conference_provider_default",
             }
             and v is not None
         }
@@ -1714,32 +1927,39 @@ class CalendarProviderService:
         sibling_count = await self.connections_collection.count_documents(account_query)
         is_last_row_for_account = sibling_count <= 1
 
-        if is_last_row_for_account:
-            token = self._decrypt_token(
-                connection_doc.get("aurinko_access_token_encrypted")
-            )
-            subscription_id = connection_doc.get("aurinko_subscription_id")
-            if token and subscription_id:
-                try:
-                    await self.client.delete_subscription(
-                        account_token=token, subscription_id=str(subscription_id)
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "Aurinko unsubscribe for account %s failed: %s",
-                        connection_doc.get("aurinko_account_id"),
-                        _redact_sensitive(exc),
-                    )
-            if token:
-                try:
-                    await self.client.revoke_account(token)
-                except Exception as exc:
-                    logger.warning(
-                        "Aurinko revoke for account %s failed (continuing with local "
-                        "disconnect): %s",
-                        connection_doc.get("aurinko_account_id"),
-                        _redact_sensitive(exc),
-                    )
+        # Subscriptions are per-calendar — every row carries its own
+        # ``aurinko_subscription_id``. Tear THIS row's subscription down
+        # unconditionally, otherwise mid-row disconnects leak the
+        # subscription on Aurinko's side. Account-token revocation, on the
+        # other hand, MUST stay conditional on last-row — revoking the
+        # account token mid-disconnect would kill every sibling row's
+        # token.
+        token = self._decrypt_token(
+            connection_doc.get("aurinko_access_token_encrypted")
+        )
+        subscription_id = connection_doc.get("aurinko_subscription_id")
+        if token and subscription_id:
+            try:
+                await self.client.delete_subscription(
+                    account_token=token, subscription_id=str(subscription_id)
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Aurinko unsubscribe for calendar %s on account %s failed: %s",
+                    connection_doc.get("aurinko_calendar_id"),
+                    connection_doc.get("aurinko_account_id"),
+                    _redact_sensitive(exc),
+                )
+        if is_last_row_for_account and token:
+            try:
+                await self.client.revoke_account(token)
+            except Exception as exc:
+                logger.warning(
+                    "Aurinko revoke for account %s failed (continuing with local "
+                    "disconnect): %s",
+                    connection_doc.get("aurinko_account_id"),
+                    _redact_sensitive(exc),
+                )
 
         now = datetime.now(UTC)
         await self.syncs_collection.update_many(
@@ -1829,11 +2049,25 @@ class CalendarProviderService:
             "events_synced": synced_count,
         }
 
-    async def disconnect(self, user_email: str) -> Dict[str, Any]:
-        """Disconnect every connection for a user across all Aurinko accounts."""
-        docs = await self.connections_collection.find(
-            {"user_email": user_email}
-        ).to_list(length=None)
+    async def disconnect(
+        self, user_email: str, *, owner_planner_id: str
+    ) -> Dict[str, Any]:
+        """Disconnect every connection for a (workspace, user) pair.
+
+        Team-member identity is compound ``(owner_planner_id, user_email)``;
+        the same email can legitimately appear in multiple planner
+        workspaces. Filtering by ``user_email`` alone would cross-disconnect
+        calendars in workspaces the caller never selected. Every Mongo
+        filter inside this method MUST carry ``owner_planner_id`` to keep
+        the action tenant-scoped.
+        """
+        scoped_filter = {
+            "user_email": user_email,
+            "owner_planner_id": owner_planner_id,
+        }
+        docs = await self.connections_collection.find(scoped_filter).to_list(
+            length=None
+        )
         if not docs:
             return {"disconnected": True, "message": "Calendar was not connected"}
 
@@ -1893,7 +2127,7 @@ class CalendarProviderService:
                 "$unset": {"calendar_connection_id": "", "calendar_id": ""},
             },
         )
-        await self.connections_collection.delete_many({"user_email": user_email})
+        await self.connections_collection.delete_many(scoped_filter)
         for connection_id in connection_ids:
             await self.invalidate_connection_events_cache(connection_id)
 

@@ -18,6 +18,38 @@ class Settings:
         os.getenv("PLATFORM_METRICS_TOKEN") or os.getenv("API_TOKEN") or API_KEY
     )
 
+    # ==================== Umami Analytics (ROOT_ADMIN only) ====================
+    # Server-to-server connection to the self-hosted Umami instance (Coolify).
+    # Used by /admin/analytics/funnel for the root admin acquisition card.
+    # These are NEVER `NEXT_PUBLIC_*` — they must not be exposed to the browser.
+    #
+    # Auth model:
+    #   - Self-hosted Umami v3 has no API-key UI; backend exchanges
+    #     UMAMI_USERNAME + UMAMI_PASSWORD for a JWT via POST /api/auth/login,
+    #     caches it in Redis, sends as `Authorization: Bearer <token>`.
+    #   - If UMAMI_API_KEY is set (e.g. Umami Cloud, or a future self-hosted
+    #     build that exposes API keys), it takes precedence and is sent as
+    #     `x-umami-api-key` — no login round-trip.
+    #
+    # UMAMI_API_BASE      — full base of Umami's REST API. Prefer the internal
+    #                       Docker hostname so this stays inside the overlay
+    #                       network (e.g. http://<umami-service>:3000/api).
+    # UMAMI_USERNAME      — login username for the backend's dedicated Umami
+    #                       user (best practice: not the human admin user).
+    # UMAMI_PASSWORD      — login password for that user.
+    # UMAMI_API_KEY       — optional; only used if Umami Cloud or a build that
+    #                       supports it. Bypasses the login flow when set.
+    # UMAMI_WEBSITE_ID    — same UUID the public tracker uses; kept separate
+    #                       from the NEXT_PUBLIC_ version so the backend never
+    #                       reads a client-bundled env var.
+    # UMAMI_DASHBOARD_URL — public Umami URL for "open in Umami" deep links.
+    UMAMI_API_BASE: Optional[str] = os.getenv("UMAMI_API_BASE")
+    UMAMI_USERNAME: Optional[str] = os.getenv("UMAMI_USERNAME")
+    UMAMI_PASSWORD: Optional[str] = os.getenv("UMAMI_PASSWORD")
+    UMAMI_API_KEY: Optional[str] = os.getenv("UMAMI_API_KEY")
+    UMAMI_WEBSITE_ID: Optional[str] = os.getenv("UMAMI_WEBSITE_ID")
+    UMAMI_DASHBOARD_URL: Optional[str] = os.getenv("UMAMI_DASHBOARD_URL")
+
     # ==================== URL Configuration ====================
     # Single source of truth - NO FALLBACKS
     # Missing vars will trigger root admin notification at startup

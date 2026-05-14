@@ -123,59 +123,6 @@ export default function RootLayout({
                     offerCount: 2,
                   },
                 },
-                {
-                  '@type': 'FAQPage',
-                  mainEntity: [
-                    {
-                      '@type': 'Question',
-                      name: 'Can I manage multiple weddings at once?',
-                      acceptedAnswer: {
-                        '@type': 'Answer',
-                        text: 'Yes. Each wedding gets its own workspace with separate guest lists, budgets, seating, vendors, and branding — all managed from a single dashboard with portfolio-level analytics.',
-                      },
-                    },
-                    {
-                      '@type': 'Question',
-                      name: 'What do my couples see?',
-                      acceptedAnswer: {
-                        '@type': 'Answer',
-                        text: 'Every couple gets their own Couple Portal with a personalized dashboard, timeline, payment history, form submissions, an inbox to message you directly, photo memories, gift registry, and FAQs — no app download needed.',
-                      },
-                    },
-                    {
-                      '@type': 'Question',
-                      name: 'How does the AI help me run my business?',
-                      acceptedAnswer: {
-                        '@type': 'Answer',
-                        text: 'AI is woven into contracts (clause generation), service packages (pricing suggestions), reminders (tone-aware message drafting), budgets (spend forecasting), payments (cash flow predictions), and seating (conflict resolution) — saving hours of manual work every week.',
-                      },
-                    },
-                    {
-                      '@type': 'Question',
-                      name: 'Can I send RSVPs and reminders via SMS?',
-                      acceptedAnswer: {
-                        '@type': 'Answer',
-                        text: 'Yes. Send RSVP invitations and follow-up reminders via SMS (Twilio or Telnyx) or email (Resend), with automatic fallback if SMS fails, delivery tracking, and AI-drafted messages in formal, friendly, or casual tones.',
-                      },
-                    },
-                    {
-                      '@type': 'Question',
-                      name: 'Can vendors collaborate in the platform?',
-                      acceptedAnswer: {
-                        '@type': 'Answer',
-                        text: 'Yes. Invite photographers, caterers, and venues into dedicated workspaces with role-based access to timelines, contracts, deliverables, and file exchanges — plus a vendor advertising portal for agencies.',
-                      },
-                    },
-                    {
-                      '@type': 'Question',
-                      name: 'Is there support on the wedding day?',
-                      acceptedAnswer: {
-                        '@type': 'Answer',
-                        text: 'Signature and Agency plans include live chat with our success team plus on-call escalation for critical day-of moments.',
-                      },
-                    },
-                  ],
-                },
               ],
             }),
           }}

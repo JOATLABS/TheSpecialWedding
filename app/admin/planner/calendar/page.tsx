@@ -208,12 +208,17 @@ export default function PlannerCalendarPage() {
     return Array.from(map.values());
   }, [ownerStaffOption, teamMembers, userProfile]);
 
+  // Use LOCAL midnight, not UTC midnight. Using Date.UTC here meant that
+  // for users in negative-offset timezones (PT/CT/ET), the query start
+  // landed on the previous day in local time — surfacing "Apr 30 7:00 PM"
+  // as an available window when the user was looking at May. Local
+  // midnight renders correctly in all timezones.
   const monthStart = useMemo(
-    () => new Date(Date.UTC(currentYear, currentMonth, 1)),
+    () => new Date(currentYear, currentMonth, 1),
     [currentMonth, currentYear]
   );
   const monthEnd = useMemo(
-    () => new Date(Date.UTC(currentYear, currentMonth + 1, 1)),
+    () => new Date(currentYear, currentMonth + 1, 1),
     [currentMonth, currentYear]
   );
 

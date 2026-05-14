@@ -87,6 +87,11 @@ class InviteDeliveryMode(str, Enum):
 class MeetingLifecycleStatus(str, Enum):
     """Lifecycle state for canonical meeting records."""
 
+    # Couple has requested a booking slot; planner must approve before it
+    # transitions to SCHEDULED. Used for the couple-initiated booking
+    # approval flow where the planner gates which proposed times become
+    # confirmed meetings on the calendar.
+    PENDING_APPROVAL = "pending_approval"
     SCHEDULED = "scheduled"
     RESCHEDULED = "rescheduled"
     CANCELLED = "cancelled"

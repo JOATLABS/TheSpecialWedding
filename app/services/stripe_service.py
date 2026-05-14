@@ -259,10 +259,18 @@ class StripeService:
             else:
                 try:
                     stripe.Product.retrieve(product_id)
+                    # Push the admin's is_active to Stripe so the Product's
+                    # archived state mirrors Mongo. Without this, a Product
+                    # that was archived (active=False) in Stripe stays
+                    # archived, then the product.updated webhook reads
+                    # active=False from Stripe and writes is_active=False
+                    # back to Mongo — clobbering the admin's re-activation
+                    # edit. See ``_handle_stripe_product_updated`` below.
                     stripe.Product.modify(
                         product_id,
                         name=plan["name"],
                         description=plan.get("description", ""),
+                        active=bool(plan.get("is_active", True)),
                         metadata={"plan_id": plan["_id"]},
                     )
                 except InvalidRequestError:
@@ -270,6 +278,7 @@ class StripeService:
                     product = stripe.Product.create(
                         name=plan["name"],
                         description=plan.get("description", ""),
+                        active=bool(plan.get("is_active", True)),
                         metadata={"plan_id": plan["_id"]},
                     )
                     product_id = product.id
@@ -2178,33 +2187,76 @@ class StripeService:
             raise
 
     async def _handle_product_updated(self, product: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle product.updated/product.created - sync product changes to local plans."""
+        """Handle product.updated/product.created - sync product changes to local plans.
+
+        Bug-fix 2026-05-13: this handler used to UNCONDITIONALLY $set
+        ``is_active`` on the Mongo plan based on ``Stripe.product.active``.
+        That clobbered every admin edit — the admin would save
+        ``is_active=True`` via the saas UI, ``update_plan`` would write
+        True to Mongo, then ``sync_plan_to_stripe`` would call
+        ``stripe.Product.modify`` which fires this exact webhook back at
+        us. If the Stripe Product happened to be archived (active=False)
+        from a prior ``delete_plan`` call, the webhook would re-assert
+        ``is_active=False`` to Mongo, reverting the admin's edit. On every
+        save. Forever.
+
+        Fix: respect admin_overrides.is_active. If admin has explicitly
+        edited is_active via the UI, the override timestamp is the
+        source of truth — Stripe's product.active is a downstream artifact
+        of that intent, and ``sync_plan_to_stripe`` now pushes Mongo's
+        is_active TO Stripe (see line ~262) so the two stay in sync.
+
+        Without an admin override (e.g., a manual Stripe Dashboard archive),
+        we still fall back to the prior Stripe-wins behavior for is_active.
+        """
         try:
             product_id = product.get("id")
             if not product_id:
                 return {"status": "ignored", "reason": "no product_id"}
 
             plan_id = product.get("metadata", {}).get("plan_id")
-            is_active = product.get("active", True)
+            stripe_is_active = product.get("active", True)
 
-            if plan_id:
-                # Update local plan's active status to match Stripe
-                result = await self.plans_collection.update_one(
-                    {"_id": plan_id, "stripe_product_id": product_id},
-                    {
-                        "$set": {
-                            "is_active": is_active,
-                            "updated_at": datetime.now(timezone.utc),
-                        }
-                    },
-                )
-                if result.modified_count > 0:
-                    logger.info(
-                        f"Plan {plan_id} synced from Stripe product {product_id} (active={is_active})"
-                    )
-            else:
+            if not plan_id:
                 logger.debug(
                     f"Product {product_id} has no plan_id metadata, skipping local sync"
+                )
+                return {"status": "success", "product_id": product_id}
+
+            # Pull the existing plan to inspect admin_overrides BEFORE writing.
+            existing = await self.plans_collection.find_one(
+                {"_id": plan_id, "stripe_product_id": product_id}
+            )
+            if not existing:
+                logger.debug(
+                    f"No matching Mongo plan for {plan_id}/{product_id}; skipping sync"
+                )
+                return {"status": "success", "product_id": product_id}
+
+            admin_overrides = existing.get("admin_overrides") or {}
+            admin_set_is_active = admin_overrides.get("is_active")
+
+            update_doc: dict = {"updated_at": datetime.now(timezone.utc)}
+            if admin_set_is_active is None:
+                # No admin override — defer to Stripe's product.active
+                update_doc["is_active"] = stripe_is_active
+            else:
+                logger.info(
+                    f"Plan {plan_id}: skipping is_active sync from Stripe "
+                    f"(admin override at {admin_set_is_active!r}); keeping "
+                    f"Mongo value is_active={existing.get('is_active')!r} "
+                    f"(Stripe wanted {stripe_is_active!r})"
+                )
+
+            result = await self.plans_collection.update_one(
+                {"_id": plan_id, "stripe_product_id": product_id},
+                {"$set": update_doc},
+            )
+            if result.modified_count > 0:
+                logger.info(
+                    f"Plan {plan_id} synced from Stripe product {product_id} "
+                    f"(stripe_active={stripe_is_active}, applied="
+                    f"{'is_active' in update_doc})"
                 )
 
             return {"status": "success", "product_id": product_id}

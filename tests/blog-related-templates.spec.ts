@@ -21,22 +21,20 @@ test.describe('Blog → free templates internal link surface', () => {
     await expect(templateLinks.first()).toBeVisible();
 
     // At least one link should deep-link into a template anchor.
-    const anchorLink = card.locator('a[href*="/resources?tab=templates#"]').first();
+    const anchorLink = card.locator('a[href*="/resources/templates#"]').first();
     await expect(anchorLink).toHaveCount(1);
   });
 
-  test('clicking a related template link lands on the Resources templates tab', async ({ page }) => {
+  test('clicking a related template link lands on the indexable templates page', async ({ page }) => {
     await page.goto(`/resources/blog/${ARTICLE_SLUG}`);
 
     const anchorLink = page
       .getByTestId('blog-related-templates')
-      .locator('a[href*="/resources?tab=templates#"]')
+      .locator('a[href*="/resources/templates#"]')
       .first();
 
     await anchorLink.click();
-    await expect(page).toHaveURL(/\/resources\?tab=templates(#|$)/);
-    await expect(page.locator('button').filter({ hasText: /^Templates$/ }).first()).toHaveClass(
-      /text-wedding-rose/,
-    );
+    await expect(page).toHaveURL(/\/resources\/templates#.+$/);
+    await expect(page.getByRole('heading', { name: /Free wedding planner templates/i })).toBeVisible();
   });
 });

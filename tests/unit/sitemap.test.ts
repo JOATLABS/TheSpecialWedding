@@ -47,6 +47,21 @@ function routeCandidatesFor(pathname: string): string[] {
 }
 
 describe('sitemap entries', () => {
+  it('emits resources templates as a canonical static route', () => {
+    const entries = buildSitemapEntries({
+      baseUrl,
+      now,
+      compareSlugs: [],
+      blogSlugs: [],
+      vendorIds: [],
+    });
+    const urls = entries.map((entry) => entry.url);
+
+    assert.equal(urls.includes(`${baseUrl}/resources`), true);
+    assert.equal(urls.includes(`${baseUrl}/resources/templates`), true);
+    assert.equal(urls.includes(`${baseUrl}/resources?tab=templates`), false);
+  });
+
   it('emits blog URLs only from API-published slugs', () => {
     const publishedBlogSlugs = [
       'how-to-price-wedding-planning-services',
