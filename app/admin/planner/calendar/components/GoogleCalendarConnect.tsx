@@ -39,6 +39,14 @@ interface CalendarConnectProps {
   weddings?: Array<{ id: string; couple_names: string }>;
   loading?: boolean;
   onRefresh: () => Promise<void> | void;
+  /** When set, the per-calendar Settings modal opens automatically for
+   *  the matching connection on mount/prop-change. Used by
+   *  CalendarStatusPill to deep-link from the popover's per-row
+   *  Settings button into this component's existing settings modal
+   *  without a second click. The parent should clear it after the
+   *  modal closes (via the optional ``onSettingsClose`` callback). */
+  autoOpenSettingsForConnectionId?: string | null;
+  onSettingsClose?: () => void;
 }
 
 const SCHEDULER_ROLE_OPTIONS: Array<{
@@ -203,6 +211,8 @@ export default function CalendarConnect({
   weddings = [],
   loading = false,
   onRefresh,
+  autoOpenSettingsForConnectionId = null,
+  onSettingsClose,
 }: CalendarConnectProps) {
   const { token } = useAdmin();
   const { confirm } = useConfirmDialog();
@@ -216,11 +226,34 @@ export default function CalendarConnect({
     () => connections.find((c) => c.id === settingsConnectionId) || null,
     [connections, settingsConnectionId]
   );
+  // Sync the modal target with the parent-provided autoOpen prop. The
+  // status-pill popover sets this to deep-link from a per-row Settings
+  // button into the modal without an extra click inside this component.
+  useEffect(() => {
+    if (autoOpenSettingsForConnectionId) {
+      setSettingsConnectionId(autoOpenSettingsForConnectionId);
+    }
+  }, [autoOpenSettingsForConnectionId]);
+  // Whenever the local settingsConnectionId clears (Done / backdrop /
+  // Escape inside the modal), notify the parent so it can release its
+  // autoOpen state and not re-open the modal on the next prop change.
+  useEffect(() => {
+    if (
+      settingsConnectionId === null &&
+      autoOpenSettingsForConnectionId &&
+      onSettingsClose
+    ) {
+      onSettingsClose();
+    }
+  }, [settingsConnectionId, autoOpenSettingsForConnectionId, onSettingsClose]);
   // Close on Escape and prevent body scroll while open.
   useEffect(() => {
     if (!settingsConnection) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSettingsConnectionId(null);
+      if (event.key === 'Escape') {
+        setSettingsConnectionId(null);
+        onSettingsClose?.();
+      }
     };
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -229,7 +262,7 @@ export default function CalendarConnect({
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [settingsConnection]);
+  }, [settingsConnection, onSettingsClose]);
 
   const groupedConnections = useMemo(() => {
     const groups = new Map<string, CalendarConnection[]>();

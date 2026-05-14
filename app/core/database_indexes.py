@@ -2315,6 +2315,27 @@ async def create_calendar_indexes():
             background=True,
         )
 
+        # Ephemeral post-OAuth pre-picker state. We hold the encrypted
+        # Aurinko account token + calendar list here while the planner
+        # uses the picker modal to choose which calendars to sync. Stale
+        # drafts auto-expire after 30 min via the TTL index on
+        # ``expires_at``. The unique index on (user_id,
+        # aurinko_account_id) prevents two concurrent OAuth attempts on
+        # the same account from creating duplicate drafts.
+        calendar_connection_drafts = mongo.get_calendar_connection_drafts_collection()
+        await calendar_connection_drafts.create_index(
+            [("user_id", ASCENDING), ("aurinko_account_id", ASCENDING)],
+            name="idx_calendar_connection_drafts_user_account",
+            unique=True,
+            background=True,
+        )
+        await calendar_connection_drafts.create_index(
+            [("expires_at", ASCENDING)],
+            name="idx_calendar_connection_drafts_expires_at_ttl",
+            expireAfterSeconds=0,
+            background=True,
+        )
+
         logger.info("Shared planner calendar indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating shared planner calendar indexes: {e}")

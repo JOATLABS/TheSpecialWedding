@@ -101,6 +101,21 @@ class MongoConnector:
             raise RuntimeError("Database not connected")
         return self.db["calendar_event_syncs"]
 
+    def get_calendar_connection_drafts_collection(self):
+        """Ephemeral post-OAuth pre-picker state.
+
+        After a successful Aurinko OAuth exchange we hold the encrypted
+        account token + discovered calendar list HERE while the planner
+        chooses which calendars to actually sync via the picker modal.
+        On commit, we drain the draft into ``calendar_connections``
+        rows and create webhook subscriptions only for the picked
+        calendars. Stale drafts are TTL-expired after 30 minutes (see
+        database_indexes.create_calendar_connection_draft_indexes).
+        """
+        if self.db is None:
+            raise RuntimeError("Database not connected")
+        return self.db["calendar_connection_drafts"]
+
     def get_meeting_invites_collection(self):
         """Couple-facing invite delivery records for meetings."""
         if self.db is None:
