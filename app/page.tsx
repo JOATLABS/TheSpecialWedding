@@ -329,7 +329,7 @@ export default function HomePage() {
             <Link href="/terms" className="hover:text-white">
               Terms
             </Link>
-            <Link href="/login" className="hover:text-white">
+            <Link href="/admin/login" className="hover:text-white">
               Login
             </Link>
           </div>
