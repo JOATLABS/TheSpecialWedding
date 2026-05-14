@@ -277,9 +277,25 @@ class SubscriptionService:
             for field in tracked_edits:
                 mongo_set[f"admin_overrides.{field}"] = now
 
-            await self.plans_collection.update_one(
-                {"_id": plan_id}, {"$set": mongo_set}
-            )
+            # Re-activation cleanup: when admin flips is_active back to True,
+            # also clear the soft-delete marker. Without this, the doc stays
+            # in the "soft-deleted but is_active=True" half-state — confusing
+            # for the admin UI and a risk for any downstream filter that
+            # treats deleted_at as authoritative. Use $unset for clarity over
+            # $set: {deleted_at: None}. Only fire when the admin actually set
+            # is_active=True AND the existing doc had deleted_at set.
+            mongo_unset: dict = {}
+            if (
+                update_data.get("is_active") is True
+                and existing_plan.get("deleted_at") is not None
+            ):
+                mongo_unset["deleted_at"] = ""
+
+            update_args: dict = {"$set": mongo_set}
+            if mongo_unset:
+                update_args["$unset"] = mongo_unset
+
+            await self.plans_collection.update_one({"_id": plan_id}, update_args)
 
             return {"message": "Subscription plan updated successfully"}
 
@@ -365,8 +381,8 @@ class SubscriptionService:
         billing_interval: str = "monthly",
         trial_days: int = 0,
         creator_email: str = "",
-        existing_stripe_subscription_id: str = None,
-        existing_stripe_customer_id: str = None,
+        existing_stripe_subscription_id: Optional[str] = None,
+        existing_stripe_customer_id: Optional[str] = None,
     ) -> dict:
         """Assign subscription plan to user"""
         try:

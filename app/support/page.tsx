@@ -6,8 +6,9 @@ export default function SupportPage() {
           <p className="text-sm uppercase tracking-[0.24em] text-slate-400">Support</p>
           <h1 className="text-4xl font-semibold tracking-tight">Support</h1>
           <p className="max-w-3xl text-base text-slate-300">
-            Public support for planner accounts, Google Calendar connections, shared calendar
-            visibility, and couple meeting delivery.
+            Public support for planner accounts, external calendar connections (Google,
+            Microsoft 365, iCloud, Exchange/EWS), shared calendar visibility, and couple
+            meeting delivery.
           </p>
         </header>
 

@@ -58,21 +58,22 @@ export default function PrivacyModal({
                 <div className="prose prose-sm max-h-[60vh] overflow-y-auto text-slate-700">
                   <p>
                     {weddingName} uses The Special Wedding as a planner platform. Planner owners and
-                    permitted team members can manage internal schedule items, connect Google
-                    calendars, and deliver meetings to couples through the portal plus email/ICS.
+                    permitted team members can manage internal schedule items, connect external
+                    calendars (Google, Microsoft 365, iCloud, Exchange/EWS), and deliver meetings
+                    to couples through the portal plus email/ICS.
                   </p>
 
                   <h4>What data is collected</h4>
                   <ul>
                     <li>Planner and team-member account information</li>
                     <li>Wedding metadata, couple contact details, and meeting details</li>
-                    <li>Connected Google account email, calendar metadata, and connection health state</li>
-                    <li>Encrypted OAuth tokens required to maintain calendar sync</li>
+                    <li>Connected calendar account email, calendar metadata, and connection health state</li>
+                    <li>Encrypted account tokens (issued by our integration provider Aurinko, which brokers OAuth with each upstream provider) required to maintain calendar sync</li>
                   </ul>
 
                   <h4>How calendar data is used</h4>
                   <p>
-                    Internal tasks and meetings remain the canonical records. Connected Google
+                    Internal tasks and meetings remain the canonical records. Connected external
                     calendars are downstream projections used for shared planner visibility,
                     assigned-staff scheduling, and availability coordination.
                   </p>
@@ -92,8 +93,9 @@ export default function PrivacyModal({
 
                   <h4>Disconnect and deletion</h4>
                   <p>
-                    Disconnecting Google Calendar removes local connection records used for sync and
-                    revokes Google access when applicable. Internal meetings remain in the platform.
+                    Disconnecting a calendar removes local connection records used for sync and
+                    revokes the Aurinko-brokered access for that provider account. Internal meetings
+                    remain in the platform.
                   </p>
 
                   <p>

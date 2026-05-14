@@ -35,6 +35,47 @@ const HISTORY_OPTIONS = [
   { label: '7 days', hours: 168 },
 ];
 
+// Umami acquisition funnel — windows match the backend's whitelist in
+// `app/api/admin_analytics.py`. Keep these in lockstep with the backend
+// `WINDOWS` dict; mismatches will surface as 400s from the funnel endpoint.
+const FUNNEL_WINDOW_OPTIONS: Array<{ label: string; value: '24h' | '7d' | '30d' }> = [
+  { label: '24 hours', value: '24h' },
+  { label: '7 days', value: '7d' },
+  { label: '30 days', value: '30d' },
+];
+
+// Display labels for the funnel events. Keys must stay in lockstep with
+// `FUNNEL_EVENTS` in `app/api/admin_analytics.py` (which in turn matches the
+// `umamiTrack(...)` call sites in the landing-page client components).
+const FUNNEL_LABELS: Record<string, string> = {
+  hero_cta_clicked: 'Hero CTA clicked',
+  pricing_viewed: 'Pricing scrolled into view',
+  pricing_cta_clicked: 'Pricing CTA clicked',
+  signup_modal_opened: 'Signup modal opened',
+  signup_step_advanced: 'Signup step 1 cleared',
+  signup_registered: 'Account created',
+  signup_checkout_redirect: 'Redirected to Stripe',
+};
+
+interface AcquisitionFunnel {
+  window: '24h' | '7d' | '30d';
+  generated_at?: string | null;
+  cached?: boolean;
+  summary: {
+    pageviews: number;
+    visitors: number;
+    visits: number;
+    bounces: number;
+    bounce_rate: number;
+    avg_visit_seconds: number;
+  };
+  top_referrer: { name: string; value: number } | null;
+  top_page: { name: string; value: number } | null;
+  funnel: Record<string, number>;
+  funnel_order: string[];
+  umami_dashboard_url?: string | null;
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
@@ -84,6 +125,14 @@ export default function AdminMetricsDashboard() {
   const [error, setError] = useState<string>('');
   const [recentActivities, setRecentActivities] = useState<AdminActivity[]>([]);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
+
+  // Acquisition funnel state. Default window is 7d per the agreed design.
+  // Errors render inline on the card rather than the global error banner so
+  // an Umami outage doesn't drown out platform-health signals.
+  const [funnelWindow, setFunnelWindow] = useState<'24h' | '7d' | '30d'>('7d');
+  const [funnelData, setFunnelData] = useState<AcquisitionFunnel | null>(null);
+  const [funnelLoading, setFunnelLoading] = useState(false);
+  const [funnelError, setFunnelError] = useState<string>('');
 
   const fetchLatestSnapshot = useCallback(async (authToken: string) => {
     setError('');
@@ -149,6 +198,43 @@ export default function AdminMetricsDashboard() {
       setHistoryLoading(false);
     }
   }, []);
+
+  const fetchFunnel = useCallback(
+    async (authToken: string, window: '24h' | '7d' | '30d', forceRefresh = false) => {
+      setFunnelLoading(true);
+      setFunnelError('');
+      try {
+        const baseUrl = getApiBaseUrl();
+        const params = new URLSearchParams({ window });
+        if (forceRefresh) params.set('refresh', 'true');
+        const response = await fetch(
+          `${baseUrl}/admin/analytics/funnel?${params.toString()}`,
+          {
+            headers: { Authorization: `Bearer ${authToken}` },
+          },
+        );
+        if (!response.ok) {
+          const problem = await response.json().catch(() => ({}));
+          // The backend uses 503 for "Umami not configured / unreachable" so
+          // we can show a clear inline message rather than a generic failure.
+          const detail =
+            typeof problem?.detail === 'string'
+              ? problem.detail
+              : `Failed to load acquisition funnel (HTTP ${response.status})`;
+          throw new Error(detail);
+        }
+        const payload = (await response.json()) as AcquisitionFunnel;
+        setFunnelData(payload);
+      } catch (err) {
+        console.error('Error loading acquisition funnel', err);
+        setFunnelError(err instanceof Error ? err.message : 'Failed to load acquisition funnel');
+        setFunnelData(null);
+      } finally {
+        setFunnelLoading(false);
+      }
+    },
+    [],
+  );
 
   const fetchRecentActivities = useCallback(async (authToken: string) => {
     setActivitiesLoading(true);
@@ -233,6 +319,14 @@ export default function AdminMetricsDashboard() {
 
     fetchRecentActivities(token);
   }, [token, userProfile, fetchRecentActivities]);
+
+  useEffect(() => {
+    // Acquisition funnel — root admin only. Refetches when window changes.
+    if (!token || !userProfile) return;
+    if (!userProfile.is_root_admin) return;
+
+    fetchFunnel(token, funnelWindow);
+  }, [token, userProfile, funnelWindow, fetchFunnel]);
 
   const metrics = useMemo(
     () => ((latestSnapshot?.metrics ?? latestSnapshot ?? {}) as Record<string, unknown>),
@@ -373,6 +467,131 @@ export default function AdminMetricsDashboard() {
           }
           loading={loading}
         />
+      </div>
+
+      {/* Acquisition Funnel (Umami) — root admin only */}
+      <div className="bg-white dark:bg-slate-800 shadow-xl rounded-2xl border border-rose-100 dark:border-slate-700 overflow-hidden">
+        <div className="px-6 py-4 border-b border-rose-100 dark:border-slate-700 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-wedding-navy dark:text-white">Acquisition</h2>
+            <p className="text-sm text-wedding-muted dark:text-gray-400">
+              Public-marketing-site traffic and signup funnel from Umami
+              {funnelData?.cached ? ' · cached' : ''}
+              {funnelData?.generated_at ? ` · updated ${formatTimestamp(funnelData.generated_at)}` : ''}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <label htmlFor="funnel-window" className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              Window
+            </label>
+            <select
+              id="funnel-window"
+              className="border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-white"
+              value={funnelWindow}
+              onChange={(event) =>
+                setFunnelWindow(event.target.value as '24h' | '7d' | '30d')
+              }
+            >
+              {FUNNEL_WINDOW_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => token && fetchFunnel(token, funnelWindow, true)}
+              disabled={funnelLoading}
+              className="text-sm px-3 py-2 rounded-lg border border-rose-200 dark:border-slate-600 text-rose-600 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-slate-700 disabled:opacity-50"
+            >
+              {funnelLoading ? 'Refreshing…' : 'Refresh'}
+            </button>
+            {funnelData?.umami_dashboard_url ? (
+              <a
+                href={funnelData.umami_dashboard_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300"
+              >
+                Open in Umami →
+              </a>
+            ) : null}
+          </div>
+        </div>
+        <div className="px-6 py-5 space-y-5">
+          {funnelError ? (
+            <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-lg px-4 py-3">
+              {funnelError}
+            </p>
+          ) : null}
+
+          {/* Summary tiles — traffic snapshot for the chosen window. */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <MetricCard
+              title="Visitors"
+              value={funnelData ? funnelData.summary.visitors.toLocaleString() : '—'}
+              loading={funnelLoading && !funnelData}
+            />
+            <MetricCard
+              title="Pageviews"
+              value={funnelData ? funnelData.summary.pageviews.toLocaleString() : '—'}
+              loading={funnelLoading && !funnelData}
+            />
+            <MetricCard
+              title="Top referrer"
+              value={funnelData?.top_referrer?.name || '—'}
+              loading={funnelLoading && !funnelData}
+            />
+            <MetricCard
+              title="Top page"
+              value={funnelData?.top_page?.name || '—'}
+              loading={funnelLoading && !funnelData}
+            />
+          </div>
+
+          {/* Funnel — each row shows raw count + conversion ratio relative to
+              the row immediately above. The first row has no upstream, so its
+              ratio cell is intentionally blank. */}
+          <div className="divide-y divide-rose-50 dark:divide-slate-700 border border-rose-100 dark:border-slate-700 rounded-xl overflow-hidden">
+            {(funnelData?.funnel_order ?? Object.keys(FUNNEL_LABELS)).map((event, index, arr) => {
+              const count = funnelData?.funnel?.[event] ?? 0;
+              const label = FUNNEL_LABELS[event] ?? event;
+              let ratio: string = '';
+              if (index > 0 && funnelData) {
+                const prev = funnelData.funnel?.[arr[index - 1]] ?? 0;
+                if (prev > 0) {
+                  ratio = `${((count / prev) * 100).toFixed(1)}% of prior`;
+                } else if (count > 0) {
+                  ratio = '— (no upstream)';
+                }
+              }
+              return (
+                <div
+                  key={event}
+                  className="flex items-center justify-between px-4 py-3 bg-white dark:bg-slate-800"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-rose-100 dark:bg-rose-900/30 text-xs font-semibold text-rose-600 dark:text-rose-300 shrink-0">
+                      {index + 1}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-wedding-navy dark:text-white truncate">{label}</p>
+                      <p className="text-xs text-wedding-muted dark:text-gray-400 truncate">{event}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-3 ml-4 whitespace-nowrap">
+                    <span className="text-base font-semibold text-wedding-navy dark:text-white tabular-nums">
+                      {funnelData ? count.toLocaleString() : '—'}
+                    </span>
+                    {ratio ? (
+                      <span className="text-xs text-wedding-muted dark:text-gray-400">{ratio}</span>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {/* Recent Admin Activity Section */}

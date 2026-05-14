@@ -21,7 +21,7 @@ from app.models.calendar_connection import (
 )
 from app.models.calendar_sync import CalendarSyncStatusValue
 from app.services.calendar_audit_service import calendar_audit_service
-from app.services.google_calendar_service import google_calendar_service
+from app.services.calendar_provider_service import calendar_provider_service
 
 
 class CalendarSyncService:
@@ -540,7 +540,7 @@ class CalendarSyncService:
             if sync_connection_id and sync_connection_id not in selected_connection_ids:
                 if sync_doc.get("external_event_id"):
                     delete_result = self._coerce_provider_result(
-                        await google_calendar_service.delete_google_event_for_connection(
+                        await calendar_provider_service.delete_event_for_connection(
                             sync_connection_id,
                             sync_doc["external_event_id"],
                         )
@@ -623,7 +623,7 @@ class CalendarSyncService:
             existing = existing_by_connection_id.get(connection_id)
             if existing and existing.get("external_event_id"):
                 provider_result = self._coerce_provider_result(
-                    await google_calendar_service.update_google_event_for_connection(
+                    await calendar_provider_service.update_event_for_connection(
                         connection_id,
                         existing["external_event_id"],
                         task,
@@ -645,7 +645,7 @@ class CalendarSyncService:
                     continue
                 if claimed_doc.get("external_event_id"):
                     provider_result = self._coerce_provider_result(
-                        await google_calendar_service.update_google_event_for_connection(
+                        await calendar_provider_service.update_event_for_connection(
                             connection_id,
                             claimed_doc["external_event_id"],
                             task,
@@ -658,7 +658,7 @@ class CalendarSyncService:
                     existing = claimed_doc
                 else:
                     provider_result = self._coerce_provider_result(
-                        await google_calendar_service.create_google_event_for_connection(
+                        await calendar_provider_service.create_event_for_connection(
                             connection_id,
                             task,
                             attendee_emails=attendee_emails,
@@ -780,7 +780,7 @@ class CalendarSyncService:
             external_event_id = sync_doc.get("external_event_id")
             if connection_id and external_event_id:
                 delete_result = self._coerce_provider_result(
-                    await google_calendar_service.delete_google_event_for_connection(
+                    await calendar_provider_service.delete_event_for_connection(
                         connection_id,
                         external_event_id,
                     )
@@ -931,7 +931,7 @@ class CalendarSyncService:
             if not connection_id or not external_event_id:
                 continue
             checked += 1
-            result = await google_calendar_service.get_google_event_for_connection(
+            result = await calendar_provider_service.get_event_for_connection(
                 connection_id,
                 external_event_id,
             )

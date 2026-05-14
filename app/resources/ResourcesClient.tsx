@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import SaasNav from '../components/saas/SaasNav';
-import MarkdownArticle from '@/components/blog/MarkdownArticle';
 import { getApiBaseUrl } from '@/utils/env';
 import {
   apiArticleToBlogPost,
@@ -27,15 +26,14 @@ const CARD_GRADIENTS: Record<string, string> = {
 function BlogCard({
   post,
   isSelected,
-  onSelect,
   compact = false,
 }: {
   post: BlogPost;
   isSelected: boolean;
-  onSelect: (slug: string) => void;
   compact?: boolean;
 }) {
   const gradient = CARD_GRADIENTS[post.category] || 'from-slate-600/30 to-slate-800/20';
+  const articleHref = `/resources/blog/${post.slug}`;
 
   return (
     <article
@@ -45,7 +43,7 @@ function BlogCard({
           : 'border-white/8 bg-white/[0.03] hover:border-wedding-rose/30'
       }`}
     >
-      <button type="button" onClick={() => onSelect(post.slug)} className="block w-full text-left">
+      <Link href={articleHref} className="block w-full text-left">
         {isSelected && <div className="h-1 bg-wedding-rose" />}
 
         {!compact && (
@@ -82,15 +80,15 @@ function BlogCard({
             {post.readTime} read &middot; {post.date}
           </p>
         </div>
-      </button>
+      </Link>
 
       {!compact && (
         <div className="px-6 pb-6 pt-0">
           <Link
-            href={`/resources/blog/${post.slug}`}
+            href={articleHref}
             className="text-xs font-medium text-wedding-rose transition hover:text-wedding-blush"
           >
-            Open article page
+            Read article
           </Link>
         </div>
       )}
@@ -100,14 +98,14 @@ function BlogCard({
 
 function FeaturedBlogCard({
   post,
-  onSelect,
 }: {
   post: BlogPost;
-  onSelect: (slug: string) => void;
 }) {
+  const articleHref = `/resources/blog/${post.slug}`;
+
   return (
     <article className="group col-span-full overflow-hidden rounded-2xl border border-white/8 bg-white/[0.03] transition hover:border-wedding-rose/30">
-      <button type="button" onClick={() => onSelect(post.slug)} className="block w-full text-left">
+      <Link href={articleHref} className="block w-full text-left">
         <div className="grid md:grid-cols-[1.2fr_1fr]">
           <div className="relative min-h-[220px] overflow-hidden md:min-h-[280px]">
             <img
@@ -132,13 +130,13 @@ function FeaturedBlogCard({
             </p>
           </div>
         </div>
-      </button>
+      </Link>
       <div className="px-8 pb-8 pt-0 md:pt-2">
         <Link
-          href={`/resources/blog/${post.slug}`}
+          href={articleHref}
           className="text-sm font-medium text-wedding-rose transition hover:text-wedding-blush"
         >
-          Open article page
+          Read article
         </Link>
       </div>
     </article>
@@ -196,13 +194,9 @@ export default function ResourcesClient({
   const [faqFilter, setFaqFilter] = useState('All');
   const [openFaqIdx, setOpenFaqIdx] = useState<number | null>(0);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedPost, setSelectedPost] = useState<string | null>(null);
-  const [selectedPostData, setSelectedPostData] = useState<BlogPost | null>(null);
-  const [loadingArticle, setLoadingArticle] = useState(false);
   const [loadingBlogList, setLoadingBlogList] = useState(false);
   const [blogUnavailable, setBlogUnavailable] = useState(initialBlogUnavailable);
   const [blogPosts, setBlogPosts] = useState(initialBlogPosts);
-  const rightPanelRef = useRef<HTMLDivElement>(null);
 
   const refreshBlogPosts = useCallback(async () => {
     setLoadingBlogList(true);
@@ -227,38 +221,6 @@ export default function ResourcesClient({
       setLoadingBlogList(false);
     }
   }, []);
-
-  const selectPost = useCallback(
-    async (slug: string) => {
-      setSelectedPost(slug);
-      setLoadingArticle(true);
-      setSelectedPostData(null);
-
-      try {
-        const baseUrl = getApiBaseUrl();
-        const response = await fetch(`${baseUrl}/api/v1/blog/articles/slug/${slug}`);
-        if (!response.ok) {
-          throw new Error(`API ${response.status}`);
-        }
-
-        const article = await response.json();
-        setSelectedPostData(apiArticleToBlogPost(article));
-      } catch {
-        const cardData = blogPosts.find((post) => post.slug === slug);
-        if (cardData) {
-          setSelectedPostData({
-            ...cardData,
-            content:
-              cardData.content ||
-              '*Full article content is not available right now. Please try again later.*',
-          });
-        }
-      } finally {
-        setLoadingArticle(false);
-      }
-    },
-    [blogPosts]
-  );
 
   const filteredPosts = useMemo(() => {
     let posts = blogPosts;
@@ -292,8 +254,6 @@ export default function ResourcesClient({
 
   const activateTab = (tab: ResourcesTab) => {
     setActiveTab(tab);
-    setSelectedPost(null);
-    setSelectedPostData(null);
 
     if (typeof window !== 'undefined') {
       const nextUrl = tab === 'blog' ? '/resources' : `/resources?tab=${tab}`;
@@ -302,15 +262,7 @@ export default function ResourcesClient({
   };
 
   useEffect(() => {
-    if (rightPanelRef.current && selectedPost) {
-      rightPanelRef.current.scrollTop = 0;
-    }
-  }, [selectedPost]);
-
-  useEffect(() => {
     setActiveTab(initialTab);
-    setSelectedPost(null);
-    setSelectedPostData(null);
   }, [initialTab]);
 
   useEffect(() => {
@@ -323,30 +275,28 @@ export default function ResourcesClient({
     <main className="min-h-screen bg-slate-950 text-white">
       <SaasNav />
 
-      {!selectedPost && (
-        <section className="relative overflow-hidden">
-          <div
-            className="absolute inset-0 opacity-50"
-            style={{
-              background:
-                'radial-gradient(800px 500px at 20% -10%, rgba(212,165,165,0.3), transparent 70%), radial-gradient(1000px 600px at 85% -10%, rgba(232,196,106,0.2), transparent 65%)',
-            }}
-          />
-          <div className="relative mx-auto max-w-5xl px-6 pb-10 pt-32 text-center sm:px-10">
-            <p className="mb-4 text-[11px] uppercase tracking-[0.5em] text-wedding-rose/80">
-              The Special Wedding
-            </p>
-            <h1 className="text-3xl font-semibold text-white sm:text-4xl">
-              Resources for professional planners
-            </h1>
-            <p className="mx-auto mt-4 max-w-xl text-base text-slate-300">
-              Pricing strategies, workflow tips, free templates, and answers to every question.
-            </p>
-          </div>
-        </section>
-      )}
+      <section className="relative overflow-hidden">
+        <div
+          className="absolute inset-0 opacity-50"
+          style={{
+            background:
+              'radial-gradient(800px 500px at 20% -10%, rgba(212,165,165,0.3), transparent 70%), radial-gradient(1000px 600px at 85% -10%, rgba(232,196,106,0.2), transparent 65%)',
+          }}
+        />
+        <div className="relative mx-auto max-w-5xl px-6 pb-10 pt-32 text-center sm:px-10">
+          <p className="mb-4 text-[11px] uppercase tracking-[0.5em] text-wedding-rose/80">
+            The Special Wedding
+          </p>
+          <h1 className="text-3xl font-semibold text-white sm:text-4xl">
+            Resources for professional planners
+          </h1>
+          <p className="mx-auto mt-4 max-w-xl text-base text-slate-300">
+            Pricing strategies, workflow tips, free templates, and answers to every question.
+          </p>
+        </div>
+      </section>
 
-      <div className={`mx-auto max-w-5xl px-6 sm:px-10 ${selectedPost ? 'pt-20' : ''}`}>
+      <div className="mx-auto max-w-5xl px-6 sm:px-10">
         <div className="flex gap-1 border-b border-white/10">
           <button
             type="button"
@@ -386,181 +336,7 @@ export default function ResourcesClient({
 
       {activeTab === 'blog' && (
         <section>
-          {selectedPost ? (
-            <div className="flex h-[calc(100vh-130px)] overflow-hidden">
-              <div className="w-full overflow-y-auto border-r border-white/10 bg-slate-950/50 md:w-[35%]">
-                <div className="space-y-3 p-6">
-                  <div className="sticky top-0 z-10 space-y-3 bg-slate-950 pb-4">
-                    <input
-                      type="text"
-                      placeholder="Search articles..."
-                      value={searchQuery}
-                      onChange={(event) => setSearchQuery(event.target.value)}
-                      className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none focus:border-wedding-rose/40"
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      {BLOG_CATEGORIES.map((category) => (
-                        <button
-                          key={category}
-                          type="button"
-                          onClick={() => setBlogFilter(category)}
-                          className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                            blogFilter === category
-                              ? 'border border-wedding-rose/40 bg-wedding-rose/15 text-wedding-rose'
-                              : 'border border-white/10 text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          {category}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    {filteredPosts.map((post) => (
-                      <BlogCard
-                        key={post.slug}
-                        post={post}
-                        isSelected={selectedPost === post.slug}
-                        compact
-                        onSelect={selectPost}
-                      />
-                    ))}
-                    {blogUnavailable && blogPosts.length === 0 && !loadingBlogList && (
-                      <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-5 text-center">
-                        <p className="text-sm font-medium text-amber-200">
-                          Blog articles are temporarily unavailable.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => void refreshBlogPosts()}
-                          className="mt-3 text-xs font-medium text-wedding-rose transition hover:text-wedding-blush"
-                        >
-                          Retry loading articles
-                        </button>
-                      </div>
-                    )}
-                    {loadingBlogList && blogPosts.length === 0 && (
-                      <div className="py-8 text-center">
-                        <p className="text-sm text-slate-500">Loading articles...</p>
-                      </div>
-                    )}
-                    {!blogUnavailable && !loadingBlogList && filteredPosts.length === 0 && (
-                      <div className="py-8 text-center">
-                        <p className="text-sm text-slate-500">No articles match your search.</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div
-                ref={rightPanelRef}
-                className="hidden overflow-y-auto md:flex md:w-[65%] md:flex-col"
-              >
-                {loadingArticle ? (
-                  <div className="flex flex-1 items-center justify-center">
-                    <div className="text-center">
-                      <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-wedding-rose/30 border-t-wedding-rose" />
-                      <p className="text-sm text-slate-500">Loading article...</p>
-                    </div>
-                  </div>
-                ) : selectedPostData ? (
-                  <>
-                    <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-slate-950/80 p-6 backdrop-blur">
-                      <div className="min-w-0 flex-1">
-                        <h2 className="truncate text-xl font-semibold text-white">
-                          {selectedPostData.title}
-                        </h2>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedPost(null);
-                          setSelectedPostData(null);
-                        }}
-                        className="ml-4 text-2xl font-light text-slate-400 transition hover:text-white"
-                      >
-                        ✕
-                      </button>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto">
-                      <article className="p-6">
-                        <div className="mb-8">
-                          <div className="mb-4 inline-block">
-                            <span className="rounded-full bg-wedding-rose/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-wedding-rose">
-                              {selectedPostData.category}
-                            </span>
-                          </div>
-                          <div className="mb-6 flex items-center gap-4 text-sm text-slate-400">
-                            <time>{selectedPostData.date}</time>
-                            <span>•</span>
-                            <span>{selectedPostData.readTime} read</span>
-                            {selectedPostData.author_name && (
-                              <>
-                                <span>•</span>
-                                <span>{selectedPostData.author_name}</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-
-                        {selectedPostData.content ? (
-                          <MarkdownArticle content={selectedPostData.content} theme="dark" />
-                        ) : (
-                          <p className="italic text-slate-500">
-                            Article content is not available.
-                          </p>
-                        )}
-                      </article>
-                    </div>
-                  </>
-                ) : null}
-              </div>
-
-              {selectedPost && selectedPostData && (
-                <div className="fixed inset-0 z-40 overflow-y-auto bg-slate-950 md:hidden">
-                  <div className="flex items-center gap-4 border-b border-white/10 p-4">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedPost(null);
-                        setSelectedPostData(null);
-                      }}
-                      className="text-slate-400 transition hover:text-white"
-                    >
-                      ← Back
-                    </button>
-                    <h2 className="truncate text-lg font-semibold text-white">
-                      {selectedPostData.title}
-                    </h2>
-                  </div>
-                  <article className="mx-auto max-w-3xl p-6">
-                    <div className="mb-8">
-                      <div className="mb-4 inline-block">
-                        <span className="rounded-full bg-wedding-rose/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-wedding-rose">
-                          {selectedPostData.category}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm text-slate-400">
-                        <time>{selectedPostData.date}</time>
-                        <span>•</span>
-                        <span>{selectedPostData.readTime} read</span>
-                      </div>
-                    </div>
-
-                    {selectedPostData.content ? (
-                      <MarkdownArticle content={selectedPostData.content} theme="dark" />
-                    ) : (
-                      <p className="italic text-slate-500">Article content is not available.</p>
-                    )}
-                  </article>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="mx-auto max-w-5xl px-6 py-10 sm:px-10">
+          <div className="mx-auto max-w-5xl px-6 py-10 sm:px-10">
               <div className="mb-8 flex flex-wrap items-center gap-3">
                 <input
                   type="text"
@@ -589,14 +365,13 @@ export default function ResourcesClient({
 
               <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                 {featured && blogFilter === 'All' && !searchQuery && (
-                  <FeaturedBlogCard post={featured} onSelect={selectPost} />
+                  <FeaturedBlogCard post={featured} />
                 )}
                 {regularPosts.map((post) => (
                   <BlogCard
                     key={post.slug}
                     post={post}
                     isSelected={false}
-                    onSelect={selectPost}
                   />
                 ))}
                 {blogUnavailable && blogPosts.length === 0 && !loadingBlogList && (
@@ -627,8 +402,7 @@ export default function ResourcesClient({
                   </div>
                 )}
               </div>
-            </div>
-          )}
+          </div>
         </section>
       )}
 
@@ -700,8 +474,7 @@ export default function ResourcesClient({
         </section>
       )}
 
-      {!selectedPost && (
-        <footer className="mt-16 border-t border-white/5 bg-slate-950">
+      <footer className="mt-16 border-t border-white/5 bg-slate-950">
           <div className="mx-auto max-w-6xl px-6 py-6">
             <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-between">
               <p className="text-xs text-slate-500">
@@ -728,8 +501,7 @@ export default function ResourcesClient({
               </div>
             </div>
           </div>
-        </footer>
-      )}
+      </footer>
     </main>
   );
 }

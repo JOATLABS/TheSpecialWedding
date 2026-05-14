@@ -9,6 +9,7 @@ from bson import ObjectId
 from fastapi import HTTPException
 
 from app.core.database import mongo
+from app.utils.rsvp_links import build_guest_otp_url
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ class TelnyxRSVPReminderHelper:
                 logger.info(f"Skipping {guest.get('name')} - opted out of SMS")
                 continue
 
-            url = f"{self.base_url}/{slug}/invite/{token}"
+            url = build_guest_otp_url(self.base_url, slug, token)
 
             # Use custom message if provided, otherwise use default
             if custom_message:

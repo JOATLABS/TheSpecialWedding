@@ -41,6 +41,7 @@ from app.services.calendar_audit_service import calendar_audit_service
 from app.services.calendar_idempotency_service import calendar_idempotency_service
 from app.services.calendar_job_service import calendar_job_service
 from app.services.calendar_sync_service import calendar_sync_service
+from app.services.calendar_provider_service import calendar_provider_service
 from app.services.google_calendar_service import google_calendar_service
 from app.utils.query_validation import (
     calculate_pagination_params,
@@ -144,6 +145,33 @@ class GoogleCallbackResponse(BaseModel):
     message: str
 
 
+class ProviderAuthUrlResponse(BaseModel):
+    """Aurinko hosted-auth URL response.
+
+    Same shape as ``GoogleAuthUrlResponse`` so the frontend can swap routes
+    incrementally without refactoring the response type.
+    """
+
+    auth_url: str
+    message: str
+
+
+class ProviderCallbackResponse(BaseModel):
+    """Response after the Aurinko hosted-auth callback.
+
+    Aurinko fans out a single OAuth flow to per-calendar connection rows, so
+    ``connections_created`` may be > 1. ``calendar_id`` carries the default
+    write target's id when one is established.
+    """
+
+    connected: bool
+    calendar_id: Optional[str] = None
+    connections_created: int = 0
+    redirect_to: Optional[str] = None
+    message: str
+    warning: Optional[str] = None
+
+
 class CalendarConnectionResponse(BaseModel):
     """Serialized external calendar connection."""
 
@@ -170,6 +198,8 @@ class CalendarConnectionResponse(BaseModel):
     is_shared_in_team_view: bool = False
     details_visibility: str = VisibilityMode.BUSY_ONLY.value
     sync_enabled: bool = False
+    couple_booking_auto_confirm: bool = True
+    conference_provider_default: Optional[str] = None
     connection_status: str
     token_expiry: Optional[datetime] = None
     last_sync_at: Optional[datetime] = None
@@ -865,6 +895,124 @@ async def google_connection_oauth_callback(
     )
 
 
+# ============================================================================
+# Aurinko (multi-provider) OAuth Endpoints
+# ============================================================================
+# These routes are the multi-provider replacement for the /google/* routes
+# above. They call ``calendar_provider_service`` which brokers OAuth + tokens
+# via Aurinko for Google, Office 365, iCloud, and Exchange/EWS.
+#
+# The legacy /google/* routes are intentionally kept in place during the
+# migration so existing frontend clients don't break. Once the planner UI is
+# switched over to ``/provider/*``, the legacy routes can be retired in a
+# follow-up.
+
+
+@router.get(
+    "/planner/calendar/provider/connect",
+    tags=["Planner Calendar"],
+    response_model=ProviderAuthUrlResponse,
+)
+async def get_provider_auth_url(
+    service_type: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional provider id to pre-select: one of 'google', 'office365', "
+            "'icloud', 'ews'. When omitted, Aurinko renders its own picker."
+        ),
+    ),
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("connect_personal_calendar")
+    ),
+) -> ProviderAuthUrlResponse:
+    """Build an Aurinko hosted-auth URL for the current planner/team member.
+
+    With ``service_type`` omitted the user gets Aurinko's provider picker
+    (Google / Office 365 / iCloud / EWS). Passing a provider id pre-selects
+    it so the user lands directly on that provider's OAuth screen — used by
+    the four per-provider buttons in the planner UI.
+    """
+    context = get_calendar_owner_identity(current_user)
+    auth_url = await calendar_provider_service.get_authorization_url(
+        user_id=context.get("user_id") or "",
+        user_email=context.get("user_email") or current_user.email,
+        owner_id=context.get("owner_id") or context.get("user_id") or "",
+        owner_email=context.get("owner_email") or current_user.email,
+        provider=service_type,
+    )
+    return ProviderAuthUrlResponse(
+        auth_url=auth_url,
+        message="Redirect the user to auth_url to connect their calendar",
+    )
+
+
+@router.get(
+    "/planner/calendar/connections/provider/callback",
+    tags=["Planner Calendar"],
+    response_model=ProviderCallbackResponse,
+)
+async def provider_oauth_callback(
+    code: str = Query(..., description="Authorization code from Aurinko"),
+    state: str = Query(..., description="Signed state from /provider/connect"),
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("connect_personal_calendar")
+    ),
+) -> ProviderCallbackResponse:
+    """Exchange the Aurinko callback code for an account token and persist
+    one ``calendar_connections`` row per writable calendar on the account.
+
+    The state JWT carries the planner/team-member identity that initiated
+    the flow; ``handle_oauth_callback`` validates it against the
+    authenticated user so an attacker can't redeem someone else's code.
+    """
+    context = get_calendar_owner_identity(current_user)
+    result = await calendar_provider_service.handle_oauth_callback(
+        code=code,
+        state=state,
+        current_user_context={
+            "user_id": context.get("user_id"),
+            "user_email": context.get("user_email"),
+        },
+    )
+    return ProviderCallbackResponse(
+        connected=bool(result.get("connected")),
+        calendar_id=result.get("calendar_id"),
+        connections_created=int(result.get("connections_created") or 0),
+        redirect_to=result.get("redirect_to"),
+        message=str(result.get("message") or ""),
+        warning=result.get("warning"),
+    )
+
+
+@router.delete(
+    "/planner/calendar/provider/disconnect",
+    tags=["Planner Calendar"],
+)
+async def disconnect_provider_calendar(
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("connect_personal_calendar")
+    ),
+) -> dict:
+    """Disconnect every Aurinko-brokered calendar for the current user
+    *within the current workspace*.
+
+    Unsubscribes each per-calendar Aurinko subscription, revokes the
+    account token Aurinko-side, marks dependent sync rows as ORPHANED, and
+    deletes the local connection rows. Idempotent — re-running on an
+    already-disconnected user is a no-op.
+
+    Scoped by ``owner_planner_id`` so a team member with the same email
+    across multiple owner workspaces only disconnects calendars within
+    THIS workspace (cross-tenant safety).
+    """
+    context = get_calendar_owner_identity(current_user)
+    owner_planner_id = context.get("owner_id") or context.get("user_id") or ""
+    return await calendar_provider_service.disconnect(
+        current_user.email,
+        owner_planner_id=owner_planner_id,
+    )
+
+
 @router.patch(
     "/planner/calendar/connections/{connection_id}",
     tags=["Planner Calendar"],
@@ -946,8 +1094,15 @@ async def delete_calendar_connection(
     connection_id: str,
     current_user: ExtendedAuthUser = Depends(require_calendar_access),
 ) -> dict:
-    """Disconnect one calendar connection, revoking provider access when appropriate."""
-    connection_doc = await google_calendar_service._get_connection_doc(connection_id)
+    """Disconnect one calendar connection, revoking provider access when appropriate.
+
+    Routes to ``calendar_provider_service`` (Aurinko) so the per-row teardown
+    actually unsubscribes the Aurinko subscription and revokes the account
+    token when this is the last row for the account. Pre-migration this
+    routed to ``google_calendar_service`` and silently no-op'd the Aurinko
+    side, leaving leaked subscriptions on Aurinko.
+    """
+    connection_doc = await calendar_provider_service.get_connection_doc(connection_id)
     current_context = get_calendar_owner_identity(current_user)
     is_owner = current_user.is_root_admin or current_user.is_wedding_planner
     can_manage_all = bool(
@@ -966,7 +1121,7 @@ async def delete_calendar_connection(
         raise HTTPException(
             status_code=403, detail="Cannot disconnect this calendar connection"
         )
-    return await google_calendar_service.disconnect_connection(
+    return await calendar_provider_service.disconnect_connection(
         connection_id,
         actor_email=current_user.email,
         actor_role=current_user.role,
@@ -1074,8 +1229,30 @@ async def get_staff_availability(
             busy_ranges.append((event_start, event_end))
     busy_ranges.sort(key=lambda row: row[0])
 
+    # Clip the window start to "now" so the past isn't reported as
+    # available. Without this, opening the calendar mid-month produced
+    # windows like "May 1 -> May 31" when today is already May 13 — the
+    # first half being walking through past time. `now` is computed in
+    # UTC to match the timezone-aware `start` query param.
+    now_utc = datetime.now(UTC)
+    if start.tzinfo is None:
+        # Defensive: callers should send tz-aware ISO strings, but if
+        # they don't, treat the naive value as UTC for the clip.
+        effective_start = max(start.replace(tzinfo=UTC), now_utc)
+    else:
+        effective_start = max(start, now_utc)
+    # If the whole requested window is in the past, return no windows.
+    if effective_start >= end:
+        return {
+            "staff_ids": staff_ids,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "busy_events": [_serialize_shared_event(event) for event in busy_events],
+            "available_windows": [],
+        }
+
     available_windows = []
-    cursor = start
+    cursor = effective_start
     for busy_start, busy_end in busy_ranges:
         if busy_start > cursor:
             available_windows.append(
@@ -2414,3 +2591,110 @@ async def get_meeting_sync_status(
         "meeting_id": meeting_id,
         "sync_status": await calendar_sync_service.get_sync_status(meeting_id),
     }
+
+
+# ============================================================================
+# Meeting resolution endpoints (phase 2 stubs)
+#
+# These four endpoints close the loop on external-change reconciliation and
+# couple-booking approval. They are wired now so the route surface is stable
+# for the planner UI work in flight; the bodies are deliberately stubs that
+# return 501 until the optimistic-concurrency + audit-trail implementation
+# lands in phase 2.
+#
+# Each endpoint takes a required ``expected_version`` query parameter — the
+# same optimistic-concurrency token ``update_meeting`` already enforces — so
+# a stale UI click cannot clobber a concurrent webhook write.
+# ============================================================================
+
+
+@router.post(
+    "/planner/calendar/meetings/{task_id}/accept-external-change",
+    tags=["Planner Calendar"],
+)
+async def accept_meeting_external_change(
+    task_id: str,
+    expected_version: int = Query(
+        ...,
+        description=(
+            "Optimistic-concurrency token. Bumped on every state transition. "
+            "Stale client clicks 409."
+        ),
+    ),
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
+) -> dict:
+    """[STUB] Accept the externally-modified version of this meeting as
+    canonical. Phase 2 implementation."""
+    raise HTTPException(
+        status_code=501,
+        detail="accept_meeting_external_change not implemented yet (phase 2)",
+    )
+
+
+@router.post(
+    "/planner/calendar/meetings/{task_id}/reject-external-change",
+    tags=["Planner Calendar"],
+)
+async def reject_meeting_external_change(
+    task_id: str,
+    expected_version: int = Query(
+        ...,
+        description=(
+            "Optimistic-concurrency token. Bumped on every state transition. "
+            "Stale client clicks 409."
+        ),
+    ),
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
+) -> dict:
+    """[STUB] Reject the externally-modified version and keep the canonical
+    meeting state. Phase 2 implementation."""
+    raise HTTPException(
+        status_code=501,
+        detail="reject_meeting_external_change not implemented yet (phase 2)",
+    )
+
+
+@router.post(
+    "/planner/calendar/meetings/{task_id}/approve-booking",
+    tags=["Planner Calendar"],
+)
+async def approve_couple_booking(
+    task_id: str,
+    expected_version: int = Query(
+        ...,
+        description=(
+            "Optimistic-concurrency token. Bumped on every state transition. "
+            "Stale client clicks 409."
+        ),
+    ),
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
+) -> dict:
+    """[STUB] Approve a couple-initiated booking request, transitioning the
+    meeting from pending_approval to scheduled. Phase 2 implementation."""
+    raise HTTPException(
+        status_code=501,
+        detail="approve_couple_booking not implemented yet (phase 2)",
+    )
+
+
+@router.post(
+    "/planner/calendar/meetings/{task_id}/decline-booking",
+    tags=["Planner Calendar"],
+)
+async def decline_couple_booking(
+    task_id: str,
+    expected_version: int = Query(
+        ...,
+        description=(
+            "Optimistic-concurrency token. Bumped on every state transition. "
+            "Stale client clicks 409."
+        ),
+    ),
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
+) -> dict:
+    """[STUB] Decline a couple-initiated booking request. Phase 2
+    implementation."""
+    raise HTTPException(
+        status_code=501,
+        detail="decline_couple_booking not implemented yet (phase 2)",
+    )

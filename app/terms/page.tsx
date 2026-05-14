@@ -7,8 +7,8 @@ export default function TermsPage() {
           <h1 className="text-4xl font-semibold tracking-tight">Terms of Service</h1>
           <p className="max-w-3xl text-base text-slate-600">
             These terms govern planner accounts, team-member access, couple portals, shared
-            planner calendars, and connected Google Calendar integrations on The Special
-            Wedding.
+            planner calendars, and connected external calendar integrations on The Special
+            Wedding (Google Calendar, Microsoft 365 / Outlook, iCloud, Exchange/EWS).
           </p>
         </header>
 
@@ -21,8 +21,9 @@ export default function TermsPage() {
           </p>
           <p>
             Internal schedule items stored in The Special Wedding are the canonical records.
-            External calendars, including Google Calendar, are downstream projections used for
-            visibility and coordination.
+            External calendars — including Google Calendar, Microsoft 365 / Outlook, iCloud,
+            and Exchange/EWS — are downstream projections used for visibility and
+            coordination.
           </p>
           <p>
             Couples do not authorize their personal calendars through OAuth in v1. Meeting
@@ -30,10 +31,12 @@ export default function TermsPage() {
             where enabled, and meetings remain visible inside the couple portal.
           </p>
           <p>
-            If you connect Google Calendar, you authorize the app to read calendar metadata
-            and manage calendar events for the calendars you connect so the product can sync
-            planner-side meetings and display shared availability according to your selected
-            sharing settings.
+            When you connect an external calendar, the OAuth handshake is brokered by our
+            integration provider Aurinko. You authorize the product (through Aurinko) to
+            read calendar metadata and manage calendar events for the calendars you connect
+            so it can sync planner-side meetings and display shared availability according
+            to your selected sharing settings. Connections can be revoked at any time from
+            the calendar settings page.
           </p>
           <p>
             The app does not treat external calendar data as the source of truth for planner

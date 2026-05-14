@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next';
+import { getComparePageData } from './compare/data';
 
 export type SitemapBuildInput = {
   baseUrl: string;
@@ -7,6 +8,26 @@ export type SitemapBuildInput = {
   blogSlugs: readonly string[];
   vendorIds: readonly string[];
 };
+
+const PUBLIC_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const MONGO_OBJECT_ID_PATTERN = /^[a-f0-9]{24}$/i;
+
+function uniqueRouteKeys(values: readonly string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function validPublicSlug(slug: string): boolean {
+  return PUBLIC_SLUG_PATTERN.test(slug);
+}
+
+function hasCanonicalSitemapUrl(url: string): boolean {
+  try {
+    const parsedUrl = new URL(url);
+    return parsedUrl.search === '' && parsedUrl.hash === '';
+  } catch {
+    return false;
+  }
+}
 
 export function buildSitemapEntries({
   baseUrl,
@@ -41,11 +62,10 @@ export function buildSitemapEntries({
       priority: 0.8,
     },
     {
-      // First-class Resources tab for the free planner-template catalog.
-      url: `${baseUrl}/resources?tab=templates`,
+      url: `${baseUrl}/resources/templates`,
       lastModified: now,
-      changeFrequency: 'monthly',
-      priority: 0.9,
+      changeFrequency: 'weekly',
+      priority: 0.8,
     },
     {
       url: `${baseUrl}/vendors`,
@@ -85,26 +105,34 @@ export function buildSitemapEntries({
     },
   ];
 
-  const comparePages: MetadataRoute.Sitemap = compareSlugs.map((slug) => ({
-    url: `${baseUrl}/compare/${slug}`,
-    lastModified: now,
-    changeFrequency: 'monthly' as const,
-    priority: 0.9,
-  }));
+  const comparePages: MetadataRoute.Sitemap = uniqueRouteKeys(compareSlugs)
+    .filter((slug) => validPublicSlug(slug) && getComparePageData(slug))
+    .map((slug) => ({
+      url: `${baseUrl}/compare/${slug}`,
+      lastModified: now,
+      changeFrequency: 'monthly' as const,
+      priority: 0.9,
+    }));
 
-  const blogPages: MetadataRoute.Sitemap = blogSlugs.map((slug) => ({
-    url: `${baseUrl}/resources/blog/${slug}`,
-    lastModified: now,
-    changeFrequency: 'monthly' as const,
-    priority: 0.7,
-  }));
+  const blogPages: MetadataRoute.Sitemap = uniqueRouteKeys(blogSlugs)
+    .filter(validPublicSlug)
+    .map((slug) => ({
+      url: `${baseUrl}/resources/blog/${slug}`,
+      lastModified: now,
+      changeFrequency: 'monthly' as const,
+      priority: 0.7,
+    }));
 
-  const vendorPages: MetadataRoute.Sitemap = vendorIds.map((id) => ({
-    url: `${baseUrl}/vendors/${id}`,
-    lastModified: now,
-    changeFrequency: 'weekly' as const,
-    priority: 0.6,
-  }));
+  const vendorPages: MetadataRoute.Sitemap = uniqueRouteKeys(vendorIds)
+    .filter((id) => MONGO_OBJECT_ID_PATTERN.test(id))
+    .map((id) => ({
+      url: `${baseUrl}/vendors/${id}`,
+      lastModified: now,
+      changeFrequency: 'weekly' as const,
+      priority: 0.6,
+    }));
 
-  return [...staticPages, ...comparePages, ...blogPages, ...vendorPages];
+  return [...staticPages, ...comparePages, ...blogPages, ...vendorPages].filter((entry) =>
+    hasCanonicalSitemapUrl(entry.url)
+  );
 }

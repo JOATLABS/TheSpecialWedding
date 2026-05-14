@@ -43,7 +43,11 @@ interface NotificationDetail {
 const COUPLE_INTAKE_TEMPLATE_ID = 'couple_intake';
 
 function buildCoupleTabUrl(weddingId: string): string {
-  return `/admin/planner/weddings/${encodeURIComponent(weddingId)}?tab=couple`;
+  // Frontend route, NOT the backend API path. The backend exposes
+  // /admin/planner/weddings/{id} but the Next.js page lives at
+  // /admin/weddings/[id]. Sending the toast click to /admin/planner/...
+  // 404s because no page.tsx exists under that segment.
+  return `/admin/weddings/${encodeURIComponent(weddingId)}?tab=couple`;
 }
 
 interface SendChecklistArgs {

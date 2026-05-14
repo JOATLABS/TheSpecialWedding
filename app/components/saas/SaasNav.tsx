@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Menu, X } from 'lucide-react';
@@ -17,6 +17,7 @@ export default function SaasNav() {
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const hasMounted = useRef(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -27,10 +28,12 @@ export default function SaasNav() {
 
   // Close mobile menu on route change
   useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      setMobileOpen(false);
-    });
-    return () => window.cancelAnimationFrame(frame);
+    if (!hasMounted.current) {
+      hasMounted.current = true;
+      return;
+    }
+
+    setMobileOpen(false);
   }, [pathname]);
 
   return (
@@ -84,6 +87,7 @@ export default function SaasNav() {
               href="/#pricing"
               className="hidden md:inline-flex items-center rounded-full bg-wedding-rose px-4 py-2 text-sm font-semibold text-slate-900 shadow-md shadow-wedding-rose/30 transition hover:bg-wedding-blush"
             >
+              {/* SYNC-WITH-SEED: trial_days — update when SEED_VERSION bumps paid trial length */}
               Start 30-Day Trial
             </Link>
 
@@ -134,6 +138,7 @@ export default function SaasNav() {
                 href="/#pricing"
                 className="flex items-center justify-center rounded-full bg-wedding-rose px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-md shadow-wedding-rose/30 transition hover:bg-wedding-blush"
               >
+                {/* SYNC-WITH-SEED: trial_days — update when SEED_VERSION bumps paid trial length */}
                 Start 30-Day Trial
               </Link>
             </div>

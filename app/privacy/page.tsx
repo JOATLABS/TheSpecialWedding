@@ -7,8 +7,9 @@ export default function PrivacyPage() {
           <h1 className="text-4xl font-semibold tracking-tight">Privacy Policy</h1>
           <p className="max-w-3xl text-base text-slate-600">
             The Special Wedding is a planner platform. This policy covers planner accounts,
-            team-member access, couple portals, and Google Calendar connections used for
-            shared scheduling.
+            team-member access, couple portals, and external calendar connections used for
+            shared scheduling (Google Calendar, Microsoft 365 / Outlook, iCloud, and
+            Exchange/EWS).
           </p>
         </header>
 
@@ -19,11 +20,24 @@ export default function PrivacyPage() {
             connection metadata required to run the shared planner calendar.
           </p>
           <p>
-            When a planner or permitted team member connects Google Calendar, we store
-            encrypted OAuth tokens, the connected Google account email, selected calendar
-            metadata, sync settings, health state, and timestamps needed to create, update,
-            delete, and display calendar projections. Internal meetings remain the source of
-            truth; connected calendars are projections of those internal records.
+            We use{' '}
+            <a
+              className="underline"
+              href="https://www.aurinko.io"
+              rel="noreferrer"
+              target="_blank"
+            >
+              Aurinko
+            </a>{' '}
+            as our calendar integration provider. When a planner or permitted team member
+            connects an external calendar, Aurinko brokers the OAuth handshake with the
+            chosen provider (Google, Microsoft 365, iCloud, or Exchange/EWS) and returns an
+            Aurinko account token to us; we do not receive or store the provider-issued
+            OAuth refresh token directly. We store the encrypted Aurinko account token,
+            the connected account email, selected calendar metadata, sync settings, health
+            state, and timestamps needed to create, update, delete, and display calendar
+            projections. Internal meetings remain the source of truth; connected calendars
+            are projections of those internal records.
           </p>
           <p>
             OAuth callback state is signed and validated against the authenticated workspace
@@ -42,14 +56,16 @@ export default function PrivacyPage() {
             connection.
           </p>
           <p>
-            Disconnecting Google Calendar removes local connection records and, when
-            applicable, revokes Google access for that connected account. Additional Google
-            data deletion details are documented on the data deletion page.
+            Disconnecting a calendar removes local connection records and revokes the
+            Aurinko account token, which in turn revokes the upstream provider session for
+            that connected account. Additional Google data deletion details are documented
+            on the data deletion page.
           </p>
           <p className="rounded-2xl border border-slate-300 bg-stone-50 p-5 text-slate-800">
-            <strong>Google API Services User Data Policy.</strong> The Special Wedding's use
-            and transfer to any other app of information received from Google APIs will
-            adhere to the{' '}
+            <strong>Google API Services User Data Policy.</strong> Where a user connects a
+            Google account, the calendar data we receive originates from Google APIs (via
+            our integration provider Aurinko). The Special Wedding's use and transfer of
+            that data adheres to the{' '}
             <a
               className="underline"
               href="https://developers.google.com/terms/api-services-user-data-policy"

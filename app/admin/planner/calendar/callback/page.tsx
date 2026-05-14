@@ -3,14 +3,26 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
-import { completeGoogleCalendarCallback } from '@/services/calendarApi';
+import { completeCalendarCallback } from '@/services/calendarApi';
 
-export default function GoogleCalendarCallbackPage() {
+// Aurinko OAuth codes are single-use. React 18 dev StrictMode double-
+// invokes effects, which would POST the same code twice — the second
+// attempt returns 410 Gone and clobbers the success state from the
+// first call. This module-level cache survives the simulated remount
+// and lets us short-circuit duplicate attempts. Stores per-tab only;
+// hard reloads start fresh which is fine because the code in the URL
+// would already be redeemed (and Aurinko would 410 — caught below).
+const inflightOrCompletedCodes = new Map<
+  string,
+  Promise<Awaited<ReturnType<typeof completeCalendarCallback>>>
+>();
+
+export default function CalendarCallbackPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { token, isLoading } = useAdmin();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
-  const [message, setMessage] = useState('Processing Google Calendar connection...');
+  const [message, setMessage] = useState('Processing your calendar connection...');
 
   useEffect(() => {
     if (isLoading) return;
@@ -26,8 +38,8 @@ export default function GoogleCalendarCallbackPage() {
         setStatus('error');
         setMessage(
           error === 'access_denied'
-            ? 'You cancelled the Google Calendar authorization.'
-            : `Google authorization failed: ${error}`
+            ? 'You cancelled the calendar authorization.'
+            : `Calendar authorization failed: ${error}`
         );
         return;
       }
@@ -40,19 +52,30 @@ export default function GoogleCalendarCallbackPage() {
 
       if (!token) {
         setStatus('error');
-        setMessage('Your admin session is missing. Sign in again and restart the Google connection.');
+        setMessage('Your admin session is missing. Sign in again and restart the calendar connection.');
         return;
       }
 
       try {
-        const result = await completeGoogleCalendarCallback(token, code, state);
+        // Dedupe by code — StrictMode in dev mounts this effect twice.
+        // Without this, both invocations POST to /provider/callback with
+        // the same single-use Aurinko code; the second hit returns 410
+        // and overwrites the first's success in the UI. Sharing the
+        // in-flight Promise means both effect runs observe the SAME
+        // resolution, so the second one cannot 410-clobber the first.
+        let exchange = inflightOrCompletedCodes.get(code);
+        if (!exchange) {
+          exchange = completeCalendarCallback(token, code, state);
+          inflightOrCompletedCodes.set(code, exchange);
+        }
+        const result = await exchange;
 
         if (cancelled) return;
 
         const connected = Boolean(result.connected);
         if (connected) {
           setStatus('success');
-          setMessage('Google Calendar connected successfully. Redirecting to the planner calendar...');
+          setMessage('Calendar connected successfully. Redirecting to the planner calendar...');
           window.setTimeout(() => {
             router.push('/admin/planner/calendar');
           }, 1500);
@@ -60,7 +83,7 @@ export default function GoogleCalendarCallbackPage() {
         }
 
         setStatus('error');
-        setMessage(String(result.message || 'Failed to connect Google Calendar.'));
+        setMessage(String(result.message || 'Failed to connect your calendar.'));
       } catch (err) {
         if (cancelled) return;
         setStatus('error');
@@ -101,7 +124,7 @@ export default function GoogleCalendarCallbackPage() {
         </div>
 
         <h1 className="text-center text-xl font-semibold text-slate-900 dark:text-slate-100">
-          {status === 'loading' && 'Connecting Google Calendar'}
+          {status === 'loading' && 'Connecting your calendar'}
           {status === 'success' && 'Calendar Connected'}
           {status === 'error' && 'Connection Failed'}
         </h1>

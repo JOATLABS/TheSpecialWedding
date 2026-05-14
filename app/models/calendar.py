@@ -87,10 +87,41 @@ class InviteDeliveryMode(str, Enum):
 class MeetingLifecycleStatus(str, Enum):
     """Lifecycle state for canonical meeting records."""
 
+    # Couple has requested a booking slot; planner must approve before it
+    # transitions to SCHEDULED. Used for the couple-initiated booking
+    # approval flow where the planner gates which proposed times become
+    # confirmed meetings on the calendar.
+    PENDING_APPROVAL = "pending_approval"
     SCHEDULED = "scheduled"
     RESCHEDULED = "rescheduled"
     CANCELLED = "cancelled"
     COMPLETED = "completed"
+
+
+class ExternalConflictStatus(str, Enum):
+    """Tri-state badge for an internal task whose external projection has
+    diverged from canonical.
+
+    NONE — projections are in sync; UI shows no badge.
+    PENDING_REVIEW — webhook or drift-check observed an external edit; the
+        planner must explicitly accept the external change or overwrite with
+        canonical via the resolve endpoints.
+    RESOLVED — last divergence was acknowledged; the row is in-sync as of
+        external_last_modified_at. Held briefly for audit visibility.
+    """
+
+    NONE = "none"
+    PENDING_REVIEW = "pending_review"
+    RESOLVED = "resolved"
+
+
+class ExternalConflictSource(str, Enum):
+    """Which mechanism detected the conflict — useful for observability
+    when triaging drift between webhook + polling code paths."""
+
+    WEBHOOK = "webhook"
+    DRIFT_CHECK = "drift_check"
+    MANUAL = "manual"
 
 
 def attach_timezone_if_naive(
@@ -198,6 +229,42 @@ class PlannerTaskModel(BaseModel):
     version: int = Field(default=1, ge=1)
     completed_at: Optional[datetime] = Field(
         None, description="When task was completed"
+    )
+
+    # ---------------- External-conflict tracking ----------------
+    # Populated by the Aurinko webhook handler (process_event_change_async)
+    # and the drift-check job when an external edit diverges from canonical.
+    # The planner UI surfaces a "modified externally" badge until accept or
+    # reject is invoked; canonical fields are NOT silently overwritten.
+    external_conflict_status: str = Field(
+        default=ExternalConflictStatus.NONE.value,
+        description="Tri-state badge — none / pending_review / resolved",
+    )
+    external_conflict_source: Optional[str] = Field(
+        default=None,
+        description="Which mechanism detected the divergence (webhook/drift_check/manual)",
+    )
+    external_conflict_detected_at: Optional[datetime] = Field(
+        default=None, description="When the most recent divergence was observed"
+    )
+    external_last_modified_at: Optional[datetime] = Field(
+        default=None,
+        description="Provider-reported lastModifiedDateTime for the linked event",
+    )
+    external_start_date: Optional[datetime] = Field(
+        default=None, description="External event start (if snapshot fetched)"
+    )
+    external_end_date: Optional[datetime] = Field(
+        default=None, description="External event end (if snapshot fetched)"
+    )
+    external_title: Optional[str] = Field(
+        default=None, description="External event subject/title (if snapshot fetched)"
+    )
+    external_description: Optional[str] = Field(
+        default=None, description="External event body preview (if snapshot fetched)"
+    )
+    external_location: Optional[str] = Field(
+        default=None, description="External event location (if snapshot fetched)"
     )
 
     class Config:

@@ -4,9 +4,19 @@ Scenario A — Planner 30-Day Trial Lifecycle (Live Verification via Test Clock)
 ==============================================================================
 
 Pins end-to-end behavior across the planner trial window: signup on a fresh
-Stripe test clock, wedding-cap gate, AI-credit cap gate, trial-warning window,
-trial expiration via the maintenance job, post-expiration access, and the
-recovery path via payment-method + new subscription.
+Stripe test clock, **no wedding cap** (paid tiers are unlimited post-2026-05-12),
+AI-credit soft-cap gate, trial-warning window, trial expiration via the
+maintenance job, post-expiration access, and the recovery path via
+payment-method + new subscription.
+
+History note: prior to the 2026-05-12 pricing refresh, Boutique had a
+hard 3-wedding cap and this driver verified the 402 trip. With paid plans
+now unlimited, A2 was rewritten from "4th wedding gated at 402" to "5th
+wedding still succeeds, no cap" — the pin shifted from "cap blocks at N"
+to "no cap, unlimited." The hard-cap behavior is still exercised by unit
+tests in tests/backend/test_subscription_limits.py against the -1
+sentinel, and Solo's 1-wedding active cap is covered by
+test_lifetime_wedding_cap.py.
 
 Anchored to `docs/plans/SUBSCRIPTION_LIFECYCLE_TEST_PLAN.md` §3.1 (checkpoints
 A0–A7). Follows the two-layer E2E rule from `CLAUDE.md`:
@@ -34,14 +44,14 @@ Phases
 ------
   SEED              — A0: register planner on clock, boutique plan, 30-day
                       trial, no PM attached.
-  TRIAL_CREATE      — A1: create wedding #1 (under the Boutique cap of 3).
-  TRIAL_CAP         — A2: create weddings #2, #3, then #4 → **402** with the
-                      exact `Wedding limit exceeded...` message.
-  TRIAL_CREDIT_CAP  — A3: seed `ai_credits_used_month = 100` directly in the
+  TRIAL_CREATE      — A1: create wedding #1 (paid plan accepts it; no cap).
+  TRIAL_UNLIMITED   — A2: create 5 additional weddings, all succeed. Pins
+                      that paid Boutique is unlimited (no 402 trip).
+  TRIAL_CREDIT_CAP  — A3: seed `ai_credits_used_month = 300` directly in the
                       usage_tracking collection (Boutique ai_credits_monthly
-                      = 100), assert `GET /admin/ai/credits?feature=chat` reports
-                      allowed=False with the exact `AI credits limit...`
-                      message. Uses the usage-gate path because GEMINI_API_KEY
+                      = 300), assert `GET /admin/ai/credits?feature=chat` reports
+                      allowed=True with overage flagged (soft cap). Uses the
+                      usage-gate path because GEMINI_API_KEY
                       may not be configured in the local env; Chrome layer
                       separately verifies the 402 UX if a live /admin/chat
                       call is made.
@@ -103,23 +113,21 @@ PLANNER_EMAIL = "test_planner+trial@thespecialwedding.io"
 PLANNER_PASSWORD = "TrialPlanner2026!"  # pragma: allowlist secret
 PLAN_ID = "plan_boutique"
 
-# Boutique snapshot limits (for expected-message assertions and Mongo seeding).
-# Kept here so the assertion strings are grep-visible from the driver header.
-BOUTIQUE_MAX_WEDDINGS = 3
-BOUTIQUE_AI_CREDITS_MONTHLY = 100
+# Boutique snapshot limits (for the AI-credit overage fixture in A3).
+# Post-2026-05-12 strategy refresh: BOUTIQUE_MAX_WEDDINGS = -1 means
+# "unlimited" — used to pin that no 402 fires no matter how many weddings
+# get created in A2 below.
+BOUTIQUE_MAX_WEDDINGS = -1  # unlimited (2026-05-12 strategy)
+BOUTIQUE_AI_CREDITS_MONTHLY = 300  # 2026-05-12 strategy (was 100 pre-refresh)
 TRIAL_DAYS = 30
 TRIAL_WARN_DAYS_OUT = 7  # A4: advance to trial_end - 7d
+A2_UNLIMITED_PROBE_COUNT = 5  # A2: create N weddings to prove no cap trip
 
-# Verbatim gate message from app/services/subscription_service.py (weddings
-# branch). If this drifts, frontend regex matching breaks and PR1-style redirect
-# gates silently stop firing. Fail loud.
-EXPECTED_WEDDING_CAP_MSG = (
-    f"Wedding limit exceeded. Plan allows {BOUTIQUE_MAX_WEDDINGS} weddings, "
-    f"you have {BOUTIQUE_MAX_WEDDINGS}"
-)
-# AI credits are now soft-capped with metered overage — going over plan returns
+# AI credits are soft-capped with metered overage — going over plan returns
 # allowed=True with `overage`, `overage_credits`, and `overage_cost_cents`. The
-# A3 phase pins the new soft-cap contract instead of a hard-stop message.
+# A3 phase pins the soft-cap contract; the wedding-cap 402 message (formerly
+# pinned here as EXPECTED_WEDDING_CAP_MSG) is exercised against -1 via the
+# unit suite at tests/backend/test_subscription_limits.py instead.
 
 
 # ---------------------------------------------------------------------------
@@ -243,14 +251,28 @@ def phase_trial_create_one(h: Harness, planner_token: str):
 
 
 def phase_trial_cap(h: Harness, planner_token: str):
-    """A2 — Fill the Boutique cap, 4th wedding POST must return 402 with the
-    verbatim `Wedding limit exceeded...` message from
-    subscription_service.py:687.
-    """
-    h.phase("TRIAL_CAP", "A2 — 4th wedding gated at 402")
+    """A2 — Verify Boutique has no wedding cap.
 
-    # Already created 1 in A1. Create 2 more to fill the cap.
-    for idx in (2, 3):
+    Post-2026-05-12 strategy: Boutique paid plan is unlimited weddings.
+    This phase used to verify a 402 trip on the 4th create; now it verifies
+    the inverse — that ``A2_UNLIMITED_PROBE_COUNT`` (5) additional weddings
+    all succeed with no 402. If the cap accidentally returns, this phase
+    fails at the first unexpected 402.
+
+    The hard-cap 402 message is still exercised by unit tests in
+    ``tests/backend/test_subscription_limits.py`` (which mocks max_weddings
+    to a finite value to verify the gate logic). Solo's 1-wedding active
+    cap is exercised by ``test_lifetime_wedding_cap.py``. So this phase
+    just pins the live "unlimited paid plan" behavior end-to-end.
+    """
+    h.phase(
+        "TRIAL_UNLIMITED",
+        f"A2 — paid plan is unlimited; {A2_UNLIMITED_PROBE_COUNT} more weddings all succeed",
+    )
+
+    # Already created 1 in A1. Create A2_UNLIMITED_PROBE_COUNT more and
+    # assert every single one is allowed.
+    for idx in range(2, 2 + A2_UNLIMITED_PROBE_COUNT):
         resp = h.api_post(
             "/admin/weddings",
             token=planner_token,
@@ -261,47 +283,26 @@ def phase_trial_cap(h: Harness, planner_token: str):
         )
         h.log.info(f"  POST /admin/weddings ({idx}) -> {resp.status_code}")
         assert resp.status_code in (200, 201), (
-            f"Wedding #{idx} should be allowed under Boutique cap, "
-            f"got {resp.status_code}: {resp.text[:200]}"
+            f"Wedding #{idx} should be allowed under UNLIMITED paid plan, "
+            f"got {resp.status_code}: {resp.text[:200]}\n"
+            "If this returned 402, the cap regression is back — paid plans "
+            "must allow unlimited weddings per the 2026-05-12 strategy."
         )
 
-    # Fourth — expected 402 with the canonical message.
-    resp = h.api_post(
-        "/admin/weddings",
-        token=planner_token,
-        json={
-            "couple_names": "Overflow Bride & Overflow Groom",
-            "date": "2027-09-01",
-        },
-    )
-    body = None
-    try:
-        body = resp.json()
-    except Exception:
-        body = {"raw": resp.text[:400]}
-    h.log.info(f"  POST /admin/weddings (4th) -> {resp.status_code} body={body}")
-
-    assert resp.status_code == 402, (
-        f"Expected 402 on 4th wedding create, got {resp.status_code}: {body}"
-    )
-    detail = body.get("detail") if isinstance(body, dict) else None
-    assert detail == EXPECTED_WEDDING_CAP_MSG, (
-        f"Wedding-cap message drift: expected\n  {EXPECTED_WEDDING_CAP_MSG!r}\n"
-        f"got\n  {detail!r}\n"
-        "(frontend regex matching breaks if this string is edited — update "
-        "subscription_service.py:687 and frontend matchers together.)"
+    h.log.info(
+        f"  ✅ Created {A2_UNLIMITED_PROBE_COUNT} additional weddings under "
+        f"unlimited paid plan; no 402 fired."
     )
 
     h.checkpoint(
         "A2",
         [
-            "Chrome: from /admin/planner, attempt to create a 4th wedding.",
-            "  The UI must surface a planner-readable 'wedding limit reached'",
-            "  message, not a raw 402 dump.",
-            "Chrome devtools: the 402 response body shows",
-            f"  detail == '{EXPECTED_WEDDING_CAP_MSG}' verbatim.",
-            "Chrome console: no uncaught exceptions or red noise after the 402.",
-            "Backend: 4th wedding POST returned 402 with the canonical message ✅",
+            "Chrome: from /admin/planner, navigate to the weddings list.",
+            f"  All {1 + A2_UNLIMITED_PROBE_COUNT} weddings should be visible — no",
+            "  'limit reached' banner, no upgrade-CTA banner specific to caps.",
+            "Chrome devtools: no 402 in the network tab for /admin/weddings.",
+            "Chrome console: no uncaught exceptions or red noise.",
+            "Backend: paid plan accepted all wedding creates ✅",
         ],
     )
 
@@ -700,7 +701,8 @@ def main() -> int:
     h.log.info(f"  Trial days    : {TRIAL_DAYS}")
     h.log.info(
         f"  Expected cap behavior:\n"
-        f"    weddings   → 402 with detail='{EXPECTED_WEDDING_CAP_MSG}'\n"
+        f"    weddings   → unlimited (no 402 trip; A2 probes "
+        f"{A2_UNLIMITED_PROBE_COUNT}+1 weddings)\n"
         f"    ai_credits → (soft-cap, metered overage; no hard-stop message)"
     )
 
