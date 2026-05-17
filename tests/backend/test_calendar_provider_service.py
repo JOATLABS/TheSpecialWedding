@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 import pytest
+from bson import ObjectId
 
 os.environ.setdefault("AURINKO_CLIENT_ID", "test-client-id")
 os.environ.setdefault("AURINKO_CLIENT_SECRET", "test-client-secret")
@@ -21,6 +22,7 @@ os.environ.setdefault("TOKEN_ENCRYPTION_KEY", "test-token-encryption-key")
 os.environ.setdefault("ENVIRONMENT", "test")
 
 from app.services.calendar_provider_service import (  # noqa: E402
+    CalendarProviderService,
     _normalize_event_for_aggregation,
     calendar_provider_service,
 )
@@ -213,7 +215,7 @@ def test_event_body_construction_for_all_day_event() -> None:
 # ============================================================================
 
 
-from unittest.mock import patch  # noqa: E402
+from unittest.mock import AsyncMock, patch  # noqa: E402
 
 from app.services.calendar_provider_service import AurinkoClient  # noqa: E402
 
@@ -246,6 +248,294 @@ def _make_response(
 ) -> httpx.Response:
     request = httpx.Request("GET", "https://api.aurinko.io/v1/_test")
     return httpx.Response(status_code, json=body or {}, request=request)
+
+
+class _MemoryCursor:
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self.rows = rows
+
+    def sort(self, *_args: Any, **_kwargs: Any) -> "_MemoryCursor":
+        return self
+
+    async def to_list(self, length: int | None = None) -> list[dict[str, Any]]:
+        return list(self.rows[:length] if length is not None else self.rows)
+
+
+class _MemoryCollection:
+    def __init__(self, docs: list[dict[str, Any]] | None = None) -> None:
+        self.docs = docs or []
+        self.update_many_calls: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        self.delete_many_calls: list[dict[str, Any]] = []
+        self.delete_one_calls: list[dict[str, Any]] = []
+
+    def _matches(self, doc: dict[str, Any], query: dict[str, Any]) -> bool:
+        for key, expected in query.items():
+            actual = doc.get(key)
+            if isinstance(expected, dict):
+                if "$in" in expected and actual not in expected["$in"]:
+                    return False
+                if "$nin" in expected and actual in expected["$nin"]:
+                    return False
+                if "$ne" in expected and actual == expected["$ne"]:
+                    return False
+                if "$gt" in expected and not (actual and actual > expected["$gt"]):
+                    return False
+                continue
+            if actual != expected:
+                return False
+        return True
+
+    async def find_one(
+        self, query: dict[str, Any], *_args: Any, **_kwargs: Any
+    ) -> dict[str, Any] | None:
+        return next((doc for doc in self.docs if self._matches(doc, query)), None)
+
+    def find(self, query: dict[str, Any]) -> _MemoryCursor:
+        return _MemoryCursor([doc for doc in self.docs if self._matches(doc, query)])
+
+    async def update_one(
+        self,
+        query: dict[str, Any],
+        update: dict[str, Any],
+        upsert: bool = False,
+    ) -> None:
+        doc = await self.find_one(query)
+        if doc is None:
+            if not upsert:
+                return
+            doc = {
+                key: value
+                for key, value in query.items()
+                if not isinstance(value, dict)
+            }
+            doc.setdefault("_id", ObjectId())
+            doc.update(update.get("$setOnInsert", {}))
+            self.docs.append(doc)
+        doc.update(update.get("$set", {}))
+        for key in update.get("$unset", {}):
+            doc.pop(key, None)
+
+    async def update_many(self, query: dict[str, Any], update: dict[str, Any]) -> None:
+        self.update_many_calls.append((query, update))
+        for doc in list(self.docs):
+            if self._matches(doc, query):
+                doc.update(update.get("$set", {}))
+                for key in update.get("$unset", {}):
+                    doc.pop(key, None)
+
+    async def delete_one(self, query: dict[str, Any]) -> None:
+        self.delete_one_calls.append(query)
+        self.docs = [doc for doc in self.docs if not self._matches(doc, query)]
+
+    async def delete_many(self, query: dict[str, Any]) -> None:
+        self.delete_many_calls.append(query)
+        self.docs = [doc for doc in self.docs if not self._matches(doc, query)]
+
+    async def bulk_write(self, operations: list[Any], ordered: bool = False) -> None:
+        for operation in operations:
+            await self.update_one(
+                operation._filter,
+                operation._doc,
+                upsert=bool(operation._upsert),
+            )
+
+
+class _SubscriptionClient:
+    def __init__(self) -> None:
+        self.created: list[dict[str, Any]] = []
+        self.deleted: list[dict[str, Any]] = []
+
+    async def create_subscription(
+        self,
+        *,
+        account_token: str,
+        webhook_url: str,
+        calendar_id: str | None = None,
+        resource: str | None = None,
+    ) -> dict[str, Any]:
+        if resource is None:
+            resource = f"/calendars/{calendar_id}/events"
+        subscription_id = f"sub-{len(self.created) + 1}"
+        self.created.append(
+            {
+                "account_token": account_token,
+                "resource": resource,
+                "webhook_url": webhook_url,
+            }
+        )
+        return {"id": subscription_id}
+
+    async def delete_subscription(
+        self, *, account_token: str, subscription_id: str
+    ) -> None:
+        self.deleted.append(
+            {"account_token": account_token, "subscription_id": subscription_id}
+        )
+
+
+@pytest.mark.asyncio
+async def test_commit_calendar_selection_anchors_task_and_contact_sync_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = CalendarProviderService.__new__(CalendarProviderService)
+    encrypted_token = calendar_provider_service._encrypt_token("account-token")
+    draft_id = "draft-token"
+    service.drafts_collection = _MemoryCollection(
+        [
+            {
+                "_id": ObjectId(),
+                "draft_token": draft_id,
+                "owner_planner_id": "planner-1",
+                "owner_planner_email": "planner@example.com",
+                "user_id": "user-1",
+                "user_email": "planner@example.com",
+                "provider": "google",
+                "provider_account_email": "planner@gmail.com",
+                "provider_account_name": "Planner Gmail",
+                "aurinko_account_id": "acct-1",
+                "aurinko_access_token_encrypted": encrypted_token,
+                "calendars_payload": [
+                    {
+                        "id": "cal-1",
+                        "name": "Primary",
+                        "accessRole": "owner",
+                        "primary": True,
+                    },
+                    {
+                        "id": "cal-2",
+                        "name": "Work",
+                        "accessRole": "writer",
+                    },
+                ],
+                "tasklists_payload": [
+                    {"id": "tasks-default", "name": "Tasks", "default": True}
+                ],
+                "contact_books_payload": [
+                    {"id": "default", "name": "Default contacts", "default": True}
+                ],
+                "default_write_calendar_id": "cal-1",
+                "connection_scopes": [
+                    "Calendar.ReadWrite",
+                    "Tasks.ReadWrite",
+                    "Contacts.ReadWrite",
+                ],
+                "redirect_to": "/admin/planner/calendar",
+            }
+        ]
+    )
+    service.connections_collection = _MemoryCollection()
+    service.syncs_collection = _MemoryCollection()
+    service.task_sync_records_collection = _MemoryCollection()
+    service.contact_sync_records_collection = _MemoryCollection()
+    service.client = _SubscriptionClient()
+    service._webhook_url = lambda: "https://example.test/calendar/webhook"
+    monkeypatch.setattr(
+        "app.services.calendar_provider_service.calendar_audit_service.log",
+        AsyncMock(return_value=None),
+    )
+
+    result = await service.commit_calendar_selection(
+        draft_id=draft_id,
+        user_id="user-1",
+        picks=[
+            {"aurinko_calendar_id": "cal-1"},
+            {"aurinko_calendar_id": "cal-2", "is_default_write_target": True},
+        ],
+        task_picks=[{"aurinko_tasklist_id": "tasks-default"}],
+        contact_picks=[{"aurinko_contact_book_id": "default"}],
+    )
+
+    assert result["connected"] is True
+    assert result["connections_created"] == 2
+    enabled_task_rows = [
+        row for row in service.connections_collection.docs if row["task_sync_enabled"]
+    ]
+    enabled_contact_rows = [
+        row
+        for row in service.connections_collection.docs
+        if row["contact_sync_enabled"]
+    ]
+    assert [row["aurinko_calendar_id"] for row in enabled_task_rows] == ["cal-2"]
+    assert [row["aurinko_calendar_id"] for row in enabled_contact_rows] == ["cal-2"]
+    created_resources = [entry["resource"] for entry in service.client.created]
+    assert created_resources.count("/tasklists/tasks-default/tasks") == 1
+    assert created_resources.count("/contacts") == 1
+
+
+@pytest.mark.asyncio
+async def test_update_connection_moves_task_sync_off_account_siblings() -> None:
+    service = CalendarProviderService.__new__(CalendarProviderService)
+    encrypted_token = calendar_provider_service._encrypt_token("account-token")
+    current_id = ObjectId()
+    sibling_id = ObjectId()
+    service.connections_collection = _MemoryCollection(
+        [
+            {
+                "_id": current_id,
+                "owner_planner_id": "planner-1",
+                "owner_planner_email": "planner@example.com",
+                "user_id": "user-1",
+                "user_email": "planner@example.com",
+                "aurinko_account_id": "acct-1",
+                "aurinko_access_token_encrypted": encrypted_token,
+                "aurinko_calendar_id": "cal-1",
+                "calendar_name": "Primary",
+                "provider": "google",
+                "is_writable": True,
+                "sync_enabled": True,
+                "task_sync_enabled": False,
+            },
+            {
+                "_id": sibling_id,
+                "owner_planner_id": "planner-1",
+                "owner_planner_email": "planner@example.com",
+                "user_id": "user-1",
+                "user_email": "planner@example.com",
+                "aurinko_account_id": "acct-1",
+                "aurinko_access_token_encrypted": encrypted_token,
+                "aurinko_calendar_id": "cal-2",
+                "calendar_name": "Work",
+                "provider": "google",
+                "is_writable": True,
+                "sync_enabled": True,
+                "task_sync_enabled": True,
+                "task_sync_tasklist_id": "tasks-default",
+                "task_sync_subscription_id": "sub-old-task",
+            },
+        ]
+    )
+    service.task_sync_records_collection = _MemoryCollection(
+        [{"connection_id": str(sibling_id), "sync_status": "synced"}]
+    )
+    service.contact_sync_records_collection = _MemoryCollection()
+    service.client = _SubscriptionClient()
+    service._webhook_url = lambda: "https://example.test/calendar/webhook"
+
+    async def _noop_invalidate(_connection_id: str) -> None:
+        return None
+
+    service.invalidate_connection_events_cache = _noop_invalidate
+
+    result = await service.update_connection(
+        str(current_id),
+        {
+            "task_sync_enabled": True,
+            "task_sync_tasklist_id": "tasks-default",
+            "task_sync_tasklist_name": "Tasks",
+        },
+    )
+
+    sibling = await service.connections_collection.find_one({"_id": sibling_id})
+    current = await service.connections_collection.find_one({"_id": current_id})
+    assert result["task_sync_enabled"] is True
+    assert current["task_sync_subscription_id"] == "sub-1"
+    assert sibling["task_sync_enabled"] is False
+    assert sibling["task_sync_tasklist_id"] is None
+    assert sibling["task_sync_subscription_id"] is None
+    assert service.client.deleted == [
+        {"account_token": "account-token", "subscription_id": "sub-old-task"}
+    ]
+    assert service.task_sync_records_collection.docs[0]["sync_status"] == "orphaned"
 
 
 @pytest.mark.asyncio
@@ -281,8 +571,11 @@ async def test_authorize_url_uses_space_separated_scopes(
     # (os.environ.setdefault at module level is too late — settings attributes
     # are class-level os.getenv() calls evaluated at first import time).
     import app.services.calendar_provider_service as _cps_mod
+
     monkeypatch.setattr(_cps_mod.settings, "AURINKO_CLIENT_ID", "test-client-id")
-    monkeypatch.setattr(_cps_mod.settings, "AURINKO_CLIENT_SECRET", "test-client-secret")
+    monkeypatch.setattr(
+        _cps_mod.settings, "AURINKO_CLIENT_SECRET", "test-client-secret"
+    )
     client = AurinkoClient()
     url = await client.authorize_url(
         scopes=["Calendar.ReadWrite", "Contacts.Read"],
@@ -319,8 +612,11 @@ async def test_authorize_url_default_serviceType_falls_back_to_google(
     multi-value form (broken in prod, never live-tested).
     """
     import app.services.calendar_provider_service as _cps_mod
+
     monkeypatch.setattr(_cps_mod.settings, "AURINKO_CLIENT_ID", "test-client-id")
-    monkeypatch.setattr(_cps_mod.settings, "AURINKO_CLIENT_SECRET", "test-client-secret")
+    monkeypatch.setattr(
+        _cps_mod.settings, "AURINKO_CLIENT_SECRET", "test-client-secret"
+    )
     client = AurinkoClient()
     url = await client.authorize_url(
         scopes=["Calendar.ReadWrite"],
@@ -344,8 +640,11 @@ async def test_authorize_url_passes_single_serviceType_when_set(
     screen. That requires sending ONLY ``Google`` in serviceType, not the
     full list."""
     import app.services.calendar_provider_service as _cps_mod
+
     monkeypatch.setattr(_cps_mod.settings, "AURINKO_CLIENT_ID", "test-client-id")
-    monkeypatch.setattr(_cps_mod.settings, "AURINKO_CLIENT_SECRET", "test-client-secret")
+    monkeypatch.setattr(
+        _cps_mod.settings, "AURINKO_CLIENT_SECRET", "test-client-secret"
+    )
     client = AurinkoClient()
     url = await client.authorize_url(
         scopes=["Calendar.ReadWrite"],
@@ -384,62 +683,41 @@ def test_resolve_service_type_falls_back_to_google_for_unknown_or_none() -> None
 
 
 @pytest.mark.asyncio
-async def test_get_authorization_url_parses_env_scopes_string() -> None:
+async def test_get_authorization_url_parses_env_scopes_string(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The production callsite passes ``settings.AURINKO_SCOPES`` (a string)
     into ``client.authorize_url`` which expects ``list[str]``. Without the
     string→list parse the URL ends up with comma-joined CHARACTERS:
     ``scopes=C,a,l,e,n,d,a,r,...``. Pin the production path so this can't
     regress. .env may use either space or comma as separator."""
-    import os
+    monkeypatch.setattr(
+        "app.services.calendar_provider_service.settings.AURINKO_SCOPES",
+        "Calendar.ReadWrite Mail.Read Mail.Send Contacts.ReadWrite",
+    )
+    monkeypatch.setattr(
+        "app.services.calendar_provider_service.settings.AURINKO_REDIRECT_URI",
+        "http://localhost:3000/cb",
+    )
+    monkeypatch.setattr(
+        "app.services.calendar_provider_service.settings.AURINKO_OAUTH_STATE_SIGNING_KEY",
+        "sk",
+    )
 
-    # Patch the env var with a space-separated string (matches the repo's
-    # .env shape today). Then call get_authorization_url which reads it.
-    saved = os.environ.get("AURINKO_SCOPES")
-    saved_redirect = os.environ.get("AURINKO_REDIRECT_URI")
-    saved_signing = os.environ.get("AURINKO_OAUTH_STATE_SIGNING_KEY")
-    try:
-        os.environ["AURINKO_SCOPES"] = (
-            "Calendar.ReadWrite Mail.Read Mail.Send Contacts.ReadWrite"
-        )
-        os.environ["AURINKO_REDIRECT_URI"] = "http://localhost:3000/cb"
-        os.environ.setdefault("AURINKO_OAUTH_STATE_SIGNING_KEY", "sk")
-        # Reload settings so the patched env is picked up.
-        import importlib
-        from app.core import config as _config_mod
-
-        importlib.reload(_config_mod)
-        # Also reload the provider module so its module-level singleton
-        # reads the refreshed settings.
-        from app.services import calendar_provider_service as _cps_mod
-
-        importlib.reload(_cps_mod)
-        svc = _cps_mod.CalendarProviderService()
-        url = await svc.get_authorization_url(
-            user_id="u1",
-            user_email="u@example.com",
-            owner_id="o1",
-            owner_email="o@example.com",
-        )
-        # The scopes parameter should contain comma-joined scope NAMES, not
-        # comma-joined CHARACTERS. Look for at least one full scope name.
-        assert "Calendar.ReadWrite" in url, f"scope name not preserved: {url[:200]}"
-        # The bug signature: comma between every character.
-        assert "C,a,l,e,n,d,a,r" not in url, (
-            "regression: scopes string joined character-by-character"
-        )
-    finally:
-        if saved is None:
-            os.environ.pop("AURINKO_SCOPES", None)
-        else:
-            os.environ["AURINKO_SCOPES"] = saved
-        if saved_redirect is None:
-            os.environ.pop("AURINKO_REDIRECT_URI", None)
-        else:
-            os.environ["AURINKO_REDIRECT_URI"] = saved_redirect
-        if saved_signing is None:
-            os.environ.pop("AURINKO_OAUTH_STATE_SIGNING_KEY", None)
-        else:
-            os.environ["AURINKO_OAUTH_STATE_SIGNING_KEY"] = saved_signing
+    svc = CalendarProviderService()
+    url = await svc.get_authorization_url(
+        user_id="u1",
+        user_email="u@example.com",
+        owner_id="o1",
+        owner_email="o@example.com",
+    )
+    # The scopes parameter should contain scope NAMES, not comma-joined
+    # CHARACTERS. Look for at least one full scope name.
+    assert "Calendar.ReadWrite" in url, f"scope name not preserved: {url[:200]}"
+    # The bug signature: comma between every character.
+    assert "C,a,l,e,n,d,a,r" not in url, (
+        "regression: scopes string joined character-by-character"
+    )
 
 
 @pytest.mark.asyncio
@@ -548,3 +826,225 @@ async def test_create_subscription_resource_is_per_calendar() -> None:
     assert recorder.last_json is not None
     assert recorder.last_json["resource"] == "/calendars/cal-99/events"
     assert recorder.last_json["notificationUrl"] == "https://example.com/webhooks"
+
+
+@pytest.mark.asyncio
+async def test_create_subscription_accepts_task_resource() -> None:
+    recorder = _RecordingClient(_make_response(200, {"id": "sub-task"}))
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.create_subscription(
+            account_token="tok",
+            resource="/tasklists/default/tasks",
+            webhook_url="https://example.com/webhooks",
+        )
+    assert recorder.last_method == "POST"
+    assert recorder.last_json is not None
+    assert recorder.last_json["resource"] == "/tasklists/default/tasks"
+
+
+@pytest.mark.asyncio
+async def test_create_subscription_accepts_contacts_resource() -> None:
+    recorder = _RecordingClient(_make_response(200, {"id": "sub-contact"}))
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.create_subscription(
+            account_token="tok",
+            resource="/contacts",
+            webhook_url="https://example.com/webhooks",
+        )
+    assert recorder.last_method == "POST"
+    assert recorder.last_json is not None
+    assert recorder.last_json["resource"] == "/contacts"
+
+
+@pytest.mark.asyncio
+async def test_task_crud_uses_tasklist_path_and_patch() -> None:
+    recorder = _RecordingClient(_make_response(200, {"id": "task-1", "etag": "v2"}))
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.update_task(
+            account_token="tok",
+            tasklist_id="default",
+            task_id="task-1",
+            body={"title": "Updated"},
+            etag="v1",
+        )
+    assert recorder.last_method == "PATCH"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/tasklists/default/tasks/task-1")
+    assert recorder.last_json == {"title": "Updated"}
+    assert recorder.last_headers is not None
+    assert recorder.last_headers["If-Match"] == "v1"
+
+
+@pytest.mark.asyncio
+async def test_create_task_uses_tasklist_path() -> None:
+    recorder = _RecordingClient(_make_response(200, {"id": "task-1"}))
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.create_task(
+            account_token="tok",
+            tasklist_id="default",
+            body={"title": "Task"},
+        )
+    assert recorder.last_method == "POST"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/tasklists/default/tasks")
+    assert recorder.last_json == {"title": "Task"}
+
+
+@pytest.mark.asyncio
+async def test_task_sync_uses_tasklist_scoped_delta_contract() -> None:
+    recorder = _RecordingClient(
+        _make_response(
+            200,
+            {
+                "ready": True,
+                "syncUpdatedToken": "updated-token",
+                "syncDeletedToken": "deleted-token",
+            },
+        )
+    )
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        result = await client.start_task_sync(
+            account_token="tok",
+            tasklist_id="default",
+            skip_completed_before_date=datetime(2026, 5, 1, tzinfo=UTC),
+            await_ready=False,
+        )
+    assert result["syncUpdatedToken"] == "updated-token"
+    assert recorder.last_method == "POST"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/tasklists/default/sync")
+    assert recorder.last_params == {
+        "skipCompletedBeforeDate": "2026-05-01T00:00:00+00:00",
+        "awaitReady": "false",
+    }
+
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.list_task_sync_changes(
+            account_token="tok",
+            tasklist_id="default",
+            change_set="updated",
+            delta_token="updated-token",
+        )
+    assert recorder.last_method == "GET"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/tasklists/default/sync/updated")
+    assert recorder.last_params == {"deltaToken": "updated-token"}
+
+
+@pytest.mark.asyncio
+async def test_delete_task_treats_404_as_idempotent() -> None:
+    recorder = _RecordingClient(_make_response(404, {"message": "gone"}))
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.delete_task(
+            account_token="tok",
+            tasklist_id="default",
+            task_id="task-1",
+        )
+    assert recorder.last_method == "DELETE"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/tasklists/default/tasks/task-1")
+
+
+@pytest.mark.asyncio
+async def test_contact_crud_uses_contacts_path_and_if_match() -> None:
+    recorder = _RecordingClient(_make_response(200, {"id": "contact-1"}))
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.update_contact(
+            account_token="tok",
+            contact_id="contact-1",
+            body={"givenName": "Ada"},
+            etag="etag-1",
+        )
+    assert recorder.last_method == "PATCH"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/contacts/contact-1")
+    assert recorder.last_json == {"givenName": "Ada"}
+    assert recorder.last_headers is not None
+    assert recorder.last_headers["If-Match"] == "etag-1"
+
+
+@pytest.mark.asyncio
+async def test_contacts_sync_uses_documented_delta_contract() -> None:
+    recorder = _RecordingClient(
+        _make_response(
+            200,
+            {
+                "ready": True,
+                "syncUpdatedToken": "contact-updated",
+                "syncDeletedToken": "contact-deleted",
+            },
+        )
+    )
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        result = await client.start_contacts_sync(
+            account_token="tok",
+            await_ready=False,
+        )
+    assert result["syncDeletedToken"] == "contact-deleted"
+    assert recorder.last_method == "POST"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/contacts/sync")
+    assert recorder.last_params == {"awaitReady": "false"}
+
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.list_contact_sync_changes(
+            account_token="tok",
+            change_set="deleted",
+            page_token="next-page",
+        )
+    assert recorder.last_method == "GET"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/contacts/sync/deleted")
+    assert recorder.last_params == {"pageToken": "next-page"}
+
+
+@pytest.mark.asyncio
+async def test_delete_contact_treats_404_as_idempotent() -> None:
+    recorder = _RecordingClient(_make_response(404, {"message": "gone"}))
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.delete_contact(account_token="tok", contact_id="contact-1")
+    assert recorder.last_method == "DELETE"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/contacts/contact-1")

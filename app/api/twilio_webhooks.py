@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhook/twilio")
 
 TwilioWebhookParams = dict[str, str]
+TWILIO_UNSIGNED_WEBHOOK_BYPASS_ENV = "TWILIO_ALLOW_UNSIGNED_WEBHOOKS"
 
 
 def _to_object_id(id_value: str):
@@ -482,22 +483,30 @@ def _validate_twilio_signature(
     """
     auth_token = os.getenv("TWILIO_AUTH_TOKEN")
 
+    environment = os.getenv("ENVIRONMENT", os.getenv("NODE_ENV", "development"))
+    allow_unsigned = environment != "production" and os.getenv(
+        TWILIO_UNSIGNED_WEBHOOK_BYPASS_ENV, ""
+    ).lower() in {"1", "true", "yes"}
+
     if not auth_token:
-        logger.warning(
-            "TWILIO_AUTH_TOKEN not configured - skipping signature verification"
-        )
-        return True  # Allow in development, but log warning
+        if allow_unsigned:
+            logger.warning(
+                "TWILIO_AUTH_TOKEN not configured - allowing unsigned webhook because %s is enabled",
+                TWILIO_UNSIGNED_WEBHOOK_BYPASS_ENV,
+            )
+            return True
+        logger.error("TWILIO_AUTH_TOKEN not configured - rejecting Twilio webhook")
+        return False
 
     if not signature:
-        # In production, require signature. In development, allow without.
-        environment = os.getenv("ENVIRONMENT", "development")
-        if environment == "production":
-            logger.warning("No X-Twilio-Signature header present in production")
-            return False
-        logger.warning(
-            "No X-Twilio-Signature header present - allowing in non-production"
-        )
-        return True
+        if allow_unsigned:
+            logger.warning(
+                "No X-Twilio-Signature header present - allowing because %s is enabled",
+                TWILIO_UNSIGNED_WEBHOOK_BYPASS_ENV,
+            )
+            return True
+        logger.warning("No X-Twilio-Signature header present")
+        return False
 
     try:
         from twilio.request_validator import (
@@ -527,8 +536,8 @@ def _validate_twilio_signature(
         return is_valid
 
     except ImportError:
-        logger.warning("twilio package not available for signature validation")
-        return True
+        logger.error("twilio package not available for signature validation")
+        return False
     except Exception as e:
         logger.error(f"Signature validation error: {str(e)}")
         return False

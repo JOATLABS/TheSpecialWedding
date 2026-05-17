@@ -17,15 +17,19 @@ function parseRoot(argv) {
   return root;
 }
 
-function listTrackedFiles(root) {
-  const output = execFileSync('git', ['-C', root, 'ls-files', '-z'], {
-    encoding: 'utf8',
-  });
+function listCandidateFiles(root) {
+  const output = execFileSync(
+    'git',
+    ['-C', root, 'ls-files', '-co', '--exclude-standard', '-z'],
+    {
+      encoding: 'utf8',
+    }
+  );
 
   return output.split('\0').filter(Boolean);
 }
 
-function listDeletedFiles(root) {
+function listDeletedTrackedFiles(root) {
   const output = execFileSync('git', ['-C', root, 'status', '--porcelain=v1', '-z'], {
     encoding: 'utf8',
   });
@@ -49,14 +53,17 @@ function findCopyArtifacts(files, deletedFiles) {
 
 function main() {
   const root = parseRoot(process.argv.slice(2));
-  const artifacts = findCopyArtifacts(listTrackedFiles(root), listDeletedFiles(root));
+  const artifacts = findCopyArtifacts(
+    listCandidateFiles(root),
+    listDeletedTrackedFiles(root)
+  );
 
   if (artifacts.length === 0) {
     console.log('No Finder-style copy artifacts found.');
     return;
   }
 
-  console.error('Finder-style copy artifacts are tracked:');
+  console.error('Finder-style copy artifacts found:');
   for (const artifact of artifacts) {
     console.error(`- ${artifact}`);
   }

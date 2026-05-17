@@ -47,9 +47,7 @@ async def seed_form_with_upload_field() -> tuple[str, str, str]:
     dist_id = f"{form_id}_dist"
     raw_token = f"verify_upl_{short_token()}"
     secret = os.environ.get("SECRET_KEY") or "test-secret"
-    token_hash = hmac.new(
-        secret.encode(), raw_token.encode(), sha256
-    ).hexdigest()
+    token_hash = hmac.new(secret.encode(), raw_token.encode(), sha256).hexdigest()
 
     await insert_one(
         "forms",
@@ -123,7 +121,7 @@ async def main() -> None:
             "From a separate browser, attempt to forge POST /public/forms/{form_id}/submit with the file_id you saw and a different distribution_id → expect 400 (cross-distribution replay rejected).",
         ],
     )
-    print(f"  ↳ run cleanup: python testbed/cleanup_form_file_upload_state.py")
+    print("  ↳ run cleanup: python testbed/cleanup_form_file_upload_state.py")
 
 
 if __name__ == "__main__":

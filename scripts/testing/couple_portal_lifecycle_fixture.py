@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.utils.auth_utils import get_password_hash
+from app.utils.auth_utils import get_password_hash  # noqa: E402
 
 DEFAULT_FIXTURE = {
     "weddingId": "wedding_1775700014748",

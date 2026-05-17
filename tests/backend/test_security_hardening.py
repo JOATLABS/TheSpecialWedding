@@ -33,9 +33,7 @@ from app.utils.security_utils import FormSecurityValidator  # noqa: E402
 # =============================================================================
 
 
-PHONE_FIELD = [
-    {"id": "phone", "type": "phone", "required": False, "label": "Phone"}
-]
+PHONE_FIELD = [{"id": "phone", "type": "phone", "required": False, "label": "Phone"}]
 
 
 @pytest.mark.parametrize(
@@ -267,23 +265,11 @@ def test_conditional_logic_validator_accepts_simple_show_when_all():
         # Empty conditions
         {"show_when": {"all": []}},
         # Bad field_id
-        {
-            "show_when": {
-                "all": [{"field_id": "", "operator": "equals", "value": 1}]
-            }
-        },
+        {"show_when": {"all": [{"field_id": "", "operator": "equals", "value": 1}]}},
         # Unknown operator
-        {
-            "show_when": {
-                "all": [{"field_id": "x", "operator": "wat", "value": 1}]
-            }
-        },
+        {"show_when": {"all": [{"field_id": "x", "operator": "wat", "value": 1}]}},
         # 'in' operator missing list value
-        {
-            "show_when": {
-                "all": [{"field_id": "x", "operator": "in", "value": "veg"}]
-            }
-        },
+        {"show_when": {"all": [{"field_id": "x", "operator": "in", "value": "veg"}]}},
     ],
 )
 def test_conditional_logic_validator_rejects_malformed(bad_logic):
@@ -316,7 +302,6 @@ def test_conditional_logic_validator_treats_none_and_empty_dict_as_no_rule():
 def test_planner_state_key_is_collision_safe():
     from app.services.form_service import FormService
 
-    s = FormService.__new__(FormService)
     a = FormService._planner_state_key("alice.smith@example.com")
     b = FormService._planner_state_key("alice_smith@example.com")
     assert a != b
@@ -394,6 +379,9 @@ def _stub_storage():
         def put_object(self, **_kwargs):
             return {"ETag": "x"}
 
+        def delete_object(self, **_kwargs):
+            return {}
+
     storage = SimpleNamespace(
         client=_S3(),
         require_target=lambda _t: target,
@@ -432,8 +420,16 @@ async def test_upload_rejected_when_aggregate_quota_exceeded(monkeypatch):
                 for i in range(2)
             ]
 
-        def find(self, _q):
-            return FakeCursor(self.docs)
+        def aggregate(self, _pipeline):
+            return FakeCursor(
+                [
+                    {
+                        "_id": None,
+                        "count": len(self.docs),
+                        "size_bytes": sum(doc["size_bytes"] for doc in self.docs),
+                    }
+                ]
+            )
 
         async def insert_one(self, doc):
             self.docs.append(doc)
@@ -449,7 +445,7 @@ async def test_upload_rejected_when_aggregate_quota_exceeded(monkeypatch):
             field_id="doc",
             filename="more.pdf",
             content_type="application/pdf",
-            contents=b"x" * 1024,
+            contents=b"%PDF-1.4\n%" + (b"x" * 1024),
         )
     assert exc.value.status_code == 413
     assert "quota" in exc.value.detail.lower()
@@ -483,8 +479,16 @@ async def test_upload_rejected_when_count_exceeded(monkeypatch):
                 for i in range(MAX_UPLOADS_PER_DISTRIBUTION)
             ]
 
-        def find(self, _q):
-            return FakeCursor(self.docs)
+        def aggregate(self, _pipeline):
+            return FakeCursor(
+                [
+                    {
+                        "_id": None,
+                        "count": len(self.docs),
+                        "size_bytes": sum(doc["size_bytes"] for doc in self.docs),
+                    }
+                ]
+            )
 
         async def insert_one(self, doc):
             self.docs.append(doc)
@@ -500,7 +504,7 @@ async def test_upload_rejected_when_count_exceeded(monkeypatch):
             field_id="doc",
             filename="more.pdf",
             content_type="application/pdf",
-            contents=b"hello",
+            contents=b"%PDF-1.4\n%hello",
         )
     assert exc.value.status_code == 429
 
@@ -566,8 +570,6 @@ def test_ai_cache_key_handles_missing_plan_safely():
 async def test_get_latest_cached_response_without_plan_finds_plan_tagged_entries():
     """The fallback caller (no subscription_plan) must still hit
     cache rows that were written under 'free' / 'active' / etc."""
-    from datetime import datetime, timedelta, timezone
-    from unittest.mock import AsyncMock
 
     from app.services.ai_cache_service import AICacheService
 
@@ -610,8 +612,6 @@ async def test_get_latest_cached_response_with_plan_keeps_scope():
     """Inverse — when caller threads the plan through, we keep the
     isolation tight to stop a downgraded view from reading paid-tier
     cache."""
-    from datetime import datetime, timedelta, timezone
-    from unittest.mock import AsyncMock
 
     from app.services.ai_cache_service import AICacheService
 
@@ -1131,9 +1131,7 @@ async def test_backfill_assigns_general_when_template_type_also_missing():
 def test_validate_form_field_preserves_conditional_logic():
     rule = {
         "show_when": {
-            "all": [
-                {"field_id": "diet", "operator": "equals", "value": "vegetarian"}
-            ]
+            "all": [{"field_id": "diet", "operator": "equals", "value": "vegetarian"}]
         }
     }
     out = FormSecurityValidator.validate_form_field(
@@ -1208,7 +1206,9 @@ async def test_ai_generate_passes_plan_to_insufficient_credits_fallback(
 
     received: Dict[str, Any] = {}
 
-    async def _spy_get_latest_cached_response(*, feature, tenant_id, subscription_plan=None):
+    async def _spy_get_latest_cached_response(
+        *, feature, tenant_id, subscription_plan=None
+    ):
         received["feature"] = feature
         received["tenant_id"] = tenant_id
         received["subscription_plan"] = subscription_plan
@@ -1286,9 +1286,7 @@ async def test_store_upload_translates_unconfigured_storage_to_503():
 
     class _BlowingStorage:
         def require_target(self, target):
-            raise RuntimeError(
-                "Storage target 'form_uploads' is not available."
-            )
+            raise RuntimeError("Storage target 'form_uploads' is not available.")
 
     # ``storage`` is a lazy property backed by ``_storage``; setting the
     # private attr is the supported test-time injection seen elsewhere
@@ -1300,16 +1298,14 @@ async def test_store_upload_translates_unconfigured_storage_to_503():
             return []
 
     class _Coll:
-        def find(self, *_a, **_kw):
+        def aggregate(self, *_a, **_kw):
             return _AsyncCursor()
 
     service.uploads_collection = _Coll()
 
     form = {
         "_id": "form_1",
-        "fields": [
-            {"id": "doc", "type": "file_upload", "required": True}
-        ],
+        "fields": [{"id": "doc", "type": "file_upload", "required": True}],
     }
     distribution = {"_id": "dist-1", "form_id": "form_1"}
 

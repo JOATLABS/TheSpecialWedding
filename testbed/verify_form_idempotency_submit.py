@@ -61,7 +61,7 @@ import uuid
 from datetime import timedelta
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Tuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -229,13 +229,9 @@ async def main() -> None:
     print(f"Seeded form C (tokenized):{form_c}")
     print(f"Seeded form D (tokenized):{form_d}")
 
-    dist_c, token_c = await _seed_tokenized_distribution(
-        form_c, "guest_c@example.com"
-    )
+    dist_c, token_c = await _seed_tokenized_distribution(form_c, "guest_c@example.com")
     print(f"  ↳ form C distribution: {dist_c}  (token live)")
-    dist_d, token_d = await _seed_tokenized_distribution(
-        form_d, "guest_d@example.com"
-    )
+    dist_d, token_d = await _seed_tokenized_distribution(form_d, "guest_d@example.com")
     print(f"  ↳ form D distribution: {dist_d}  (will be expired below)")
 
     form_service = FormService()
@@ -247,9 +243,7 @@ async def main() -> None:
     # ------------------------------------------------------------------
     _log_checkpoint(1, TOTAL, "First submit with key creates one row")
     key_1 = _new_key()
-    request_1 = SubmitFormRequest(
-        responses={"name": "Alex"}, idempotency_key=key_1
-    )
+    request_1 = SubmitFormRequest(responses={"name": "Alex"}, idempotency_key=key_1)
     response_1 = await form_service.submit_form_response(form_a, request_1)
     _assert("id" in response_1, "response carries an id")
     _assert("message" in response_1, "response carries a message")
@@ -260,8 +254,8 @@ async def main() -> None:
     )
     rows_1 = await count_documents("form_responses", {"form_id": form_a})
     _assert(rows_1 == 1, "exactly one form_responses row exists for form A")
-    persisted = await get_async_mongo().db["form_responses"].find_one(
-        {"_id": response_1["id"]}
+    persisted = (
+        await get_async_mongo().db["form_responses"].find_one({"_id": response_1["id"]})
     )
     _assert(
         persisted is not None and persisted.get("idempotency_key") == key_1,
@@ -281,9 +275,7 @@ async def main() -> None:
     # NO second row.
     # ------------------------------------------------------------------
     _log_checkpoint(2, TOTAL, "Repeat with same key returns original response")
-    request_2 = SubmitFormRequest(
-        responses={"name": "Alex"}, idempotency_key=key_1
-    )
+    request_2 = SubmitFormRequest(responses={"name": "Alex"}, idempotency_key=key_1)
     response_2 = await form_service.submit_form_response(form_a, request_2)
     _assert(response_2["id"] == response_1["id"], "id matches the first submit")
     _assert(response_2["message"] == response_1["message"], "message matches")
@@ -534,10 +526,7 @@ async def main() -> None:
 
     print()
     print(f"All {TOTAL} checkpoints passed.")
-    print(
-        "  ↳ run cleanup: "
-        "python testbed/cleanup_form_idempotency_submit_state.py"
-    )
+    print("  ↳ run cleanup: python testbed/cleanup_form_idempotency_submit_state.py")
 
 
 if __name__ == "__main__":

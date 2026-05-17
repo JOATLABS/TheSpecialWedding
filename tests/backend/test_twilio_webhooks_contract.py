@@ -183,6 +183,40 @@ def test_normalize_twilio_form_data_ignores_upload_files(
     assert "Ignoring unexpected uploaded file" in caplog.text
 
 
+def test_twilio_signature_validation_fails_closed_without_auth_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("TWILIO_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv(
+        twilio_webhooks.TWILIO_UNSIGNED_WEBHOOK_BYPASS_ENV, raising=False
+    )
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    request = FakeRequest(FormData({"MessageSid": "SM123"}), "/webhook/twilio/status")
+
+    assert (
+        twilio_webhooks._validate_twilio_signature(
+            request, None, {"MessageSid": "SM123"}
+        )
+        is False
+    )
+
+
+def test_twilio_signature_validation_allows_explicit_nonproduction_bypass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("TWILIO_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv(twilio_webhooks.TWILIO_UNSIGNED_WEBHOOK_BYPASS_ENV, "true")
+    request = FakeRequest(FormData({"MessageSid": "SM123"}), "/webhook/twilio/status")
+
+    assert (
+        twilio_webhooks._validate_twilio_signature(
+            request, None, {"MessageSid": "SM123"}
+        )
+        is True
+    )
+
+
 @pytest.mark.asyncio
 async def test_status_callback_parses_error_code_once_and_calls_failure_handler(
     monkeypatch: pytest.MonkeyPatch,

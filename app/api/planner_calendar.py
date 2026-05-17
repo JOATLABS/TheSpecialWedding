@@ -42,6 +42,8 @@ from app.services.calendar_idempotency_service import calendar_idempotency_servi
 from app.services.calendar_job_service import calendar_job_service
 from app.services.calendar_sync_service import calendar_sync_service
 from app.services.calendar_provider_service import calendar_provider_service
+from app.services.aurinko_contacts_sync_service import aurinko_contacts_sync_service
+from app.services.aurinko_tasks_sync_service import aurinko_tasks_sync_service
 from app.services.google_calendar_service import google_calendar_service
 from app.utils.query_validation import (
     calculate_pagination_params,
@@ -156,12 +158,53 @@ class ProviderAuthUrlResponse(BaseModel):
     message: str
 
 
+class ProviderCallbackCalendar(BaseModel):
+    """One row in the post-OAuth picker.
+
+    Surfaces just the fields the picker UI needs. The full Aurinko
+    payload stays in the backend draft and is replayed on
+    /connections/select.
+    """
+
+    aurinko_calendar_id: str
+    name: str
+    access_role: Optional[str] = None
+    is_writable: bool = False
+    is_primary: bool = False
+    suggested_default_write: bool = False
+
+
+class ProviderCallbackTasklist(BaseModel):
+    """One task list option in the post-OAuth picker."""
+
+    aurinko_tasklist_id: str
+    name: str
+    is_writable: bool = True
+    suggested_default: bool = False
+
+
+class ProviderCallbackContactBook(BaseModel):
+    """One contact book option in the post-OAuth picker."""
+
+    aurinko_contact_book_id: str
+    name: str
+    is_writable: bool = True
+    suggested_default: bool = False
+
+
 class ProviderCallbackResponse(BaseModel):
     """Response after the Aurinko hosted-auth callback.
 
-    Aurinko fans out a single OAuth flow to per-calendar connection rows, so
-    ``connections_created`` may be > 1. ``calendar_id`` carries the default
-    write target's id when one is established.
+    Under Option B (deferred creation), the callback no longer creates
+    per-calendar rows directly. It returns a draft id + the calendar
+    list so the frontend can render the picker modal; the picker's
+    Submit then POSTs to /admin/planner/calendar/connections/select to
+    commit the planner's chosen subset.
+
+    The legacy fields (``connected``, ``calendar_id``,
+    ``connections_created``, ``message``, ``warning``) stay so the
+    server can also respond from /connections/select with the same
+    shape — the frontend distinguishes by checking ``needs_selection``.
     """
 
     connected: bool
@@ -170,6 +213,45 @@ class ProviderCallbackResponse(BaseModel):
     redirect_to: Optional[str] = None
     message: str
     warning: Optional[str] = None
+    # Option-B picker fields (set on the callback hop, cleared on commit):
+    needs_selection: bool = False
+    draft_id: Optional[str] = None
+    account_email: Optional[str] = None
+    account_name: Optional[str] = None
+    provider: Optional[str] = None
+    calendars: list[ProviderCallbackCalendar] = []
+    tasklists: list[ProviderCallbackTasklist] = []
+    contact_books: list[ProviderCallbackContactBook] = []
+
+
+class CalendarSelectionPick(BaseModel):
+    """One picker choice — sent in the body of /connections/select."""
+
+    aurinko_calendar_id: str
+    is_default_write_target: Optional[bool] = None
+    details_visibility: Optional[str] = None  # "details" | "busy_only"
+    is_shared_in_team_view: Optional[bool] = None
+
+
+class TaskListSelectionPick(BaseModel):
+    """One selected tasklist choice for /connections/select."""
+
+    aurinko_tasklist_id: str
+
+
+class ContactBookSelectionPick(BaseModel):
+    """One selected contact book choice for /connections/select."""
+
+    aurinko_contact_book_id: str
+
+
+class CalendarSelectionRequest(BaseModel):
+    """POST body for /admin/planner/calendar/connections/select."""
+
+    draft_id: str
+    picks: list[CalendarSelectionPick] = []
+    task_picks: list[TaskListSelectionPick] = []
+    contact_picks: list[ContactBookSelectionPick] = []
 
 
 class CalendarConnectionResponse(BaseModel):
@@ -198,6 +280,17 @@ class CalendarConnectionResponse(BaseModel):
     is_shared_in_team_view: bool = False
     details_visibility: str = VisibilityMode.BUSY_ONLY.value
     sync_enabled: bool = False
+    task_sync_enabled: bool = False
+    task_sync_tasklist_id: Optional[str] = None
+    task_sync_tasklist_name: Optional[str] = None
+    task_sync_subscription_id: Optional[str] = None
+    contact_sync_enabled: bool = False
+    contact_sync_book_id: Optional[str] = None
+    contact_sync_book_name: Optional[str] = None
+    contact_sync_group_id: Optional[str] = None
+    contact_sync_group_name: Optional[str] = None
+    contact_sync_subscription_id: Optional[str] = None
+    connection_scopes: list[str] = Field(default_factory=list)
     couple_booking_auto_confirm: bool = True
     conference_provider_default: Optional[str] = None
     connection_status: str
@@ -207,6 +300,29 @@ class CalendarConnectionResponse(BaseModel):
     last_error: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+class ConnectionTasklistResponse(BaseModel):
+    """Tasklist option returned for one connected account."""
+
+    aurinko_tasklist_id: str
+    name: str
+    is_writable: bool = True
+
+
+class ConnectionContactBookResponse(BaseModel):
+    """Contact-book option returned for one connected account."""
+
+    aurinko_contact_book_id: str
+    name: str
+    is_writable: bool = True
+
+
+class ContactSyncNowResponse(BaseModel):
+    """Bulk contact mirror result."""
+
+    vendors: int = 0
+    weddings: int = 0
 
 
 class SharedCalendarEventResponse(BaseModel):
@@ -261,9 +377,16 @@ def _optional_str(value: Any) -> Optional[str]:
     return None
 
 
-async def _get_wedding_name(wedding_id: Optional[str]) -> Optional[str]:
+async def _get_wedding_name(
+    wedding_id: Optional[str],
+    current_user: Optional[ExtendedAuthUser] = None,
+) -> Optional[str]:
     """Get wedding couple names by ID."""
     if not wedding_id:
+        return None
+    if current_user is not None and not await check_wedding_access(
+        current_user, wedding_id
+    ):
         return None
     try:
         oid = ObjectId(wedding_id) if ObjectId.is_valid(wedding_id) else wedding_id
@@ -353,7 +476,53 @@ async def _load_task_sync_summary_map(
     tasks: list[dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
     task_ids = [str(task["_id"]) for task in tasks if task.get("_id")]
-    return await calendar_sync_service.get_sync_summary_map(task_ids)
+    summaries = await calendar_sync_service.get_sync_summary_map(task_ids)
+    if not task_ids:
+        return summaries
+    task_sync_rows = (
+        await mongo.get_task_sync_records_collection()
+        .find({"planner_task_id": {"$in": task_ids}})
+        .to_list(length=1000)
+    )
+    for row in task_sync_rows:
+        task_id = str(row.get("planner_task_id") or "")
+        if not task_id:
+            continue
+        summary = summaries.setdefault(task_id, {})
+        summary["row_count"] = int(summary.get("row_count") or 0) + 1
+        status = row.get("sync_status")
+        if status == CalendarSyncStatusValue.SYNCED.value:
+            summary["synced_target_count"] = (
+                int(summary.get("synced_target_count") or 0) + 1
+            )
+            summary["has_synced_target"] = True
+            summary["has_configured_target"] = True
+            summary.setdefault("primary_external_event_id", row.get("aurinko_task_id"))
+        elif status == CalendarSyncStatusValue.FAILED.value:
+            summary["failed_target_count"] = (
+                int(summary.get("failed_target_count") or 0) + 1
+            )
+            summary["has_configured_target"] = True
+        elif status == CalendarSyncStatusValue.ORPHANED.value:
+            summary["orphaned_target_count"] = (
+                int(summary.get("orphaned_target_count") or 0) + 1
+            )
+        elif status == CalendarSyncStatusValue.NOT_CONFIGURED.value:
+            summary["not_configured_target_count"] = (
+                int(summary.get("not_configured_target_count") or 0) + 1
+            )
+        else:
+            summary["pending_target_count"] = (
+                int(summary.get("pending_target_count") or 0) + 1
+            )
+        last_sync_at = row.get("last_sync_at")
+        if last_sync_at and not summary.get("last_sync_at"):
+            summary["last_sync_at"] = last_sync_at
+    return summaries
+
+
+async def _load_task_sync_summary(task_id: str) -> dict[str, Any]:
+    return (await _load_task_sync_summary_map([{"_id": task_id}])).get(task_id, {})
 
 
 def _require_document(document: Any, detail: str) -> dict[str, Any]:
@@ -421,6 +590,22 @@ def _connection_matches_owner_scope(
     if owner_email and connection_owner_email:
         return str(owner_email) == str(connection_owner_email)
     return False
+
+
+def _can_view_provider_account_metadata(
+    connection_doc: dict[str, Any],
+    current_user: ExtendedAuthUser,
+) -> bool:
+    """Provider task/contact names are account metadata, not shared calendar data."""
+    if current_user.is_root_admin or current_user.is_wedding_planner:
+        return True
+    current_context = get_calendar_owner_identity(current_user)
+    if connection_doc.get("user_id") == current_context.get("user_id"):
+        return True
+    return bool(
+        current_user.team_permissions
+        and current_user.team_permissions.get("manage_calendar_connections", False)
+    )
 
 
 def _can_send_meeting_invites(current_user: ExtendedAuthUser) -> bool:
@@ -789,7 +974,12 @@ async def get_google_calendar_status(
 
     Returns connection status, last sync time, and number of synced events.
     """
-    status = await google_calendar_service.get_connection_status(current_user.email)
+    context = get_calendar_owner_identity(current_user)
+    owner_planner_id = str(context.get("owner_id") or context.get("user_id") or "")
+    status = await google_calendar_service.get_connection_status(
+        current_user.email,
+        owner_planner_id=owner_planner_id,
+    )
 
     return CalendarSyncStatus(
         connected=status.get("connected", False),
@@ -814,7 +1004,12 @@ async def disconnect_google_calendar(
 
     Removes stored OAuth tokens. Tasks are preserved but sync is disabled.
     """
-    result = await google_calendar_service.disconnect(current_user.email)
+    context = get_calendar_owner_identity(current_user)
+    owner_planner_id = str(context.get("owner_id") or context.get("user_id") or "")
+    result = await google_calendar_service.disconnect(
+        current_user.email,
+        owner_planner_id=owner_planner_id,
+    )
     return result
 
 
@@ -835,11 +1030,14 @@ async def fetch_google_events(
     """
     time_min = datetime.now(UTC)
     time_max = time_min + timedelta(days=days_ahead)
+    context = get_calendar_owner_identity(current_user)
+    owner_planner_id = str(context.get("owner_id") or context.get("user_id") or "")
 
     events = await google_calendar_service.fetch_google_events(
         current_user.email,
         time_min=time_min,
         time_max=time_max,
+        owner_planner_id=owner_planner_id,
     )
 
     return events
@@ -855,7 +1053,7 @@ async def list_calendar_connections(
 ) -> list[CalendarConnectionResponse]:
     """List visible Google calendar connections in the planner owner scope."""
     scope = get_accessible_calendar_scope(current_user)
-    connections = await google_calendar_service.list_connections(
+    connections = await calendar_provider_service.list_connections(
         owner_id=str(scope.get("owner_id") or ""),
         current_user_id=get_calendar_owner_identity(current_user).get("user_id"),
         include_all_owner_connections=bool(scope.get("is_owner")),
@@ -974,6 +1172,9 @@ async def provider_oauth_callback(
             "user_email": context.get("user_email"),
         },
     )
+    raw_calendars = result.get("calendars") or []
+    raw_tasklists = result.get("tasklists") or []
+    raw_contact_books = result.get("contact_books") or []
     return ProviderCallbackResponse(
         connected=bool(result.get("connected")),
         calendar_id=result.get("calendar_id"),
@@ -981,6 +1182,135 @@ async def provider_oauth_callback(
         redirect_to=result.get("redirect_to"),
         message=str(result.get("message") or ""),
         warning=result.get("warning"),
+        needs_selection=bool(result.get("needs_selection")),
+        draft_id=result.get("draft_id"),
+        account_email=result.get("account_email"),
+        account_name=result.get("account_name"),
+        provider=result.get("provider"),
+        calendars=[ProviderCallbackCalendar(**entry) for entry in raw_calendars],
+        tasklists=[ProviderCallbackTasklist(**entry) for entry in raw_tasklists],
+        contact_books=[
+            ProviderCallbackContactBook(**entry) for entry in raw_contact_books
+        ],
+    )
+
+
+@router.post(
+    "/planner/calendar/connections/select",
+    tags=["Planner Calendar"],
+    response_model=ProviderCallbackResponse,
+)
+async def commit_calendar_selection(
+    body: CalendarSelectionRequest,
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("connect_personal_calendar")
+    ),
+) -> ProviderCallbackResponse:
+    """Commit the planner's picker choices into ``calendar_connections``
+    rows + Aurinko webhook subscriptions.
+
+    Companion to the OAuth callback: after that endpoint stashes the
+    encrypted account token + calendar list in a draft, the frontend
+    renders a picker modal and POSTs the picks here. We only create
+    rows + subscriptions for the picked calendars — un-picked read-only
+    iCal feeds (Cushion, Holidays, etc.) never get a webhook-subscribe
+    attempt, which is the root cause fix for the 2026-05-13
+    "Webhook subscription failed for N calendars" banner.
+
+    Empty ``picks`` is the "Skip for now" path — the draft is deleted
+    and zero connection rows are created.
+    """
+    context = get_calendar_owner_identity(current_user)
+    user_id = str(context.get("user_id") or "")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="No authenticated user")
+
+    result = await calendar_provider_service.commit_calendar_selection(
+        draft_id=body.draft_id,
+        user_id=user_id,
+        picks=[pick.model_dump(exclude_none=True) for pick in body.picks],
+        task_picks=[pick.model_dump(exclude_none=True) for pick in body.task_picks],
+        contact_picks=[
+            pick.model_dump(exclude_none=True) for pick in body.contact_picks
+        ],
+    )
+    return ProviderCallbackResponse(
+        connected=bool(result.get("connected")),
+        calendar_id=result.get("calendar_id"),
+        connections_created=int(result.get("connections_created") or 0),
+        redirect_to=result.get("redirect_to"),
+        message=str(result.get("message") or ""),
+        warning=result.get("warning"),
+        needs_selection=False,
+        draft_id=None,
+        calendars=[],
+        tasklists=[],
+        contact_books=[],
+    )
+
+
+@router.get(
+    "/planner/calendar/connections/picker-resume",
+    tags=["Planner Calendar"],
+    response_model=ProviderCallbackResponse,
+)
+async def resume_calendar_picker(
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("connect_personal_calendar")
+    ),
+) -> ProviderCallbackResponse:
+    """Return the planner's most recent unexpired picker draft, if any.
+
+    Recovery hop for the callback page when the OAuth code can no longer
+    be redeemed (Aurinko 410 on a second redeem after refresh / network
+    drop / back button). If we find an active draft for this user, we
+    rebuild the same payload the callback returned and the frontend
+    re-renders the picker modal. If there's no draft, we return
+    ``needs_selection=false`` with an empty calendars list so the
+    frontend knows to show a clean "start over" prompt instead of an
+    error toast.
+    """
+    context = get_calendar_owner_identity(current_user)
+    user_id = str(context.get("user_id") or "")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="No authenticated user")
+
+    payload = await calendar_provider_service.get_active_picker_draft(user_id=user_id)
+    if payload is None:
+        return ProviderCallbackResponse(
+            connected=False,
+            needs_selection=False,
+            draft_id=None,
+            calendar_id=None,
+            connections_created=0,
+            redirect_to=None,
+            message="No active calendar selection to resume.",
+            warning=None,
+            calendars=[],
+            tasklists=[],
+            contact_books=[],
+        )
+
+    raw_calendars = payload.get("calendars") or []
+    raw_tasklists = payload.get("tasklists") or []
+    raw_contact_books = payload.get("contact_books") or []
+    return ProviderCallbackResponse(
+        connected=False,
+        needs_selection=bool(payload.get("needs_selection")),
+        draft_id=payload.get("draft_id"),
+        calendar_id=None,
+        connections_created=0,
+        redirect_to=payload.get("redirect_to"),
+        message=str(payload.get("message") or ""),
+        warning=None,
+        account_email=payload.get("account_email"),
+        account_name=payload.get("account_name"),
+        provider=payload.get("provider"),
+        calendars=[ProviderCallbackCalendar(**entry) for entry in raw_calendars],
+        tasklists=[ProviderCallbackTasklist(**entry) for entry in raw_tasklists],
+        contact_books=[
+            ProviderCallbackContactBook(**entry) for entry in raw_contact_books
+        ],
     )
 
 
@@ -1024,7 +1354,7 @@ async def update_calendar_connection(
     current_user: ExtendedAuthUser = Depends(require_calendar_access),
 ) -> CalendarConnectionResponse:
     """Update mutable connection settings for a calendar row."""
-    connection_doc = await google_calendar_service._get_connection_doc(connection_id)
+    connection_doc = await calendar_provider_service.get_connection_doc(connection_id)
     current_context = get_calendar_owner_identity(current_user)
     is_owner = current_user.is_root_admin or current_user.is_wedding_planner
     is_connection_owner = connection_doc.get("user_id") == current_context.get(
@@ -1077,12 +1407,20 @@ async def update_calendar_connection(
             updates["allowed_wedding_ids"],
         )
 
-    updated = await google_calendar_service.update_connection(
-        connection_id,
-        updates,
-        actor_email=current_user.email,
-        actor_role=current_user.role,
-    )
+    if connection_doc.get("aurinko_account_id"):
+        updated = await calendar_provider_service.update_connection(
+            connection_id,
+            updates,
+            actor_email=current_user.email,
+            actor_role=current_user.role,
+        )
+    else:
+        updated = await google_calendar_service.update_connection(
+            connection_id,
+            updates,
+            actor_email=current_user.email,
+            actor_role=current_user.role,
+        )
     return CalendarConnectionResponse(**updated)
 
 
@@ -1138,7 +1476,7 @@ async def healthcheck_calendar_connection(
     current_user: ExtendedAuthUser = Depends(require_calendar_access),
 ) -> CalendarConnectionResponse:
     """Validate a connection against Google and return updated health metadata."""
-    connection_doc = await google_calendar_service._get_connection_doc(connection_id)
+    connection_doc = await calendar_provider_service.get_connection_doc(connection_id)
     current_context = get_calendar_owner_identity(current_user)
     can_manage_all = bool(
         current_user.team_permissions
@@ -1157,8 +1495,113 @@ async def healthcheck_calendar_connection(
         raise HTTPException(
             status_code=403, detail="Cannot healthcheck this calendar connection"
         )
-    result = await google_calendar_service.healthcheck_connection(connection_id)
+    if connection_doc.get("aurinko_account_id"):
+        result = await calendar_provider_service.healthcheck_connection(connection_id)
+    else:
+        result = await google_calendar_service.healthcheck_connection(connection_id)
     return CalendarConnectionResponse(**result)
+
+
+@router.get(
+    "/planner/calendar/connections/{connection_id}/tasklists",
+    tags=["Planner Calendar"],
+    response_model=list[ConnectionTasklistResponse],
+)
+async def list_connection_tasklists(
+    connection_id: str,
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
+) -> list[ConnectionTasklistResponse]:
+    """List task lists available through one Aurinko connection."""
+    connection_doc = await calendar_provider_service.get_connection_doc(connection_id)
+    if not _connection_matches_owner_scope(connection_doc, current_user):
+        raise HTTPException(
+            status_code=403, detail="Cannot view this calendar connection"
+        )
+    if not _can_view_provider_account_metadata(connection_doc, current_user):
+        raise HTTPException(
+            status_code=403, detail="Cannot inspect this provider account"
+        )
+    token = await calendar_provider_service._account_token_for_connection(
+        connection_doc
+    )
+    if not token:
+        raise HTTPException(status_code=400, detail="Connection has no Aurinko token")
+    tasklists = await calendar_provider_service.client.list_tasklists(token)
+    rows: list[ConnectionTasklistResponse] = []
+    for entry in tasklists:
+        tasklist_id = (
+            entry.get("id") or entry.get("taskListId") or entry.get("tasklistId")
+        )
+        if not tasklist_id:
+            continue
+        rows.append(
+            ConnectionTasklistResponse(
+                aurinko_tasklist_id=str(tasklist_id),
+                name=entry.get("name") or entry.get("title") or str(tasklist_id),
+                is_writable=bool(entry.get("is_writable", True)),
+            )
+        )
+    return rows
+
+
+@router.get(
+    "/planner/calendar/connections/{connection_id}/contact-books",
+    tags=["Planner Calendar"],
+    response_model=list[ConnectionContactBookResponse],
+)
+async def list_connection_contact_books(
+    connection_id: str,
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
+) -> list[ConnectionContactBookResponse]:
+    """List contact books available through one Aurinko connection."""
+    connection_doc = await calendar_provider_service.get_connection_doc(connection_id)
+    if not _connection_matches_owner_scope(connection_doc, current_user):
+        raise HTTPException(
+            status_code=403, detail="Cannot view this calendar connection"
+        )
+    if not _can_view_provider_account_metadata(connection_doc, current_user):
+        raise HTTPException(
+            status_code=403, detail="Cannot inspect this provider account"
+        )
+    token = await calendar_provider_service._account_token_for_connection(
+        connection_doc
+    )
+    if not token:
+        raise HTTPException(status_code=400, detail="Connection has no Aurinko token")
+    contact_books = await calendar_provider_service.client.list_contact_books(token)
+    return [
+        ConnectionContactBookResponse(
+            aurinko_contact_book_id=str(
+                entry.get("id") or entry.get("bookId") or "default"
+            ),
+            name=entry.get("name") or entry.get("title") or "Default contacts",
+            is_writable=bool(entry.get("is_writable", True)),
+        )
+        for entry in contact_books
+    ]
+
+
+@router.post(
+    "/planner/calendar/connections/{connection_id}/contacts/sync-now",
+    tags=["Planner Calendar"],
+    response_model=ContactSyncNowResponse,
+)
+async def sync_connection_contacts_now(
+    connection_id: str,
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("manage_calendar_connections")
+    ),
+) -> ContactSyncNowResponse:
+    """Bulk mirror current vendors and couple records for one connection."""
+    connection_doc = await calendar_provider_service.get_connection_doc(connection_id)
+    if not _connection_matches_owner_scope(connection_doc, current_user):
+        raise HTTPException(
+            status_code=403, detail="Cannot manage this calendar connection"
+        )
+    result = await aurinko_contacts_sync_service.bulk_mirror_for_connection(
+        connection_id
+    )
+    return ContactSyncNowResponse(**result)
 
 
 @router.get(
@@ -1299,6 +1742,11 @@ async def create_task(
     now = datetime.now(UTC)
     owner_context = get_calendar_owner_identity(current_user)
     owner_email = _calendar_owner_email(current_user)
+    if task_data.wedding_id and not await check_wedding_access(
+        current_user, task_data.wedding_id
+    ):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
     external_sync_requested = bool(
         task_data.external_sync_requested
         if task_data.external_sync_requested is not None
@@ -1360,19 +1808,25 @@ async def create_task(
     result = await tasks_collection.insert_one(task_doc)
     task_doc["_id"] = result.inserted_id
 
-    # Sync to Google Calendar if requested and connected
+    # Sync externally if requested and connected. Meetings remain calendar
+    # events; ordinary tasks are mirrored to the configured task list.
     if external_sync_requested:
-        await calendar_sync_service.sync_schedule_item(
-            task_doc,
-            actor_user_id=_calendar_user_id(current_user),
-            actor_is_owner=bool(
-                current_user.is_root_admin or current_user.is_wedding_planner
-            ),
-            actor_role_scope=_calendar_actor_role_scope(current_user),
-        )
+        if task_doc.get("schedule_item_type") == ScheduleItemType.MEETING.value:
+            await calendar_sync_service.sync_schedule_item(
+                task_doc,
+                actor_user_id=_calendar_user_id(current_user),
+                actor_is_owner=bool(
+                    current_user.is_root_admin or current_user.is_wedding_planner
+                ),
+                actor_role_scope=_calendar_actor_role_scope(current_user),
+            )
+        else:
+            await aurinko_tasks_sync_service.mirror_planner_task_to_aurinko(
+                str(result.inserted_id)
+            )
 
-    wedding_name = await _get_wedding_name(task_data.wedding_id)
-    sync_summary = await calendar_sync_service.get_sync_summary(str(result.inserted_id))
+    wedding_name = await _get_wedding_name(task_data.wedding_id, current_user)
+    sync_summary = await _load_task_sync_summary(str(result.inserted_id))
 
     logger.info(f"Created task {result.inserted_id} for planner {current_user.email}")
 
@@ -1412,6 +1866,8 @@ async def list_tasks(
         status, ["pending", "in_progress", "completed", "cancelled"]
     )
     category = validated_string_filter(category, max_length=50)
+    if wedding_id and not await check_wedding_access(current_user, wedding_id):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     # Build query
     query: dict[str, Any] = _build_task_scope_query(current_user)
@@ -1443,13 +1899,11 @@ async def list_tasks(
     wedding_names: dict[str, str] = {}
 
     if wedding_ids:
-        weddings_collection = mongo.get_weddings_collection()
         for wid in wedding_ids:
             try:
-                oid = ObjectId(wid) if ObjectId.is_valid(wid) else wid
-                wedding = await weddings_collection.find_one({"_id": oid})
-                if wedding:
-                    wedding_names[wid] = wedding.get("couple_names", "")
+                name = await _get_wedding_name(str(wid), current_user)
+                if name:
+                    wedding_names[str(wid)] = name
             except Exception:
                 pass
 
@@ -1496,8 +1950,8 @@ async def get_task(
     )
     task = _require_document(task, "Task not found")
 
-    wedding_name = await _get_wedding_name(task.get("wedding_id"))
-    sync_summary = await calendar_sync_service.get_sync_summary(task_id)
+    wedding_name = await _get_wedding_name(task.get("wedding_id"), current_user)
+    sync_summary = await _load_task_sync_summary(task_id)
 
     return _serialize_task(task, wedding_name, sync_summary)
 
@@ -1535,6 +1989,11 @@ async def update_task(
 
     update_fields = updates.model_dump(exclude_unset=True)
     owner_context = get_calendar_owner_identity(current_user)
+    if update_fields.get("wedding_id") and not await check_wedding_access(
+        current_user, update_fields["wedding_id"]
+    ):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
     requested_sync_state = None
     if update_fields.get("external_sync_requested") is not None:
         requested_sync_state = bool(update_fields.pop("external_sync_requested"))
@@ -1561,30 +2020,46 @@ async def update_task(
     elif updates.status and updates.status != "completed":
         update_doc["completed_at"] = None
 
-    existing_sync_summary = await calendar_sync_service.get_sync_summary(task_id)
+    existing_sync_summary = await _load_task_sync_summary(task_id)
     updated_task_doc = {**task, **update_doc, "_id": oid}
 
     await tasks_collection.update_one({"_id": oid}, {"$set": update_doc})
 
     if requested_sync_state is False and existing_sync_summary.get("row_count"):
         await calendar_sync_service.delete_schedule_item_syncs(task_id)
+        await aurinko_tasks_sync_service.unmirror_planner_task(task_id)
     elif updated_task_doc.get("external_sync_requested") or existing_sync_summary.get(
         "row_count"
     ):
-        await calendar_sync_service.sync_schedule_item(
-            updated_task_doc,
-            actor_user_id=_calendar_user_id(current_user),
-            actor_is_owner=bool(
-                current_user.is_root_admin or current_user.is_wedding_planner
-            ),
-            actor_role_scope=_calendar_actor_role_scope(current_user),
-        )
+        if updated_task_doc.get("schedule_item_type") == ScheduleItemType.MEETING.value:
+            await calendar_sync_service.sync_schedule_item(
+                updated_task_doc,
+                actor_user_id=_calendar_user_id(current_user),
+                actor_is_owner=bool(
+                    current_user.is_root_admin or current_user.is_wedding_planner
+                ),
+                actor_role_scope=_calendar_actor_role_scope(current_user),
+            )
+        else:
+            await aurinko_tasks_sync_service.mirror_planner_task_to_aurinko(task_id)
+
+    # Meeting → task type changes must not leave old calendar-event rows alive.
+    if (
+        task.get("schedule_item_type") == ScheduleItemType.MEETING.value
+        and updated_task_doc.get("schedule_item_type") != ScheduleItemType.MEETING.value
+    ):
+        await calendar_sync_service.delete_schedule_item_syncs(task_id)
+    if (
+        task.get("schedule_item_type") != ScheduleItemType.MEETING.value
+        and updated_task_doc.get("schedule_item_type") == ScheduleItemType.MEETING.value
+    ):
+        await aurinko_tasks_sync_service.unmirror_planner_task(task_id)
 
     # Fetch updated task
     updated_task = await tasks_collection.find_one({"_id": oid})
     updated_task = _require_document(updated_task, "Task not found after update")
-    wedding_name = await _get_wedding_name(updated_task.get("wedding_id"))
-    sync_summary = await calendar_sync_service.get_sync_summary(task_id)
+    wedding_name = await _get_wedding_name(updated_task.get("wedding_id"), current_user)
+    sync_summary = await _load_task_sync_summary(task_id)
 
     logger.info(f"Updated task {task_id} for planner {current_user.email}")
 
@@ -1620,8 +2095,9 @@ async def delete_task(
     )
     task = _require_document(task, "Task not found")
 
-    # Delete from Google Calendar if synced
+    # Delete external projections before removing the canonical task.
     await calendar_sync_service.delete_schedule_item_syncs(task_id)
+    await aurinko_tasks_sync_service.unmirror_planner_task(task_id)
 
     await tasks_collection.delete_one({"_id": oid})
 
@@ -1670,23 +2146,37 @@ async def sync_task_to_google(
     )
     task["external_sync_requested"] = True
 
-    sync_status = await calendar_sync_service.sync_schedule_item(
-        task,
-        actor_user_id=_calendar_user_id(current_user),
-        actor_is_owner=bool(
-            current_user.is_root_admin or current_user.is_wedding_planner
-        ),
-        actor_role_scope=_calendar_actor_role_scope(current_user),
-    )
-    successful_sync = next(
-        (
-            item
-            for item in sync_status
-            if item.get("sync_status") == CalendarSyncStatusValue.SYNCED.value
-            and item.get("external_event_id")
-        ),
-        None,
-    )
+    if task.get("schedule_item_type") == ScheduleItemType.MEETING.value:
+        sync_status = await calendar_sync_service.sync_schedule_item(
+            task,
+            actor_user_id=_calendar_user_id(current_user),
+            actor_is_owner=bool(
+                current_user.is_root_admin or current_user.is_wedding_planner
+            ),
+            actor_role_scope=_calendar_actor_role_scope(current_user),
+        )
+        successful_sync = next(
+            (
+                item
+                for item in sync_status
+                if item.get("sync_status") == CalendarSyncStatusValue.SYNCED.value
+                and item.get("external_event_id")
+            ),
+            None,
+        )
+    else:
+        sync_status = await aurinko_tasks_sync_service.mirror_planner_task_to_aurinko(
+            task_id
+        )
+        successful_sync = next(
+            (
+                item
+                for item in sync_status
+                if item.get("sync_status") == CalendarSyncStatusValue.SYNCED.value
+                and item.get("aurinko_task_id")
+            ),
+            None,
+        )
 
     if not successful_sync:
         raise HTTPException(
@@ -1697,8 +2187,8 @@ async def sync_task_to_google(
     # Fetch updated task
     updated_task = await tasks_collection.find_one({"_id": oid})
     updated_task = _require_document(updated_task, "Task not found after sync")
-    wedding_name = await _get_wedding_name(updated_task.get("wedding_id"))
-    sync_summary = await calendar_sync_service.get_sync_summary(task_id)
+    wedding_name = await _get_wedding_name(updated_task.get("wedding_id"), current_user)
+    sync_summary = await _load_task_sync_summary(task_id)
 
     return _serialize_task(updated_task, wedding_name, sync_summary)
 
@@ -1755,6 +2245,27 @@ async def bulk_update_task_status(
         },
         {"$set": update_doc},
     )
+    changed_tasks = await tasks_collection.find(
+        {
+            "_id": {"$in": oids},
+            **_build_task_scope_query(current_user),
+            "external_sync_requested": True,
+        }
+    ).to_list(length=len(oids))
+    for changed_task in changed_tasks:
+        if changed_task.get("schedule_item_type") == ScheduleItemType.MEETING.value:
+            await calendar_sync_service.sync_schedule_item(
+                changed_task,
+                actor_user_id=_calendar_user_id(current_user),
+                actor_is_owner=bool(
+                    current_user.is_root_admin or current_user.is_wedding_planner
+                ),
+                actor_role_scope=_calendar_actor_role_scope(current_user),
+            )
+        else:
+            await aurinko_tasks_sync_service.mirror_planner_task_to_aurinko(
+                str(changed_task["_id"])
+            )
 
     return {
         "updated_count": result.modified_count,
@@ -1821,13 +2332,11 @@ async def get_month_tasks(
     wedding_names: dict[str, str] = {}
 
     if wedding_ids:
-        weddings_collection = mongo.get_weddings_collection()
         for wid in wedding_ids:
             try:
-                oid = ObjectId(wid) if ObjectId.is_valid(wid) else wid
-                wedding = await weddings_collection.find_one({"_id": oid})
-                if wedding:
-                    wedding_names[wid] = wedding.get("couple_names", "")
+                name = await _get_wedding_name(str(wid), current_user)
+                if name:
+                    wedding_names[str(wid)] = name
             except Exception:
                 pass
     sync_summary_map = await _load_task_sync_summary_map(tasks)
@@ -1883,13 +2392,11 @@ async def get_upcoming_tasks(
     wedding_names: dict[str, str] = {}
 
     if wedding_ids:
-        weddings_collection = mongo.get_weddings_collection()
         for wid in wedding_ids:
             try:
-                oid = ObjectId(wid) if ObjectId.is_valid(wid) else wid
-                wedding = await weddings_collection.find_one({"_id": oid})
-                if wedding:
-                    wedding_names[wid] = wedding.get("couple_names", "")
+                name = await _get_wedding_name(str(wid), current_user)
+                if name:
+                    wedding_names[str(wid)] = name
             except Exception:
                 pass
     sync_summary_map = await _load_task_sync_summary_map(tasks)

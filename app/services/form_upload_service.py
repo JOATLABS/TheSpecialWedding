@@ -15,10 +15,13 @@ cannot smuggle in a file from another form / another guest's session.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import uuid
+import zipfile
 from datetime import datetime, timezone
+from io import BytesIO
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
@@ -65,6 +68,84 @@ ALLOWED_MIME_TYPES: frozenset[str] = frozenset(
 
 
 _FILENAME_SANITIZE_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _normalize_content_type(content_type: Optional[str]) -> Optional[str]:
+    if not content_type:
+        return None
+    return content_type.split(";", 1)[0].strip().lower() or None
+
+
+def _header_safe_metadata(value: Any, *, fallback: str = "unknown") -> str:
+    """Return a short printable-ASCII value safe for S3 user metadata headers."""
+    text = str(value or "").strip()
+    cleaned = "".join(char if 32 <= ord(char) <= 126 else "_" for char in text)
+    return cleaned[:128] or fallback
+
+
+def _content_disposition_attachment(filename: str) -> str:
+    return f'attachment; filename="{sanitize_filename(filename)}"'
+
+
+def _detect_ooxml_type(contents: bytes) -> set[str]:
+    try:
+        with zipfile.ZipFile(BytesIO(contents)) as archive:
+            names = set(archive.namelist())
+    except zipfile.BadZipFile:
+        return set()
+
+    detected: set[str] = set()
+    if "[Content_Types].xml" in names:
+        if any(name.startswith("word/") for name in names):
+            detected.add(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+        if any(name.startswith("xl/") for name in names):
+            detected.add(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    return detected
+
+
+def detect_upload_mime_types(contents: bytes) -> frozenset[str]:
+    """Best-effort file-signature detector for the upload allowlist.
+
+    It intentionally returns a set because some legacy binary Office formats
+    share the same OLE container signature and cannot be distinguished cheaply.
+    """
+    head = contents[:512]
+    detected: set[str] = set()
+
+    if head.startswith(b"\xff\xd8\xff"):
+        detected.add("image/jpeg")
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        detected.add("image/png")
+    if head.startswith(b"GIF87a") or head.startswith(b"GIF89a"):
+        detected.add("image/gif")
+    if len(head) >= 12 and head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        detected.add("image/webp")
+    if head.startswith(b"%PDF-"):
+        detected.add("application/pdf")
+    if head.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
+        detected.update({"application/msword", "application/vnd.ms-excel"})
+    if head.startswith(b"PK\x03\x04"):
+        detected.update(_detect_ooxml_type(contents))
+    if len(head) >= 12 and head[4:8] == b"ftyp":
+        brands = head[8:64].lower()
+        if any(brand in brands for brand in (b"heic", b"heix", b"hevc", b"hevx")):
+            detected.add("image/heic")
+        if any(brand in brands for brand in (b"heif", b"heim", b"heis", b"mif1")):
+            detected.add("image/heif")
+
+    if not detected and b"\x00" not in head:
+        try:
+            contents.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            pass
+        else:
+            detected.update({"text/plain", "text/csv"})
+
+    return frozenset(detected)
 
 
 def sanitize_filename(filename: Optional[str]) -> str:
@@ -133,7 +214,8 @@ class FormUploadService:
         """
         self._validate_field_is_file_upload(form, field_id)
 
-        if content_type is None or content_type.lower() not in ALLOWED_MIME_TYPES:
+        normalized_content_type = _normalize_content_type(content_type)
+        if normalized_content_type not in ALLOWED_MIME_TYPES:
             raise HTTPException(
                 status_code=415,
                 detail="Unsupported file type for upload",
@@ -146,14 +228,22 @@ class FormUploadService:
                 detail=(f"File too large. Max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB."),
             )
 
+        detected_content_types = detect_upload_mime_types(contents)
+        if normalized_content_type not in detected_content_types:
+            raise HTTPException(
+                status_code=415,
+                detail="Uploaded file content does not match the declared type",
+            )
+
         # Per-distribution aggregate quota. Counted from existing
         # form_uploads rows for this distribution; rejecting up-front
         # avoids partial writes (we'd otherwise put_object into S3 and
         # discover the quota miss only after spending bandwidth).
-        existing = await self.uploads_collection.find(
-            {"form_id": form["_id"], "distribution_id": distribution["_id"]}
-        ).to_list(length=MAX_UPLOADS_PER_DISTRIBUTION + 1)
-        if len(existing) >= MAX_UPLOADS_PER_DISTRIBUTION:
+        usage = await self._distribution_upload_usage(
+            form_id=form["_id"],
+            distribution_id=distribution["_id"],
+        )
+        if usage["count"] >= MAX_UPLOADS_PER_DISTRIBUTION:
             raise HTTPException(
                 status_code=429,
                 detail=(
@@ -161,8 +251,7 @@ class FormUploadService:
                     f"({MAX_UPLOADS_PER_DISTRIBUTION} files per recipient)."
                 ),
             )
-        existing_bytes = sum(int(row.get("size_bytes") or 0) for row in existing)
-        if existing_bytes + len(contents) > MAX_UPLOAD_BYTES_PER_DISTRIBUTION:
+        if usage["size_bytes"] + len(contents) > MAX_UPLOAD_BYTES_PER_DISTRIBUTION:
             raise HTTPException(
                 status_code=413,
                 detail=(
@@ -193,15 +282,17 @@ class FormUploadService:
         key = f"forms/{form['_id']}/{distribution['_id']}/{file_id}-{safe_filename}"
 
         try:
-            self.storage.client.put_object(
+            await asyncio.to_thread(
+                self.storage.client.put_object,
                 Bucket=target.bucket_name,
                 Key=key,
                 Body=contents,
-                ContentType=content_type,
+                ContentType=normalized_content_type,
+                ContentDisposition=_content_disposition_attachment(safe_filename),
                 Metadata={
-                    "form_id": str(form["_id"]),
-                    "distribution_id": str(distribution["_id"]),
-                    "field_id": field_id,
+                    "form_id": _header_safe_metadata(form["_id"]),
+                    "distribution_id": _header_safe_metadata(distribution["_id"]),
+                    "field_id": _header_safe_metadata(field_id),
                 },
             )
         except Exception as exc:  # pragma: no cover - boto error surface
@@ -222,22 +313,71 @@ class FormUploadService:
             "field_id": field_id,
             "filename": safe_filename,
             "original_filename": filename,
-            "content_type": content_type,
+            "content_type": normalized_content_type,
             "size_bytes": len(contents),
             "s3_bucket": target.bucket_name,
             "s3_key": key,
             "url": public_url,
             "uploaded_at": datetime.now(timezone.utc),
         }
-        await self.uploads_collection.insert_one(record)
+        try:
+            await self.uploads_collection.insert_one(record)
+        except Exception as exc:
+            logger.error(
+                "Failed to persist form attachment row for form=%s dist=%s key=%s: %s",
+                form.get("_id"),
+                distribution.get("_id"),
+                key,
+                exc,
+            )
+            try:
+                await asyncio.to_thread(
+                    self.storage.client.delete_object,
+                    Bucket=target.bucket_name,
+                    Key=key,
+                )
+            except Exception as cleanup_exc:  # pragma: no cover - best effort
+                logger.warning(
+                    "Failed to clean up orphaned form attachment key=%s: %s",
+                    key,
+                    cleanup_exc,
+                )
+            raise HTTPException(status_code=502, detail="Upload failed") from exc
 
         return {
             "file_id": file_id,
             "url": public_url,
             "filename": safe_filename,
-            "content_type": content_type,
+            "content_type": normalized_content_type,
             "size_bytes": len(contents),
             "field_id": field_id,
+        }
+
+    async def _distribution_upload_usage(
+        self,
+        *,
+        form_id: str,
+        distribution_id: str,
+    ) -> dict[str, int]:
+        cursor = self.uploads_collection.aggregate(
+            [
+                {"$match": {"form_id": form_id, "distribution_id": distribution_id}},
+                {
+                    "$group": {
+                        "_id": None,
+                        "count": {"$sum": 1},
+                        "size_bytes": {"$sum": "$size_bytes"},
+                    }
+                },
+            ]
+        )
+        rows = await cursor.to_list(length=1)
+        if not rows:
+            return {"count": 0, "size_bytes": 0}
+        row = rows[0]
+        return {
+            "count": int(row.get("count") or 0),
+            "size_bytes": int(row.get("size_bytes") or 0),
         }
 
     async def get_upload_for_form_distribution(
@@ -270,5 +410,6 @@ __all__ = [
     "MAX_UPLOAD_BYTES",
     "MAX_UPLOAD_BYTES_PER_DISTRIBUTION",
     "MAX_UPLOADS_PER_DISTRIBUTION",
+    "detect_upload_mime_types",
     "sanitize_filename",
 ]

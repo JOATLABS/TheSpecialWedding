@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Planner Calendar Redesign — Mockup Preview</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&display=swap" rel="stylesheet" />
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          rose: { brand: '#D4A5A5', deep: '#B98484' },
+          sage: { brand: '#A8DADC', deep: '#7FBFC1' },
+          gold: { brand: '#E9C46A', deep: '#C9A24C' },
+          navy: { brand: '#1D3557', deep: '#0F1E36' },
+          ink: { 0: '#0B1220', 1: '#101B30', 2: '#16223A', 3: '#1E2D49', 4: '#28395A' },
+        },
+        fontFamily: {
+          display: ['"Playfair Display"', 'serif'],
+          decor: ['"Cormorant Garamond"', 'serif'],
+          sans: ['Inter', 'system-ui', 'sans-serif'],
+        },
+      },
+    },
+  };
+</script>
+<style>
+  body { background: linear-gradient(180deg, #060A14 0%, #0B1220 60%, #060A14 100%); font-family: 'Inter', sans-serif; color: #E8ECF5; }
+  .frame { box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6), 0 12px 24px -10px rgba(0,0,0,0.45); }
+  .grid-cell { aspect-ratio: 1.15 / 1; }
+  .pill-dot::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 999px; margin-right: 8px; vertical-align: middle; }
+  .pill-dot-gold::before { background: #E9C46A; box-shadow: 0 0 0 3px rgba(233,196,106,0.18); }
+  .pill-dot-emerald::before { background: #34D399; box-shadow: 0 0 0 3px rgba(52,211,153,0.18); }
+  .pill-dot-amber::before { background: #F59E0B; box-shadow: 0 0 0 3px rgba(245,158,11,0.18); }
+  .pill-dot-slate::before { background: #64748B; }
+  .ring-rose { box-shadow: 0 0 0 2px rgba(212,165,165,0.85), inset 0 0 0 1px rgba(212,165,165,0.55); }
+  .grad-rose { background: linear-gradient(135deg, rgba(212,165,165,0.18), rgba(212,165,165,0.04)); }
+  .chip-task { background: rgba(168,218,220,0.14); border: 1px solid rgba(168,218,220,0.32); color: #BFEEF0; }
+  .chip-meeting { background: rgba(212,165,165,0.16); border: 1px solid rgba(212,165,165,0.34); color: #F1CFCF; }
+  .chip-external { background: rgba(148,163,184,0.14); border: 1px solid rgba(148,163,184,0.3); color: #CBD5E1; }
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 999px; }
+  /* sample checkbox */
+  .mock-check { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid #475569; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; background: rgba(15,23,42,0.55); }
+  .mock-check.checked { background: #D4A5A5; border-color: #D4A5A5; }
+  .mock-check.checked::after { content: '✓'; color: #1D1B1B; font-size: 12px; font-weight: 700; }
+  .mock-check.disabled { opacity: 0.4; border-style: dashed; }
+  .radio { width: 14px; height: 14px; border-radius: 999px; border: 1.5px solid #94A3B8; display: inline-flex; align-items: center; justify-content: center; }
+  .radio.on::after { content: ''; width: 7px; height: 7px; border-radius: 999px; background: #D4A5A5; }
+  hr.divider { border: 0; border-top: 1px solid rgba(255,255,255,0.06); }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- ============ Doc header ============ -->
+<header class="max-w-[1180px] mx-auto px-6 pt-12 pb-8">
+  <p class="font-decor italic text-gold-brand text-sm uppercase tracking-[0.28em]">Mockup · awaiting approval</p>
+  <h1 class="font-display text-4xl md:text-5xl text-white mt-3">Planner Calendar redesign</h1>
+  <p class="mt-3 text-slate-300 max-w-3xl leading-relaxed">
+    Three surfaces. The calendar page becomes the grid, not a settings page. Connections move
+    to their own home. After OAuth, the planner picks which calendars they actually want to
+    sync — no more surprise <em class="text-rose-brand">Cushion — Bills &amp; BNPL</em> rows.
+  </p>
+  <div class="mt-5 flex flex-wrap gap-2 text-xs">
+    <span class="rounded-full bg-ink-2 border border-white/10 px-3 py-1.5 text-slate-300">View 1 · Calendar page</span>
+    <span class="rounded-full bg-ink-2 border border-white/10 px-3 py-1.5 text-slate-300">View 2 · Calendar picker modal</span>
+    <span class="rounded-full bg-ink-2 border border-white/10 px-3 py-1.5 text-slate-300">View 3 · Settings page</span>
+  </div>
+</header>
+
+<!-- ============================================================ -->
+<!-- VIEW 1 — Redesigned Calendar Page                           -->
+<!-- ============================================================ -->
+<section class="max-w-[1180px] mx-auto px-6">
+  <div class="mb-3 flex items-center gap-3">
+    <span class="font-display text-rose-brand text-2xl">View 1</span>
+    <span class="text-slate-400 text-sm">— /admin/planner/calendar</span>
+  </div>
+
+  <div class="frame rounded-2xl overflow-hidden border border-white/8 bg-ink-1">
+    <!-- Browser chrome (cosmetic) -->
+    <div class="flex items-center gap-2 px-4 py-2.5 bg-ink-0 border-b border-white/5">
+      <span class="w-3 h-3 rounded-full bg-rose-500/70"></span>
+      <span class="w-3 h-3 rounded-full bg-amber-400/70"></span>
+      <span class="w-3 h-3 rounded-full bg-emerald-400/70"></span>
+      <span class="ml-3 text-[11px] text-slate-500 font-mono">localhost:3000/admin/planner/calendar</span>
+    </div>
+
+    <div class="flex">
+      <!-- Side nav (simplified mock of existing) -->
+      <aside class="w-[200px] bg-ink-0 border-r border-white/5 py-5 px-3 hidden md:block">
+        <div class="px-2 mb-6">
+          <p class="font-decor italic text-[10px] tracking-[0.32em] text-rose-brand/90">THE SPECIAL</p>
+          <p class="font-display text-xl text-white leading-none">Wedding</p>
+          <p class="text-[9px] tracking-[0.2em] text-slate-500 mt-1">A JOATLABS.DEV PLATFORM</p>
+        </div>
+        <nav class="space-y-1 text-[13px] text-slate-400">
+          <div class="px-3 py-1.5 rounded-lg hover:bg-white/5">Dashboard</div>
+          <div class="px-3 py-1.5 rounded-lg bg-rose-brand/15 text-rose-brand">Calendar</div>
+          <div class="px-3 py-1.5 rounded-lg">Weddings</div>
+          <div class="px-3 py-1.5 rounded-lg">Packages</div>
+          <div class="px-3 py-1.5 rounded-lg">Guests</div>
+          <div class="px-3 py-1.5 rounded-lg">Communications</div>
+          <div class="px-3 py-1.5 rounded-lg">Forms</div>
+          <div class="px-3 py-1.5 rounded-lg">Vendors</div>
+          <div class="px-3 py-1.5 rounded-lg">Notifications</div>
+          <div class="px-3 py-1.5 rounded-lg">Settings</div>
+        </nav>
+      </aside>
+
+      <!-- Main pane -->
+      <main class="flex-1 p-6 bg-ink-1">
+        <!-- Header row -->
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 class="font-display text-3xl text-white leading-tight">Shared Planner Calendar</h2>
+            <p class="text-slate-400 text-sm mt-1 font-decor italic">Business + external meetings — each visibility-tied.</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <!-- Status pill -->
+            <a class="pill-dot pill-dot-emerald inline-flex items-center gap-3 rounded-full bg-emerald-400/8 border border-emerald-400/25 px-3.5 py-1.5 text-[12px] text-emerald-100 hover:bg-emerald-400/12 cursor-pointer">
+              Google · 1 active · Webhooks OK
+              <span class="text-emerald-300/80">Manage →</span>
+            </a>
+            <button class="rounded-full bg-rose-brand text-navy-deep font-semibold text-[13px] px-4 py-1.5 hover:bg-rose-deep">+ New event</button>
+          </div>
+        </div>
+
+        <!-- Compact metric strip -->
+        <div class="mt-5 rounded-xl bg-ink-2/60 border border-white/6 px-5 py-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-[13px]">
+          <span class="pill-dot pill-dot-slate text-slate-400">0 internal meetings</span>
+          <span class="text-slate-700">·</span>
+          <span class="pill-dot pill-dot-slate text-slate-400">0 shared</span>
+          <span class="text-slate-700">·</span>
+          <span class="pill-dot pill-dot-slate text-slate-400">0 imports</span>
+          <span class="text-slate-700">·</span>
+          <span class="pill-dot pill-dot-gold text-white font-semibold">173 visible items</span>
+          <span class="ml-auto text-slate-500 text-[12px]">May 2026</span>
+        </div>
+
+        <!-- Filter bar -->
+        <div class="mt-5 flex flex-wrap items-center gap-2">
+          <div class="flex gap-2">
+            <button class="rounded-lg bg-ink-2 border border-white/8 px-3 py-1.5 text-[12.5px] text-slate-200">All weddings ▾</button>
+            <button class="rounded-lg bg-ink-2 border border-white/8 px-3 py-1.5 text-[12.5px] text-slate-200">All staff ▾</button>
+            <button class="rounded-lg bg-ink-2 border border-white/8 px-3 py-1.5 text-[12.5px] text-slate-200">All sources ▾</button>
+            <button class="rounded-lg bg-ink-2 border border-white/8 px-3 py-1.5 text-[12.5px] text-slate-200">All visibility ▾</button>
+          </div>
+          <div class="ml-auto flex items-center gap-2">
+            <button class="rounded-lg bg-ink-2 border border-white/8 px-3 py-1.5 text-[12.5px] text-slate-200">Today</button>
+            <button class="rounded-lg bg-ink-2 border border-white/8 px-2.5 py-1.5 text-[12.5px] text-slate-200">‹</button>
+            <span class="text-[13px] text-slate-200 font-display">May 2026</span>
+            <button class="rounded-lg bg-ink-2 border border-white/8 px-2.5 py-1.5 text-[12.5px] text-slate-200">›</button>
+            <div class="ml-3 inline-flex rounded-lg overflow-hidden border border-white/8">
+              <button class="bg-rose-brand text-navy-deep px-3 py-1.5 text-[12.5px] font-semibold">Calendar</button>
+              <button class="bg-ink-2 text-slate-300 px-3 py-1.5 text-[12.5px]">Agenda</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Calendar grid + slide-over -->
+        <div class="mt-5 grid grid-cols-12 gap-4">
+          <!-- Grid -->
+          <div class="col-span-8">
+            <div class="grid grid-cols-7 text-[10px] uppercase tracking-[0.18em] text-slate-500 px-1 pb-2">
+              <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+            </div>
+            <div class="grid grid-cols-7 gap-1.5">
+              <!-- Row 1: prev-month tails + May 1, 2 -->
+              <div class="grid-cell rounded-lg bg-ink-2/30 p-2 text-[11px] text-slate-600">26</div>
+              <div class="grid-cell rounded-lg bg-ink-2/30 p-2 text-[11px] text-slate-600">27</div>
+              <div class="grid-cell rounded-lg bg-ink-2/30 p-2 text-[11px] text-slate-600">28</div>
+              <div class="grid-cell rounded-lg bg-ink-2/30 p-2 text-[11px] text-slate-600">29</div>
+              <div class="grid-cell rounded-lg bg-ink-2/30 p-2 text-[11px] text-slate-600">30</div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">
+                <div class="font-semibold">1</div>
+              </div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">
+                <div class="font-semibold">2</div>
+              </div>
+
+              <!-- Row 2: 3-9 -->
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">3</div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">
+                <div class="font-semibold">4</div>
+                <div class="mt-1 chip-meeting rounded px-1.5 py-0.5 text-[9.5px] truncate">Tasting</div>
+              </div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">5</div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">
+                <div class="font-semibold">6</div>
+                <div class="mt-1 chip-task rounded px-1.5 py-0.5 text-[9.5px] truncate">Florist deposit</div>
+              </div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">7</div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">8</div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">9</div>
+
+              <!-- Row 3: 10-16, today=13, selected=15 -->
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">10</div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">11</div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">12</div>
+              <div class="grid-cell rounded-lg grad-rose p-2 text-[11px] text-slate-100 border border-rose-brand/40">
+                <div class="flex items-center justify-between">
+                  <span class="font-semibold text-rose-brand">13</span>
+                  <span class="text-[8.5px] uppercase tracking-wider text-rose-brand/80">Today</span>
+                </div>
+                <div class="mt-1 chip-meeting rounded px-1.5 py-0.5 text-[9.5px] truncate">RSVP review</div>
+              </div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">14</div>
+              <div class="grid-cell rounded-lg bg-ink-2 ring-rose p-2 text-[11px] text-slate-100">
+                <div class="flex items-center justify-between">
+                  <span class="font-semibold text-white">15</span>
+                  <span class="text-[8.5px] text-rose-brand">Selected</span>
+                </div>
+                <div class="mt-1 space-y-0.5">
+                  <div class="chip-meeting rounded px-1.5 py-0.5 text-[9.5px] truncate">Venue walkthrough</div>
+                  <div class="chip-task rounded px-1.5 py-0.5 text-[9.5px] truncate">+2 tasks</div>
+                </div>
+              </div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">16</div>
+
+              <!-- Row 4 -->
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">17</div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">18</div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">
+                <div class="font-semibold">19</div>
+                <div class="mt-1 chip-external rounded px-1.5 py-0.5 text-[9.5px] truncate">Holiday</div>
+              </div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">20</div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">21</div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">
+                <div class="font-semibold">22</div>
+                <div class="mt-1 chip-meeting rounded px-1.5 py-0.5 text-[9.5px] truncate">Rehearsal</div>
+              </div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">
+                <div class="font-semibold">23</div>
+                <div class="mt-1 chip-meeting rounded px-1.5 py-0.5 text-[9.5px] truncate">Wedding · Josh &amp; Esther</div>
+              </div>
+
+              <!-- Row 5 -->
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">24</div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">25</div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">26</div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">27</div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">28</div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">29</div>
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">30</div>
+
+              <!-- Row 6 -->
+              <div class="grid-cell rounded-lg bg-ink-2 p-2 text-[11px] text-slate-300">31</div>
+              <div class="grid-cell rounded-lg bg-ink-2/30 p-2 text-[11px] text-slate-600">1</div>
+              <div class="grid-cell rounded-lg bg-ink-2/30 p-2 text-[11px] text-slate-600">2</div>
+              <div class="grid-cell rounded-lg bg-ink-2/30 p-2 text-[11px] text-slate-600">3</div>
+              <div class="grid-cell rounded-lg bg-ink-2/30 p-2 text-[11px] text-slate-600">4</div>
+              <div class="grid-cell rounded-lg bg-ink-2/30 p-2 text-[11px] text-slate-600">5</div>
+              <div class="grid-cell rounded-lg bg-ink-2/30 p-2 text-[11px] text-slate-600">6</div>
+            </div>
+          </div>
+
+          <!-- Slide-over panel (replaces right rail when a day is clicked) -->
+          <aside class="col-span-4 rounded-xl bg-ink-2 border border-rose-brand/30 p-4 max-h-[540px] overflow-y-auto scrollbar-thin">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="font-decor italic text-rose-brand text-[11px] tracking-[0.2em] uppercase">Selected day</p>
+                <h3 class="font-display text-xl text-white leading-tight">Friday, May 15</h3>
+                <p class="text-slate-400 text-xs">3 tasks · 1 meeting · 0 external</p>
+              </div>
+              <button class="text-slate-400 hover:text-slate-200 text-lg leading-none">×</button>
+            </div>
+
+            <div class="mt-3 grid grid-cols-3 gap-1.5">
+              <button class="rounded-md bg-rose-brand/15 border border-rose-brand/30 text-rose-brand py-1.5 text-[11px] font-medium hover:bg-rose-brand/25">+ Task</button>
+              <button class="rounded-md bg-sage-brand/15 border border-sage-brand/30 text-sage-brand py-1.5 text-[11px] font-medium hover:bg-sage-brand/25">+ Meeting</button>
+              <button class="rounded-md bg-white/5 border border-white/10 text-slate-300 py-1.5 text-[11px] font-medium hover:bg-white/10">+ Block</button>
+            </div>
+
+            <hr class="divider my-4" />
+
+            <p class="text-[10px] uppercase tracking-[0.22em] text-sage-brand mb-2">Tasks · 3</p>
+            <ul class="space-y-2">
+              <li class="rounded-lg bg-ink-3 border border-white/5 p-2.5">
+                <div class="flex items-center gap-2">
+                  <span class="mock-check"></span>
+                  <span class="text-sm text-slate-100">Confirm florist deposit</span>
+                </div>
+                <p class="text-[11px] text-slate-500 ml-6 mt-0.5">Josh &amp; Esther · due today</p>
+              </li>
+              <li class="rounded-lg bg-ink-3 border border-white/5 p-2.5">
+                <div class="flex items-center gap-2">
+                  <span class="mock-check"></span>
+                  <span class="text-sm text-slate-100">Send seating chart</span>
+                </div>
+                <p class="text-[11px] text-slate-500 ml-6 mt-0.5">Family Picnic</p>
+              </li>
+              <li class="rounded-lg bg-ink-3 border border-white/5 p-2.5">
+                <div class="flex items-center gap-2">
+                  <span class="mock-check"></span>
+                  <span class="text-sm text-slate-100">Follow up on RSVPs</span>
+                </div>
+                <p class="text-[11px] text-slate-500 ml-6 mt-0.5">Josh &amp; Esther</p>
+              </li>
+            </ul>
+
+            <hr class="divider my-4" />
+
+            <p class="text-[10px] uppercase tracking-[0.22em] text-rose-brand mb-2">Meetings · 1</p>
+            <ul class="space-y-2">
+              <li class="rounded-lg bg-ink-3 border border-rose-brand/15 p-2.5">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm text-slate-100 font-medium">Venue walkthrough</span>
+                  <span class="text-[11px] text-rose-brand">10:00 · 60 min</span>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-1">Maple Hall · 3 attendees · Google Meet</p>
+              </li>
+            </ul>
+
+            <hr class="divider my-4" />
+
+            <p class="text-[10px] uppercase tracking-[0.22em] text-slate-500 mb-2">External · 0</p>
+            <p class="text-[12px] text-slate-500 italic">Nothing on your connected calendars today.</p>
+          </aside>
+        </div>
+
+        <!-- Annotation -->
+        <p class="mt-4 text-[11px] text-slate-500 italic font-decor text-center">
+          Connections moved to <span class="text-rose-brand">View 3</span>. Top metric strip is ~25% the height of today's 4-card grid.
+        </p>
+      </main>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- VIEW 2 — Calendar Picker Modal                              -->
+<!-- ============================================================ -->
+<section class="max-w-[1180px] mx-auto px-6 mt-16">
+  <div class="mb-3 flex items-center gap-3">
+    <span class="font-display text-rose-brand text-2xl">View 2</span>
+    <span class="text-slate-400 text-sm">— rendered inside /admin/planner/calendar/callback after successful OAuth</span>
+  </div>
+
+  <div class="frame rounded-2xl overflow-hidden border border-white/8 bg-ink-1 relative">
+    <!-- Faded backdrop (cosmetic, suggesting "page behind") -->
+    <div class="absolute inset-0 bg-ink-0/80 backdrop-blur-sm flex items-center justify-center p-6">
+      <!-- Modal -->
+      <div class="w-full max-w-[560px] rounded-2xl bg-ink-1 border border-white/10 shadow-2xl overflow-hidden">
+        <!-- Modal header -->
+        <div class="px-6 pt-6 pb-4 border-b border-white/6">
+          <div class="flex items-start justify-between">
+            <div>
+              <p class="font-decor italic text-rose-brand text-[11px] tracking-[0.2em] uppercase">Almost there</p>
+              <h3 class="font-display text-2xl text-white leading-tight mt-1">Pick the calendars to sync</h3>
+              <p class="text-slate-400 text-sm mt-2 leading-relaxed">
+                We'll only sync events from the ones you check. You can change this later
+                under <span class="text-rose-brand">Settings → Calendars</span>.
+              </p>
+            </div>
+            <button class="text-slate-400 hover:text-slate-200 text-xl leading-none">×</button>
+          </div>
+          <div class="mt-4 inline-flex items-center gap-2 rounded-full bg-white/5 border border-white/10 px-3 py-1 text-[12px] text-slate-300">
+            <span class="w-5 h-5 rounded-full bg-rose-brand/20 flex items-center justify-center text-rose-brand text-[10px]">G</span>
+            emmanuel.t.akinwale@gmail.com · Google
+          </div>
+        </div>
+
+        <!-- Calendar list -->
+        <div class="px-6 py-5 space-y-3 max-h-[440px] overflow-y-auto scrollbar-thin">
+          <!-- Primary (checked) -->
+          <div class="rounded-xl bg-ink-2 border border-rose-brand/25 p-4">
+            <div class="flex items-start gap-3">
+              <span class="mock-check checked mt-0.5"></span>
+              <div class="flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="text-sm font-semibold text-white">Primary calendar</p>
+                  <span class="rounded-full bg-rose-brand/15 border border-rose-brand/30 text-rose-brand text-[10px] px-2 py-0.5">Primary</span>
+                  <span class="rounded-full bg-white/8 text-slate-200 text-[10px] px-2 py-0.5">Default write</span>
+                </div>
+                <p class="text-[11.5px] text-slate-400 mt-0.5">emmanuel.t.akinwale@gmail.com · writable</p>
+                <div class="mt-3 grid grid-cols-2 gap-3 text-[11.5px]">
+                  <div>
+                    <p class="text-slate-500 uppercase tracking-[0.16em] text-[9.5px] mb-1.5">Visibility</p>
+                    <label class="flex items-center gap-1.5 text-slate-200"><span class="radio on"></span> Busy/free only</label>
+                    <label class="flex items-center gap-1.5 text-slate-500 mt-1"><span class="radio"></span> Full details</label>
+                  </div>
+                  <div>
+                    <p class="text-slate-500 uppercase tracking-[0.16em] text-[9.5px] mb-1.5">Color</p>
+                    <div class="flex items-center gap-1.5">
+                      <span class="w-5 h-5 rounded-full bg-rose-brand ring-2 ring-white/30"></span>
+                      <span class="w-5 h-5 rounded-full bg-sage-brand opacity-60"></span>
+                      <span class="w-5 h-5 rounded-full bg-gold-brand opacity-60"></span>
+                      <span class="w-5 h-5 rounded-full bg-navy-brand opacity-60"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Family (checked) -->
+          <div class="rounded-xl bg-ink-2 border border-white/8 p-4">
+            <div class="flex items-start gap-3">
+              <span class="mock-check checked mt-0.5"></span>
+              <div class="flex-1">
+                <p class="text-sm font-semibold text-white">Family</p>
+                <p class="text-[11.5px] text-slate-400 mt-0.5">Owner · writable</p>
+                <div class="mt-3 grid grid-cols-2 gap-3 text-[11.5px]">
+                  <div>
+                    <p class="text-slate-500 uppercase tracking-[0.16em] text-[9.5px] mb-1.5">Visibility</p>
+                    <label class="flex items-center gap-1.5 text-slate-200"><span class="radio on"></span> Busy/free only</label>
+                    <label class="flex items-center gap-1.5 text-slate-500 mt-1"><span class="radio"></span> Full details</label>
+                  </div>
+                  <div>
+                    <p class="text-slate-500 uppercase tracking-[0.16em] text-[9.5px] mb-1.5">Color</p>
+                    <div class="flex items-center gap-1.5">
+                      <span class="w-5 h-5 rounded-full bg-rose-brand opacity-60"></span>
+                      <span class="w-5 h-5 rounded-full bg-sage-brand ring-2 ring-white/30"></span>
+                      <span class="w-5 h-5 rounded-full bg-gold-brand opacity-60"></span>
+                      <span class="w-5 h-5 rounded-full bg-navy-brand opacity-60"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cushion - Bills & BNPL (read-only, disabled) -->
+          <div class="rounded-xl bg-ink-2/50 border border-white/5 p-4 opacity-70">
+            <div class="flex items-start gap-3">
+              <span class="mock-check disabled mt-0.5"></span>
+              <div class="flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="text-sm text-slate-300">Cushion — Bills &amp; BNPL</p>
+                  <span class="rounded-full bg-slate-700 text-slate-300 text-[10px] px-2 py-0.5">Read-only</span>
+                </div>
+                <p class="text-[11.5px] text-slate-500 mt-0.5 italic">Subscribed iCal feed · cannot sync events back.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Holidays (read-only) -->
+          <div class="rounded-xl bg-ink-2/50 border border-white/5 p-4 opacity-70">
+            <div class="flex items-start gap-3">
+              <span class="mock-check disabled mt-0.5"></span>
+              <div class="flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="text-sm text-slate-300">Holidays in United States</p>
+                  <span class="rounded-full bg-slate-700 text-slate-300 text-[10px] px-2 py-0.5">Read-only</span>
+                </div>
+                <p class="text-[11.5px] text-slate-500 mt-0.5 italic">Subscribed iCal feed.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Birthdays (read-only) -->
+          <div class="rounded-xl bg-ink-2/50 border border-white/5 p-4 opacity-70">
+            <div class="flex items-start gap-3">
+              <span class="mock-check disabled mt-0.5"></span>
+              <div class="flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="text-sm text-slate-300">Birthdays</p>
+                  <span class="rounded-full bg-slate-700 text-slate-300 text-[10px] px-2 py-0.5">Read-only</span>
+                </div>
+                <p class="text-[11.5px] text-slate-500 mt-0.5 italic">Google-derived feed.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-4 border-t border-white/6 flex items-center justify-between bg-ink-0/60">
+          <button class="text-slate-400 hover:text-slate-200 text-sm">Skip for now</button>
+          <button class="rounded-full bg-rose-brand text-navy-deep font-semibold text-sm px-5 py-2 hover:bg-rose-deep">
+            Connect 2 calendars
+          </button>
+        </div>
+      </div>
+    </div>
+    <!-- Pad so absolute modal has height -->
+    <div class="h-[760px]"></div>
+  </div>
+
+  <p class="mt-4 text-[12px] text-slate-500 italic font-decor text-center">
+    Only checked calendars get a <code class="not-italic font-mono text-rose-brand">calendar_connections</code> row + Aurinko webhook subscription. No more surprise rows.
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<!-- VIEW 3 — Settings Page (new route)                          -->
+<!-- ============================================================ -->
+<section class="max-w-[1180px] mx-auto px-6 mt-16 pb-20">
+  <div class="mb-3 flex items-center gap-3">
+    <span class="font-display text-rose-brand text-2xl">View 3</span>
+    <span class="text-slate-400 text-sm">— /admin/planner/settings/calendars (new)</span>
+  </div>
+
+  <div class="frame rounded-2xl overflow-hidden border border-white/8 bg-ink-1">
+    <div class="flex items-center gap-2 px-4 py-2.5 bg-ink-0 border-b border-white/5">
+      <span class="w-3 h-3 rounded-full bg-rose-500/70"></span>
+      <span class="w-3 h-3 rounded-full bg-amber-400/70"></span>
+      <span class="w-3 h-3 rounded-full bg-emerald-400/70"></span>
+      <span class="ml-3 text-[11px] text-slate-500 font-mono">localhost:3000/admin/planner/settings/calendars</span>
+    </div>
+
+    <div class="flex">
+      <aside class="w-[200px] bg-ink-0 border-r border-white/5 py-5 px-3 hidden md:block">
+        <div class="px-2 mb-6">
+          <p class="font-decor italic text-[10px] tracking-[0.32em] text-rose-brand/90">THE SPECIAL</p>
+          <p class="font-display text-xl text-white leading-none">Wedding</p>
+        </div>
+        <nav class="space-y-1 text-[13px] text-slate-400">
+          <div class="px-3 py-1.5 rounded-lg">Dashboard</div>
+          <div class="px-3 py-1.5 rounded-lg">Calendar</div>
+          <div class="px-3 py-1.5 rounded-lg">Weddings</div>
+          <div class="px-3 py-1.5 rounded-lg">Notifications</div>
+          <div class="px-3 py-1.5 rounded-lg bg-rose-brand/15 text-rose-brand">Settings</div>
+        </nav>
+      </aside>
+
+      <main class="flex-1 p-6 bg-ink-1">
+        <div class="flex items-start justify-between">
+          <div>
+            <p class="font-decor italic text-[11px] tracking-[0.2em] uppercase text-rose-brand">Settings</p>
+            <h2 class="font-display text-3xl text-white">Calendar settings</h2>
+            <p class="text-slate-400 text-sm mt-1">Connections, sync rules, and webhook health.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="rounded-full bg-rose-brand text-navy-deep font-semibold text-sm px-4 py-2 hover:bg-rose-deep">+ Connect a calendar ▾</button>
+          </div>
+        </div>
+
+        <!-- Tabs (future) -->
+        <div class="mt-6 flex gap-1 text-[12.5px] border-b border-white/8">
+          <button class="px-4 py-2 text-rose-brand border-b-2 border-rose-brand">Connections</button>
+          <button class="px-4 py-2 text-slate-400 hover:text-slate-200">Sync rules</button>
+          <button class="px-4 py-2 text-slate-400 hover:text-slate-200">Notifications</button>
+          <button class="px-4 py-2 text-slate-400 hover:text-slate-200">Webhook health</button>
+        </div>
+
+        <!-- Connections list -->
+        <div class="mt-5 space-y-4">
+          <!-- Account group: expanded -->
+          <div class="rounded-2xl bg-ink-2 border border-white/8">
+            <button class="w-full flex items-center justify-between p-4 text-left">
+              <div class="flex items-center gap-3">
+                <span class="w-9 h-9 rounded-full bg-rose-brand/15 text-rose-brand flex items-center justify-center font-semibold">G</span>
+                <div>
+                  <p class="text-white text-sm font-semibold">emmanuel.t.akinwale@gmail.com</p>
+                  <p class="text-[11.5px] text-slate-400">Google · 2 calendars active · webhooks healthy</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="pill-dot pill-dot-emerald text-emerald-200 text-[11px]">Healthy</span>
+                <span class="text-slate-500">▾</span>
+              </div>
+            </button>
+
+            <hr class="divider mx-4" />
+
+            <div class="p-4 space-y-3">
+              <!-- Calendar row 1 -->
+              <div class="rounded-xl bg-ink-3 border border-white/6 p-4">
+                <div class="flex flex-wrap items-start gap-4 justify-between">
+                  <div>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <p class="text-white font-semibold text-sm">Primary calendar</p>
+                      <span class="rounded-full bg-emerald-400/15 border border-emerald-400/25 text-emerald-200 text-[10px] px-2 py-0.5">active</span>
+                      <span class="rounded-full bg-white/8 border border-white/10 text-slate-200 text-[10px] px-2 py-0.5">Default write</span>
+                      <span class="rounded-full bg-rose-brand/15 border border-rose-brand/30 text-rose-brand text-[10px] px-2 py-0.5">Primary</span>
+                    </div>
+                    <div class="mt-2 grid grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-1 text-[11.5px] text-slate-400">
+                      <p>Workspace user: test_planner+e2e@thespecialwedding.io</p>
+                      <p>Access role: owner</p>
+                      <p>Visibility: Busy/free</p>
+                      <p>Last check: 2 min ago</p>
+                    </div>
+                  </div>
+                  <div class="flex flex-wrap gap-2">
+                    <button class="rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[12px] text-slate-100 hover:bg-white/10">Settings</button>
+                    <button class="rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[12px] text-slate-100 hover:bg-white/10">Check health</button>
+                    <button class="rounded-lg bg-rose-500/10 border border-rose-500/30 px-3 py-1.5 text-[12px] text-rose-200 hover:bg-rose-500/15">Disconnect</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Calendar row 2 -->
+              <div class="rounded-xl bg-ink-3 border border-white/6 p-4">
+                <div class="flex flex-wrap items-start gap-4 justify-between">
+                  <div>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <p class="text-white font-semibold text-sm">Family</p>
+                      <span class="rounded-full bg-emerald-400/15 border border-emerald-400/25 text-emerald-200 text-[10px] px-2 py-0.5">active</span>
+                    </div>
+                    <div class="mt-2 grid grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-1 text-[11.5px] text-slate-400">
+                      <p>Workspace user: test_planner+e2e@thespecialwedding.io</p>
+                      <p>Access role: owner</p>
+                      <p>Visibility: Busy/free</p>
+                      <p>Last check: 2 min ago</p>
+                    </div>
+                  </div>
+                  <div class="flex flex-wrap gap-2">
+                    <button class="rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[12px] text-slate-100 hover:bg-white/10">Settings</button>
+                    <button class="rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[12px] text-slate-100 hover:bg-white/10">Check health</button>
+                    <button class="rounded-lg bg-rose-500/10 border border-rose-500/30 px-3 py-1.5 text-[12px] text-rose-200 hover:bg-rose-500/15">Disconnect</button>
+                  </div>
+                </div>
+              </div>
+
+              <button class="w-full rounded-xl border border-dashed border-white/15 px-4 py-2.5 text-[12.5px] text-slate-400 hover:bg-white/5">
+                + Add another calendar from this account
+              </button>
+            </div>
+          </div>
+
+          <!-- Account group: collapsed example -->
+          <div class="rounded-2xl bg-ink-2 border border-white/8">
+            <button class="w-full flex items-center justify-between p-4 text-left">
+              <div class="flex items-center gap-3">
+                <span class="w-9 h-9 rounded-full bg-sage-brand/15 text-sage-brand flex items-center justify-center font-semibold">M</span>
+                <div>
+                  <p class="text-white text-sm font-semibold">team@thespecialwedding.io</p>
+                  <p class="text-[11.5px] text-slate-400">Microsoft 365 · 0 calendars · awaiting calendar pick</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="pill-dot pill-dot-amber text-amber-100 text-[11px]">Action needed</span>
+                <span class="text-slate-500">▸</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Footer note -->
+        <p class="mt-6 text-[11.5px] text-slate-500 italic font-decor">
+          Per-calendar Settings opens the modal we already built today — no redesign there. Only the page chrome moves.
+        </p>
+      </main>
+    </div>
+  </div>
+</section>
+
+<footer class="max-w-[1180px] mx-auto px-6 pb-16 text-center">
+  <p class="text-[11px] text-slate-500 font-decor italic">
+    Mockup preview · awaiting approval before any production-code change. Companion spec:
+    <span class="text-rose-brand">docs/plans/planner_calendar_redesign_mockup.md</span>
+  </p>
+</footer>
+
+</body>
+</html>

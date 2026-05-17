@@ -107,7 +107,7 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
       {children}
 
       {state.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-[11000] flex items-center justify-center">
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black/50 backdrop-blur-sm"

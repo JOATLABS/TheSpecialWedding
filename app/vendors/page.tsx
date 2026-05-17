@@ -4,6 +4,7 @@ import {
   buildVendorDirectoryItemList,
   fetchPublicVendorDirectory,
 } from './publicVendorData';
+import { serializeJsonLd } from '@/seo/jsonLd';
 
 export default async function VendorsPage() {
   const initialDirectory = await fetchPublicVendorDirectory();
@@ -19,7 +20,7 @@ export default async function VendorsPage() {
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(itemListJsonLd) }}
       />
       <VendorsDirectoryClient initialDirectory={initialDirectory} />
     </>

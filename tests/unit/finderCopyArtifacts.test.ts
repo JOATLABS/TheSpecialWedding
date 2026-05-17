@@ -39,6 +39,26 @@ describe('Finder copy artifact guard', () => {
     }
   });
 
+  it('fails when an untracked file uses a space-number copy suffix', () => {
+    const root = makeGitFixture({
+      'canonical.ts': 'export const value = 1;\n',
+    });
+
+    try {
+      writeFileSync(join(root, 'canonical 2.ts'), 'export const value = 1;\n');
+
+      const result = spawnSync(process.execPath, [scriptPath, '--root', root], {
+        encoding: 'utf8',
+      });
+
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /canonical 2\.ts/);
+      assert.match(result.stderr, /Finder-style copy artifacts/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('passes when tracked filenames avoid Finder copy suffixes', () => {
     const root = makeGitFixture({
       'canonical.ts': 'export const value = 1;\n',

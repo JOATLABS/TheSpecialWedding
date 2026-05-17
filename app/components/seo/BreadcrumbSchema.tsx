@@ -1,3 +1,5 @@
+import { serializeJsonLd } from '@/seo/jsonLd';
+
 const DEFAULT_SITE_ORIGIN = 'https://thespecialwedding.io';
 
 function isSupportedPublicOrigin(value: string | undefined): value is string {
@@ -54,7 +56,7 @@ export default function BreadcrumbSchema({ items }: { items: BreadcrumbItem[] })
   return (
     <script
       type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
     />
   );
 }
