@@ -37,6 +37,8 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 
 from app.services.calendar_idempotency_service import calendar_idempotency_service
 from app.services.calendar_webhook_service import calendar_webhook_service
+from app.services.aurinko_contacts_sync_service import aurinko_contacts_sync_service
+from app.services.aurinko_tasks_sync_service import aurinko_tasks_sync_service
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,8 @@ router = APIRouter()
 # (some providers use email-style ids that contain "@") so we accept anything
 # that isn't a literal "/".
 _CALENDAR_RESOURCE_RE = re.compile(r"^/calendars/([^/]+)/events/?$")
+_TASKLIST_RESOURCE_RE = re.compile(r"^/tasklists/([^/]+)/tasks/?$")
+_CONTACTS_RESOURCE_RE = re.compile(r"^/contacts/?$")
 
 
 def _coerce_datetime(value: Any) -> Optional[datetime]:
@@ -70,6 +74,61 @@ def _extract_calendar_id(resource: Optional[str]) -> Optional[str]:
     # email-style calendar id). We store the decoded id in Mongo at OAuth
     # callback time, so decode here to make the connection lookup match.
     return unquote(match.group(1))
+
+
+def _extract_tasklist_id(resource: Optional[str]) -> Optional[str]:
+    if not resource:
+        return None
+    match = _TASKLIST_RESOURCE_RE.match(resource)
+    if not match:
+        return None
+    return unquote(match.group(1))
+
+
+def _resource_kind(resource: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    if not resource:
+        return None, None
+    calendar_id = _extract_calendar_id(resource)
+    if calendar_id:
+        return "calendar", calendar_id
+    tasklist_id = _extract_tasklist_id(resource)
+    if tasklist_id:
+        return "tasklist", tasklist_id
+    if _CONTACTS_RESOURCE_RE.match(resource):
+        return "contacts", "contacts"
+    return None, None
+
+
+def _payload_ids_digest(payload: Any) -> str:
+    """Stable hash of the event-id set in an Aurinko delivery payload.
+
+    Used as a defense-in-depth component of the dedup key so that
+    deliveries can be grouped by "what events does this cover" even if
+    Aurinko ever reformats body whitespace or reorders keys between a
+    delivery and its retries. Includes lifecycleEvent when present
+    (lifecycle deliveries have no ``payloads`` array).
+
+    Sorted to be order-independent: ``[A, B]`` and ``[B, A]`` digest
+    identically — important because Aurinko's payload ordering is not
+    documented as stable across retries.
+    """
+    parts: list[str] = []
+    items = payload.get("payloads") if isinstance(payload, dict) else None
+    if isinstance(items, list):
+        for entry in items:
+            if not isinstance(entry, dict):
+                continue
+            entry_id = entry.get("id") or entry.get("event_id")
+            change_type = entry.get("changeType") or entry.get("change_type") or ""
+            if entry_id is None:
+                continue
+            parts.append(f"{entry_id}:{change_type}")
+    lifecycle = payload.get("lifecycleEvent") if isinstance(payload, dict) else None
+    if lifecycle:
+        parts.append(f"lifecycle:{lifecycle}")
+    if not parts:
+        return "none"
+    return hashlib.sha256("\n".join(sorted(parts)).encode("utf-8")).hexdigest()
 
 
 @router.post(
@@ -142,9 +201,21 @@ async def aurinko_webhook(
     # Aurinko does NOT include a deliveryId in webhook payloads (verified
     # against docs.aurinko.io/unified-apis/webhooks-api — the documented
     # body shape is {subscription, resource, accountId, payloads[]} with
-    # no top-level delivery id). To dedupe, we derive a stable key from
-    # the signed-request timestamp + body hash. Two genuine retries from
-    # Aurinko hit the same key; two distinct events differ in body bytes.
+    # no top-level delivery id). To dedupe, we derive a stable composite
+    # key from the signed-request timestamp + body hash + sorted
+    # payload-id hash.
+    #
+    # Why all three components:
+    #   * ``ts_part`` (timestamp) partitions retries from new deliveries
+    #     at the second granularity Aurinko exposes.
+    #   * ``body_digest`` is the primary uniqueness pivot — two genuine
+    #     retries hit the same bytes.
+    #   * ``ids_part`` (sorted sha256 of payloads[].id ∪ lifecycleEvent)
+    #     is defense-in-depth: gives a stable, human-grep-able event-set
+    #     pivot in idempotency logs and protects against the
+    #     hypothetical case where Aurinko ever reformats whitespace /
+    #     re-orders body keys between retries (which would change
+    #     body_digest but not the event set).
     explicit_delivery_id = (
         payload.get("deliveryId")
         or payload.get("delivery_id")
@@ -156,7 +227,8 @@ async def aurinko_webhook(
         body_digest = hashlib.sha256(raw_body).hexdigest()
         subscription_part = str(payload.get("subscription") or "no-sub")
         ts_part = (timestamp_header or "no-ts").strip()
-        delivery_id = f"aurinko:{subscription_part}:{ts_part}:{body_digest}"
+        ids_part = _payload_ids_digest(payload)
+        delivery_id = f"aurinko:{subscription_part}:{ts_part}:{body_digest}:{ids_part}"
 
     # Replay window is enforced against the signed timestamp (header) — the
     # value the signature actually covers. Falling back to a payload-internal
@@ -177,7 +249,7 @@ async def aurinko_webhook(
     try:
         aurinko_account_id = str(payload.get("accountId") or "")
         resource = payload.get("resource")
-        aurinko_calendar_id = _extract_calendar_id(
+        resource_kind, resource_id = _resource_kind(
             resource if isinstance(resource, str) else None
         )
         items = payload.get("payloads")
@@ -201,6 +273,12 @@ async def aurinko_webhook(
             )
             return Response(status_code=200)
 
+        if resource_kind is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Unsupported Aurinko webhook resource",
+            )
+
         # Signal-mode deliveries (subscriptions created with
         # ``detailLevel=signal``) arrive WITHOUT a ``payloads`` array — just
         # the {subscription, resource, accountId} envelope as a "ping that
@@ -212,23 +290,26 @@ async def aurinko_webhook(
         # and rely on the drift-check job to backfill the actual change.
         if (
             aurinko_account_id
-            and aurinko_calendar_id
+            and resource_kind
+            and resource_id
             and items is None
             and not lifecycle_event
         ):
             await calendar_webhook_service.mark_delivery_processed(str(delivery_id))
             logger.info(
                 "Aurinko signal-mode delivery ack 200 (no payloads): "
-                "delivery=%s account=%s calendar=%s",
+                "delivery=%s account=%s resource=%s id=%s",
                 delivery_id,
                 aurinko_account_id,
-                aurinko_calendar_id,
+                resource_kind,
+                resource_id,
             )
             return Response(status_code=200)
 
         if (
             not aurinko_account_id
-            or not aurinko_calendar_id
+            or not resource_kind
+            or not resource_id
             or not isinstance(items, list)
         ):
             raise HTTPException(
@@ -240,20 +321,35 @@ async def aurinko_webhook(
         for item in items:
             if not isinstance(item, dict):
                 continue
-            external_event_id = str(item.get("id") or "")
+            external_id = str(item.get("id") or "")
             change_type = str(item.get("changeType") or "updated").lower()
-            if not external_event_id:
+            if not external_id:
                 continue
             # BackgroundTasks runs after the response is sent — Aurinko gets its
             # 200 ack immediately, snapshot fetch + planner_task update happen
             # off the request path.
-            background_tasks.add_task(
-                calendar_webhook_service.process_event_change_async,
-                aurinko_account_id=aurinko_account_id,
-                aurinko_calendar_id=aurinko_calendar_id,
-                external_event_id=external_event_id,
-                change_type=change_type,
-            )
+            if resource_kind == "calendar":
+                background_tasks.add_task(
+                    calendar_webhook_service.process_event_change_async,
+                    aurinko_account_id=aurinko_account_id,
+                    aurinko_calendar_id=str(resource_id),
+                    external_event_id=external_id,
+                    change_type=change_type,
+                )
+            elif resource_kind == "tasklist":
+                background_tasks.add_task(
+                    aurinko_tasks_sync_service.process_external_task_change_async,
+                    aurinko_account_id=aurinko_account_id,
+                    aurinko_tasklist_id=str(resource_id),
+                    aurinko_task_id=external_id,
+                    change_type=change_type,
+                )
+            elif resource_kind == "contacts":
+                background_tasks.add_task(
+                    aurinko_contacts_sync_service.acknowledge_external_contact_delivery,
+                    aurinko_account_id=aurinko_account_id,
+                    change_count=len(items),
+                )
             queued += 1
 
         # Mark delivery processed before responding so a quick retry from Aurinko
@@ -261,12 +357,13 @@ async def aurinko_webhook(
         # tasks.
         await calendar_webhook_service.mark_delivery_processed(str(delivery_id))
         logger.info(
-            "Aurinko webhook ack 200: delivery=%s items=%d queued=%d account=%s calendar=%s",
+            "Aurinko webhook ack 200: delivery=%s items=%d queued=%d account=%s resource=%s id=%s",
             delivery_id,
             len(items),
             queued,
             aurinko_account_id,
-            aurinko_calendar_id,
+            resource_kind,
+            resource_id,
         )
     except HTTPException:
         # Permanent client errors (422) — mark the idempotency record failed so

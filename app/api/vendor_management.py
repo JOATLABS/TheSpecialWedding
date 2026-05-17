@@ -181,7 +181,8 @@ async def get_wedding_vendors(
     wedding_id: str, current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """Get all vendors assigned to a wedding"""
-    return await vendor_service.get_wedding_vendors(wedding_id, current_user.email)
+    owner_email = None if current_user.is_root_admin else current_user.email
+    return await vendor_service.get_wedding_vendors(wedding_id, owner_email)
 
 
 @router.patch("/assignments/{assignment_id}/status", tags=["Vendor Assignments"])
@@ -239,7 +240,10 @@ async def get_contract_template(
     template_id: str, current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """Get a specific contract template"""
-    return await vendor_service.get_contract_template(template_id)
+    owner_email = None if current_user.is_root_admin else current_user.email
+    return await vendor_service.get_contract_template(
+        template_id, created_by=owner_email
+    )
 
 
 # =============================================================================
@@ -592,8 +596,12 @@ async def get_vendor_communication_history(
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """Get communication history with a vendor"""
+    owner_email = None if current_user.is_root_admin else current_user.email
     return await vendor_service.get_vendor_communications(
-        vendor_profile_id=vendor_id, wedding_id=wedding_id, limit=limit
+        vendor_profile_id=vendor_id,
+        wedding_id=wedding_id,
+        limit=limit,
+        created_by=owner_email,
     )
 
 

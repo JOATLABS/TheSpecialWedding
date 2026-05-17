@@ -209,6 +209,16 @@ export default function TaskModal({
       ),
     [connections]
   );
+  const writableTaskConnections = useMemo(
+    () =>
+      connections.filter(
+        (connection) =>
+          connection.connection_status === 'active' &&
+          connection.task_sync_enabled &&
+          Boolean(connection.task_sync_tasklist_id)
+      ),
+    [connections]
+  );
   const availableCategories = useMemo(() => {
     const allowed = new Set<TaskCategory>(
       CATEGORIES.filter((item) => {
@@ -296,7 +306,7 @@ export default function TaskModal({
       setReminderMinutes('');
       setNotes('');
       setColor('');
-      setSyncToGoogle(true);
+      setSyncToGoogle(writableTaskConnections.length > 0);
       setIsRecurring(false);
       setRecurrencePreset('weekly');
       setRecurrenceCount(8);
@@ -315,7 +325,7 @@ export default function TaskModal({
 
     setMeetingMutationIntent(createCalendarMutationIntent());
     setError('');
-  }, [defaultSelectableCategory, open, task, defaultDate]);
+  }, [defaultSelectableCategory, open, task, defaultDate, writableTaskConnections.length]);
 
   useEffect(() => {
     if (category !== 'meeting') {
@@ -407,7 +417,9 @@ export default function TaskModal({
       invite_delivery_mode: isMeetingMode ? inviteDeliveryMode : undefined,
       sync_target_connection_ids:
         isMeetingMode && customTargetsEnabled ? selectedConnectionIds : undefined,
-      external_sync_requested: !isMeetingMode ? syncToGoogle : undefined,
+      external_sync_requested: !isMeetingMode
+        ? syncToGoogle && writableTaskConnections.length > 0
+        : undefined,
       expected_version: isMeetingMode && task ? task.version : undefined,
     };
 
@@ -655,11 +667,12 @@ export default function TaskModal({
               <label className={`flex items-center gap-2 px-3 py-3 ${SUBTLE_PANEL_CLASS} ${CHECKBOX_TEXT_CLASS}`}>
                 <input
                   type="checkbox"
-                  checked={syncToGoogle}
+                  checked={syncToGoogle && writableTaskConnections.length > 0}
                   onChange={(event) => setSyncToGoogle(event.target.checked)}
+                  disabled={writableTaskConnections.length === 0}
                   className="h-4 w-4 rounded border-slate-300 text-slate-900 dark:border-slate-600 dark:bg-slate-800"
                 />
-                Sync this task to the default writable calendar
+                Sync this task to the connected task list
               </label>
             )}
           </div>

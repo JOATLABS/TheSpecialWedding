@@ -112,4 +112,24 @@ describe('public vendor SEO schema', () => {
 
     assert.equal(await fetchPublicVendorProfile('missing-vendor'), null);
   });
+
+  it('drops unsafe public vendor URLs before rendering links or JSON-LD', async () => {
+    process.env.INTERNAL_API_BASE_URL = 'https://api.example.com';
+    delete process.env.NEXT_PUBLIC_API_BASE_URL;
+    delete process.env.FRONTEND_URL;
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      ...vendor,
+      website: 'javascript:alert(1)',
+      portfolio_urls: [
+        'https://example.com/safe-work',
+        'data:text/html,<script>alert(1)</script>',
+      ],
+    }), { status: 200 })) as typeof fetch;
+
+    const profile = await fetchPublicVendorProfile(vendor._id);
+
+    assert.equal(profile?.website, undefined);
+    assert.deepEqual(profile?.portfolio_urls, ['https://example.com/safe-work']);
+    assert.equal(buildVendorProfileJsonLd(profile as PublicVendor).sameAs, undefined);
+  });
 });

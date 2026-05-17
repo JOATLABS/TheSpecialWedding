@@ -3,6 +3,7 @@
 import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { PUBLIC_LOGIN_PATH } from '@/seo/crawlPolicy';
 import SaasNav from '../components/saas/SaasNav';
 import BreadcrumbSchema from '../components/seo/BreadcrumbSchema';
 import { MARKETING_FEATURES } from '../data/marketingFeatures';
@@ -225,7 +226,7 @@ export default function FeaturesPage() {
           </p>
           <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
             <Link
-              href="/admin/login"
+              href={PUBLIC_LOGIN_PATH}
               className="rounded-full bg-white px-6 py-3 text-base font-semibold text-slate-900 transition hover:bg-slate-100"
             >
               Get started free

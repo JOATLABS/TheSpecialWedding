@@ -16,6 +16,11 @@ import {
   MARKETING_TEMPLATES,
   getMarketingTemplates,
 } from '../../templates/manifest';
+import {
+  buildPublicOgImagePath,
+  buildPublicOgImageUrl,
+} from '@/seo/crawlPolicy';
+import { serializeJsonLd } from '@/seo/jsonLd';
 
 function getArticleData(apiArticle: PublicBlogApiArticle | null, slug: string) {
   const fallback = allowStaticFallback ? blogPosts[slug as BlogPostKey] : undefined;
@@ -40,6 +45,12 @@ function getArticleData(apiArticle: PublicBlogApiArticle | null, slug: string) {
       authorName: apiArticle.author_name || 'The Special Wedding',
       fallbackContent: null as ReactNode | null,
       relatedTemplates,
+      // BLG-synced articles ship their own JSON-LD; we surface it as
+      // a sibling <script> in the page so we don't lose rich-result
+      // eligibility. Admin-authored articles fall through to the
+      // homegrown BlogPosting JSON-LD below.
+      syncedJsonLd: apiArticle.json_ld ?? null,
+      syncedFaqJsonLd: apiArticle.faq_json_ld ?? null,
     };
   }
 
@@ -57,6 +68,8 @@ function getArticleData(apiArticle: PublicBlogApiArticle | null, slug: string) {
       authorName: 'The Special Wedding',
       fallbackContent: fallback.content,
       relatedTemplates,
+      syncedJsonLd: null,
+      syncedFaqJsonLd: null,
     };
   }
 
@@ -88,11 +101,11 @@ export default async function BlogPostPage({
     : '';
 
   // Use the article-specific OG image if uploaded, otherwise fall back to the
-  // dynamic /api/og route which renders a branded card per slug. Either way,
+  // public dynamic OG route allowed in robots.txt. Either way,
   // BlogPosting.image must be present for Google rich-result eligibility.
   const articleImage = article.ogImage
     ? article.ogImage
-    : `https://thespecialwedding.io/api/og?type=blog&slug=${encodeURIComponent(slug)}`;
+    : buildPublicOgImageUrl({ type: 'blog', slug });
 
   const relatedTemplateRecords = getMarketingTemplates(article.relatedTemplates);
   const hasRelatedTemplates = relatedTemplateRecords.length > 0;
@@ -151,10 +164,34 @@ export default async function BlogPostPage({
           { name: article.title, href: `/resources/blog/${slug}` },
         ]}
       />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
+      {/*
+        Schema order matters: emit BLG's pre-built schema FIRST when
+        present, then our homegrown BlogPosting fallback. Google reads
+        all JSON-LD blocks but giving BLG's richer schema precedence
+        means rich-result extractors latch onto it first.
+        Per BLG docs: https://www.babylovegrowth.ai/docs/integrations/api
+      */}
+      {article.syncedJsonLd ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: serializeJsonLd(article.syncedJsonLd),
+          }}
+        />
+      ) : (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
+        />
+      )}
+      {article.syncedFaqJsonLd ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: serializeJsonLd(article.syncedFaqJsonLd),
+          }}
+        />
+      ) : null}
 
       {/* Article content */}
       <article className="max-w-3xl mx-auto px-6 pt-24 pb-16">
@@ -308,7 +345,7 @@ export async function generateMetadata({
 
   const canonicalUrl = `https://thespecialwedding.io/resources/blog/${slug}`;
   const metadataTitle = article.metaTitle || article.title;
-  const dynamicOgImage = `/api/og?type=blog&slug=${encodeURIComponent(slug)}`;
+  const dynamicOgImage = buildPublicOgImagePath({ type: 'blog', slug });
 
   return {
     title: `${metadataTitle} | The Special Wedding Blog`,

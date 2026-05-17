@@ -96,6 +96,17 @@ class CalendarConnectionModel(BaseModel):
     is_shared_in_team_view: bool = False
     details_visibility: str = Field(default=VisibilityMode.BUSY_ONLY.value)
     sync_enabled: bool = True
+    task_sync_enabled: bool = False
+    task_sync_tasklist_id: Optional[str] = None
+    task_sync_tasklist_name: Optional[str] = None
+    task_sync_subscription_id: Optional[str] = None
+    contact_sync_enabled: bool = False
+    contact_sync_book_id: Optional[str] = None
+    contact_sync_book_name: Optional[str] = None
+    contact_sync_group_id: Optional[str] = None
+    contact_sync_group_name: Optional[str] = None
+    contact_sync_subscription_id: Optional[str] = None
+    connection_scopes: list[str] = Field(default_factory=list)
     couple_booking_auto_confirm: bool = True
     # Per-calendar default conferencing provider for couple bookings.
     # Valid values: "zoom" | "teams" | "webex" | None. The planner UI restricts
@@ -135,6 +146,17 @@ class CalendarConnectionUpdateRequest(BaseModel):
     is_shared_in_team_view: Optional[bool] = None
     details_visibility: Optional[str] = None
     sync_enabled: Optional[bool] = None
+    task_sync_enabled: Optional[bool] = None
+    task_sync_tasklist_id: Optional[str] = None
+    task_sync_tasklist_name: Optional[str] = None
+    task_sync_subscription_id: Optional[str] = None
+    contact_sync_enabled: Optional[bool] = None
+    contact_sync_book_id: Optional[str] = None
+    contact_sync_book_name: Optional[str] = None
+    contact_sync_group_id: Optional[str] = None
+    contact_sync_group_name: Optional[str] = None
+    contact_sync_subscription_id: Optional[str] = None
+    connection_scopes: Optional[list[str]] = None
     couple_booking_auto_confirm: Optional[bool] = None
     # None means calendar-only; planner explicitly opts in to per-meeting
     # conference auto-create via Aurinko ``startConference=true`` at booking

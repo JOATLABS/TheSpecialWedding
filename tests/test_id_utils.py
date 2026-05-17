@@ -276,8 +276,8 @@ class TestIntegrationScenarios:
         # API receives string ID
         api_input_id = "507f1f77bcf86cd799439011"
 
-        # Convert for MongoDB query
-        query_id = to_object_id(api_input_id, "user_id")
+        # Convert for MongoDB query (must not raise)
+        to_object_id(api_input_id, "user_id")
 
         # Simulate database document
         doc = {"_id": ObjectId(api_input_id), "name": "user"}

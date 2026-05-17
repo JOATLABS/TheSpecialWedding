@@ -12,8 +12,8 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-import app.dependencies.auth_extended as auth_extended
-import app.services.user_management_service as user_management_service_module
+import app.dependencies.auth_extended as auth_extended  # noqa: E402
+import app.services.user_management_service as user_management_service_module  # noqa: E402
 
 
 class DummyEmailService:

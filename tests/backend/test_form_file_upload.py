@@ -13,7 +13,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import mongomock
 import pytest
@@ -34,8 +34,11 @@ from app.models.form import SubmitFormRequest  # noqa: E402
 from app.services.form_upload_service import (  # noqa: E402
     MAX_UPLOAD_BYTES,
     FormUploadService,
+    detect_upload_mime_types,
     sanitize_filename,
 )
+
+PDF_BYTES = b"%PDF-1.4\n%test pdf\n"
 
 
 # =============================================================================
@@ -106,6 +109,9 @@ class AsyncMockCollection:
     def find(self, *args, **kwargs):
         return AsyncMockCursor(self.collection.find(*args, **kwargs))
 
+    def aggregate(self, *args, **kwargs):
+        return AsyncMockCursor(self.collection.aggregate(*args, **kwargs))
+
     async def find_one(self, *args, **kwargs):
         return self.collection.find_one(*args, **kwargs)
 
@@ -136,10 +142,15 @@ class AsyncMockDatabase:
 class FakeS3Client:
     def __init__(self) -> None:
         self.put_calls: list[Dict[str, Any]] = []
+        self.delete_calls: list[Dict[str, Any]] = []
 
     def put_object(self, **kwargs):
         self.put_calls.append(kwargs)
         return {"ETag": "fake"}
+
+    def delete_object(self, **kwargs):
+        self.delete_calls.append(kwargs)
+        return {}
 
 
 class FakeStorage:
@@ -250,12 +261,12 @@ async def test_store_upload_persists_record_and_writes_to_s3(upload_service):
         field_id="insurance",
         filename="cert.pdf",
         content_type="application/pdf",
-        contents=b"hello world",
+        contents=PDF_BYTES,
     )
 
     assert result["filename"] == "cert.pdf"
     assert result["url"].startswith("https://uploads.test.example.com/")
-    assert result["size_bytes"] == 11
+    assert result["size_bytes"] == len(PDF_BYTES)
 
     stored = database["form_uploads"].find_one({"_id": result["file_id"]})
     assert stored is not None
@@ -268,6 +279,77 @@ async def test_store_upload_persists_record_and_writes_to_s3(upload_service):
     assert s3_calls[0]["Bucket"] == "form-uploads-test"
     assert s3_calls[0]["Key"].startswith("forms/form_1/dist-1/")
     assert s3_calls[0]["Key"].endswith("-cert.pdf")
+    assert s3_calls[0]["ContentType"] == "application/pdf"
+    assert s3_calls[0]["ContentDisposition"] == 'attachment; filename="cert.pdf"'
+
+
+@pytest.mark.parametrize(
+    "payload,expected",
+    [
+        (b"%PDF-1.4\n", {"application/pdf"}),
+        (b"\x89PNG\r\n\x1a\n" + b"\x00" * 8, {"image/png"}),
+        (b"plain text\n", {"text/plain", "text/csv"}),
+    ],
+)
+def test_detect_upload_mime_types(payload, expected):
+    assert detect_upload_mime_types(payload) == expected
+
+
+@pytest.mark.asyncio
+async def test_store_upload_rejects_spoofed_content_type(upload_service):
+    service, _ = upload_service
+    form = _form_doc()
+    distribution = {"_id": "dist-1", "form_id": form["_id"]}
+
+    with pytest.raises(HTTPException) as exc:
+        await service.store_upload(
+            form=form,
+            distribution=distribution,
+            field_id="insurance",
+            filename="fake.png",
+            content_type="image/png",
+            contents=b"<html><script>alert(1)</script></html>",
+        )
+    assert exc.value.status_code == 415
+
+
+@pytest.mark.asyncio
+async def test_store_upload_deletes_s3_object_when_db_insert_fails(upload_service):
+    service, _ = upload_service
+    form = _form_doc()
+    distribution = {"_id": "dist-1", "form_id": form["_id"]}
+
+    class EmptyCursor:
+        async def to_list(self, length=None):
+            return []
+
+    class FailingUploads:
+        def aggregate(self, *_args, **_kwargs):
+            return EmptyCursor()
+
+        async def insert_one(self, _doc):
+            raise RuntimeError("mongo unavailable")
+
+    service.uploads_collection = FailingUploads()
+
+    with pytest.raises(HTTPException) as exc:
+        await service.store_upload(
+            form=form,
+            distribution=distribution,
+            field_id="insurance",
+            filename="cert.pdf",
+            content_type="application/pdf",
+            contents=PDF_BYTES,
+        )
+
+    assert exc.value.status_code == 502
+    assert len(service.storage.client.put_calls) == 1
+    assert service.storage.client.delete_calls == [
+        {
+            "Bucket": "form-uploads-test",
+            "Key": service.storage.client.put_calls[0]["Key"],
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -320,7 +402,7 @@ async def test_store_upload_rejects_non_file_upload_field(upload_service):
             field_id="name",  # text field, not file_upload
             filename="cert.pdf",
             content_type="application/pdf",
-            contents=b"hi",
+            contents=PDF_BYTES,
         )
     assert exc.value.status_code == 400
 
@@ -338,7 +420,7 @@ async def test_store_upload_rejects_unknown_field(upload_service):
             field_id="not-a-field",
             filename="cert.pdf",
             content_type="application/pdf",
-            contents=b"hi",
+            contents=PDF_BYTES,
         )
     assert exc.value.status_code == 400
 
@@ -355,7 +437,7 @@ async def test_get_upload_for_form_distribution_scopes_correctly(upload_service)
         field_id="insurance",
         filename="cert.pdf",
         content_type="application/pdf",
-        contents=b"hi",
+        contents=PDF_BYTES,
     )
     file_id = stored["file_id"]
 
@@ -408,7 +490,7 @@ async def test_submit_with_valid_file_upload_reference_persists_metadata(
         field_id="insurance",
         filename="cert.pdf",
         content_type="application/pdf",
-        contents=b"hi",
+        contents=PDF_BYTES,
     )
 
     request = SubmitFormRequest(
@@ -507,7 +589,7 @@ async def test_submit_with_file_id_from_other_distribution_is_rejected(
         field_id="insurance",
         filename="other.pdf",
         content_type="application/pdf",
-        contents=b"x",
+        contents=PDF_BYTES,
     )
 
     # Submit using my distribution + token, but reference the OTHER upload's file_id
@@ -533,7 +615,9 @@ async def test_submit_with_file_id_from_other_distribution_is_rejected(
 
 
 @pytest.mark.asyncio
-async def test_get_form_strips_underscore_id_from_public_response(configured_form_service):
+async def test_get_form_strips_underscore_id_from_public_response(
+    configured_form_service,
+):
     service, database = configured_form_service
     database["forms"].insert_one(_form_doc())
 
@@ -563,7 +647,7 @@ async def test_store_upload_keyerrors_on_sanitized_form_doc(configured_form_serv
             field_id="insurance",
             filename="cert.pdf",
             content_type="application/pdf",
-            contents=b"hello",
+            contents=PDF_BYTES,
         )
 
 
@@ -585,7 +669,7 @@ async def test_store_upload_succeeds_on_raw_form_doc(configured_form_service):
         field_id="insurance",
         filename="cert.pdf",
         content_type="application/pdf",
-        contents=b"hello",
+        contents=PDF_BYTES,
     )
     assert result.get("filename") == "cert.pdf"
     stored = database["form_uploads"].find_one({"_id": result["file_id"]})

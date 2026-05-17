@@ -11,7 +11,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-import app.services.planner_onboarding_email_service as onboarding_module
+import app.services.planner_onboarding_email_service as onboarding_module  # noqa: E402
 
 
 def _resolve_dotted(document, dotted_key):
@@ -561,7 +561,7 @@ def test_process_due_emails_skips_day8_when_team_exists():
         "user_subscriptions": [],
     }
     service = build_service(storage)
-    result = asyncio.run(service.process_due_emails())
+    asyncio.run(service.process_due_emails())
     state = storage["users"][0]["planner_onboarding_email"]
     assert state.get("team_rules_skipped_at") is not None
     assert state.get("team_rules_skip_reason") == "team_members_already_exist"

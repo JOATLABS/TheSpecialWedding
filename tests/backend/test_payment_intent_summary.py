@@ -4,7 +4,9 @@ import asyncio
 import os
 import sys
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
+from bson import ObjectId
 import stripe
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -18,16 +20,26 @@ import app.core.database as database_module
 import app.core.settings as settings_module
 
 
+def _matches(document, query):
+    for key, expected in query.items():
+        if document.get(key) != expected:
+            return False
+    return True
+
+
 class AsyncCollection:
-    def __init__(self, document=None):
-        self.document = document
+    def __init__(self, documents=None):
+        if documents is None:
+            documents = []
+        if isinstance(documents, dict):
+            documents = [documents]
+        self.documents = documents
         self.inserted = None
 
     async def find_one(self, query):
-        if not self.document:
-            return None
-        if query.get("public_token") == self.document.get("public_token"):
-            return dict(self.document)
+        for document in self.documents:
+            if _matches(document, query):
+                return dict(document)
         return None
 
     async def insert_one(self, document):
@@ -36,9 +48,11 @@ class AsyncCollection:
 
 
 class AsyncDatabase:
-    def __init__(self, payment_request=None):
+    def __init__(self, payment_request=None, weddings=None, users=None):
         self.collections = {
             "payment_requests": AsyncCollection(payment_request),
+            "weddings": AsyncCollection(weddings),
+            "users": AsyncCollection(users),
         }
 
     def __getitem__(self, name):
@@ -46,8 +60,8 @@ class AsyncDatabase:
 
 
 class FakeMongo:
-    def __init__(self, payment_request=None):
-        self.db = AsyncDatabase(payment_request)
+    def __init__(self, payment_request=None, weddings=None, users=None):
+        self.db = AsyncDatabase(payment_request, weddings=weddings, users=users)
 
 
 def test_payment_intent_summary_omits_client_secret(monkeypatch):
@@ -214,8 +228,25 @@ def test_payment_request_details_reject_raw_payment_intent_id(monkeypatch):
 
 
 def test_create_payment_intent_stores_public_token_without_client_secret(monkeypatch):
-    fake_mongo = FakeMongo()
+    fake_mongo = FakeMongo(
+        weddings=[
+            {
+                "_id": "wedding_123",
+                "planner_id": "planner-1",
+                "assigned_planner_id": "planner-1",
+                "assigned_planner_email": "planner@example.com",
+            }
+        ],
+        users=[
+            {
+                "_id": "planner-1",
+                "email": "planner@example.com",
+                "stripe_connect_id": "acct_planner",
+            }
+        ],
+    )
     monkeypatch.setattr(database_module, "mongo", fake_mongo)
+    monkeypatch.setattr(stripe_payment_module, "mongo", fake_mongo, raising=False)
     monkeypatch.setattr(
         stripe_payment_module.stripe_service,
         "create_payment_intent_for_couple",
@@ -251,3 +282,131 @@ def test_create_payment_intent_stores_public_token_without_client_secret(monkeyp
     assert inserted["public_token"]
     assert "client_secret" not in inserted
     assert result["payment_intent"]["public_token"] == inserted["public_token"]
+
+
+def test_create_payment_intent_rejects_destination_outside_wedding_owner_scope(
+    monkeypatch,
+):
+    other_user_id = ObjectId()
+    fake_mongo = FakeMongo(
+        weddings=[
+            {
+                "_id": "wedding_123",
+                "planner_id": "planner-1",
+                "assigned_planner_id": "planner-1",
+                "assigned_planner_email": "planner@example.com",
+            }
+        ],
+        users=[
+            {
+                "_id": other_user_id,
+                "email": "other@example.com",
+                "stripe_connect_id": "acct_other",
+            }
+        ],
+    )
+    monkeypatch.setattr(database_module, "mongo", fake_mongo)
+    monkeypatch.setattr(stripe_payment_module, "mongo", fake_mongo, raising=False)
+    monkeypatch.setattr(
+        stripe_payment_module,
+        "check_wedding_access",
+        AsyncMock(return_value=True),
+    )
+    create_mock = AsyncMock()
+    monkeypatch.setattr(
+        stripe_payment_module.stripe_service,
+        "create_payment_intent_for_couple",
+        create_mock,
+    )
+
+    current_user = SimpleNamespace(
+        is_root_admin=False,
+        is_wedding_planner=True,
+        is_team_member=False,
+        user_data={"_id": "planner-1"},
+        email="planner@example.com",
+    )
+
+    try:
+        asyncio.run(
+            stripe_payment_module.create_payment_intent(
+                stripe_payment_module.CreatePaymentIntentRequest(
+                    amount=50.0,
+                    currency="usd",
+                    wedding_id="wedding_123",
+                    destination_user_id=str(other_user_id),
+                ),
+                current_user=current_user,
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 403
+        assert exc.detail == "Destination account must belong to the wedding owner"
+    else:
+        raise AssertionError("Expected cross-owner destination account to be rejected")
+
+    create_mock.assert_not_awaited()
+
+
+def test_create_payment_intent_rejects_stale_legacy_planner_destination(
+    monkeypatch,
+):
+    fake_mongo = FakeMongo(
+        weddings=[
+            {
+                "_id": "wedding_123",
+                "planner_id": "stale-planner",
+                "planner_email": "stale@example.com",
+                "assigned_planner_id": "planner-1",
+                "assigned_planner_email": "planner@example.com",
+            }
+        ],
+        users=[
+            {
+                "_id": "stale-planner",
+                "email": "stale@example.com",
+                "stripe_connect_id": "acct_stale",
+            }
+        ],
+    )
+    monkeypatch.setattr(database_module, "mongo", fake_mongo)
+    monkeypatch.setattr(stripe_payment_module, "mongo", fake_mongo, raising=False)
+    monkeypatch.setattr(
+        stripe_payment_module,
+        "check_wedding_access",
+        AsyncMock(return_value=True),
+    )
+    create_mock = AsyncMock()
+    monkeypatch.setattr(
+        stripe_payment_module.stripe_service,
+        "create_payment_intent_for_couple",
+        create_mock,
+    )
+
+    current_user = SimpleNamespace(
+        is_root_admin=False,
+        is_wedding_planner=True,
+        is_team_member=False,
+        user_data={"_id": "planner-1"},
+        email="planner@example.com",
+    )
+
+    try:
+        asyncio.run(
+            stripe_payment_module.create_payment_intent(
+                stripe_payment_module.CreatePaymentIntentRequest(
+                    amount=50.0,
+                    currency="usd",
+                    wedding_id="wedding_123",
+                    destination_user_id="stale-planner",
+                ),
+                current_user=current_user,
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 403
+        assert exc.detail == "Destination account must belong to the wedding owner"
+    else:
+        raise AssertionError("Expected stale legacy planner destination to be rejected")
+
+    create_mock.assert_not_awaited()

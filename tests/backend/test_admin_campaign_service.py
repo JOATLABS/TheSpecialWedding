@@ -17,12 +17,9 @@ from app.models.advertising_campaign import CampaignStatus, CreativeReviewStatus
 from app.services.admin_campaign_service import AdminCampaignService
 from tests.backend.conftest_advertising import (
     ADMIN_EMAIL,
-    VENDOR_EMAIL,
     VENDOR_ID,
-    VENDOR_NAME,
     AsyncMockDatabase,
     make_ad_event,
-    make_ad_lead,
     make_campaign,
     make_creative,
 )
@@ -48,7 +45,6 @@ async def test_get_review_queue_returns_pending_campaigns_fifo(service_and_db):
     """Test that review queue returns pending campaigns in FIFO order (oldest first)."""
     service, _, raw_db = service_and_db
 
-    now = datetime.now(timezone.utc)
     campaign_old = make_campaign(
         status=CampaignStatus.PENDING_REVIEW.value,
         submitted_at=datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),

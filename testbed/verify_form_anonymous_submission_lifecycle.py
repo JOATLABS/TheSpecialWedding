@@ -52,7 +52,6 @@ from testbed._form_lifecycle_common import (  # noqa: E402
     count_documents,
     insert_one,
     now_utc,
-    purge_form_rows_for_planner,
     short_token,
 )
 
@@ -120,7 +119,7 @@ async def main() -> None:
 
     rows = await count_documents("form_responses", {"form_id": form_id})
     print(f"  ↳ post-VERIFY form_responses count: {rows}")
-    print(f"  ↳ run cleanup: python testbed/cleanup_form_anonymous_submission_state.py")
+    print("  ↳ run cleanup: python testbed/cleanup_form_anonymous_submission_state.py")
 
 
 if __name__ == "__main__":

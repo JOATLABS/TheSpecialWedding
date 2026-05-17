@@ -20,11 +20,17 @@ const playfairDisplay = Playfair_Display({
 })
 
 export const metadata: Metadata = {
+  // Title kept within 45-60 char band so it doesn't get truncated in
+  // SERPs. Previous "Wedding Planner Software & CRM for Pros — The
+  // Special Wedding" was 61 chars and got cut. New value tested via
+  // BLG Technical Audit (https://www.babylovegrowth.ai/en/dashboard/geo-audit).
   title: {
-    default: 'Wedding Planner Software & CRM for Pros — The Special Wedding',
+    default: 'All-In-One Wedding Planner Software & CRM for Pros',
     template: '%s | The Special Wedding',
   },
-  description: 'Wedding planning software & CRM built for professional planners. Manage guests, RSVPs, seating, vendor contracts, budgets, day-of timelines, and a live couple portal — replacing HoneyBook, Aisle Planner, and Squarespace. Free to start.',
+  // Meta description tightened to fit the 140-160 char band SERPs
+  // display in full. Previous 235-char value was truncated mid-thought.
+  description: 'All-in-one wedding planning OS & CRM for planners. Manage guests, RSVPs, seating, budgets, contracts, timelines, and a live couple portal. Free trial.',
   keywords: ['wedding planner software', 'wedding planning business software', 'event planner CRM', 'wedding vendor management', 'guest management for planners', 'wedding seating chart tool', 'HoneyBook alternative', 'Aisle Planner alternative'],
   authors: [{ name: 'The Special Wedding' }],
   creator: 'The Special Wedding',

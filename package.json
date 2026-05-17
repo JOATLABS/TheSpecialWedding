@@ -11,7 +11,7 @@
     "dev": "node scripts/ensure-deps.mjs && next dev --webpack",
     "build": "node scripts/ensure-deps.mjs && next build --webpack",
     "start": "next start",
-    "lint": "node scripts/ensure-deps.mjs && eslint .",
+    "lint": "node scripts/ensure-deps.mjs && npm run repo:check-copy-artifacts && eslint .",
     "type-check": "node scripts/ensure-deps.mjs && tsc --noEmit --pretty",
     "test": "node scripts/ensure-deps.mjs && tsx --test tests/**/*.test.ts tests/**/*.test.tsx",
     "images:optimize": "npx -y -p node@16 -p @squoosh/cli squoosh-cli -d public --webp '{\"quality\":80}' --avif '{\"cqLevel\":33}' public/*.png",

@@ -29,6 +29,10 @@ We use FastAPI's TestClient so we exercise the real ASGI stack including
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fastapi.testclient import TestClient
 
 os.environ.setdefault("AURINKO_WEBHOOK_SECRET", "test-webhook-secret")
 os.environ.setdefault("AURINKO_CLIENT_ID", "test-cid")
@@ -41,6 +45,21 @@ from app.api.aurinko_redirector import (  # noqa: E402
     build_aurinko_callback_url,
     router as aurinko_redirector_router,
 )
+
+
+def _make_redirector_test_client() -> "TestClient":
+    """Mount only the redirector router.
+
+    The production app lifespan connects to MongoDB, Redis, and index
+    bootstrap paths. This route is a stateless 302 shim, so these contract
+    tests should not require CI to run the full backend stack.
+    """
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    app = FastAPI()
+    app.include_router(aurinko_redirector_router)
+    return TestClient(app)
 
 
 def test_redirector_route_is_registered_at_bare_path() -> None:
@@ -57,6 +76,22 @@ def test_redirector_route_is_registered_at_bare_path() -> None:
     assert ("GET", "/v1/auth/callback") in registered, (
         f"intermediate redirector must be at GET /v1/auth/callback "
         f"(bare, no prefix). Found: {sorted(registered)}"
+    )
+
+
+def test_redirector_route_is_included_in_main_app_without_startup() -> None:
+    """Pin app registration without entering the Mongo-backed lifespan."""
+    from app.main import app
+
+    registered = {
+        (m, route.path)
+        for route in app.routes
+        if hasattr(route, "methods")
+        for m in route.methods
+    }
+    assert ("GET", "/v1/auth/callback") in registered, (
+        "app.main must include the bare Aurinko redirector route; otherwise "
+        "Google/Aurinko callbacks 404 even though the router module is correct."
     )
 
 
@@ -79,34 +114,26 @@ def test_build_aurinko_callback_url_with_no_params() -> None:
 
 
 def test_redirector_302s_to_aurinko_with_preserved_query() -> None:
-    """End-to-end: GET /v1/auth/callback?<params> on our app must 302 to
+    """End-to-end: GET /v1/auth/callback?<params> must 302 to
     https://api.aurinko.io/v1/auth/callback?<same params, byte-for-byte>.
 
-    Uses TestClient with the full FastAPI app so RedirectResponse's 302
-    behavior is exercised. We use ``follow_redirects=False`` to inspect
-    the Location header directly rather than chasing the redirect into
-    Aurinko's live API.
+    Uses TestClient against an isolated app containing the redirector router
+    so RedirectResponse's 302 behavior is exercised without entering the
+    Mongo-backed production lifespan. We use ``follow_redirects=False`` to
+    inspect the Location header directly rather than chasing the redirect
+    into Aurinko's live API.
     """
-    import pytest as _pytest
-    from fastapi.testclient import TestClient
-
-    try:
-        from app.main import app
-        with TestClient(app) as client:
-            r = client.get(
-                "/v1/auth/callback",
-                params={
-                    "code": "google-code-abc",
-                    "state": "our-state-xyz",
-                    "scope": "openid email profile",
-                    "authuser": "0",
-                },
-                follow_redirects=False,
-            )
-    except RuntimeError as exc:
-        if "Mongo" in str(exc) or "MongoDB" in str(exc):
-            _pytest.skip(f"Mongo not reachable in this env: {exc}")
-        raise
+    client = _make_redirector_test_client()
+    r = client.get(
+        "/v1/auth/callback",
+        params={
+            "code": "google-code-abc",
+            "state": "our-state-xyz",
+            "scope": "openid email profile",
+            "authuser": "0",
+        },
+        follow_redirects=False,
+    )
 
     assert r.status_code == 302, (
         f"expected 302 redirect, got {r.status_code}: {r.text[:200]}"
@@ -128,17 +155,8 @@ def test_redirector_302s_to_bare_aurinko_callback_when_no_query() -> None:
     """If Google ever calls us with NO query params (defensive — shouldn't
     happen in practice), the redirect target should be the bare Aurinko
     URL without a trailing ``?``."""
-    import pytest as _pytest
-    from fastapi.testclient import TestClient
-
-    try:
-        from app.main import app
-        with TestClient(app) as client:
-            r = client.get("/v1/auth/callback", follow_redirects=False)
-    except RuntimeError as exc:
-        if "Mongo" in str(exc) or "MongoDB" in str(exc):
-            _pytest.skip(f"Mongo not reachable in this env: {exc}")
-        raise
+    client = _make_redirector_test_client()
+    r = client.get("/v1/auth/callback", follow_redirects=False)
 
     assert r.status_code == 302
     location = r.headers.get("location") or r.headers.get("Location")

@@ -2,10 +2,14 @@
 "use client";
 
 import React from 'react';
+import { createPortal } from 'react-dom';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 interface DialogContextValue {
   open: boolean;
   setOpen: (open: boolean) => void;
+  titleId: string;
+  descriptionId: string;
 }
 
 const DialogContext = React.createContext<DialogContextValue | undefined>(undefined);
@@ -18,12 +22,20 @@ export interface DialogProps {
 
 export function Dialog({ open: controlledOpen, onOpenChange, children }: DialogProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
+  const generatedId = React.useId();
 
   const open = controlledOpen !== undefined ? controlledOpen : uncontrolledOpen;
   const setOpen = onOpenChange || setUncontrolledOpen;
 
   return (
-    <DialogContext.Provider value={{ open, setOpen }}>
+    <DialogContext.Provider
+      value={{
+        open,
+        setOpen,
+        titleId: `${generatedId}-title`,
+        descriptionId: `${generatedId}-description`,
+      }}
+    >
       {children}
     </DialogContext.Provider>
   );
@@ -47,33 +59,77 @@ export function DialogTrigger({ asChild, children }: DialogTriggerProps) {
   return <button onClick={handleClick}>{children}</button>;
 }
 
-export interface DialogContentProps {
-  className?: string;
-  children: React.ReactNode;
+export interface DialogContentProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, 'role'> {
+  closeOnOverlayClick?: boolean;
 }
 
-export function DialogContent({ className = '', children }: DialogContentProps) {
+export function DialogContent({
+  className = '',
+  children,
+  closeOnOverlayClick = true,
+  ...props
+}: DialogContentProps) {
   const context = React.useContext(DialogContext);
   if (!context) throw new Error('DialogContent must be used within Dialog');
+  const { open, setOpen, titleId, descriptionId } = context;
 
-  if (!context.open) return null;
+  const [mounted, setMounted] = React.useState(false);
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, open && mounted);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4">
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        setOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, [open, setOpen]);
+
+  if (!open) return null;
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center overflow-y-auto p-4">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/50"
-        onClick={() => context.setOpen(false)}
+        className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm dark:bg-black/70"
+        onClick={() => {
+          if (closeOnOverlayClick) setOpen(false);
+        }}
       />
 
       {/* Content */}
       <div
-        className={`relative bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-h-[90vh] overflow-y-auto mx-4 ${className}`}
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        className={`relative z-[10000] mx-4 max-h-[90vh] w-full overflow-y-auto rounded-lg bg-white p-6 shadow-2xl outline-none dark:bg-gray-800 ${className}`}
         onClick={(e) => e.stopPropagation()}
+        {...props}
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -103,27 +159,38 @@ export function DialogFooter({ className = '', children }: DialogFooterProps) {
   );
 }
 
-export interface DialogTitleProps {
-  className?: string;
-  children: React.ReactNode;
-}
+export interface DialogTitleProps
+  extends React.HTMLAttributes<HTMLHeadingElement> {}
 
-export function DialogTitle({ className = '', children }: DialogTitleProps) {
+export function DialogTitle({ className = '', id, children, ...props }: DialogTitleProps) {
+  const context = React.useContext(DialogContext);
   return (
-    <h2 className={`text-lg font-semibold leading-none tracking-tight ${className}`}>
+    <h2
+      id={id || context?.titleId}
+      className={`text-lg font-semibold leading-none tracking-tight ${className}`}
+      {...props}
+    >
       {children}
     </h2>
   );
 }
 
-export interface DialogDescriptionProps {
-  className?: string;
-  children: React.ReactNode;
-}
+export interface DialogDescriptionProps
+  extends React.HTMLAttributes<HTMLParagraphElement> {}
 
-export function DialogDescription({ className = '', children }: DialogDescriptionProps) {
+export function DialogDescription({
+  className = '',
+  id,
+  children,
+  ...props
+}: DialogDescriptionProps) {
+  const context = React.useContext(DialogContext);
   return (
-    <p className={`text-sm text-gray-500 dark:text-gray-400 ${className}`}>
+    <p
+      id={id || context?.descriptionId}
+      className={`text-sm text-gray-500 dark:text-gray-400 ${className}`}
+      {...props}
+    >
       {children}
     </p>
   );

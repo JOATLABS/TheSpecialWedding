@@ -16,7 +16,6 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -27,7 +26,7 @@ os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
-from app.models.advertising_campaign import (  # Enums; Models; Request models
+from app.models.advertising_campaign import (  # Enums; Models; Request models  # noqa: E402
     AdCampaign,
     AdCreative,
     AdFraudSignal,

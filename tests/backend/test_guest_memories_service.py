@@ -89,9 +89,9 @@ def _install_test_stubs() -> None:
 
 _install_test_stubs()
 
-import app.services.guest_media_service as guest_media_module
-from app.services.guest_export_service import GuestExportService
-from app.services.guest_media_service import GuestMediaService
+import app.services.guest_media_service as guest_media_module  # noqa: E402
+from app.services.guest_export_service import GuestExportService  # noqa: E402
+from app.services.guest_media_service import GuestMediaService  # noqa: E402
 
 
 def _build_service() -> GuestMediaService:

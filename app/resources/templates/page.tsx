@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 
 import SaasNav from '@/components/saas/SaasNav';
 import BreadcrumbSchema from '@/components/seo/BreadcrumbSchema';
+import { serializeJsonLd } from '@/seo/jsonLd';
 
 import TemplatesClient from './TemplatesClient';
 import { MARKETING_TEMPLATES } from './manifest';
@@ -94,7 +95,7 @@ export default function PublicTemplatesPage() {
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(templatesJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(templatesJsonLd) }}
       />
 
       <section className="mx-auto max-w-6xl px-6 pb-16 pt-28 sm:px-10 sm:pb-20">

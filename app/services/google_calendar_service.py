@@ -850,6 +850,19 @@ class GoogleCalendarService:
                 "details_visibility", VisibilityMode.BUSY_ONLY.value
             ),
             "sync_enabled": doc.get("sync_enabled", False),
+            "task_sync_enabled": doc.get("task_sync_enabled", False),
+            "task_sync_tasklist_id": doc.get("task_sync_tasklist_id"),
+            "task_sync_tasklist_name": doc.get("task_sync_tasklist_name"),
+            "task_sync_subscription_id": doc.get("task_sync_subscription_id"),
+            "contact_sync_enabled": doc.get("contact_sync_enabled", False),
+            "contact_sync_book_id": doc.get("contact_sync_book_id"),
+            "contact_sync_book_name": doc.get("contact_sync_book_name"),
+            "contact_sync_group_id": doc.get("contact_sync_group_id"),
+            "contact_sync_group_name": doc.get("contact_sync_group_name"),
+            "contact_sync_subscription_id": doc.get("contact_sync_subscription_id"),
+            "connection_scopes": self._normalize_string_list(
+                doc.get("connection_scopes", [])
+            ),
             "connection_status": doc.get(
                 "connection_status", CalendarConnectionStatus.ERROR.value
             ),
@@ -1030,6 +1043,15 @@ class GoogleCalendarService:
                 "is_shared_in_team_view",
                 "details_visibility",
                 "sync_enabled",
+                "task_sync_enabled",
+                "task_sync_tasklist_id",
+                "task_sync_tasklist_name",
+                "contact_sync_enabled",
+                "contact_sync_book_id",
+                "contact_sync_book_name",
+                "contact_sync_group_id",
+                "contact_sync_group_name",
+                "connection_scopes",
             }
             and v is not None
         }
@@ -1063,6 +1085,10 @@ class GoogleCalendarService:
         if "allowed_wedding_ids" in set_doc:
             set_doc["allowed_wedding_ids"] = self._normalize_string_list(
                 set_doc["allowed_wedding_ids"]
+            )
+        if "connection_scopes" in set_doc:
+            set_doc["connection_scopes"] = self._normalize_string_list(
+                set_doc["connection_scopes"]
             )
 
         if set_doc.get("is_default_write_target") and not (
@@ -1443,6 +1469,8 @@ class GoogleCalendarService:
     async def get_default_write_connection_for_user(
         self,
         user_email: str,
+        *,
+        owner_planner_id: Optional[str] = None,
     ) -> Optional[dict]:
         """Resolve the active default writable connection for a user."""
         query = {
@@ -1451,6 +1479,8 @@ class GoogleCalendarService:
             "is_writable": True,
             "sync_enabled": True,
         }
+        if owner_planner_id:
+            query["owner_planner_id"] = owner_planner_id
         connection = await self.connections_collection.find_one(
             {**query, "is_default_write_target": True}
         )
@@ -1458,9 +1488,13 @@ class GoogleCalendarService:
             return connection
         return await self.connections_collection.find_one(query)
 
-    async def get_connection_status(self, user_email: str) -> Dict[str, Any]:
+    async def get_connection_status(
+        self, user_email: str, *, owner_planner_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Compatibility helper for legacy UI that expects one status object."""
-        connection = await self.get_default_write_connection_for_user(user_email)
+        connection = await self.get_default_write_connection_for_user(
+            user_email, owner_planner_id=owner_planner_id
+        )
         if not connection:
             return {
                 "connected": False,
@@ -1473,6 +1507,7 @@ class GoogleCalendarService:
         synced_count = await self.syncs_collection.count_documents(
             {
                 "target_user_email": user_email,
+                "calendar_connection_id": str(connection["_id"]),
                 "sync_status": CalendarSyncStatusValue.SYNCED.value,
             }
         )
@@ -1484,16 +1519,21 @@ class GoogleCalendarService:
             "events_synced": synced_count,
         }
 
-    async def disconnect(self, user_email: str) -> Dict[str, Any]:
+    async def disconnect(
+        self, user_email: str, *, owner_planner_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Compatibility helper to disconnect every connection for a user.
 
         Performs revocation per *provider account* (not per row), then bulk
         deletes the rows in a single statement. Avoids the partial-failure
         and silent-truncation issues of the prior per-row loop.
         """
-        docs = await self.connections_collection.find(
-            {"user_email": user_email}
-        ).to_list(length=None)
+        scoped_filter: Dict[str, Any] = {"user_email": user_email}
+        if owner_planner_id:
+            scoped_filter["owner_planner_id"] = owner_planner_id
+        docs = await self.connections_collection.find(scoped_filter).to_list(
+            length=None
+        )
         if not docs:
             return {
                 "disconnected": True,
@@ -1549,7 +1589,7 @@ class GoogleCalendarService:
                 },
             },
         )
-        await self.connections_collection.delete_many({"user_email": user_email})
+        await self.connections_collection.delete_many(scoped_filter)
         for connection_id in connection_ids:
             await self.invalidate_connection_events_cache(connection_id)
 
@@ -1978,9 +2018,13 @@ class GoogleCalendarService:
         time_min: Optional[datetime] = None,
         time_max: Optional[datetime] = None,
         max_results: int = 100,
+        *,
+        owner_planner_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Legacy wrapper for single-user Google event fetch."""
-        connection = await self.get_default_write_connection_for_user(user_email)
+        connection = await self.get_default_write_connection_for_user(
+            user_email, owner_planner_id=owner_planner_id
+        )
         if not connection:
             return []
         return await self.fetch_google_events_for_connection(
