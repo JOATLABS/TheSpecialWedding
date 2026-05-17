@@ -29,6 +29,7 @@ import jwt
 from bson import ObjectId
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
+from pymongo import UpdateOne
 
 from app.core.cache import cache
 from app.core.config import settings
@@ -150,6 +151,7 @@ class AurinkoClient:
         account_token: Optional[str] = None,
         params: Optional[dict[str, Any]] = None,
         json_body: Optional[dict[str, Any]] = None,
+        extra_headers: Optional[dict[str, str]] = None,
         platform_auth: bool = False,
     ) -> httpx.Response:
         url = f"{self.base_url}{path}"
@@ -161,7 +163,10 @@ class AurinkoClient:
             client_id, client_secret = self._platform_basic_auth()
             kwargs["auth"] = (client_id, client_secret)
         elif account_token:
-            kwargs["headers"] = self._account_headers(account_token)
+            headers = self._account_headers(account_token)
+            if extra_headers:
+                headers.update(extra_headers)
+            kwargs["headers"] = headers
         else:
             raise RuntimeError(
                 "Aurinko request requires either an account token or platform auth"
@@ -429,24 +434,232 @@ class AurinkoClient:
         response.raise_for_status()
         return response.json()
 
+    async def list_tasklists(self, account_token: str) -> list[dict[str, Any]]:
+        """List task lists for the connected account."""
+        response = await self._request("GET", "/tasklists", account_token=account_token)
+        response.raise_for_status()
+        payload = response.json()
+        return payload.get("records") or payload.get("tasklists") or []
+
+    async def list_tasks(
+        self,
+        *,
+        account_token: str,
+        tasklist_id: str,
+        page_token: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """List tasks from one Aurinko task list."""
+        params: dict[str, Any] = {"pageSize": _AURINKO_LIST_PAGE_SIZE}
+        if page_token:
+            params["pageToken"] = page_token
+        response = await self._request(
+            "GET",
+            f"/tasklists/{quote(tasklist_id, safe='')}/tasks",
+            account_token=account_token,
+            params=params,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def get_task(
+        self,
+        *,
+        account_token: str,
+        tasklist_id: str,
+        task_id: str,
+    ) -> dict[str, Any]:
+        response = await self._request(
+            "GET",
+            f"/tasklists/{quote(tasklist_id, safe='')}/tasks/{quote(task_id, safe='')}",
+            account_token=account_token,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def create_task(
+        self,
+        *,
+        account_token: str,
+        tasklist_id: str,
+        body: dict[str, Any],
+    ) -> dict[str, Any]:
+        response = await self._request(
+            "POST",
+            f"/tasklists/{quote(tasklist_id, safe='')}/tasks",
+            account_token=account_token,
+            json_body=body,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def update_task(
+        self,
+        *,
+        account_token: str,
+        tasklist_id: str,
+        task_id: str,
+        body: dict[str, Any],
+        etag: Optional[str] = None,
+    ) -> dict[str, Any]:
+        response = await self._request(
+            "PATCH",
+            f"/tasklists/{quote(tasklist_id, safe='')}/tasks/{quote(task_id, safe='')}",
+            account_token=account_token,
+            json_body=body,
+            extra_headers={"If-Match": etag} if etag else None,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def delete_task(
+        self,
+        *,
+        account_token: str,
+        tasklist_id: str,
+        task_id: str,
+    ) -> None:
+        response = await self._request(
+            "DELETE",
+            f"/tasklists/{quote(tasklist_id, safe='')}/tasks/{quote(task_id, safe='')}",
+            account_token=account_token,
+        )
+        if response.status_code == 404:
+            return
+        response.raise_for_status()
+
+    async def list_contact_books(self, account_token: str) -> list[dict[str, Any]]:
+        """Return the default writable Contacts address book.
+
+        Aurinko's public Contacts API exposes contact CRUD and sync endpoints,
+        but not a documented contact-book or group enumeration endpoint. We
+        therefore model the connected account's default contacts store as the
+        selectable v1 book and keep planner grouping as an explicit keyword on
+        mirrored contacts.
+        """
+        return [
+            {
+                "id": "default",
+                "name": "Default contacts",
+                "is_writable": True,
+            }
+        ]
+
+    async def list_contacts(
+        self,
+        *,
+        account_token: str,
+        book_id: Optional[str] = None,
+        page_token: Optional[str] = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {}
+        if page_token:
+            body["syncToken"] = page_token
+        response = await self._request(
+            "POST",
+            "/contacts/sync/updated",
+            account_token=account_token,
+            json_body=body,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def get_contact(
+        self,
+        *,
+        account_token: str,
+        contact_id: str,
+    ) -> dict[str, Any]:
+        response = await self._request(
+            "GET",
+            f"/contacts/{quote(contact_id, safe='')}",
+            account_token=account_token,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def create_contact(
+        self,
+        *,
+        account_token: str,
+        body: dict[str, Any],
+    ) -> dict[str, Any]:
+        response = await self._request(
+            "POST",
+            "/contacts",
+            account_token=account_token,
+            json_body=body,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def update_contact(
+        self,
+        *,
+        account_token: str,
+        contact_id: str,
+        body: dict[str, Any],
+        etag: Optional[str] = None,
+    ) -> dict[str, Any]:
+        response = await self._request(
+            "PATCH",
+            f"/contacts/{quote(contact_id, safe='')}",
+            account_token=account_token,
+            json_body=body,
+            extra_headers={"If-Match": etag} if etag else None,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def delete_contact(
+        self,
+        *,
+        account_token: str,
+        contact_id: str,
+    ) -> None:
+        response = await self._request(
+            "DELETE",
+            f"/contacts/{quote(contact_id, safe='')}",
+            account_token=account_token,
+        )
+        if response.status_code == 404:
+            return
+        response.raise_for_status()
+
+    async def create_group(self, account_token: str, name: str) -> dict[str, Any]:
+        """Return a stable local sync label for mirrored contacts.
+
+        The user-facing feature speaks in terms of a planner contacts group,
+        but Aurinko's documented Contacts API does not expose a group-create
+        endpoint. Persisting this deterministic id keeps the UX stable while
+        avoiding an undocumented API guess.
+        """
+        normalized = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+        return {
+            "id": f"local-keyword:{normalized or 'wedding-planner'}",
+            "name": name,
+        }
+
     async def create_subscription(
         self,
         *,
         account_token: str,
-        calendar_id: str,
+        calendar_id: Optional[str] = None,
+        resource: Optional[str] = None,
         webhook_url: str,
     ) -> dict[str, Any]:
-        """Subscribe to change notifications for a single calendar.
+        """Subscribe to change notifications for one Aurinko resource.
 
         Aurinko subscriptions are scoped per-resource — there is no
         "all calendars on this account" subscription. The valid resource
-        strings for calendar events are ``/calendars/primary/events`` and
-        ``/calendars/{calId}/events``. We always use the explicit calendar id
-        so a planner with multiple calendars connected gets per-calendar
-        delivery.
+        strings include ``/calendars/{calId}/events``,
+        ``/tasklists/{taskListId}/tasks``, and ``/contacts``.
         """
+        if resource is None:
+            if not calendar_id:
+                raise ValueError("create_subscription requires calendar_id or resource")
+            resource = f"/calendars/{calendar_id}/events"
         body = {
-            "resource": f"/calendars/{calendar_id}/events",
+            "resource": resource,
             "notificationUrl": webhook_url,
         }
         response = await self._request(
@@ -698,6 +911,10 @@ class CalendarProviderService:
     def __init__(self) -> None:
         self.connections_collection = mongo.get_calendar_connections_collection()
         self.syncs_collection = mongo.get_calendar_event_syncs_collection()
+        self.task_sync_records_collection = mongo.get_task_sync_records_collection()
+        self.contact_sync_records_collection = (
+            mongo.get_contact_sync_records_collection()
+        )
         # Drafts hold the encrypted Aurinko account token + calendar list
         # between OAuth callback and the picker-modal submission. See
         # ``handle_oauth_callback`` / ``commit_calendar_selection``.
@@ -1001,6 +1218,7 @@ class CalendarProviderService:
         owner_id: str,
         owner_email: str,
         redirect_to: Optional[str] = None,
+        service_type: Optional[str] = None,
     ) -> str:
         now = datetime.now(UTC)
         payload = {
@@ -1009,6 +1227,7 @@ class CalendarProviderService:
             "owner_id": owner_id,
             "owner_email": owner_email,
             "redirect_to": redirect_to or "/admin/planner/calendar",
+            "serviceType": service_type,
             "nonce": secrets.token_urlsafe(16),
             "iat": int(now.timestamp()),
             "exp": int((now + timedelta(minutes=10)).timestamp()),
@@ -1038,6 +1257,9 @@ class CalendarProviderService:
 
     # ----- OAuth -----------------------------------------------------------
 
+    def _configured_scopes(self) -> list[str]:
+        return [s for s in re.split(r"[,\s]+", settings.AURINKO_SCOPES.strip()) if s]
+
     async def get_authorization_url(
         self,
         *,
@@ -1061,22 +1283,21 @@ class CalendarProviderService:
                 status_code=503,
                 detail="Calendar aggregator is not configured. Missing AURINKO_REDIRECT_URI.",
             )
+        service_type = AurinkoClient.resolve_service_type(provider)
         state = self._build_state(
             user_id=user_id,
             user_email=user_email,
             owner_id=owner_id,
             owner_email=owner_email,
             redirect_to=redirect_to,
+            service_type=service_type,
         )
         # settings.AURINKO_SCOPES is a string (env values are strings). The
         # client's authorize_url expects list[str] and does ','.join(scopes)
         # — if we pass the raw string, ','.join iterates characters and
         # produces 'C,a,l,e,n,d,a,r,...'. Split on whitespace OR comma so
         # whatever form the env uses ("a b" or "a,b") parses correctly.
-        scope_list = [
-            s for s in re.split(r"[,\s]+", settings.AURINKO_SCOPES.strip()) if s
-        ]
-        service_type = AurinkoClient.resolve_service_type(provider)
+        scope_list = self._configured_scopes()
         return await self.client.authorize_url(
             scopes=scope_list,
             return_url=settings.AURINKO_REDIRECT_URI,
@@ -1166,8 +1387,23 @@ class CalendarProviderService:
             or account_info.get("displayName")
             or provider_account_email
         )
+        # Three sources for provider identification, in order of trust:
+        #   1. /v1/account.type      — Aurinko's own canonical view of the
+        #                              connected account
+        #   2. token_response.serviceType — set on the token-exchange leg
+        #                                   for some providers
+        #   3. state JWT serviceType — the value WE put into the OAuth
+        #                              state at authorize-URL build time.
+        #                              This is the always-available
+        #                              fallback that keeps the connection
+        #                              row from landing on "unknown" when
+        #                              the first two are absent (which is
+        #                              the dominant case for Aurinko's
+        #                              current Google + Office365 flows).
         provider_label = self._map_aurinko_service_to_provider(
-            account_info.get("type") or token_response.get("serviceType")
+            account_info.get("type")
+            or token_response.get("serviceType")
+            or state_payload.get("serviceType")
         )
 
         try:
@@ -1181,6 +1417,25 @@ class CalendarProviderService:
                 status_code=502,
                 detail="Could not load calendars from your account. Please try again.",
             ) from exc
+
+        tasklists: list[dict[str, Any]] = []
+        try:
+            tasklists = await self.client.list_tasklists(account_token)
+        except Exception as exc:
+            logger.info(
+                "Aurinko tasklists unavailable during OAuth callback; continuing "
+                "calendar picker without tasklist rows: %s",
+                _redact_sensitive(exc),
+            )
+        contact_books: list[dict[str, Any]] = []
+        try:
+            contact_books = await self.client.list_contact_books(account_token)
+        except Exception as exc:
+            logger.info(
+                "Aurinko contact books unavailable during OAuth callback; continuing "
+                "calendar picker without contact-book rows: %s",
+                _redact_sensitive(exc),
+            )
 
         if not calendars:
             raise HTTPException(
@@ -1246,7 +1501,52 @@ class CalendarProviderService:
                 }
             )
 
+        picker_tasklists: list[dict[str, Any]] = []
+        for entry in tasklists:
+            tasklist_id = (
+                entry.get("id") or entry.get("taskListId") or entry.get("tasklistId")
+            )
+            if not tasklist_id:
+                continue
+            picker_tasklists.append(
+                {
+                    "aurinko_tasklist_id": str(tasklist_id),
+                    "name": entry.get("name") or entry.get("title") or str(tasklist_id),
+                    "is_writable": bool(entry.get("is_writable", True)),
+                    "suggested_default": bool(
+                        entry.get("primary") or entry.get("default")
+                    ),
+                }
+            )
+
+        picker_contact_books: list[dict[str, Any]] = []
+        for entry in contact_books:
+            book_id = entry.get("id") or entry.get("bookId") or "default"
+            picker_contact_books.append(
+                {
+                    "aurinko_contact_book_id": str(book_id),
+                    "name": entry.get("name")
+                    or entry.get("title")
+                    or "Default contacts",
+                    "is_writable": bool(entry.get("is_writable", True)),
+                    "suggested_default": bool(
+                        entry.get("primary")
+                        or entry.get("default")
+                        or book_id == "default"
+                    ),
+                }
+            )
+
         expires_at = now + timedelta(minutes=30)
+        # Mint a cryptographically random token for the picker handoff.
+        # We DON'T expose the Mongo ObjectId because its embedded
+        # timestamp + per-process random + counter give roughly 2^24
+        # bits of unpredictability to an attacker who can guess the
+        # rough creation time and host (OWASP ASVS v4 §6.3.1 — random
+        # values that must be unguessable must come from a CSPRNG).
+        # ``secrets.token_urlsafe(24)`` yields ~192 bits of CSPRNG
+        # output base64url-encoded into a 32-char URL-safe string.
+        draft_token = secrets.token_urlsafe(24)
         await self.drafts_collection.update_one(
             {"user_id": user_id, "aurinko_account_id": aurinko_account_id},
             {
@@ -1260,9 +1560,13 @@ class CalendarProviderService:
                     "provider_account_name": provider_account_name,
                     "aurinko_account_id": aurinko_account_id,
                     "aurinko_access_token_encrypted": encrypted_token,
+                    "draft_token": draft_token,
                     # Full Aurinko-shape calendar payload for the commit step.
                     "calendars_payload": list(calendars),
+                    "tasklists_payload": list(tasklists),
+                    "contact_books_payload": list(contact_books),
                     "default_write_calendar_id": default_write_id,
+                    "connection_scopes": self._configured_scopes(),
                     "redirect_to": state_payload.get("redirect_to"),
                     "expires_at": expires_at,
                     "updated_at": now,
@@ -1271,24 +1575,131 @@ class CalendarProviderService:
             },
             upsert=True,
         )
-        draft = await self.drafts_collection.find_one(
-            {"user_id": user_id, "aurinko_account_id": aurinko_account_id}
-        )
-        draft_id = str(draft["_id"]) if draft else ""
 
         return {
             "connected": False,
             "needs_selection": True,
-            "draft_id": draft_id,
+            # The frontend treats this as opaque. We hand back the
+            # token, not the ObjectId — see security note above.
+            "draft_id": draft_token,
             "account_email": provider_account_email,
             "account_name": provider_account_name,
             "provider": provider_label,
             "calendars": picker_calendars,
+            "tasklists": picker_tasklists,
+            "contact_books": picker_contact_books,
             "redirect_to": state_payload.get("redirect_to"),
             "message": (
                 f"Found {len(picker_calendars)} calendar(s) on "
                 f"{provider_account_email}. Pick which to sync."
             ),
+        }
+
+    async def get_active_picker_draft(
+        self,
+        *,
+        user_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Return the planner's most recent unexpired picker draft, if any.
+
+        Used by the callback page's "resume after refresh / back-button /
+        network-drop" path: if the OAuth code was already redeemed (Aurinko
+        returns 410 on the second redeem attempt) but the draft is still in
+        Mongo, we can re-render the picker from the draft instead of
+        showing a generic error. The draft id we return here is the same
+        opaque CSPRNG token that ``handle_oauth_callback`` minted.
+        """
+        now = datetime.now(UTC)
+        # We rely on the TTL index for cleanup, but ALSO filter on
+        # expires_at here so a sweep-lag (Mongo TTL monitor is ~60 s)
+        # can't surface a logically-expired draft.
+        draft = await self.drafts_collection.find_one(
+            {"user_id": user_id, "expires_at": {"$gt": now}},
+            sort=[("updated_at", -1)],
+        )
+        if draft is None:
+            return None
+
+        # Rebuild the picker-row shape the frontend already knows. We do
+        # NOT re-fetch the calendar list from Aurinko — we replay what
+        # the original callback saw, which is what the user already
+        # consented to.
+        calendars = list(draft.get("calendars_payload") or [])
+        tasklists = list(draft.get("tasklists_payload") or [])
+        contact_books = list(draft.get("contact_books_payload") or [])
+        default_write_id = draft.get("default_write_calendar_id")
+        picker_calendars: list[dict[str, Any]] = []
+        for entry in calendars:
+            calendar_id = entry.get("id") or entry.get("calendarId")
+            if not calendar_id:
+                continue
+            is_writable = self._is_writable_calendar(entry)
+            picker_calendars.append(
+                {
+                    "aurinko_calendar_id": calendar_id,
+                    "name": (
+                        entry.get("name")
+                        or entry.get("summary")
+                        or entry.get("title")
+                        or calendar_id
+                    ),
+                    "access_role": entry.get("accessRole") or entry.get("access"),
+                    "is_writable": is_writable,
+                    "is_primary": bool(entry.get("primary")),
+                    "suggested_default_write": bool(
+                        is_writable and calendar_id == default_write_id
+                    ),
+                }
+            )
+
+        picker_tasklists: list[dict[str, Any]] = []
+        for entry in tasklists:
+            tasklist_id = (
+                entry.get("id") or entry.get("taskListId") or entry.get("tasklistId")
+            )
+            if not tasklist_id:
+                continue
+            picker_tasklists.append(
+                {
+                    "aurinko_tasklist_id": str(tasklist_id),
+                    "name": entry.get("name") or entry.get("title") or str(tasklist_id),
+                    "is_writable": bool(entry.get("is_writable", True)),
+                    "suggested_default": bool(
+                        entry.get("primary") or entry.get("default")
+                    ),
+                }
+            )
+
+        picker_contact_books: list[dict[str, Any]] = []
+        for entry in contact_books:
+            book_id = entry.get("id") or entry.get("bookId") or "default"
+            picker_contact_books.append(
+                {
+                    "aurinko_contact_book_id": str(book_id),
+                    "name": entry.get("name")
+                    or entry.get("title")
+                    or "Default contacts",
+                    "is_writable": bool(entry.get("is_writable", True)),
+                    "suggested_default": bool(
+                        entry.get("primary")
+                        or entry.get("default")
+                        or book_id == "default"
+                    ),
+                }
+            )
+
+        return {
+            "connected": False,
+            "needs_selection": True,
+            "draft_id": str(draft.get("draft_token") or ""),
+            "account_email": draft.get("provider_account_email"),
+            "account_name": draft.get("provider_account_name"),
+            "provider": draft.get("provider"),
+            "calendars": picker_calendars,
+            "tasklists": picker_tasklists,
+            "contact_books": picker_contact_books,
+            "redirect_to": draft.get("redirect_to"),
+            "message": "Resumed your calendar selection.",
         }
 
     async def commit_calendar_selection(
@@ -1297,6 +1708,8 @@ class CalendarProviderService:
         draft_id: str,
         user_id: str,
         picks: list[dict[str, Any]],
+        task_picks: Optional[list[dict[str, Any]]] = None,
+        contact_picks: Optional[list[dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Drain a draft into ``calendar_connections`` rows + webhook subs.
 
@@ -1321,22 +1734,69 @@ class CalendarProviderService:
                 "is_shared_in_team_view": bool,      # optional
             }
 
+        Optional ``task_picks`` / ``contact_picks`` select one tasklist or
+        contacts book for the newly materialized connection rows. These are
+        account-scoped resources in Aurinko, but v1 persists the choice on
+        each connection row to match the existing per-row settings model.
+
         Returns the same response shape the pre-Option-B
         ``handle_oauth_callback`` used to return, so the existing
         ``ProviderCallbackResponse`` model can carry it forward.
-        """
-        try:
-            draft_oid = ObjectId(draft_id)
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=400, detail="Invalid draft id") from exc
 
-        # Guard: a planner must only be able to commit their OWN drafts.
-        # Without this filter, a leaked draft id would let any
-        # authenticated user activate someone else's connection.
+        Idempotency: if the same draft_token POSTs twice (network
+        retry, double-submit), the second call finds the draft already
+        drained and returns the same success shape derived from
+        existing connection rows. Per IETF RFC 9110 §9.2.2 idempotency
+        semantics and the active Idempotency-Key header draft.
+        """
+        if not draft_id or not isinstance(draft_id, str):
+            raise HTTPException(status_code=400, detail="Missing draft id")
+
+        # The draft id is an opaque CSPRNG token minted via
+        # secrets.token_urlsafe in handle_oauth_callback. We do NOT
+        # accept the Mongo ObjectId (insufficient entropy — see OWASP
+        # ASVS v4 §6.3.1). The user_id filter is defense-in-depth so a
+        # leaked token can't activate someone else's connection.
         draft = await self.drafts_collection.find_one(
-            {"_id": draft_oid, "user_id": user_id}
+            {"draft_token": draft_id, "user_id": user_id}
         )
         if draft is None:
+            # Idempotency path: the draft is gone, which could mean (a)
+            # never run, (b) TTL-expired, or (c) the FIRST commit
+            # succeeded and this is a duplicate POST. Distinguish (c) by
+            # checking for connection rows that match the planner's
+            # picks — if they exist, this is a retry and we return the
+            # same success shape so the UI doesn't error-toast a
+            # successful run.
+            retry_picked_ids = [
+                str(pick.get("aurinko_calendar_id") or "").strip()
+                for pick in picks or []
+            ]
+            retry_picked_ids = [cid for cid in retry_picked_ids if cid]
+            if retry_picked_ids:
+                already = await self.connections_collection.find(
+                    {
+                        "user_id": user_id,
+                        "aurinko_calendar_id": {"$in": retry_picked_ids},
+                    }
+                ).to_list(length=None)
+                if len(already) >= len(retry_picked_ids):
+                    default_row = next(
+                        (r for r in already if r.get("is_default_write_target")),
+                        already[0] if already else None,
+                    )
+                    return {
+                        "connected": True,
+                        "calendar_id": (
+                            default_row.get("aurinko_calendar_id")
+                            if default_row
+                            else None
+                        ),
+                        "connections_created": len(already),
+                        "redirect_to": None,
+                        "message": "Calendar selection already saved.",
+                        "warning": None,
+                    }
             raise HTTPException(
                 status_code=404,
                 detail=(
@@ -1345,6 +1805,7 @@ class CalendarProviderService:
                 ),
             )
 
+        draft_oid = draft["_id"]
         aurinko_account_id = str(draft.get("aurinko_account_id") or "")
         encrypted_token = draft.get("aurinko_access_token_encrypted")
         account_token = self._decrypt_token(encrypted_token)
@@ -1362,7 +1823,12 @@ class CalendarProviderService:
         provider_account_email = str(draft.get("provider_account_email") or "")
         provider_account_name = str(draft.get("provider_account_name") or "")
         calendars = list(draft.get("calendars_payload") or [])
+        tasklists = list(draft.get("tasklists_payload") or [])
+        contact_books = list(draft.get("contact_books_payload") or [])
         draft_default_write = draft.get("default_write_calendar_id")
+        connection_scopes = self._normalize_string_list(
+            draft.get("connection_scopes") or self._configured_scopes()
+        )
 
         # Index Aurinko's calendar payload by id so picks can join in.
         calendars_by_id: dict[str, dict[str, Any]] = {}
@@ -1370,6 +1836,18 @@ class CalendarProviderService:
             cid = entry.get("id") or entry.get("calendarId")
             if cid:
                 calendars_by_id[str(cid)] = entry
+
+        tasklists_by_id: dict[str, dict[str, Any]] = {}
+        for entry in tasklists:
+            tid = entry.get("id") or entry.get("taskListId") or entry.get("tasklistId")
+            if tid:
+                tasklists_by_id[str(tid)] = entry
+
+        contact_books_by_id: dict[str, dict[str, Any]] = {}
+        for entry in contact_books:
+            bid = entry.get("id") or entry.get("bookId") or "default"
+            if bid:
+                contact_books_by_id[str(bid)] = entry
 
         # Picks → only keep those that reference a real calendar Aurinko
         # returned. Drops any client-side tampering attempts.
@@ -1400,6 +1878,37 @@ class CalendarProviderService:
                 "warning": None,
             }
 
+        selected_tasklist_id: Optional[str] = None
+        selected_tasklist_name: Optional[str] = None
+        for pick in task_picks or []:
+            tid = str(pick.get("aurinko_tasklist_id") or pick.get("tasklist_id") or "")
+            tid = tid.strip()
+            if not tid or tid not in tasklists_by_id:
+                continue
+            selected_tasklist_id = tid
+            tasklist_entry = tasklists_by_id[tid]
+            selected_tasklist_name = (
+                tasklist_entry.get("name") or tasklist_entry.get("title") or tid
+            )
+            break
+
+        selected_contact_book_id: Optional[str] = None
+        selected_contact_book_name: Optional[str] = None
+        for pick in contact_picks or []:
+            bid = str(
+                pick.get("aurinko_contact_book_id") or pick.get("contact_book_id") or ""
+            ).strip()
+            if not bid or bid not in contact_books_by_id:
+                continue
+            selected_contact_book_id = bid
+            contact_book_entry = contact_books_by_id[bid]
+            selected_contact_book_name = (
+                contact_book_entry.get("name")
+                or contact_book_entry.get("title")
+                or "Default contacts"
+            )
+            break
+
         now = datetime.now(UTC)
 
         # Compute the effective default-write target from picks, falling
@@ -1425,18 +1934,36 @@ class CalendarProviderService:
             )
         )
 
+        # P3#7 — batch the per-calendar upserts. Previous impl did one
+        # find_one + one update_one per pick (N×2 round-trips). We now
+        # do ONE find_many to load existing docs into a dict, then ONE
+        # bulk_write for all upserts. Per MongoDB docs (Bulk Write
+        # Operations) this cuts round-trips from 2N to 2 regardless of
+        # pick count.
+        existing_rows = await self.connections_collection.find(
+            {
+                "user_id": user_id,
+                "aurinko_account_id": aurinko_account_id,
+                "aurinko_calendar_id": {"$in": picked_ids},
+            }
+        ).to_list(length=None)
+        existing_by_calendar: dict[str, dict[str, Any]] = {
+            str(row.get("aurinko_calendar_id")): row for row in existing_rows
+        }
+
         seen_calendar_ids: list[str] = []
+        bulk_ops: list[UpdateOne] = []
         for calendar_id in picked_ids:
             entry = calendars_by_id[calendar_id]
             override = pick_overrides.get(calendar_id, {})
             seen_calendar_ids.append(calendar_id)
             is_writable = self._is_writable_calendar(entry)
+            existing_doc = existing_by_calendar.get(calendar_id)
             connection_query = {
                 "user_id": user_id,
                 "aurinko_account_id": aurinko_account_id,
                 "aurinko_calendar_id": calendar_id,
             }
-            existing_doc = await self.connections_collection.find_one(connection_query)
             connection_doc = {
                 "owner_planner_id": owner_id,
                 "owner_planner_email": owner_email,
@@ -1499,15 +2026,77 @@ class CalendarProviderService:
                     if existing_doc is not None and is_writable
                     else is_writable
                 ),
+                "task_sync_enabled": bool(
+                    existing_doc.get("task_sync_enabled", False)
+                    if existing_doc is not None and selected_tasklist_id is None
+                    else bool(selected_tasklist_id)
+                ),
+                "task_sync_tasklist_id": (
+                    selected_tasklist_id
+                    if selected_tasklist_id is not None
+                    else (
+                        existing_doc.get("task_sync_tasklist_id")
+                        if existing_doc is not None
+                        else None
+                    )
+                ),
+                "task_sync_tasklist_name": (
+                    selected_tasklist_name
+                    if selected_tasklist_name is not None
+                    else (
+                        existing_doc.get("task_sync_tasklist_name")
+                        if existing_doc is not None
+                        else None
+                    )
+                ),
+                "contact_sync_enabled": bool(
+                    existing_doc.get("contact_sync_enabled", False)
+                    if existing_doc is not None and selected_contact_book_id is None
+                    else bool(selected_contact_book_id)
+                ),
+                "contact_sync_book_id": (
+                    selected_contact_book_id
+                    if selected_contact_book_id is not None
+                    else (
+                        existing_doc.get("contact_sync_book_id")
+                        if existing_doc is not None
+                        else None
+                    )
+                ),
+                "contact_sync_book_name": (
+                    selected_contact_book_name
+                    if selected_contact_book_name is not None
+                    else (
+                        existing_doc.get("contact_sync_book_name")
+                        if existing_doc is not None
+                        else None
+                    )
+                ),
+                "contact_sync_group_id": (
+                    existing_doc.get("contact_sync_group_id")
+                    if existing_doc is not None
+                    else None
+                ),
+                "contact_sync_group_name": (
+                    existing_doc.get("contact_sync_group_name")
+                    if existing_doc is not None
+                    else None
+                ),
+                "connection_scopes": connection_scopes,
                 "connection_status": CalendarConnectionStatus.ACTIVE.value,
                 "last_error": None,
                 "updated_at": now,
             }
-            await self.connections_collection.update_one(
-                connection_query,
-                {"$set": connection_doc, "$setOnInsert": {"created_at": now}},
-                upsert=True,
+            bulk_ops.append(
+                UpdateOne(
+                    connection_query,
+                    {"$set": connection_doc, "$setOnInsert": {"created_at": now}},
+                    upsert=True,
+                )
             )
+
+        if bulk_ops:
+            await self.connections_collection.bulk_write(bulk_ops, ordered=False)
 
         # Calendars that were present in a prior OAuth but are no longer
         # returned by Aurinko (e.g. user removed the calendar from their
@@ -1652,6 +2241,103 @@ class CalendarProviderService:
                         _redact_sensitive(exc),
                     )
 
+                tasklist_id = row.get("task_sync_tasklist_id")
+                if row.get("task_sync_enabled") and tasklist_id:
+                    prior_task_subscription_id = row.get("task_sync_subscription_id")
+                    if prior_task_subscription_id:
+                        try:
+                            await self.client.delete_subscription(
+                                account_token=account_token,
+                                subscription_id=str(prior_task_subscription_id),
+                            )
+                        except Exception as exc:
+                            logger.info(
+                                "Could not delete prior Aurinko task subscription %s "
+                                "for tasklist %s on account %s: %s",
+                                prior_task_subscription_id,
+                                tasklist_id,
+                                aurinko_account_id,
+                                _redact_sensitive(exc),
+                            )
+                    try:
+                        subscription = await self.client.create_subscription(
+                            account_token=account_token,
+                            resource=f"/tasklists/{tasklist_id}/tasks",
+                            webhook_url=webhook_url,
+                        )
+                        subscription_id = str(
+                            subscription.get("id")
+                            or subscription.get("subscriptionId")
+                            or ""
+                        )
+                        await self.connections_collection.update_one(
+                            {"_id": row["_id"]},
+                            {
+                                "$set": {
+                                    "task_sync_subscription_id": subscription_id
+                                    or None,
+                                    "updated_at": now,
+                                }
+                            },
+                        )
+                    except Exception as exc:
+                        webhook_failure_count += 1
+                        logger.warning(
+                            "Failed to register Aurinko task subscription for "
+                            "tasklist %s on account %s: %s",
+                            tasklist_id,
+                            aurinko_account_id,
+                            _redact_sensitive(exc),
+                        )
+
+                if row.get("contact_sync_enabled"):
+                    prior_contact_subscription_id = row.get(
+                        "contact_sync_subscription_id"
+                    )
+                    if prior_contact_subscription_id:
+                        try:
+                            await self.client.delete_subscription(
+                                account_token=account_token,
+                                subscription_id=str(prior_contact_subscription_id),
+                            )
+                        except Exception as exc:
+                            logger.info(
+                                "Could not delete prior Aurinko contact subscription "
+                                "%s on account %s: %s",
+                                prior_contact_subscription_id,
+                                aurinko_account_id,
+                                _redact_sensitive(exc),
+                            )
+                    try:
+                        subscription = await self.client.create_subscription(
+                            account_token=account_token,
+                            resource="/contacts",
+                            webhook_url=webhook_url,
+                        )
+                        subscription_id = str(
+                            subscription.get("id")
+                            or subscription.get("subscriptionId")
+                            or ""
+                        )
+                        await self.connections_collection.update_one(
+                            {"_id": row["_id"]},
+                            {
+                                "$set": {
+                                    "contact_sync_subscription_id": subscription_id
+                                    or None,
+                                    "updated_at": now,
+                                }
+                            },
+                        )
+                    except Exception as exc:
+                        webhook_failure_count += 1
+                        logger.warning(
+                            "Failed to register Aurinko contacts subscription on "
+                            "account %s: %s",
+                            aurinko_account_id,
+                            _redact_sensitive(exc),
+                        )
+
             if webhook_failure_count:
                 webhook_warning = (
                     f"Webhook subscription failed for {webhook_failure_count} "
@@ -1726,16 +2412,24 @@ class CalendarProviderService:
         if normalized in {"office365", "ms365", "microsoft365"}:
             return CalendarProvider.OFFICE365.value
         if normalized in {"outlook", "outlookcom", "outlook.com"}:
-            return CalendarProvider.OUTLOOK.value
+            return CalendarProvider.OFFICE365.value
         if normalized in {"exchange", "ews"}:
             # Aurinko's hosted-auth uses "EWS" (Exchange Web Services) on the
             # request side and may echo either form back from /am/accounts/me;
-            # both map to our EXCHANGE provider label.
-            return CalendarProvider.EXCHANGE.value
+            # map to Exchange/EWS depending on which enum member exists.
+            exchange_member = getattr(CalendarProvider, "EXCHANGE", None)
+            if exchange_member is None:
+                exchange_member = getattr(CalendarProvider, "EWS", None)
+            if exchange_member is not None:
+                return str(exchange_member.value)
+            return CalendarProvider.UNKNOWN.value
         if normalized in {"icloud", "apple"}:
             return CalendarProvider.ICLOUD.value
         if normalized in {"zoho"}:
-            return CalendarProvider.ZOHO.value
+            zoho_member = getattr(CalendarProvider, "ZOHO", None)
+            if zoho_member is not None:
+                return str(zoho_member.value)
+            return CalendarProvider.UNKNOWN.value
         return CalendarProvider.UNKNOWN.value
 
     # ----- connection CRUD -------------------------------------------------
@@ -1780,6 +2474,19 @@ class CalendarProviderService:
                 "details_visibility", VisibilityMode.BUSY_ONLY.value
             ),
             "sync_enabled": doc.get("sync_enabled", False),
+            "task_sync_enabled": doc.get("task_sync_enabled", False),
+            "task_sync_tasklist_id": doc.get("task_sync_tasklist_id"),
+            "task_sync_tasklist_name": doc.get("task_sync_tasklist_name"),
+            "task_sync_subscription_id": doc.get("task_sync_subscription_id"),
+            "contact_sync_enabled": doc.get("contact_sync_enabled", False),
+            "contact_sync_book_id": doc.get("contact_sync_book_id"),
+            "contact_sync_book_name": doc.get("contact_sync_book_name"),
+            "contact_sync_group_id": doc.get("contact_sync_group_id"),
+            "contact_sync_group_name": doc.get("contact_sync_group_name"),
+            "contact_sync_subscription_id": doc.get("contact_sync_subscription_id"),
+            "connection_scopes": self._normalize_string_list(
+                doc.get("connection_scopes", [])
+            ),
             "couple_booking_auto_confirm": doc.get("couple_booking_auto_confirm", True),
             "conference_provider_default": doc.get("conference_provider_default"),
             "connection_status": doc.get(
@@ -1824,6 +2531,182 @@ class CalendarProviderService:
             raise HTTPException(status_code=404, detail="Calendar connection not found")
         return doc
 
+    def _default_contact_group_name(self, connection_doc: dict[str, Any]) -> str:
+        base = (
+            connection_doc.get("provider_account_name")
+            or connection_doc.get("owner_planner_email")
+            or "Wedding planner"
+        )
+        return f"{base} (TheSpecialWedding)"
+
+    async def _sync_auxiliary_subscription_state(
+        self,
+        connection_doc: dict[str, Any],
+        set_doc: dict[str, Any],
+    ) -> None:
+        """Keep task/contact webhook subscriptions aligned with row settings."""
+        connection_id = str(connection_doc["_id"])
+        token = await self._account_token_for_connection(connection_doc)
+        webhook_url = self._webhook_url()
+        now = datetime.now(UTC)
+        db_update: dict[str, Any] = {}
+
+        old_task_enabled = bool(connection_doc.get("task_sync_enabled", False))
+        new_task_enabled = bool(set_doc.get("task_sync_enabled", old_task_enabled))
+        old_tasklist_id = connection_doc.get("task_sync_tasklist_id")
+        new_tasklist_id = set_doc.get("task_sync_tasklist_id", old_tasklist_id)
+        task_settings_changed = (
+            "task_sync_enabled" in set_doc
+            or "task_sync_tasklist_id" in set_doc
+            or "task_sync_tasklist_name" in set_doc
+        )
+        if task_settings_changed:
+            prior_subscription_id = connection_doc.get("task_sync_subscription_id")
+            if (
+                token
+                and prior_subscription_id
+                and (not new_task_enabled or new_tasklist_id != old_tasklist_id)
+            ):
+                try:
+                    await self.client.delete_subscription(
+                        account_token=token,
+                        subscription_id=str(prior_subscription_id),
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Aurinko task unsubscribe failed for connection %s: %s",
+                        connection_id,
+                        _redact_sensitive(exc),
+                    )
+                db_update["task_sync_subscription_id"] = None
+
+            if not new_task_enabled:
+                db_update.update(
+                    {
+                        "task_sync_tasklist_id": None,
+                        "task_sync_tasklist_name": None,
+                        "task_sync_subscription_id": None,
+                    }
+                )
+                await self.task_sync_records_collection.update_many(
+                    {"connection_id": connection_id},
+                    {
+                        "$set": {
+                            "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                            "last_error": "Task sync disabled for connection",
+                            "updated_at": now,
+                        }
+                    },
+                )
+            elif (
+                webhook_url
+                and token
+                and new_tasklist_id
+                and (not prior_subscription_id or new_tasklist_id != old_tasklist_id)
+            ):
+                try:
+                    subscription = await self.client.create_subscription(
+                        account_token=token,
+                        resource=f"/tasklists/{new_tasklist_id}/tasks",
+                        webhook_url=webhook_url,
+                    )
+                    db_update["task_sync_subscription_id"] = (
+                        str(
+                            subscription.get("id")
+                            or subscription.get("subscriptionId")
+                            or ""
+                        )
+                        or None
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Aurinko task subscribe failed for connection %s: %s",
+                        connection_id,
+                        _redact_sensitive(exc),
+                    )
+
+        old_contact_enabled = bool(connection_doc.get("contact_sync_enabled", False))
+        new_contact_enabled = bool(
+            set_doc.get("contact_sync_enabled", old_contact_enabled)
+        )
+        contact_settings_changed = (
+            "contact_sync_enabled" in set_doc
+            or "contact_sync_book_id" in set_doc
+            or "contact_sync_group_name" in set_doc
+        )
+        if contact_settings_changed:
+            prior_subscription_id = connection_doc.get("contact_sync_subscription_id")
+            if token and prior_subscription_id and not new_contact_enabled:
+                try:
+                    await self.client.delete_subscription(
+                        account_token=token,
+                        subscription_id=str(prior_subscription_id),
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Aurinko contacts unsubscribe failed for connection %s: %s",
+                        connection_id,
+                        _redact_sensitive(exc),
+                    )
+                db_update["contact_sync_subscription_id"] = None
+
+            if not new_contact_enabled:
+                db_update.update(
+                    {
+                        "contact_sync_book_id": None,
+                        "contact_sync_book_name": None,
+                        "contact_sync_group_id": None,
+                        "contact_sync_group_name": None,
+                        "contact_sync_subscription_id": None,
+                    }
+                )
+                await self.contact_sync_records_collection.update_many(
+                    {"connection_id": connection_id},
+                    {
+                        "$set": {
+                            "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                            "last_error": "Contact sync disabled for connection",
+                            "updated_at": now,
+                        }
+                    },
+                )
+            else:
+                group_name = (
+                    set_doc.get("contact_sync_group_name")
+                    or connection_doc.get("contact_sync_group_name")
+                    or self._default_contact_group_name(connection_doc)
+                )
+                group = await self.client.create_group(token or "", group_name)
+                db_update["contact_sync_group_id"] = group.get("id")
+                db_update["contact_sync_group_name"] = group.get("name") or group_name
+                if webhook_url and token and not prior_subscription_id:
+                    try:
+                        subscription = await self.client.create_subscription(
+                            account_token=token,
+                            resource="/contacts",
+                            webhook_url=webhook_url,
+                        )
+                        db_update["contact_sync_subscription_id"] = (
+                            str(
+                                subscription.get("id")
+                                or subscription.get("subscriptionId")
+                                or ""
+                            )
+                            or None
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Aurinko contacts subscribe failed for connection %s: %s",
+                            connection_id,
+                            _redact_sensitive(exc),
+                        )
+
+        if db_update:
+            db_update["updated_at"] = now
+            await self.connections_collection.update_one(
+                {"_id": connection_doc["_id"]}, {"$set": db_update}
+            )
+
     async def update_connection(
         self,
         connection_id: str,
@@ -1848,6 +2731,15 @@ class CalendarProviderService:
                 "is_shared_in_team_view",
                 "details_visibility",
                 "sync_enabled",
+                "task_sync_enabled",
+                "task_sync_tasklist_id",
+                "task_sync_tasklist_name",
+                "contact_sync_enabled",
+                "contact_sync_book_id",
+                "contact_sync_book_name",
+                "contact_sync_group_id",
+                "contact_sync_group_name",
+                "connection_scopes",
                 "couple_booking_auto_confirm",
                 "conference_provider_default",
             }
@@ -1884,6 +2776,28 @@ class CalendarProviderService:
             set_doc["allowed_wedding_ids"] = self._normalize_string_list(
                 set_doc["allowed_wedding_ids"]
             )
+        if "connection_scopes" in set_doc:
+            set_doc["connection_scopes"] = self._normalize_string_list(
+                set_doc["connection_scopes"]
+            )
+        if set_doc.get("task_sync_enabled") and not set_doc.get(
+            "task_sync_tasklist_id", connection_doc.get("task_sync_tasklist_id")
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Select a task list before enabling task sync",
+            )
+        if set_doc.get("contact_sync_enabled"):
+            set_doc.setdefault(
+                "contact_sync_book_id",
+                connection_doc.get("contact_sync_book_id") or "default",
+            )
+            if not set_doc.get("contact_sync_group_name") and not connection_doc.get(
+                "contact_sync_group_name"
+            ):
+                set_doc["contact_sync_group_name"] = self._default_contact_group_name(
+                    connection_doc
+                )
 
         if set_doc.get("is_default_write_target") and not (
             connection_doc.get("is_writable")
@@ -1914,6 +2828,8 @@ class CalendarProviderService:
             {"_id": connection_doc["_id"]}, {"$set": set_doc}
         )
         await self.invalidate_connection_events_cache(connection_id)
+
+        await self._sync_auxiliary_subscription_state(connection_doc, set_doc)
 
         # Subscription lifecycle on sync_enabled flip. Aurinko subscriptions
         # are per-resource (one per calendar), so we track them per-row.
@@ -2174,6 +3090,25 @@ class CalendarProviderService:
                     connection_doc.get("aurinko_account_id"),
                     _redact_sensitive(exc),
                 )
+        for field_name in (
+            "task_sync_subscription_id",
+            "contact_sync_subscription_id",
+        ):
+            auxiliary_subscription_id = connection_doc.get(field_name)
+            if not token or not auxiliary_subscription_id:
+                continue
+            try:
+                await self.client.delete_subscription(
+                    account_token=token,
+                    subscription_id=str(auxiliary_subscription_id),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Aurinko unsubscribe for %s on connection %s failed: %s",
+                    field_name,
+                    connection_id,
+                    _redact_sensitive(exc),
+                )
         if is_last_row_for_account and token:
             try:
                 await self.client.revoke_account(token)
@@ -2198,6 +3133,26 @@ class CalendarProviderService:
                     "updated_at": now,
                 },
                 "$unset": {"calendar_connection_id": "", "calendar_id": ""},
+            },
+        )
+        await self.task_sync_records_collection.update_many(
+            {"connection_id": connection_id},
+            {
+                "$set": {
+                    "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                    "last_error": "Calendar connection disconnected",
+                    "updated_at": now,
+                }
+            },
+        )
+        await self.contact_sync_records_collection.update_many(
+            {"connection_id": connection_id},
+            {
+                "$set": {
+                    "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                    "last_error": "Calendar connection disconnected",
+                    "updated_at": now,
+                }
             },
         )
         await self.connections_collection.delete_one({"_id": connection_doc["_id"]})
@@ -2311,21 +3266,26 @@ class CalendarProviderService:
             # subscription model.
             if token:
                 for row in account_docs:
-                    subscription_id = row.get("aurinko_subscription_id")
-                    if not subscription_id:
-                        continue
-                    try:
-                        await self.client.delete_subscription(
-                            account_token=token,
-                            subscription_id=str(subscription_id),
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            "Aurinko unsubscribe for calendar %s on account %s failed: %s",
-                            row.get("aurinko_calendar_id"),
-                            aurinko_account_id,
-                            _redact_sensitive(exc),
-                        )
+                    for subscription_field in (
+                        "aurinko_subscription_id",
+                        "task_sync_subscription_id",
+                        "contact_sync_subscription_id",
+                    ):
+                        subscription_id = row.get(subscription_field)
+                        if not subscription_id:
+                            continue
+                        try:
+                            await self.client.delete_subscription(
+                                account_token=token,
+                                subscription_id=str(subscription_id),
+                            )
+                        except Exception as exc:
+                            logger.warning(
+                                "Aurinko unsubscribe for %s on account %s failed: %s",
+                                subscription_field,
+                                aurinko_account_id,
+                                _redact_sensitive(exc),
+                            )
                 try:
                     await self.client.revoke_account(token)
                 except Exception as exc:
@@ -2349,6 +3309,26 @@ class CalendarProviderService:
                     "updated_at": now,
                 },
                 "$unset": {"calendar_connection_id": "", "calendar_id": ""},
+            },
+        )
+        await self.task_sync_records_collection.update_many(
+            {"connection_id": {"$in": connection_ids}},
+            {
+                "$set": {
+                    "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                    "last_error": "Calendar connection disconnected",
+                    "updated_at": now,
+                }
+            },
+        )
+        await self.contact_sync_records_collection.update_many(
+            {"connection_id": {"$in": connection_ids}},
+            {
+                "$set": {
+                    "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                    "last_error": "Calendar connection disconnected",
+                    "updated_at": now,
+                }
             },
         )
         await self.connections_collection.delete_many(scoped_filter)
@@ -2389,7 +3369,9 @@ class CalendarProviderService:
         attendee_emails: Optional[list[str]] = None,
     ) -> dict:
         """Translate a canonical task into an Aurinko event body."""
-        timezone_name = task.get("timezone") or settings.CALENDAR_DEFAULT_TIMEZONE
+        timezone_name = task.get("timezone") or getattr(
+            settings, "GOOGLE_CALENDAR_DEFAULT_TIMEZONE", "UTC"
+        )
         start_date = self._coerce_datetime(task.get("start_date"), "start_date")
         end_date = self._coerce_datetime(
             task.get("end_date") or task.get("start_date"),
@@ -2751,7 +3733,9 @@ class CalendarProviderService:
                 status_code=400, detail="Connection has no Aurinko account token"
             )
         return await self.client.create_subscription(
-            account_token=token, webhook_url=webhook_url
+            account_token=token,
+            calendar_id=connection_doc["aurinko_calendar_id"],
+            webhook_url=webhook_url,
         )
 
     async def unsubscribe_webhook(

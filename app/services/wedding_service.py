@@ -135,6 +135,16 @@ class WeddingService:
                 )
 
             await self.collection.insert_one(wedding_dict)
+            try:
+                from app.services.aurinko_contacts_sync_service import (
+                    aurinko_contacts_sync_service,
+                )
+
+                await aurinko_contacts_sync_service.mirror_couple_to_aurinko(
+                    str(wedding_dict["_id"])
+                )
+            except Exception:
+                pass
             return {
                 "message": "Wedding created successfully",
                 "id": wedding_dict["_id"],
@@ -358,6 +368,15 @@ class WeddingService:
             if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
+            try:
+                from app.services.aurinko_contacts_sync_service import (
+                    aurinko_contacts_sync_service,
+                )
+
+                await aurinko_contacts_sync_service.mirror_couple_to_aurinko(wedding_id)
+            except Exception:
+                pass
+
             return {"message": "Wedding updated successfully"}
         except HTTPException:
             raise
@@ -369,6 +388,17 @@ class WeddingService:
     async def delete_wedding(self, wedding_id: str):
         """Delete a wedding"""
         try:
+            try:
+                from app.services.aurinko_contacts_sync_service import (
+                    aurinko_contacts_sync_service,
+                )
+
+                await aurinko_contacts_sync_service.unmirror_source(
+                    source_type="wedding",
+                    source_id=wedding_id,
+                )
+            except Exception:
+                pass
             result = await self.collection.delete_one({"_id": wedding_id})
 
             if result.deleted_count == 0:

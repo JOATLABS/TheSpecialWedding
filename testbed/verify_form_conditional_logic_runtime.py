@@ -111,7 +111,7 @@ async def main() -> None:
             "Hit GET /admin/forms/{form_id}/responses — the meat-with-ghost row should NOT contain a veg_kind column value.",
         ],
     )
-    print(f"  ↳ run cleanup: python testbed/cleanup_form_conditional_logic_state.py")
+    print("  ↳ run cleanup: python testbed/cleanup_form_conditional_logic_state.py")
 
 
 if __name__ == "__main__":

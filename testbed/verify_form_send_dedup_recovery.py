@@ -51,11 +51,10 @@ Pair: cleanup_form_send_dedup_recovery_state.py
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -66,7 +65,6 @@ from testbed._form_lifecycle_common import (  # noqa: E402
     banner,
     checkpoint_pause,
     count_documents,
-    delete_many,
     get_async_mongo,
     insert_one,
     now_utc,
@@ -175,9 +173,11 @@ async def _latest_distribution(form_id: str) -> Dict[str, Any]:
     """Most recent form_distributions row for the verifier recipient."""
     mongo = get_async_mongo()
     coll = mongo.db["form_distributions"]
-    cursor = coll.find(
-        {"form_id": form_id, "recipient_email": RECIPIENT_EMAIL.lower()}
-    ).sort("sent_at", -1).limit(1)
+    cursor = (
+        coll.find({"form_id": form_id, "recipient_email": RECIPIENT_EMAIL.lower()})
+        .sort("sent_at", -1)
+        .limit(1)
+    )
     docs = [d async for d in cursor]
     assert docs, "expected at least one distribution row"
     return docs[0]
@@ -224,8 +224,10 @@ async def main() -> None:
 
     form_id = await seed_form()
     print(f"Seeded form: {form_id}")
-    print(f"Distributions before run: "
-          f"{await count_documents('form_distributions', {'form_id': form_id})}")
+    print(
+        f"Distributions before run: "
+        f"{await count_documents('form_distributions', {'form_id': form_id})}"
+    )
 
     form_service = FormService()
     stub_email = _StubEmailService()
@@ -242,18 +244,25 @@ async def main() -> None:
     response_1 = await _call_send(form_service, form_id)
     recipients_1 = response_1.get("recipients", [])
     _assert(len(recipients_1) == 1, "response carries one recipients[] entry")
-    _assert(recipients_1[0]["email"] == RECIPIENT_EMAIL.lower(),
-            "recipients[0].email matches normalized recipient")
-    _assert(recipients_1[0]["status"] == "sent",
-            "recipients[0].status == 'sent'")
+    _assert(
+        recipients_1[0]["email"] == RECIPIENT_EMAIL.lower(),
+        "recipients[0].email matches normalized recipient",
+    )
+    _assert(recipients_1[0]["status"] == "sent", "recipients[0].status == 'sent'")
     _assert(response_1.get("sent") == 1, "aggregate sent=1")
-    _assert(response_1.get("skipped_duplicates", 0) == 0,
-            "aggregate skipped_duplicates=0 on first send")
+    _assert(
+        response_1.get("skipped_duplicates", 0) == 0,
+        "aggregate skipped_duplicates=0 on first send",
+    )
     latest = await _latest_distribution(form_id)
-    _assert(int(latest.get("email_sends") or 0) == 1,
-            "new distribution row records email_sends=1")
-    _assert(int(latest.get("email_send_failures") or 0) == 0,
-            "new distribution row records email_send_failures=0")
+    _assert(
+        int(latest.get("email_sends") or 0) == 1,
+        "new distribution row records email_sends=1",
+    )
+    _assert(
+        int(latest.get("email_send_failures") or 0) == 0,
+        "new distribution row records email_send_failures=0",
+    )
     checkpoint_pause(
         "Open the planner's send page in Chrome",
         [
@@ -266,24 +275,27 @@ async def main() -> None:
     # ------------------------------------------------------------------
     # CHECKPOINT 2: Duplicate send to delivered+live blocks (positive case).
     # ------------------------------------------------------------------
-    _log_checkpoint(2, TOTAL,
-                    "Duplicate send to delivered+live distribution is skipped")
+    _log_checkpoint(
+        2, TOTAL, "Duplicate send to delivered+live distribution is skipped"
+    )
     response_2 = await _call_send(form_service, form_id)
     recipients_2 = response_2.get("recipients", [])
     _assert(len(recipients_2) == 1, "duplicate response still carries one entry")
-    _assert(recipients_2[0]["status"] == "skipped_duplicate",
-            "recipients[0].status == 'skipped_duplicate'")
-    _assert(response_2.get("skipped_duplicates") == 1,
-            "skipped_duplicates aggregate increments to 1")
-    _assert(response_2.get("sent") == 0,
-            "no new send recorded (sent=0)")
+    _assert(
+        recipients_2[0]["status"] == "skipped_duplicate",
+        "recipients[0].status == 'skipped_duplicate'",
+    )
+    _assert(
+        response_2.get("skipped_duplicates") == 1,
+        "skipped_duplicates aggregate increments to 1",
+    )
+    _assert(response_2.get("sent") == 0, "no new send recorded (sent=0)")
     # No new distribution row should have been created.
     rows_after_dup = await count_documents(
         "form_distributions",
         {"form_id": form_id, "recipient_email": RECIPIENT_EMAIL.lower()},
     )
-    _assert(rows_after_dup == 1,
-            "no new distribution row created on dedup-skip")
+    _assert(rows_after_dup == 1, "no new distribution row created on dedup-skip")
     checkpoint_pause(
         "Verify dedup behavior in Chrome",
         [
@@ -296,20 +308,22 @@ async def main() -> None:
     # CHECKPOINT 3: Failed-send recovery (false-negative under old code).
     # Flip the row to look like a Resend bounce: email_sends=0, failures=1.
     # ------------------------------------------------------------------
-    _log_checkpoint(3, TOTAL,
-                    "Failed-send recovery — fresh send goes through")
+    _log_checkpoint(3, TOTAL, "Failed-send recovery — fresh send goes through")
     await _update_latest_distribution(
         form_id,
         {"email_sends": 0, "email_send_failures": 1, "status": "failed"},
     )
     response_3 = await _call_send(form_service, form_id)
     recipients_3 = response_3.get("recipients", [])
-    _assert(recipients_3[0]["status"] == "sent",
-            "failed-send row does NOT block — recipients[0].status=='sent'")
-    _assert(response_3.get("sent") == 1,
-            "aggregate sent=1 after failed-send recovery")
-    _assert(response_3.get("skipped_duplicates", 0) == 0,
-            "skipped_duplicates=0 after failed-send recovery")
+    _assert(
+        recipients_3[0]["status"] == "sent",
+        "failed-send row does NOT block — recipients[0].status=='sent'",
+    )
+    _assert(response_3.get("sent") == 1, "aggregate sent=1 after failed-send recovery")
+    _assert(
+        response_3.get("skipped_duplicates", 0) == 0,
+        "skipped_duplicates=0 after failed-send recovery",
+    )
     checkpoint_pause(
         "Inspect the new distribution row in Chrome",
         [
@@ -322,8 +336,7 @@ async def main() -> None:
     # CHECKPOINT 4: Expired-token recovery.
     # Backdate token_expires_at on the most recent row.
     # ------------------------------------------------------------------
-    _log_checkpoint(4, TOTAL,
-                    "Expired-token recovery — fresh send goes through")
+    _log_checkpoint(4, TOTAL, "Expired-token recovery — fresh send goes through")
     yesterday = now_utc() - timedelta(days=1)
     await _update_latest_distribution(
         form_id,
@@ -331,10 +344,13 @@ async def main() -> None:
     )
     response_4 = await _call_send(form_service, form_id)
     recipients_4 = response_4.get("recipients", [])
-    _assert(recipients_4[0]["status"] == "sent",
-            "expired-token row does NOT block — recipients[0].status=='sent'")
-    _assert(response_4.get("sent") == 1,
-            "aggregate sent=1 after expired-token recovery")
+    _assert(
+        recipients_4[0]["status"] == "sent",
+        "expired-token row does NOT block — recipients[0].status=='sent'",
+    )
+    _assert(
+        response_4.get("sent") == 1, "aggregate sent=1 after expired-token recovery"
+    )
     checkpoint_pause(
         "Verify expired-token recovery in Chrome",
         [
@@ -348,8 +364,7 @@ async def main() -> None:
     # Simulate a row that was inserted but the email_sends counter never
     # got bumped (no email_sends or email_send_failures field at all).
     # ------------------------------------------------------------------
-    _log_checkpoint(5, TOTAL,
-                    "Never-attempted recovery — fresh send goes through")
+    _log_checkpoint(5, TOTAL, "Never-attempted recovery — fresh send goes through")
     # Insert a distribution by hand with NO email_sends / failures fields.
     naked_dist_id = f"{form_id}_naked_{short_token()}"
     await insert_one(
@@ -381,8 +396,10 @@ async def main() -> None:
     )
     response_5 = await _call_send(form_service, form_id)
     recipients_5 = response_5.get("recipients", [])
-    _assert(recipients_5[0]["status"] == "sent",
-            "never-attempted row does NOT block (email_sends defaults to 0)")
+    _assert(
+        recipients_5[0]["status"] == "sent",
+        "never-attempted row does NOT block (email_sends defaults to 0)",
+    )
     checkpoint_pause(
         "Verify never-attempted recovery in Chrome",
         [
@@ -394,8 +411,7 @@ async def main() -> None:
     # CHECKPOINT 6: Submitted lead unblocks resend (positive — planner
     # may want to re-collect from the same person, e.g. updated info).
     # ------------------------------------------------------------------
-    _log_checkpoint(6, TOTAL,
-                    "Submitted distribution unblocks a resend")
+    _log_checkpoint(6, TOTAL, "Submitted distribution unblocks a resend")
     await _update_latest_distribution(
         form_id,
         {
@@ -407,10 +423,14 @@ async def main() -> None:
     )
     response_6 = await _call_send(form_service, form_id)
     recipients_6 = response_6.get("recipients", [])
-    _assert(recipients_6[0]["status"] == "sent",
-            "submitted distribution does NOT block re-send")
-    _assert(response_6.get("skipped_duplicates", 0) == 0,
-            "submitted recipient is not counted as a skipped duplicate")
+    _assert(
+        recipients_6[0]["status"] == "sent",
+        "submitted distribution does NOT block re-send",
+    )
+    _assert(
+        response_6.get("skipped_duplicates", 0) == 0,
+        "submitted recipient is not counted as a skipped duplicate",
+    )
     checkpoint_pause(
         "Verify resend after submission in Chrome",
         [
@@ -438,8 +458,9 @@ async def main() -> None:
     # response where the gate fired. Also re-verify the always-zero
     # case on response_3 / response_6.
     # ------------------------------------------------------------------
-    _log_checkpoint(8, TOTAL,
-                    "skipped_duplicates aggregate matches per-recipient counts")
+    _log_checkpoint(
+        8, TOTAL, "skipped_duplicates aggregate matches per-recipient counts"
+    )
     for resp_label, resp in (
         ("first send", response_1),
         ("duplicate send", response_2),
@@ -449,18 +470,17 @@ async def main() -> None:
         ("submitted resend", response_6),
     ):
         recipients = resp.get("recipients", [])
-        per_count = sum(
-            1 for r in recipients if r.get("status") == "skipped_duplicate"
-        )
+        per_count = sum(1 for r in recipients if r.get("status") == "skipped_duplicate")
         agg_count = int(resp.get("skipped_duplicates") or 0)
-        _assert(per_count == agg_count,
-                f"{resp_label}: skipped_duplicates aggregate ({agg_count}) "
-                f"matches per-recipient count ({per_count})")
+        _assert(
+            per_count == agg_count,
+            f"{resp_label}: skipped_duplicates aggregate ({agg_count}) "
+            f"matches per-recipient count ({per_count})",
+        )
 
     print()
-    print("All 8 checkpoints passed. Total stub-email sends: "
-          f"{stub_email.send_count}")
-    print(f"  ↳ run cleanup: python testbed/cleanup_form_send_dedup_recovery_state.py")
+    print(f"All 8 checkpoints passed. Total stub-email sends: {stub_email.send_count}")
+    print("  ↳ run cleanup: python testbed/cleanup_form_send_dedup_recovery_state.py")
 
 
 if __name__ == "__main__":

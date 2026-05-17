@@ -39,6 +39,15 @@ export interface PublicBlogApiArticle {
   meta_title?: string;
   meta_description?: string;
   ogDescription?: string;
+  // BabyLoveGrowth-synced articles carry pre-built schema.org structured
+  // data. Both fields are optional — admin-authored articles use the
+  // page's homegrown BlogPosting JSON-LD instead. When present, BLG's
+  // schema overrides ours for richer search results (FAQPage carousels,
+  // Article rich snippets). Per BLG docs Best Practice at
+  // https://www.babylovegrowth.ai/docs/integrations/api: "Use jsonLd
+  // and faqJsonLd if your CMS supports dedicated schema fields".
+  json_ld?: Record<string, unknown> | null;
+  faq_json_ld?: Record<string, unknown> | null;
 }
 
 export const BLOG_CATEGORIES = ['All', 'Business', 'Workflow', 'Tools', 'Industry'];

@@ -12,9 +12,8 @@ Total: 30+ tests
 
 import os
 import sys
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import mongomock
 import pytest
@@ -31,9 +30,9 @@ os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
-from app.models.advertising_campaign import CampaignStatus
-from app.services.planner_ad_interaction_service import PlannerAdInteractionService
-from tests.backend.conftest_advertising import (
+from app.models.advertising_campaign import CampaignStatus  # noqa: E402
+from app.services.planner_ad_interaction_service import PlannerAdInteractionService  # noqa: E402
+from tests.backend.conftest_advertising import (  # noqa: E402
     VENDOR_EMAIL,
     VENDOR_ID,
     VENDOR_NAME,

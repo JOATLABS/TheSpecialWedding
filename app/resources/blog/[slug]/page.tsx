@@ -40,6 +40,12 @@ function getArticleData(apiArticle: PublicBlogApiArticle | null, slug: string) {
       authorName: apiArticle.author_name || 'The Special Wedding',
       fallbackContent: null as ReactNode | null,
       relatedTemplates,
+      // BLG-synced articles ship their own JSON-LD; we surface it as
+      // a sibling <script> in the page so we don't lose rich-result
+      // eligibility. Admin-authored articles fall through to the
+      // homegrown BlogPosting JSON-LD below.
+      syncedJsonLd: apiArticle.json_ld ?? null,
+      syncedFaqJsonLd: apiArticle.faq_json_ld ?? null,
     };
   }
 
@@ -57,6 +63,8 @@ function getArticleData(apiArticle: PublicBlogApiArticle | null, slug: string) {
       authorName: 'The Special Wedding',
       fallbackContent: fallback.content,
       relatedTemplates,
+      syncedJsonLd: null,
+      syncedFaqJsonLd: null,
     };
   }
 
@@ -151,10 +159,34 @@ export default async function BlogPostPage({
           { name: article.title, href: `/resources/blog/${slug}` },
         ]}
       />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
+      {/*
+        Schema order matters: emit BLG's pre-built schema FIRST when
+        present, then our homegrown BlogPosting fallback. Google reads
+        all JSON-LD blocks but giving BLG's richer schema precedence
+        means rich-result extractors latch onto it first.
+        Per BLG docs: https://www.babylovegrowth.ai/docs/integrations/api
+      */}
+      {article.syncedJsonLd ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(article.syncedJsonLd),
+          }}
+        />
+      ) : (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      )}
+      {article.syncedFaqJsonLd ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(article.syncedFaqJsonLd),
+          }}
+        />
+      ) : null}
 
       {/* Article content */}
       <article className="max-w-3xl mx-auto px-6 pt-24 pb-16">

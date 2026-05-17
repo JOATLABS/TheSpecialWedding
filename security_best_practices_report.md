@@ -1,229 +1,35 @@
-# Security Best Practices Report
-
-## Executive Summary
-
-This report was refreshed on April 1, 2026 after re-checking the earlier release-hardening work and reviewing the newer guest memories and public-link flows.
-
-Current status:
-
-- The project is **ready for staging**.
-- The earlier **critical** and **high** deployment blockers remain fixed.
-- No new **critical**, **high**, or currently-open **medium** app-code findings remain in this refresh.
-- The guest-facing RSVP and OTP handoff flow was remediated in this pass by exchanging invite tokens into a short-lived HttpOnly guest session and moving the guest UI onto session-backed OTP and RSVP endpoints.
-- The remaining work now splits into two tracks:
-  - production-like validation of the already-fixed blockers and the new guest-session flow
-  - retirement of temporary legacy query-token compatibility once older emailed links age out
-
-## New Or Remaining Findings
-
-### SP-008: Guest RSVP and OTP handoff no longer persist raw invite tokens in browser state — Medium / Resolved
-
-**Impact:** The prior guest flow extended raw invite-token exposure by translating path-token invites back into query parameters, persisting tokens in browser storage, and reusing the raw token as the client credential for OTP, RSVP, and gallery access. That avoidable exposure window is now closed in the canonical flow.
-
-Evidence of the fix in the current codebase:
-
-- Guest invite links are now exchanged into a short-lived HttpOnly `guest_access_session` cookie via [app/api/guest_verification.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/api/guest_verification.py) and [app/dependencies/guest_access.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/dependencies/guest_access.py).
-- The canonical invite page now performs a one-time exchange and lands the browser on `/{slug}#rsvp` instead of translating the invite token back into a query-string URL in [app/[slug]/invite/[token]/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/[slug]/invite/[token]/page.tsx).
-- The public landing page now uses the guest session endpoint instead of `sessionStorage` durability, while still immediately cleaning legacy `?rsvp_token=` links during compatibility exchange in [app/[slug]/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/[slug]/page.tsx).
-- OTP request, OTP verify, RSVP submit, and verified gallery fetches now use session-backed endpoints in:
-  - [app/api/otp.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/api/otp.py)
-  - [app/api/rspv.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/api/rspv.py)
-  - [app/api/gallery_public.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/api/gallery_public.py)
-  - [app/components/RSVPModal.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/components/RSVPModal.tsx)
-  - [app/components/RSVPForm.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/components/RSVPForm.tsx)
-  - [app/components/GuestVerificationModal.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/components/GuestVerificationModal.tsx)
-  - [app/utils/publicGallery.ts](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/utils/publicGallery.ts)
-- Guest-facing API responses now strip the raw guest token before returning guest data in [app/services/guest_verification_service.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/services/guest_verification_service.py) and [app/services/otp_service.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/services/otp_service.py).
-
-### SP-008A: Temporary legacy query-token compatibility remains as bounded low-risk debt — Low / Scheduled Cleanup
-
-**Impact:** Already-issued legacy guest links that still carry `?rsvp_token=` or `/otp/verify?token=` can still place the token on the first inbound request line before the app exchanges it into the safer guest session and cleans the visible URL. This no longer creates long-lived browser storage or canonical client reuse, but it can still show up once in edge logs or copied legacy URLs until those old links age out.
-
-Current bounded compatibility points:
-
-- [app/[slug]/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/[slug]/page.tsx) still accepts `rsvp_token` only long enough to exchange it and immediately remove it from the address bar.
-- [app/otp/verify/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/otp/verify/page.tsx) still accepts a legacy `token` query param only long enough to exchange it and immediately rewrite the URL to a slug-only form.
-
-This is now scheduled cleanup, not a staging blocker.
-
-## Rechecked Healthy Areas
-
-### Couple, account setup/reset, and team invite flows now use canonical path tokens with immediate query cleanup
-
-- Couple invitation and couple reset links now generate canonical path-token URLs in [app/api/couple_invite.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/api/couple_invite.py) and [app/api/couple_auth.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/api/couple_auth.py).
-- General account setup, admin reset-password, and team invitation emails now generate canonical path-token URLs in [app/services/user_management_service.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/services/user_management_service.py) and [app/services/team_management_service.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/services/team_management_service.py).
-- The public entry pages for couple setup, couple reset, admin setup-account, admin reset-password, and team accept now redirect legacy `?token=` URLs onto canonical path-token routes before the client settles on the old address bar state in:
-  - [app/couple/setup/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/couple/setup/page.tsx)
-  - [app/couple/reset-password/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/couple/reset-password/page.tsx)
-  - [app/setup-account/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/setup-account/page.tsx)
-  - [app/reset-password/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/reset-password/page.tsx)
-  - [app/admin/team/accept/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/admin/team/accept/page.tsx)
-- The corresponding client pages now take route-provided token props instead of reading token query parameters directly, while preserving the existing safer backend contracts that already validated tokens on path endpoints and sent tokens in request bodies.
-
-### Vendor public flows now use canonical path tokens, and vendor contract signing no longer places PII in the URL
-
-- Canonical vendor form links are now path-based in [app/api/vendor_forms.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/api/vendor_forms.py), [app/vendor-form/[form_id]/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/vendor-form/[form_id]/page.tsx), and [app/vendor-form/[form_id]/[token]/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/vendor-form/[form_id]/[token]/page.tsx).
-- Canonical vendor contract links are now path-based in [app/services/vendor_service.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/services/vendor_service.py), [app/vendor-contract/[id]/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/vendor-contract/[id]/page.tsx), and [app/vendor-contract/[id]/[token]/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/vendor-contract/[id]/[token]/page.tsx).
-- The public vendor contract signing payload now sends signer details in the request body, not in the URL, in [app/api/vendor_contract_public.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/api/vendor_contract_public.py), [app/vendor-contract/[id]/PublicContractPageClient.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/vendor-contract/[id]/PublicContractPageClient.tsx), and [app/services/vendorManagementApi.ts](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/services/vendorManagementApi.ts).
-- Old query-token links are still accepted temporarily, but they are immediately redirected to canonical path-token routes by [app/vendor-form/[form_id]/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/vendor-form/[form_id]/page.tsx) and [app/vendor-contract/[id]/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/vendor-contract/[id]/page.tsx).
-
-### Guest memories upload and review flow is using the safer transport model
-
-- Guest memories public uploads use path-scoped upload tokens rather than query-string bearer parameters in [app/api/guest_memories.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/api/guest_memories.py).
-- Upload tokens are hashed at rest, public access is rate-limited per client/token scope, uploaded objects are revalidated against reserved size and MIME constraints, and couple-facing asset access is re-exposed through authenticated app endpoints in [app/services/guest_media_service.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/services/guest_media_service.py).
-
-### Inbound email HTML rendering is still sanitized server-side
-
-- The admin inbox still renders HTML, but the rendering path remains server-sanitized before it reaches the frontend. This did not surface as a current blocker in the refresh.
-
-### Form redirect URLs are still validated before use
-
-- Redirect targets continue to be validated before the client follows them, which materially reduces open-redirect risk on the public form completion path.
-
-## Previously Blocking Findings That Remain Resolved
-
-### SP-001: SSE authentication no longer places bearer credentials in URL query strings
-
-- The SSE endpoint now authenticates through the existing `admin_token` HttpOnly cookie in [app/api/notification_stream.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/api/notification_stream.py).
-- The frontend now opens `EventSource` without a `?token=` parameter and relies on `withCredentials` in [app/contexts/SSEContext.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/contexts/SSEContext.tsx).
-
-### SP-002: FastAPI docs and OpenAPI exposure are now environment-gated
-
-- Docs exposure is controlled by `ENABLE_API_DOCS` in [app/core/settings.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/core/settings.py).
-- `docs_url`, `redoc_url`, and `openapi_url` are disabled automatically in production unless explicitly re-enabled in [app/main.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/main.py).
-
-### SP-003 / SP-004 / SP-005: KB contract, route, and retrieval alignment issues remain resolved
-
-- The KB status contract is consistently `draft`, `published`, and `archived` across [app/models/knowledge_base.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/models/knowledge_base.py), [app/api/knowledge_base.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/api/knowledge_base.py), and [app/admin/components/kb/ArticleEditor.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/admin/components/kb/ArticleEditor.tsx).
-- The miswired double-prefixed feedback route is gone, and article list retrieval excludes large content fields at query time in [app/services/knowledge_base_service.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/services/knowledge_base_service.py).
-
-### SP-006: Deprecated admin auth/API bridge surface remains removed
-
-- The deprecated `AuthContext` / `APIContext` compatibility files and the dead generic admin request-hook chain are no longer part of the active app surface.
-- [app/contexts/AdminContext.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/contexts/AdminContext.tsx) is now the only supported admin auth/API surface.
-
-### SP-007: Host header validation remains enforced in the FastAPI middleware stack
-
-- `ALLOWED_HOSTS` parsing and derived trusted-host generation live in [app/core/settings.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/core/settings.py).
-- `TrustedHostMiddleware` is active in [app/main.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/main.py).
-
-## Verification Basis For This Refresh
-
-This refresh included a concrete remediation pass plus focused regression verification.
-
-Code paths explicitly rechecked:
-
-- [app/api/guest_memories.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/api/guest_memories.py)
-- [app/services/guest_media_service.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/services/guest_media_service.py)
-- [app/api/vendor_forms.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/api/vendor_forms.py)
-- [app/vendor-form/[form_id]/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/vendor-form/[form_id]/page.tsx)
-- [app/api/vendor_contract_public.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/api/vendor_contract_public.py)
-- [app/vendor-contract/[id]/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/vendor-contract/[id]/page.tsx)
-- [app/api/couple_auth.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/api/couple_auth.py)
-- [app/api/couple_invite.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/api/couple_invite.py)
-- [app/services/user_management_service.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/services/user_management_service.py)
-- [app/services/team_management_service.py](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/services/team_management_service.py)
-- [app/couple/setup/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/couple/setup/page.tsx)
-- [app/couple/reset-password/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/couple/reset-password/page.tsx)
-- [app/setup-account/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/setup-account/page.tsx)
-- [app/reset-password/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/reset-password/page.tsx)
-- [app/admin/team/accept/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/admin/team/accept/page.tsx)
-- [app/[slug]/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/[slug]/page.tsx)
-- [app/[slug]/invite/[token]/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/[slug]/invite/[token]/page.tsx)
-- [app/otp/verify/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/otp/verify/page.tsx)
-
-Latest known verification from the earlier hardening work already landed:
-
-- `./.venv/bin/python -m pytest tests/backend/test_settings.py tests/backend/test_notification_stream_contract.py tests/backend/test_knowledge_base_contract.py tests/backend/test_guest_memories_service.py -q`
-- `./.venv/bin/python -m compileall app`
-- `npm run build`
-
-Verification completed for this vendor-flow hardening pass:
-
-- `./.venv/bin/python -m pytest tests/backend/test_public_token_transport_contract.py -q`
-- `./.venv/bin/python -m compileall app`
-- `npm run build`
-- `curl -I -s 'http://localhost:3000/vendor-form/aaaaaaaaaaaaaaaaaaaaaaaa?token=dummy-token'`
-  Result: `307 Temporary Redirect` to `/vendor-form/aaaaaaaaaaaaaaaaaaaaaaaa/dummy-token`
-- `curl -I -s 'http://localhost:3000/vendor-contract/aaaaaaaaaaaaaaaaaaaaaaaa?token=dummy-token'`
-  Result: `307 Temporary Redirect` to `/vendor-contract/aaaaaaaaaaaaaaaaaaaaaaaa/dummy-token`
-
-Verification completed for this couple/account/team transport-hardening pass:
-
-- `./.venv/bin/python -m pytest tests/backend/test_setup_reset_token_transport_contract.py -q`
-- `./.venv/bin/python -m compileall app`
-- `curl --max-time 10 -s -o /dev/null -D - 'http://localhost:3000/couple/setup?token=dummy-token'`
-  Result: `307 Temporary Redirect` to `/couple/setup/dummy-token`
-- `curl --max-time 10 -s -o /dev/null -D - 'http://localhost:3000/couple/reset-password?token=dummy-token'`
-  Result: `307 Temporary Redirect` to `/couple/reset-password/dummy-token`
-- `curl --max-time 10 -s -o /dev/null -D - 'http://localhost:3000/setup-account?token=dummy-token'`
-  Result: `307 Temporary Redirect` to `/setup-account/dummy-token`
-- `curl --max-time 10 -s -o /dev/null -D - 'http://localhost:3000/reset-password?token=dummy-token'`
-  Result: `307 Temporary Redirect` to `/reset-password/dummy-token`
-- `curl --max-time 10 -s 'http://localhost:3000/admin/team/accept?token=dummy-token'`
-  Result: Next.js dev-mode response includes a `NEXT_REDIRECT` digest targeting `/admin/team/accept/dummy-token`; this route is redirecting through the RSC payload rather than returning a bare `307` header in the current dev server.
-- `npm run build`
-  Result: currently blocked by an unrelated untracked local file, [app/admin/scraper/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/admin/scraper/page.tsx), which is not part of this remediation slice and fails type-check in the current worktree.
-
-Verification completed for this guest-session hardening pass:
-
-- `./.venv/bin/python -m pytest tests/backend/test_guest_access_session_contract.py -q`
-- `./.venv/bin/python -m pytest tests/backend/test_settings.py tests/backend/test_notification_stream_contract.py tests/backend/test_setup_reset_token_transport_contract.py tests/backend/test_guest_access_session_contract.py -q`
-- `./.venv/bin/python -m compileall app`
-- `npx eslint 'app/[slug]/page.tsx' 'app/[slug]/gallery/page.tsx' 'app/[slug]/invite/[token]/page.tsx' 'app/otp/verify/page.tsx' 'app/components/RSVPModal.tsx' 'app/components/RSVPForm.tsx' 'app/components/GuestVerificationModal.tsx' 'app/components/landing-page/LandingLayout.tsx' 'app/utils/publicGallery.ts' 'app/utils/guestAccess.ts'`
-- `npm run build`
-  Result: frontend build still reaches the same unrelated existing blocker in [app/admin/scraper/page.tsx](/Users/emmanuelakinwale/Desktop/WeddingWebApp/app/admin/scraper/page.tsx), which is not part of this remediation slice and is not caused by the guest-session changes.
-
-## Careful Phase Plan
-
-### Phase 0: Hold The Current Staging Baseline
-
-1. Do not reopen the already-fixed SSE or docs/OpenAPI changes while addressing the remaining items.
-2. Keep the current staging posture as the control baseline for regression checks.
-3. Decide up front whether SP-008 and SP-009 are required before production or are being accepted temporarily as scheduled medium-risk debt.
-
-### Phase 1: Validate The Earlier Blockers In A Production-Like Environment
-
-1. Confirm `/docs`, `/redoc`, and `/openapi.json` are absent when production settings are active and `ENABLE_API_DOCS` is unset.
-2. Confirm `/admin/notifications/stream` still works through the real proxy/CDN path with cookie auth, reconnect behavior, and expected CORS behavior.
-3. Confirm final deployed frontend/API domains are covered by derived trusted hosts or an explicit `ALLOWED_HOSTS` override.
-
-### Phase 2: Normalize Vendor Public Flows First - Completed
-
-1. Vendor form and vendor contract links now use canonical path tokens instead of `?token=...`.
-2. Public vendor contract signing now sends signer data in the request body instead of the query string.
-3. Backward-compatible handling for already-issued query-token links remains in place temporarily, with immediate redirect to the canonical path-token URL so the browser address bar is cleaned quickly.
-
-### Phase 3: Normalize Couple Invite, Setup, Reset, And Team Invite Flows - Completed
-
-1. Couple setup, couple reset-password, admin setup-account, admin reset-password, and team accept-invite emails now generate canonical path-token URLs instead of `?token=...`.
-2. Legacy query-token pages now immediately redirect onto canonical path routes before the client settles on the legacy URL.
-3. The existing backend validation and mutation contracts were preserved so this change stayed transport-focused and low-risk.
-
-### Phase 4: Replace RSVP And OTP Query Persistence With A Short-Lived Access Exchange - Completed
-
-1. The canonical invite route stays path-based, but it now exchanges the token into a short-lived HttpOnly `guest_access_session` cookie instead of translating the token back into `?rsvp_token=...`.
-2. The landing page, OTP flow, RSVP submit path, and verified gallery reads now consume that guest session rather than reusing the raw invite token as a browser credential.
-3. Guest-facing API responses no longer echo `guest.token` back into frontend state.
-4. Legacy query-token entry points remain only as one-time compatibility shims with immediate URL cleanup.
-
-### Phase 5: Retire Compatibility And Re-Verify Logging Hygiene
-
-1. Remove temporary guest query-token compatibility once old emailed links are out of circulation.
-2. Confirm application access logs, reverse-proxy logs, analytics tags, and error reporting no longer capture the residual one-time compatibility query parameters.
-3. Keep the new guest-session regression coverage and add runtime staging checks for cookie exchange, resend/verify behavior, and session expiry.
-
-## Deployment Readiness Call
-
-### Recommended Readiness Call
-
-- **Ready for staging**
-- **No unresolved critical/high app-code findings**
-- **No unresolved currently-open medium app-code findings**
-- **Production sign-off depends on two things:**
-  - validating the already-fixed SSE/docs/trusted-host behavior in the real deployment environment
-  - validating the new guest-access session exchange and expiry behavior in the real deployment environment
-
-### Practical Recommendation
-
-If the goal is the narrow production-hardening bar discussed earlier, the original blockers are fixed and the guest RSVP/OTP transport issue is now also addressed in the canonical flow. The remaining security work is operational: verify the guest-session flow in staging and then retire the temporary compatibility shims once older emailed links are no longer expected to circulate.
+# Form Upload Security Finding Validation
+
+Scan scope: `app/services/form_upload_service.py`, `app/api/forms.py`, form upload UI/response display, R2 storage settings, and index migration coverage.
+
+Executive summary: the highest-value finding was valid: the upload service trusted the browser-supplied multipart `Content-Type`. The patch now verifies allowed file signatures, writes objects as attachments, constrains S3 metadata, moves blocking R2 calls off the event loop, and cleans up the just-written object if Mongo persistence fails. Malware scanning, abandoned-upload cleanup, and atomic quota reservation remain follow-up work because they require operational scanner/sweeper and retention decisions.
+
+## Validity Matrix
+
+| # | Verdict | Code Evidence | Solution / Status | Official Basis |
+|---|---|---|---|---|
+| 1 | Valid, fixed | Previously `upload.content_type` flowed from `app/api/forms.py:946-952` into `FormUploadService.store_upload`; the service now normalizes and checks declared type at `app/services/form_upload_service.py:217-236` and detects signatures at `app/services/form_upload_service.py:110-148`. Admin opens stored links at `app/admin/forms/[id]/responses/page.tsx:239-248`. | Added `detect_upload_mime_types`, rejects spoofed content, and stores R2 objects with `Content-Disposition: attachment` at `app/services/form_upload_service.py:284-297`. Still verify CDN `X-Content-Type-Options: nosniff` in deployment. | [OWASP File Upload Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html), [MDN X-Content-Type-Options](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Content-Type-Options), [AWS PutObject](https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObject.html) |
+| 2 | Valid low-risk hardening, fixed | Metadata is written at `app/services/form_upload_service.py:292-296`. Public route sanitizes `field_id`, but the service boundary previously did not constrain metadata values. | Added `_header_safe_metadata` at `app/services/form_upload_service.py:79-83`. | [AWS S3 object metadata](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingMetadata.html) |
+| 3 | Valid gap, not fully fixed | Public uploads accept PDFs/DOCXs/etc. and no scanner exists in `app/services/form_upload_service.py`. | Reported as follow-up: add scanner/quarantine workflow before planner download, or block download until scan passes. | [OWASP File Upload Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html) |
+| 4 | Valid, fixed for immediate DB failure | Previous write order was R2 put then Mongo insert. Current code writes at `app/services/form_upload_service.py:284-297` and compensates with `delete_object` on insert failure at `app/services/form_upload_service.py:323-345`. | Added cleanup test `test_store_upload_deletes_s3_object_when_db_insert_fails`. | [AWS DeleteObject](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html) |
+| 5 | Valid performance note, improved | Prior code loaded all rows for a distribution. Current `_distribution_upload_usage` aggregates count and bytes at `app/services/form_upload_service.py:356-381`. | Replaced row materialization with one Mongo aggregation. | [MongoDB `$sum`](https://www.mongodb.com/docs/v6.0/reference/operator/aggregation/sum/) |
+| 6 | Invalid | The claimed missing compound indexes already exist in `scripts/create_indexes_p1_forms_and_ai.py:95-103`. | No change needed. | [MongoDB compound indexes](https://www.mongodb.com/docs/v8.2/core/indexes/index-types) |
+| 7 | Valid, fixed | `store_upload` is async and previously called boto3 synchronously. Current upload/delete calls use `asyncio.to_thread` at `app/services/form_upload_service.py:284-297` and `app/services/form_upload_service.py:333-338`. | Offloaded blocking storage I/O from the event loop. | [Python `asyncio.to_thread`](https://docs.python.org/3.11/library/asyncio-task.html#asyncio.to_thread) |
+| 8 | Invalid as a finding | API still caps read size before allocation; service also enforces the cap. | Kept both checks as defense in depth. | [OWASP File Upload Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html) |
+| 9 | Invalid / accepted behavior | Empty uploads consume a public endpoint attempt before returning 400. | Counting invalid attempts against an abuse budget is acceptable unless product wants refund semantics. | [OWASP Input Validation Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html) |
+| 10 | Valid, follow-up | Quota read at `app/services/form_upload_service.py:242-255` is still pre-write and not an atomic reservation. | Follow-up: reserve against `form_distributions` with atomic counters or use a Mongo transaction-backed ledger with rollback on R2/DB failure. | [MongoDB transactions](https://www.mongodb.com/docs/manual/core/transactions/) |
+| 11 | Valid, follow-up | `form_uploads` rows are durable and no visible form-upload TTL/sweeper exists; index script covers unrelated TTLs but not form uploads. | Follow-up: orphan sweeper keyed to distribution expiration/submission state plus R2 lifecycle rules. Avoid blind TTL on submitted attachments without product retention approval. | [MongoDB TTL indexes](https://www.mongodb.com/docs/manual/core/index-ttl/), [Cloudflare R2 object lifecycles](https://developers.cloudflare.com/r2/buckets/object-lifecycles/) |
+| 12 | Valid positive control | `uploaded_at` uses `datetime.now(timezone.utc)` at `app/services/form_upload_service.py:321`. | No change needed. | [Python `datetime.timezone.utc`](https://docs.python.org/3/library/datetime.html#datetime.timezone.utc) |
+| 13 | Valid maintainability note, not security | Upload rate limit `30/hour` remains inline in `app/api/forms.py:899-905`. | Optional cleanup: move to a named constant when touching form route constants. | [OWASP Input Validation Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html) |
+| 14 | Valid maintainability note, not security | `MediaStorage.target` uses explicit branches in `app/services/media_storage.py:189-221`. | No security change needed. Consider registry only when adding another storage target. | [Python `Enum`](https://docs.python.org/3/library/enum.html) |
+| 15 | Valid, fixed | Settings had `S3_FORM_UPLOADS_BUCKET_NAME`, `FORM_UPLOADS_DOMAIN`, and `CLOUDFLARE_API_TOKEN`, but `.env.example` did not document them. | Added entries at `.env.example:72-83`. | [Cloudflare R2 CORS API](https://developers.cloudflare.com/api/resources/r2/subresources/buckets/subresources/cors/) |
+
+## Twilio HIPAA Applicability
+
+No finding in this form-upload feature directly uses Twilio. If future healthcare/PHI workflows send form-upload content or PHI through Twilio, the compliance sequence is: execute a BAA, use HIPAA-designated projects/subaccounts, use only HIPAA-eligible products, and configure product-specific privacy controls. Twilio’s own HIPAA documentation states that HIPAA compliance is shared responsibility and that signing a BAA alone does not make the application compliant. See [Twilio HIPAA Accounts](https://www.twilio.com/docs/iam/twilio-editions/hippa?t=28366), [Twilio HIPAA Eligible Services PDF](https://www.twilio.com/content/dam/twilio-com/global/en/other/hipaa/pdf/HIPAA-Eligible-Services.pdf), and [Twilio Message Redaction](https://www.twilio.com/docs/sms/tutorials/privacy-message-redaction).
+
+## Verification
+
+- `.venv/bin/python -m pytest tests/backend/test_form_file_upload.py tests/backend/test_security_hardening.py -q` — 91 passed.
+- `.venv/bin/python -m ruff check app/services/form_upload_service.py tests/backend/test_form_file_upload.py tests/backend/test_security_hardening.py` — passed.
+- `.venv/bin/python -m ruff format --check app/services/form_upload_service.py tests/backend/test_form_file_upload.py tests/backend/test_security_hardening.py` — passed.

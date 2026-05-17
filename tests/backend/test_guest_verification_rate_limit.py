@@ -7,8 +7,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.services import guest_verification_service as guest_verification_module
-from app.services.guest_verification_service import GuestVerificationService
+from app.services import guest_verification_service as guest_verification_module  # noqa: E402
+from app.services.guest_verification_service import GuestVerificationService  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

@@ -15,7 +15,7 @@ if PROJECT_ROOT not in sys.path:
 os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("API_KEY", "test-api-key")
 
-import app.services.vendor_dashboard_service as vendor_dashboard_module
+import app.services.vendor_dashboard_service as vendor_dashboard_module  # noqa: E402
 
 
 class FakeMongo:

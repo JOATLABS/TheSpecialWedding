@@ -21,6 +21,7 @@ os.environ.setdefault("TOKEN_ENCRYPTION_KEY", "test-token-encryption-key")
 os.environ.setdefault("ENVIRONMENT", "test")
 
 from app.services.calendar_provider_service import (  # noqa: E402
+    CalendarProviderService,
     _normalize_event_for_aggregation,
     calendar_provider_service,
 )
@@ -366,62 +367,41 @@ def test_resolve_service_type_falls_back_to_google_for_unknown_or_none() -> None
 
 
 @pytest.mark.asyncio
-async def test_get_authorization_url_parses_env_scopes_string() -> None:
+async def test_get_authorization_url_parses_env_scopes_string(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The production callsite passes ``settings.AURINKO_SCOPES`` (a string)
     into ``client.authorize_url`` which expects ``list[str]``. Without the
     string→list parse the URL ends up with comma-joined CHARACTERS:
     ``scopes=C,a,l,e,n,d,a,r,...``. Pin the production path so this can't
     regress. .env may use either space or comma as separator."""
-    import os
+    monkeypatch.setattr(
+        "app.services.calendar_provider_service.settings.AURINKO_SCOPES",
+        "Calendar.ReadWrite Mail.Read Mail.Send Contacts.ReadWrite",
+    )
+    monkeypatch.setattr(
+        "app.services.calendar_provider_service.settings.AURINKO_REDIRECT_URI",
+        "http://localhost:3000/cb",
+    )
+    monkeypatch.setattr(
+        "app.services.calendar_provider_service.settings.AURINKO_OAUTH_STATE_SIGNING_KEY",
+        "sk",
+    )
 
-    # Patch the env var with a space-separated string (matches the repo's
-    # .env shape today). Then call get_authorization_url which reads it.
-    saved = os.environ.get("AURINKO_SCOPES")
-    saved_redirect = os.environ.get("AURINKO_REDIRECT_URI")
-    saved_signing = os.environ.get("AURINKO_OAUTH_STATE_SIGNING_KEY")
-    try:
-        os.environ["AURINKO_SCOPES"] = (
-            "Calendar.ReadWrite Mail.Read Mail.Send Contacts.ReadWrite"
-        )
-        os.environ["AURINKO_REDIRECT_URI"] = "http://localhost:3000/cb"
-        os.environ.setdefault("AURINKO_OAUTH_STATE_SIGNING_KEY", "sk")
-        # Reload settings so the patched env is picked up.
-        import importlib
-        from app.core import config as _config_mod
-
-        importlib.reload(_config_mod)
-        # Also reload the provider module so its module-level singleton
-        # reads the refreshed settings.
-        from app.services import calendar_provider_service as _cps_mod
-
-        importlib.reload(_cps_mod)
-        svc = _cps_mod.CalendarProviderService()
-        url = await svc.get_authorization_url(
-            user_id="u1",
-            user_email="u@example.com",
-            owner_id="o1",
-            owner_email="o@example.com",
-        )
-        # The scopes parameter should contain comma-joined scope NAMES, not
-        # comma-joined CHARACTERS. Look for at least one full scope name.
-        assert "Calendar.ReadWrite" in url, f"scope name not preserved: {url[:200]}"
-        # The bug signature: comma between every character.
-        assert "C,a,l,e,n,d,a,r" not in url, (
-            "regression: scopes string joined character-by-character"
-        )
-    finally:
-        if saved is None:
-            os.environ.pop("AURINKO_SCOPES", None)
-        else:
-            os.environ["AURINKO_SCOPES"] = saved
-        if saved_redirect is None:
-            os.environ.pop("AURINKO_REDIRECT_URI", None)
-        else:
-            os.environ["AURINKO_REDIRECT_URI"] = saved_redirect
-        if saved_signing is None:
-            os.environ.pop("AURINKO_OAUTH_STATE_SIGNING_KEY", None)
-        else:
-            os.environ["AURINKO_OAUTH_STATE_SIGNING_KEY"] = saved_signing
+    svc = CalendarProviderService()
+    url = await svc.get_authorization_url(
+        user_id="u1",
+        user_email="u@example.com",
+        owner_id="o1",
+        owner_email="o@example.com",
+    )
+    # The scopes parameter should contain scope NAMES, not comma-joined
+    # CHARACTERS. Look for at least one full scope name.
+    assert "Calendar.ReadWrite" in url, f"scope name not preserved: {url[:200]}"
+    # The bug signature: comma between every character.
+    assert "C,a,l,e,n,d,a,r" not in url, (
+        "regression: scopes string joined character-by-character"
+    )
 
 
 @pytest.mark.asyncio
@@ -530,3 +510,135 @@ async def test_create_subscription_resource_is_per_calendar() -> None:
     assert recorder.last_json is not None
     assert recorder.last_json["resource"] == "/calendars/cal-99/events"
     assert recorder.last_json["notificationUrl"] == "https://example.com/webhooks"
+
+
+@pytest.mark.asyncio
+async def test_create_subscription_accepts_task_resource() -> None:
+    recorder = _RecordingClient(_make_response(200, {"id": "sub-task"}))
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.create_subscription(
+            account_token="tok",
+            resource="/tasklists/default/tasks",
+            webhook_url="https://example.com/webhooks",
+        )
+    assert recorder.last_method == "POST"
+    assert recorder.last_json is not None
+    assert recorder.last_json["resource"] == "/tasklists/default/tasks"
+
+
+@pytest.mark.asyncio
+async def test_create_subscription_accepts_contacts_resource() -> None:
+    recorder = _RecordingClient(_make_response(200, {"id": "sub-contact"}))
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.create_subscription(
+            account_token="tok",
+            resource="/contacts",
+            webhook_url="https://example.com/webhooks",
+        )
+    assert recorder.last_method == "POST"
+    assert recorder.last_json is not None
+    assert recorder.last_json["resource"] == "/contacts"
+
+
+@pytest.mark.asyncio
+async def test_task_crud_uses_tasklist_path_and_patch() -> None:
+    recorder = _RecordingClient(_make_response(200, {"id": "task-1", "etag": "v2"}))
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.update_task(
+            account_token="tok",
+            tasklist_id="default",
+            task_id="task-1",
+            body={"title": "Updated"},
+            etag="v1",
+        )
+    assert recorder.last_method == "PATCH"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/tasklists/default/tasks/task-1")
+    assert recorder.last_json == {"title": "Updated"}
+    assert recorder.last_headers is not None
+    assert recorder.last_headers["If-Match"] == "v1"
+
+
+@pytest.mark.asyncio
+async def test_create_task_uses_tasklist_path() -> None:
+    recorder = _RecordingClient(_make_response(200, {"id": "task-1"}))
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.create_task(
+            account_token="tok",
+            tasklist_id="default",
+            body={"title": "Task"},
+        )
+    assert recorder.last_method == "POST"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/tasklists/default/tasks")
+    assert recorder.last_json == {"title": "Task"}
+
+
+@pytest.mark.asyncio
+async def test_delete_task_treats_404_as_idempotent() -> None:
+    recorder = _RecordingClient(_make_response(404, {"message": "gone"}))
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.delete_task(
+            account_token="tok",
+            tasklist_id="default",
+            task_id="task-1",
+        )
+    assert recorder.last_method == "DELETE"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/tasklists/default/tasks/task-1")
+
+
+@pytest.mark.asyncio
+async def test_contact_crud_uses_contacts_path_and_if_match() -> None:
+    recorder = _RecordingClient(_make_response(200, {"id": "contact-1"}))
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.update_contact(
+            account_token="tok",
+            contact_id="contact-1",
+            body={"givenName": "Ada"},
+            etag="etag-1",
+        )
+    assert recorder.last_method == "PATCH"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/contacts/contact-1")
+    assert recorder.last_json == {"givenName": "Ada"}
+    assert recorder.last_headers is not None
+    assert recorder.last_headers["If-Match"] == "etag-1"
+
+
+@pytest.mark.asyncio
+async def test_delete_contact_treats_404_as_idempotent() -> None:
+    recorder = _RecordingClient(_make_response(404, {"message": "gone"}))
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.delete_contact(account_token="tok", contact_id="contact-1")
+    assert recorder.last_method == "DELETE"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/contacts/contact-1")

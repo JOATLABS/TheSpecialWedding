@@ -5,12 +5,56 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import {
   CalendarSelectionPick,
+  ContactBookSelectionPick,
   completeCalendarCallback,
+  getCalendarPickerResume,
   ProviderCallbackCalendar,
+  ProviderCallbackContactBook,
   ProviderCallbackResponse,
+  ProviderCallbackTasklist,
   selectCalendars,
+  TaskListSelectionPick,
 } from '@/services/calendarApi';
 import CalendarPickerModal from './CalendarPickerModal';
+
+// Translate a raw error from a callback or commit request into a
+// planner-friendly sentence. Generic toast text was hiding distinct
+// failure modes — a refresh after the picker (code-already-redeemed)
+// should read very differently from a network drop or a vanished
+// session. See the audit in the design-critique pass for the list.
+function describeError(err: unknown, context: 'callback' | 'commit'): string {
+  const message = err instanceof Error ? err.message : String(err ?? '');
+  const lower = message.toLowerCase();
+  if (lower.includes('410') || lower.includes('gone')) {
+    return context === 'callback'
+      ? 'It looks like you already finished this step. Trying to pick up where you left off…'
+      : 'That selection was already saved. Continuing to your calendar…';
+  }
+  if (lower.includes('401') || lower.includes('unauthorized') || lower.includes('session')) {
+    return 'Your session expired. Please sign in again and reconnect your calendar.';
+  }
+  if (lower.includes('404') || lower.includes('not found') || lower.includes('expired')) {
+    return context === 'commit'
+      ? 'Your picker session expired. Please start the Connect Calendar flow again.'
+      : 'We could not find your calendar connection. Please try connecting again.';
+  }
+  if (
+    lower.includes('failed to fetch') ||
+    lower.includes('networkerror') ||
+    lower.includes('timeout')
+  ) {
+    return "We couldn't reach the server. Check your connection and try again.";
+  }
+  if (lower.includes('returnurl')) {
+    return 'The redirect URL is misconfigured. Please contact support.';
+  }
+  return (
+    message ||
+    (context === 'callback'
+      ? 'Something went wrong connecting your calendar. Please try again.'
+      : 'Something went wrong saving your selection. Please try again.')
+  );
+}
 
 // Aurinko OAuth codes are single-use. React 18 dev StrictMode double-
 // invokes effects, which would POST the same code twice — the second
@@ -41,6 +85,8 @@ export default function CalendarCallbackPage() {
     accountName: string | null;
     provider: string | null;
     calendars: ProviderCallbackCalendar[];
+    tasklists: ProviderCallbackTasklist[];
+    contactBooks: ProviderCallbackContactBook[];
     redirectTo: string | null;
   } | null>(null);
   const [pickerSubmitting, setPickerSubmitting] = useState(false);
@@ -56,7 +102,11 @@ export default function CalendarCallbackPage() {
   );
 
   const handleSelection = useCallback(
-    async (picks: CalendarSelectionPick[]) => {
+    async (
+      picks: CalendarSelectionPick[],
+      taskPicks: TaskListSelectionPick[] = [],
+      contactPicks: ContactBookSelectionPick[] = []
+    ) => {
       if (!token || !pickerPayload) return;
       setPickerSubmitting(true);
       setPickerError(null);
@@ -64,7 +114,9 @@ export default function CalendarCallbackPage() {
         const result: ProviderCallbackResponse = await selectCalendars(
           token,
           pickerPayload.draftId,
-          picks
+          picks,
+          taskPicks,
+          contactPicks
         );
         if (!result.connected) {
           throw new Error(result.message || 'Failed to save calendar selection.');
@@ -78,11 +130,7 @@ export default function CalendarCallbackPage() {
         );
         completeRedirect(result.redirect_to ?? pickerPayload.redirectTo);
       } catch (err) {
-        setPickerError(
-          err instanceof Error
-            ? err.message
-            : 'Could not save your calendar selection. Please retry.'
-        );
+        setPickerError(describeError(err, 'commit'));
       } finally {
         setPickerSubmitting(false);
       }
@@ -106,6 +154,13 @@ export default function CalendarCallbackPage() {
       const code = searchParams.get('code');
       const state = searchParams.get('state');
       const error = searchParams.get('error');
+      // ``?resume=1`` is set by the "Continue setup" banner on the
+      // main calendar page. In this mode we DON'T expect code+state
+      // in the URL — instead we ask the backend for the planner's
+      // most recent unexpired draft via /picker-resume and render
+      // the picker directly. This handles the auth-bounce case where
+      // the planner's session expired during OAuth round-trip.
+      const resumeMode = searchParams.get('resume') === '1';
 
       if (error) {
         setStatus('error');
@@ -117,17 +172,76 @@ export default function CalendarCallbackPage() {
         return;
       }
 
+      if (!token) {
+        setStatus('error');
+        setMessage('Your admin session is missing. Sign in again and restart the calendar connection.');
+        return;
+      }
+
+      if (resumeMode) {
+        try {
+          const resume = await getCalendarPickerResume(token);
+          if (cancelled) return;
+          if (resume.needs_selection && resume.draft_id) {
+            setPickerPayload({
+              draftId: resume.draft_id,
+              accountEmail: resume.account_email ?? null,
+              accountName: resume.account_name ?? null,
+              provider: resume.provider ?? null,
+              calendars: resume.calendars ?? [],
+              tasklists: resume.tasklists ?? [],
+              contactBooks: resume.contact_books ?? [],
+              redirectTo: resume.redirect_to ?? null,
+            });
+            setStatus('picker');
+            setMessage(resume.message || 'Resumed your calendar selection.');
+            return;
+          }
+          setStatus('error');
+          setMessage(
+            'No calendar setup to resume — it may have expired. Start a new connection from the calendar page.'
+          );
+        } catch (err) {
+          if (cancelled) return;
+          setStatus('error');
+          setMessage(describeError(err, 'callback'));
+        }
+        return;
+      }
+
       if (!code || !state) {
         setStatus('error');
         setMessage('Missing authorization code or state parameter.');
         return;
       }
 
-      if (!token) {
-        setStatus('error');
-        setMessage('Your admin session is missing. Sign in again and restart the calendar connection.');
-        return;
-      }
+      // Helper: surface a draft we recover via /picker-resume in the
+      // same way we'd surface a fresh callback result. Returns true if
+      // a draft was found and rendered.
+      const tryResumeFromDraft = async (): Promise<boolean> => {
+        try {
+          const resume = await getCalendarPickerResume(token);
+          if (cancelled) return true; // bail; effect about to remount
+          if (resume.needs_selection && resume.draft_id) {
+            setPickerPayload({
+              draftId: resume.draft_id,
+              accountEmail: resume.account_email ?? null,
+              accountName: resume.account_name ?? null,
+              provider: resume.provider ?? null,
+              calendars: resume.calendars ?? [],
+              tasklists: resume.tasklists ?? [],
+              contactBooks: resume.contact_books ?? [],
+              redirectTo: resume.redirect_to ?? null,
+            });
+            setStatus('picker');
+            setMessage(resume.message || 'Resumed your calendar selection.');
+            return true;
+          }
+        } catch {
+          // Swallow — the caller surfaces a specific error below.
+        }
+        return false;
+      };
 
       try {
         // Dedupe by code — StrictMode in dev mounts this effect twice.
@@ -154,6 +268,8 @@ export default function CalendarCallbackPage() {
             accountName: result.account_name ?? null,
             provider: result.provider ?? null,
             calendars: result.calendars ?? [],
+            tasklists: result.tasklists ?? [],
+            contactBooks: result.contact_books ?? [],
             redirectTo: result.redirect_to ?? null,
           });
           setStatus('picker');
@@ -169,12 +285,21 @@ export default function CalendarCallbackPage() {
           return;
         }
 
+        // ``needs_selection=false`` AND ``connected=false`` is the rare
+        // server-side fallthrough — try resume before declaring failure.
+        const resumed = await tryResumeFromDraft();
+        if (cancelled || resumed) return;
         setStatus('error');
         setMessage(String(result.message || 'Failed to connect your calendar.'));
       } catch (err) {
         if (cancelled) return;
+        // Refresh / back-button / network-drop recovery: if the code is
+        // already redeemed but a draft is still in Mongo, render the
+        // picker from the draft instead of showing an error toast.
+        const resumed = await tryResumeFromDraft();
+        if (cancelled || resumed) return;
         setStatus('error');
-        setMessage(err instanceof Error ? err.message : 'An unexpected error occurred.');
+        setMessage(describeError(err, 'callback'));
       }
     };
 
@@ -197,6 +322,8 @@ export default function CalendarCallbackPage() {
           accountName={pickerPayload.accountName}
           provider={pickerPayload.provider}
           calendars={pickerPayload.calendars}
+          tasklists={pickerPayload.tasklists}
+          contactBooks={pickerPayload.contactBooks}
           submitting={pickerSubmitting}
           errorMessage={pickerError}
           onSubmit={handleSelection}

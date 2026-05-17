@@ -850,6 +850,19 @@ class GoogleCalendarService:
                 "details_visibility", VisibilityMode.BUSY_ONLY.value
             ),
             "sync_enabled": doc.get("sync_enabled", False),
+            "task_sync_enabled": doc.get("task_sync_enabled", False),
+            "task_sync_tasklist_id": doc.get("task_sync_tasklist_id"),
+            "task_sync_tasklist_name": doc.get("task_sync_tasklist_name"),
+            "task_sync_subscription_id": doc.get("task_sync_subscription_id"),
+            "contact_sync_enabled": doc.get("contact_sync_enabled", False),
+            "contact_sync_book_id": doc.get("contact_sync_book_id"),
+            "contact_sync_book_name": doc.get("contact_sync_book_name"),
+            "contact_sync_group_id": doc.get("contact_sync_group_id"),
+            "contact_sync_group_name": doc.get("contact_sync_group_name"),
+            "contact_sync_subscription_id": doc.get("contact_sync_subscription_id"),
+            "connection_scopes": self._normalize_string_list(
+                doc.get("connection_scopes", [])
+            ),
             "connection_status": doc.get(
                 "connection_status", CalendarConnectionStatus.ERROR.value
             ),
@@ -1030,6 +1043,15 @@ class GoogleCalendarService:
                 "is_shared_in_team_view",
                 "details_visibility",
                 "sync_enabled",
+                "task_sync_enabled",
+                "task_sync_tasklist_id",
+                "task_sync_tasklist_name",
+                "contact_sync_enabled",
+                "contact_sync_book_id",
+                "contact_sync_book_name",
+                "contact_sync_group_id",
+                "contact_sync_group_name",
+                "connection_scopes",
             }
             and v is not None
         }
@@ -1063,6 +1085,10 @@ class GoogleCalendarService:
         if "allowed_wedding_ids" in set_doc:
             set_doc["allowed_wedding_ids"] = self._normalize_string_list(
                 set_doc["allowed_wedding_ids"]
+            )
+        if "connection_scopes" in set_doc:
+            set_doc["connection_scopes"] = self._normalize_string_list(
+                set_doc["connection_scopes"]
             )
 
         if set_doc.get("is_default_write_target") and not (

@@ -24,7 +24,6 @@ from tests.backend.conftest_advertising import (
     VENDOR_ID,
     AsyncMockDatabase,
     make_ad_event,
-    make_ad_lead,
     make_campaign,
 )
 
@@ -84,7 +83,6 @@ async def test_compute_daily_rollup_returns_both_counts(service_and_db):
     raw_db["ad_campaigns"].insert_one(campaign)
 
     target_date = datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
-    day_end = target_date + timedelta(days=1)
 
     # Insert an event within the target date range
     event = make_ad_event(

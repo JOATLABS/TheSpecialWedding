@@ -101,6 +101,18 @@ class MongoConnector:
             raise RuntimeError("Database not connected")
         return self.db["calendar_event_syncs"]
 
+    def get_task_sync_records_collection(self):
+        """Per-connection external task sync mappings."""
+        if self.db is None:
+            raise RuntimeError("Database not connected")
+        return self.db["task_sync_records"]
+
+    def get_contact_sync_records_collection(self):
+        """Per-connection external contact mirror mappings."""
+        if self.db is None:
+            raise RuntimeError("Database not connected")
+        return self.db["contact_sync_records"]
+
     def get_calendar_connection_drafts_collection(self):
         """Ephemeral post-OAuth pre-picker state.
 

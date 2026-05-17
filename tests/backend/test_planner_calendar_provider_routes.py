@@ -34,6 +34,12 @@ _TESTBED_PLANNER_ROUTES = [
     ("GET", "/admin/planner/calendar/provider/connect"),
     ("GET", "/admin/planner/calendar/connections/provider/callback"),
     ("DELETE", "/admin/planner/calendar/provider/disconnect"),
+    ("GET", "/admin/planner/calendar/connections/{connection_id}/tasklists"),
+    ("GET", "/admin/planner/calendar/connections/{connection_id}/contact-books"),
+    (
+        "POST",
+        "/admin/planner/calendar/connections/{connection_id}/contacts/sync-now",
+    ),
 ]
 
 

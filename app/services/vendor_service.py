@@ -1122,6 +1122,20 @@ class VendorService:
             logger.info(
                 f"Created vendor profile: {vendor['business_name']} by {created_by}"
             )
+            try:
+                from app.services.aurinko_contacts_sync_service import (
+                    aurinko_contacts_sync_service,
+                )
+
+                await aurinko_contacts_sync_service.mirror_vendor_to_aurinko(
+                    str(vendor["_id"])
+                )
+            except Exception as sync_exc:
+                logger.warning(
+                    "Vendor contact mirror failed for %s: %s",
+                    vendor.get("_id"),
+                    sync_exc,
+                )
             return vendor
 
         except HTTPException:
@@ -1390,6 +1404,20 @@ class VendorService:
                 result["created_at"] = result["created_at"].isoformat()
             if isinstance(result.get("updated_at"), datetime):
                 result["updated_at"] = result["updated_at"].isoformat()
+            try:
+                from app.services.aurinko_contacts_sync_service import (
+                    aurinko_contacts_sync_service,
+                )
+
+                await aurinko_contacts_sync_service.mirror_vendor_to_aurinko(
+                    str(result["_id"])
+                )
+            except Exception as sync_exc:
+                logger.warning(
+                    "Vendor contact mirror failed for %s: %s",
+                    result.get("_id"),
+                    sync_exc,
+                )
             return result
 
         except HTTPException:
@@ -1422,6 +1450,22 @@ class VendorService:
 
             if not result:
                 raise HTTPException(status_code=404, detail="Vendor not found")
+
+            try:
+                from app.services.aurinko_contacts_sync_service import (
+                    aurinko_contacts_sync_service,
+                )
+
+                await aurinko_contacts_sync_service.unmirror_source(
+                    source_type="vendor",
+                    source_id=str(result["_id"]),
+                )
+            except Exception as sync_exc:
+                logger.warning(
+                    "Vendor contact unmirror failed for %s: %s",
+                    result.get("_id"),
+                    sync_exc,
+                )
 
             return {"message": "Vendor deleted successfully"}
 
