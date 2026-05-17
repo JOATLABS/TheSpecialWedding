@@ -215,6 +215,80 @@ async def test_mirror_planner_task_creates_aurinko_task_and_sync_record() -> Non
 
 
 @pytest.mark.asyncio
+async def test_mirror_planner_task_dedupes_same_account_tasklist_rows() -> None:
+    """Legacy picker commits may have enabled one task list on many calendar rows.
+
+    One planner task should still create only one Aurinko task for that
+    account/task-list resource.
+    """
+    task_id = ObjectId()
+    first_connection_id = ObjectId()
+    default_connection_id = ObjectId()
+    provider = _Provider()
+    service = _service(
+        tasks=_Collection(
+            [
+                {
+                    "_id": task_id,
+                    "title": "Book florist",
+                    "status": "pending",
+                    "owner_planner_id": "planner-1",
+                    "owner_planner_email": "planner@example.com",
+                }
+            ]
+        ),
+        connections=_Collection(
+            [
+                {
+                    "_id": first_connection_id,
+                    "aurinko_account_id": "acct-1",
+                    "connection_status": CalendarConnectionStatus.ACTIVE.value,
+                    "task_sync_enabled": True,
+                    "task_sync_tasklist_id": "tasks-default",
+                    "owner_planner_id": "planner-1",
+                    "owner_planner_email": "planner@example.com",
+                    "user_id": "user-1",
+                    "user_email": "planner@example.com",
+                    "provider": "google",
+                },
+                {
+                    "_id": default_connection_id,
+                    "aurinko_account_id": "acct-1",
+                    "connection_status": CalendarConnectionStatus.ACTIVE.value,
+                    "task_sync_enabled": True,
+                    "task_sync_tasklist_id": "tasks-default",
+                    "is_default_write_target": True,
+                    "owner_planner_id": "planner-1",
+                    "owner_planner_email": "planner@example.com",
+                    "user_id": "user-1",
+                    "user_email": "planner@example.com",
+                    "provider": "google",
+                },
+            ]
+        ),
+        syncs=_Collection(),
+        provider=provider,
+    )
+
+    result = await service.mirror_planner_task_to_aurinko(str(task_id))
+
+    assert result == [
+        {
+            "connection_id": str(default_connection_id),
+            "aurinko_task_id": "aurinko-task-1",
+            "sync_status": CalendarSyncStatusValue.SYNCED.value,
+        }
+    ]
+    assert len(provider.client.created) == 1
+    assert (
+        provider.client.created[0]["account_token"] == f"token:{default_connection_id}"
+    )
+    assert service.syncs_collection.docs[0]["connection_id"] == str(
+        default_connection_id
+    )
+
+
+@pytest.mark.asyncio
 async def test_apply_external_task_change_creates_internal_task_when_no_mapping() -> (
     None
 ):

@@ -48,6 +48,40 @@ class AurinkoContactsSyncService:
         value = payload.get("etag") or payload.get("changeKey")
         return str(value) if value else None
 
+    def _account_contact_book_key(self, connection: dict[str, Any]) -> tuple[str, str]:
+        account_key = str(connection.get("aurinko_account_id") or "").strip()
+        if not account_key:
+            account_key = "|".join(
+                [
+                    str(connection.get("user_id") or ""),
+                    str(connection.get("provider") or ""),
+                    str(connection.get("provider_account_email") or ""),
+                ]
+            )
+        book_id = str(connection.get("contact_sync_book_id") or "default").strip()
+        return account_key, book_id
+
+    def _dedupe_account_contact_book_connections(
+        self, connections: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Return one enabled row per connected account/contact-book resource."""
+        sorted_connections = sorted(
+            connections,
+            key=lambda row: (
+                not bool(row.get("is_default_write_target")),
+                str(row.get("calendar_name") or row.get("_id") or ""),
+            ),
+        )
+        seen: set[tuple[str, str]] = set()
+        deduped: list[dict[str, Any]] = []
+        for connection in sorted_connections:
+            key = self._account_contact_book_key(connection)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(connection)
+        return deduped
+
     def _name_parts(self, display_name: str) -> tuple[str, str]:
         parts = [part for part in display_name.strip().split() if part]
         if not parts:
@@ -166,7 +200,8 @@ class AurinkoContactsSyncService:
             query["owner_planner_email"] = owner_planner_email
         if connection_id:
             query["_id"] = ObjectId(connection_id)
-        return await self.connections_collection.find(query).to_list(length=100)
+        connections = await self.connections_collection.find(query).to_list(length=100)
+        return self._dedupe_account_contact_book_connections(connections)
 
     async def _mirror_body(
         self,

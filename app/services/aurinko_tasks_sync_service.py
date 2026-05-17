@@ -92,6 +92,45 @@ class AurinkoTasksSyncService:
         value = payload.get("etag") or payload.get("changeKey")
         return str(value) if value else None
 
+    def _account_tasklist_key(self, connection: dict[str, Any]) -> tuple[str, str]:
+        account_key = str(connection.get("aurinko_account_id") or "").strip()
+        if not account_key:
+            account_key = "|".join(
+                [
+                    str(connection.get("user_id") or ""),
+                    str(connection.get("provider") or ""),
+                    str(connection.get("provider_account_email") or ""),
+                ]
+            )
+        tasklist_id = str(connection.get("task_sync_tasklist_id") or "").strip()
+        return account_key, tasklist_id
+
+    def _dedupe_account_tasklist_connections(
+        self, connections: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Return one enabled row per connected account/task-list resource.
+
+        Older picker submissions stored the same account-scoped task list on
+        every picked calendar row. Prefer the default-write row when repairing
+        that legacy shape in memory.
+        """
+        sorted_connections = sorted(
+            connections,
+            key=lambda row: (
+                not bool(row.get("is_default_write_target")),
+                str(row.get("calendar_name") or row.get("_id") or ""),
+            ),
+        )
+        seen: set[tuple[str, str]] = set()
+        deduped: list[dict[str, Any]] = []
+        for connection in sorted_connections:
+            key = self._account_tasklist_key(connection)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(connection)
+        return deduped
+
     async def _eligible_connections(
         self,
         task: dict[str, Any],
@@ -110,7 +149,8 @@ class AurinkoTasksSyncService:
             )
         if connection_id:
             query["_id"] = ObjectId(connection_id)
-        return await self.connections_collection.find(query).to_list(length=100)
+        connections = await self.connections_collection.find(query).to_list(length=100)
+        return self._dedupe_account_tasklist_connections(connections)
 
     async def mirror_planner_task_to_aurinko(
         self,
@@ -431,13 +471,15 @@ class AurinkoTasksSyncService:
         aurinko_task_id: str,
         change_type: str,
     ) -> None:
-        connection = await self.connections_collection.find_one(
+        connections = await self.connections_collection.find(
             {
                 "aurinko_account_id": aurinko_account_id,
                 "task_sync_tasklist_id": aurinko_tasklist_id,
                 "task_sync_enabled": True,
             }
-        )
+        ).to_list(length=100)
+        eligible = self._dedupe_account_tasklist_connections(connections)
+        connection = eligible[0] if eligible else None
         if not connection:
             return
         snapshot = None
