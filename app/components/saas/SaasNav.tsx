@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Menu, X } from 'lucide-react';
 import { BrandLockup } from '@/components/brand/BrandLockup';
+import { PUBLIC_LOGIN_PATH } from '@/seo/crawlPolicy';
 
 const NAV_LINKS = [
   { href: '/', label: 'Home' },
@@ -78,7 +79,7 @@ export default function SaasNav() {
             <div className="hidden md:block w-px h-5 bg-white/10 mx-2" />
 
             <Link
-              href="/admin/login"
+              href={PUBLIC_LOGIN_PATH}
               className="hidden md:inline-flex text-sm font-medium text-slate-300 hover:text-white transition px-3 py-2"
             >
               Sign in
@@ -129,7 +130,7 @@ export default function SaasNav() {
             })}
             <div className="pt-3 border-t border-white/5 mt-3 flex flex-col gap-2">
               <Link
-                href="/admin/login"
+                href={PUBLIC_LOGIN_PATH}
                 className="px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-white/5 transition"
               >
                 Sign in

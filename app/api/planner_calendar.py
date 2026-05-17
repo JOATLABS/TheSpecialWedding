@@ -377,9 +377,16 @@ def _optional_str(value: Any) -> Optional[str]:
     return None
 
 
-async def _get_wedding_name(wedding_id: Optional[str]) -> Optional[str]:
+async def _get_wedding_name(
+    wedding_id: Optional[str],
+    current_user: Optional[ExtendedAuthUser] = None,
+) -> Optional[str]:
     """Get wedding couple names by ID."""
     if not wedding_id:
+        return None
+    if current_user is not None and not await check_wedding_access(
+        current_user, wedding_id
+    ):
         return None
     try:
         oid = ObjectId(wedding_id) if ObjectId.is_valid(wedding_id) else wedding_id
@@ -583,6 +590,22 @@ def _connection_matches_owner_scope(
     if owner_email and connection_owner_email:
         return str(owner_email) == str(connection_owner_email)
     return False
+
+
+def _can_view_provider_account_metadata(
+    connection_doc: dict[str, Any],
+    current_user: ExtendedAuthUser,
+) -> bool:
+    """Provider task/contact names are account metadata, not shared calendar data."""
+    if current_user.is_root_admin or current_user.is_wedding_planner:
+        return True
+    current_context = get_calendar_owner_identity(current_user)
+    if connection_doc.get("user_id") == current_context.get("user_id"):
+        return True
+    return bool(
+        current_user.team_permissions
+        and current_user.team_permissions.get("manage_calendar_connections", False)
+    )
 
 
 def _can_send_meeting_invites(current_user: ExtendedAuthUser) -> bool:
@@ -951,7 +974,12 @@ async def get_google_calendar_status(
 
     Returns connection status, last sync time, and number of synced events.
     """
-    status = await google_calendar_service.get_connection_status(current_user.email)
+    context = get_calendar_owner_identity(current_user)
+    owner_planner_id = str(context.get("owner_id") or context.get("user_id") or "")
+    status = await google_calendar_service.get_connection_status(
+        current_user.email,
+        owner_planner_id=owner_planner_id,
+    )
 
     return CalendarSyncStatus(
         connected=status.get("connected", False),
@@ -976,7 +1004,12 @@ async def disconnect_google_calendar(
 
     Removes stored OAuth tokens. Tasks are preserved but sync is disabled.
     """
-    result = await google_calendar_service.disconnect(current_user.email)
+    context = get_calendar_owner_identity(current_user)
+    owner_planner_id = str(context.get("owner_id") or context.get("user_id") or "")
+    result = await google_calendar_service.disconnect(
+        current_user.email,
+        owner_planner_id=owner_planner_id,
+    )
     return result
 
 
@@ -997,11 +1030,14 @@ async def fetch_google_events(
     """
     time_min = datetime.now(UTC)
     time_max = time_min + timedelta(days=days_ahead)
+    context = get_calendar_owner_identity(current_user)
+    owner_planner_id = str(context.get("owner_id") or context.get("user_id") or "")
 
     events = await google_calendar_service.fetch_google_events(
         current_user.email,
         time_min=time_min,
         time_max=time_max,
+        owner_planner_id=owner_planner_id,
     )
 
     return events
@@ -1481,6 +1517,10 @@ async def list_connection_tasklists(
         raise HTTPException(
             status_code=403, detail="Cannot view this calendar connection"
         )
+    if not _can_view_provider_account_metadata(connection_doc, current_user):
+        raise HTTPException(
+            status_code=403, detail="Cannot inspect this provider account"
+        )
     token = await calendar_provider_service._account_token_for_connection(
         connection_doc
     )
@@ -1518,6 +1558,10 @@ async def list_connection_contact_books(
     if not _connection_matches_owner_scope(connection_doc, current_user):
         raise HTTPException(
             status_code=403, detail="Cannot view this calendar connection"
+        )
+    if not _can_view_provider_account_metadata(connection_doc, current_user):
+        raise HTTPException(
+            status_code=403, detail="Cannot inspect this provider account"
         )
     token = await calendar_provider_service._account_token_for_connection(
         connection_doc
@@ -1698,6 +1742,11 @@ async def create_task(
     now = datetime.now(UTC)
     owner_context = get_calendar_owner_identity(current_user)
     owner_email = _calendar_owner_email(current_user)
+    if task_data.wedding_id and not await check_wedding_access(
+        current_user, task_data.wedding_id
+    ):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
     external_sync_requested = bool(
         task_data.external_sync_requested
         if task_data.external_sync_requested is not None
@@ -1776,7 +1825,7 @@ async def create_task(
                 str(result.inserted_id)
             )
 
-    wedding_name = await _get_wedding_name(task_data.wedding_id)
+    wedding_name = await _get_wedding_name(task_data.wedding_id, current_user)
     sync_summary = await _load_task_sync_summary(str(result.inserted_id))
 
     logger.info(f"Created task {result.inserted_id} for planner {current_user.email}")
@@ -1817,6 +1866,8 @@ async def list_tasks(
         status, ["pending", "in_progress", "completed", "cancelled"]
     )
     category = validated_string_filter(category, max_length=50)
+    if wedding_id and not await check_wedding_access(current_user, wedding_id):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     # Build query
     query: dict[str, Any] = _build_task_scope_query(current_user)
@@ -1848,13 +1899,11 @@ async def list_tasks(
     wedding_names: dict[str, str] = {}
 
     if wedding_ids:
-        weddings_collection = mongo.get_weddings_collection()
         for wid in wedding_ids:
             try:
-                oid = ObjectId(wid) if ObjectId.is_valid(wid) else wid
-                wedding = await weddings_collection.find_one({"_id": oid})
-                if wedding:
-                    wedding_names[wid] = wedding.get("couple_names", "")
+                name = await _get_wedding_name(str(wid), current_user)
+                if name:
+                    wedding_names[str(wid)] = name
             except Exception:
                 pass
 
@@ -1901,7 +1950,7 @@ async def get_task(
     )
     task = _require_document(task, "Task not found")
 
-    wedding_name = await _get_wedding_name(task.get("wedding_id"))
+    wedding_name = await _get_wedding_name(task.get("wedding_id"), current_user)
     sync_summary = await _load_task_sync_summary(task_id)
 
     return _serialize_task(task, wedding_name, sync_summary)
@@ -1940,6 +1989,11 @@ async def update_task(
 
     update_fields = updates.model_dump(exclude_unset=True)
     owner_context = get_calendar_owner_identity(current_user)
+    if update_fields.get("wedding_id") and not await check_wedding_access(
+        current_user, update_fields["wedding_id"]
+    ):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
     requested_sync_state = None
     if update_fields.get("external_sync_requested") is not None:
         requested_sync_state = bool(update_fields.pop("external_sync_requested"))
@@ -2004,7 +2058,7 @@ async def update_task(
     # Fetch updated task
     updated_task = await tasks_collection.find_one({"_id": oid})
     updated_task = _require_document(updated_task, "Task not found after update")
-    wedding_name = await _get_wedding_name(updated_task.get("wedding_id"))
+    wedding_name = await _get_wedding_name(updated_task.get("wedding_id"), current_user)
     sync_summary = await _load_task_sync_summary(task_id)
 
     logger.info(f"Updated task {task_id} for planner {current_user.email}")
@@ -2133,7 +2187,7 @@ async def sync_task_to_google(
     # Fetch updated task
     updated_task = await tasks_collection.find_one({"_id": oid})
     updated_task = _require_document(updated_task, "Task not found after sync")
-    wedding_name = await _get_wedding_name(updated_task.get("wedding_id"))
+    wedding_name = await _get_wedding_name(updated_task.get("wedding_id"), current_user)
     sync_summary = await _load_task_sync_summary(task_id)
 
     return _serialize_task(updated_task, wedding_name, sync_summary)
@@ -2278,13 +2332,11 @@ async def get_month_tasks(
     wedding_names: dict[str, str] = {}
 
     if wedding_ids:
-        weddings_collection = mongo.get_weddings_collection()
         for wid in wedding_ids:
             try:
-                oid = ObjectId(wid) if ObjectId.is_valid(wid) else wid
-                wedding = await weddings_collection.find_one({"_id": oid})
-                if wedding:
-                    wedding_names[wid] = wedding.get("couple_names", "")
+                name = await _get_wedding_name(str(wid), current_user)
+                if name:
+                    wedding_names[str(wid)] = name
             except Exception:
                 pass
     sync_summary_map = await _load_task_sync_summary_map(tasks)
@@ -2340,13 +2392,11 @@ async def get_upcoming_tasks(
     wedding_names: dict[str, str] = {}
 
     if wedding_ids:
-        weddings_collection = mongo.get_weddings_collection()
         for wid in wedding_ids:
             try:
-                oid = ObjectId(wid) if ObjectId.is_valid(wid) else wid
-                wedding = await weddings_collection.find_one({"_id": oid})
-                if wedding:
-                    wedding_names[wid] = wedding.get("couple_names", "")
+                name = await _get_wedding_name(str(wid), current_user)
+                if name:
+                    wedding_names[str(wid)] = name
             except Exception:
                 pass
     sync_summary_map = await _load_task_sync_summary_map(tasks)

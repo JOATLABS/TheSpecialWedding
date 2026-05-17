@@ -31,8 +31,13 @@ from testbed.harness import PM_TOKEN_GOOD, Harness
 
 DRIVER_NAME = "verify_aurinko_contacts_lifecycle"
 
-PLANNER_EMAIL = "test_planner+aurinko_oauth@thespecialwedding.io"
-PLANNER_PASSWORD = "AurinkoOAuth2026!"  # pragma: allowlist secret
+PLANNER_EMAIL = os.getenv(
+    "AURINKO_OAUTH_PLANNER_EMAIL", "test_planner+aurinko_oauth@thespecialwedding.io"
+)
+PLANNER_PASSWORD = os.getenv(
+    "AURINKO_OAUTH_PLANNER_PASSWORD",
+    "AurinkoOAuth2026!",  # pragma: allowlist secret
+)
 PLAN_ID = os.getenv("AURINKO_OAUTH_PLAN_ID", "plan_signature")
 
 SANDBOX_ENABLED = os.getenv("AURINKO_SANDBOX_ENABLED", "0") in ("1", "true", "yes")
@@ -59,11 +64,39 @@ def _account_token(connection: dict) -> str | None:
     )
 
 
+def _ensure_planner(h: Harness, admin_token: str) -> str:
+    existing = h.mongo["users"].find_one({"email": PLANNER_EMAIL})
+    if existing:
+        user_id = str(existing["_id"])
+        if not existing.get("is_active") or not existing.get("email_verified"):
+            h.activate_planner(admin_token, user_id)
+        return h.login(PLANNER_EMAIL, PLANNER_PASSWORD)
+
+    h.seed_planner(
+        admin_token=admin_token,
+        email=PLANNER_EMAIL,
+        password=PLANNER_PASSWORD,
+        plan_id=PLAN_ID,
+        pm_token=PM_TOKEN_GOOD,
+    )
+    return h.login(PLANNER_EMAIL, PLANNER_PASSWORD)
+
+
 def _aurinko_get_contact(account_token: str, contact_id: str) -> httpx.Response:
     base = os.getenv("AURINKO_API_BASE_URL", "https://api.aurinko.io/v1").rstrip("/")
     url = f"{base}/contacts/{quote(contact_id, safe='')}"
     return httpx.get(
         url, headers={"Authorization": f"Bearer {account_token}"}, timeout=20
+    )
+
+
+def _aurinko_start_contacts_sync(account_token: str) -> httpx.Response:
+    base = os.getenv("AURINKO_API_BASE_URL", "https://api.aurinko.io/v1").rstrip("/")
+    return httpx.post(
+        f"{base}/contacts/sync",
+        headers={"Authorization": f"Bearer {account_token}"},
+        params={"awaitReady": "false"},
+        timeout=20,
     )
 
 
@@ -134,14 +167,7 @@ def main() -> int:
     h.preflight()
 
     admin_token = h.get_admin_token()
-    h.seed_planner(
-        admin_token=admin_token,
-        email=PLANNER_EMAIL,
-        password=PLANNER_PASSWORD,
-        plan_id=PLAN_ID,
-        pm_token=PM_TOKEN_GOOD,
-    )
-    planner_token = h.login(PLANNER_EMAIL, PLANNER_PASSWORD)
+    planner_token = _ensure_planner(h, admin_token)
     _checkpoint(h, "P0a_SEED", bool(planner_token), "planner login")
 
     connection = _connection_for_planner(h)
@@ -155,6 +181,17 @@ def main() -> int:
     account_token = _account_token(connection)
     _checkpoint(h, "P0c_TOKEN", bool(account_token), "decryptable account token")
     assert account_token is not None
+    sync_probe = _aurinko_start_contacts_sync(account_token)
+    sync_probe_body = sync_probe.json() if sync_probe.status_code < 400 else {}
+    _checkpoint(
+        h,
+        "P0d_CONTACTS_SYNC_START",
+        sync_probe.status_code < 400,
+        (
+            f"status={sync_probe.status_code} ready={sync_probe_body.get('ready')} "
+            f"has_updated_token={bool(sync_probe_body.get('syncUpdatedToken'))}"
+        ),
+    )
 
     vendor_id = _create_vendor(h, planner_token)
     sync_row = _contact_sync_row(h, vendor_id)

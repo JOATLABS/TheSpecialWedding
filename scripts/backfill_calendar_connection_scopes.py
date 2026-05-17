@@ -10,7 +10,11 @@ banner instead of assuming expanded access already exists.
 from __future__ import annotations
 
 import asyncio
+import sys
 from datetime import UTC, datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.database import mongo
 

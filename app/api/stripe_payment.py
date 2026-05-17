@@ -11,7 +11,12 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.dependencies.auth_extended import ExtendedAuthUser, require_admin_or_planner
+from app.dependencies.auth_extended import (
+    ExtendedAuthUser,
+    check_wedding_access,
+    get_owner_identity,
+    require_admin_or_planner,
+)
 from app.models.subscription import (
     ACTIVE_SUBSCRIPTION_STATUSES,
     BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES,
@@ -19,6 +24,11 @@ from app.models.subscription import (
     normalize_subscription_status,
 )
 from app.services.stripe_service import stripe_service
+from app.utils.planner_ownership import (
+    normalize_planner_email,
+    normalize_planner_id,
+    normalize_query_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +87,47 @@ def _is_public_checkout_resume_candidate(user_doc: dict) -> bool:
     return (
         status in PUBLIC_CHECKOUT_ALLOWED_STATUSES
         and user_doc.get("registration_source") == "public_signup"
+    )
+
+
+def _wedding_owner_ids(wedding: dict) -> set[str]:
+    assigned_id = normalize_planner_id(wedding.get("assigned_planner_id"))
+    if assigned_id or normalize_planner_email(wedding.get("assigned_planner_email")):
+        return {assigned_id} if assigned_id else set()
+
+    legacy_id = normalize_planner_id(wedding.get("planner_id"))
+    return {legacy_id} if legacy_id else set()
+
+
+def _wedding_owner_emails(wedding: dict) -> set[str]:
+    assigned_email = normalize_planner_email(wedding.get("assigned_planner_email"))
+    if assigned_email or normalize_planner_id(wedding.get("assigned_planner_id")):
+        return {assigned_email} if assigned_email else set()
+
+    legacy_email = normalize_planner_email(wedding.get("planner_email"))
+    return {legacy_email} if legacy_email else set()
+
+
+def _user_matches_wedding_payment_owner(user_doc: dict, wedding: dict) -> bool:
+    user_id = normalize_planner_id(user_doc.get("_id"))
+    user_email = normalize_planner_email(user_doc.get("email"))
+    owner_ids = _wedding_owner_ids(wedding)
+    owner_emails = _wedding_owner_emails(wedding)
+    return bool(
+        (user_id and user_id in owner_ids)
+        or (user_email and user_email in owner_emails)
+    )
+
+
+def _current_user_matches_legacy_wedding_owner(
+    current_user: ExtendedAuthUser, wedding: dict
+) -> bool:
+    owner_id, owner_email = get_owner_identity(current_user)
+    owner_ids = _wedding_owner_ids(wedding)
+    owner_emails = _wedding_owner_emails(wedding)
+    return bool(
+        (owner_id and owner_id in owner_ids)
+        or (owner_email and owner_email in owner_emails)
     )
 
 
@@ -204,7 +255,7 @@ async def create_checkout_session(
             billing_interval=request.billing_interval,
             success_url=request.success_url or "",
             cancel_url=request.cancel_url or "",
-            trial_days=request.trial_days,
+            trial_days=None,
         )
 
         return {"status": "success", "checkout_session": session}
@@ -248,7 +299,7 @@ async def create_public_checkout_session(request: PublicCreateCheckoutSessionReq
             billing_interval=request.billing_interval,
             success_url=request.success_url or "",
             cancel_url=request.cancel_url or "",
-            trial_days=request.trial_days,
+            trial_days=None,
         )
 
         return {"status": "success", "checkout_session": session}
@@ -667,57 +718,58 @@ async def create_payment_intent(
     """
     try:
         destination_account_id = None
-        # Ensure planner is authorized for the wedding if wedding_id provided
-        if request.wedding_id and not current_user.is_root_admin:
-            from app.core.database import mongo
-
-            # Try string ID first (wedding IDs are stored as strings like "wedding_XXXXX")
-            wedding = await mongo.db["weddings"].find_one({"_id": request.wedding_id})
-            if not wedding:
-                try:
-                    wedding = await mongo.db["weddings"].find_one(
-                        {"_id": ObjectId(request.wedding_id)}
-                    )
-                except Exception:
-                    pass
-            if not wedding:
-                raise HTTPException(status_code=404, detail="Wedding not found")
-
-            # Check if user has access to this wedding
-            user_id = str(current_user.user_data.get("_id"))
-            planner_id = wedding.get("planner_id")
-
-            # If current user is not admin, they must be the planner
-            if (
-                not current_user.is_root_admin
-                and planner_id
-                and str(planner_id) != user_id
-            ):
-                raise HTTPException(
-                    status_code=403,
-                    detail="You don't have permission to create payments for this wedding",
-                )
-
-            # If we want to route funds to the planner of the wedding:
-            if planner_id:
-                planner = await mongo.db["users"].find_one({"_id": planner_id})
-                if planner and planner.get("stripe_connect_id"):
-                    destination_account_id = planner.get("stripe_connect_id")
-
-        # Override destination if explicitly provided (and allowed?)
-        # For security, maybe restrict who can set destination_user_id
-        if request.destination_user_id:
-            # Look up connect ID for this user
-            from app.core.database import mongo
-
-            dest_user = await mongo.db["users"].find_one(
-                {"_id": ObjectId(request.destination_user_id)}
-            )
-            if dest_user and dest_user.get("stripe_connect_id"):
-                destination_account_id = dest_user.get("stripe_connect_id")
-
         if not request.wedding_id:
             raise HTTPException(status_code=400, detail="wedding_id is required")
+
+        from app.core.database import mongo
+
+        wedding = await mongo.db["weddings"].find_one(
+            {"_id": normalize_query_id(request.wedding_id)}
+        )
+        if not wedding:
+            raise HTTPException(status_code=404, detail="Wedding not found")
+
+        has_wedding_access = await check_wedding_access(
+            current_user, request.wedding_id
+        )
+        if not has_wedding_access and not current_user.is_root_admin:
+            has_wedding_access = _current_user_matches_legacy_wedding_owner(
+                current_user, wedding
+            )
+        if not has_wedding_access:
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have permission to create payments for this wedding",
+            )
+
+        destination_user = None
+        if request.destination_user_id:
+            destination_user = await mongo.db["users"].find_one(
+                {"_id": normalize_query_id(request.destination_user_id)}
+            )
+            if not destination_user:
+                raise HTTPException(
+                    status_code=404, detail="Destination user not found"
+                )
+            if not _user_matches_wedding_payment_owner(destination_user, wedding):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Destination account must belong to the wedding owner",
+                )
+        else:
+            owner_ids = _wedding_owner_ids(wedding)
+            owner_emails = _wedding_owner_emails(wedding)
+            if owner_ids:
+                destination_user = await mongo.db["users"].find_one(
+                    {"_id": normalize_query_id(next(iter(owner_ids)))}
+                )
+            if not destination_user and owner_emails:
+                destination_user = await mongo.db["users"].find_one(
+                    {"email": next(iter(owner_emails))}
+                )
+
+        if destination_user and destination_user.get("stripe_connect_id"):
+            destination_account_id = destination_user.get("stripe_connect_id")
 
         wedding_id: str = request.wedding_id
         description: str = request.description or ""

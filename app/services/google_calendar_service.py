@@ -1469,6 +1469,8 @@ class GoogleCalendarService:
     async def get_default_write_connection_for_user(
         self,
         user_email: str,
+        *,
+        owner_planner_id: Optional[str] = None,
     ) -> Optional[dict]:
         """Resolve the active default writable connection for a user."""
         query = {
@@ -1477,6 +1479,8 @@ class GoogleCalendarService:
             "is_writable": True,
             "sync_enabled": True,
         }
+        if owner_planner_id:
+            query["owner_planner_id"] = owner_planner_id
         connection = await self.connections_collection.find_one(
             {**query, "is_default_write_target": True}
         )
@@ -1484,9 +1488,13 @@ class GoogleCalendarService:
             return connection
         return await self.connections_collection.find_one(query)
 
-    async def get_connection_status(self, user_email: str) -> Dict[str, Any]:
+    async def get_connection_status(
+        self, user_email: str, *, owner_planner_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Compatibility helper for legacy UI that expects one status object."""
-        connection = await self.get_default_write_connection_for_user(user_email)
+        connection = await self.get_default_write_connection_for_user(
+            user_email, owner_planner_id=owner_planner_id
+        )
         if not connection:
             return {
                 "connected": False,
@@ -1499,6 +1507,7 @@ class GoogleCalendarService:
         synced_count = await self.syncs_collection.count_documents(
             {
                 "target_user_email": user_email,
+                "calendar_connection_id": str(connection["_id"]),
                 "sync_status": CalendarSyncStatusValue.SYNCED.value,
             }
         )
@@ -1510,16 +1519,21 @@ class GoogleCalendarService:
             "events_synced": synced_count,
         }
 
-    async def disconnect(self, user_email: str) -> Dict[str, Any]:
+    async def disconnect(
+        self, user_email: str, *, owner_planner_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Compatibility helper to disconnect every connection for a user.
 
         Performs revocation per *provider account* (not per row), then bulk
         deletes the rows in a single statement. Avoids the partial-failure
         and silent-truncation issues of the prior per-row loop.
         """
-        docs = await self.connections_collection.find(
-            {"user_email": user_email}
-        ).to_list(length=None)
+        scoped_filter: Dict[str, Any] = {"user_email": user_email}
+        if owner_planner_id:
+            scoped_filter["owner_planner_id"] = owner_planner_id
+        docs = await self.connections_collection.find(scoped_filter).to_list(
+            length=None
+        )
         if not docs:
             return {
                 "disconnected": True,
@@ -1575,7 +1589,7 @@ class GoogleCalendarService:
                 },
             },
         )
-        await self.connections_collection.delete_many({"user_email": user_email})
+        await self.connections_collection.delete_many(scoped_filter)
         for connection_id in connection_ids:
             await self.invalidate_connection_events_cache(connection_id)
 
@@ -2004,9 +2018,13 @@ class GoogleCalendarService:
         time_min: Optional[datetime] = None,
         time_max: Optional[datetime] = None,
         max_results: int = 100,
+        *,
+        owner_planner_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Legacy wrapper for single-user Google event fetch."""
-        connection = await self.get_default_write_connection_for_user(user_email)
+        connection = await self.get_default_write_connection_for_user(
+            user_email, owner_planner_id=owner_planner_id
+        )
         if not connection:
             return []
         return await self.fetch_google_events_for_connection(

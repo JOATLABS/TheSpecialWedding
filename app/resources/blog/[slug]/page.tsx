@@ -16,6 +16,11 @@ import {
   MARKETING_TEMPLATES,
   getMarketingTemplates,
 } from '../../templates/manifest';
+import {
+  buildPublicOgImagePath,
+  buildPublicOgImageUrl,
+} from '@/seo/crawlPolicy';
+import { serializeJsonLd } from '@/seo/jsonLd';
 
 function getArticleData(apiArticle: PublicBlogApiArticle | null, slug: string) {
   const fallback = allowStaticFallback ? blogPosts[slug as BlogPostKey] : undefined;
@@ -96,11 +101,11 @@ export default async function BlogPostPage({
     : '';
 
   // Use the article-specific OG image if uploaded, otherwise fall back to the
-  // dynamic /api/og route which renders a branded card per slug. Either way,
+  // public dynamic OG route allowed in robots.txt. Either way,
   // BlogPosting.image must be present for Google rich-result eligibility.
   const articleImage = article.ogImage
     ? article.ogImage
-    : `https://thespecialwedding.io/api/og?type=blog&slug=${encodeURIComponent(slug)}`;
+    : buildPublicOgImageUrl({ type: 'blog', slug });
 
   const relatedTemplateRecords = getMarketingTemplates(article.relatedTemplates);
   const hasRelatedTemplates = relatedTemplateRecords.length > 0;
@@ -170,20 +175,20 @@ export default async function BlogPostPage({
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify(article.syncedJsonLd),
+            __html: serializeJsonLd(article.syncedJsonLd),
           }}
         />
       ) : (
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
         />
       )}
       {article.syncedFaqJsonLd ? (
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify(article.syncedFaqJsonLd),
+            __html: serializeJsonLd(article.syncedFaqJsonLd),
           }}
         />
       ) : null}
@@ -340,7 +345,7 @@ export async function generateMetadata({
 
   const canonicalUrl = `https://thespecialwedding.io/resources/blog/${slug}`;
   const metadataTitle = article.metaTitle || article.title;
-  const dynamicOgImage = `/api/og?type=blog&slug=${encodeURIComponent(slug)}`;
+  const dynamicOgImage = buildPublicOgImagePath({ type: 'blog', slug });
 
   return {
     title: `${metadataTitle} | The Special Wedding Blog`,

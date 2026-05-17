@@ -1690,12 +1690,20 @@ class VendorService:
             logger.error(f"Error assigning vendor: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to assign vendor")
 
-    async def get_wedding_vendors(self, wedding_id: str, created_by: str) -> List[dict]:
+    async def get_wedding_vendors(
+        self, wedding_id: str, created_by: Optional[str]
+    ) -> List[dict]:
         """Get all vendors assigned to a wedding"""
         try:
-            cursor = self.vendor_assignments.find(
-                {"wedding_id": wedding_id, "is_deleted": {"$ne": True}}
-            )
+            query: Dict[str, Any] = {
+                "wedding_id": wedding_id,
+                "is_deleted": {"$ne": True},
+            }
+            normalized_actor = normalize_planner_email(created_by)
+            if normalized_actor is not None:
+                query["created_by"] = normalized_actor
+
+            cursor = self.vendor_assignments.find(query)
             assignments = await cursor.to_list(length=100)
 
             for a in assignments:
@@ -1841,12 +1849,23 @@ class VendorService:
             logger.error(f"Error fetching templates: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to fetch templates")
 
-    async def get_contract_template(self, template_id: str) -> dict:
+    async def get_contract_template(
+        self,
+        template_id: str,
+        created_by: Optional[str] = None,
+        include_system: bool = True,
+    ) -> dict:
         """Get a specific contract template"""
         try:
-            template = await self.contract_templates.find_one(
-                {"_id": ObjectId(template_id)}
-            )
+            query: Dict[str, Any] = {"_id": ObjectId(template_id), "is_active": True}
+            normalized_actor = normalize_planner_email(created_by)
+            if normalized_actor is not None:
+                or_conditions: List[Dict[str, Any]] = [{"created_by": normalized_actor}]
+                if include_system:
+                    or_conditions.append({"is_system_template": True})
+                query["$or"] = or_conditions
+
+            template = await self.contract_templates.find_one(query)
             if not template:
                 raise HTTPException(status_code=404, detail="Template not found")
 
@@ -1990,7 +2009,10 @@ class VendorService:
             cancellation_policy = None
 
             if template_id:
-                template = await self.get_contract_template(template_id)
+                template = await self.get_contract_template(
+                    template_id,
+                    created_by=created_by,
+                )
                 for section in template.get("sections", []):
                     sections.append(
                         {
@@ -4185,11 +4207,18 @@ class VendorService:
     # =========================================================================
 
     async def get_vendor_communications(
-        self, vendor_profile_id: str, wedding_id: Optional[str] = None, limit: int = 50
+        self,
+        vendor_profile_id: str,
+        wedding_id: Optional[str] = None,
+        limit: int = 50,
+        created_by: Optional[str] = None,
     ) -> List[dict]:
         """Get communication history with a vendor"""
         try:
             query = {"vendor_profile_id": vendor_profile_id}
+            normalized_actor = normalize_planner_email(created_by)
+            if normalized_actor is not None:
+                query["created_by"] = normalized_actor
             if wedding_id:
                 query["wedding_id"] = wedding_id
 

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/Button';
 import { GlassCard } from '@/components/ui/GlassCard';
+import { PUBLIC_LOGIN_PATH } from '@/seo/crawlPolicy';
 import { getApiBaseUrl } from '@/utils/env';
 
 interface PasswordValidation {
@@ -198,7 +199,7 @@ export default function ResetPasswordPageClient({ initialToken }: { initialToken
               </Link>
               <div>
                 <Link
-                  href="/admin/login"
+                  href={PUBLIC_LOGIN_PATH}
                   className="text-sm font-medium text-wedding-rose hover:text-wedding-gold"
                 >
                   Back to login
@@ -235,7 +236,7 @@ export default function ResetPasswordPageClient({ initialToken }: { initialToken
 
             <div className="mt-8">
               <Link
-                href="/admin/login"
+                href={PUBLIC_LOGIN_PATH}
                 className="inline-block rounded-xl bg-wedding-rose px-6 py-3 text-white font-medium hover:bg-wedding-rose/90 transition"
               >
                 Go to Login

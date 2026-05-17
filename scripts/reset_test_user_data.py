@@ -168,6 +168,10 @@ PRESERVED_COLLECTIONS = [
     "notification_templates",
 ]
 
+PRODUCTION_ENVIRONMENT_VALUES = {"prod", "production"}
+REMOTE_RESET_BYPASS_ENV = "RESET_TEST_USER_DATA_ALLOW_REMOTE"
+REMOTE_RESET_BYPASS_VALUE = "I_UNDERSTAND"
+
 
 def _load_repo_env(path: Path) -> Dict[str, str]:
     values: Dict[str, str] = {}
@@ -192,6 +196,78 @@ def _load_identity_emails() -> Dict[str, str]:
         if value:
             identities[key] = value.strip().lower()
     return identities
+
+
+def _selected_environment() -> str:
+    for key in ("ENVIRONMENT", "APP_ENV", "NODE_ENV"):
+        value = os.environ.get(key)
+        if value:
+            return value.strip().lower()
+    return ""
+
+
+def _configured_mongo_uri() -> str:
+    env_uris = [
+        value.strip()
+        for key in ("MONGODB_URI", "MONGO_URI", "DATABASE_URL")
+        if (value := os.environ.get(key))
+    ]
+    for uri in env_uris:
+        if not _is_local_mongo_uri(uri):
+            return uri
+    if env_uris:
+        return env_uris[0]
+
+    env_values = _load_repo_env(Path(__file__).resolve().parent.parent / ".env")
+    file_uris = [
+        value.strip()
+        for key in ("MONGODB_URI", "MONGO_URI", "DATABASE_URL")
+        if (value := env_values.get(key))
+    ]
+    for uri in file_uris:
+        if not _is_local_mongo_uri(uri):
+            return uri
+    if file_uris:
+        return file_uris[0]
+
+    return ""
+
+
+def _is_local_mongo_uri(uri: str) -> bool:
+    if not uri:
+        return True
+
+    lowered = uri.lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "localhost",
+            "127.0.0.1",
+            "::1",
+            "mongodb://mongo:",
+            "mongodb://mongo/",
+        )
+    )
+
+
+def assert_reset_allowed() -> None:
+    environment = _selected_environment()
+    if environment in PRODUCTION_ENVIRONMENT_VALUES:
+        raise RuntimeError(
+            "Refusing to reset user data when ENVIRONMENT/APP_ENV/NODE_ENV is production."
+        )
+
+    mongo_uri = _configured_mongo_uri()
+    if _is_local_mongo_uri(mongo_uri):
+        return
+
+    if os.environ.get(REMOTE_RESET_BYPASS_ENV) == REMOTE_RESET_BYPASS_VALUE:
+        return
+
+    raise RuntimeError(
+        "Refusing to reset user data against a non-local MongoDB URI. "
+        f"Set {REMOTE_RESET_BYPASS_ENV}={REMOTE_RESET_BYPASS_VALUE} only for a known disposable test database."
+    )
 
 
 async def _list_existing_collections() -> set[str]:
@@ -355,6 +431,7 @@ async def main_async(args: argparse.Namespace) -> int:
         if args.verify:
             return await verify_reset()
         if args.execute:
+            assert_reset_allowed()
             return await execute_reset(assume_yes=args.yes)
         await dry_run()
         return 0

@@ -6,6 +6,8 @@ Used by the public vendor profile page at /vendors/{id}.
 """
 
 import logging
+import re
+from urllib.parse import urlparse
 
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException
@@ -51,11 +53,37 @@ PUBLIC_VENDOR_FIELDS = {
 def _normalize_public_vendor_doc(doc: dict) -> dict:
     """Backfill optional collection fields for older vendor records."""
     doc["service_subcategories"] = doc.get("service_subcategories") or []
-    doc["portfolio_urls"] = doc.get("portfolio_urls") or []
+    doc["website"] = _normalize_public_web_url(doc.get("website"))
+    doc["portfolio_urls"] = [
+        url
+        for url in (
+            _normalize_public_web_url(url) for url in doc.get("portfolio_urls") or []
+        )
+        if url
+    ]
     doc["tags"] = doc.get("tags") or []
     doc["currency"] = doc.get("currency") or "USD"
     doc["source"] = doc.get("source") or "manual"
     return doc
+
+
+def _normalize_public_web_url(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    parsed = urlparse(normalized)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        return None
+    return normalized
+
+
+def _literal_case_insensitive_regex(value: str) -> dict | None:
+    normalized = (value or "").strip()
+    if not normalized:
+        return None
+    return {"$regex": re.escape(normalized[:100]), "$options": "i"}
 
 
 @router.get("/sitemap-ids")
@@ -86,16 +114,22 @@ async def list_public_vendors(
     if category:
         query["service_category"] = category
     if location:
+        location_filter = _literal_case_insensitive_regex(location)
+        if not location_filter:
+            location_filter = {"$regex": r"$^"}
         query["$or"] = [
-            {"city": {"$regex": location, "$options": "i"}},
-            {"state": {"$regex": location, "$options": "i"}},
-            {"country": {"$regex": location, "$options": "i"}},
+            {"city": location_filter},
+            {"state": location_filter},
+            {"country": location_filter},
         ]
     if search:
+        search_filter = _literal_case_insensitive_regex(search)
+        if not search_filter:
+            search_filter = {"$regex": r"$^"}
         search_conditions = [
-            {"business_name": {"$regex": search, "$options": "i"}},
-            {"service_description": {"$regex": search, "$options": "i"}},
-            {"service_category": {"$regex": search, "$options": "i"}},
+            {"business_name": search_filter},
+            {"service_description": search_filter},
+            {"service_category": search_filter},
         ]
         if "$or" in query:
             query["$and"] = [{"$or": query.pop("$or")}, {"$or": search_conditions}]

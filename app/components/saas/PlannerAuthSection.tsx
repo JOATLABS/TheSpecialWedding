@@ -657,7 +657,7 @@ export function PlannerAuthSection({
             <input type="checkbox" className="rounded border-slate-300 text-slate-900 focus:ring-slate-900/40" {...register('rememberMe')} />
             Remember this device
           </label>
-          <Link href="/admin/login?mode=reset" className="text-sm font-medium text-slate-800 underline decoration-slate-300 underline-offset-4 hover:decoration-slate-500">
+          <Link href="/forgot-password" className="text-sm font-medium text-slate-800 underline decoration-slate-300 underline-offset-4 hover:decoration-slate-500">
             Forgot password?
           </Link>
         </div>
