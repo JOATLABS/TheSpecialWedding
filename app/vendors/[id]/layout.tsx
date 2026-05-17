@@ -4,6 +4,7 @@ import {
   fetchPublicVendorProfile,
   getVendorCategoryLabel,
 } from '../publicVendorData';
+import { buildPublicOgImagePath } from '@/seo/crawlPolicy';
 
 export async function generateMetadata({
   params,
@@ -13,7 +14,7 @@ export async function generateMetadata({
   const { id } = await params;
   const vendor = await fetchPublicVendorProfile(id);
   const canonicalUrl = `https://thespecialwedding.io/vendors/${id}`;
-  const dynamicOgImage = `/api/og?type=vendor&id=${encodeURIComponent(id)}`;
+  const dynamicOgImage = buildPublicOgImagePath({ type: 'vendor', id });
 
   if (!vendor) {
     return {

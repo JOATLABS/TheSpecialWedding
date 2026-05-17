@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from typing import Optional
@@ -120,7 +121,11 @@ def verify_ssr_health(session: requests.Session, frontend_base: str) -> None:
     regression from CI signal.
     """
     url = f"{frontend_base.rstrip('/')}/api/health-ssr"
-    response = request(session, "GET", url)
+    headers = {}
+    token = os.environ.get("SSR_HEALTHCHECK_TOKEN")
+    if token:
+        headers["X-SSR-Health-Token"] = token
+    response = request(session, "GET", url, headers=headers or None)
 
     if response.ok:
         try:

@@ -89,8 +89,13 @@ logger = logging.getLogger(__name__)
 
 DRIVER_NAME = "verify_aurinko_oauth_lifecycle"
 
-PLANNER_EMAIL = "test_planner+aurinko_oauth@thespecialwedding.io"
-PLANNER_PASSWORD = "AurinkoOAuth2026!"  # pragma: allowlist secret
+PLANNER_EMAIL = os.getenv(
+    "AURINKO_OAUTH_PLANNER_EMAIL", "test_planner+aurinko_oauth@thespecialwedding.io"
+)
+PLANNER_PASSWORD = os.getenv(
+    "AURINKO_OAUTH_PLANNER_PASSWORD",
+    "AurinkoOAuth2026!",  # pragma: allowlist secret
+)
 PLAN_ID = os.getenv("AURINKO_OAUTH_PLAN_ID", "plan_signature")
 
 INTERACTIVE = os.getenv("TESTBED_NON_INTERACTIVE", "0") not in ("1", "true", "yes")
@@ -127,6 +132,24 @@ def _resolve_account_token(h: Harness) -> str | None:
     return calendar_provider_service._decrypt_token(
         row.get("aurinko_access_token_encrypted")
     )
+
+
+def _ensure_planner(h: Harness, admin_token: str) -> str:
+    existing = h.mongo["users"].find_one({"email": PLANNER_EMAIL})
+    if existing:
+        user_id = str(existing["_id"])
+        if not existing.get("is_active") or not existing.get("email_verified"):
+            h.activate_planner(admin_token, user_id)
+        return h.login(PLANNER_EMAIL, PLANNER_PASSWORD)
+
+    h.seed_planner(
+        admin_token=admin_token,
+        email=PLANNER_EMAIL,
+        password=PLANNER_PASSWORD,
+        plan_id=PLAN_ID,
+        pm_token=PM_TOKEN_GOOD,
+    )
+    return h.login(PLANNER_EMAIL, PLANNER_PASSWORD)
 
 
 def _wait_for_oauth_code() -> tuple[str, str]:
@@ -209,9 +232,15 @@ def _phase_commit_all_writable(
     planner ticking every writable row in the picker modal and
     clicking Connect. Read-only iCal feeds are check-disabled in the
     UI so we deliberately skip them here.
+
+    For this lifecycle driver we also make the task/contact opt-in explicit
+    by choosing the first writable task list/contact book Aurinko returned.
+    The task/contact drivers assert those settings before mutating data.
     """
     draft_id = callback_body.get("draft_id") or ""
     calendars = callback_body.get("calendars") or []
+    tasklists = callback_body.get("tasklists") or []
+    contact_books = callback_body.get("contact_books") or []
     picks = [
         {
             "aurinko_calendar_id": cal.get("aurinko_calendar_id"),
@@ -221,9 +250,24 @@ def _phase_commit_all_writable(
         for cal in calendars
         if cal.get("is_writable")
     ]
+    task_picks = [
+        {"aurinko_tasklist_id": row.get("aurinko_tasklist_id")}
+        for row in tasklists
+        if row.get("is_writable") and row.get("aurinko_tasklist_id")
+    ][:1]
+    contact_picks = [
+        {"aurinko_contact_book_id": row.get("aurinko_contact_book_id")}
+        for row in contact_books
+        if row.get("is_writable") and row.get("aurinko_contact_book_id")
+    ][:1]
     response = requests.post(
         f"{h.config.backend_url}/admin/planner/calendar/connections/select",
-        json={"draft_id": draft_id, "picks": picks},
+        json={
+            "draft_id": draft_id,
+            "picks": picks,
+            "task_picks": task_picks,
+            "contact_picks": contact_picks,
+        },
         headers={"Authorization": f"Bearer {planner_token}"},
         timeout=30,
     )
@@ -235,7 +279,8 @@ def _phase_commit_all_writable(
         and bool(body.get("connected"))
         and int(body.get("connections_created") or 0) == len(picks),
         f"status={response.status_code} created={body.get('connections_created')} "
-        f"expected={len(picks)}",
+        f"expected={len(picks)} task_picks={len(task_picks)} "
+        f"contact_picks={len(contact_picks)}",
     )
     return body
 
@@ -364,14 +409,7 @@ def main() -> int:
     h.preflight()
 
     admin_token = h.get_admin_token()
-    h.seed_planner(
-        admin_token=admin_token,
-        email=PLANNER_EMAIL,
-        password=PLANNER_PASSWORD,
-        plan_id=PLAN_ID,
-        pm_token=PM_TOKEN_GOOD,
-    )
-    planner_token = h.login(PLANNER_EMAIL, PLANNER_PASSWORD)
+    planner_token = _ensure_planner(h, admin_token)
     _checkpoint(h, "P0_SEED", bool(planner_token), "planner login")
 
     if not INTERACTIVE:

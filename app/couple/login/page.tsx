@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
 import { clearLegacyCoupleStorage, extractApiErrorMessage } from '@/couple/lib/auth';
 import { BrandLockup } from '@/components/brand/BrandLockup';
+import { PUBLIC_LOGIN_PATH } from '@/seo/crawlPolicy';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -200,7 +201,7 @@ export default function CoupleLoginPage() {
                       Forgot your password?
                     </Link>
                     <Link
-                      href="/admin/login"
+                      href={PUBLIC_LOGIN_PATH}
                       className="text-sm text-wedding-navy/60 hover:text-wedding-navy transition-colors"
                     >
                       Planner Portal →

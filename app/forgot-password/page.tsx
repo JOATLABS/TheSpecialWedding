@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { FormEvent, useState } from 'react';
+import { PUBLIC_LOGIN_PATH } from '@/seo/crawlPolicy';
 import { getApiBaseUrl } from '@/utils/env';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Button } from '@/components/ui/Button';
@@ -94,7 +95,7 @@ export default function ForgotPasswordPage() {
                 </p>
 
                 <Link
-                  href="/admin/login"
+                  href={PUBLIC_LOGIN_PATH}
                   className="inline-block text-sm font-medium text-wedding-rose transition hover:text-wedding-gold"
                 >
                   Back to login
@@ -168,7 +169,7 @@ export default function ForgotPasswordPage() {
 
           <div className="mt-6 text-center">
             <Link
-              href="/admin/login"
+              href={PUBLIC_LOGIN_PATH}
               className="text-sm font-medium text-wedding-rose transition hover:text-wedding-gold"
             >
               Back to login

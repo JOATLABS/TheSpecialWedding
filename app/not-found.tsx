@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { PUBLIC_LOGIN_PATH } from '@/seo/crawlPolicy';
 
 export default function NotFound() {
   return (
@@ -19,7 +20,7 @@ export default function NotFound() {
             Go to homepage
           </Link>
           <Link
-            href="/admin/login"
+            href={PUBLIC_LOGIN_PATH}
             className="inline-flex items-center justify-center rounded-full border border-wedding-navy/20 px-6 py-3 text-base font-semibold text-wedding-navy transition hover:border-wedding-navy/40"
           >
             Sign in to dashboard

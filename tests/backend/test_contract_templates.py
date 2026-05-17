@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 from bson import ObjectId
+from fastapi import HTTPException
 
 from app.services.vendor_service import vendor_service
 
@@ -76,6 +77,12 @@ class FakeTemplatesCollection:
     def find(self, query: Dict[str, Any]) -> FakeCursor:
         matched = [deepcopy(d) for d in self.documents if _matches(d, query)]
         return FakeCursor(matched)
+
+    async def find_one(self, query: Dict[str, Any]) -> Dict[str, Any] | None:
+        for document in self.documents:
+            if _matches(document, query):
+                return deepcopy(document)
+        return None
 
 
 def _make_template(
@@ -251,3 +258,55 @@ async def test_get_templates_excludes_inactive(
     )
 
     assert [t["name"] for t in results] == ["Active Universal"]
+
+
+@pytest.mark.asyncio
+async def test_get_template_rejects_other_planner_private_template(
+    configured_template_service,
+) -> None:
+    service, fake = configured_template_service
+    template_id = ObjectId()
+    fake.documents.append(
+        {
+            **_make_template(
+                name="Other Planner Private",
+                service_category=None,
+                created_by="other@example.com",
+            ),
+            "_id": template_id,
+        }
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.get_contract_template(
+            str(template_id),
+            created_by="planner@example.com",
+        )
+
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_template_allows_system_template_across_planners(
+    configured_template_service,
+) -> None:
+    service, fake = configured_template_service
+    template_id = ObjectId()
+    fake.documents.append(
+        {
+            **_make_template(
+                name="System Starter",
+                service_category=None,
+                created_by="system@example.com",
+                is_system_template=True,
+            ),
+            "_id": template_id,
+        }
+    )
+
+    result = await service.get_contract_template(
+        str(template_id),
+        created_by="planner@example.com",
+    )
+
+    assert result["name"] == "System Starter"

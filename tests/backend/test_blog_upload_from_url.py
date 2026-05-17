@@ -12,6 +12,7 @@ All tests stub httpx (via respx) and the MediaStorage upload path
 from __future__ import annotations
 
 import asyncio
+import socket
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -62,6 +63,27 @@ def fake_storage(monkeypatch):
 
     service = BlogUploadService()
     return service, captured
+
+
+@pytest.fixture(autouse=True)
+def public_dns_resolution(monkeypatch):
+    """Keep SSRF DNS checks deterministic while respx owns the HTTP layer."""
+
+    def _fake_getaddrinfo(host, port, *args, **kwargs):
+        return [
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                6,
+                "",
+                ("93.184.216.34", port),
+            )
+        ]
+
+    monkeypatch.setattr(
+        "app.services.blog_upload_service.socket.getaddrinfo",
+        _fake_getaddrinfo,
+    )
 
 
 def _img_bytes(size: int = 1024) -> bytes:
@@ -298,6 +320,69 @@ def test_missing_content_type_rejected(fake_storage):
 
     with pytest.raises(BlogUploadFromUrlError, match="not in allowlist"):
         asyncio.run(service.upload_from_url(url))
+
+
+# ────────────────────────── Error paths — SSRF guard ─────────────────────────
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "file:///etc/passwd",
+        "http://localhost/private.png",
+        "http://127.0.0.1/private.png",
+        "http://10.0.0.5/private.png",
+        "http://169.254.169.254/latest/meta-data",
+        "http://[::1]/private.png",
+    ],
+)
+def test_private_or_non_http_source_urls_are_rejected_before_fetch(fake_storage, url):
+    service, captured = fake_storage
+
+    with pytest.raises(BlogUploadFromUrlError):
+        asyncio.run(service.upload_from_url(url))
+
+    assert captured["uploads"] == []
+
+
+@respx.mock
+def test_redirect_to_private_address_is_rejected_before_followup_request(fake_storage):
+    service, captured = fake_storage
+    source_url = "https://cdn.example.com/redirect"
+    private_url = "http://127.0.0.1/private.png"
+    respx.get(source_url).mock(
+        return_value=httpx.Response(302, headers={"location": private_url})
+    )
+    private_route = respx.get(private_url).mock(
+        return_value=httpx.Response(
+            200,
+            content=_img_bytes(256),
+            headers={"content-type": "image/png"},
+        )
+    )
+
+    with pytest.raises(BlogUploadFromUrlError, match="non-public|not allowed"):
+        asyncio.run(service.upload_from_url(source_url))
+
+    assert captured["uploads"] == []
+    assert not private_route.called
+
+
+def test_private_dns_resolution_is_rejected(fake_storage, monkeypatch):
+    service, captured = fake_storage
+
+    def _private_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.1.2.3", port))]
+
+    monkeypatch.setattr(
+        "app.services.blog_upload_service.socket.getaddrinfo",
+        _private_getaddrinfo,
+    )
+
+    with pytest.raises(BlogUploadFromUrlError, match="non-public"):
+        asyncio.run(service.upload_from_url("https://cdn.example.com/private.png"))
+
+    assert captured["uploads"] == []
 
 
 # ────────────────────────── Error paths — size cap ───────────────────────────

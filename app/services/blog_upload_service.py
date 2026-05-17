@@ -1,9 +1,12 @@
 import asyncio
+import ipaddress
 import io
 import logging
 import os
 import re
+import socket
 from datetime import datetime, timezone
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from botocore.exceptions import ClientError
@@ -20,6 +23,9 @@ ALLOWED_BLOG_IMAGE_TYPES = {
 }
 
 MAX_BLOG_IMAGE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
+MAX_REMOTE_IMAGE_REDIRECTS = 5
+_ALLOWED_REMOTE_IMAGE_SCHEMES = {"http", "https"}
+_BLOCKED_HOSTNAMES = {"localhost", "localhost.localdomain"}
 
 _CONTENT_TYPE_TO_EXTENSION = {
     "image/jpeg": ".jpg",
@@ -183,57 +189,140 @@ class BlogUploadService:
              responses).
         """
         timeout = httpx.Timeout(timeout_seconds)
+        current_url = self._validate_remote_image_url(remote_url)
+        redirects_remaining = MAX_REMOTE_IMAGE_REDIRECTS
         try:
-            async with httpx.AsyncClient(
-                timeout=timeout, follow_redirects=True
-            ) as client:
-                async with client.stream("GET", remote_url) as response:
-                    if response.status_code != 200:
-                        raise BlogUploadFromUrlError(
-                            f"Source returned HTTP {response.status_code} "
-                            f"for {remote_url}"
-                        )
-
-                    content_type = (
-                        (response.headers.get("content-type") or "")
-                        .split(";")[0]
-                        .strip()
-                        .lower()
-                    )
-                    if content_type not in ALLOWED_BLOG_IMAGE_TYPES:
-                        raise BlogUploadFromUrlError(
-                            f"Content-type {content_type!r} not in allowlist "
-                            f"for {remote_url}"
-                        )
-
-                    declared = response.headers.get("content-length")
-                    if declared:
-                        try:
-                            declared_int = int(declared)
-                        except ValueError:
-                            declared_int = 0
-                        if declared_int > max_bytes:
-                            raise BlogUploadFromUrlError(
-                                f"Declared content-length {declared_int} "
-                                f"exceeds cap {max_bytes} for {remote_url}"
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                while True:
+                    async with client.stream("GET", current_url) as response:
+                        if 300 <= response.status_code < 400:
+                            location = response.headers.get("location")
+                            if not location:
+                                raise BlogUploadFromUrlError(
+                                    f"Source redirect missing Location for {current_url}"
+                                )
+                            if redirects_remaining <= 0:
+                                raise BlogUploadFromUrlError(
+                                    f"Too many redirects fetching {remote_url}"
+                                )
+                            redirects_remaining -= 1
+                            current_url = self._validate_remote_image_url(
+                                urljoin(str(response.url), location)
                             )
+                            continue
 
-                    buffer = bytearray()
-                    async for chunk in response.aiter_bytes():
-                        buffer.extend(chunk)
-                        if len(buffer) > max_bytes:
-                            raise BlogUploadFromUrlError(
-                                f"Streamed size exceeded cap {max_bytes} "
-                                f"for {remote_url}"
-                            )
-
-                    return content_type, bytes(buffer)
+                        return await self._read_image_response(
+                            response=response,
+                            remote_url=current_url,
+                            max_bytes=max_bytes,
+                        )
         except BlogUploadFromUrlError:
             raise
         except httpx.HTTPError as exc:
             raise BlogUploadFromUrlError(
                 f"HTTP error fetching {remote_url}: {exc}"
             ) from exc
+
+    @staticmethod
+    def _validate_remote_image_url(remote_url: str) -> str:
+        parsed = urlparse(remote_url)
+        if parsed.scheme.lower() not in _ALLOWED_REMOTE_IMAGE_SCHEMES:
+            raise BlogUploadFromUrlError(
+                f"Remote image URL must use http or https: {remote_url}"
+            )
+
+        hostname = (parsed.hostname or "").strip().lower().rstrip(".")
+        if not hostname:
+            raise BlogUploadFromUrlError(
+                f"Remote image URL must include a host: {remote_url}"
+            )
+        if hostname in _BLOCKED_HOSTNAMES or hostname.endswith(".localhost"):
+            raise BlogUploadFromUrlError(
+                f"Remote image host is not allowed: {hostname}"
+            )
+
+        try:
+            addresses = [ipaddress.ip_address(hostname)]
+        except ValueError:
+            try:
+                resolved = socket.getaddrinfo(
+                    hostname,
+                    parsed.port or (443 if parsed.scheme == "https" else 80),
+                    type=socket.SOCK_STREAM,
+                )
+            except socket.gaierror as exc:
+                raise BlogUploadFromUrlError(
+                    f"Unable to resolve remote image host {hostname}: {exc}"
+                ) from exc
+            addresses = []
+            for result in resolved:
+                sockaddr = result[4]
+                try:
+                    addresses.append(ipaddress.ip_address(sockaddr[0]))
+                except (IndexError, ValueError):
+                    continue
+
+        if not addresses:
+            raise BlogUploadFromUrlError(
+                f"Unable to resolve remote image host {hostname}"
+            )
+
+        for address in addresses:
+            if (
+                address.is_loopback
+                or address.is_private
+                or address.is_link_local
+                or address.is_multicast
+                or address.is_reserved
+                or address.is_unspecified
+            ):
+                raise BlogUploadFromUrlError(
+                    f"Remote image host resolves to a non-public address: {hostname}"
+                )
+
+        return remote_url
+
+    @staticmethod
+    async def _read_image_response(
+        *,
+        response: httpx.Response,
+        remote_url: str,
+        max_bytes: int,
+    ) -> tuple[str, bytes]:
+        if response.status_code != 200:
+            raise BlogUploadFromUrlError(
+                f"Source returned HTTP {response.status_code} for {remote_url}"
+            )
+
+        content_type = (
+            (response.headers.get("content-type") or "").split(";")[0].strip().lower()
+        )
+        if content_type not in ALLOWED_BLOG_IMAGE_TYPES:
+            raise BlogUploadFromUrlError(
+                f"Content-type {content_type!r} not in allowlist for {remote_url}"
+            )
+
+        declared = response.headers.get("content-length")
+        if declared:
+            try:
+                declared_int = int(declared)
+            except ValueError:
+                declared_int = 0
+            if declared_int > max_bytes:
+                raise BlogUploadFromUrlError(
+                    f"Declared content-length {declared_int} "
+                    f"exceeds cap {max_bytes} for {remote_url}"
+                )
+
+        buffer = bytearray()
+        async for chunk in response.aiter_bytes():
+            buffer.extend(chunk)
+            if len(buffer) > max_bytes:
+                raise BlogUploadFromUrlError(
+                    f"Streamed size exceeded cap {max_bytes} for {remote_url}"
+                )
+
+        return content_type, bytes(buffer)
 
     @staticmethod
     def _build_synced_key(folder: str, remote_url: str, content_type: str) -> str:

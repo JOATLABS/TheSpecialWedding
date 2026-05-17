@@ -20,14 +20,38 @@ function normalizeStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
+function normalizePublicWebUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return undefined;
+    }
+    return trimmed;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizePublicWebUrlArray(value: unknown): string[] {
+  return normalizeStringArray(value)
+    .map(normalizePublicWebUrl)
+    .filter((item): item is string => Boolean(item));
+}
+
 function normalizePublicVendor(raw: Partial<PublicVendor>): PublicVendor {
+  const website = normalizePublicWebUrl(raw.website);
   return {
     ...raw,
     _id: String(raw._id || ''),
     business_name: String(raw.business_name || ''),
+    website,
     service_category: String(raw.service_category || 'other'),
     service_subcategories: normalizeStringArray(raw.service_subcategories),
-    portfolio_urls: normalizeStringArray(raw.portfolio_urls),
+    portfolio_urls: normalizePublicWebUrlArray(raw.portfolio_urls),
     currency: raw.currency || 'USD',
     is_preferred: Boolean(raw.is_preferred),
     weddings_count: Number(raw.weddings_count || 0),

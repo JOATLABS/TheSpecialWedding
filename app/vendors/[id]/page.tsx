@@ -16,6 +16,7 @@ import {
   fetchPublicVendorProfile,
   getVendorCategoryLabel,
 } from '../publicVendorData';
+import { serializeJsonLd } from '@/seo/jsonLd';
 
 export default async function VendorProfilePage({
   params,
@@ -46,7 +47,7 @@ export default async function VendorProfilePage({
     <div className="min-h-screen bg-white">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(profileJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(profileJsonLd) }}
       />
 
       <div className="bg-gradient-to-r from-primary-50 to-blue-50 border-b border-gray-200">

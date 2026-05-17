@@ -609,6 +609,54 @@ async def test_create_task_uses_tasklist_path() -> None:
 
 
 @pytest.mark.asyncio
+async def test_task_sync_uses_tasklist_scoped_delta_contract() -> None:
+    recorder = _RecordingClient(
+        _make_response(
+            200,
+            {
+                "ready": True,
+                "syncUpdatedToken": "updated-token",
+                "syncDeletedToken": "deleted-token",
+            },
+        )
+    )
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        result = await client.start_task_sync(
+            account_token="tok",
+            tasklist_id="default",
+            skip_completed_before_date=datetime(2026, 5, 1, tzinfo=UTC),
+            await_ready=False,
+        )
+    assert result["syncUpdatedToken"] == "updated-token"
+    assert recorder.last_method == "POST"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/tasklists/default/sync")
+    assert recorder.last_params == {
+        "skipCompletedBeforeDate": "2026-05-01T00:00:00+00:00",
+        "awaitReady": "false",
+    }
+
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.list_task_sync_changes(
+            account_token="tok",
+            tasklist_id="default",
+            change_set="updated",
+            delta_token="updated-token",
+        )
+    assert recorder.last_method == "GET"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/tasklists/default/sync/updated")
+    assert recorder.last_params == {"deltaToken": "updated-token"}
+
+
+@pytest.mark.asyncio
 async def test_delete_task_treats_404_as_idempotent() -> None:
     recorder = _RecordingClient(_make_response(404, {"message": "gone"}))
     client = AurinkoClient()
@@ -646,6 +694,48 @@ async def test_contact_crud_uses_contacts_path_and_if_match() -> None:
     assert recorder.last_json == {"givenName": "Ada"}
     assert recorder.last_headers is not None
     assert recorder.last_headers["If-Match"] == "etag-1"
+
+
+@pytest.mark.asyncio
+async def test_contacts_sync_uses_documented_delta_contract() -> None:
+    recorder = _RecordingClient(
+        _make_response(
+            200,
+            {
+                "ready": True,
+                "syncUpdatedToken": "contact-updated",
+                "syncDeletedToken": "contact-deleted",
+            },
+        )
+    )
+    client = AurinkoClient()
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        result = await client.start_contacts_sync(
+            account_token="tok",
+            await_ready=False,
+        )
+    assert result["syncDeletedToken"] == "contact-deleted"
+    assert recorder.last_method == "POST"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/contacts/sync")
+    assert recorder.last_params == {"awaitReady": "false"}
+
+    with patch(
+        "app.services.calendar_provider_service._get_aurinko_http_client",
+        return_value=recorder,
+    ):
+        await client.list_contact_sync_changes(
+            account_token="tok",
+            change_set="deleted",
+            page_token="next-page",
+        )
+    assert recorder.last_method == "GET"
+    assert recorder.last_url is not None
+    assert recorder.last_url.endswith("/contacts/sync/deleted")
+    assert recorder.last_params == {"pageToken": "next-page"}
 
 
 @pytest.mark.asyncio

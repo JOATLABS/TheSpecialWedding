@@ -461,6 +461,59 @@ class AurinkoClient:
         response.raise_for_status()
         return response.json()
 
+    async def start_task_sync(
+        self,
+        *,
+        account_token: str,
+        tasklist_id: str,
+        skip_completed_before_date: Optional[datetime] = None,
+        await_ready: Optional[bool] = None,
+    ) -> dict[str, Any]:
+        """Provision Aurinko's task-list delta stream.
+
+        Official Tasks API: ``POST /tasklists/{taskListId}/sync`` returns
+        ``syncUpdatedToken`` / ``syncDeletedToken`` once ``ready`` is true.
+        """
+        params: dict[str, Any] = {}
+        if skip_completed_before_date is not None:
+            params["skipCompletedBeforeDate"] = skip_completed_before_date.isoformat()
+        if await_ready is not None:
+            params["awaitReady"] = str(bool(await_ready)).lower()
+        response = await self._request(
+            "POST",
+            f"/tasklists/{quote(tasklist_id, safe='')}/sync",
+            account_token=account_token,
+            params=params or None,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def list_task_sync_changes(
+        self,
+        *,
+        account_token: str,
+        tasklist_id: str,
+        change_set: str,
+        delta_token: Optional[str] = None,
+        page_token: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Read one page from Aurinko's task ``updated`` or ``deleted`` stream."""
+        if change_set not in {"updated", "deleted"}:
+            raise ValueError("change_set must be 'updated' or 'deleted'")
+        params: dict[str, Any] = {}
+        if delta_token:
+            params["deltaToken"] = delta_token
+        if page_token:
+            params["pageToken"] = page_token
+        response = await self._request(
+            "GET",
+            f"/tasklists/{quote(tasklist_id, safe='')}/sync/{change_set}",
+            account_token=account_token,
+            params=params or None,
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def get_task(
         self,
         *,
@@ -559,6 +612,54 @@ class AurinkoClient:
             "/contacts/sync/updated",
             account_token=account_token,
             json_body=body,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def start_contacts_sync(
+        self,
+        *,
+        account_token: str,
+        await_ready: Optional[bool] = None,
+    ) -> dict[str, Any]:
+        """Provision Aurinko's contacts delta stream.
+
+        Official Contacts API: ``POST /contacts/sync`` returns
+        ``syncUpdatedToken`` / ``syncDeletedToken`` once ``ready`` is true.
+        """
+        params: dict[str, Any] = {}
+        if await_ready is not None:
+            params["awaitReady"] = str(bool(await_ready)).lower()
+        response = await self._request(
+            "POST",
+            "/contacts/sync",
+            account_token=account_token,
+            params=params or None,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def list_contact_sync_changes(
+        self,
+        *,
+        account_token: str,
+        change_set: str,
+        delta_token: Optional[str] = None,
+        page_token: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Read one page from Aurinko's contacts ``updated`` or ``deleted`` stream."""
+        if change_set not in {"updated", "deleted"}:
+            raise ValueError("change_set must be 'updated' or 'deleted'")
+        params: dict[str, Any] = {}
+        if delta_token:
+            params["deltaToken"] = delta_token
+        if page_token:
+            params["pageToken"] = page_token
+        response = await self._request(
+            "GET",
+            f"/contacts/sync/{change_set}",
+            account_token=account_token,
+            params=params or None,
         )
         response.raise_for_status()
         return response.json()
@@ -1293,10 +1394,10 @@ class CalendarProviderService:
             service_type=service_type,
         )
         # settings.AURINKO_SCOPES is a string (env values are strings). The
-        # client's authorize_url expects list[str] and does ','.join(scopes)
-        # — if we pass the raw string, ','.join iterates characters and
-        # produces 'C,a,l,e,n,d,a,r,...'. Split on whitespace OR comma so
-        # whatever form the env uses ("a b" or "a,b") parses correctly.
+        # client's authorize_url expects list[str]; passing the raw string
+        # would iterate characters instead of scope names. Split on
+        # whitespace OR comma so whatever form the env uses ("a b" or "a,b")
+        # parses correctly before authorize_url joins names with spaces.
         scope_list = self._configured_scopes()
         return await self.client.authorize_url(
             scopes=scope_list,

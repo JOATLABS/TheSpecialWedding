@@ -5,6 +5,7 @@ import { FeatureShowcase } from "./components/landing-page/FeatureShowcase.clien
 import { PricingSignupSection } from "./components/landing-page/PricingSignupSection.client";
 import HomepageTemplatesBand from "./components/saas/HomepageTemplatesBand";
 import SaasNav from "./components/saas/SaasNav";
+import { serializeJsonLd } from "./seo/jsonLd";
 import type { ThemeConfig } from "./types/wedding";
 
 type Testimonial = {
@@ -189,7 +190,7 @@ export default function HomePage() {
     <main className="min-h-screen overflow-x-hidden bg-slate-950 text-white">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqPageJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(faqPageJsonLd) }}
       />
       <SaasNav />
 

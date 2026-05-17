@@ -34,6 +34,47 @@ class _DummyFindOneCollection:
         return self.result
 
 
+class _DummyCursor:
+    def __init__(self, docs):
+        self.docs = docs
+
+    def sort(self, *_args):
+        return self
+
+    def limit(self, value):
+        self.docs = self.docs[:value]
+        return self
+
+    async def to_list(self, length=None):
+        return list(self.docs if length is None else self.docs[:length])
+
+
+class _DummyFindCollection:
+    def __init__(self, docs):
+        self.docs = docs
+        self.last_query = None
+
+    def find(self, query):
+        self.last_query = query
+        matched = []
+        for doc in self.docs:
+            if self._matches(doc, query):
+                matched.append(doc.copy())
+        return _DummyCursor(matched)
+
+    @staticmethod
+    def _matches(doc, query):
+        for key, expected in query.items():
+            actual = doc.get(key)
+            if isinstance(expected, dict):
+                if "$ne" in expected and actual == expected["$ne"]:
+                    return False
+                continue
+            if actual != expected:
+                return False
+        return True
+
+
 @pytest.mark.asyncio
 async def test_create_vendor_profile_omits_empty_google_place_id():
     service = VendorService.__new__(VendorService)
@@ -101,6 +142,35 @@ async def test_assign_vendor_to_wedding_returns_conflict_for_duplicates():
 
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail == "Vendor already assigned to this wedding"
+
+
+@pytest.mark.asyncio
+async def test_get_wedding_vendors_scopes_assignments_by_owner():
+    service = VendorService.__new__(VendorService)
+    service.vendor_assignments = _DummyFindCollection(
+        [
+            {
+                "_id": "assignment-1",
+                "wedding_id": "wedding_123",
+                "created_by": "planner@example.com",
+                "is_deleted": False,
+            },
+            {
+                "_id": "assignment-2",
+                "wedding_id": "wedding_123",
+                "created_by": "other@example.com",
+                "is_deleted": False,
+            },
+        ]
+    )
+
+    results = await service.get_wedding_vendors(
+        "wedding_123",
+        created_by="planner@example.com",
+    )
+
+    assert [item["_id"] for item in results] == ["assignment-1"]
+    assert service.vendor_assignments.last_query["created_by"] == "planner@example.com"
 
 
 def _build_contract_payload(**overrides) -> dict:
@@ -181,3 +251,32 @@ async def test_ensure_contract_editable_allows_unlocked_draft():
 
     # Should not raise.
     await service._ensure_contract_editable(unlocked_contract)
+
+
+@pytest.mark.asyncio
+async def test_get_vendor_communications_scopes_by_owner():
+    service = VendorService.__new__(VendorService)
+    service.vendor_communications = _DummyFindCollection(
+        [
+            {
+                "_id": "comm-1",
+                "vendor_profile_id": "vendor-1",
+                "created_by": "planner@example.com",
+            },
+            {
+                "_id": "comm-2",
+                "vendor_profile_id": "vendor-1",
+                "created_by": "other@example.com",
+            },
+        ]
+    )
+
+    results = await service.get_vendor_communications(
+        "vendor-1",
+        created_by="planner@example.com",
+    )
+
+    assert [item["_id"] for item in results] == ["comm-1"]
+    assert (
+        service.vendor_communications.last_query["created_by"] == "planner@example.com"
+    )
