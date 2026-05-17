@@ -265,7 +265,9 @@ async def test_authorize_url_advertises_ews_not_exchange() -> None:
 
 
 @pytest.mark.asyncio
-async def test_authorize_url_uses_space_separated_scopes() -> None:
+async def test_authorize_url_uses_space_separated_scopes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Aurinko's hosted-auth ``/v1/auth/authorize`` REQUIRES space-separated
     scopes. Live-verified 2026-05-13 against api.aurinko.io:
 
@@ -276,6 +278,12 @@ async def test_authorize_url_uses_space_separated_scopes() -> None:
     comma-separated based on an untested assumption. Pin space-separated
     here so we don't drift back to comma and re-trigger live OAuth failures.
     """
+    # Patch the settings object held by calendar_provider_service directly
+    # (os.environ.setdefault at module level is too late — settings attributes
+    # are class-level os.getenv() calls evaluated at first import time).
+    import app.services.calendar_provider_service as _cps_mod
+    monkeypatch.setattr(_cps_mod.settings, "AURINKO_CLIENT_ID", "test-client-id")
+    monkeypatch.setattr(_cps_mod.settings, "AURINKO_CLIENT_SECRET", "test-client-secret")
     client = AurinkoClient()
     url = await client.authorize_url(
         scopes=["Calendar.ReadWrite", "Contacts.Read"],
@@ -294,7 +302,9 @@ async def test_authorize_url_uses_space_separated_scopes() -> None:
 
 
 @pytest.mark.asyncio
-async def test_authorize_url_default_serviceType_falls_back_to_google() -> None:
+async def test_authorize_url_default_serviceType_falls_back_to_google(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Aurinko's hosted-auth ``/v1/auth/authorize`` accepts a SINGLE
     serviceType value only. Live-verified 2026-05-13:
 
@@ -309,6 +319,9 @@ async def test_authorize_url_default_serviceType_falls_back_to_google() -> None:
     This corrects an earlier test that pinned the comma-separated
     multi-value form (broken in prod, never live-tested).
     """
+    import app.services.calendar_provider_service as _cps_mod
+    monkeypatch.setattr(_cps_mod.settings, "AURINKO_CLIENT_ID", "test-client-id")
+    monkeypatch.setattr(_cps_mod.settings, "AURINKO_CLIENT_SECRET", "test-client-secret")
     client = AurinkoClient()
     url = await client.authorize_url(
         scopes=["Calendar.ReadWrite"],
@@ -324,11 +337,16 @@ async def test_authorize_url_default_serviceType_falls_back_to_google() -> None:
 
 
 @pytest.mark.asyncio
-async def test_authorize_url_passes_single_serviceType_when_set() -> None:
+async def test_authorize_url_passes_single_serviceType_when_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """When a per-provider button calls /provider/connect?service_type=google
     we want Aurinko to skip its picker and jump straight to Google's OAuth
     screen. That requires sending ONLY ``Google`` in serviceType, not the
     full list."""
+    import app.services.calendar_provider_service as _cps_mod
+    monkeypatch.setattr(_cps_mod.settings, "AURINKO_CLIENT_ID", "test-client-id")
+    monkeypatch.setattr(_cps_mod.settings, "AURINKO_CLIENT_SECRET", "test-client-secret")
     client = AurinkoClient()
     url = await client.authorize_url(
         scopes=["Calendar.ReadWrite"],
