@@ -206,6 +206,70 @@ async def test_mirror_vendor_creates_contact_with_workspace_keywords() -> None:
 
 
 @pytest.mark.asyncio
+async def test_mirror_vendor_dedupes_same_account_contact_book_rows() -> None:
+    """Legacy picker commits may have enabled one contacts book on many rows."""
+    vendor_id = ObjectId()
+    first_connection_id = ObjectId()
+    default_connection_id = ObjectId()
+    provider = _Provider()
+    service = _service(
+        vendors=_Collection(
+            [
+                {
+                    "_id": vendor_id,
+                    "business_name": "Lens & Light",
+                    "contact_name": "Ada Lovelace",
+                    "email": "ada@example.com",
+                    "created_by": "planner@example.com",
+                    "is_active": True,
+                }
+            ]
+        ),
+        connections=_Collection(
+            [
+                {
+                    "_id": first_connection_id,
+                    "aurinko_account_id": "acct-1",
+                    "connection_status": CalendarConnectionStatus.ACTIVE.value,
+                    "contact_sync_enabled": True,
+                    "contact_sync_book_id": "default",
+                    "owner_planner_email": "planner@example.com",
+                    "owner_planner_id": "planner-1",
+                    "user_id": "user-1",
+                    "user_email": "planner@example.com",
+                    "provider": "google",
+                },
+                {
+                    "_id": default_connection_id,
+                    "aurinko_account_id": "acct-1",
+                    "connection_status": CalendarConnectionStatus.ACTIVE.value,
+                    "contact_sync_enabled": True,
+                    "contact_sync_book_id": "default",
+                    "is_default_write_target": True,
+                    "owner_planner_email": "planner@example.com",
+                    "owner_planner_id": "planner-1",
+                    "user_id": "user-1",
+                    "user_email": "planner@example.com",
+                    "provider": "google",
+                },
+            ]
+        ),
+        syncs=_Collection(),
+        provider=provider,
+    )
+
+    await service.mirror_vendor_to_aurinko(str(vendor_id))
+
+    assert len(provider.client.created) == 1
+    assert (
+        provider.client.created[0]["account_token"] == f"token:{default_connection_id}"
+    )
+    assert service.syncs_collection.docs[0]["connection_id"] == str(
+        default_connection_id
+    )
+
+
+@pytest.mark.asyncio
 async def test_mirror_couple_uses_wedding_owner_scope_and_couple_user_email() -> None:
     connection_id = ObjectId()
     wedding_id = "wedding-1"

@@ -1803,6 +1803,73 @@ class CalendarProviderService:
             "message": "Resumed your calendar selection.",
         }
 
+    def _select_account_auxiliary_anchor_calendar_id(
+        self,
+        *,
+        picked_ids: list[str],
+        effective_default_write: Optional[str],
+        calendars_by_id: dict[str, dict[str, Any]],
+    ) -> Optional[str]:
+        """Choose the one row that owns account-scoped task/contact sync."""
+        if effective_default_write and effective_default_write in picked_ids:
+            return effective_default_write
+        for calendar_id in picked_ids:
+            if self._is_writable_calendar(calendars_by_id.get(calendar_id, {})):
+                return calendar_id
+        return picked_ids[0] if picked_ids else None
+
+    def _select_existing_auxiliary_anchor_calendar_id(
+        self,
+        *,
+        picked_ids: list[str],
+        effective_default_write: Optional[str],
+        existing_by_calendar: dict[str, dict[str, Any]],
+        enabled_field: str,
+    ) -> Optional[str]:
+        enabled_ids = [
+            calendar_id
+            for calendar_id in picked_ids
+            if existing_by_calendar.get(calendar_id, {}).get(enabled_field)
+        ]
+        if not enabled_ids:
+            return None
+        if effective_default_write and effective_default_write in enabled_ids:
+            return effective_default_write
+        existing_default = next(
+            (
+                calendar_id
+                for calendar_id in enabled_ids
+                if existing_by_calendar[calendar_id].get("is_default_write_target")
+            ),
+            None,
+        )
+        return existing_default or enabled_ids[0]
+
+    async def _delete_auxiliary_subscription(
+        self,
+        *,
+        account_token: str,
+        subscription_id: Any,
+        label: str,
+        aurinko_account_id: str,
+    ) -> None:
+        if not account_token or not subscription_id:
+            return
+        try:
+            await self.client.delete_subscription(
+                account_token=account_token,
+                subscription_id=str(subscription_id),
+            )
+        except Exception as exc:
+            logger.info(
+                "Could not delete duplicate Aurinko %s subscription %s on "
+                "account %s: %s",
+                label,
+                subscription_id,
+                aurinko_account_id,
+                _redact_sensitive(exc),
+            )
+
     async def commit_calendar_selection(
         self,
         *,
@@ -1836,9 +1903,8 @@ class CalendarProviderService:
             }
 
         Optional ``task_picks`` / ``contact_picks`` select one tasklist or
-        contacts book for the newly materialized connection rows. These are
-        account-scoped resources in Aurinko, but v1 persists the choice on
-        each connection row to match the existing per-row settings model.
+        contacts book for the account. These are account-scoped resources in
+        Aurinko, so v1 stores them on exactly one anchor connection row.
 
         Returns the same response shape the pre-Option-B
         ``handle_oauth_callback`` used to return, so the existing
@@ -2024,7 +2090,11 @@ class CalendarProviderService:
         )
         effective_default_write = (
             explicit_default_write
-            or (str(draft_default_write) if draft_default_write else None)
+            or (
+                str(draft_default_write)
+                if draft_default_write and str(draft_default_write) in picked_ids
+                else None
+            )
             or next(
                 (
                     cid
@@ -2051,8 +2121,37 @@ class CalendarProviderService:
         existing_by_calendar: dict[str, dict[str, Any]] = {
             str(row.get("aurinko_calendar_id")): row for row in existing_rows
         }
+        auxiliary_anchor_id = self._select_account_auxiliary_anchor_calendar_id(
+            picked_ids=picked_ids,
+            effective_default_write=effective_default_write,
+            calendars_by_id=calendars_by_id,
+        )
+        existing_task_anchor_id = self._select_existing_auxiliary_anchor_calendar_id(
+            picked_ids=picked_ids,
+            effective_default_write=effective_default_write,
+            existing_by_calendar=existing_by_calendar,
+            enabled_field="task_sync_enabled",
+        )
+        existing_contact_anchor_id = self._select_existing_auxiliary_anchor_calendar_id(
+            picked_ids=picked_ids,
+            effective_default_write=effective_default_write,
+            existing_by_calendar=existing_by_calendar,
+            enabled_field="contact_sync_enabled",
+        )
+        task_anchor_id = (
+            auxiliary_anchor_id
+            if selected_tasklist_id is not None
+            else existing_task_anchor_id
+        )
+        contact_anchor_id = (
+            auxiliary_anchor_id
+            if selected_contact_book_id is not None
+            else existing_contact_anchor_id
+        )
 
         seen_calendar_ids: list[str] = []
+        disabled_task_connection_ids: list[str] = []
+        disabled_contact_connection_ids: list[str] = []
         bulk_ops: list[UpdateOne] = []
         for calendar_id in picked_ids:
             entry = calendars_by_id[calendar_id]
@@ -2060,6 +2159,82 @@ class CalendarProviderService:
             seen_calendar_ids.append(calendar_id)
             is_writable = self._is_writable_calendar(entry)
             existing_doc = existing_by_calendar.get(calendar_id)
+            existing_task_enabled = bool(
+                existing_doc.get("task_sync_enabled", False)
+                if existing_doc is not None
+                else False
+            )
+            existing_contact_enabled = bool(
+                existing_doc.get("contact_sync_enabled", False)
+                if existing_doc is not None
+                else False
+            )
+            task_sync_enabled = bool(task_anchor_id and calendar_id == task_anchor_id)
+            contact_sync_enabled = bool(
+                contact_anchor_id and calendar_id == contact_anchor_id
+            )
+            if task_sync_enabled:
+                task_sync_tasklist_id = (
+                    selected_tasklist_id
+                    if selected_tasklist_id is not None
+                    else (
+                        existing_doc.get("task_sync_tasklist_id")
+                        if existing_doc is not None
+                        else None
+                    )
+                )
+                task_sync_tasklist_name = (
+                    selected_tasklist_name
+                    if selected_tasklist_name is not None
+                    else (
+                        existing_doc.get("task_sync_tasklist_name")
+                        if existing_doc is not None
+                        else None
+                    )
+                )
+            else:
+                task_sync_tasklist_id = None
+                task_sync_tasklist_name = None
+            if contact_sync_enabled:
+                contact_sync_book_id = (
+                    selected_contact_book_id
+                    if selected_contact_book_id is not None
+                    else (
+                        existing_doc.get("contact_sync_book_id")
+                        if existing_doc is not None
+                        else None
+                    )
+                )
+                contact_sync_book_name = (
+                    selected_contact_book_name
+                    if selected_contact_book_name is not None
+                    else (
+                        existing_doc.get("contact_sync_book_name")
+                        if existing_doc is not None
+                        else None
+                    )
+                )
+            else:
+                contact_sync_book_id = None
+                contact_sync_book_name = None
+            if existing_doc is not None and not task_sync_enabled:
+                await self._delete_auxiliary_subscription(
+                    account_token=account_token,
+                    subscription_id=existing_doc.get("task_sync_subscription_id"),
+                    label="task",
+                    aurinko_account_id=aurinko_account_id,
+                )
+                if existing_task_enabled:
+                    disabled_task_connection_ids.append(str(existing_doc["_id"]))
+            if existing_doc is not None and not contact_sync_enabled:
+                await self._delete_auxiliary_subscription(
+                    account_token=account_token,
+                    subscription_id=existing_doc.get("contact_sync_subscription_id"),
+                    label="contact",
+                    aurinko_account_id=aurinko_account_id,
+                )
+                if existing_contact_enabled:
+                    disabled_contact_connection_ids.append(str(existing_doc["_id"]))
             connection_query = {
                 "user_id": user_id,
                 "aurinko_account_id": aurinko_account_id,
@@ -2127,60 +2302,30 @@ class CalendarProviderService:
                     if existing_doc is not None and is_writable
                     else is_writable
                 ),
-                "task_sync_enabled": bool(
-                    existing_doc.get("task_sync_enabled", False)
-                    if existing_doc is not None and selected_tasklist_id is None
-                    else bool(selected_tasklist_id)
+                "task_sync_enabled": task_sync_enabled,
+                "task_sync_tasklist_id": task_sync_tasklist_id,
+                "task_sync_tasklist_name": task_sync_tasklist_name,
+                "task_sync_subscription_id": (
+                    existing_doc.get("task_sync_subscription_id")
+                    if existing_doc is not None and task_sync_enabled
+                    else None
                 ),
-                "task_sync_tasklist_id": (
-                    selected_tasklist_id
-                    if selected_tasklist_id is not None
-                    else (
-                        existing_doc.get("task_sync_tasklist_id")
-                        if existing_doc is not None
-                        else None
-                    )
-                ),
-                "task_sync_tasklist_name": (
-                    selected_tasklist_name
-                    if selected_tasklist_name is not None
-                    else (
-                        existing_doc.get("task_sync_tasklist_name")
-                        if existing_doc is not None
-                        else None
-                    )
-                ),
-                "contact_sync_enabled": bool(
-                    existing_doc.get("contact_sync_enabled", False)
-                    if existing_doc is not None and selected_contact_book_id is None
-                    else bool(selected_contact_book_id)
-                ),
-                "contact_sync_book_id": (
-                    selected_contact_book_id
-                    if selected_contact_book_id is not None
-                    else (
-                        existing_doc.get("contact_sync_book_id")
-                        if existing_doc is not None
-                        else None
-                    )
-                ),
-                "contact_sync_book_name": (
-                    selected_contact_book_name
-                    if selected_contact_book_name is not None
-                    else (
-                        existing_doc.get("contact_sync_book_name")
-                        if existing_doc is not None
-                        else None
-                    )
+                "contact_sync_enabled": contact_sync_enabled,
+                "contact_sync_book_id": contact_sync_book_id,
+                "contact_sync_book_name": contact_sync_book_name,
+                "contact_sync_subscription_id": (
+                    existing_doc.get("contact_sync_subscription_id")
+                    if existing_doc is not None and contact_sync_enabled
+                    else None
                 ),
                 "contact_sync_group_id": (
                     existing_doc.get("contact_sync_group_id")
-                    if existing_doc is not None
+                    if existing_doc is not None and contact_sync_enabled
                     else None
                 ),
                 "contact_sync_group_name": (
                     existing_doc.get("contact_sync_group_name")
-                    if existing_doc is not None
+                    if existing_doc is not None and contact_sync_enabled
                     else None
                 ),
                 "connection_scopes": connection_scopes,
@@ -2198,6 +2343,30 @@ class CalendarProviderService:
 
         if bulk_ops:
             await self.connections_collection.bulk_write(bulk_ops, ordered=False)
+        if disabled_task_connection_ids:
+            await self.task_sync_records_collection.update_many(
+                {"connection_id": {"$in": disabled_task_connection_ids}},
+                {
+                    "$set": {
+                        "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                        "last_error": "Task sync moved to account anchor connection",
+                        "updated_at": now,
+                    }
+                },
+            )
+        if disabled_contact_connection_ids:
+            await self.contact_sync_records_collection.update_many(
+                {"connection_id": {"$in": disabled_contact_connection_ids}},
+                {
+                    "$set": {
+                        "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                        "last_error": (
+                            "Contact sync moved to account anchor connection"
+                        ),
+                        "updated_at": now,
+                    }
+                },
+            )
 
         # Calendars that were present in a prior OAuth but are no longer
         # returned by Aurinko (e.g. user removed the calendar from their
@@ -2215,27 +2384,31 @@ class CalendarProviderService:
         )
         if stale_rows:
             for stale_row in stale_rows:
-                stale_subscription_id = stale_row.get("aurinko_subscription_id")
-                if not stale_subscription_id:
-                    continue
                 stale_token = self._decrypt_token(
                     stale_row.get("aurinko_access_token_encrypted")
                 )
                 if not stale_token:
                     continue
-                try:
-                    await self.client.delete_subscription(
-                        account_token=stale_token,
-                        subscription_id=str(stale_subscription_id),
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "Aurinko unsubscribe for stale calendar %s on account %s "
-                        "failed during reconnect teardown: %s",
-                        stale_row.get("aurinko_calendar_id"),
-                        aurinko_account_id,
-                        _redact_sensitive(exc),
-                    )
+                for stale_subscription_id in (
+                    stale_row.get("aurinko_subscription_id"),
+                    stale_row.get("task_sync_subscription_id"),
+                    stale_row.get("contact_sync_subscription_id"),
+                ):
+                    if not stale_subscription_id:
+                        continue
+                    try:
+                        await self.client.delete_subscription(
+                            account_token=stale_token,
+                            subscription_id=str(stale_subscription_id),
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Aurinko unsubscribe for stale calendar %s on account %s "
+                            "failed during reconnect teardown: %s",
+                            stale_row.get("aurinko_calendar_id"),
+                            aurinko_account_id,
+                            _redact_sensitive(exc),
+                        )
             stale_connection_ids = [str(row["_id"]) for row in stale_rows]
             if stale_connection_ids:
                 await self.syncs_collection.update_many(
@@ -2250,6 +2423,26 @@ class CalendarProviderService:
                             "updated_at": now,
                         },
                         "$unset": {"calendar_connection_id": "", "calendar_id": ""},
+                    },
+                )
+                await self.task_sync_records_collection.update_many(
+                    {"connection_id": {"$in": stale_connection_ids}},
+                    {
+                        "$set": {
+                            "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                            "last_error": "Calendar removed from provider",
+                            "updated_at": now,
+                        }
+                    },
+                )
+                await self.contact_sync_records_collection.update_many(
+                    {"connection_id": {"$in": stale_connection_ids}},
+                    {
+                        "$set": {
+                            "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                            "last_error": "Calendar removed from provider",
+                            "updated_at": now,
+                        }
                     },
                 )
         await self.connections_collection.delete_many(stale_filter)
@@ -2808,6 +3001,75 @@ class CalendarProviderService:
                 {"_id": connection_doc["_id"]}, {"$set": db_update}
             )
 
+    async def _disable_account_auxiliary_siblings(
+        self,
+        *,
+        connection_doc: dict[str, Any],
+        enabled_field: str,
+        subscription_field: str,
+        sync_records_collection: Any,
+        sync_label: str,
+        now: datetime,
+    ) -> None:
+        account_id = connection_doc.get("aurinko_account_id")
+        if not account_id:
+            return
+        siblings = await self.connections_collection.find(
+            {
+                "user_id": connection_doc.get("user_id"),
+                "aurinko_account_id": account_id,
+                "_id": {"$ne": connection_doc["_id"]},
+                enabled_field: True,
+            }
+        ).to_list(length=100)
+        if not siblings:
+            return
+        for sibling in siblings:
+            token = await self._account_token_for_connection(sibling)
+            await self._delete_auxiliary_subscription(
+                account_token=token or "",
+                subscription_id=sibling.get(subscription_field),
+                label=sync_label,
+                aurinko_account_id=str(account_id),
+            )
+        sibling_ids = [row["_id"] for row in siblings]
+        sibling_connection_ids = [str(row["_id"]) for row in siblings]
+        clear_doc: dict[str, Any] = {
+            enabled_field: False,
+            subscription_field: None,
+            "updated_at": now,
+        }
+        if sync_label == "task":
+            clear_doc.update(
+                {
+                    "task_sync_tasklist_id": None,
+                    "task_sync_tasklist_name": None,
+                }
+            )
+        else:
+            clear_doc.update(
+                {
+                    "contact_sync_book_id": None,
+                    "contact_sync_book_name": None,
+                    "contact_sync_group_id": None,
+                    "contact_sync_group_name": None,
+                }
+            )
+        await self.connections_collection.update_many(
+            {"_id": {"$in": sibling_ids}},
+            {"$set": clear_doc},
+        )
+        await sync_records_collection.update_many(
+            {"connection_id": {"$in": sibling_connection_ids}},
+            {
+                "$set": {
+                    "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                    "last_error": f"{sync_label.title()} sync moved to another connection",
+                    "updated_at": now,
+                }
+            },
+        )
+
     async def update_connection(
         self,
         connection_id: str,
@@ -2924,7 +3186,53 @@ class CalendarProviderService:
         ):
             set_doc["is_default_write_target"] = False
 
-        set_doc["updated_at"] = datetime.now(UTC)
+        now = datetime.now(UTC)
+        new_task_enabled = bool(
+            set_doc.get(
+                "task_sync_enabled", connection_doc.get("task_sync_enabled", False)
+            )
+        )
+        new_contact_enabled = bool(
+            set_doc.get(
+                "contact_sync_enabled",
+                connection_doc.get("contact_sync_enabled", False),
+            )
+        )
+        if new_task_enabled and any(
+            key in set_doc
+            for key in (
+                "task_sync_enabled",
+                "task_sync_tasklist_id",
+                "task_sync_tasklist_name",
+            )
+        ):
+            await self._disable_account_auxiliary_siblings(
+                connection_doc=connection_doc,
+                enabled_field="task_sync_enabled",
+                subscription_field="task_sync_subscription_id",
+                sync_records_collection=self.task_sync_records_collection,
+                sync_label="task",
+                now=now,
+            )
+        if new_contact_enabled and any(
+            key in set_doc
+            for key in (
+                "contact_sync_enabled",
+                "contact_sync_book_id",
+                "contact_sync_book_name",
+                "contact_sync_group_name",
+            )
+        ):
+            await self._disable_account_auxiliary_siblings(
+                connection_doc=connection_doc,
+                enabled_field="contact_sync_enabled",
+                subscription_field="contact_sync_subscription_id",
+                sync_records_collection=self.contact_sync_records_collection,
+                sync_label="contact",
+                now=now,
+            )
+
+        set_doc["updated_at"] = now
         await self.connections_collection.update_one(
             {"_id": connection_doc["_id"]}, {"$set": set_doc}
         )

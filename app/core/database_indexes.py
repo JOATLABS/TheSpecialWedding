@@ -2275,47 +2275,59 @@ async def create_calendar_indexes():
             background=True,
         )
 
-        task_sync_records = mongo.get_task_sync_records_collection()
-        await task_sync_records.create_index(
-            [("planner_task_id", ASCENDING), ("connection_id", ASCENDING)],
-            name="idx_task_sync_records_task_connection",
-            unique=True,
-            background=True,
-        )
-        await task_sync_records.create_index(
-            [("connection_id", ASCENDING), ("aurinko_task_id", ASCENDING)],
-            name="idx_task_sync_records_connection_external",
-            sparse=True,
-            background=True,
-        )
-        await task_sync_records.create_index(
-            [("owner_planner_id", ASCENDING), ("sync_status", ASCENDING)],
-            name="idx_task_sync_records_owner_status",
-            background=True,
-        )
+        try:
+            task_sync_records = mongo.get_task_sync_records_collection()
+            await task_sync_records.create_index(
+                [("planner_task_id", ASCENDING), ("connection_id", ASCENDING)],
+                name="idx_task_sync_records_task_connection",
+                unique=True,
+                background=True,
+            )
+            await task_sync_records.create_index(
+                [("connection_id", ASCENDING), ("aurinko_task_id", ASCENDING)],
+                name="idx_task_sync_records_connection_external",
+                sparse=True,
+                background=True,
+            )
+            await task_sync_records.create_index(
+                [("owner_planner_id", ASCENDING), ("sync_status", ASCENDING)],
+                name="idx_task_sync_records_owner_status",
+                background=True,
+            )
+        except AttributeError as exc:
+            logger.warning(
+                "Skipping task sync record indexes; collection getter unavailable: %s",
+                exc,
+            )
 
-        contact_sync_records = mongo.get_contact_sync_records_collection()
-        await contact_sync_records.create_index(
-            [
-                ("source_type", ASCENDING),
-                ("source_id", ASCENDING),
-                ("connection_id", ASCENDING),
-            ],
-            name="idx_contact_sync_records_source_connection",
-            unique=True,
-            background=True,
-        )
-        await contact_sync_records.create_index(
-            [("connection_id", ASCENDING), ("aurinko_contact_id", ASCENDING)],
-            name="idx_contact_sync_records_connection_external",
-            sparse=True,
-            background=True,
-        )
-        await contact_sync_records.create_index(
-            [("owner_planner_id", ASCENDING), ("sync_status", ASCENDING)],
-            name="idx_contact_sync_records_owner_status",
-            background=True,
-        )
+        try:
+            contact_sync_records = mongo.get_contact_sync_records_collection()
+            await contact_sync_records.create_index(
+                [
+                    ("source_type", ASCENDING),
+                    ("source_id", ASCENDING),
+                    ("connection_id", ASCENDING),
+                ],
+                name="idx_contact_sync_records_source_connection",
+                unique=True,
+                background=True,
+            )
+            await contact_sync_records.create_index(
+                [("connection_id", ASCENDING), ("aurinko_contact_id", ASCENDING)],
+                name="idx_contact_sync_records_connection_external",
+                sparse=True,
+                background=True,
+            )
+            await contact_sync_records.create_index(
+                [("owner_planner_id", ASCENDING), ("sync_status", ASCENDING)],
+                name="idx_contact_sync_records_owner_status",
+                background=True,
+            )
+        except AttributeError as exc:
+            logger.warning(
+                "Skipping contact sync record indexes; collection getter unavailable: %s",
+                exc,
+            )
 
         meeting_invites = mongo.get_meeting_invites_collection()
         await _deduplicate_meeting_invites(meeting_invites)
