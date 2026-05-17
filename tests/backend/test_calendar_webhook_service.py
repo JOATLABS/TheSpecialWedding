@@ -37,7 +37,13 @@ def _sign(
     return hmac.new(secret.encode("utf-8"), base_string, hashlib.sha256).hexdigest()
 
 
-def test_verify_signature_accepts_valid_v0_signature() -> None:
+def test_verify_signature_accepts_valid_v0_signature(monkeypatch) -> None:
+    # settings.AURINKO_WEBHOOK_SECRET is a class-level os.getenv() call evaluated
+    # at first import time; by then AURINKO_WEBHOOK_SECRET may not be in the env.
+    # Patch the settings object held by calendar_webhook_service directly so
+    # verify_signature sees the correct test secret regardless of import order.
+    import app.services.calendar_webhook_service as _cws_mod
+    monkeypatch.setattr(_cws_mod.settings, "AURINKO_WEBHOOK_SECRET", "test-webhook-secret")
     body = b'{"subscription":1217,"resource":"/calendars/c/events","accountId":1,"payloads":[]}'
     timestamp = str(int(time.time()))
     signature = _sign(body, timestamp)
