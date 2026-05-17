@@ -19,15 +19,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-import stripe
-from bson import ObjectId
-from pymongo import MongoClient
+import stripe  # noqa: E402
+from pymongo import MongoClient  # noqa: E402
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from app.models.subscription import normalize_subscription_status
+from app.models.subscription import normalize_subscription_status  # noqa: E402
 
 # Connect to MongoDB (same pattern as seed_subscription_plans.py)
 mongo_uri = (
@@ -71,7 +70,7 @@ def main():
         print(f"\nNo subscription record found for user {user_id}")
         sys.exit(1)
 
-    print(f"\nSubscription record:")
+    print("\nSubscription record:")
     print(f"  plan_id: {sub_record.get('plan_id')}")
     print(f"  status: {sub_record.get('status')}")
     print(f"  stripe_customer_id: {sub_record.get('stripe_customer_id')}")
@@ -172,7 +171,7 @@ def main():
         }
 
     # Update user_subscriptions collection
-    print(f"\n--- Updating subscription record ---")
+    print("\n--- Updating subscription record ---")
     sub_update = {
         "stripe_subscription_id": subscription_id,
         "stripe_customer_id": customer_id,
@@ -195,7 +194,7 @@ def main():
     print(f"  matched: {result.matched_count}, modified: {result.modified_count}")
 
     # Update users collection
-    print(f"\n--- Updating user record ---")
+    print("\n--- Updating user record ---")
     user_update = {
         "subscription_status": internal_status,
         "plan_id": plan_id,
@@ -222,7 +221,7 @@ def main():
     print(f"  matched: {result.matched_count}, modified: {result.modified_count}")
 
     # Initialize usage tracking
-    print(f"\n--- Initializing usage tracking ---")
+    print("\n--- Initializing usage tracking ---")
     sub_id = str(sub_record["_id"])
     existing_usage = db["usage_tracking"].find_one({"user_id": user_id})
     if existing_usage:
@@ -252,7 +251,7 @@ def main():
             "updated_at": now,
         }
         db["usage_tracking"].insert_one(usage_doc)
-        print(f"  Created usage tracking record")
+        print("  Created usage tracking record")
 
     # Verify final state
     updated_sub = db["user_subscriptions"].find_one({"user_id": user_id})
@@ -260,10 +259,10 @@ def main():
     usage = db["usage_tracking"].find_one({"user_id": user_id})
 
     print(f"\n{'=' * 50}")
-    print(f"FINAL STATE")
+    print("FINAL STATE")
     print(f"{'=' * 50}")
 
-    print(f"\nSubscription:")
+    print("\nSubscription:")
     print(f"  status: {updated_sub.get('status')}")
     print(f"  stripe_status: {updated_sub.get('stripe_status')}")
     print(f"  stripe_subscription_id: {updated_sub.get('stripe_subscription_id')}")
@@ -272,7 +271,7 @@ def main():
     print(f"  plan_id: {updated_sub.get('plan_id')}")
     print(f"  plan_snapshot: {'YES' if updated_sub.get('plan_snapshot') else 'NO'}")
 
-    print(f"\nUser:")
+    print("\nUser:")
     print(f"  is_active: {updated_user.get('is_active')}")
     print(f"  email_verified: {updated_user.get('email_verified')}")
     print(f"  subscription_status: {updated_user.get('subscription_status')}")
@@ -280,7 +279,7 @@ def main():
     print(f"  stripe_customer_id: {updated_user.get('stripe_customer_id')}")
 
     if usage:
-        print(f"\nUsage Tracking:")
+        print("\nUsage Tracking:")
         print(f"  weddings: {usage.get('weddings_used')}/{usage.get('weddings_limit')}")
         print(f"  guests: {usage.get('guests_used')}/{usage.get('guests_limit')}")
         print(
@@ -290,9 +289,9 @@ def main():
             f"  storage_gb: {usage.get('storage_used_gb')}/{usage.get('storage_limit_gb')}"
         )
     else:
-        print(f"\nUsage Tracking: NOT FOUND")
+        print("\nUsage Tracking: NOT FOUND")
 
-    print(f"\nDone!")
+    print("\nDone!")
     client.close()
 
 

@@ -209,6 +209,15 @@ Rules:
 
 Status as of 2026-04-21: role checks are still partially scattered. `app/services/auth_service.py` references `"team_member"` (line 83), `"public_signup"` (line 54), and `"advertising_vendor"` (line 161) as bare strings. The good pattern lives at `app/utils/planner_billing_scope.is_planner_billing_role`, and is also followed by `app/utils/messaging_roles.py` for the `couple_messages.sender_role` field. Migration is open tech debt — do not introduce new role-string callsites; fold existing ones into the constants module as you touch surrounding code.
 
+## Media Upload Path Convention
+
+R2 uploads have two paths. Pick the right one or you'll re-implement plumbing that already exists.
+
+- **Browser upload (admin authoring a blog/KB article).** Use the presigned-PUT flow: `GET /admin/blog/upload-url` returns a one-time URL the browser PUTs to directly. Wired in `app/api/blog.py:get_blog_image_upload_url` and `app/services/blog_upload_service.py:create_presigned_upload_url`. Never reach into boto3 or `MediaStorage` from the frontend; never proxy bytes through FastAPI.
+- **Server-side upload (sync service, scheduled job, anything fetching a remote URL and storing it).** Use `BlogUploadService.upload_from_url(remote_url, folder)` — streams via httpx with the same 5 MB cap and `ALLOWED_BLOG_IMAGE_TYPES` allowlist, raises `BlogUploadFromUrlError` on failure. The BabyLoveGrowth sync uses this to re-host hero images on our own CDN. Do not write to `MediaStorage.client.put_object` directly in service code — the wrapper carries the safety rails.
+
+Same bucket (`BLOG_ASSETS`, env `S3_BLOG_BUCKET_NAME`), same CDN domain (env `BLOG_MEDIA_DOMAIN`), same allowlist — only the ingress path differs.
+
 ## Regression And Bug-Title Convention
 
 Regression and bug-fix titles describe the *behavior* being fixed, not the environment that exposed it.

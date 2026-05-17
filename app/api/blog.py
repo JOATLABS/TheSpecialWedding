@@ -6,7 +6,7 @@ Public endpoints for the /resources page (no auth) + Admin CRUD (ROOT_ADMIN only
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
 from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
@@ -269,3 +269,109 @@ async def get_blog_image_upload_url(
         folder=folder,
         content_type=content_type,
     )
+
+
+# ==================== BABYLOVEGROWTH SYNC (ROOT_ADMIN) ====================
+#
+# These endpoints drive the AI-content-pipeline integration spec'd in
+# docs/plans/babylovegrowth_integration_mockup.md. Sync runs in a
+# BackgroundTask so the external cron caller gets a quick 202 — same
+# pattern as app/api/billing_jobs.py:sync_usage_to_stripe.
+
+
+@router.post("/admin/blog/sync-babylovegrowth", tags=["Blog Admin"])
+async def trigger_babylovegrowth_sync(
+    background_tasks: BackgroundTasks,
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
+    """Trigger a BabyLoveGrowth → blog_articles sync run.
+
+    Two response shapes:
+
+      - ``{"status": "accepted", ...}`` — gate checks passed, real
+        sync work scheduled in the background. Consult
+        ``GET /admin/blog/sync-babylovegrowth/status`` for progress.
+      - ``{"status": "skipped", "reason": ...}`` — gate checks failed.
+        Returned SYNCHRONOUSLY because FastAPI BackgroundTasks
+        discards return values; if we enqueued the task and let it
+        bail inside ``run_full_sync``, the admin UI would see only a
+        bare "accepted" with no way to surface the reason. Pre-flight
+        gates: ``sync_disabled``, ``no_api_key``, ``lock_held``.
+
+    Note: the lock-held check is racy in principle (we read the lock
+    state, then schedule a task that re-acquires it), but the
+    advisory lock in ``run_full_sync`` is the authoritative gate and
+    will catch any race. The pre-flight check is a UX shortcut, not a
+    correctness mechanism.
+    """
+    from app.core.settings import settings as _settings
+    from app.services.babylovegrowth_sync_service import (
+        SYNC_STATE_COLLECTION,
+        SYNC_STATE_DOC_ID,
+        babylovegrowth_sync_service,
+    )
+    from app.core.database import mongo as _mongo
+
+    if not _settings.babylovegrowth_sync_enabled:
+        return {"status": "skipped", "reason": "sync_disabled"}
+    if not _settings.babylovegrowth_api_key:
+        return {"status": "skipped", "reason": "no_api_key"}
+
+    # Pre-flight lock check — see docstring for the racy-but-fine
+    # rationale. If a stale "running" doc was left by a crashed run,
+    # run_full_sync's stale-lock TTL handles it.
+    state_doc = await _mongo.db[SYNC_STATE_COLLECTION].find_one(
+        {"_id": SYNC_STATE_DOC_ID}
+    )
+    if state_doc and state_doc.get("status") == "running":
+        return {"status": "skipped", "reason": "lock_held"}
+
+    background_tasks.add_task(
+        babylovegrowth_sync_service.run_full_sync, triggered_by="manual"
+    )
+    return {
+        "status": "accepted",
+        "message": "BabyLoveGrowth sync started in background",
+    }
+
+
+@router.post("/admin/blog/sync-babylovegrowth/backfill-images", tags=["Blog Admin"])
+async def backfill_babylovegrowth_hero_images(
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
+    """Retry hero image proxy for synced articles where og_image is None.
+
+    Synchronous (NOT BackgroundTask) so the admin sees per-article
+    results in the response. Each failure returns the exact reason
+    string from BlogUploadFromUrlError — diagnostic by design.
+
+    Use case: original sync persisted an article but the hero image
+    fetch failed (CDN was rate-limiting, wrong content-type, etc.).
+    This retries with full error surfacing.
+    """
+    from app.services.babylovegrowth_sync_service import (
+        babylovegrowth_sync_service,
+    )
+
+    return await babylovegrowth_sync_service.backfill_hero_images()
+
+
+@router.get("/admin/blog/sync-babylovegrowth/status", tags=["Blog Admin"])
+async def get_babylovegrowth_sync_status(
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
+    """Return the singleton sync-state document.
+
+    Includes lock state, last-run timestamps, counts (new/skipped/
+    image_failed/error), and the last `MAX_RETAINED_ERRORS` errors.
+    Used by cron healthchecks ("last successful sync more than N
+    hours ago") and by manual debug sessions.
+    """
+    from app.services.babylovegrowth_sync_service import (
+        babylovegrowth_sync_service,
+    )
+
+    state = await babylovegrowth_sync_service.get_last_run_status()
+    # Mongo's _id is the literal string "babylovegrowth_sync_state" —
+    # safe to return as-is in JSON, no ObjectId stringification needed.
+    return state

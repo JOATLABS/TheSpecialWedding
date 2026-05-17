@@ -7,7 +7,6 @@ crashing mid-request with a generic FileNotFoundError. These tests pin
 that contract so a future image rebuild can't silently regress.
 """
 
-import os
 import sys
 from importlib import reload
 from pathlib import Path

@@ -32,7 +32,6 @@ from app.models.team_member import (  # noqa: E402
     TeamPermissions,
     resolve_team_permissions,
 )
-from app.services import calendar_provider_service as provider_module  # noqa: E402
 from app.services.calendar_aggregation_service import (  # noqa: E402
     calendar_aggregation_service,
 )
@@ -83,9 +82,7 @@ def test_resolve_team_permissions_supports_couple_bookable_overrides() -> None:
     assert resolved["approve_couple_bookings"] is True
 
     # Planner opts an editor *out* of being bookable while preserving other perms.
-    resolved = resolve_team_permissions(
-        "editor", {"couple_bookable": False}
-    )
+    resolved = resolve_team_permissions("editor", {"couple_bookable": False})
     assert resolved["couple_bookable"] is False
     assert resolved["approve_couple_bookings"] is True
 
@@ -101,9 +98,7 @@ def test_team_permissions_pydantic_model_exposes_new_keys() -> None:
 
 
 def test_planner_notification_types_define_meeting_booking_request() -> None:
-    assert (
-        PlannerNotificationTypes.MEETING_BOOKING_REQUEST == "meeting_booking_request"
-    )
+    assert PlannerNotificationTypes.MEETING_BOOKING_REQUEST == "meeting_booking_request"
 
 
 def test_aggregation_internal_event_surfaces_external_conflict_snapshot() -> None:

@@ -7,15 +7,14 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import PageHeader from '../../components/PageHeader';
 import TaskModal from './components/TaskModal';
-// CalendarConnect (multi-provider) is exported as the default from the legacy
-// GoogleCalendarConnect.tsx path; the file rename is a follow-up cleanup.
-import CalendarConnect from './components/GoogleCalendarConnect';
+import CalendarConnect from './components/CalendarConnect';
 import CalendarStatusPill from './components/CalendarStatusPill';
 import CalendarRightRail from './components/CalendarRightRail';
 import DaySlideOver from './components/DaySlideOver';
 import MetricStrip from './components/MetricStrip';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import {
   CalendarConnection,
   CATEGORY_LABELS,
@@ -23,6 +22,7 @@ import {
   deleteMeeting,
   deleteTask,
   disconnectCalendarConnection,
+  getCalendarPickerResume,
   getSharedCalendarView,
   getStaffAvailability,
   getTask,
@@ -56,7 +56,7 @@ const MONTH_NAMES = [
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 type ViewMode = 'calendar' | 'list';
-type SourceFilter = 'all' | 'internal_task' | 'internal_meeting' | 'external_google';
+type SourceFilter = 'all' | 'internal_task' | 'internal_meeting' | 'external';
 type VisibilityFilter = 'all' | 'details' | 'busy_only';
 
 const PANEL_CLASS =
@@ -87,7 +87,7 @@ function buildCalendarDays(year: number, month: number) {
 }
 
 function eventTone(event: SharedCalendarEvent) {
-  if (event.source_type === 'external_google') {
+  if (String(event.source_type || '').startsWith('external')) {
     return 'border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-700/80 dark:text-slate-100';
   }
   if (event.source_type === 'internal_meeting') {
@@ -102,7 +102,10 @@ function eventTone(event: SharedCalendarEvent) {
 }
 
 function eventDisplayTitle(event: SharedCalendarEvent) {
-  if (event.source_type === 'external_google' && event.visibility_mode === 'busy_only') {
+  if (
+    String(event.source_type || '').startsWith('external') &&
+    event.visibility_mode === 'busy_only'
+  ) {
     return 'Busy';
   }
   return event.title || 'Untitled item';
@@ -151,6 +154,18 @@ export default function PlannerCalendarPage() {
     string | null
   >(null);
   const [daySlideOverIso, setDaySlideOverIso] = useState<string | null>(null);
+  // WAI-ARIA Dialog pattern — focus trap on the manage-calendars modal.
+  const manageCalendarsDialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(manageCalendarsDialogRef, manageCalendarsOpen);
+
+  // Picker-resume banner state — populated on mount via /picker-resume.
+  // Surfaces an "in-flight calendar setup" the planner left behind
+  // (refresh, tab close, auth bounce). One click sends them to the
+  // callback page in resume mode, which re-renders the picker modal.
+  const [resumeDraftId, setResumeDraftId] = useState<string | null>(null);
+  const [resumeAccountEmail, setResumeAccountEmail] = useState<string | null>(
+    null
+  );
 
   const canViewCalendar =
     !!userProfile &&
@@ -389,6 +404,35 @@ export default function PlannerCalendarPage() {
     void loadAvailability();
   }, [canViewAvailability, loadAvailability]);
 
+  // Picker-resume probe — fires once on planner mount. If the planner
+  // started a calendar OAuth, was bounced to login (or refreshed, or
+  // closed the tab), and arrived back here, the draft they made is
+  // still in Mongo (TTL 30 min). Surface a banner offering to continue
+  // the setup instead of making them re-do OAuth.
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await getCalendarPickerResume(token);
+        if (cancelled) return;
+        if (result.needs_selection && result.draft_id) {
+          setResumeDraftId(result.draft_id);
+          setResumeAccountEmail(result.account_email ?? null);
+        }
+      } catch {
+        // Silent — banner is opportunistic recovery, not a hard
+        // dependency. The /picker-resume endpoint returns an empty
+        // payload when no draft exists; only network / 5xx errors
+        // would throw, and there's nothing the planner can do about
+        // those here.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
   const openCreateModal = (date?: Date) => {
     setSelectedTask(null);
     setSelectedDate(date);
@@ -398,8 +442,8 @@ export default function PlannerCalendarPage() {
   const openExistingItem = async (event: SharedCalendarEvent) => {
     if (!token) return;
 
-    if (event.source_type === 'external_google') {
-      toast.message('External Google events are read-only here. Change sharing or sync settings from the connection panel.');
+    if (String(event.source_type || '').startsWith('external')) {
+      toast.message('External events are read-only here. Change sharing or sync settings from the connection panel.');
       return;
     }
     if (event.source_type === 'internal_task' && !canManageGeneralTasks) {
@@ -455,13 +499,16 @@ export default function PlannerCalendarPage() {
     }
   };
 
-  const toggleAvailabilityStaff = (staffId: string) => {
+  // Restored from the Phase-3 follow-up: the staff selector now lives
+  // inside the CalendarRightRail Availability tab as a small popover
+  // (anchored to the "Staff" button next to Refresh).
+  const toggleAvailabilityStaff = useCallback((staffId: string) => {
     setSelectedAvailabilityStaffIds((current) =>
       current.includes(staffId)
         ? current.filter((value) => value !== staffId)
         : [...current, staffId]
     );
-  };
+  }, []);
 
   const goToPreviousMonth = () => {
     if (currentMonth === 0) {
@@ -615,6 +662,67 @@ export default function PlannerCalendarPage() {
         context={`${MONTH_NAMES[currentMonth]} ${currentYear}`}
       />
 
+      {/* Resume-calendar-setup banner — appears when /picker-resume on
+          mount returned an in-flight draft. Most common cause: planner
+          started OAuth, was bounced to login (session expired), came
+          back here. Without this banner they'd think the OAuth never
+          ran. The "Continue setup" CTA routes to the callback page in
+          resume mode so the picker modal re-renders. */}
+      {resumeDraftId && !loading && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-wedding-rose/30 bg-wedding-rose/5 px-4 py-3 dark:border-wedding-rose/40 dark:bg-wedding-rose/10">
+          <div className="min-w-0">
+            <p className="font-medium text-slate-900 dark:text-slate-100">
+              You have a calendar setup waiting
+            </p>
+            {resumeAccountEmail && (
+              <p className="mt-0.5 text-[12.5px] text-slate-600 dark:text-slate-300">
+                Pick which calendars to sync on{' '}
+                <span className="font-medium">{resumeAccountEmail}</span>.
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => router.push('/admin/planner/calendar/callback?resume=1')}
+              className="rounded-full bg-rose-600 px-4 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-700 dark:bg-rose-300 dark:text-slate-900 dark:hover:bg-rose-200"
+            >
+              Continue setup
+            </button>
+            <button
+              type="button"
+              onClick={() => setResumeDraftId(null)}
+              className="rounded-full px-3 py-1.5 text-sm text-slate-500 transition hover:bg-white/60 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700/60 dark:hover:text-slate-100"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Empty-state CTA — when zero connections and no in-flight
+          draft, surface the path to add one without making the planner
+          hunt for the status pill. */}
+      {!resumeDraftId && !loading && connections.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-center dark:border-slate-700 dark:bg-slate-900/40">
+          <p className="font-heading text-xl text-slate-900 dark:text-slate-100">
+            Connect your first calendar
+          </p>
+          <p className="mx-auto mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">
+            Pull your Google, Microsoft 365, iCloud, or Exchange calendar into
+            your planner so meetings, availability, and external events stay in
+            one place.
+          </p>
+          <button
+            type="button"
+            onClick={() => setManageCalendarsOpen(true)}
+            className="mt-4 rounded-full bg-rose-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-700 dark:bg-rose-300 dark:text-slate-900 dark:hover:bg-rose-200"
+          >
+            Connect a calendar
+          </button>
+        </div>
+      )}
+
       {/* Manage-all-calendars modal — hosts the full <CalendarConnect>
           component. Triggered from the CalendarStatusPill popover.
           When the popover's per-row Settings button calls
@@ -636,10 +744,13 @@ export default function PlannerCalendarPage() {
               }}
               aria-hidden
             />
-            <div className="relative z-[61] mx-4 max-h-[88vh] w-full max-w-[960px] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+            <div
+              ref={manageCalendarsDialogRef}
+              className="relative z-[61] mx-4 max-h-[88vh] w-full max-w-[960px] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+            >
               <div className="sticky top-0 z-[62] flex items-center justify-between border-b border-slate-200 bg-white/95 px-6 py-4 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-wedding-rose">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary-700 dark:text-rose-200">
                     Manage calendars
                   </p>
                   <h2 className="font-heading text-xl text-slate-900 dark:text-slate-100">
@@ -687,9 +798,9 @@ export default function PlannerCalendarPage() {
         />
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.95fr)]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.95fr)]">
         <section className={PANEL_CLASS}>
-          <div className="border-b border-slate-200 px-6 py-5 dark:border-slate-700">
+          <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div className="flex flex-wrap items-center gap-3">
                 <button
@@ -774,7 +885,7 @@ export default function PlannerCalendarPage() {
                 <option value="all">All sources</option>
                 <option value="internal_task">Internal tasks</option>
                 <option value="internal_meeting">Internal meetings</option>
-                <option value="external_google">Google calendars</option>
+                <option value="external">External calendars</option>
               </select>
 
               <select
@@ -789,10 +900,10 @@ export default function PlannerCalendarPage() {
             </div>
           </div>
 
-          <div className="p-4">
+          <div className="p-3">
             {loading ? (
-              <div className="flex h-80 items-center justify-center">
-                <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900 dark:border-slate-700 dark:border-t-slate-100" />
+              <div className="flex h-40 items-center justify-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900 dark:border-slate-700 dark:border-t-slate-100" />
               </div>
             ) : error ? (
               <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
@@ -800,15 +911,22 @@ export default function PlannerCalendarPage() {
               </div>
             ) : viewMode === 'calendar' ? (
               <>
-                <div className="mb-3 grid grid-cols-7 gap-2">
+                <div className="mb-1.5 grid grid-cols-7 gap-1.5">
                   {DAY_NAMES.map((day) => (
-                    <div key={day} className="px-2 py-1 text-center text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+                    <div key={day} className="px-1 py-0.5 text-center text-[9.5px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
                       {day}
                     </div>
                   ))}
                 </div>
 
-                <div className="grid grid-cols-7 gap-2">
+                {/* Calendar grid — compact density per the Phase-3
+                    redesign. Cells use ``aspect-[1.4/1]`` so they
+                    scale width-first to the column instead of being
+                    locked at a fixed 130px tall (which made 6 rows
+                    occupy ~780px on a 7-column grid). The event chips
+                    inside cap at 2 lines + a "more" pill — anything
+                    over that lives in the slide-over (day click). */}
+                <div className="grid grid-cols-7 gap-1.5">
                   {calendarDays.map((day, index) => {
                     const cellIso = day
                       ? new Date(Date.UTC(currentYear, currentMonth, day))
@@ -824,53 +942,44 @@ export default function PlannerCalendarPage() {
                     const selectedRing = isSelected
                       ? 'ring-2 ring-wedding-rose'
                       : '';
+                    const dayEvents = eventsByDay[day || 0] || [];
+                    const visibleEvents = dayEvents.slice(0, 2);
+                    const overflowCount = dayEvents.length - visibleEvents.length;
                     return (
                     <div
                       key={`${day ?? 'empty'}-${index}`}
                       onClick={() => day && openDaySlideOver(day)}
-                      className={`min-h-[130px] rounded-2xl border p-2 transition ${
+                      className={`aspect-[1.4/1] rounded-xl border p-1.5 transition overflow-hidden ${
                         day
                           ? 'cursor-pointer border-slate-200 bg-slate-50 hover:border-wedding-rose/50 dark:border-slate-700 dark:bg-slate-900/60 dark:hover:border-wedding-rose/40'
                           : 'border-transparent bg-transparent'
                       } ${todayRing} ${selectedRing}`}
                     >
                       {day && (
-                        <>
-                          <div className={`mb-2 text-sm font-semibold ${isToday(day) ? 'text-wedding-rose' : 'text-slate-500 dark:text-slate-400'}`}>
+                        <div className="flex h-full flex-col gap-1">
+                          <div className={`text-[11px] font-semibold leading-none ${isToday(day) ? 'text-primary-700 dark:text-rose-200' : 'text-slate-500 dark:text-slate-400'}`}>
                             {day}
                           </div>
-                          <div className="space-y-1.5">
-                            {(eventsByDay[day] || []).slice(0, 4).map((event) => (
+                          <div className="flex flex-col gap-0.5 overflow-hidden">
+                            {visibleEvents.map((event) => (
                               <button
                                 key={event.id}
                                 onClick={(clickEvent) => {
                                   clickEvent.stopPropagation();
                                   void openExistingItem(event);
                                 }}
-                                className={`w-full rounded-xl border px-2 py-1.5 text-left text-[11px] font-medium ${eventTone(event)}`}
+                                className={`w-full truncate rounded px-1.5 py-0.5 text-left text-[10px] font-medium leading-tight ${eventTone(event)}`}
                               >
-                                <div className="truncate">{eventDisplayTitle(event)}</div>
-                                <div className="truncate text-[10px] opacity-70">
-                                  {event.all_day
-                                    ? 'All day'
-                                    : event.start_date
-                                    ? formatDateTime(
-                                        event.start_date,
-                                        { hour: 'numeric', minute: '2-digit' },
-                                        'en-US',
-                                        DEFAULT_TIMEZONE
-                                      )
-                                    : 'Time TBD'}
-                                </div>
+                                {eventDisplayTitle(event)}
                               </button>
                             ))}
-                            {(eventsByDay[day] || []).length > 4 && (
-                              <div className="px-1 text-[11px] text-slate-500 dark:text-slate-400">
-                                +{(eventsByDay[day] || []).length - 4} more
+                            {overflowCount > 0 && (
+                              <div className="px-1 text-[9.5px] text-slate-400 dark:text-slate-500">
+                                +{overflowCount} more
                               </div>
                             )}
                           </div>
-                        </>
+                        </div>
                       )}
                     </div>
                     );
@@ -941,17 +1050,20 @@ export default function PlannerCalendarPage() {
           </div>
         </section>
 
-        <aside className="min-h-[420px]">
+        <aside>
           <CalendarRightRail
             upcoming={upcomingEvents}
             availabilityWindows={availability?.available_windows ?? []}
             availabilityLabel={
               selectedAvailabilityStaffIds.length > 0
                 ? `For ${selectedAvailabilityStaffIds.length} selected staff`
-                : 'Select staff via the team filter'
+                : 'Pick at least one staff member to see open windows.'
             }
             onRefreshUpcoming={() => void refreshAll()}
             onRefreshAvailability={canViewAvailability ? () => void loadAvailability() : undefined}
+            staffOptions={canViewAvailability ? staffOptions : undefined}
+            selectedStaffIds={selectedAvailabilityStaffIds}
+            onToggleStaff={canViewAvailability ? toggleAvailabilityStaff : undefined}
           />
         </aside>
       </div>

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, cast
@@ -30,6 +31,7 @@ from app.services.google_calendar_service import (
     GoogleCalendarService,
     google_calendar_service,
 )
+from app.services import google_calendar_service as google_calendar_service_module
 from app.services.meeting_invite_service import MeetingInviteService
 
 
@@ -249,13 +251,31 @@ def test_google_service_requires_explicit_security_keys_in_production(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = GoogleCalendarService.__new__(GoogleCalendarService)
-    monkeypatch.setattr("app.core.config.settings.ENVIRONMENT", "production")
-    monkeypatch.setattr("app.core.config.settings.GOOGLE_CLIENT_ID", "client-id")
     monkeypatch.setattr(
-        "app.core.config.settings.GOOGLE_CLIENT_SECRET", "client-secret"
+        google_calendar_service_module.settings,
+        "ENVIRONMENT",
+        "production",
     )
-    monkeypatch.setattr("app.core.config.settings.GOOGLE_OAUTH_STATE_SIGNING_KEY", None)
-    monkeypatch.setattr("app.core.config.settings.TOKEN_ENCRYPTION_KEY", None)
+    monkeypatch.setattr(
+        google_calendar_service_module.settings,
+        "GOOGLE_CLIENT_ID",
+        "client-id",
+    )
+    monkeypatch.setattr(
+        google_calendar_service_module.settings,
+        "GOOGLE_CLIENT_SECRET",
+        "client-secret",
+    )
+    monkeypatch.setattr(
+        google_calendar_service_module.settings,
+        "GOOGLE_OAUTH_STATE_SIGNING_KEY",
+        None,
+    )
+    monkeypatch.setattr(
+        google_calendar_service_module.settings,
+        "TOKEN_ENCRYPTION_KEY",
+        None,
+    )
 
     with pytest.raises(RuntimeError) as exc_info:
         service._validate_security_configuration()
@@ -1089,6 +1109,10 @@ async def test_create_meeting_normalizes_owner_scope_for_team_members(
 async def test_update_meeting_sends_updated_ics_for_material_email_ics_change(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    @asynccontextmanager
+    async def noop_meeting_lock(_meeting_id: str):
+        yield
+
     original_task = {
         "_id": "meeting-1",
         "owner_planner_id": "owner-1",
@@ -1166,6 +1190,11 @@ async def test_update_meeting_sends_updated_ics_for_material_email_ics_change(
         "log",
         AsyncMock(return_value=None),
     )
+    monkeypatch.setattr(
+        planner_calendar_api,
+        "_meeting_mutation_lock",
+        noop_meeting_lock,
+    )
 
     current_user = ExtendedAuthUser(
         "owner@example.com",
@@ -1204,6 +1233,10 @@ async def test_update_meeting_sends_updated_ics_for_material_email_ics_change(
 async def test_delete_meeting_sends_cancellation_ics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    @asynccontextmanager
+    async def noop_meeting_lock(_meeting_id: str):
+        yield
+
     task = {
         "_id": "meeting-1",
         "owner_planner_id": "owner-1",
@@ -1276,6 +1309,11 @@ async def test_delete_meeting_sends_cancellation_ics(
         planner_calendar_api.calendar_audit_service,
         "log",
         AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        planner_calendar_api,
+        "_meeting_mutation_lock",
+        noop_meeting_lock,
     )
 
     current_user = ExtendedAuthUser(

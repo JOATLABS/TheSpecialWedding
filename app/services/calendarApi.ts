@@ -128,6 +128,17 @@ export interface CalendarConnection {
   is_shared_in_team_view: boolean;
   details_visibility: VisibilityMode;
   sync_enabled: boolean;
+  task_sync_enabled?: boolean;
+  task_sync_tasklist_id?: string | null;
+  task_sync_tasklist_name?: string | null;
+  task_sync_subscription_id?: string | null;
+  contact_sync_enabled?: boolean;
+  contact_sync_book_id?: string | null;
+  contact_sync_book_name?: string | null;
+  contact_sync_group_id?: string | null;
+  contact_sync_group_name?: string | null;
+  contact_sync_subscription_id?: string | null;
+  connection_scopes?: string[];
   couple_booking_auto_confirm?: boolean;
   conference_provider_default?: 'zoom' | 'teams' | 'webex' | null;
   connection_status: ConnectionStatus | string;
@@ -162,7 +173,7 @@ export interface CalendarSyncStatusItem {
 
 export interface SharedCalendarEvent {
   id: string;
-  source_type: 'internal_task' | 'internal_meeting' | 'external_google' | string;
+  source_type: 'internal_task' | 'internal_meeting' | 'external' | string;
   title?: string | null;
   start_date?: string | null;
   end_date?: string | null;
@@ -512,6 +523,20 @@ export interface ProviderCallbackCalendar {
   suggested_default_write: boolean;
 }
 
+export interface ProviderCallbackTasklist {
+  aurinko_tasklist_id: string;
+  name: string;
+  is_writable: boolean;
+  suggested_default: boolean;
+}
+
+export interface ProviderCallbackContactBook {
+  aurinko_contact_book_id: string;
+  name: string;
+  is_writable: boolean;
+  suggested_default: boolean;
+}
+
 export interface ProviderCallbackResponse {
   connected: boolean;
   calendar_id?: string | null;
@@ -527,6 +552,8 @@ export interface ProviderCallbackResponse {
   account_name?: string | null;
   provider?: string | null;
   calendars?: ProviderCallbackCalendar[];
+  tasklists?: ProviderCallbackTasklist[];
+  contact_books?: ProviderCallbackContactBook[];
 }
 
 export interface CalendarSelectionPick {
@@ -534,6 +561,14 @@ export interface CalendarSelectionPick {
   is_default_write_target?: boolean;
   details_visibility?: 'details' | 'busy_only';
   is_shared_in_team_view?: boolean;
+}
+
+export interface TaskListSelectionPick {
+  aurinko_tasklist_id: string;
+}
+
+export interface ContactBookSelectionPick {
+  aurinko_contact_book_id: string;
 }
 
 /** Build an Aurinko hosted-auth URL. When ``serviceType`` is set, Aurinko
@@ -566,6 +601,23 @@ export async function completeCalendarCallback(
   );
 }
 
+/** Resume the planner's most recent unexpired picker draft.
+ *
+ *  Recovery hop for the callback page when the OAuth code can no
+ *  longer be redeemed (Aurinko 410 on a second redeem after refresh /
+ *  network drop / back-button). The backend hands back the same
+ *  picker payload the original callback returned. ``needs_selection``
+ *  in the response tells the frontend whether to re-render the picker
+ *  (true) or show a clean "start over" prompt (false). */
+export async function getCalendarPickerResume(
+  token: string
+): Promise<ProviderCallbackResponse> {
+  return authFetch<ProviderCallbackResponse>(
+    token,
+    `/admin/planner/calendar/connections/picker-resume`
+  );
+}
+
 /** Submit the planner's picker choices. The backend drains the draft
  *  identified by ``draftId`` into ``calendar_connections`` rows (one
  *  per picked calendar) and registers Aurinko webhook subscriptions
@@ -574,14 +626,21 @@ export async function completeCalendarCallback(
 export async function selectCalendars(
   token: string,
   draftId: string,
-  picks: CalendarSelectionPick[]
+  picks: CalendarSelectionPick[],
+  taskPicks: TaskListSelectionPick[] = [],
+  contactPicks: ContactBookSelectionPick[] = []
 ): Promise<ProviderCallbackResponse> {
   return authFetch<ProviderCallbackResponse>(
     token,
     `/admin/planner/calendar/connections/select`,
     {
       method: 'POST',
-      body: JSON.stringify({ draft_id: draftId, picks }),
+      body: JSON.stringify({
+        draft_id: draftId,
+        picks,
+        task_picks: taskPicks,
+        contact_picks: contactPicks,
+      }),
     }
   );
 }
@@ -614,6 +673,14 @@ export async function updateCalendarConnection(
       | 'is_shared_in_team_view'
       | 'details_visibility'
       | 'sync_enabled'
+      | 'task_sync_enabled'
+      | 'task_sync_tasklist_id'
+      | 'task_sync_tasklist_name'
+      | 'contact_sync_enabled'
+      | 'contact_sync_book_id'
+      | 'contact_sync_book_name'
+      | 'contact_sync_group_id'
+      | 'contact_sync_group_name'
       | 'is_default_write_target'
     >
   >
@@ -625,6 +692,49 @@ export async function updateCalendarConnection(
       method: 'PATCH',
       body: JSON.stringify(updates),
     }
+  );
+}
+
+export interface ConnectionTasklist {
+  aurinko_tasklist_id: string;
+  name: string;
+  is_writable: boolean;
+}
+
+export interface ConnectionContactBook {
+  aurinko_contact_book_id: string;
+  name: string;
+  is_writable: boolean;
+}
+
+export async function listConnectionTasklists(
+  token: string,
+  connectionId: string
+): Promise<ConnectionTasklist[]> {
+  return authFetch<ConnectionTasklist[]>(
+    token,
+    `/admin/planner/calendar/connections/${connectionId}/tasklists`
+  );
+}
+
+export async function listConnectionContactBooks(
+  token: string,
+  connectionId: string
+): Promise<ConnectionContactBook[]> {
+  return authFetch<ConnectionContactBook[]>(
+    token,
+    `/admin/planner/calendar/connections/${connectionId}/contact-books`
+  );
+}
+
+export async function syncConnectionContactsNow(
+  token: string,
+  connectionId: string
+): Promise<{ vendors: number; weddings: number }> {
+  return authFetch<{ vendors: number; weddings: number }>(
+    token,
+    `/admin/planner/calendar/connections/${connectionId}/contacts/sync-now`,
+    { method: 'POST' }
   );
 }
 

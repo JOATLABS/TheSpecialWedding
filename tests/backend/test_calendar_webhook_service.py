@@ -133,7 +133,11 @@ def test_replay_window_accepts_missing_timestamp() -> None:
 # ============================================================================
 
 
-from app.api.calendar_webhooks import _extract_calendar_id  # noqa: E402
+from app.api.calendar_webhooks import (  # noqa: E402
+    _extract_calendar_id,
+    _extract_tasklist_id,
+    _resource_kind,
+)
 
 
 def test_extract_calendar_id_from_specific_calendar_resource() -> None:
@@ -153,6 +157,7 @@ def test_extract_calendar_id_rejects_non_calendar_resource() -> None:
     parser must not match them."""
     assert _extract_calendar_id("/email/messages") is None
     assert _extract_calendar_id("/contacts") is None
+    assert _extract_calendar_id("/tasklists/default/tasks") is None
     assert _extract_calendar_id("") is None
     assert _extract_calendar_id(None) is None
 
@@ -165,6 +170,25 @@ def test_extract_calendar_id_handles_url_encoded_calendar() -> None:
         _extract_calendar_id("/calendars/user%40example.com/events")
         == "user@example.com"
     )
+
+
+def test_extract_tasklist_id_from_task_resource() -> None:
+    assert _extract_tasklist_id("/tasklists/default/tasks") == "default"
+    assert _extract_tasklist_id("/tasklists/list-123/tasks/") == "list-123"
+
+
+def test_extract_tasklist_id_decodes_url_encoded_tasklist() -> None:
+    assert (
+        _extract_tasklist_id("/tasklists/user%40example.com/tasks")
+        == "user@example.com"
+    )
+
+
+def test_resource_kind_classifies_supported_resources() -> None:
+    assert _resource_kind("/calendars/cal-abc/events") == ("calendar", "cal-abc")
+    assert _resource_kind("/tasklists/default/tasks") == ("tasklist", "default")
+    assert _resource_kind("/contacts") == ("contacts", "contacts")
+    assert _resource_kind("/unknown/resource") == (None, None)
 
 
 # ============================================================================

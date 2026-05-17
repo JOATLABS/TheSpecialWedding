@@ -164,7 +164,7 @@ class Settings:
     # provider selector UI Aurinko renders.
     AURINKO_SCOPES: str = os.getenv(
         "AURINKO_SCOPES",
-        "Calendar.Read,Calendar.ReadWrite",
+        "Calendar.Read,Calendar.ReadWrite,Tasks.Read,Tasks.ReadWrite,Contacts.Read,Contacts.ReadWrite",
     )
     AURINKO_SERVICE_TYPES: str = os.getenv(
         "AURINKO_SERVICE_TYPES",

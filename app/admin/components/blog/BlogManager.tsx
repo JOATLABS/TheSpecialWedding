@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card';
 import BlogArticleList from './BlogArticleList';
 import BlogArticleEditor from './BlogArticleEditor';
 import BlogCategorySidebar from './BlogCategorySidebar';
+import SyncBabyLoveGrowthButton from './SyncBabyLoveGrowthButton';
 import {
   Search,
   Plus,
@@ -182,6 +183,9 @@ export default function BlogManager() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <SyncBabyLoveGrowthButton
+            onSyncComplete={() => { fetchArticles(currentPage); fetchCategoryCounts(); }}
+          />
           <button
             onClick={() => { fetchArticles(currentPage); fetchCategoryCounts(); }}
             className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:shadow-none dark:hover:text-white dark:hover:bg-white/10"

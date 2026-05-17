@@ -1239,6 +1239,18 @@ async def create_blog_articles_indexes():
         )
         logger.info("Created index: idx_blog_published_at")
 
+        # 7. BabyLoveGrowth sync — partial unique index for idempotent upserts.
+        # Only enforced when babylovegrowth_id is set, so admin-authored
+        # articles (no sync source) are unaffected.
+        # See docs/plans/babylovegrowth_integration_mockup.md.
+        await collection.create_index(
+            [("babylovegrowth_id", ASCENDING)],
+            name="idx_blog_babylovegrowth_id_unique",
+            unique=True,
+            partialFilterExpression={"babylovegrowth_id": {"$exists": True}},
+        )
+        logger.info("Created index: idx_blog_babylovegrowth_id_unique (partial unique)")
+
         logger.info("All blog articles indexes created successfully")
         return True
 
@@ -2263,6 +2275,48 @@ async def create_calendar_indexes():
             background=True,
         )
 
+        task_sync_records = mongo.get_task_sync_records_collection()
+        await task_sync_records.create_index(
+            [("planner_task_id", ASCENDING), ("connection_id", ASCENDING)],
+            name="idx_task_sync_records_task_connection",
+            unique=True,
+            background=True,
+        )
+        await task_sync_records.create_index(
+            [("connection_id", ASCENDING), ("aurinko_task_id", ASCENDING)],
+            name="idx_task_sync_records_connection_external",
+            sparse=True,
+            background=True,
+        )
+        await task_sync_records.create_index(
+            [("owner_planner_id", ASCENDING), ("sync_status", ASCENDING)],
+            name="idx_task_sync_records_owner_status",
+            background=True,
+        )
+
+        contact_sync_records = mongo.get_contact_sync_records_collection()
+        await contact_sync_records.create_index(
+            [
+                ("source_type", ASCENDING),
+                ("source_id", ASCENDING),
+                ("connection_id", ASCENDING),
+            ],
+            name="idx_contact_sync_records_source_connection",
+            unique=True,
+            background=True,
+        )
+        await contact_sync_records.create_index(
+            [("connection_id", ASCENDING), ("aurinko_contact_id", ASCENDING)],
+            name="idx_contact_sync_records_connection_external",
+            sparse=True,
+            background=True,
+        )
+        await contact_sync_records.create_index(
+            [("owner_planner_id", ASCENDING), ("sync_status", ASCENDING)],
+            name="idx_contact_sync_records_owner_status",
+            background=True,
+        )
+
         meeting_invites = mongo.get_meeting_invites_collection()
         await _deduplicate_meeting_invites(meeting_invites)
         await meeting_invites.create_index(
@@ -2333,6 +2387,18 @@ async def create_calendar_indexes():
             [("expires_at", ASCENDING)],
             name="idx_calendar_connection_drafts_expires_at_ttl",
             expireAfterSeconds=0,
+            background=True,
+        )
+        # Lookup index for the CSPRNG draft_token (see
+        # secrets.token_urlsafe call in calendar_provider_service —
+        # OWASP ASVS v4 §6.3.1 mandates CSPRNG for unguessable handles).
+        # ``sparse`` because legacy drafts predating the token field
+        # would otherwise fail the unique constraint with null.
+        await calendar_connection_drafts.create_index(
+            [("draft_token", ASCENDING)],
+            name="idx_calendar_connection_drafts_token",
+            unique=True,
+            sparse=True,
             background=True,
         )
 

@@ -406,6 +406,29 @@ class Settings(BaseSettings):
         """Check if AI features are enabled (requires Google/Gemini API key)."""
         return bool(self.ai_api_key)
 
+    # BabyLoveGrowth — pulls AI-generated articles into blog_articles via the
+    # API integration (pull model). See docs/plans/babylovegrowth_integration_mockup.md.
+    babylovegrowth_api_key: Optional[str] = Field(
+        default=None, alias="BABYLOVEGROWTH_API_KEY"
+    )
+    babylovegrowth_api_base_url: str = Field(
+        default="https://api.babylovegrowth.ai/api/integrations",
+        alias="BABYLOVEGROWTH_API_BASE_URL",
+    )
+    babylovegrowth_sync_enabled: bool = Field(
+        default=False, alias="BABYLOVEGROWTH_SYNC_ENABLED"
+    )
+    # Brand-safety default: synced articles land as draft until Etastic reviews
+    # and manually publishes. Flip to false once you trust BLG's output.
+    babylovegrowth_land_as_draft: bool = Field(
+        default=True, alias="BABYLOVEGROWTH_LAND_AS_DRAFT"
+    )
+
+    @property
+    def babylovegrowth_enabled(self) -> bool:
+        """Check if BabyLoveGrowth sync is fully configured AND not killed."""
+        return bool(self.babylovegrowth_api_key) and self.babylovegrowth_sync_enabled
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

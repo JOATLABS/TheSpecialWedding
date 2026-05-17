@@ -37,12 +37,18 @@ Scenario checkpoints
     P2  — OAUTH:   user completes the Aurinko hosted-auth flow in Chrome
                    against a sandbox Google account; driver pauses for the
                    ``code`` + ``state`` from the callback URL.
-    P3  — CALLBACK: POST the code+state to
+    P3a — CALLBACK: GET the code+state to
                     ``/admin/planner/calendar/connections/provider/callback``;
-                    response shows ``connected=True`` and
-                    ``connections_created >= 1``.
-    P4  — ROWS:    one ``calendar_connections`` row per writable calendar
-                   on the Aurinko account; each writable row has a
+                    response under Option B shows ``connected=False``,
+                    ``needs_selection=True``, and carries a ``draft_id``
+                    + ``calendars[]`` for the picker.
+    P3b — COMMIT:  POST the draft_id + every writable calendar pick to
+                   ``/admin/planner/calendar/connections/select``;
+                   response shows ``connected=True`` and
+                   ``connections_created == len(picks)``.
+    P4  — ROWS:    one ``calendar_connections`` row per PICKED calendar
+                   (not per Aurinko-returned calendar — un-picked rows
+                   never exist under Option B); each writable row has a
                    non-null ``aurinko_subscription_id``.
     P5  — AURINKO-SIDE: GET /v1/subscriptions on Aurinko returns a sub
                         for every ``aurinko_subscription_id`` we stored.
@@ -75,6 +81,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import httpx
 import requests
+from bson import ObjectId
 
 from testbed.harness import PM_TOKEN_GOOD, Harness
 
@@ -156,6 +163,16 @@ def _phase_authurl(h: Harness, planner_token: str) -> str:
 
 
 def _phase_callback(h: Harness, planner_token: str, code: str, state: str) -> dict:
+    """Option-B callback: returns a draft id + calendar list for the picker.
+
+    Validates the picker payload shape:
+      * ``connected == False``  (rows are deferred to /select)
+      * ``needs_selection == True``
+      * ``draft_id`` is a non-empty CSPRNG token (NOT a Mongo ObjectId
+        — see calendar_provider_service handle_oauth_callback security
+        note re: OWASP ASVS v4 §6.3.1)
+      * ``calendars`` is a non-empty list
+    """
     response = requests.get(
         f"{h.config.backend_url}/admin/planner/calendar/connections/provider/callback",
         params={"code": code, "state": state},
@@ -163,13 +180,96 @@ def _phase_callback(h: Harness, planner_token: str, code: str, state: str) -> di
         timeout=30,
     )
     body = response.json() if response.ok else {"error": response.text}
+    draft_id = body.get("draft_id") or ""
+    calendars = body.get("calendars") or []
+    ok = (
+        response.ok
+        and body.get("needs_selection") is True
+        and bool(body.get("connected")) is False
+        and len(draft_id) >= 20  # secrets.token_urlsafe(24) → 32 chars
+        and not ObjectId.is_valid(draft_id)
+        and len(calendars) >= 1
+    )
     _checkpoint(
         h,
-        "P3_CALLBACK",
-        response.ok and bool(body.get("connected")),
-        f"status={response.status_code} body={body}",
+        "P3a_CALLBACK_PICKER_PAYLOAD",
+        ok,
+        f"status={response.status_code} needs_selection={body.get('needs_selection')} "
+        f"draft_id_len={len(draft_id)} calendars={len(calendars)}",
     )
     return body
+
+
+def _phase_commit_all_writable(
+    h: Harness, planner_token: str, callback_body: dict
+) -> dict:
+    """POST /connections/select with every writable calendar checked.
+
+    This is the "happy path" picker submission — equivalent to the
+    planner ticking every writable row in the picker modal and
+    clicking Connect. Read-only iCal feeds are check-disabled in the
+    UI so we deliberately skip them here.
+    """
+    draft_id = callback_body.get("draft_id") or ""
+    calendars = callback_body.get("calendars") or []
+    picks = [
+        {
+            "aurinko_calendar_id": cal.get("aurinko_calendar_id"),
+            "is_default_write_target": bool(cal.get("suggested_default_write")),
+            "details_visibility": "busy_only",
+        }
+        for cal in calendars
+        if cal.get("is_writable")
+    ]
+    response = requests.post(
+        f"{h.config.backend_url}/admin/planner/calendar/connections/select",
+        json={"draft_id": draft_id, "picks": picks},
+        headers={"Authorization": f"Bearer {planner_token}"},
+        timeout=30,
+    )
+    body = response.json() if response.ok else {"error": response.text}
+    _checkpoint(
+        h,
+        "P3b_COMMIT",
+        response.ok
+        and bool(body.get("connected"))
+        and int(body.get("connections_created") or 0) == len(picks),
+        f"status={response.status_code} created={body.get('connections_created')} "
+        f"expected={len(picks)}",
+    )
+    return body
+
+
+def _phase_idempotent_commit(
+    h: Harness, planner_token: str, callback_body: dict
+) -> None:
+    """P3c — retrying the commit with the same draft_id MUST succeed.
+
+    Validates RFC 9110 idempotency contract on /connections/select.
+    The first commit deleted the draft; the second POST goes through
+    the "already committed" branch and returns the same success shape
+    derived from existing connection rows instead of a 404.
+    """
+    draft_id = callback_body.get("draft_id") or ""
+    calendars = callback_body.get("calendars") or []
+    picks = [
+        {"aurinko_calendar_id": cal.get("aurinko_calendar_id")}
+        for cal in calendars
+        if cal.get("is_writable")
+    ]
+    response = requests.post(
+        f"{h.config.backend_url}/admin/planner/calendar/connections/select",
+        json={"draft_id": draft_id, "picks": picks},
+        headers={"Authorization": f"Bearer {planner_token}"},
+        timeout=30,
+    )
+    body = response.json() if response.ok else {"error": response.text}
+    _checkpoint(
+        h,
+        "P3c_COMMIT_IDEMPOTENT",
+        response.ok and bool(body.get("connected")),
+        f"status={response.status_code} message={body.get('message')}",
+    )
 
 
 def _phase_rows(h: Harness) -> list[dict]:
@@ -280,7 +380,11 @@ def main() -> int:
 
     _phase_authurl(h, planner_token)
     code, state = _wait_for_oauth_code()
-    _phase_callback(h, planner_token, code, state)
+    # Option B is a TWO-step landing: callback returns a picker payload,
+    # then /connections/select commits the planner's chosen subset.
+    callback_body = _phase_callback(h, planner_token, code, state)
+    _phase_commit_all_writable(h, planner_token, callback_body)
+    _phase_idempotent_commit(h, planner_token, callback_body)
     rows = _phase_rows(h)
     _phase_aurinko_side(h, rows)
     _phase_disconnect(h, planner_token, rows)

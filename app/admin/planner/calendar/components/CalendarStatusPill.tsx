@@ -113,7 +113,9 @@ function statusToneClasses(tone: StatusTone): {
       return {
         dot: 'bg-wedding-rose shadow-[0_0_0_3px_rgba(212,165,165,0.25)]',
         pill: 'bg-wedding-rose/10 border-wedding-rose/30 hover:bg-wedding-rose/15',
-        text: 'text-wedding-rose dark:text-rose-200',
+        // wedding-rose #D4A5A5 fails WCAG 1.4.3 as text on light surfaces
+        // (2.24:1). primary-700 #804040 passes (~8.6:1).
+        text: 'text-primary-700 dark:text-rose-200',
       };
     case 'empty':
     default:
@@ -250,7 +252,7 @@ export default function CalendarStatusPill({
           className="absolute right-0 top-full z-40 mt-2 w-[480px] max-w-[calc(100vw-2rem)] origin-top-right animate-fade-in rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900"
         >
           <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-700">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-wedding-rose">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary-700 dark:text-rose-200">
               Connect a calendar
             </p>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
@@ -321,7 +323,7 @@ export default function CalendarStatusPill({
                         className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-wedding-rose/15 text-[11px] font-semibold text-wedding-rose">
+                          <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-wedding-rose/15 text-[11px] font-semibold text-primary-700 dark:text-rose-200">
                             {capitalize(provider).slice(0, 1)}
                           </span>
                           <div className="min-w-0">
@@ -370,7 +372,7 @@ export default function CalendarStatusPill({
                                       </span>
                                     )}
                                     {conn.is_primary && (
-                                      <span className="rounded-full bg-wedding-rose/15 px-1.5 py-0.5 text-[9.5px] font-medium text-wedding-rose">
+                                      <span className="rounded-full bg-wedding-rose/15 px-1.5 py-0.5 text-[9.5px] font-medium text-primary-700 dark:text-rose-200">
                                         Primary
                                       </span>
                                     )}

@@ -8,7 +8,6 @@ import glob
 import os
 import re
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 
 def count_interactive_elements(file_path: str) -> int:

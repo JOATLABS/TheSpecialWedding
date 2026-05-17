@@ -43,7 +43,7 @@ async def main() -> None:
     checkpoint_pause(
         "Phase D seed lifecycle",
         [
-            f"Open the planner dashboard at /admin/forms — expect 9 forms named after the catalog (Couple Intake, Order of Events, Guest Dietary, …).",
+            "Open the planner dashboard at /admin/forms — expect 9 forms named after the catalog (Couple Intake, Order of Events, Guest Dietary, …).",
             "Each form's settings.title should match the catalog name.",
             "Each form should carry seeded_from_catalog=True (verify via Mongo or the Phase 1 admin tooling).",
             "Run the seeder a second time (e.g. by re-clicking the verification link). Result: still 9 forms (idempotent — Phase D's seeded_from_catalog + catalog_template_id markers prevent duplicates).",
@@ -55,7 +55,7 @@ async def main() -> None:
         {"created_by": PHASE_D_SEED.email, "seeded_from_catalog": True},
     )
     print(f"  ↳ post-VERIFY seeded form count for {PHASE_D_SEED.email}: {seeded}")
-    print(f"  ↳ run cleanup: python testbed/cleanup_form_phase_d_seed_state.py")
+    print("  ↳ run cleanup: python testbed/cleanup_form_phase_d_seed_state.py")
 
 
 if __name__ == "__main__":
