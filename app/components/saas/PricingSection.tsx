@@ -227,7 +227,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
         <div className="space-y-6 text-center">
           <h2 className="text-3xl font-semibold text-white sm:text-4xl">Simple, transparent pricing</h2>
           <p className="mx-auto max-w-3xl text-base text-slate-200 sm:text-lg">
-            Choose the plan that fits your studio. Every tier includes our concierge onboarding and secure client portals.
+            Choose the plan that fits your studio. Paid tiers scale team seats, AI credits, guest memories storage, and support.
           </p>
 
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
