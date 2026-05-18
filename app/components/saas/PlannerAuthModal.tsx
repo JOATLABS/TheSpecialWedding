@@ -116,7 +116,7 @@ export const PlannerAuthModal: React.FC<PlannerAuthModalProps> = ({
               <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-blue-100">
                 Planner workspace
               </span>
-              <h2 className="text-2xl font-semibold leading-tight">Launch in minutes with concierge onboarding</h2>
+              <h2 className="text-2xl font-semibold leading-tight">Launch in minutes with guided setup</h2>
               <p className="text-sm text-slate-200">
                 Personalize your studio portal, invite your team, and turn on automations in one guided flow.
               </p>

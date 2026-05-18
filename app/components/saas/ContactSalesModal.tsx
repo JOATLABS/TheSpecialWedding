@@ -112,8 +112,8 @@ export const ContactSalesModal: React.FC<ContactSalesModalProps> = ({ isOpen, on
             <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">Talk to sales</p>
             <h2 className="text-2xl font-semibold text-slate-900 sm:text-3xl">Let&apos;s plan growth together</h2>
             <p className="text-sm text-slate-600">
-              Share a few details and we&apos;ll craft a tailored walkthrough, connect you with the right onboarding concierge, and
-              keep you updated via email.
+              Share a few details and we&apos;ll craft a tailored walkthrough, note any onboarding help you need, and keep you
+              updated via email.
             </p>
           </div>
 
