@@ -493,29 +493,26 @@ All paid plans (Boutique, Signature, Enterprise) include a **30-day free trial**
 
 ## Subscription Plans
 
-Special Wedding offers four plans. All paid plans include **unlimited weddings and unlimited guests** — what changes between them is team size, white-label capability, and support level.
+Special Wedding offers four plans. All paid plans include **unlimited weddings and unlimited guests** — what changes between them is team size, AI credits, guest memories storage, and support level.
 
 ### Solo — Free
 Try us with your first client. One wedding, on us.
 - 1 active wedding at a time (delete to start another)
-- Up to 50 guests
 - Guest list & RSVP system
 - Branded wedding website
 - Basic timeline builder
-- 1GB storage
+- 1GB guest memories storage
 
 ### Boutique — $49/month
-For independent planners running their solo practice. Unlimited weddings, no caps.
+For independent planners running their solo practice with paid planning tools and higher limits.
 - Unlimited weddings
 - Unlimited guests
-- AI-powered timeline & vendor matching
 - Vendor management
 - Seating orchestration
-- QR check-in & live counts
 - Automated reminders
 - Calendar sync (Google, Outlook)
 - 300 AI credits/month
-- 25GB storage
+- 25GB guest memories storage
 - Email support
 
 ### Signature — $149/month *(Most Popular)*
@@ -526,23 +523,20 @@ For agencies running a team of planners. Everything in Boutique, plus team seats
 - Team collaboration (5 staff seats)
 - Vendor-collaboration workspaces
 - Cross-wedding analytics & revenue tracking
-- Custom domain (app.yourbrand.com)
 - 1,500 AI credits/month
-- 100GB storage
+- 100GB guest memories storage
 - Priority support (12h response)
+- Support-assisted onboarding by request
 
 ### Enterprise — $399/month
-For franchises and white-label partners. Your brand, our platform, dedicated success.
+For larger planning teams that need more seats, higher AI usage, expanded guest memories storage, and launch support.
 - Unlimited weddings
 - Unlimited guests
 - Everything in Signature, plus:
-- White-label branding (your brand, no Special Wedding mentions)
-- API access + webhooks
 - 20 staff seats
 - 5,000 AI credits/month
-- 500GB storage
-- Dedicated success manager
-- Custom integrations
+- 500GB guest memories storage
+- Support-assisted launch planning
 
 ---
 

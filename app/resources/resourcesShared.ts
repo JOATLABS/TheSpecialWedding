@@ -199,7 +199,7 @@ export const faqs: FAQ[] = [
   {
     question: "What's included in the Enterprise tier?",
     answer:
-      'Enterprise is built for firms that need unlimited weddings, unlimited guests, higher AI usage, team seats, white-label branding, API access, dedicated support, and custom integrations.',
+      'Enterprise is built for firms that need unlimited weddings, unlimited guests, 20 staff seats, higher AI usage, expanded guest memories storage, and support-assisted launch planning.',
     category: 'Pricing & Billing',
   },
 ];

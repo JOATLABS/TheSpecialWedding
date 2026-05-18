@@ -43,7 +43,7 @@ from app.constants.billing import (  # noqa: E402
 # timestamps to plan["admin_overrides"][<field>] every time an admin edits.
 # Together: bump SEED_VERSION → admin edits older than the bump are
 # superseded; admin edits newer than the bump survive future deploys.
-SEED_VERSION = "2026-05-12T00:00:00+00:00"
+SEED_VERSION = "2026-05-18T00:00:00+00:00"
 
 if os.getenv("SEED_SUBSCRIPTION_PLANS_IMPORT_CHECK_ONLY") == "1":
     print("[OK] seed subscription import contract satisfied")
@@ -619,9 +619,11 @@ def _guard_seed_billing_model_transition(
 #   - Solo (free): 1 ACTIVE wedding (deletable; can have many over time)
 #   - Boutique ($49/mo): UNLIMITED weddings, UNLIMITED guests, 1 seat — solo paid practitioner
 #   - Signature ($149/mo): UNLIMITED weddings, UNLIMITED guests, 5 seats — agency / small team
-#   - Enterprise ($399/mo): UNLIMITED weddings, UNLIMITED guests, 20 seats — white-label / API
+#   - Enterprise ($399/mo): UNLIMITED weddings, UNLIMITED guests, 20 seats — support-assisted launch
 #
-# Differentiation is by CAPABILITY (team seats, white-label, API, dedicated SM), NOT volume.
+# Differentiation is by implemented limits and support paths (team seats, AI credits,
+# guest memories storage, support-assisted onboarding/launch), NOT unsupported
+# white-label/API/custom-domain promises.
 # Trial = uniform 30 days across all paid plans. Solo is permanently free.
 # All plans are FLAT (is_metered=False). The metering hardening shipped 2026-05-04
 # is available infrastructure — flip is_metered=True + add meter_event_name on any
@@ -645,8 +647,9 @@ plans = [
         # Active-count cap (NOT lifetime): planner can delete a wedding and
         # create another. Per-PR 2026-05-12 strategy refresh, we accept the
         # mild create→delete→re-create cost in exchange for less surprising
-        # behavior. Upgrade pressure comes from the 50-guest cap and the
-        # 1-active-wedding-at-a-time ceiling, not from a lifetime gate.
+        # behavior. The 50-guest value remains in plan data for future
+        # enforcement, but public copy should not advertise it until guest
+        # creation/import paths actually honor the limit.
         "max_weddings_lifetime": False,
         "max_guests_per_wedding": 50,
         "ai_credits_monthly": 0,
@@ -676,11 +679,10 @@ plans = [
         },
         "features_list": [
             "1 wedding to try us out",
-            "Up to 50 guests",
             "Guest list & RSVP system",
             "Branded wedding website",
             "Basic timeline builder",
-            "1GB storage",
+            "1GB guest memories storage",
         ],
         "is_active": True,
         "is_featured": False,
@@ -696,7 +698,7 @@ plans = [
     {
         "_id": "plan_boutique",
         "name": "Boutique",
-        "description": "For independent planners running their solo practice. Unlimited weddings, no caps.",
+        "description": "For independent planners running their solo practice with paid planning tools and higher limits.",
         "price_monthly": 49,
         "price_yearly": 490,  # 10x monthly
         "trial_days": 30,
@@ -718,7 +720,7 @@ plans = [
             "vendor_management": True,
             "seating_orchestration": True,
             "ai_features": True,
-            "qr_checkin": True,
+            "qr_checkin": False,
             "automated_reminders": True,
             "calendar_sync": True,
             "payment_processing": True,
@@ -733,14 +735,12 @@ plans = [
         "features_list": [
             "Unlimited weddings",
             "Unlimited guests",
-            "AI-powered timeline & vendor matching",
             "Vendor management",
             "Seating orchestration",
-            "QR check-in & live counts",
             "Automated reminders",
             "Calendar sync (Google, Outlook)",
             "300 AI credits/month",
-            "25GB storage",
+            "25GB guest memories storage",
             "Email support",
         ],
         "is_active": True,
@@ -776,13 +776,13 @@ plans = [
             "vendor_management": True,
             "seating_orchestration": True,
             "ai_features": True,
-            "qr_checkin": True,
+            "qr_checkin": False,
             "automated_reminders": True,
             "calendar_sync": True,
             "payment_processing": True,
             "vendor_collaboration": True,
             "advanced_analytics": True,
-            "custom_domain": True,
+            "custom_domain": False,
             "priority_support": True,
             "white_label": False,
             "api_access": False,
@@ -795,11 +795,10 @@ plans = [
             "Team collaboration (5 staff seats)",
             "Vendor-collaboration workspaces",
             "Cross-wedding analytics & revenue tracking",
-            "Custom domain (app.yourbrand.com)",
             "1,500 AI credits/month",
-            "100GB storage",
+            "100GB guest memories storage",
             "Priority support (12h response)",
-            "Group onboarding session",
+            "Support-assisted onboarding by request",
         ],
         "is_active": True,
         "is_featured": True,
@@ -812,7 +811,7 @@ plans = [
     {
         "_id": "plan_enterprise",
         "name": "Enterprise",
-        "description": "For franchises and white-label partners. Your brand, our platform, dedicated success.",
+        "description": "For larger planning teams that need more seats, higher AI usage, expanded guest memories storage, and launch support.",
         "price_monthly": 399,
         "price_yearly": 3990,  # ~2 months free
         "trial_days": 30,
@@ -835,28 +834,25 @@ plans = [
             "vendor_management": True,
             "seating_orchestration": True,
             "ai_features": True,
-            "qr_checkin": True,
+            "qr_checkin": False,
             "automated_reminders": True,
             "calendar_sync": True,
             "payment_processing": True,
             "vendor_collaboration": True,
-            "custom_domain": True,
+            "custom_domain": False,
             "priority_support": True,
-            "white_label": True,
-            "api_access": True,
-            "dedicated_support": True,
+            "white_label": False,
+            "api_access": False,
+            "dedicated_support": False,
         },
         "features_list": [
             "Unlimited weddings",
             "Unlimited guests",
             "Everything in Signature",
-            "White-label (your brand, no Special Wedding mentions)",
-            "API access + webhooks",
             "20 staff seats",
             "5,000 AI credits/month",
-            "500GB storage",
-            "Dedicated success manager",
-            "Custom integrations",
+            "500GB guest memories storage",
+            "Support-assisted launch planning",
         ],
         "is_active": True,
         "is_featured": False,

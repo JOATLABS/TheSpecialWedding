@@ -135,7 +135,7 @@ def _get_default_saas_config():
             },
             {
                 "title": "Wedding websites",
-                "description": "Launch a stunning site for every celebration—custom domains, schedules, travel, and galleries.",
+                "description": "Launch a stunning site for every celebration with schedules, travel details, and galleries.",
                 "category": "Experience",
                 "status": "available",
                 "order": 3,
