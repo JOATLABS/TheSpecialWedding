@@ -26,6 +26,9 @@
 # Optional env vars (skip the prompt for any of these):
 #   PROD_FRONTEND_URL        e.g. https://thespecialwedding.io
 #   PROD_API_URL             e.g. https://api.thespecialwedding.io
+#   PROD_INTERNAL_API_BASE_URL
+#                             runtime backend URL for frontend SSR/proxy
+#                             (from the prod Coolify/GitHub environment)
 #   PROD_MONGO_CONTAINER     UUID of wedding-prod MongoDB in new Coolify
 #   PROD_MONGO_PASSWORD      root password for wedding-prod
 #   PROD_REDIS_CONTAINER     UUID of redis-prod in new Coolify
@@ -79,6 +82,11 @@ echo
 
 prompt PROD_FRONTEND_URL      "Production frontend URL"      no "https://thespecialwedding.io"
 prompt PROD_API_URL           "Production API URL"           no "https://api.thespecialwedding.io"
+prompt PROD_INTERNAL_API_BASE_URL "Production frontend INTERNAL_API_BASE_URL" no
+if [ -z "$PROD_INTERNAL_API_BASE_URL" ]; then
+  printf '%s\n' "PROD_INTERNAL_API_BASE_URL is required; set it from the prod environment variable/secrets source."
+  exit 1
+fi
 
 echo
 log "--- New Coolify resources (container UUIDs and passwords) ---"
@@ -225,10 +233,10 @@ FRONTEND_URL=${PROD_FRONTEND_URL}
 # Public API fallback (must match public domain + be valid TLS)
 NEXT_PUBLIC_API_BASE_URL=${PROD_API_URL}
 
-# Server-side rendering and runtime /api/proxy: bypass Traefik and call the
-# backend container directly on the Docker network. Requires backend-prod
-# Network Alias to be set to 'backend-prod'.
-INTERNAL_API_BASE_URL=http://backend-prod:8000
+# Server-side rendering and runtime /api/proxy. Keep this environment-scoped;
+# do not bake prod/staging topology into the image or source code.
+INTERNAL_API_BASE_URL=${PROD_INTERNAL_API_BASE_URL}
+BACKEND_SERVICE_URL=${PROD_INTERNAL_API_BASE_URL}
 
 # Public asset domains (same R2 buckets as backend)
 NEXT_PUBLIC_MEDIA_DOMAIN=media.thespecialwedding.io
@@ -264,7 +272,7 @@ Generated $(date -u +%Y-%m-%dT%H:%M:%SZ).
      - Tag: (matches the commit you want live; use the latest CI-built tag)
      - Port Exposes: \`8000\`
      - Domain: \`${PROD_API_URL}\`
-     - **Network Aliases: \`backend-prod\`** ← required for INTERNAL_API_BASE_URL
+     - Network alias must match the host portion of \`${PROD_INTERNAL_API_BASE_URL}\` when using a private Coolify URL
   4. \`frontend-prod\` — Docker Image app:
      - Image: \`ghcr.io/lopewale/wedding-app-frontend\`
      - Port Exposes: \`3000\`
