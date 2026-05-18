@@ -220,6 +220,43 @@ def test_seed_version_is_a_valid_iso_timestamp():
     )
 
 
+def test_admin_override_timestamps_are_normalized_before_seed_comparison():
+    """Pin the production bootstrap fix for mixed naive/aware datetimes.
+
+    Mongo can return historical ``admin_overrides`` timestamps as naive
+    ``datetime`` objects, while ``SEED_VERSION`` is intentionally aware UTC.
+    The seed must normalize both sides before comparing or the backend
+    container exits during startup.
+    """
+    import ast as _ast
+
+    seed_path = Path(PROJECT_ROOT) / "scripts" / "seed_subscription_plans.py"
+    tree = _ast.parse(seed_path.read_text())
+
+    build_func = next(
+        (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, _ast.FunctionDef)
+            and node.name == "_build_effective_seed_plan"
+        ),
+        None,
+    )
+    assert build_func is not None, "_build_effective_seed_plan not found"
+
+    normalized_args = set()
+    for node in ast.walk(build_func):
+        if not isinstance(node, _ast.Call):
+            continue
+        if not isinstance(node.func, _ast.Name) or node.func.id != "to_utc_datetime":
+            continue
+        if not node.args or not isinstance(node.args[0], _ast.Name):
+            continue
+        normalized_args.add(node.args[0].id)
+
+    assert {"SEED_VERSION", "admin_edit_at"} <= normalized_args
+
+
 def test_paid_plans_declare_unlimited_weddings_and_guests():
     """2026-05-12 strategy: Boutique/Signature/Enterprise have no volume caps.
 

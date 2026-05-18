@@ -23,6 +23,7 @@ from app.constants.billing import (  # noqa: E402
     PLAN_BILLING_MODEL_MIGRATION_FLAG,
     plan_billing_model_migration_enabled,
 )
+from app.utils.mongo_dates import to_utc_datetime  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # SEED_VERSION — bump this string on every strategy refresh that should win
@@ -536,27 +537,20 @@ def _build_effective_seed_plan(seed_plan: dict, existing_plan: dict | None) -> d
     effective = dict(seed_plan)
     admin_overrides = existing_plan.get("admin_overrides") or {}
 
-    try:
-        seed_version_dt = datetime.fromisoformat(SEED_VERSION)
-    except ValueError as exc:
+    seed_version_dt = to_utc_datetime(SEED_VERSION)
+    if seed_version_dt is None:
         raise RuntimeError(
-            f"SEED_VERSION ({SEED_VERSION!r}) must be a valid ISO-8601 "
-            f"timestamp; got error: {exc}"
+            f"SEED_VERSION ({SEED_VERSION!r}) must be a valid ISO-8601 timestamp."
         )
 
     for field in ADMIN_MUTABLE_PLAN_FIELDS:
         if field not in existing_plan:
             continue
         admin_edit_at = admin_overrides.get(field)
-        # Coerce to comparable datetime — accepts both datetime objects
-        # (from Mongo) and ISO strings (from JSON round-trips).
-        if isinstance(admin_edit_at, str):
-            try:
-                admin_edit_at_dt = datetime.fromisoformat(admin_edit_at)
-            except ValueError:
-                admin_edit_at_dt = None
-        else:
-            admin_edit_at_dt = admin_edit_at
+        # Accept datetime objects from Mongo plus ISO strings from JSON
+        # round-trips. Legacy Mongo values may be timezone-naive; normalize
+        # them to UTC before comparing against the aware SEED_VERSION.
+        admin_edit_at_dt = to_utc_datetime(admin_edit_at)
 
         if admin_edit_at_dt and admin_edit_at_dt > seed_version_dt:
             # Admin edited this field AFTER the current SEED_VERSION cutoff
