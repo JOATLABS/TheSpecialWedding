@@ -5,6 +5,7 @@ import { FeatureShowcase } from "./components/landing-page/FeatureShowcase.clien
 import { PricingSignupSection } from "./components/landing-page/PricingSignupSection.client";
 import HomepageTemplatesBand from "./components/saas/HomepageTemplatesBand";
 import SaasNav from "./components/saas/SaasNav";
+import { PUBLIC_LOGIN_PATH } from "./seo/crawlPolicy";
 import { serializeJsonLd } from "./seo/jsonLd";
 import type { ThemeConfig } from "./types/wedding";
 
@@ -329,7 +330,7 @@ export default function HomePage() {
             <Link href="/terms" className="hover:text-white">
               Terms
             </Link>
-            <Link href="/admin/login" className="hover:text-white">
+            <Link href={PUBLIC_LOGIN_PATH} className="hover:text-white">
               Login
             </Link>
           </div>
