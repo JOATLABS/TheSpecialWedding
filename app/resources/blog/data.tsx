@@ -118,25 +118,25 @@ export const blogPosts = {
         <h3 className="text-xl font-semibold text-white mt-8">For growing teams</h3>
 
         <p>
-          Enterprise is built for planning firms and franchises: unlimited weddings, unlimited guests, 20 staff seats, white-label branding, API access, dedicated success manager, custom integrations, and expanded AI usage.
+          Enterprise is built for larger planning teams: unlimited weddings, unlimited guests, 20 staff seats, 5,000 AI credits per month, 500GB guest memories storage, and support-assisted launch planning.
         </p>
 
         <h3 className="text-xl font-semibold text-white mt-8">The four plans</h3>
 
         <p>
-          <strong>Solo (free):</strong> Try us with your first client. One active wedding at a time, up to 50 guests, branded wedding website, RSVP system, basic timeline builder, 1GB storage. Perfect for testing whether we're a fit before committing.
+          <strong>Solo (free):</strong> Try us with your first client. One active wedding at a time, branded wedding website, RSVP system, basic timeline builder, and 1GB guest memories storage. Perfect for testing whether we're a fit before committing.
         </p>
 
         <p>
-          <strong>Boutique ($49/month):</strong> Unlimited weddings, unlimited guests, vendor management, seating orchestration, QR check-in & live counts, automated reminders, calendar sync, and 300 AI credits per month. Perfect for independent planners running their solo practice.
+          <strong>Boutique ($49/month):</strong> Unlimited weddings, unlimited guests, vendor management, seating orchestration, automated reminders, calendar sync, 300 AI credits per month, and 25GB guest memories storage. Perfect for independent planners running their solo practice.
         </p>
 
         <p>
-          <strong>Signature ($149/month):</strong> Everything in Boutique plus 5 staff seats, vendor-collaboration workspaces, cross-wedding analytics, custom domain, and 1,500 AI credits per month. Perfect for agencies running a team of planners.
+          <strong>Signature ($149/month):</strong> Everything in Boutique plus 5 staff seats, vendor-collaboration workspaces, cross-wedding analytics, 1,500 AI credits per month, 100GB guest memories storage, and support-assisted onboarding by request. Perfect for agencies running a team of planners.
         </p>
 
         <p>
-          <strong>Enterprise ($399/month):</strong> Everything in Signature plus white-label branding, API access plus webhooks, 20 staff seats, dedicated success manager, custom integrations, and 5,000 AI credits per month. Perfect for franchises and large agencies scaling across many planners.
+          <strong>Enterprise ($399/month):</strong> Everything in Signature plus 20 staff seats, 5,000 AI credits per month, 500GB guest memories storage, and support-assisted launch planning. Perfect for larger agencies scaling across many planners.
         </p>
 
         <p>

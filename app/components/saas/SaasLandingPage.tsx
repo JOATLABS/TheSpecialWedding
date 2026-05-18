@@ -337,7 +337,7 @@ export const SaasLandingPage: React.FC = () => {
       {
         _id: 'plan_boutique',
         name: 'Boutique',
-        description: 'For independent planners running their solo practice. Unlimited weddings, no caps.',
+        description: 'For independent planners running their solo practice with paid planning tools and higher limits.',
         price_monthly: 49,
         price_yearly: 490,
         billing_model: 'flat_rate',
@@ -363,7 +363,7 @@ export const SaasLandingPage: React.FC = () => {
       {
         _id: 'plan_enterprise',
         name: 'Enterprise',
-        description: 'For franchises and white-label partners. Your brand, our platform, dedicated success.',
+        description: 'For larger planning teams that need more seats, higher AI usage, expanded guest memories storage, and launch support.',
         price_monthly: 399,
         price_yearly: 3990,
         billing_model: 'flat_rate',
