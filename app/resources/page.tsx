@@ -1,10 +1,5 @@
 import ResourcesClient from './ResourcesClient';
-import { fetchPublishedBlogArticles } from './blog/serverApi';
-import {
-  allowStaticFallback,
-  apiArticleToBlogPost,
-  fallbackBlogCards,
-} from './resourcesShared';
+import { loadResourceBlogPosts } from './blogListData';
 
 export const revalidate = 60;
 
@@ -21,19 +16,13 @@ export default async function ResourcesPage({
   searchParams?: Promise<{ tab?: string | string[] }>;
 }) {
   const params = searchParams ? await searchParams : {};
-  const { articles, unavailable } = await fetchPublishedBlogArticles(50);
-  const initialBlogPosts =
-    articles.length > 0
-      ? articles.map(apiArticleToBlogPost)
-      : allowStaticFallback
-        ? fallbackBlogCards
-        : [];
+  const { initialBlogPosts, initialBlogUnavailable } = await loadResourceBlogPosts(50);
 
   return (
     <ResourcesClient
       initialTab={parseInitialTab(params.tab)}
       initialBlogPosts={initialBlogPosts}
-      initialBlogUnavailable={unavailable && !allowStaticFallback}
+      initialBlogUnavailable={initialBlogUnavailable}
     />
   );
 }

@@ -256,7 +256,7 @@ export default function ResourcesClient({
     setActiveTab(tab);
 
     if (typeof window !== 'undefined') {
-      const nextUrl = tab === 'blog' ? '/resources' : `/resources?tab=${tab}`;
+      const nextUrl = tab === 'blog' ? '/resources/blog' : `/resources?tab=${tab}`;
       window.history.replaceState(null, '', nextUrl);
     }
   };

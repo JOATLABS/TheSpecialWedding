@@ -161,6 +161,7 @@ export default async function BlogPostPage({
         items={[
           { name: 'Home', href: '/' },
           { name: 'Resources', href: '/resources' },
+          { name: 'Blog', href: '/resources/blog' },
           { name: article.title, href: `/resources/blog/${slug}` },
         ]}
       />
@@ -197,10 +198,10 @@ export default async function BlogPostPage({
       <article className="max-w-3xl mx-auto px-6 pt-24 pb-16">
         {/* Back link */}
         <Link
-          href="/resources"
+          href="/resources/blog"
           className="text-wedding-rose hover:text-wedding-blush transition-colors text-sm font-medium"
         >
-          ← Back to Resources
+          ← Back to Blog
         </Link>
 
         {/* Category and metadata */}
