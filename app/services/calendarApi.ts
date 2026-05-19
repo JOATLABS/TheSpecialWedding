@@ -1,5 +1,5 @@
 /**
- * Calendar API client for planner scheduling, shared calendars, and Google connections.
+ * Calendar API client for planner scheduling, shared calendars, and provider connections.
  */
 import { getApiBaseUrl } from '@/utils/env';
 
@@ -883,6 +883,72 @@ export async function getMeetingSyncStatus(
   return authFetch<CalendarSyncStatusItem[]>(
     token,
     `/admin/planner/calendar/meetings/${meetingId}/sync-status`
+  );
+}
+
+export async function approveCoupleBooking(
+  token: string,
+  meetingId: string,
+  expectedVersion: number
+): Promise<MeetingUpsertResponse> {
+  return authFetch<MeetingUpsertResponse>(
+    token,
+    `/admin/planner/calendar/meetings/${meetingId}/approve-booking${buildQuery({
+      expected_version: String(expectedVersion),
+    })}`,
+    {
+      method: 'POST',
+    }
+  );
+}
+
+export async function declineCoupleBooking(
+  token: string,
+  meetingId: string,
+  expectedVersion: number,
+  reason?: string
+): Promise<MeetingUpsertResponse> {
+  return authFetch<MeetingUpsertResponse>(
+    token,
+    `/admin/planner/calendar/meetings/${meetingId}/decline-booking${buildQuery({
+      expected_version: String(expectedVersion),
+      reason: reason || undefined,
+    })}`,
+    {
+      method: 'POST',
+    }
+  );
+}
+
+export async function acceptMeetingExternalChange(
+  token: string,
+  meetingId: string,
+  expectedVersion: number
+): Promise<MeetingUpsertResponse> {
+  return authFetch<MeetingUpsertResponse>(
+    token,
+    `/admin/planner/calendar/meetings/${meetingId}/accept-external-change${buildQuery({
+      expected_version: String(expectedVersion),
+    })}`,
+    {
+      method: 'POST',
+    }
+  );
+}
+
+export async function rejectMeetingExternalChange(
+  token: string,
+  meetingId: string,
+  expectedVersion: number
+): Promise<MeetingUpsertResponse> {
+  return authFetch<MeetingUpsertResponse>(
+    token,
+    `/admin/planner/calendar/meetings/${meetingId}/reject-external-change${buildQuery({
+      expected_version: String(expectedVersion),
+    })}`,
+    {
+      method: 'POST',
+    }
   );
 }
 

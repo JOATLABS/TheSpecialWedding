@@ -20,6 +20,8 @@ from zoneinfo import ZoneInfo
 from bson import ObjectId
 
 from app.core.database import mongo
+from app.models.calendar import ScheduleItemType
+from app.models.calendar_connection import CalendarConnectionStatus
 from app.models.team_member import TeamMemberStatus, resolve_team_permissions
 from app.services.calendar_aggregation_service import calendar_aggregation_service
 from app.utils.planner_ownership import (
@@ -136,20 +138,48 @@ class AvailabilitySlotService:
         the booking might land on requires approval, the booking is held
         for the planner to confirm.
         """
-        async for conn in self.connections_collection.find(
+        for conn in await self._bookable_connections_for_staff(
+            owner_id, user_id, wedding_id
+        ):
+            if not conn.get("couple_booking_auto_confirm", True):
+                return True
+        return False
+
+    def _connection_allows_meeting_booking(
+        self, connection: dict[str, Any], wedding_id: str
+    ) -> bool:
+        allowed = {str(value) for value in connection.get("allowed_wedding_ids", [])}
+        if allowed and str(wedding_id) not in allowed:
+            return False
+        allowed_item_types = {
+            str(value)
+            for value in connection.get("allowed_schedule_item_types", [])
+            if value
+        }
+        if (
+            allowed_item_types
+            and ScheduleItemType.MEETING.value not in allowed_item_types
+        ):
+            return False
+        return True
+
+    async def _bookable_connections_for_staff(
+        self, owner_id: str, user_id: str, wedding_id: str
+    ) -> list[dict[str, Any]]:
+        rows = await self.connections_collection.find(
             {
                 "owner_planner_id": owner_id,
                 "user_id": user_id,
                 "is_writable": True,
                 "sync_enabled": True,
+                "connection_status": CalendarConnectionStatus.ACTIVE.value,
             }
-        ):
-            allowed = conn.get("allowed_wedding_ids") or []
-            if allowed and str(wedding_id) not in {str(v) for v in allowed}:
-                continue
-            if not conn.get("couple_booking_auto_confirm", True):
-                return True
-        return False
+        ).to_list(length=100)
+        return [
+            row
+            for row in rows
+            if self._connection_allows_meeting_booking(row, wedding_id)
+        ]
 
     async def _resolve_candidate_staff(
         self,
@@ -169,7 +199,9 @@ class AvailabilitySlotService:
         # whose `allowed_wedding_ids` includes this wedding (or empty list,
         # meaning "all weddings under this planner").
         candidates: dict[str, _CandidateStaff] = {}
-        if owner_id:
+        if owner_id and await self._bookable_connections_for_staff(
+            owner_id, owner_id, wedding_id
+        ):
             candidates[owner_id] = _CandidateStaff(
                 user_id=owner_id,
                 user_email=owner_email,
@@ -180,13 +212,17 @@ class AvailabilitySlotService:
             )
 
         async for conn in self.connections_collection.find(
-            {"owner_planner_id": owner_id, "is_writable": True, "sync_enabled": True}
+            {
+                "owner_planner_id": owner_id,
+                "is_writable": True,
+                "sync_enabled": True,
+                "connection_status": CalendarConnectionStatus.ACTIVE.value,
+            }
         ):
             connection_user_id = str(conn.get("user_id") or "")
             if not connection_user_id:
                 continue
-            allowed = conn.get("allowed_wedding_ids") or []
-            if allowed and str(wedding_id) not in {str(v) for v in allowed}:
+            if not self._connection_allows_meeting_booking(conn, wedding_id):
                 continue
             if connection_user_id in candidates:
                 continue

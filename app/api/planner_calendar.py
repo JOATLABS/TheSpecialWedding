@@ -44,6 +44,7 @@ from app.services.calendar_sync_service import calendar_sync_service
 from app.services.calendar_provider_service import calendar_provider_service
 from app.services.aurinko_contacts_sync_service import aurinko_contacts_sync_service
 from app.services.aurinko_tasks_sync_service import aurinko_tasks_sync_service
+from app.services.couple_booking_service import couple_booking_service
 from app.services.google_calendar_service import google_calendar_service
 from app.utils.query_validation import (
     calculate_pagination_params,
@@ -729,6 +730,34 @@ async def _get_scoped_meeting(
         _build_scoped_meeting_query(current_user, meeting_id)
     )
     return _require_document(task, detail)
+
+
+async def _get_resolution_meeting_context(
+    task_id: str,
+    current_user: ExtendedAuthUser,
+) -> tuple[ObjectId, dict[str, Any], str]:
+    try:
+        oid = ObjectId(task_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid meeting ID format")
+
+    task = await _get_scoped_meeting(oid, current_user)
+    if task.get("wedding_id") and not await check_wedding_access(
+        current_user, task["wedding_id"]
+    ):
+        raise HTTPException(
+            status_code=403, detail="You don't have access to this wedding"
+        )
+    owner_id = str(
+        task.get("owner_planner_id")
+        or get_calendar_owner_identity(current_user).get("owner_id")
+        or ""
+    )
+    if not owner_id:
+        raise HTTPException(
+            status_code=400, detail="Meeting is missing planner owner scope"
+        )
+    return oid, task, owner_id
 
 
 def _serialize_shared_event(row: dict) -> SharedCalendarEventResponse:
@@ -3101,17 +3130,7 @@ async def get_meeting_sync_status(
 
 
 # ============================================================================
-# Meeting resolution endpoints (phase 2 stubs)
-#
-# These four endpoints close the loop on external-change reconciliation and
-# couple-booking approval. They are wired now so the route surface is stable
-# for the planner UI work in flight; the bodies are deliberately stubs that
-# return 501 until the optimistic-concurrency + audit-trail implementation
-# lands in phase 2.
-#
-# Each endpoint takes a required ``expected_version`` query parameter — the
-# same optimistic-concurrency token ``update_meeting`` already enforces — so
-# a stale UI click cannot clobber a concurrent webhook write.
+# Meeting resolution endpoints
 # ============================================================================
 
 
@@ -3128,13 +3147,51 @@ async def accept_meeting_external_change(
             "Stale client clicks 409."
         ),
     ),
-    current_user: ExtendedAuthUser = Depends(require_calendar_access),
-) -> dict:
-    """[STUB] Accept the externally-modified version of this meeting as
-    canonical. Phase 2 implementation."""
-    raise HTTPException(
-        status_code=501,
-        detail="accept_meeting_external_change not implemented yet (phase 2)",
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("edit_meetings")
+    ),
+) -> MeetingUpsertResponse:
+    """Accept an externally modified meeting as canonical and update projections."""
+    _oid, previous_task, owner_id = await _get_resolution_meeting_context(
+        task_id, current_user
+    )
+    result = await couple_booking_service.accept_external_change(
+        owner_planner_id=owner_id,
+        task_id=task_id,
+        expected_version=expected_version,
+    )
+    sync_status = await calendar_sync_service.sync_schedule_item(
+        result.task,
+        actor_user_id=_calendar_user_id(current_user),
+        actor_is_owner=bool(
+            current_user.is_root_admin or current_user.is_wedding_planner
+        ),
+        actor_role_scope=_calendar_actor_role_scope(current_user),
+    )
+    invite_status: list[dict[str, Any]] = []
+    if previous_task.get(
+        "invite_delivery_mode"
+    ) == InviteDeliveryMode.EMAIL_ICS.value and previous_task.get(
+        "couple_attendee_emails"
+    ):
+        invite_status = await calendar_job_service.enqueue_invite_job(
+            result.task,
+            method="REQUEST",
+            reason="external_change_accepted",
+        )
+    await calendar_audit_service.log(
+        action="calendar_external_change_accepted",
+        message=f"Accepted external change for {result.task.get('title')}",
+        owner_planner_email=_optional_str(result.task.get("owner_planner_email")),
+        actor_email=current_user.email,
+        actor_role=current_user.role,
+        wedding_id=_optional_str(result.task.get("wedding_id")),
+        metadata={"task_id": task_id, "previous_version": expected_version},
+    )
+    return MeetingUpsertResponse(
+        meeting=_serialize_meeting_payload(result.task),
+        sync_status=sync_status,
+        invite_status=invite_status,
     )
 
 
@@ -3151,13 +3208,40 @@ async def reject_meeting_external_change(
             "Stale client clicks 409."
         ),
     ),
-    current_user: ExtendedAuthUser = Depends(require_calendar_access),
-) -> dict:
-    """[STUB] Reject the externally-modified version and keep the canonical
-    meeting state. Phase 2 implementation."""
-    raise HTTPException(
-        status_code=501,
-        detail="reject_meeting_external_change not implemented yet (phase 2)",
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("edit_meetings")
+    ),
+) -> MeetingUpsertResponse:
+    """Reject an external edit and push canonical state back to providers."""
+    _oid, _previous_task, owner_id = await _get_resolution_meeting_context(
+        task_id, current_user
+    )
+    result = await couple_booking_service.reject_external_change(
+        owner_planner_id=owner_id,
+        task_id=task_id,
+        expected_version=expected_version,
+    )
+    sync_status = await calendar_sync_service.sync_schedule_item(
+        result.task,
+        actor_user_id=_calendar_user_id(current_user),
+        actor_is_owner=bool(
+            current_user.is_root_admin or current_user.is_wedding_planner
+        ),
+        actor_role_scope=_calendar_actor_role_scope(current_user),
+    )
+    await calendar_audit_service.log(
+        action="calendar_external_change_rejected",
+        message=f"Rejected external change for {result.task.get('title')}",
+        owner_planner_email=_optional_str(result.task.get("owner_planner_email")),
+        actor_email=current_user.email,
+        actor_role=current_user.role,
+        wedding_id=_optional_str(result.task.get("wedding_id")),
+        metadata={"task_id": task_id, "previous_version": expected_version},
+    )
+    return MeetingUpsertResponse(
+        meeting=_serialize_meeting_payload(result.task),
+        sync_status=sync_status,
+        invite_status=[],
     )
 
 
@@ -3174,13 +3258,51 @@ async def approve_couple_booking(
             "Stale client clicks 409."
         ),
     ),
-    current_user: ExtendedAuthUser = Depends(require_calendar_access),
-) -> dict:
-    """[STUB] Approve a couple-initiated booking request, transitioning the
-    meeting from pending_approval to scheduled. Phase 2 implementation."""
-    raise HTTPException(
-        status_code=501,
-        detail="approve_couple_booking not implemented yet (phase 2)",
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("approve_couple_bookings")
+    ),
+) -> MeetingUpsertResponse:
+    """Approve a couple booking request, sync it externally, and queue invites."""
+    _oid, _previous_task, owner_id = await _get_resolution_meeting_context(
+        task_id, current_user
+    )
+    result = await couple_booking_service.approve_meeting(
+        owner_planner_id=owner_id,
+        task_id=task_id,
+        expected_version=expected_version,
+    )
+    sync_status = await calendar_sync_service.sync_schedule_item(
+        result.task,
+        actor_user_id=_calendar_user_id(current_user),
+        actor_is_owner=bool(
+            current_user.is_root_admin or current_user.is_wedding_planner
+        ),
+        actor_role_scope=_calendar_actor_role_scope(current_user),
+    )
+    invite_status: list[dict[str, Any]] = []
+    if result.task.get(
+        "invite_delivery_mode"
+    ) == InviteDeliveryMode.EMAIL_ICS.value and result.task.get(
+        "couple_attendee_emails"
+    ):
+        invite_status = await calendar_job_service.enqueue_invite_job(
+            result.task,
+            method="REQUEST",
+            reason="couple_booking_approved",
+        )
+    await calendar_audit_service.log(
+        action="couple_booking_approved",
+        message=f"Approved couple booking {result.task.get('title')}",
+        owner_planner_email=_optional_str(result.task.get("owner_planner_email")),
+        actor_email=current_user.email,
+        actor_role=current_user.role,
+        wedding_id=_optional_str(result.task.get("wedding_id")),
+        metadata={"task_id": task_id, "previous_version": expected_version},
+    )
+    return MeetingUpsertResponse(
+        meeting=_serialize_meeting_payload(result.task),
+        sync_status=sync_status,
+        invite_status=invite_status,
     )
 
 
@@ -3197,11 +3319,44 @@ async def decline_couple_booking(
             "Stale client clicks 409."
         ),
     ),
-    current_user: ExtendedAuthUser = Depends(require_calendar_access),
-) -> dict:
-    """[STUB] Decline a couple-initiated booking request. Phase 2
-    implementation."""
-    raise HTTPException(
-        status_code=501,
-        detail="decline_couple_booking not implemented yet (phase 2)",
+    reason: Optional[str] = Query(None, max_length=1000),
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("approve_couple_bookings")
+    ),
+) -> MeetingUpsertResponse:
+    """Decline a couple booking request and cancel any external projection."""
+    _oid, previous_task, owner_id = await _get_resolution_meeting_context(
+        task_id, current_user
+    )
+    result = await couple_booking_service.decline_meeting(
+        owner_planner_id=owner_id,
+        task_id=task_id,
+        expected_version=expected_version,
+        reason=reason,
+    )
+    await calendar_sync_service.delete_schedule_item_syncs(task_id)
+    invite_status: list[dict[str, Any]] = []
+    if previous_task.get(
+        "invite_delivery_mode"
+    ) == InviteDeliveryMode.EMAIL_ICS.value and previous_task.get(
+        "couple_attendee_emails"
+    ):
+        invite_status = await calendar_job_service.enqueue_invite_job(
+            {**previous_task, "meeting_status": MeetingLifecycleStatus.CANCELLED.value},
+            method="CANCEL",
+            reason="couple_booking_declined",
+        )
+    await calendar_audit_service.log(
+        action="couple_booking_declined",
+        message=f"Declined couple booking {result.task.get('title')}",
+        owner_planner_email=_optional_str(result.task.get("owner_planner_email")),
+        actor_email=current_user.email,
+        actor_role=current_user.role,
+        wedding_id=_optional_str(result.task.get("wedding_id")),
+        metadata={"task_id": task_id, "previous_version": expected_version},
+    )
+    return MeetingUpsertResponse(
+        meeting=_serialize_meeting_payload(result.task),
+        sync_status=[],
+        invite_status=invite_status,
     )

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import { DeferredHomeEffects } from "./components/landing-page/DeferredHomeEffects.client";
 import { FeatureShowcase } from "./components/landing-page/FeatureShowcase.client";
 import { PricingSignupSection } from "./components/landing-page/PricingSignupSection.client";
@@ -173,6 +172,10 @@ const metrics = [
   { label: "Guest workflows automated", value: "11" },
 ];
 
+const heroDashboardSizes = "(min-width: 1280px) 604px, (min-width: 1024px) 46vw, calc(100vw - 48px)";
+const heroDashboardAvifSrcSet = "/dashboard-hero-768.avif 768w, /dashboard-hero-1200.avif 1200w";
+const heroDashboardWebpSrcSet = "/dashboard-hero-768.webp 768w, /dashboard-hero-1200.webp 1200w";
+
 function SectionBridge({ label }: { label: string }) {
   return (
     <div className="pointer-events-none flex items-center justify-center py-8 sm:py-10" aria-hidden="true">
@@ -242,14 +245,22 @@ export default function HomePage() {
                 <span className="h-2.5 w-2.5 rounded-full bg-green-400/70" />
               </div>
               <div className="relative aspect-[16/10] rounded-b-xl bg-[#071020]">
-                <Image
-                  src="/dashboard.webp"
-                  alt="The Special Wedding planner dashboard showing live wedding metrics, workflow insights, and planning tools"
-                  fill
-                  sizes="(min-width: 1280px) 604px, (min-width: 1024px) 46vw, calc(100vw - 48px)"
-                  className="object-contain object-top"
-                  priority
-                />
+                <picture>
+                  <source srcSet={heroDashboardAvifSrcSet} sizes={heroDashboardSizes} type="image/avif" />
+                  <source srcSet={heroDashboardWebpSrcSet} sizes={heroDashboardSizes} type="image/webp" />
+                  <img
+                    src="/dashboard-hero-1200.webp"
+                    srcSet={heroDashboardWebpSrcSet}
+                    sizes={heroDashboardSizes}
+                    alt="The Special Wedding planner dashboard showing live wedding metrics, workflow insights, and planning tools"
+                    width={1200}
+                    height={666}
+                    loading="eager"
+                    decoding="async"
+                    fetchPriority="high"
+                    className="absolute inset-0 h-full w-full object-contain object-top"
+                  />
+                </picture>
               </div>
             </div>
           </div>

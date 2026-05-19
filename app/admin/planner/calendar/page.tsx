@@ -187,6 +187,11 @@ export default function PlannerCalendarPage() {
     (userProfile.is_root_admin ||
       userProfile.is_wedding_planner ||
       userProfile.team_permissions?.edit_meetings);
+  const canApproveCoupleBookings =
+    !!userProfile &&
+    (userProfile.is_root_admin ||
+      userProfile.is_wedding_planner ||
+      userProfile.team_permissions?.approve_couple_bookings);
   const canManageGeneralTasks =
     !!userProfile &&
     (userProfile.is_root_admin ||
@@ -1077,6 +1082,7 @@ export default function PlannerCalendarPage() {
         defaultCategory={defaultCreateCategory}
         allowGeneralTasks={canManageGeneralTasks}
         allowMeetings={canCreateMeetings || canEditMeetings}
+        allowBookingApproval={canApproveCoupleBookings}
         connections={connections}
         staffOptions={staffOptions}
         onSuccess={async () => {

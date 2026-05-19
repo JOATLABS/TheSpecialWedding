@@ -2294,6 +2294,24 @@ async def create_calendar_indexes():
                 name="idx_task_sync_records_owner_status",
                 background=True,
             )
+            await task_sync_records.create_index(
+                [
+                    ("sync_status", ASCENDING),
+                    ("next_retry_at", ASCENDING),
+                    ("retryable_error", ASCENDING),
+                ],
+                name="idx_task_sync_records_retry_queue",
+                background=True,
+            )
+            await task_sync_records.create_index(
+                [
+                    ("sync_status", ASCENDING),
+                    ("last_drift_check_at", ASCENDING),
+                    ("connection_id", ASCENDING),
+                ],
+                name="idx_task_sync_records_drift_checks",
+                background=True,
+            )
         except AttributeError as exc:
             logger.warning(
                 "Skipping task sync record indexes; collection getter unavailable: %s",
