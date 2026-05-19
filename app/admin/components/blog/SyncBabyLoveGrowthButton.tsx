@@ -251,7 +251,7 @@ export default function SyncBabyLoveGrowthButton({
     } finally {
       setBusy(false);
     }
-  }, [apiRequest, busy, onSyncComplete, pollUntilDone]);
+  }, [apiRequest, busy, onSyncComplete, pollUntilDone, runBackfill]);
 
   return (
     <button

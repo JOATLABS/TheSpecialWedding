@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate } from '@/utils/dateFormat';
 import { Card } from '@/components/ui/Card';
@@ -74,10 +74,20 @@ interface SmsSupportSummary {
   };
 }
 
+type SupportTab = 'tickets' | 'metrics' | 'knowledge_base' | 'blog';
+
+function normalizeSupportTab(tab: string | null, isRootAdmin: boolean): SupportTab {
+  if (tab === 'knowledge_base') return 'knowledge_base';
+  if (isRootAdmin && (tab === 'metrics' || tab === 'blog')) return tab;
+  return 'tickets';
+}
+
 export default function SupportPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const searchParamsText = searchParams.toString();
   const { apiRequest, userProfile } = useAdmin();
-  const [activeTab, setActiveTab] = useState<'tickets' | 'metrics' | 'knowledge_base' | 'blog'>('tickets');
+  const [activeTab, setActiveTab] = useState<SupportTab>('tickets');
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [metrics, setMetrics] = useState<SupportMetrics | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,6 +111,23 @@ export default function SupportPage() {
   } = pagination;
 
   const isRootAdmin = userProfile?.is_root_admin;
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParamsText);
+    setActiveTab(normalizeSupportTab(params.get('tab'), Boolean(isRootAdmin)));
+  }, [isRootAdmin, searchParamsText]);
+
+  const handleTabChange = useCallback((tab: SupportTab) => {
+    const params = new URLSearchParams(searchParamsText);
+    params.set('tab', tab);
+    if (tab !== 'blog') {
+      params.delete('blogArticle');
+      params.delete('blogMode');
+    }
+
+    setActiveTab(tab);
+    router.replace(`/admin/support?${params.toString()}`, { scroll: false });
+  }, [router, searchParamsText]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -340,7 +367,7 @@ export default function SupportPage() {
           ].map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key as any)}
+              onClick={() => handleTabChange(tab.key as SupportTab)}
               className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === tab.key
                   ? 'border-blue-500 text-blue-600 dark:text-blue-400'

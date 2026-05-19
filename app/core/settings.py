@@ -418,6 +418,9 @@ class Settings(BaseSettings):
     babylovegrowth_sync_enabled: bool = Field(
         default=False, alias="BABYLOVEGROWTH_SYNC_ENABLED"
     )
+    babylovegrowth_webhook_secret: Optional[str] = Field(
+        default=None, alias="BABYLOVEGROWTH_WEBHOOK_SECRET"
+    )
     # Brand-safety default: synced articles land as draft until Etastic reviews
     # and manually publishes. Flip to false once you trust BLG's output.
     babylovegrowth_land_as_draft: bool = Field(

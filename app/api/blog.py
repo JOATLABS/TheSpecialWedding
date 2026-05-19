@@ -4,9 +4,18 @@ Public endpoints for the /resources page (no auth) + Admin CRUD (ROOT_ADMIN only
 """
 
 import logging
+import secrets
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+)
 from pydantic import BaseModel, Field, field_validator
 
 from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
@@ -269,6 +278,47 @@ async def get_blog_image_upload_url(
         folder=folder,
         content_type=content_type,
     )
+
+
+# ==================== BABYLOVEGROWTH WEBHOOK (PUBLIC, BEARER-GATED) ====================
+
+
+@router.post("/webhook/babylovegrowth", tags=["Webhooks"])
+async def handle_babylovegrowth_webhook(
+    request: Request,
+    authorization: Optional[str] = Header(default=None),
+):
+    """Receive BabyLoveGrowth publish webhooks.
+
+    BLG sends this when an article is published from their dashboard.
+    We require a shared bearer token because the route is public and
+    intentionally not tied to admin browser auth.
+    """
+    from app.core.settings import settings as _settings
+    from app.services.babylovegrowth_sync_service import babylovegrowth_sync_service
+
+    webhook_secret = _settings.babylovegrowth_webhook_secret
+    if not webhook_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="BabyLoveGrowth webhook is not configured",
+        )
+
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    if not secrets.compare_digest(token, webhook_secret):
+        raise HTTPException(status_code=401, detail="Invalid bearer token")
+
+    try:
+        payload = await request.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+
+    try:
+        return await babylovegrowth_sync_service.ingest_webhook_article(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # ==================== BABYLOVEGROWTH SYNC (ROOT_ADMIN) ====================
