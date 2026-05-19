@@ -1,12 +1,15 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
 import BlogArticleList from './BlogArticleList';
 import BlogArticleEditor from './BlogArticleEditor';
 import BlogCategorySidebar from './BlogCategorySidebar';
 import SyncBabyLoveGrowthButton from './SyncBabyLoveGrowthButton';
+import type { BlogRouteState } from './blogRouteState';
+import { buildBlogRouteSearch, getBlogRouteState } from './blogRouteState';
 import {
   Search,
   Plus,
@@ -44,6 +47,9 @@ type ViewMode = 'list' | 'create' | 'edit';
 
 export default function BlogManager() {
   const { apiRequest } = useAdmin();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const searchParamsText = searchParams.toString();
 
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [articles, setArticles] = useState<BlogArticle[]>([]);
@@ -55,6 +61,11 @@ export default function BlogManager() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
+
+  const updateBlogRouteState = useCallback((state: BlogRouteState) => {
+    const query = buildBlogRouteSearch(searchParamsText, state);
+    router.replace(`/admin/support?${query}`, { scroll: false });
+  }, [router, searchParamsText]);
 
   const fetchArticles = useCallback(async (page: number = 1) => {
     try {
@@ -107,11 +118,46 @@ export default function BlogManager() {
     fetchCategoryCounts();
   }, [fetchCategoryCounts]);
 
+  useEffect(() => {
+    const routeState = getBlogRouteState(new URLSearchParams(searchParamsText));
+    let cancelled = false;
+
+    if (routeState.viewMode === 'edit') {
+      apiRequest(`/admin/blog/articles/${routeState.articleId}`)
+        .then((article) => {
+          if (cancelled) return;
+          setSelectedArticle(article);
+          setViewMode('edit');
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          console.error('Failed to restore blog editor route:', error);
+          setSelectedArticle(null);
+          setViewMode('list');
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (routeState.viewMode === 'create') {
+      setSelectedArticle(null);
+      setViewMode('create');
+      return undefined;
+    }
+
+    setSelectedArticle(null);
+    setViewMode('list');
+    return undefined;
+  }, [apiRequest, searchParamsText]);
+
   const handleEdit = async (articleId: string) => {
     try {
       const article = await apiRequest(`/admin/blog/articles/${articleId}`);
       setSelectedArticle(article);
       setViewMode('edit');
+      updateBlogRouteState({ viewMode: 'edit', articleId });
     } catch (error) {
       console.error('Failed to fetch article:', error);
     }
@@ -137,6 +183,7 @@ export default function BlogManager() {
       }
       setViewMode('list');
       setSelectedArticle(null);
+      updateBlogRouteState({ viewMode: 'list' });
       fetchArticles(1);
       fetchCategoryCounts();
     } catch (error) {
@@ -150,21 +197,39 @@ export default function BlogManager() {
     setCurrentPage(1);
   };
 
+  const returnToList = () => {
+    setViewMode('list');
+    setSelectedArticle(null);
+    updateBlogRouteState({ viewMode: 'list' });
+  };
+
+  const startCreate = () => {
+    setSelectedArticle(null);
+    setViewMode('create');
+    updateBlogRouteState({ viewMode: 'create' });
+  };
+
   // Editor view
   if (viewMode === 'create' || viewMode === 'edit') {
+    const editorKey =
+      viewMode === 'edit'
+        ? selectedArticle?.id || selectedArticle?._id || 'edit'
+        : 'create';
+
     return (
       <div>
         <button
-          onClick={() => { setViewMode('list'); setSelectedArticle(null); }}
+          onClick={returnToList}
           className="mb-4 flex items-center gap-2 text-sm text-slate-600 transition hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to articles
         </button>
         <BlogArticleEditor
+          key={editorKey}
           article={viewMode === 'edit' ? selectedArticle : null}
           onSave={handleSave}
-          onCancel={() => { setViewMode('list'); setSelectedArticle(null); }}
+          onCancel={returnToList}
         />
       </div>
     );
@@ -194,7 +259,7 @@ export default function BlogManager() {
             Refresh
           </button>
           <button
-            onClick={() => setViewMode('create')}
+            onClick={startCreate}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-wedding-rose text-white text-sm font-medium hover:bg-wedding-blush transition"
           >
             <Plus className="w-4 h-4" />
@@ -241,7 +306,7 @@ export default function BlogManager() {
                 {searchQuery ? 'Try a different search term.' : 'Create your first article to get started.'}
               </p>
               <button
-                onClick={() => setViewMode('create')}
+                onClick={startCreate}
                 className="text-sm text-wedding-rose hover:text-wedding-blush transition"
               >
                 Create your first article →

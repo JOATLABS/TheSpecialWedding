@@ -463,6 +463,63 @@ class BabyLoveGrowthSyncService:
             "results": results,
         }
 
+    async def ingest_webhook_article(self, payload: dict) -> dict:
+        """Persist a BLG publish-webhook payload into ``blog_articles``.
+
+        BabyLoveGrowth webhooks are publish events, so this path treats the
+        upstream action as explicit publish intent. Local archives still win:
+        an article an admin intentionally archived stays archived.
+        """
+        if not isinstance(payload, dict):
+            raise ValueError("Webhook payload must be a JSON object")
+
+        normalized = _normalize_blg_payload(payload)
+        blg_id = _coerce_blg_id(normalized.get("id"))
+        if blg_id is None:
+            raise ValueError("Webhook payload missing valid integer id")
+
+        language = (normalized.get("languageCode") or "").lower()
+        if language and language != "en":
+            logger.info(
+                "Skipped non-English BLG webhook article",
+                extra={"blg_id": blg_id, "language": language},
+            )
+            return {
+                "status": "skipped",
+                "reason": "non_english",
+                "babylovegrowth_id": blg_id,
+            }
+
+        mapped = _map_blg_article(
+            normalized,
+            normalized,
+            status_override="published",
+        )
+        if mapped is None:
+            return {
+                "status": "skipped",
+                "reason": "unmappable_article",
+                "babylovegrowth_id": blg_id,
+            }
+
+        hero_url = normalized.get("hero_image_url")
+        hero_cdn_url = await self._proxy_hero_image(hero_url, blg_id)
+        image_failed = bool(hero_url and hero_cdn_url is None)
+
+        upsert_result = await self._upsert_article(
+            blg_id=blg_id,
+            mapped=mapped,
+            hero_cdn_url=hero_cdn_url,
+        )
+        return {
+            "status": "processed",
+            "babylovegrowth_id": blg_id,
+            "slug": upsert_result["slug"],
+            "article_status": upsert_result["status"],
+            "inserted": upsert_result["inserted"],
+            "image_failed": image_failed,
+        }
+
     async def get_last_run_status(self) -> dict:
         """Return the singleton sync-state doc, or a default if unseeded."""
         doc = await mongo.db[SYNC_STATE_COLLECTION].find_one({"_id": SYNC_STATE_DOC_ID})
@@ -693,7 +750,7 @@ class BabyLoveGrowthSyncService:
         blg_id: int,
         mapped: dict,
         hero_cdn_url: Optional[str],
-    ) -> None:
+    ) -> dict:
         """Upsert by babylovegrowth_id. Slug collisions retry with -N suffix.
 
         The unique sparse index idx_blog_babylovegrowth_id_unique
@@ -704,21 +761,73 @@ class BabyLoveGrowthSyncService:
         from pymongo.errors import DuplicateKeyError
 
         now = _now_utc()
+        existing = await mongo.db["blog_articles"].find_one(
+            {"babylovegrowth_id": blg_id},
+            {
+                "slug": 1,
+                "status": 1,
+                "published_at": 1,
+                "og_image": 1,
+                "card_image": 1,
+                "category": 1,
+                "featured": 1,
+            },
+        )
         base_slug = mapped["slug"]
-        candidate_slug = base_slug
+        preserve_existing_slug = bool(
+            existing
+            and existing.get("slug")
+            and (existing.get("status") != "draft" or existing.get("published_at"))
+        )
+        candidate_slug = existing["slug"] if preserve_existing_slug else base_slug
         suffix = 1
 
         for _ in range(20):  # Cap collision retries to avoid pathological loops
+            set_fields = {
+                **mapped,
+                "slug": candidate_slug,
+                "synced_at": now,
+                "sync_source": "babylovegrowth",
+                "updated_at": now,
+            }
+
+            if existing:
+                # Preserve local curation choices for rows that have already
+                # been reviewed in our admin. BLG remains the content source;
+                # our Mongo row remains the publishing source of truth.
+                for curated_field in ("category", "featured"):
+                    if curated_field in existing:
+                        set_fields[curated_field] = existing[curated_field]
+
+                existing_status = existing.get("status")
+                incoming_status = mapped.get("status")
+                if existing_status == "archived":
+                    set_fields["status"] = "archived"
+                    set_fields["published_at"] = existing.get("published_at")
+                elif incoming_status == "published":
+                    set_fields["status"] = "published"
+                    set_fields["published_at"] = (
+                        existing.get("published_at")
+                        or mapped.get("published_at")
+                        or now
+                    )
+                else:
+                    set_fields["status"] = existing_status or incoming_status
+                    set_fields["published_at"] = existing.get(
+                        "published_at", mapped.get("published_at")
+                    )
+
+            if hero_cdn_url is not None:
+                set_fields["og_image"] = hero_cdn_url
+                set_fields["card_image"] = hero_cdn_url
+            elif not existing or not (
+                existing.get("og_image") or existing.get("card_image")
+            ):
+                set_fields["og_image"] = None
+                set_fields["card_image"] = None
+
             update = {
-                "$set": {
-                    **mapped,
-                    "slug": candidate_slug,
-                    "og_image": hero_cdn_url,
-                    "card_image": hero_cdn_url,
-                    "synced_at": now,
-                    "sync_source": "babylovegrowth",
-                    "updated_at": now,
-                },
+                "$set": set_fields,
                 "$setOnInsert": {
                     "_id": ObjectId(),
                     "created_at": now,
@@ -732,7 +841,11 @@ class BabyLoveGrowthSyncService:
                     update,
                     upsert=True,
                 )
-                return
+                return {
+                    "inserted": existing is None,
+                    "slug": candidate_slug,
+                    "status": set_fields["status"],
+                }
             except DuplicateKeyError as exc:
                 # Was this the slug index or the babylovegrowth_id index?
                 msg = str(exc)
@@ -746,7 +859,11 @@ class BabyLoveGrowthSyncService:
                     "BLG article already synced by another writer",
                     extra={"blg_id": blg_id},
                 )
-                return
+                return {
+                    "inserted": False,
+                    "slug": candidate_slug,
+                    "status": set_fields["status"],
+                }
 
         raise RuntimeError(
             f"Could not find a non-colliding slug for BLG article {blg_id} after 20 attempts"
@@ -776,7 +893,12 @@ class BabyLoveGrowthSyncService:
 # ─────────────────────────────────────── Field mapping ───────────────────────
 
 
-def _map_blg_article(full: dict, summary: dict) -> Optional[dict]:
+def _map_blg_article(
+    full: dict,
+    summary: dict,
+    *,
+    status_override: Optional[str] = None,
+) -> Optional[dict]:
     """Map a BLG full-article payload to a partial blog_articles document.
 
     Returns None if the article cannot be mapped (e.g. content fails
@@ -846,11 +968,20 @@ def _map_blg_article(full: dict, summary: dict) -> Optional[dict]:
                     tags.append(cleaned)
     tags = tags[:15]
 
-    # Status: brand-safe default to draft when LAND_AS_DRAFT=true.
-    status = "draft" if settings.babylovegrowth_land_as_draft else "published"
+    # Status: brand-safe default to draft when LAND_AS_DRAFT=true, except
+    # publish webhooks, where the upstream user explicitly clicked Publish.
+    if status_override is not None:
+        if status_override not in {"draft", "published", "archived"}:
+            raise ValueError(f"Unsupported BLG status override: {status_override}")
+        status = status_override
+    else:
+        status = "draft" if settings.babylovegrowth_land_as_draft else "published"
 
     # published_at: only set if we're publishing immediately.
-    published_at = _now_utc() if status == "published" else None
+    source_created_at = _parse_blg_datetime(
+        full.get("created_at") or summary.get("created_at")
+    )
+    published_at = (source_created_at or _now_utc()) if status == "published" else None
 
     # Schema.org JSON-LD: BLG documents these as dedicated structured
     # data fields. Their docs Best Practice says: "Use jsonLd and
@@ -901,6 +1032,53 @@ def _derive_excerpt_from_content(sanitized: str) -> str:
     text = _STRIP_TAGS_PATTERN.sub(" ", sanitized)
     text = _WHITESPACE_PATTERN.sub(" ", text).strip()
     return text[:400]
+
+
+def _normalize_blg_payload(payload: dict) -> dict:
+    """Normalize BLG's API and webhook casing into the API-shaped keys."""
+    normalized = dict(payload)
+    aliases = {
+        "metaDescription": "meta_description",
+        "heroImageUrl": "hero_image_url",
+        "createdAt": "created_at",
+        "publicUrl": "public_url",
+    }
+    for source_key, target_key in aliases.items():
+        if target_key not in normalized and source_key in normalized:
+            normalized[target_key] = normalized[source_key]
+    return normalized
+
+
+def _coerce_blg_id(value: Any) -> Optional[int]:
+    """Return a BLG article id as int, rejecting bools and non-numeric strings."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        cleaned = value.strip()
+        if cleaned.isdigit():
+            return int(cleaned)
+    return None
+
+
+def _parse_blg_datetime(value: Any) -> Optional[datetime]:
+    """Parse BLG ISO timestamps as UTC-aware datetimes."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    normalized = value.strip()
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        logger.warning(
+            "Could not parse BLG created_at timestamp", extra={"value": value}
+        )
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 # ─────────────────────────────────────── Helpers ─────────────────────────────

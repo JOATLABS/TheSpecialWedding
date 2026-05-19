@@ -195,6 +195,76 @@ def test_get_status_endpoint_returns_state_doc(app_with_blog_router, monkeypatch
     assert body["skipped_count"] == 2
 
 
+def test_babylovegrowth_webhook_requires_configured_secret(
+    app_with_blog_router, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.core.settings.settings.babylovegrowth_webhook_secret", None
+    )
+
+    client = TestClient(app_with_blog_router)
+    response = client.post(
+        "/webhook/babylovegrowth",
+        headers={"Authorization": "Bearer test-secret"},
+        json={"id": 123},
+    )
+
+    assert response.status_code == 503
+
+
+def test_babylovegrowth_webhook_rejects_invalid_bearer(
+    app_with_blog_router, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.core.settings.settings.babylovegrowth_webhook_secret", "test-secret"
+    )
+    fake_ingest = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.babylovegrowth_sync_service.babylovegrowth_sync_service.ingest_webhook_article",
+        fake_ingest,
+    )
+
+    client = TestClient(app_with_blog_router)
+    response = client.post(
+        "/webhook/babylovegrowth",
+        headers={"Authorization": "Bearer wrong-secret"},
+        json={"id": 123},
+    )
+
+    assert response.status_code == 401
+    fake_ingest.assert_not_called()
+
+
+def test_babylovegrowth_webhook_ingests_valid_payload(
+    app_with_blog_router, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.core.settings.settings.babylovegrowth_webhook_secret", "test-secret"
+    )
+    expected = {
+        "status": "processed",
+        "babylovegrowth_id": 123,
+        "slug": "published-from-webhook",
+    }
+    fake_ingest = AsyncMock(return_value=expected)
+    monkeypatch.setattr(
+        "app.services.babylovegrowth_sync_service.babylovegrowth_sync_service.ingest_webhook_article",
+        fake_ingest,
+    )
+
+    payload = {"id": 123, "title": "Published from webhook"}
+    client = TestClient(app_with_blog_router)
+    response = client.post(
+        "/webhook/babylovegrowth",
+        headers={"Authorization": "Bearer test-secret"},
+        json=payload,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == expected
+    fake_ingest.assert_called_once_with(payload)
+
+
 def test_endpoints_require_root_admin():
     """If require_root_admin is NOT overridden, the endpoint can't be
     reached — verify the dependency is wired."""

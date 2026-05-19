@@ -1,18 +1,19 @@
 # BabyLoveGrowth Blog Sync — Implementation Mockup
 
-> **Status:** Mockup pending review. No code has been written. Do not implement until Etastic signs off.
+> **Status:** Implemented. Keep this document aligned with the live integration contract.
 
 ## TL;DR
 
 We **already have** a full blog system (`blog_articles` Mongo collection, `BlogService`, public route `/resources/blog/[slug]`, admin CRUD, sanitization, slug dedup, view counter). The BabyLoveGrowth integration is a thin adapter, not a new subsystem.
 
-Five additions:
+Six production additions:
 
 1. One new field on existing `blog_articles` docs: `babylovegrowth_id` (unique sparse index) for idempotent upserts.
 2. One new service: `app/services/babylovegrowth_sync_service.py` — pulls articles from their REST API, maps fields, upserts.
-3. One new admin endpoint: `POST /api/v1/blog/sync-babylovegrowth` — `require_root_admin`-gated, uses `BackgroundTasks` (same pattern as `app/api/billing_jobs.py::sync_usage_to_stripe`).
+3. One new admin endpoint: `POST /admin/blog/sync-babylovegrowth` — `require_root_admin`-gated, uses `BackgroundTasks` (same pattern as `app/api/billing_jobs.py::sync_usage_to_stripe`).
 4. One new method on existing `BlogUploadService`: `upload_from_url(remote_url, folder)` — server-side image ingestion into the existing R2 bucket. Sync re-hosts BLG hero images on our own CDN so synced articles look architecturally identical to admin-authored ones.
-5. One new single-row Mongo collection: `babylovegrowth_sync_runs` — holds the advisory lock + last run state (status, counts, recent errors). Read by `GET /sync-babylovegrowth/status`.
+5. One new single-row Mongo collection: `babylovegrowth_sync_runs` — holds the advisory lock + last run state (status, counts, recent errors). Read by `GET /admin/blog/sync-babylovegrowth/status`.
+6. One public, bearer-gated webhook endpoint: `POST /webhook/babylovegrowth` — receives BLG dashboard Publish events and ingests them immediately.
 
 No new Next.js page. No new R2 bucket. No new external dependencies.
 
@@ -20,7 +21,7 @@ No new Next.js page. No new R2 bucket. No new external dependencies.
 
 Both contracts are confirmed. The disqualifier on the webhook: **no automatic retries**. If the FastAPI dyno is restarting, mid-deploy, or transiently 5xx-ing when an article publishes, the article is silently lost — recoverable only by clicking Publish again in their UI. The pull model is idempotent and re-runnable. A failed sync just runs again on the next cron tick.
 
-Hybrid (webhook + API safety net) is possible later. Not in this scope.
+**2026-05-19 update:** Hybrid is now the production shape. BLG's Publish flow expects a public endpoint that returns 200, so `/webhook/babylovegrowth` receives bearer-authenticated publish events and ingests them immediately. The API pull remains the safety net for content backfill and new-row recovery; publish-state parity depends on the webhook because the REST API still exposes no article status field.
 
 ## BabyLoveGrowth API contract (confirmed)
 
@@ -81,7 +82,7 @@ db.blog_articles.createIndex(
 ## Sync flow
 
 ```
-POST /api/v1/blog/sync-babylovegrowth   (root_admin only)
+POST /admin/blog/sync-babylovegrowth   (root_admin only)
   │
   ├─ enqueue BackgroundTasks(run_babylovegrowth_sync)
   └─ return 202 { "status": "accepted" }
@@ -232,7 +233,7 @@ Pick the collection. Schema:
 }
 ```
 
-Only one document exists at a time — `_id` is a known constant string `"babylovegrowth_sync_state"` (not `ObjectId()`; that comment in the schema above is wrong — corrected here). Every run mutates this single document. `GET /sync-babylovegrowth/status` reads it directly.
+Only one document exists at a time — `_id` is a known constant string `"babylovegrowth_sync_state"` (not `ObjectId()`; that comment in the schema above is wrong — corrected here). Every run mutates this single document. `GET /admin/blog/sync-babylovegrowth/status` reads it directly.
 
 No new collection if you'd rather store this in an existing one — but a dedicated single-doc collection is cleaner than overloading anything else, and matches your existing pattern in places like `behavioral_analytics_service.py` (singleton state docs).
 
@@ -275,12 +276,14 @@ So we cannot cheaply diff a synced article against its BLG source. Options:
 
 The `updated` counter that appeared in the prior draft pseudocode was dead — removed below.
 
+**2026-05-19 update:** the webhook path can update an existing BLG-backed row because the publish payload includes the full article. Local curation still wins for status `archived`, category, featured state, and already-public slugs. API polling remains insert/backfill-oriented because the REST list/single-fetch contract still has no `updated_at`.
+
 ## Endpoint mockup — matches `billing_jobs.py` pattern
 
 ```python
 # app/api/blog.py (additions)
 
-@router.post("/blog/admin/sync-babylovegrowth")
+@router.post("/admin/blog/sync-babylovegrowth")
 async def sync_babylovegrowth(
     background_tasks: BackgroundTasks,
     current_user: ExtendedAuthUser = Depends(require_root_admin),
@@ -293,7 +296,7 @@ async def sync_babylovegrowth(
     return {"status": "accepted", "message": "BabyLoveGrowth sync started in background"}
 
 
-@router.get("/blog/admin/sync-babylovegrowth/status")
+@router.get("/admin/blog/sync-babylovegrowth/status")
 async def sync_status(
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
@@ -349,7 +352,7 @@ For future engineers landing on this doc: the boot-time config validator at `app
 
 ## Trigger / scheduling
 
-Matches your existing pattern: **no in-process scheduler.** External cron hits `POST /api/v1/blog/admin/sync-babylovegrowth` on a 1–4h cadence. Whatever you use to drive `POST /billing/sync-usage` today drives this too.
+Matches your existing pattern: **no in-process scheduler.** External cron hits `POST /admin/blog/sync-babylovegrowth` on a 1–4h cadence. Whatever you use to drive `POST /billing/sync-usage` today drives this too.
 
 **Open question — cadence.** BLG generates articles on their schedule (you control rate in their dashboard). Hourly seems fine; daily is probably enough for v1. Pick after watching their publish frequency for a week.
 
@@ -359,6 +362,7 @@ Matches your existing pattern: **no in-process scheduler.** External cron hits `
 BABYLOVEGROWTH_API_KEY=<paste from BLG dashboard>
 BABYLOVEGROWTH_API_BASE_URL=https://api.babylovegrowth.ai/api/integrations   # optional, defaults
 BABYLOVEGROWTH_SYNC_ENABLED=true                                              # kill switch
+BABYLOVEGROWTH_WEBHOOK_SECRET=<bearer token configured in BLG Webhooks>
 BABYLOVEGROWTH_LAND_AS_DRAFT=true                                             # see "Synced article default status" below
 ```
 
@@ -479,7 +483,6 @@ Items addressed inline above are no longer listed here. Items are now decisions 
 
 ## Out of scope for v1
 
-- Webhook endpoint (BLG → us). Add later if/when you want real-time.
 - Two-way sync (us → BLG). Not supported by their API.
 - JSON-LD rendering.
 - Keyword → category mapping.
@@ -499,7 +502,8 @@ NEW   tests/backend/test_blog_content_img_allowlist.py  # exhaustive bleach test
 EDIT  app/api/blog.py                                # +2 endpoints (sync trigger + status read), ~40 LOC
 EDIT  app/services/blog_upload_service.py            # +upload_from_url method (~60 LOC)
 EDIT  app/utils/blog_content.py                      # add `img` to allowlist + post-bleach https-only src enforcement
-EDIT  app/core/settings.py                           # +4 BABYLOVEGROWTH_* env fields (incl. LAND_AS_DRAFT)
+EDIT  app/core/settings.py                           # +5 BABYLOVEGROWTH_* env fields (incl. WEBHOOK_SECRET + LAND_AS_DRAFT)
+EDIT  .env.example                                   # document API + webhook env keys
 EDIT  app/core/database_indexes.py                   # +partial unique index on babylovegrowth_id
 EDIT  AGENTS.md                                      # one-line note: server-side R2 uploads go via BlogUploadService.upload_from_url
 DB    one-time migration: ensure babylovegrowth_sync_runs has a single seed doc with status="idle"
@@ -519,6 +523,6 @@ No changes to `app/models/blog.py` (the new field is sync-metadata, not part of 
   - **Image fetch:** success (asserts cdn_url under `BLOG_MEDIA_DOMAIN`), 404 (article still synced, `og_image=None`), oversized > 5 MB (rejected pre-upload), wrong content-type (rejected).
   - **Draft default:** with `BABYLOVEGROWTH_LAND_AS_DRAFT=true`, synced article has `status="draft"` and is invisible to `BlogService.get_published_articles`.
   - **Inline `<img>` allowlist:** `<img src="https://...">` survives sanitization; `<img src="http://...">`, `<img src="data:...">`, `<img src="javascript:...">`, `<img src="blob:...">`, `<img onerror="...">` all dropped or attribute-stripped. Existing admin-authored articles re-sanitize without regression.
-- **Live with Etastic watching (Chrome):** generate one real BLG article in their dashboard, hit `POST /sync-babylovegrowth`, then in admin UI find the synced article in draft state, publish manually, watch it appear at `/resources/blog/<slug>` with the hero image served from your R2/CDN (verify in DevTools Network tab — `Request URL` should be your `BLOG_MEDIA_DOMAIN`, not BLG's CDN). Hit sync again, confirm no duplicate.
+- **Live with Etastic watching (Chrome):** generate one real BLG article in their dashboard, hit `POST /admin/blog/sync-babylovegrowth`, then in admin UI find the synced article in draft state, publish manually, watch it appear at `/resources/blog/<slug>` with the hero image served from your R2/CDN (verify in DevTools Network tab — `Request URL` should be your `BLOG_MEDIA_DOMAIN`, not BLG's CDN). Hit sync again, confirm no duplicate. For the publish-webhook path, configure BLG Webhooks to `POST /webhook/babylovegrowth` with the bearer token from `BABYLOVEGROWTH_WEBHOOK_SECRET`, click Publish in BLG, and verify the local article row is `published`.
 
 Sync is considered done when both layers agree.

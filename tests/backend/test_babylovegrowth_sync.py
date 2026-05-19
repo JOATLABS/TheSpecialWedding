@@ -494,7 +494,19 @@ def mock_mongo_for_sync(monkeypatch):
         elif existing is not None:
             existing.update(update.get("$set", {}))
 
+    async def _blog_find_one(filter_doc, projection=None):
+        match_id = filter_doc.get("babylovegrowth_id")
+        return next(
+            (
+                d
+                for d in state["blog_articles"]
+                if d.get("babylovegrowth_id") == match_id
+            ),
+            None,
+        )
+
     blog_articles.find.side_effect = _blog_find
+    blog_articles.find_one = AsyncMock(side_effect=_blog_find_one)
     blog_articles.update_one = AsyncMock(side_effect=_blog_update_one)
 
     # ────── sync runs collection ──────
@@ -700,6 +712,111 @@ def test_service_image_failure_persists_article_without_hero(
     article = mock_mongo_for_sync["blog_articles"][0]
     assert article["og_image"] is None
     assert article["card_image"] is None
+
+
+def test_webhook_ingest_creates_published_article(
+    monkeypatch, mock_mongo_for_sync, configured_settings
+):
+    """A BLG publish webhook is explicit publish intent, not a draft import."""
+    payload = {
+        **_fixture_full(701),
+        "metaDescription": "Webhook meta description.",
+        "heroImageUrl": "https://cdn.example.com/webhook-hero.jpg",
+        "createdAt": "2026-05-17T18:08:00.000Z",
+    }
+    payload.pop("meta_description", None)
+    payload.pop("hero_image_url", None)
+    payload.pop("created_at", None)
+
+    mock_upload = AsyncMock(
+        return_value={"key": "k", "cdn_url": "https://cdn.test/webhook.jpg"}
+    )
+    service = BabyLoveGrowthSyncService()
+    monkeypatch.setattr(
+        service, "_upload_service", MagicMock(upload_from_url=mock_upload)
+    )
+
+    result = asyncio.run(service.ingest_webhook_article(payload))
+    assert result["status"] == "processed"
+    assert result["article_status"] == "published"
+    assert result["inserted"] is True
+
+    article = mock_mongo_for_sync["blog_articles"][0]
+    assert article["status"] == "published"
+    assert article["published_at"].isoformat() == "2026-05-17T18:08:00+00:00"
+    assert article["og_image"] == "https://cdn.test/webhook.jpg"
+
+
+def test_webhook_ingest_publishes_existing_draft_without_clearing_existing_image(
+    monkeypatch, mock_mongo_for_sync, configured_settings
+):
+    """A retrying webhook should not erase a previously proxied hero image
+    if BLG's CDN is temporarily unavailable during the retry."""
+    mock_mongo_for_sync["blog_articles"].append(
+        {
+            "babylovegrowth_id": 702,
+            "slug": "draft-workspace",
+            "status": "draft",
+            "og_image": "https://cdn.old/hero.jpg",
+            "card_image": "https://cdn.old/card.jpg",
+            "category": "platform-updates",
+            "featured": True,
+        }
+    )
+
+    payload = {
+        **_fixture_full(702),
+        "heroImageUrl": "https://cdn.example.com/flaky-hero.jpg",
+        "createdAt": "2026-05-17T18:08:00.000Z",
+    }
+    payload.pop("hero_image_url", None)
+    payload.pop("created_at", None)
+
+    from app.services.blog_upload_service import BlogUploadFromUrlError
+
+    mock_upload = AsyncMock(side_effect=BlogUploadFromUrlError("cdn timeout"))
+    service = BabyLoveGrowthSyncService()
+    monkeypatch.setattr(
+        service, "_upload_service", MagicMock(upload_from_url=mock_upload)
+    )
+
+    result = asyncio.run(service.ingest_webhook_article(payload))
+    article = mock_mongo_for_sync["blog_articles"][0]
+
+    assert result["status"] == "processed"
+    assert result["image_failed"] is True
+    assert article["status"] == "published"
+    assert article["og_image"] == "https://cdn.old/hero.jpg"
+    assert article["card_image"] == "https://cdn.old/card.jpg"
+    assert article["category"] == "platform-updates"
+    assert article["featured"] is True
+
+
+def test_webhook_ingest_does_not_resurrect_archived_article(
+    monkeypatch, mock_mongo_for_sync, configured_settings
+):
+    """Local archive intent is stronger than a later BLG publish retry."""
+    mock_mongo_for_sync["blog_articles"].append(
+        {
+            "babylovegrowth_id": 703,
+            "slug": "archived-workspace",
+            "status": "archived",
+            "published_at": None,
+        }
+    )
+
+    mock_upload = AsyncMock(return_value={"key": "k", "cdn_url": "https://cdn.test/k"})
+    service = BabyLoveGrowthSyncService()
+    monkeypatch.setattr(
+        service, "_upload_service", MagicMock(upload_from_url=mock_upload)
+    )
+
+    result = asyncio.run(service.ingest_webhook_article(_fixture_full(703)))
+    article = mock_mongo_for_sync["blog_articles"][0]
+
+    assert result["article_status"] == "archived"
+    assert article["status"] == "archived"
+    assert article["slug"] == "archived-workspace"
 
 
 @respx.mock
