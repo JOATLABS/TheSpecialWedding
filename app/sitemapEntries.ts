@@ -62,6 +62,12 @@ export function buildSitemapEntries({
       priority: 0.8,
     },
     {
+      url: `${baseUrl}/resources/blog`,
+      lastModified: now,
+      changeFrequency: 'weekly',
+      priority: 0.8,
+    },
+    {
       url: `${baseUrl}/resources/templates`,
       lastModified: now,
       changeFrequency: 'weekly',

@@ -58,6 +58,7 @@ describe('sitemap entries', () => {
     const urls = entries.map((entry) => entry.url);
 
     assert.equal(urls.includes(`${baseUrl}/resources`), true);
+    assert.equal(urls.includes(`${baseUrl}/resources/blog`), true);
     assert.equal(urls.includes(`${baseUrl}/resources/templates`), true);
     assert.equal(urls.includes(`${baseUrl}/resources?tab=templates`), false);
   });
@@ -77,6 +78,7 @@ describe('sitemap entries', () => {
     });
     const urls = entries.map((entry) => entry.url);
 
+    assert.equal(urls.includes(`${baseUrl}/resources/blog`), true);
     assert.deepEqual(
       urlsFor('/resources/blog/', urls),
       publishedBlogSlugs.map((slug) => `${baseUrl}/resources/blog/${slug}`)

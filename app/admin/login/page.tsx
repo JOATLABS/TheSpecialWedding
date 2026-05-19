@@ -93,7 +93,7 @@ export default function AdminLoginPage() {
         className="pointer-events-none absolute bottom-[-6rem] left-[-6rem] h-[22rem] w-[22rem] rounded-full bg-wedding-navy/10 blur-3xl"
       />
 
-      <div className="relative mx-auto flex min-h-dvh w-full max-w-3xl flex-col items-center justify-start gap-5 px-4 py-8 sm:gap-6 sm:px-6 sm:py-10 lg:justify-center lg:py-8">
+      <div className="relative mx-auto flex min-h-dvh w-full max-w-3xl flex-col items-center justify-center gap-5 px-4 pb-16 pt-4 sm:gap-6 sm:px-6 sm:pb-12 sm:pt-8 lg:py-8">
         <header className="relative z-10 flex w-full justify-center px-2">
           <span className="sm:hidden">
             <BrandLockup
