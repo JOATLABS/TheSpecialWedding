@@ -17,8 +17,9 @@ import copy
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, List, Optional
+from zoneinfo import ZoneInfo
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -35,6 +36,19 @@ from app.dependencies.auth_extended import (
     require_team_or_planner,
 )
 from app.dependencies.couple_auth import require_couple_auth
+from app.models.calendar import (
+    CalendarSyncPolicy,
+    InviteDeliveryMode,
+    MeetingLifecycleStatus,
+    ScheduleItemType,
+    VisibilityMode,
+)
+from app.models.calendar_connection import CalendarConnectionStatus
+from app.services.availability_slot_service import availability_slot_service
+from app.services.calendar_audit_service import calendar_audit_service
+from app.services.calendar_idempotency_service import calendar_idempotency_service
+from app.services.calendar_job_service import calendar_job_service
+from app.services.calendar_sync_service import calendar_sync_service
 from app.services.couple_lifecycle_service import couple_lifecycle_service
 from app.services.couple_portal_service import couple_portal_service
 from app.services.guest_export_service import guest_export_service
@@ -2461,7 +2475,382 @@ def _serialize_meeting(task: dict, include_planner_fields: bool = True) -> dict:
     return result
 
 
+class CoupleAvailabilityResponse(BaseModel):
+    slots: list[dict[str, Any]]
+    count: int
+
+
+class CoupleBookMeetingRequest(BaseModel):
+    staff_id: str = Field(..., min_length=1)
+    start: datetime
+    end: datetime
+    title: str = Field(..., min_length=1, max_length=200)
+    notes: Optional[str] = Field(None, max_length=2000)
+    timezone: str = Field(default="UTC")
+    idempotency_key: str = Field(..., min_length=8, max_length=200)
+
+
+class CoupleBookMeetingResponse(BaseModel):
+    meeting_id: str
+    meeting_status: str
+    requires_approval: bool
+    staff_id: str
+    start: str
+    end: str
+    sync_status: Any = None
+    invite_status: Any = None
+
+
+def _normalize_couple_booking_datetime(value: datetime, timezone_name: str) -> datetime:
+    if value.tzinfo is not None:
+        return value.astimezone(UTC)
+    try:
+        zone = ZoneInfo(timezone_name)
+    except Exception:
+        zone = UTC
+    return value.replace(tzinfo=zone).astimezone(UTC)
+
+
+def _same_booking_instant(left: datetime, right: datetime) -> bool:
+    return left.astimezone(UTC).replace(microsecond=0) == right.astimezone(UTC).replace(
+        microsecond=0
+    )
+
+
+def _optional_couple_record_id(couple: dict) -> Optional[str]:
+    try:
+        return get_couple_record_id(couple)
+    except ValueError:
+        return None
+
+
+def _couple_booking_scope_key(couple: dict) -> str:
+    return f"couple_booking:{_optional_couple_record_id(couple) or couple.get('email') or couple.get('wedding_id')}"
+
+
+def _connection_allows_booking(
+    connection: dict[str, Any],
+    *,
+    wedding_id: str,
+) -> bool:
+    if connection.get("connection_status") != CalendarConnectionStatus.ACTIVE.value:
+        return False
+    allowed_wedding_ids = {
+        str(value) for value in connection.get("allowed_wedding_ids", [])
+    }
+    if allowed_wedding_ids and str(wedding_id) not in allowed_wedding_ids:
+        return False
+    allowed_item_types = {
+        str(value)
+        for value in connection.get("allowed_schedule_item_types", [])
+        if value
+    }
+    if allowed_item_types and ScheduleItemType.MEETING.value not in allowed_item_types:
+        return False
+    return True
+
+
+async def _find_couple_booking_connection(
+    *,
+    owner_planner_id: str,
+    staff_id: str,
+    wedding_id: str,
+) -> Optional[dict[str, Any]]:
+    rows = (
+        await mongo.get_calendar_connections_collection()
+        .find(
+            {
+                "owner_planner_id": owner_planner_id,
+                "user_id": staff_id,
+                "is_writable": True,
+                "sync_enabled": True,
+                "connection_status": CalendarConnectionStatus.ACTIVE.value,
+            }
+        )
+        .to_list(length=100)
+    )
+    eligible = [
+        row for row in rows if _connection_allows_booking(row, wedding_id=wedding_id)
+    ]
+    eligible.sort(
+        key=lambda row: (
+            not bool(row.get("is_default_write_target")),
+            str(row.get("calendar_name") or row.get("_id") or ""),
+        )
+    )
+    return eligible[0] if eligible else None
+
+
+async def _begin_couple_booking_idempotency(
+    *,
+    couple: dict,
+    body: CoupleBookMeetingRequest,
+) -> tuple[str, str, Optional[dict[str, Any]]]:
+    scope_key = _couple_booking_scope_key(couple)
+    resolution = await calendar_idempotency_service.begin(
+        scope_key=scope_key,
+        idempotency_key=body.idempotency_key,
+        request_hash=calendar_idempotency_service.build_request_hash(
+            action="couple_book_meeting",
+            payload=body.model_dump(mode="json"),
+        ),
+    )
+    if resolution.state == "replay" and resolution.response_payload:
+        return scope_key, body.idempotency_key, resolution.response_payload
+    if resolution.state == "conflict":
+        raise HTTPException(
+            status_code=409,
+            detail="Idempotency key was already used for a different booking request",
+        )
+    if resolution.state == "in_progress":
+        raise HTTPException(
+            status_code=409,
+            detail="Booking request is already in progress. Please retry shortly.",
+        )
+    return scope_key, body.idempotency_key, None
+
+
 # --- Couple-side meeting endpoints ---
+
+
+@router.get(
+    "/couple/portal/availability",
+    tags=["Couple Portal - Meetings"],
+    response_model=CoupleAvailabilityResponse,
+)
+async def get_couple_availability(
+    duration: int = Query(..., ge=15, le=480),
+    start: Optional[datetime] = Query(None),
+    end: Optional[datetime] = Query(None),
+    staff_id: Optional[str] = Query(None),
+    couple: dict = Depends(require_couple_auth),
+) -> CoupleAvailabilityResponse:
+    """Return bookable planner/team slots for this couple's wedding."""
+    if couple.get("wedding_archived"):
+        return CoupleAvailabilityResponse(slots=[], count=0)
+
+    wedding_id = couple.get("wedding_id")
+    if not wedding_id:
+        return CoupleAvailabilityResponse(slots=[], count=0)
+
+    try:
+        slots = await availability_slot_service.generate_slots(
+            wedding_id=str(wedding_id),
+            duration_minutes=duration,
+            range_start=start,
+            range_end=end,
+            staff_id=staff_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    payload = [slot.to_dict() for slot in slots[:100]]
+    return CoupleAvailabilityResponse(slots=payload, count=len(payload))
+
+
+@router.post(
+    "/couple/portal/meetings/book",
+    tags=["Couple Portal - Meetings"],
+    response_model=CoupleBookMeetingResponse,
+)
+async def book_meeting_couple(
+    body: CoupleBookMeetingRequest,
+    couple: dict = Depends(require_couple_auth),
+) -> CoupleBookMeetingResponse:
+    """Book a selected availability slot as a canonical meeting."""
+    if couple.get("wedding_archived"):
+        raise HTTPException(
+            status_code=403, detail="Meeting booking is disabled for archived weddings"
+        )
+
+    wedding_id = couple.get("wedding_id")
+    if not wedding_id:
+        raise HTTPException(status_code=404, detail="Wedding not found")
+
+    try:
+        ZoneInfo(body.timezone)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid timezone") from exc
+
+    start_utc = _normalize_couple_booking_datetime(body.start, body.timezone)
+    end_utc = _normalize_couple_booking_datetime(body.end, body.timezone)
+    if end_utc <= start_utc:
+        raise HTTPException(status_code=400, detail="Booking end must be after start")
+
+    (
+        scope_key,
+        idempotency_key,
+        replay_payload,
+    ) = await _begin_couple_booking_idempotency(
+        couple=couple,
+        body=body,
+    )
+    if replay_payload:
+        return CoupleBookMeetingResponse(**replay_payload)
+
+    try:
+        duration_minutes = int((end_utc - start_utc).total_seconds() // 60)
+        slots = await availability_slot_service.generate_slots(
+            wedding_id=str(wedding_id),
+            duration_minutes=duration_minutes,
+            range_start=start_utc,
+            range_end=end_utc,
+            staff_id=body.staff_id,
+        )
+        selected_slot = next(
+            (
+                slot
+                for slot in slots
+                if slot.staff_id == body.staff_id
+                and _same_booking_instant(slot.start, start_utc)
+                and _same_booking_instant(slot.end, end_utc)
+            ),
+            None,
+        )
+        if selected_slot is None:
+            raise HTTPException(
+                status_code=409,
+                detail="This slot is no longer available. Please choose another time.",
+            )
+
+        wedding = await mongo.get_weddings_collection().find_one(
+            {"_id": normalize_wedding_query_id(wedding_id)},
+            {"assigned_planner_id": 1, "assigned_planner_email": 1},
+        )
+        owner_identity = await resolve_wedding_owner_identity(wedding)
+        owner_id = str(owner_identity.get("planner_id") or "")
+        owner_email = str(owner_identity.get("planner_email") or "")
+        if not owner_id or not owner_email:
+            raise HTTPException(
+                status_code=400,
+                detail="This wedding is missing planner ownership information",
+            )
+
+        connection = await _find_couple_booking_connection(
+            owner_planner_id=owner_id,
+            staff_id=body.staff_id,
+            wedding_id=str(wedding_id),
+        )
+        if not connection:
+            raise HTTPException(
+                status_code=409,
+                detail="This staff member no longer has a bookable connected calendar.",
+            )
+
+        requires_approval = bool(selected_slot.requires_approval)
+        meeting_status = (
+            MeetingLifecycleStatus.PENDING_APPROVAL.value
+            if requires_approval
+            else MeetingLifecycleStatus.SCHEDULED.value
+        )
+        couple_email = str(couple.get("email") or "").strip().lower()
+        couple_record_id = _optional_couple_record_id(couple)
+        now = datetime.now(UTC)
+        task_id = ObjectId()
+        task_doc: dict[str, Any] = {
+            "_id": task_id,
+            "planner_email": owner_email,
+            "owner_planner_id": owner_id,
+            "owner_planner_email": owner_email,
+            "created_by_user_id": couple_record_id or couple_email,
+            "created_by_email": couple_email,
+            "assigned_user_ids": [body.staff_id],
+            "assigned_user_emails": (
+                [selected_slot.staff_email] if selected_slot.staff_email else []
+            ),
+            "wedding_id": str(wedding_id),
+            "title": body.title.strip(),
+            "description": body.notes,
+            "category": "meeting",
+            "priority": "medium",
+            "status": "pending",
+            "schedule_item_type": ScheduleItemType.MEETING.value,
+            "visibility_mode": VisibilityMode.DETAILS.value,
+            "calendar_sync_policy": CalendarSyncPolicy.CUSTOM.value,
+            "external_sync_requested": not requires_approval,
+            "sync_target_override_enabled": True,
+            "sync_target_connection_ids": [str(connection["_id"])],
+            "start_date": start_utc,
+            "end_date": end_utc,
+            "all_day": False,
+            "due_date": None,
+            "timezone": body.timezone,
+            "couple_attendee_emails": [couple_email] if couple_email else [],
+            "external_attendees": [],
+            "conference_provider": connection.get("conference_provider_default"),
+            "conference_url": None,
+            "invite_delivery_mode": InviteDeliveryMode.EMAIL_ICS.value,
+            "meeting_status": meeting_status,
+            "reminder_minutes": None,
+            "is_recurring": False,
+            "recurrence_rule": None,
+            "color": None,
+            "notes": body.notes,
+            "attachments": [],
+            "booking_source": "couple_portal",
+            "booking_auto_confirmed": not requires_approval,
+            "booking_requested_at": now,
+            "created_at": now,
+            "updated_at": now,
+            "version": 1,
+            "completed_at": None,
+        }
+        await mongo.get_planner_tasks_collection().insert_one(task_doc)
+
+        sync_status: Any = []
+        invite_status: Any = []
+        if not requires_approval:
+            sync_status = await calendar_sync_service.sync_schedule_item(
+                task_doc,
+                explicit_connection_ids=[str(connection["_id"])],
+                actor_is_owner=True,
+            )
+            if couple_email:
+                invite_status = await calendar_job_service.enqueue_invite_job(
+                    task_doc,
+                    method="REQUEST",
+                    reason="couple_booking_confirmed",
+                )
+
+        await calendar_audit_service.log(
+            action="couple_meeting_booked",
+            message=f"Couple booked meeting {task_doc.get('title')}",
+            owner_planner_email=owner_email,
+            actor_email=couple_email,
+            actor_role="couple",
+            wedding_id=str(wedding_id),
+            metadata={
+                "task_id": str(task_id),
+                "staff_id": body.staff_id,
+                "requires_approval": requires_approval,
+                "calendar_connection_id": str(connection["_id"]),
+            },
+        )
+
+        response_payload = CoupleBookMeetingResponse(
+            meeting_id=str(task_id),
+            meeting_status=meeting_status,
+            requires_approval=requires_approval,
+            staff_id=body.staff_id,
+            start=start_utc.isoformat(),
+            end=end_utc.isoformat(),
+            sync_status=sync_status,
+            invite_status=invite_status,
+        ).model_dump(mode="json")
+        await calendar_idempotency_service.complete(
+            scope_key=scope_key,
+            idempotency_key=idempotency_key,
+            response_payload=response_payload,
+        )
+        return CoupleBookMeetingResponse(**response_payload)
+    except Exception as exc:
+        await calendar_idempotency_service.fail(
+            scope_key=scope_key,
+            idempotency_key=idempotency_key,
+            error_detail=str(exc),
+        )
+        raise
 
 
 @router.get("/couple/portal/meetings", tags=["Couple Portal - Meetings"])

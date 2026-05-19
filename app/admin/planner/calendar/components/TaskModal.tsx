@@ -13,9 +13,11 @@ import {
   CalendarConnection,
   CATEGORY_LABELS,
   CalendarSyncPolicy,
+  approveCoupleBooking,
   createCalendarMutationIntent,
   createMeeting,
   createTask,
+  declineCoupleBooking,
   InviteDeliveryMode,
   PlannerTask,
   PRIORITY_CONFIG,
@@ -44,6 +46,7 @@ interface TaskModalProps {
   defaultCategory?: TaskCategory;
   allowGeneralTasks?: boolean;
   allowMeetings?: boolean;
+  allowBookingApproval?: boolean;
   connections?: CalendarConnection[];
   staffOptions?: StaffOption[];
   onSuccess?: () => void;
@@ -156,6 +159,7 @@ export default function TaskModal({
   defaultCategory = 'other',
   allowGeneralTasks = true,
   allowMeetings = true,
+  allowBookingApproval = false,
   connections = [],
   staffOptions = [],
   onSuccess,
@@ -197,6 +201,7 @@ export default function TaskModal({
     createCalendarMutationIntent()
   );
   const [loading, setLoading] = useState(false);
+  const [resolutionLoading, setResolutionLoading] = useState<'approve' | 'decline' | null>(null);
   const [error, setError] = useState('');
 
   const writableConnections = useMemo(
@@ -240,6 +245,13 @@ export default function TaskModal({
 
   const isMeetingMode =
     category === 'meeting' || task?.schedule_item_type === 'meeting' || task?.category === 'meeting';
+  const canResolvePendingBooking = Boolean(
+    isEditing &&
+      task &&
+      isMeetingMode &&
+      task.meeting_status === 'pending_approval' &&
+      allowBookingApproval
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -448,6 +460,37 @@ export default function TaskModal({
     }
   };
 
+  const handleApproveBooking = async () => {
+    if (!token || !task) return;
+    setResolutionLoading('approve');
+    setError('');
+    try {
+      await approveCoupleBooking(token, task.id, task.version);
+      onSuccess?.();
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to approve booking');
+    } finally {
+      setResolutionLoading(null);
+    }
+  };
+
+  const handleDeclineBooking = async () => {
+    if (!token || !task) return;
+    const reason = window.prompt('Optional decline reason')?.trim() || undefined;
+    setResolutionLoading('decline');
+    setError('');
+    try {
+      await declineCoupleBooking(token, task.id, task.version, reason);
+      onSuccess?.();
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to decline booking');
+    } finally {
+      setResolutionLoading(null);
+    }
+  };
+
   const colorOptions = [
     { value: '', label: 'Default' },
     { value: '#a4bdfc', label: 'Lavender' },
@@ -490,6 +533,40 @@ export default function TaskModal({
           {error && (
             <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
               {error}
+            </div>
+          )}
+
+          {canResolvePendingBooking && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950/30">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                    Couple booking pending approval
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-amber-800 dark:text-amber-200">
+                    Approving syncs the meeting to the selected calendar target and queues the
+                    invite. Declining cancels the request.
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleDeclineBooking()}
+                    disabled={Boolean(resolutionLoading) || loading}
+                    className="rounded-lg border border-amber-300 px-3 py-2 text-xs font-semibold text-amber-900 transition hover:bg-amber-100 disabled:opacity-60 dark:border-amber-700 dark:text-amber-100 dark:hover:bg-amber-900/50"
+                  >
+                    {resolutionLoading === 'decline' ? 'Declining...' : 'Decline'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleApproveBooking()}
+                    disabled={Boolean(resolutionLoading) || loading}
+                    className="rounded-lg bg-amber-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-800 disabled:opacity-60 dark:bg-amber-200 dark:text-amber-950 dark:hover:bg-amber-100"
+                  >
+                    {resolutionLoading === 'approve' ? 'Approving...' : 'Approve'}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -937,14 +1014,14 @@ export default function TaskModal({
                 <button
                   type="button"
                   onClick={() => onOpenChange(false)}
-                  disabled={loading}
+                  disabled={loading || Boolean(resolutionLoading)}
                   className={SECONDARY_BUTTON_CLASS}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || Boolean(resolutionLoading)}
                   className={PRIMARY_BUTTON_CLASS}
                 >
                   {loading ? 'Saving...' : isEditing ? 'Save changes' : 'Create'}

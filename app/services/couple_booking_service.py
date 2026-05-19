@@ -494,6 +494,9 @@ class CoupleBookingService:
                 "end_date": chosen["end"],
                 "proposed_slots": [chosen],
                 "meeting_status": new_status,
+                "external_sync_requested": (
+                    new_status == MeetingLifecycleStatus.SCHEDULED.value
+                ),
                 "slot_accepted_at": _utcnow(),
                 "slot_accepted_by_user_id": couple_user_id,
             },
@@ -545,6 +548,7 @@ class CoupleBookingService:
             expected_version,
             {
                 "meeting_status": MeetingLifecycleStatus.SCHEDULED.value,
+                "external_sync_requested": True,
                 "approved_at": _utcnow(),
                 "approved_by_planner_id": owner_planner_id,
             },
@@ -582,6 +586,8 @@ class CoupleBookingService:
             expected_version,
             {
                 "meeting_status": MeetingLifecycleStatus.CANCELLED.value,
+                "status": "cancelled",
+                "external_sync_requested": False,
                 "decline_reason": reason,
                 "declined_at": _utcnow(),
                 "declined_by_planner_id": owner_planner_id,

@@ -16,6 +16,7 @@ export function FeatureShowcase() {
   const [activeIdx, setActiveIdx] = useState(0);
   const [isDescriptionOpen, setIsDescriptionOpen] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const [shouldLoadMedia, setShouldLoadMedia] = useState(false);
   const sectionRef = useRef<HTMLDivElement | null>(null);
   const activeFeature = features[activeIdx];
   const nextFeature = features[(activeIdx + 1) % features.length];
@@ -43,6 +44,9 @@ export function FeatureShowcase() {
     const observer = new IntersectionObserver(
       ([entry]) => {
         setIsVisible(entry.isIntersecting);
+        if (entry.isIntersecting) {
+          setShouldLoadMedia(true);
+        }
       },
       { rootMargin: "180px 0px", threshold: 0.15 },
     );
@@ -67,7 +71,7 @@ export function FeatureShowcase() {
   }, [features.length, isVisible]);
 
   useEffect(() => {
-    if (!nextFeature?.image) {
+    if (!shouldLoadMedia || !nextFeature?.image) {
       return undefined;
     }
 
@@ -115,7 +119,7 @@ export function FeatureShowcase() {
         clearTimeout(timeoutId);
       }
     };
-  }, [nextFeature?.image]);
+  }, [shouldLoadMedia, nextFeature?.image]);
 
   return (
     <div ref={sectionRef} className="space-y-4 sm:space-y-6">
@@ -139,21 +143,28 @@ export function FeatureShowcase() {
               ``<name>.webp`` and ``<name>.avif`` siblings under
               /public.  The .avif source is derived by suffix swap.
             */}
-            <picture>
-              <source
-                srcSet={activeFeature.image.replace(/\.webp$/, ".avif")}
-                type="image/avif"
+            {shouldLoadMedia ? (
+              <picture>
+                <source
+                  srcSet={activeFeature.image.replace(/\.webp$/, ".avif")}
+                  type="image/avif"
+                />
+                <source srcSet={activeFeature.image} type="image/webp" />
+                <img
+                  key={activeFeature.id}
+                  src={activeFeature.image}
+                  alt={`${activeFeature.title}: ${activeFeature.tagline}`}
+                  loading="lazy"
+                  decoding="async"
+                  className="absolute inset-0 h-full w-full object-contain object-top"
+                />
+              </picture>
+            ) : (
+              <span
+                className="absolute inset-0 bg-[radial-gradient(circle_at_28%_18%,rgba(212,165,165,0.16),transparent_44%),linear-gradient(135deg,rgba(15,23,42,0.86),rgba(7,16,32,1))]"
+                aria-hidden="true"
               />
-              <source srcSet={activeFeature.image} type="image/webp" />
-              <img
-                key={activeFeature.id}
-                src={activeFeature.image}
-                alt={`${activeFeature.title}: ${activeFeature.tagline}`}
-                loading="lazy"
-                decoding="async"
-                className="absolute inset-0 h-full w-full object-contain object-top"
-              />
-            </picture>
+            )}
           </div>
         </div>
 
@@ -257,14 +268,22 @@ export function FeatureShowcase() {
                     docs/plans/babylovegrowth_integration_mockup.md.
                     Use the feature title as a meaningful alt to
                     satisfy both auditors. */}
-                <Image
-                  src={feature.image}
-                  alt={`${feature.title} preview`}
-                  fill
-                  sizes="96px"
-                  className="object-cover object-top"
-                  loading="lazy"
-                />
+                {shouldLoadMedia ? (
+                  <Image
+                    src={feature.image}
+                    alt={`${feature.title} preview`}
+                    fill
+                    sizes="96px"
+                    className="object-cover object-top"
+                    loading="lazy"
+                    fetchPriority={isActive ? "auto" : "low"}
+                  />
+                ) : (
+                  <span
+                    className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(212,165,165,0.18),transparent_45%),linear-gradient(135deg,rgba(15,23,42,0.85),rgba(7,16,32,1))]"
+                    aria-hidden="true"
+                  />
+                )}
               </span>
               <span className="min-w-0 self-center">
                 <span className="block text-[9px] font-semibold uppercase tracking-[0.18em] text-wedding-rose">

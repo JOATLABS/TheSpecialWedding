@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Optional
 
 from bson import ObjectId
 from fastapi import HTTPException
 
+from app.core.config import settings
 from app.core.database import mongo
 from app.models.calendar import ScheduleItemType
 from app.models.calendar_connection import CalendarConnectionStatus
@@ -91,6 +92,84 @@ class AurinkoTasksSyncService:
     def _external_etag(self, payload: dict[str, Any]) -> Optional[str]:
         value = payload.get("etag") or payload.get("changeKey")
         return str(value) if value else None
+
+    def _retry_backoff(self, retry_count: int) -> timedelta:
+        capped_attempts = min(
+            max(retry_count, 1), settings.CALENDAR_SYNC_RETRY_MAX_ATTEMPTS
+        )
+        seconds = settings.CALENDAR_SYNC_RETRY_INITIAL_BACKOFF_SECONDS * (
+            2 ** (capped_attempts - 1)
+        )
+        max_seconds = settings.CALENDAR_SYNC_RETRY_INITIAL_BACKOFF_SECONDS * 32
+        return timedelta(seconds=min(seconds, max_seconds))
+
+    def _classify_exception(self, exc: Exception) -> dict[str, Any]:
+        classifier = getattr(self.provider, "_classify_aurinko_exception", None)
+        if callable(classifier):
+            return classifier(exc)
+        return {
+            "retryable": False,
+            "error_category": "unknown",
+            "error_message": _redact_sensitive(exc),
+            "status_code": None,
+        }
+
+    def _build_failure_state(
+        self,
+        *,
+        existing_retry_count: int,
+        classification: dict[str, Any],
+        now: datetime,
+    ) -> dict[str, Any]:
+        retry_count = existing_retry_count + 1
+        retryable = bool(classification.get("retryable", False)) and (
+            retry_count <= settings.CALENDAR_SYNC_RETRY_MAX_ATTEMPTS
+        )
+        next_retry_at = now + self._retry_backoff(retry_count) if retryable else None
+        return {
+            "sync_status": CalendarSyncStatusValue.FAILED.value,
+            "last_sync_at": None,
+            "last_error": classification.get("error_message")
+            or "Failed to sync Aurinko task",
+            "last_error_category": classification.get("error_category"),
+            "retryable_error": retryable,
+            "retry_count": retry_count,
+            "last_retry_at": now,
+            "next_retry_at": next_retry_at,
+            "updated_at": now,
+        }
+
+    async def _mark_sync_orphaned(
+        self,
+        sync_doc: dict[str, Any],
+        *,
+        message: str,
+        category: str,
+        now: datetime,
+    ) -> None:
+        await self.syncs_collection.update_one(
+            {"_id": sync_doc["_id"]},
+            {
+                "$set": {
+                    "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                    "last_error": message,
+                    "last_error_category": category,
+                    "retryable_error": False,
+                    "next_retry_at": None,
+                    "updated_at": now,
+                }
+            },
+        )
+
+    async def _connection_for_sync_doc(
+        self, sync_doc: dict[str, Any]
+    ) -> Optional[dict[str, Any]]:
+        connection_id = str(sync_doc.get("connection_id") or "")
+        if not ObjectId.is_valid(connection_id):
+            return None
+        return await self.connections_collection.find_one(
+            {"_id": ObjectId(connection_id)}
+        )
 
     def _account_tasklist_key(self, connection: dict[str, Any]) -> tuple[str, str]:
         account_key = str(connection.get("aurinko_account_id") or "").strip()
@@ -178,6 +257,11 @@ class AurinkoTasksSyncService:
                         or task.get("planner_email"),
                         "sync_status": CalendarSyncStatusValue.NOT_CONFIGURED.value,
                         "last_error": "No task-sync-enabled connection is available",
+                        "last_error_category": "not_configured",
+                        "retryable_error": False,
+                        "retry_count": 0,
+                        "last_retry_at": None,
+                        "next_retry_at": None,
                         "updated_at": datetime.now(UTC),
                     },
                     "$setOnInsert": {"created_at": datetime.now(UTC)},
@@ -191,13 +275,38 @@ class AurinkoTasksSyncService:
         now = datetime.now(UTC)
         for connection in connections:
             cid = str(connection["_id"])
-            token = await self.provider._account_token_for_connection(connection)
-            tasklist_id = str(connection.get("task_sync_tasklist_id") or "")
-            if not token or not tasklist_id:
-                continue
             sync_doc = await self.syncs_collection.find_one(
                 {"planner_task_id": planner_task_id, "connection_id": cid}
             )
+            token = await self.provider._account_token_for_connection(connection)
+            tasklist_id = str(connection.get("task_sync_tasklist_id") or "")
+            if not token or not tasklist_id:
+                await self.syncs_collection.update_one(
+                    {"planner_task_id": planner_task_id, "connection_id": cid},
+                    {
+                        "$set": {
+                            "planner_task_id": planner_task_id,
+                            "owner_planner_id": task.get("owner_planner_id"),
+                            "owner_planner_email": task.get("owner_planner_email")
+                            or task.get("planner_email"),
+                            "connection_id": cid,
+                            **self._build_failure_state(
+                                existing_retry_count=int(
+                                    (sync_doc or {}).get("retry_count") or 0
+                                ),
+                                classification={
+                                    "retryable": False,
+                                    "error_category": "credentials_unavailable",
+                                    "error_message": "Calendar credentials are unavailable for this connection",
+                                },
+                                now=now,
+                            ),
+                        },
+                        "$setOnInsert": {"created_at": now},
+                    },
+                    upsert=True,
+                )
+                continue
             try:
                 if sync_doc and sync_doc.get("aurinko_task_id"):
                     payload = await self.provider.client.update_task(
@@ -237,6 +346,12 @@ class AurinkoTasksSyncService:
                             "last_external_etag": etag,
                             "last_sync_at": now,
                             "last_error": None,
+                            "last_error_category": None,
+                            "retryable_error": False,
+                            "retry_count": 0,
+                            "last_retry_at": None,
+                            "next_retry_at": None,
+                            "last_drift_check_at": now,
                             "updated_at": now,
                         },
                         "$setOnInsert": {"created_at": now},
@@ -257,6 +372,8 @@ class AurinkoTasksSyncService:
                     cid,
                     _redact_sensitive(exc),
                 )
+                classification = self._classify_exception(exc)
+                existing_retry_count = int((sync_doc or {}).get("retry_count") or 0)
                 await self.syncs_collection.update_one(
                     {"planner_task_id": planner_task_id, "connection_id": cid},
                     {
@@ -266,9 +383,11 @@ class AurinkoTasksSyncService:
                             "owner_planner_email": task.get("owner_planner_email")
                             or task.get("planner_email"),
                             "connection_id": cid,
-                            "sync_status": CalendarSyncStatusValue.FAILED.value,
-                            "last_error": _redact_sensitive(exc),
-                            "updated_at": now,
+                            **self._build_failure_state(
+                                existing_retry_count=existing_retry_count,
+                                classification=classification,
+                                now=now,
+                            ),
                         },
                         "$setOnInsert": {"created_at": now},
                     },
@@ -456,12 +575,224 @@ class AurinkoTasksSyncService:
                     "last_external_etag": self._external_etag(snapshot),
                     "last_sync_at": now,
                     "last_error": None,
+                    "last_error_category": None,
+                    "retryable_error": False,
+                    "retry_count": 0,
+                    "last_retry_at": None,
+                    "next_retry_at": None,
+                    "last_drift_check_at": now,
                     "updated_at": now,
                 },
                 "$setOnInsert": {"created_at": now},
             },
             upsert=True,
         )
+
+    async def process_due_retries(self, *, limit: int) -> dict[str, int]:
+        """Retry transient Aurinko task-list mirror failures."""
+        now = datetime.now(UTC)
+        due_rows = (
+            await self.syncs_collection.find(
+                {
+                    "sync_status": CalendarSyncStatusValue.FAILED.value,
+                    "retryable_error": True,
+                    "next_retry_at": {"$lte": now},
+                    "connection_id": {"$exists": True, "$ne": None},
+                    "planner_task_id": {"$exists": True, "$ne": None},
+                }
+            )
+            .sort("next_retry_at", 1)
+            .limit(limit)
+            .to_list(length=limit)
+        )
+        processed = 0
+        succeeded = 0
+        failed = 0
+        for sync_doc in due_rows:
+            processed += 1
+            if await self._retry_sync_row(sync_doc, now=now):
+                succeeded += 1
+            else:
+                failed += 1
+        return {"processed": processed, "succeeded": succeeded, "failed": failed}
+
+    async def _retry_sync_row(self, sync_doc: dict[str, Any], *, now: datetime) -> bool:
+        planner_task_id = str(sync_doc.get("planner_task_id") or "")
+        if not ObjectId.is_valid(planner_task_id):
+            await self._mark_sync_orphaned(
+                sync_doc,
+                message="Canonical planner task ID is invalid",
+                category="missing_task",
+                now=now,
+            )
+            return False
+        task = await self.tasks_collection.find_one({"_id": ObjectId(planner_task_id)})
+        if not isinstance(task, dict):
+            await self._mark_sync_orphaned(
+                sync_doc,
+                message="Canonical planner task no longer exists",
+                category="missing_task",
+                now=now,
+            )
+            return False
+        if not self._is_syncable_task(task):
+            await self._mark_sync_orphaned(
+                sync_doc,
+                message="Planner task is no longer eligible for Aurinko task sync",
+                category="not_syncable",
+                now=now,
+            )
+            return False
+
+        connection_id = str(sync_doc.get("connection_id") or "")
+        if not ObjectId.is_valid(connection_id):
+            await self._mark_sync_orphaned(
+                sync_doc,
+                message="Task sync connection ID is invalid",
+                category="connection_disconnected",
+                now=now,
+            )
+            return False
+        eligible = await self._eligible_connections(task, connection_id)
+        if not eligible:
+            await self._mark_sync_orphaned(
+                sync_doc,
+                message="Retry target is no longer selected by current task sync settings",
+                category="deselected_target",
+                now=now,
+            )
+            return False
+
+        await self.mirror_planner_task_to_aurinko(planner_task_id, connection_id)
+        refreshed = await self.syncs_collection.find_one({"_id": sync_doc["_id"]})
+        return bool(
+            isinstance(refreshed, dict)
+            and refreshed.get("sync_status") == CalendarSyncStatusValue.SYNCED.value
+        )
+
+    async def run_drift_checks(self, *, limit: int) -> int:
+        """Check synced Aurinko task rows for missing provider tasks/access."""
+        now = datetime.now(UTC)
+        cutoff = now - timedelta(minutes=settings.CALENDAR_DRIFT_CHECK_INTERVAL_MINUTES)
+        due_rows = (
+            await self.syncs_collection.find(
+                {
+                    "sync_status": CalendarSyncStatusValue.SYNCED.value,
+                    "connection_id": {"$exists": True, "$ne": None},
+                    "aurinko_task_id": {"$exists": True, "$ne": None},
+                    "$or": [
+                        {"last_drift_check_at": {"$exists": False}},
+                        {"last_drift_check_at": None},
+                        {"last_drift_check_at": {"$lt": cutoff}},
+                    ],
+                }
+            )
+            .sort("last_drift_check_at", 1)
+            .limit(limit)
+            .to_list(length=limit)
+        )
+        checked = 0
+        for sync_doc in due_rows:
+            checked += 1
+            await self._run_drift_check(sync_doc, now=now)
+        return checked
+
+    async def _run_drift_check(
+        self, sync_doc: dict[str, Any], *, now: datetime
+    ) -> None:
+        connection = await self._connection_for_sync_doc(sync_doc)
+        if not connection:
+            await self._mark_sync_orphaned(
+                sync_doc,
+                message="Calendar connection no longer exists",
+                category="connection_disconnected",
+                now=now,
+            )
+            return
+        tasklist_id = str(
+            sync_doc.get("aurinko_tasklist_id")
+            or connection.get("task_sync_tasklist_id")
+            or ""
+        )
+        if (
+            connection.get("connection_status") != CalendarConnectionStatus.ACTIVE.value
+            or not connection.get("task_sync_enabled")
+            or not tasklist_id
+        ):
+            await self._mark_sync_orphaned(
+                sync_doc,
+                message="Task sync target is no longer active",
+                category="connection_disconnected",
+                now=now,
+            )
+            return
+        token = await self.provider._account_token_for_connection(connection)
+        if not token:
+            await self.syncs_collection.update_one(
+                {"_id": sync_doc["_id"]},
+                {
+                    "$set": {
+                        **self._build_failure_state(
+                            existing_retry_count=int(sync_doc.get("retry_count") or 0),
+                            classification={
+                                "retryable": False,
+                                "error_category": "credentials_unavailable",
+                                "error_message": "Calendar credentials are unavailable for this connection",
+                            },
+                            now=now,
+                        ),
+                        "last_drift_check_at": now,
+                    }
+                },
+            )
+            return
+        try:
+            payload = await self.provider.client.get_task(
+                account_token=token,
+                tasklist_id=tasklist_id,
+                task_id=str(sync_doc["aurinko_task_id"]),
+            )
+            await self.syncs_collection.update_one(
+                {"_id": sync_doc["_id"]},
+                {
+                    "$set": {
+                        "last_external_etag": self._external_etag(payload),
+                        "last_error": None,
+                        "last_error_category": None,
+                        "retryable_error": False,
+                        "next_retry_at": None,
+                        "last_drift_check_at": now,
+                        "updated_at": now,
+                    }
+                },
+            )
+        except Exception as exc:
+            classification = self._classify_exception(exc)
+            if classification.get("error_category") == "not_found":
+                await self._mark_sync_orphaned(
+                    sync_doc,
+                    message="Provider task no longer exists",
+                    category="provider_task_missing",
+                    now=now,
+                )
+                await self.syncs_collection.update_one(
+                    {"_id": sync_doc["_id"]},
+                    {"$set": {"last_drift_check_at": now}},
+                )
+                return
+            await self.syncs_collection.update_one(
+                {"_id": sync_doc["_id"]},
+                {
+                    "$set": {
+                        **self._build_failure_state(
+                            existing_retry_count=int(sync_doc.get("retry_count") or 0),
+                            classification=classification,
+                            now=now,
+                        ),
+                        "last_drift_check_at": now,
+                    }
+                },
+            )
 
     async def process_external_task_change_async(
         self,

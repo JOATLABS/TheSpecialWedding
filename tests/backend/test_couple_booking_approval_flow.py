@@ -11,9 +11,13 @@ from __future__ import annotations
 
 import inspect
 import os
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
+from bson import ObjectId
 
 os.environ.setdefault("AURINKO_CLIENT_ID", "test-client-id")
 os.environ.setdefault("AURINKO_CLIENT_SECRET", "test-client-secret")
@@ -21,7 +25,8 @@ os.environ.setdefault("AURINKO_OAUTH_STATE_SIGNING_KEY", "test-state-signing-key
 os.environ.setdefault("TOKEN_ENCRYPTION_KEY", "test-token-encryption-key")
 os.environ.setdefault("ENVIRONMENT", "test")
 
-from app.api import planner_calendar  # noqa: E402
+from app.api import couple_portal, planner_calendar  # noqa: E402
+from app.dependencies.auth_extended import ExtendedAuthUser  # noqa: E402
 from app.models.calendar import MeetingLifecycleStatus  # noqa: E402
 from app.models.calendar_connection import CalendarConnectionModel  # noqa: E402
 from app.models.planner_notification import (  # noqa: E402
@@ -35,6 +40,24 @@ from app.models.team_member import (  # noqa: E402
 from app.services.calendar_aggregation_service import (  # noqa: E402
     calendar_aggregation_service,
 )
+
+
+@dataclass
+class _FakeAvailabilitySlot:
+    staff_id: str
+    staff_email: str
+    start: datetime
+    end: datetime
+    requires_approval: bool
+
+    def to_dict(self) -> dict:
+        return {
+            "staff_id": self.staff_id,
+            "staff_email": self.staff_email,
+            "start": self.start.isoformat(),
+            "end": self.end.isoformat(),
+            "requires_approval": self.requires_approval,
+        }
 
 
 def test_meeting_lifecycle_status_includes_pending_approval() -> None:
@@ -237,3 +260,307 @@ def test_meeting_resolution_endpoints_require_expected_version(
     assert param.default is not None, (
         f"{endpoint_name} expected_version must be required, not optional."
     )
+
+
+@pytest.mark.asyncio
+async def test_couple_booking_route_creates_pending_internal_meeting_without_sync(
+    monkeypatch,
+) -> None:
+    """A slot requiring planner approval must create only the canonical task.
+
+    The external calendar is a projection. Pending approval cannot leak to a
+    provider or send an invite before the planner approves it.
+    """
+    start = datetime(2026, 5, 6, 15, 0, tzinfo=UTC)
+    end = datetime(2026, 5, 6, 16, 0, tzinfo=UTC)
+    inserted: dict = {}
+
+    class _Tasks:
+        async def insert_one(self, doc):
+            inserted.update(doc)
+
+    class _Weddings:
+        async def find_one(self, *args, **kwargs):
+            return {"_id": "wedding-1", "assigned_planner_id": "owner-1"}
+
+    fake_mongo = SimpleNamespace(
+        get_planner_tasks_collection=lambda: _Tasks(),
+        get_weddings_collection=lambda: _Weddings(),
+    )
+    monkeypatch.setattr(couple_portal, "mongo", fake_mongo)
+    monkeypatch.setattr(
+        couple_portal.availability_slot_service,
+        "generate_slots",
+        AsyncMock(
+            return_value=[
+                _FakeAvailabilitySlot(
+                    staff_id="staff-1",
+                    staff_email="staff@example.com",
+                    start=start,
+                    end=end,
+                    requires_approval=True,
+                )
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        couple_portal,
+        "resolve_wedding_owner_identity",
+        AsyncMock(
+            return_value={"planner_id": "owner-1", "planner_email": "owner@example.com"}
+        ),
+    )
+    monkeypatch.setattr(
+        couple_portal,
+        "_find_couple_booking_connection",
+        AsyncMock(return_value={"_id": "connection-1"}),
+    )
+    monkeypatch.setattr(
+        couple_portal.calendar_idempotency_service,
+        "begin",
+        AsyncMock(return_value=SimpleNamespace(state="started", response_payload=None)),
+    )
+    monkeypatch.setattr(
+        couple_portal.calendar_idempotency_service,
+        "build_request_hash",
+        lambda **kwargs: "request-hash",
+    )
+    complete = AsyncMock()
+    monkeypatch.setattr(
+        couple_portal.calendar_idempotency_service, "complete", complete
+    )
+    monkeypatch.setattr(couple_portal.calendar_idempotency_service, "fail", AsyncMock())
+    sync = AsyncMock()
+    invite = AsyncMock()
+    monkeypatch.setattr(couple_portal.calendar_sync_service, "sync_schedule_item", sync)
+    monkeypatch.setattr(
+        couple_portal.calendar_job_service, "enqueue_invite_job", invite
+    )
+    monkeypatch.setattr(couple_portal.calendar_audit_service, "log", AsyncMock())
+
+    response = await couple_portal.book_meeting_couple(
+        couple_portal.CoupleBookMeetingRequest(
+            staff_id="staff-1",
+            start=start,
+            end=end,
+            title="Planning call",
+            timezone="UTC",
+            idempotency_key="booking-key-1",
+        ),
+        couple={
+            "_id": ObjectId(),
+            "email": "couple@example.com",
+            "wedding_id": "wedding-1",
+        },
+    )
+
+    assert response.meeting_status == MeetingLifecycleStatus.PENDING_APPROVAL.value
+    assert response.requires_approval is True
+    assert inserted["schedule_item_type"] == "meeting"
+    assert inserted["external_sync_requested"] is False
+    assert inserted["sync_target_connection_ids"] == ["connection-1"]
+    sync.assert_not_awaited()
+    invite.assert_not_awaited()
+    complete.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_couple_booking_route_auto_confirm_syncs_selected_connection(
+    monkeypatch,
+) -> None:
+    """Auto-confirmed slots immediately project the canonical meeting outward."""
+    start = datetime(2026, 5, 6, 15, 0, tzinfo=UTC)
+    end = datetime(2026, 5, 6, 16, 0, tzinfo=UTC)
+    inserted: dict = {}
+
+    class _Tasks:
+        async def insert_one(self, doc):
+            inserted.update(doc)
+
+    class _Weddings:
+        async def find_one(self, *args, **kwargs):
+            return {"_id": "wedding-1", "assigned_planner_id": "owner-1"}
+
+    fake_mongo = SimpleNamespace(
+        get_planner_tasks_collection=lambda: _Tasks(),
+        get_weddings_collection=lambda: _Weddings(),
+    )
+    monkeypatch.setattr(couple_portal, "mongo", fake_mongo)
+    monkeypatch.setattr(
+        couple_portal.availability_slot_service,
+        "generate_slots",
+        AsyncMock(
+            return_value=[
+                _FakeAvailabilitySlot(
+                    staff_id="staff-1",
+                    staff_email="staff@example.com",
+                    start=start,
+                    end=end,
+                    requires_approval=False,
+                )
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        couple_portal,
+        "resolve_wedding_owner_identity",
+        AsyncMock(
+            return_value={"planner_id": "owner-1", "planner_email": "owner@example.com"}
+        ),
+    )
+    monkeypatch.setattr(
+        couple_portal,
+        "_find_couple_booking_connection",
+        AsyncMock(return_value={"_id": "connection-1"}),
+    )
+    monkeypatch.setattr(
+        couple_portal.calendar_idempotency_service,
+        "begin",
+        AsyncMock(return_value=SimpleNamespace(state="started", response_payload=None)),
+    )
+    monkeypatch.setattr(
+        couple_portal.calendar_idempotency_service,
+        "build_request_hash",
+        lambda **kwargs: "request-hash",
+    )
+    monkeypatch.setattr(
+        couple_portal.calendar_idempotency_service, "complete", AsyncMock()
+    )
+    monkeypatch.setattr(couple_portal.calendar_idempotency_service, "fail", AsyncMock())
+    sync = AsyncMock(
+        return_value=[{"connection_id": "connection-1", "status": "synced"}]
+    )
+    invite = AsyncMock(return_value=[{"status": "queued"}])
+    monkeypatch.setattr(couple_portal.calendar_sync_service, "sync_schedule_item", sync)
+    monkeypatch.setattr(
+        couple_portal.calendar_job_service, "enqueue_invite_job", invite
+    )
+    monkeypatch.setattr(couple_portal.calendar_audit_service, "log", AsyncMock())
+
+    response = await couple_portal.book_meeting_couple(
+        couple_portal.CoupleBookMeetingRequest(
+            staff_id="staff-1",
+            start=start,
+            end=end,
+            title="Planning call",
+            timezone="UTC",
+            idempotency_key="booking-key-2",
+        ),
+        couple={
+            "_id": ObjectId(),
+            "email": "couple@example.com",
+            "wedding_id": "wedding-1",
+        },
+    )
+
+    assert response.meeting_status == MeetingLifecycleStatus.SCHEDULED.value
+    assert response.requires_approval is False
+    assert inserted["external_sync_requested"] is True
+    sync.assert_awaited_once()
+    assert sync.await_args.kwargs["explicit_connection_ids"] == ["connection-1"]
+    invite.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_planner_approve_booking_route_syncs_and_invites(monkeypatch) -> None:
+    task_id = str(ObjectId())
+    task = {
+        "_id": ObjectId(task_id),
+        "title": "Planning call",
+        "wedding_id": "wedding-1",
+        "owner_planner_email": "owner@example.com",
+        "start_date": datetime(2026, 5, 6, 15, 0, tzinfo=UTC),
+        "end_date": datetime(2026, 5, 6, 16, 0, tzinfo=UTC),
+        "meeting_status": MeetingLifecycleStatus.SCHEDULED.value,
+        "invite_delivery_mode": "email_ics",
+        "couple_attendee_emails": ["couple@example.com"],
+    }
+    monkeypatch.setattr(
+        planner_calendar,
+        "_get_resolution_meeting_context",
+        AsyncMock(return_value=(ObjectId(task_id), task, "owner-1")),
+    )
+    monkeypatch.setattr(
+        planner_calendar.couple_booking_service,
+        "approve_meeting",
+        AsyncMock(return_value=SimpleNamespace(task=task)),
+    )
+    sync = AsyncMock(return_value=[{"status": "synced"}])
+    invite = AsyncMock(return_value=[{"status": "queued"}])
+    monkeypatch.setattr(
+        planner_calendar.calendar_sync_service, "sync_schedule_item", sync
+    )
+    monkeypatch.setattr(
+        planner_calendar.calendar_job_service, "enqueue_invite_job", invite
+    )
+    monkeypatch.setattr(planner_calendar.calendar_audit_service, "log", AsyncMock())
+
+    response = await planner_calendar.approve_couple_booking(
+        task_id,
+        expected_version=3,
+        current_user=ExtendedAuthUser(
+            "owner@example.com",
+            "wedding_planner",
+            {"_id": "owner-1"},
+        ),
+    )
+
+    assert response.meeting["meeting_status"] == MeetingLifecycleStatus.SCHEDULED.value
+    sync.assert_awaited_once()
+    invite.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_planner_decline_booking_route_cancels_projection(monkeypatch) -> None:
+    task_id = str(ObjectId())
+    previous_task = {
+        "_id": ObjectId(task_id),
+        "title": "Planning call",
+        "wedding_id": "wedding-1",
+        "owner_planner_email": "owner@example.com",
+        "start_date": datetime(2026, 5, 6, 15, 0, tzinfo=UTC),
+        "end_date": datetime(2026, 5, 6, 16, 0, tzinfo=UTC),
+        "invite_delivery_mode": "email_ics",
+        "couple_attendee_emails": ["couple@example.com"],
+    }
+    declined_task = {
+        **previous_task,
+        "meeting_status": MeetingLifecycleStatus.CANCELLED.value,
+    }
+    monkeypatch.setattr(
+        planner_calendar,
+        "_get_resolution_meeting_context",
+        AsyncMock(return_value=(ObjectId(task_id), previous_task, "owner-1")),
+    )
+    monkeypatch.setattr(
+        planner_calendar.couple_booking_service,
+        "decline_meeting",
+        AsyncMock(return_value=SimpleNamespace(task=declined_task)),
+    )
+    delete_syncs = AsyncMock()
+    invite = AsyncMock(return_value=[{"status": "queued"}])
+    monkeypatch.setattr(
+        planner_calendar.calendar_sync_service,
+        "delete_schedule_item_syncs",
+        delete_syncs,
+    )
+    monkeypatch.setattr(
+        planner_calendar.calendar_job_service, "enqueue_invite_job", invite
+    )
+    monkeypatch.setattr(planner_calendar.calendar_audit_service, "log", AsyncMock())
+
+    response = await planner_calendar.decline_couple_booking(
+        task_id,
+        expected_version=3,
+        reason="Not available",
+        current_user=ExtendedAuthUser(
+            "owner@example.com",
+            "wedding_planner",
+            {"_id": "owner-1"},
+        ),
+    )
+
+    assert response.meeting["meeting_status"] == MeetingLifecycleStatus.CANCELLED.value
+    assert response.sync_status == []
+    delete_syncs.assert_awaited_once_with(task_id)
+    invite.assert_awaited_once()
