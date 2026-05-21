@@ -16,6 +16,12 @@ import { MARKETING_TEMPLATES } from './templates/manifest';
 
 type ResourcesTab = 'blog' | 'templates' | 'faq';
 
+const RESOURCE_TAB_PATHS: Record<ResourcesTab, string> = {
+  blog: '/resources/blog',
+  templates: '/resources/templates',
+  faq: '/resources/faq',
+};
+
 const CARD_GRADIENTS: Record<string, string> = {
   Business: 'from-amber-600/30 to-orange-800/20',
   Workflow: 'from-blue-600/30 to-cyan-800/20',
@@ -252,15 +258,6 @@ export default function ResourcesClient({
   const featured = filteredPosts.find((post) => post.featured);
   const regularPosts = filteredPosts.filter((post) => !post.featured);
 
-  const activateTab = (tab: ResourcesTab) => {
-    setActiveTab(tab);
-
-    if (typeof window !== 'undefined') {
-      const nextUrl = tab === 'blog' ? '/resources/blog' : `/resources?tab=${tab}`;
-      window.history.replaceState(null, '', nextUrl);
-    }
-  };
-
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
@@ -297,10 +294,11 @@ export default function ResourcesClient({
       </section>
 
       <div className="mx-auto max-w-5xl px-6 sm:px-10">
-        <div className="flex gap-1 border-b border-white/10">
-          <button
-            type="button"
-            onClick={() => activateTab('blog')}
+        <nav aria-label="Resource categories" className="flex gap-1 border-b border-white/10">
+          <Link
+            href={RESOURCE_TAB_PATHS.blog}
+            scroll={false}
+            aria-current={activeTab === 'blog' ? 'page' : undefined}
             className={`border-b-2 px-6 py-3 text-sm font-semibold transition ${
               activeTab === 'blog'
                 ? 'border-wedding-rose text-wedding-rose'
@@ -308,10 +306,11 @@ export default function ResourcesClient({
             }`}
           >
             Blog
-          </button>
-          <button
-            type="button"
-            onClick={() => activateTab('templates')}
+          </Link>
+          <Link
+            href={RESOURCE_TAB_PATHS.templates}
+            scroll={false}
+            aria-current={activeTab === 'templates' ? 'page' : undefined}
             className={`border-b-2 px-6 py-3 text-sm font-semibold transition ${
               activeTab === 'templates'
                 ? 'border-wedding-rose text-wedding-rose'
@@ -319,10 +318,11 @@ export default function ResourcesClient({
             }`}
           >
             Templates
-          </button>
-          <button
-            type="button"
-            onClick={() => activateTab('faq')}
+          </Link>
+          <Link
+            href={RESOURCE_TAB_PATHS.faq}
+            scroll={false}
+            aria-current={activeTab === 'faq' ? 'page' : undefined}
             className={`border-b-2 px-6 py-3 text-sm font-semibold transition ${
               activeTab === 'faq'
                 ? 'border-wedding-rose text-wedding-rose'
@@ -330,8 +330,8 @@ export default function ResourcesClient({
             }`}
           >
             FAQ
-          </button>
-        </div>
+          </Link>
+        </nav>
       </div>
 
       {activeTab === 'blog' && (

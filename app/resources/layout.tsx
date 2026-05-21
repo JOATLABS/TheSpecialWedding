@@ -6,13 +6,13 @@ export const metadata: Metadata = {
     'Articles, guides, and answers for professional wedding planners. Pricing strategies, workflow tips, tool comparisons, and frequently asked questions.',
   metadataBase: new URL('https://thespecialwedding.io'),
   alternates: {
-    canonical: '/resources',
+    canonical: '/resources/blog',
   },
   openGraph: {
     title: 'Resources — Blog & FAQ for Wedding Planners | The Special Wedding',
     description:
       'Articles, guides, and answers for professional wedding planners. Pricing strategies, workflow tips, tool comparisons, and FAQs.',
-    url: 'https://thespecialwedding.io/resources',
+    url: 'https://thespecialwedding.io/resources/blog',
     images: [
       {
         url: '/og-image.png',

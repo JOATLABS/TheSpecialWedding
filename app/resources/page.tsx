@@ -1,9 +1,12 @@
-import ResourcesClient from './ResourcesClient';
-import { loadResourceBlogPosts } from './blogListData';
-
-export const revalidate = 60;
+import { permanentRedirect } from 'next/navigation';
 
 type ResourcesTab = 'blog' | 'templates' | 'faq';
+
+const RESOURCES_TAB_PATHS: Record<ResourcesTab, string> = {
+  blog: '/resources/blog',
+  templates: '/resources/templates',
+  faq: '/resources/faq',
+};
 
 function parseInitialTab(value: string | string[] | undefined): ResourcesTab {
   const tab = Array.isArray(value) ? value[0] : value;
@@ -16,13 +19,5 @@ export default async function ResourcesPage({
   searchParams?: Promise<{ tab?: string | string[] }>;
 }) {
   const params = searchParams ? await searchParams : {};
-  const { initialBlogPosts, initialBlogUnavailable } = await loadResourceBlogPosts(50);
-
-  return (
-    <ResourcesClient
-      initialTab={parseInitialTab(params.tab)}
-      initialBlogPosts={initialBlogPosts}
-      initialBlogUnavailable={initialBlogUnavailable}
-    />
-  );
+  permanentRedirect(RESOURCES_TAB_PATHS[parseInitialTab(params.tab)]);
 }
