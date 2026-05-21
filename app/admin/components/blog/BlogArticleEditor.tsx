@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, type ChangeEvent } from 'react';
 import { BlogArticle } from './BlogManager';
 import MarkdownArticle from '@/components/blog/MarkdownArticle';
 import { useAdmin } from '@/contexts/AdminContext';
@@ -56,9 +56,6 @@ export default function BlogArticleEditor({ article, onSave, onCancel }: BlogArt
   const [showPreview, setShowPreview] = useState(false);
   const [uploadingCard, setUploadingCard] = useState(false);
   const [uploadingOg, setUploadingOg] = useState(false);
-
-  const cardFileRef = useRef<HTMLInputElement>(null);
-  const ogFileRef = useRef<HTMLInputElement>(null);
 
   // ── Image Upload ──
   const uploadImage = async (file: File, folder: string): Promise<string> => {
@@ -122,6 +119,18 @@ export default function BlogArticleEditor({ article, onSave, onCancel }: BlogArt
       setError(err instanceof Error ? err.message : 'OG image upload failed');
     } finally {
       setUploadingOg(false);
+    }
+  };
+
+  const handleImageInputChange = (
+    event: ChangeEvent<HTMLInputElement>,
+    upload: (file: File) => Promise<void>,
+  ) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+
+    if (file) {
+      void upload(file);
     }
   };
 
@@ -247,12 +256,14 @@ export default function BlogArticleEditor({ article, onSave, onCancel }: BlogArt
                     </button>
                   </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => cardFileRef.current?.click()}
-                    disabled={uploadingCard}
-                    aria-controls="blog-card-image-upload"
-                    className="flex h-32 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 text-slate-500 transition hover:border-wedding-rose/40 hover:text-slate-700 dark:border-white/10 dark:text-slate-500 dark:hover:border-wedding-rose/30 dark:hover:text-slate-300"
+                  <label
+                    htmlFor="blog-card-image-upload"
+                    aria-disabled={uploadingCard}
+                    className={`flex h-32 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 text-slate-500 transition dark:border-white/10 dark:text-slate-500 ${
+                      uploadingCard
+                        ? 'cursor-wait opacity-70'
+                        : 'cursor-pointer hover:border-wedding-rose/40 hover:text-slate-700 dark:hover:border-wedding-rose/30 dark:hover:text-slate-300'
+                    }`}
                   >
                     {uploadingCard ? (
                       <Loader2 className="w-5 h-5 animate-spin text-wedding-rose" />
@@ -262,20 +273,16 @@ export default function BlogArticleEditor({ article, onSave, onCancel }: BlogArt
                         <span className="text-xs">Upload card image</span>
                       </>
                     )}
-                  </button>
+                  </label>
                 )}
                 <input
                   id="blog-card-image-upload"
-                  ref={cardFileRef}
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
+                  disabled={uploadingCard}
+                  className="sr-only"
                   aria-label="Blog card image file"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleCardImageUpload(file);
-                    e.target.value = '';
-                  }}
+                  onChange={(event) => handleImageInputChange(event, handleCardImageUpload)}
                 />
                 {/* Manual URL input */}
                 <input
@@ -309,12 +316,14 @@ export default function BlogArticleEditor({ article, onSave, onCancel }: BlogArt
                     </button>
                   </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => ogFileRef.current?.click()}
-                    disabled={uploadingOg}
-                    aria-controls="blog-og-image-upload"
-                    className="flex h-32 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 text-slate-500 transition hover:border-wedding-rose/40 hover:text-slate-700 dark:border-white/10 dark:text-slate-500 dark:hover:border-wedding-rose/30 dark:hover:text-slate-300"
+                  <label
+                    htmlFor="blog-og-image-upload"
+                    aria-disabled={uploadingOg}
+                    className={`flex h-32 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 text-slate-500 transition dark:border-white/10 dark:text-slate-500 ${
+                      uploadingOg
+                        ? 'cursor-wait opacity-70'
+                        : 'cursor-pointer hover:border-wedding-rose/40 hover:text-slate-700 dark:hover:border-wedding-rose/30 dark:hover:text-slate-300'
+                    }`}
                   >
                     {uploadingOg ? (
                       <Loader2 className="w-5 h-5 animate-spin text-wedding-rose" />
@@ -324,20 +333,16 @@ export default function BlogArticleEditor({ article, onSave, onCancel }: BlogArt
                         <span className="text-xs">Upload OG image</span>
                       </>
                     )}
-                  </button>
+                  </label>
                 )}
                 <input
                   id="blog-og-image-upload"
-                  ref={ogFileRef}
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
+                  disabled={uploadingOg}
+                  className="sr-only"
                   aria-label="Blog OG image file"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleOgImageUpload(file);
-                    e.target.value = '';
-                  }}
+                  onChange={(event) => handleImageInputChange(event, handleOgImageUpload)}
                 />
                 <input
                   id="blog-og-image-url"

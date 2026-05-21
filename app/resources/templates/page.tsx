@@ -1,15 +1,17 @@
 import type { Metadata } from 'next';
 
-import SaasNav from '@/components/saas/SaasNav';
 import BreadcrumbSchema from '@/components/seo/BreadcrumbSchema';
 import { serializeJsonLd } from '@/seo/jsonLd';
 
-import TemplatesClient from './TemplatesClient';
+import ResourcesClient from '../ResourcesClient';
+import { loadResourceBlogPosts } from '../blogListData';
 import { MARKETING_TEMPLATES } from './manifest';
 
 const SITE_URL = 'https://thespecialwedding.io';
 const TEMPLATES_PATH = '/resources/templates';
 const TEMPLATES_URL = `${SITE_URL}${TEMPLATES_PATH}`;
+
+export const revalidate = 60;
 
 export const metadata: Metadata = {
   title: 'Free Wedding Planner Templates | Download 9 Planner PDFs',
@@ -82,14 +84,15 @@ const templatesJsonLd = {
   ],
 };
 
-export default function PublicTemplatesPage() {
+export default async function PublicTemplatesPage() {
+  const { initialBlogPosts, initialBlogUnavailable } = await loadResourceBlogPosts(50);
+
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
-      <SaasNav />
+    <>
       <BreadcrumbSchema
         items={[
           { name: 'Home', href: '/' },
-          { name: 'Resources', href: '/resources' },
+          { name: 'Resources', href: '/resources/blog' },
           { name: 'Templates', href: TEMPLATES_PATH },
         ]}
       />
@@ -97,24 +100,11 @@ export default function PublicTemplatesPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(templatesJsonLd) }}
       />
-
-      <section className="mx-auto max-w-6xl px-6 pb-16 pt-28 sm:px-10 sm:pb-20">
-        <div className="mb-10 max-w-3xl">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-wedding-rose">
-            Free download
-          </p>
-          <h1 className="mt-3 text-4xl font-semibold leading-tight text-white sm:text-5xl">
-            Free wedding planner templates
-          </h1>
-          <p className="mt-4 text-base leading-7 text-slate-300 sm:text-lg sm:leading-8">
-            Nine production-ready PDFs for intake, timelines, vendor onboarding,
-            guest needs, shot lists, and day-of contacts. Each template can be
-            downloaded without creating an account.
-          </p>
-        </div>
-
-        <TemplatesClient templates={MARKETING_TEMPLATES} surface="dark" />
-      </section>
-    </main>
+      <ResourcesClient
+        initialTab="templates"
+        initialBlogPosts={initialBlogPosts}
+        initialBlogUnavailable={initialBlogUnavailable}
+      />
+    </>
   );
 }

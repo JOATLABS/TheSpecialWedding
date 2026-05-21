@@ -1,7 +1,7 @@
 """
 Blog Article Models for Public-Facing Marketing Blog
 Separate collection from Knowledge Base — these are SEO-targeted blog posts
-visible on /resources to the public (no auth required).
+visible on /resources/blog to the public (no auth required).
 """
 
 from datetime import datetime

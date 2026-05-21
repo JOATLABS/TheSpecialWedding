@@ -25,6 +25,7 @@ describe('serializeJsonLd', () => {
       'app/components/seo/BreadcrumbSchema.tsx',
       'app/resources/blog/[slug]/page.tsx',
       'app/resources/templates/page.tsx',
+      'app/resources/faq/page.tsx',
       'app/vendors/page.tsx',
       'app/vendors/[id]/page.tsx',
     ];
