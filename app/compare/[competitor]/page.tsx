@@ -137,7 +137,7 @@ function SupportedPage({
                 <ArrowRight size={16} />
               </Link>
               <Link
-                href="/resources"
+                href="/resources/blog"
                 className="inline-flex items-center gap-2 rounded-full border border-white/15 px-5 py-3 text-sm font-semibold text-white transition hover:border-white/30 hover:bg-white/5"
               >
                 Open the resources hub
@@ -410,7 +410,7 @@ function SupportedPage({
               <ArrowRight size={16} />
             </Link>
             <Link
-              href="/resources"
+              href="/resources/blog"
               className="inline-flex items-center gap-2 rounded-full border border-white/15 px-5 py-3 text-sm font-semibold text-white transition hover:border-white/30 hover:bg-white/5"
             >
               Browse resources

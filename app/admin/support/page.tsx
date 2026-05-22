@@ -321,7 +321,11 @@ export default function SupportPage() {
     }
   };
 
-  if (loading) {
+  // Ticket/metric refreshes are not prerequisites for editor tabs; keep
+  // mounted editors alive when mobile file pickers trigger focus rechecks.
+  const shouldBlockForSupportData = loading && (activeTab === 'tickets' || activeTab === 'metrics');
+
+  if (shouldBlockForSupportData) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">

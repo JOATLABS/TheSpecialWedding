@@ -10,7 +10,7 @@ import { PUBLIC_LOGIN_PATH } from '@/seo/crawlPolicy';
 const NAV_LINKS = [
   { href: '/', label: 'Home' },
   { href: '/features', label: 'Features' },
-  { href: '/resources', label: 'Resources' },
+  { href: '/resources/blog', label: 'Resources' },
   { href: '/vendors', label: 'Vendors' },
 ];
 
@@ -59,6 +59,8 @@ export default function SaasNav() {
                 const isActive =
                   link.href === '/'
                     ? pathname === '/'
+                    : link.href === '/resources/blog'
+                      ? pathname.startsWith('/resources')
                     : pathname.startsWith(link.href);
                 return (
                   <Link
@@ -113,6 +115,8 @@ export default function SaasNav() {
               const isActive =
                 link.href === '/'
                   ? pathname === '/'
+                  : link.href === '/resources/blog'
+                    ? pathname.startsWith('/resources')
                   : pathname.startsWith(link.href);
               return (
                 <Link

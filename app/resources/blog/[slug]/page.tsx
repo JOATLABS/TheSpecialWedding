@@ -160,7 +160,7 @@ export default async function BlogPostPage({
       <BreadcrumbSchema
         items={[
           { name: 'Home', href: '/' },
-          { name: 'Resources', href: '/resources' },
+          { name: 'Resources', href: '/resources/blog' },
           { name: 'Blog', href: '/resources/blog' },
           { name: article.title, href: `/resources/blog/${slug}` },
         ]}

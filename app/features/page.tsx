@@ -109,7 +109,7 @@ export default function FeaturesPage() {
               Start 30-day trial
             </a>
             <Link
-              href="/resources"
+              href="/resources/blog"
               className="rounded-full border border-white/20 px-6 py-3 text-base font-semibold text-white backdrop-blur transition hover:border-white/40"
             >
               Read the blog

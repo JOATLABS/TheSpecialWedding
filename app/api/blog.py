@@ -1,6 +1,6 @@
 """
 Blog API Endpoints
-Public endpoints for the /resources page (no auth) + Admin CRUD (ROOT_ADMIN only)
+Public endpoints for the /resources/blog page (no auth) + Admin CRUD (ROOT_ADMIN only)
 """
 
 import logging
@@ -119,7 +119,7 @@ async def get_published_articles(
 ):
     """
     Get published blog articles — PUBLIC, no auth required.
-    Used by the /resources page on the marketing site.
+    Used by the /resources/blog page on the marketing site.
     Rate limited to 60 requests per minute per IP.
     """
     client_ip = get_client_ip(request)
