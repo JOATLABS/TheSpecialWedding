@@ -13,7 +13,7 @@ test.describe('Resources blog rendering', () => {
     await page.goto('/resources/blog');
 
     await expect(page).toHaveURL(/\/resources\/blog$/);
-    await expect(page.getByRole('button', { name: 'Blog' })).toHaveClass(/text-wedding-rose/);
+    await expect(page.getByRole('link', { name: 'Blog' })).toHaveClass(/text-wedding-rose/);
     await expect(page.getByRole('link', { name: new RegExp(ARTICLE_TITLE, 'i') }).first()).toBeVisible();
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
       'href',
@@ -21,11 +21,12 @@ test.describe('Resources blog rendering', () => {
     );
   });
 
-  test('blog tab rewrites the resources hub to the canonical blog URL', async ({ page }) => {
+  test('legacy resources tab URLs redirect to canonical tab paths', async ({ page }) => {
     await page.goto('/resources?tab=faq');
 
-    await page.getByRole('button', { name: 'Blog' }).click();
+    await expect(page).toHaveURL(/\/resources\/faq$/);
 
+    await page.getByRole('link', { name: 'Blog' }).click();
     await expect(page).toHaveURL(/\/resources\/blog$/);
   });
 
