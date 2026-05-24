@@ -20,6 +20,7 @@ from app.models.vendor import (
     AssignVendorRequest,
     CreatePaymentLinkRequest,
     CreateVendorProfileRequest,
+    UpdateVendorAssignmentRequest,
     UpdateVendorProfileRequest,
     VendorCategory,
 )
@@ -204,6 +205,46 @@ async def update_vendor_assignment_status(
     return await vendor_service.update_assignment_status(
         assignment_id=assignment_id, status=status, created_by=owner_email
     )
+
+
+@router.patch("/assignments/{assignment_id}", tags=["Vendor Assignments"])
+async def update_vendor_assignment(
+    assignment_id: str,
+    data: UpdateVendorAssignmentRequest,
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
+):
+    """Partial update of a vendor assignment.
+
+    Re-links an existing assignment to a different budget category, detaches it
+    through an explicit null category, or updates assignment notes. The
+    wedding-vendor relationship stays one row; budget_category_id is a mutable
+    property of that row.
+    """
+    enforce_team_permission(current_user, "manage_vendors")
+    owner_email = None if current_user.is_root_admin else current_user.email
+    return await vendor_service.update_assignment(
+        assignment_id=assignment_id,
+        fields=data.model_dump(exclude_unset=True),
+        created_by=owner_email,
+    )
+
+
+@router.delete(
+    "/assignments/{assignment_id}",
+    status_code=204,
+    tags=["Vendor Assignments"],
+)
+async def delete_vendor_assignment(
+    assignment_id: str,
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
+):
+    """Soft-delete a vendor assignment from a wedding."""
+    enforce_team_permission(current_user, "manage_vendors")
+    owner_email = None if current_user.is_root_admin else current_user.email
+    await vendor_service.soft_delete_assignment(
+        assignment_id=assignment_id, created_by=owner_email
+    )
+    return None
 
 
 # =============================================================================

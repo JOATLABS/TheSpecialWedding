@@ -1665,6 +1665,7 @@ class VendorService:
                 "quoted_amount": None,
                 "contracted_amount": None,
                 "paid_amount": 0.0,
+                "is_deleted": False,
                 "created_by": created_by,
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
@@ -1773,6 +1774,137 @@ class VendorService:
         except Exception as e:
             logger.error(f"Error updating assignment: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to update assignment")
+
+    async def update_assignment(
+        self,
+        assignment_id: str,
+        fields: Dict[str, Any],
+        created_by: Optional[str] = None,
+    ) -> dict:
+        """Partial update of a vendor assignment.
+
+        The wedding-vendor relationship is unique by ``(wedding_id,
+        vendor_profile_id)``; ``budget_category_id`` is a mutable property of
+        that relationship. Updating it here lets the budget page link vendors
+        that were already attached from the Vendor Directory without creating
+        a duplicate assignment row.
+        """
+        if not fields:
+            raise HTTPException(
+                status_code=400,
+                detail="At least one field must be provided",
+            )
+
+        allowed_fields = {"budget_category_id", "service_notes"}
+        unknown = set(fields) - allowed_fields
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported fields: {sorted(unknown)}",
+            )
+
+        try:
+            owned = await self._get_owned_assignment(assignment_id, created_by)
+            if not owned:
+                raise HTTPException(status_code=404, detail="Assignment not found")
+
+            new_category_id = fields.get("budget_category_id")
+            if "budget_category_id" in fields and new_category_id is not None:
+                try:
+                    category_obj_id = ObjectId(new_category_id)
+                except (InvalidId, TypeError, ValueError):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid budget_category_id",
+                    )
+
+                category = await self.budget_categories.find_one(
+                    {"_id": category_obj_id}
+                )
+                if not category:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Budget category not found",
+                    )
+                if str(category.get("wedding_id")) != str(owned.get("wedding_id")):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Budget category belongs to a different wedding",
+                    )
+
+            update_query: Dict[str, Any] = {
+                "_id": ObjectId(assignment_id),
+                "is_deleted": {"$ne": True},
+            }
+            normalized_actor = normalize_planner_email(created_by)
+            if normalized_actor is not None:
+                update_query["created_by"] = normalized_actor
+
+            set_payload: Dict[str, Any] = {
+                "updated_at": datetime.now(timezone.utc),
+            }
+            for key in allowed_fields:
+                if key in fields:
+                    set_payload[key] = fields[key]
+
+            result = await self.vendor_assignments.find_one_and_update(
+                update_query,
+                {"$set": set_payload},
+                return_document=True,
+            )
+
+            if not result:
+                raise HTTPException(status_code=404, detail="Assignment not found")
+
+            result["_id"] = str(result["_id"])
+            return result
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error updating assignment fields: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to update assignment")
+
+    async def soft_delete_assignment(
+        self,
+        assignment_id: str,
+        created_by: Optional[str] = None,
+    ) -> None:
+        """Soft-delete a vendor assignment and free its wedding-vendor slot."""
+        try:
+            owned = await self._get_owned_assignment(assignment_id, created_by)
+            if not owned:
+                raise HTTPException(status_code=404, detail="Assignment not found")
+
+            update_query: Dict[str, Any] = {
+                "_id": ObjectId(assignment_id),
+                "is_deleted": {"$ne": True},
+            }
+            normalized_actor = normalize_planner_email(created_by)
+            if normalized_actor is not None:
+                update_query["created_by"] = normalized_actor
+
+            result = await self.vendor_assignments.update_one(
+                update_query,
+                {
+                    "$set": {
+                        "is_deleted": True,
+                        "deleted_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
+
+            if result.modified_count == 0:
+                raise HTTPException(status_code=404, detail="Assignment not found")
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error soft-deleting assignment: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail="Failed to delete assignment"
+            )
 
     # =========================================================================
     # CONTRACT TEMPLATES

@@ -1002,6 +1002,18 @@ class AssignVendorRequest(BaseModel):
     service_notes: Optional[str] = None
 
 
+class UpdateVendorAssignmentRequest(BaseModel):
+    """Partial update to a vendor assignment.
+
+    Used to re-link an existing wedding-vendor assignment to a budget
+    category, detach it from a category, or update assignment notes without
+    creating a duplicate wedding-vendor row.
+    """
+
+    budget_category_id: Optional[str] = None
+    service_notes: Optional[str] = None
+
+
 class SignContractRequest(BaseModel):
     """Request when vendor signs contract"""
 

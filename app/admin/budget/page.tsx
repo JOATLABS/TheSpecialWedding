@@ -18,11 +18,14 @@ import {
   getVendorDirectory,
   getWeddingVendors,
   assignVendorToWedding,
+  updateVendorAssignment,
+  deleteVendorAssignment,
   type VendorProfile,
   type VendorAssignment
 } from '../../services/vendorManagementApi';
 import { formatDate } from '@/utils/dateFormat';
 import { Sparkles, X, Loader2, AlertCircle, Lightbulb } from 'lucide-react';
+import UnlinkedVendorsPanel from '../../components/budget/UnlinkedVendorsPanel';
 import { CampaignSponsoredRail } from '../vendors/components/CampaignSponsoredRail';
 import type {
   BudgetCategory,
@@ -314,9 +317,16 @@ export default function BudgetDashboard() {
         prev.map((cat) => (cat.id === editingCategory.id ? updatedCategory : cat))
       );
 
-      // Handle vendor assignment if a vendor was selected
+      const existingAssignment = vendorAssignments.find(
+        a => a.budget_category_id === editingCategory.id
+      );
+
+      // Handle vendor assignment changes. Choosing "No vendor" explicitly
+      // detaches the old category link while keeping the vendor on the wedding.
       if (selectedVendorId) {
         await handleVendorAssignment(editingCategory.id);
+      } else if (existingAssignment) {
+        await handleDetachAssignmentFromCategory(existingAssignment);
       }
 
       setShowCategoryModal(false);
@@ -378,6 +388,95 @@ export default function BudgetDashboard() {
     return vendorAssignments.find(a => a.budget_category_id === categoryId);
   }, [vendorAssignments]);
 
+  const findAssignmentForVendor = useCallback(
+    (vendorId: string): VendorAssignment | undefined => {
+      return vendorAssignments.find(
+        a => a.vendor_profile_id === vendorId
+          && a.wedding_id === selectedWedding
+      );
+    },
+    [vendorAssignments, selectedWedding]
+  );
+
+  const unlinkedAssignments = useMemo(() => {
+    const categoryIds = new Set(categories.map(c => c.id));
+    return vendorAssignments.filter(
+      a => !a.budget_category_id
+        || !categoryIds.has(a.budget_category_id)
+    );
+  }, [vendorAssignments, categories]);
+
+  const handleLinkUnlinkedToCategory = useCallback(
+    async (assignmentId: string, categoryId: string) => {
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+      const updated = await updateVendorAssignment(token, assignmentId, {
+        budget_category_id: categoryId,
+      });
+      setVendorAssignments(prev => {
+        const filtered = prev.filter(
+          a => a._id !== updated._id
+            && a.budget_category_id !== categoryId
+        );
+        return [...filtered, updated];
+      });
+      toast.success(`Linked ${updated.vendor_name} to category`);
+    },
+    [token]
+  );
+
+  const handleRemoveAssignment = useCallback(
+    async (assignmentId: string) => {
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+      await deleteVendorAssignment(token, assignmentId);
+      setVendorAssignments(prev => prev.filter(a => a._id !== assignmentId));
+      toast.success('Vendor removed from this wedding');
+    },
+    [token]
+  );
+
+  const handleDetachAssignmentFromCategory = useCallback(
+    async (assignment: VendorAssignment) => {
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+      const updated = await updateVendorAssignment(token, assignment._id, {
+        budget_category_id: null,
+      });
+      setVendorAssignments(prev =>
+        prev.map(item => item._id === updated._id ? updated : item)
+      );
+    },
+    [token]
+  );
+
+  const describeVendorOption = useCallback(
+    (vendor: VendorProfile): string => {
+      const base = `${vendor.business_name} (${vendor.service_category})${
+        vendor.is_preferred ? ' ★' : ''
+      }`;
+      const existing = findAssignmentForVendor(vendor._id);
+      if (!existing) return base;
+
+      const editingCategoryId = editingCategory?.id;
+      if (editingCategoryId && existing.budget_category_id === editingCategoryId) {
+        return `${base} - on this category`;
+      }
+      if (!existing.budget_category_id) {
+        return `${base} - on this wedding (unlinked)`;
+      }
+      const otherCategory = categories.find(
+        c => c.id === existing.budget_category_id
+      );
+      const label = otherCategory?.name || 'another category';
+      return `${base} - on this wedding (${label})`;
+    },
+    [findAssignmentForVendor, editingCategory, categories]
+  );
+
   // Handle vendor assignment when creating/updating category
   const handleVendorAssignment = async (categoryId: string) => {
     if (!token || !selectedWedding || !selectedVendorId) return;
@@ -386,21 +485,38 @@ export default function BudgetDashboard() {
     if (!vendor) return;
 
     try {
-      const assignment = await assignVendorToWedding(token, {
-        vendor_profile_id: selectedVendorId,
-        wedding_id: selectedWedding,
-        budget_category_id: categoryId,
-      });
-      // Update local state
+      const existing = vendorAssignments.find(
+        a => a.vendor_profile_id === selectedVendorId
+          && a.wedding_id === selectedWedding
+      );
+
+      let assignment: VendorAssignment;
+      if (existing) {
+        if (existing.budget_category_id === categoryId) {
+          return;
+        }
+        assignment = await updateVendorAssignment(token, existing._id, {
+          budget_category_id: categoryId,
+        });
+      } else {
+        assignment = await assignVendorToWedding(token, {
+          vendor_profile_id: selectedVendorId,
+          wedding_id: selectedWedding,
+          budget_category_id: categoryId,
+        });
+      }
+
       setVendorAssignments(prev => {
-        // Remove any existing assignment for this category
-        const filtered = prev.filter(a => a.budget_category_id !== categoryId);
+        const filtered = prev.filter(
+          a => a._id !== assignment._id
+            && a.budget_category_id !== categoryId
+        );
         return [...filtered, assignment];
       });
     } catch (err: any) {
       console.error('Failed to assign vendor:', err);
-      // Don't fail the whole operation, just log the error
-      toast.error('Category saved, but vendor assignment failed');
+      const detail = err?.message || 'Vendor assignment failed';
+      toast.error(`Category saved, but ${detail.toLowerCase()}`);
     }
   };
 
@@ -681,6 +797,15 @@ export default function BudgetDashboard() {
         </Card>
       )}
 
+      {selectedWedding && unlinkedAssignments.length > 0 && (
+        <UnlinkedVendorsPanel
+          unlinkedAssignments={unlinkedAssignments}
+          categories={categories}
+          onLinkToCategory={handleLinkUnlinkedToCategory}
+          onRemoveAssignment={handleRemoveAssignment}
+        />
+      )}
+
       {/* Categories Section */}
       {selectedWedding && (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[2fr_1fr] items-start">
@@ -887,8 +1012,7 @@ export default function BudgetDashboard() {
                     <option value="">-- No vendor assigned --</option>
                     {vendorDirectory.map((vendor) => (
                       <option key={vendor._id} value={vendor._id}>
-                        {vendor.business_name} ({vendor.service_category})
-                        {vendor.is_preferred && ' ★'}
+                        {describeVendorOption(vendor)}
                       </option>
                     ))}
                   </select>

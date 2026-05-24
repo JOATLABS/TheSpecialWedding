@@ -299,6 +299,58 @@ export async function getWeddingVendors(token: string, weddingId: string): Promi
   return response.json();
 }
 
+/**
+ * Partial update to a vendor assignment. Undefined fields are omitted;
+ * explicit null clears a field on the server.
+ */
+export async function updateVendorAssignment(
+  token: string,
+  assignmentId: string,
+  data: {
+    budget_category_id?: string | null;
+    service_notes?: string | null;
+  }
+): Promise<VendorAssignment> {
+  const body: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(data, 'budget_category_id')) {
+    body.budget_category_id = data.budget_category_id ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(data, 'service_notes')) {
+    body.service_notes = data.service_notes ?? null;
+  }
+
+  const response = await fetch(`${API_BASE}/admin/assignments/${assignmentId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, 'Failed to update vendor assignment'));
+  }
+
+  return response.json();
+}
+
+export async function deleteVendorAssignment(
+  token: string,
+  assignmentId: string,
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/admin/assignments/${assignmentId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, 'Failed to remove vendor assignment'));
+  }
+}
+
 // =============================================================================
 // VENDOR DASHBOARD API
 // =============================================================================
