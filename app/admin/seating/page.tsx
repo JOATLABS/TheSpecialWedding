@@ -24,6 +24,7 @@ import { GuestItem } from '@/admin/components/seating/GuestItem';
 import { GlassButton } from '@/admin/components/ui/glass/GlassButton';
 import { SeatingConstraintsModal } from '@/admin/components/seating/SeatingConstraintsModal';
 import { PrintableSeatingChart } from '@/admin/components/seating/PrintableSeatingChart';
+import { getSeatingAiErrorMessage } from '@/admin/seating/aiErrorMessage';
 import {
   Plus,
   Download,
@@ -408,15 +409,15 @@ export default function SeatingPage() {
       );
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to get AI suggestions');
+        const error = await response.json().catch(() => null);
+        throw new Error(getSeatingAiErrorMessage(error));
       }
 
       const data = await response.json();
       setAiSuggestions(data);
       setShowAiModal(true);
     } catch (e: any) {
-      setAiError(e.message || 'Failed to get AI suggestions');
+      setAiError(getSeatingAiErrorMessage(e));
     } finally {
       setAiLoading(false);
     }

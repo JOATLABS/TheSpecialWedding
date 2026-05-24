@@ -864,7 +864,7 @@ export default function BudgetDashboard() {
                     type="number"
                     min="0"
                     max="100"
-                    step="0.1"
+                    step="0.01"
                     value={categoryForm.percentage_of_total}
                     onChange={(e) => handlePercentageChange(parseFloat(e.target.value) || 0)}
                     className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
