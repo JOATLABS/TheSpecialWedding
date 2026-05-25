@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 import pytest
+from bson import ObjectId
 from fastapi import HTTPException
 from pydantic import ValidationError
 
@@ -29,9 +30,40 @@ class _DummyVendorCollection:
 class _DummyFindOneCollection:
     def __init__(self, result):
         self.result = result
+        self.last_query = None
 
     async def find_one(self, query):
+        self.last_query = query
         return self.result
+
+
+class _DummyFindOneAndUpdateCollection:
+    def __init__(self, result):
+        self.result = result
+        self.last_query = None
+        self.last_update = None
+
+    async def find_one_and_update(self, query, update, return_document=True):
+        self.last_query = query
+        self.last_update = update
+        result = self.result.copy()
+        result.update(update.get("$set", {}))
+        return result
+
+
+class _DummyUpdateOneResult:
+    modified_count = 1
+
+
+class _DummyUpdateOneCollection:
+    def __init__(self):
+        self.last_query = None
+        self.last_update = None
+
+    async def update_one(self, query, update):
+        self.last_query = query
+        self.last_update = update
+        return _DummyUpdateOneResult()
 
 
 class _DummyCursor:
@@ -171,6 +203,105 @@ async def test_get_wedding_vendors_scopes_assignments_by_owner():
 
     assert [item["_id"] for item in results] == ["assignment-1"]
     assert service.vendor_assignments.last_query["created_by"] == "planner@example.com"
+
+
+@pytest.mark.asyncio
+async def test_update_assignment_relinks_budget_category_with_owner_scope():
+    assignment_id = str(ObjectId())
+    category_id = ObjectId()
+    service = VendorService.__new__(VendorService)
+    owned_assignment = {
+        "_id": ObjectId(assignment_id),
+        "wedding_id": "wedding_123",
+        "vendor_profile_id": "vendor_123",
+        "created_by": "planner@example.com",
+        "is_deleted": False,
+    }
+
+    async def get_owned_assignment(_assignment_id, _created_by):
+        return owned_assignment
+
+    service._get_owned_assignment = get_owned_assignment
+    service.budget_categories = _DummyFindOneCollection(
+        {
+            "_id": category_id,
+            "wedding_id": "wedding_123",
+        }
+    )
+    service.vendor_assignments = _DummyFindOneAndUpdateCollection(
+        owned_assignment.copy()
+    )
+
+    result = await service.update_assignment(
+        assignment_id,
+        {"budget_category_id": str(category_id)},
+        created_by="Planner@Example.com",
+    )
+
+    assert result["budget_category_id"] == str(category_id)
+    assert service.vendor_assignments.last_query["created_by"] == "planner@example.com"
+    assert service.vendor_assignments.last_update["$set"]["budget_category_id"] == str(
+        category_id
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_assignment_rejects_cross_wedding_budget_category():
+    assignment_id = str(ObjectId())
+    category_id = ObjectId()
+    service = VendorService.__new__(VendorService)
+
+    async def get_owned_assignment(_assignment_id, _created_by):
+        return {
+            "_id": ObjectId(assignment_id),
+            "wedding_id": "wedding_123",
+            "created_by": "planner@example.com",
+            "is_deleted": False,
+        }
+
+    service._get_owned_assignment = get_owned_assignment
+    service.budget_categories = _DummyFindOneCollection(
+        {
+            "_id": category_id,
+            "wedding_id": "other_wedding",
+        }
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.update_assignment(
+            assignment_id,
+            {"budget_category_id": str(category_id)},
+            created_by="planner@example.com",
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Budget category belongs to a different wedding"
+
+
+@pytest.mark.asyncio
+async def test_soft_delete_assignment_marks_assignment_deleted_with_owner_scope():
+    assignment_id = str(ObjectId())
+    service = VendorService.__new__(VendorService)
+
+    async def get_owned_assignment(_assignment_id, _created_by):
+        return {
+            "_id": ObjectId(assignment_id),
+            "wedding_id": "wedding_123",
+            "created_by": "planner@example.com",
+            "is_deleted": False,
+        }
+
+    service._get_owned_assignment = get_owned_assignment
+    service.vendor_assignments = _DummyUpdateOneCollection()
+
+    await service.soft_delete_assignment(
+        assignment_id,
+        created_by="Planner@Example.com",
+    )
+
+    assert service.vendor_assignments.last_query["created_by"] == "planner@example.com"
+    assert service.vendor_assignments.last_update["$set"]["is_deleted"] is True
+    assert "deleted_at" in service.vendor_assignments.last_update["$set"]
 
 
 def _build_contract_payload(**overrides) -> dict:
