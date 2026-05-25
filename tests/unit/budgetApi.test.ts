@@ -32,15 +32,19 @@ describe('budgetApi payments', () => {
   });
 
   it('records a payment with the correct request payload and headers', async () => {
+    const payment = {
+      id: 'pay_123',
+      category_id: 'cat_1',
+      amount: 1200,
+      payment_method: 'card',
+      payment_date: '2025-02-01T00:00:00.000Z',
+      status: 'completed',
+      created_at: '2025-02-01T00:00:00.000Z',
+    };
     const responseBody = {
-      payment: {
-        id: 'pay_123',
-        category_id: 'cat_1',
-        amount: 1200,
-        payment_method: 'card',
-        payment_date: '2025-02-01T00:00:00.000Z',
-        status: 'completed',
-        created_at: '2025-02-01T00:00:00.000Z',
+      success: true,
+      data: {
+        payment,
       },
     };
 
@@ -73,7 +77,35 @@ describe('budgetApi payments', () => {
     });
 
     assert.equal(fetchMock.mock.callCount(), 1);
-    assert.deepEqual(result, responseBody.payment);
+    assert.deepEqual(result, payment);
+  });
+
+  it('keeps legacy payment envelopes compatible', async () => {
+    const payment = {
+      id: 'pay_legacy',
+      category_id: 'cat_1',
+      amount: 400,
+      payment_method: 'transfer',
+      payment_date: '2025-02-01T00:00:00.000Z',
+      status: 'completed',
+      created_at: '2025-02-01T00:00:00.000Z',
+    };
+
+    const fetchMock = mock.fn(async () =>
+      new Response(JSON.stringify({ payment }), { status: 200 })
+    );
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await budgetApi.recordPayment('secret-token', 'cat_1', {
+      amount: 400,
+      payment_method: 'transfer',
+      payment_date: '2025-02-01T00:00:00.000Z',
+      status: 'completed',
+    });
+
+    assert.equal(fetchMock.mock.callCount(), 1);
+    assert.deepEqual(result, payment);
   });
 
   it('throws a friendly error when recording a payment fails', async () => {
@@ -109,7 +141,13 @@ describe('budgetApi payments', () => {
         'https://api.example.com/admin/weddings/wed_1/payments'
       );
 
-      return new Response(JSON.stringify({ payments }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: { payments },
+        }),
+        { status: 200 }
+      );
     });
 
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -119,12 +157,194 @@ describe('budgetApi payments', () => {
     assert.deepEqual(result, payments);
   });
 
+  it('updates a payment from a standardized response envelope', async () => {
+    const payment = {
+      id: 'pay_2',
+      category_id: 'cat_2',
+      amount: 1084.08,
+      payment_method: 'card',
+      payment_date: '2026-01-08T00:00:00.000Z',
+      status: 'completed',
+      created_at: '2026-01-08T00:00:00.000Z',
+    };
+
+    const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      assert.equal(input.toString(), 'https://api.example.com/admin/budget/payment/pay_2');
+      assert.equal(init?.method, 'PUT');
+
+      const parsedBody = JSON.parse(init?.body as string);
+      assert.equal(parsedBody.amount, 1084.08);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: { payment },
+        }),
+        { status: 200 }
+      );
+    });
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await budgetApi.updatePayment('secret-token', 'pay_2', {
+      amount: 1084.08,
+      payment_method: 'card',
+      payment_date: '2026-01-08T00:00:00.000Z',
+      status: 'completed',
+    });
+
+    assert.equal(fetchMock.mock.callCount(), 1);
+    assert.deepEqual(result, payment);
+  });
+
   it('returns an empty array when the history payload is malformed', async () => {
     const fetchMock = mock.fn(async () => new Response(JSON.stringify({ foo: 'bar' }), { status: 200 }));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const result = await budgetApi.getPaymentHistory('secret-token', 'wed_2');
     assert.deepEqual(result, []);
+  });
+});
+
+describe('budgetApi categories', () => {
+  before(async () => {
+    ({ budgetApi } = await import('../../app/services/budgetApi'));
+  });
+
+  beforeEach(() => {
+    mock.restoreAll();
+  });
+
+  afterEach(() => {
+    if (originalFetch) {
+      globalThis.fetch = originalFetch;
+    } else {
+      Reflect.deleteProperty(
+        globalThis as typeof globalThis & { fetch?: typeof fetch },
+        'fetch'
+      );
+    }
+  });
+
+  after(() => {
+    budgetApi = undefined as unknown as typeof budgetApi;
+  });
+
+  it('unwraps standardized update envelopes before returning a category', async () => {
+    const category = {
+      _id: 'cat_1',
+      wedding_id: 'wed_1',
+      name: 'Planning and Decor',
+      description: 'Planner and decor provider',
+      budgeted_amount: 31355,
+      actual_spent: 31355,
+      payment_status: 'paid',
+      priority: 2,
+      percentage_of_total: 41.9,
+      subcategories: [],
+      vendor_quotes: [],
+      payments: [],
+      created_at: '2026-05-23T00:00:00.000Z',
+      updated_at: '2026-05-23T01:00:00.000Z',
+    };
+
+    const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      assert.equal(input.toString(), 'https://api.example.com/admin/budget/category/cat_1');
+      assert.equal(init?.method, 'PUT');
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: { category },
+          message: 'Budget category updated successfully',
+        }),
+        { status: 200 }
+      );
+    });
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await budgetApi.updateBudgetCategory('secret-token', 'cat_1', {
+      name: 'Planning and Decor',
+      budgeted_amount: 31355,
+    });
+
+    assert.equal(fetchMock.mock.callCount(), 1);
+    assert.equal(result.id, 'cat_1');
+    assert.equal(result._id, 'cat_1');
+    assert.equal(result.name, 'Planning and Decor');
+    assert.equal(result.payment_status, 'paid');
+  });
+
+  it('keeps legacy category envelopes compatible', async () => {
+    const category = {
+      id: 'cat_2',
+      wedding_id: 'wed_1',
+      name: 'Catering',
+      budgeted_amount: 5250,
+      actual_spent: 1500,
+      payment_status: 'partial',
+      priority: 1,
+      subcategories: [],
+      vendor_quotes: [],
+      payments: [],
+      created_at: '2026-05-23T00:00:00.000Z',
+      updated_at: '2026-05-23T01:00:00.000Z',
+    };
+
+    const fetchMock = mock.fn(async () =>
+      new Response(JSON.stringify({ category }), { status: 200 })
+    );
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await budgetApi.createBudgetCategory('secret-token', {
+      wedding_id: 'wed_1',
+      name: 'Catering',
+      budgeted_amount: 5250,
+    });
+
+    assert.equal(fetchMock.mock.callCount(), 1);
+    assert.equal(result.id, 'cat_2');
+    assert.equal(result.name, 'Catering');
+    assert.equal(result.payment_status, 'partial');
+  });
+
+  it('normalizes category lists from standardized envelopes', async () => {
+    const fetchMock = mock.fn(async () =>
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            categories: [
+              {
+                _id: 'cat_3',
+                wedding_id: 'wed_1',
+                name: 'Audio Visual',
+                budgeted_amount: 5400,
+                actual_spent: 0,
+                payment_status: 'pending',
+                priority: 3,
+                subcategories: [],
+                vendor_quotes: [],
+                payments: [],
+                created_at: '2026-05-23T00:00:00.000Z',
+                updated_at: '2026-05-23T01:00:00.000Z',
+              },
+            ],
+          },
+        }),
+        { status: 200 }
+      )
+    );
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await budgetApi.getBudgetCategories('secret-token', 'wed_1');
+
+    assert.equal(fetchMock.mock.callCount(), 1);
+    assert.equal(result.length, 1);
+    assert.equal(result[0].id, 'cat_3');
+    assert.equal(result[0].name, 'Audio Visual');
   });
 });
 

@@ -20,6 +20,7 @@ from app.models.vendor import (
     AssignVendorRequest,
     CreatePaymentLinkRequest,
     CreateVendorProfileRequest,
+    UpdateVendorAssignmentRequest,
     UpdateVendorProfileRequest,
     VendorCategory,
 )
@@ -204,6 +205,69 @@ async def update_vendor_assignment_status(
     return await vendor_service.update_assignment_status(
         assignment_id=assignment_id, status=status, created_by=owner_email
     )
+
+
+@router.patch("/assignments/{assignment_id}", tags=["Vendor Assignments"])
+async def update_vendor_assignment(
+    assignment_id: str,
+    data: UpdateVendorAssignmentRequest,
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
+):
+    """Partial update of a vendor assignment.
+
+    Today this re-links an existing assignment to a different budget
+    category (or detaches it via explicit ``null``). The endpoint exists
+    because ``POST /assign`` enforces a one-live-row-per-(wedding,
+    vendor) uniqueness rule via a partial unique index; moving a vendor
+    between categories therefore cannot be expressed as a delete-and-
+    re-insert without racing the index. ``budget_category_id`` is a
+    mutable property of the link, not part of the join key.
+
+    Body uses ``model_dump(exclude_unset=True)`` so unset fields are not
+    touched, while explicit ``None`` clears them (used to detach a
+    vendor from any category).
+
+    Status is intentionally NOT mutable here — see
+    ``PATCH /assignments/{id}/status`` for the documented status
+    state machine.
+
+    Root admins bypass the planner-ownership filter (pass ``None``).
+    """
+    enforce_team_permission(current_user, "manage_vendors")
+    owner_email = None if current_user.is_root_admin else current_user.email
+    fields = data.model_dump(exclude_unset=True)
+    return await vendor_service.update_assignment(
+        assignment_id=assignment_id,
+        fields=fields,
+        created_by=owner_email,
+    )
+
+
+@router.delete(
+    "/assignments/{assignment_id}",
+    status_code=204,
+    tags=["Vendor Assignments"],
+)
+async def delete_vendor_assignment(
+    assignment_id: str,
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
+):
+    """Soft-delete a vendor assignment.
+
+    Sets ``is_deleted: True`` and stamps ``deleted_at``. Frees the
+    ``(wedding_id, vendor_profile_id)`` pair so a fresh assignment of
+    the same vendor on the same wedding can be created later. Used by
+    the Budget page's Unlinked Vendors panel "Remove from wedding"
+    action.
+
+    Root admins bypass the planner-ownership filter (pass ``None``).
+    """
+    enforce_team_permission(current_user, "manage_vendors")
+    owner_email = None if current_user.is_root_admin else current_user.email
+    await vendor_service.soft_delete_assignment(
+        assignment_id=assignment_id, created_by=owner_email
+    )
+    return None
 
 
 # =============================================================================

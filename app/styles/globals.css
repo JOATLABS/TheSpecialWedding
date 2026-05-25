@@ -8,6 +8,30 @@
 .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
 .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 
+/* Visible, stable scrollbars for dense operational panes like inbox threads. */
+.scrollbar-visible-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.68) transparent;
+  scrollbar-gutter: stable;
+}
+.scrollbar-visible-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scrollbar-visible-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-visible-thin::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.56);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.scrollbar-visible-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.78);
+  background-clip: padding-box;
+}
+
 /* Theme CSS Custom Properties */
 :root {
   --theme-primary: #1D3557;

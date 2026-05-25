@@ -1,57 +1,93 @@
 # The Special Wedding
 
-> All-in-one wedding planning operating system and CRM for professional wedding planners. Replaces the multi-tool stack (HoneyBook + Aisle Planner + Squarespace + DocuSign + Honeybook payments) with a single workspace covering guest management, RSVPs, seating, vendor contracts, budgets, day-of timelines, AI-assisted contract drafting, SMS reminders, and a real-time couple portal.
+> The Special Wedding provides evergreen, citation-ready information about wedding planning software for professional planners: product features, planner workflows, templates, public pricing, planner resources, and customer outcomes.
 
-The Special Wedding is built for solo planners and boutique agencies running 5-50 weddings a year. Couples access their own portal where they can RSVP, view timelines, complete planner-assigned forms, and message the planner directly. Vendors are managed through a structured contract pipeline with budget propagation. The platform is multi-tenant — each planner is a tenant with their own couples, vendors, weddings, and team members.
+The Special Wedding is an all-in-one planning workspace and CRM for professional wedding planners. It consolidates client onboarding, wedding websites, guest management, RSVPs, seating, vendor records, contracts, budgets, timelines, reminders, galleries, and couple communication into one planner-controlled platform.
 
-## Platform Overview
+The marketing site at https://thespecialwedding.io is written for independent planners and planning agencies. Couples use The Special Wedding through a planner-invited couple portal; they do not self-sign up as the primary buyer.
 
-- Wedding planning OS for professionals running multiple events simultaneously
-- Multi-tenant architecture: each planner gets a private workspace
-- Couple portal: RSVPs, timelines, gallery, forms, planner messaging
-- Vendor CRM: contracts, budgets, deliverables, payment tracking
-- Guest management: invites, plus-ones, dietary requirements, seating
-- AI tools: contract drafting, vendor outreach, day-of timeline generation
-- Day-of execution: SMS reminders to guests, vendor check-in, live status
+## Core Content
 
-## Core Workflows
+### Platform Overview
 
-### Onboarding a New Wedding
+- Wedding planning software and CRM tailored for professional planners
+- Centralized workspace for multiple weddings, couples, vendors, guests, forms, files, timelines, budgets, and communications
+- Planner dashboard, couple portal, vendor directory, resources library, public blog, and template collection
+- Multi-tenant product model: each planner or agency manages its own weddings, team members, clients, vendors, and records
+- Public marketing pages include feature explanations, real workflow examples, product screenshots, pricing tiers, testimonials, FAQs, and free resources
 
-A planner creates a wedding from their dashboard, invites the couple via email (the couple receives a magic-link invitation to their dedicated portal), and configures the wedding profile: ceremony and reception venues, guest list, budget envelopes, vendor categories, and key dates. The platform then enables couple-side features like RSVP collection, gallery uploads, and form responses.
+### Features And Workflows
 
-### Vendor Contracts
+- Operations management for wedding projects, deadlines, reminders, budgets, packages, and day-of timelines
+- Wedding website and couple portal for RSVP collection, guest-facing details, gallery uploads, forms, and planner-couple messaging
+- Guest management for guest lists, plus-ones, dietary needs, accessibility notes, seating assignments, and RSVP status
+- Seating orchestration with table planning, capacity awareness, and guest-detail context
+- Vendor CRM and vendor directory for vendor discovery, assignments, contracts, payments, files, and collaboration workflows
+- AI-assisted tools for package pricing, contract drafting, vendor outreach, cash-flow guidance, and planning content
+- Communication tools for planner inboxes, reminders, invitations, support threads, and couple messaging
+- Media and guest memories features for collecting and organizing wedding-day photos and gallery uploads
+- Calendar and scheduling workflows for planner tasks, meetings, reminders, and external calendar sync where configured
 
-Vendors are added to a wedding with a contract pipeline: draft → sent → signed → in-progress → completed. AI-assisted drafting generates a first-pass contract from a structured prompt (vendor type, service description, payment terms). The planner reviews, redlines, and sends via e-signature. Budget envelopes are automatically updated when contracts move between stages.
+### Pricing Plans
 
-### Guest Management
+The public pricing model uses four plans:
 
-Guest lists support plus-ones, dietary requirements, accessibility notes, and table assignments. RSVPs are collected through tokenized public links — no guest needs an account. Late or missing RSVPs trigger automated SMS reminders. Seating charts are built with drag-and-drop, with capacity warnings and conflict detection (e.g. seated relatives who shouldn't share a table).
+- **Solo**: Free plan for trying The Special Wedding with one active wedding. Includes guest list and RSVP tools, a branded wedding website, a basic timeline builder, and 1GB guest memories storage.
+- **Boutique**: $49/month for independent planners. Includes unlimited weddings, unlimited guests, vendor management, seating orchestration, automated reminders, Google and Outlook calendar sync, 300 AI credits per month, 25GB guest memories storage, and email support.
+- **Signature**: $149/month for planning agencies. Includes everything in Boutique plus 5 staff seats, vendor-collaboration workspaces, cross-wedding analytics and revenue tracking, 1,500 AI credits per month, 100GB guest memories storage, priority support, and support-assisted onboarding by request.
+- **Enterprise**: $399/month for larger planning teams. Includes everything in Signature plus 20 staff seats, 5,000 AI credits per month, 500GB guest memories storage, and support-assisted launch planning.
 
-### Day-Of Execution
+Paid plans include a 30-day free trial with no credit card required at signup.
 
-The day-of dashboard surfaces the full timeline, vendor status, guest check-ins, and outstanding tasks. SMS reminders fire automatically based on the timeline. Photos uploaded by guests appear in the couple's gallery in real time. The planner can broadcast updates to vendors or specific guest segments.
+### Testimonials And User Feedback
 
-## Pricing
+The Special Wedding publishes planner testimonials and outcomes on its marketing site. Representative themes include:
 
-- Starter: $29/month per planner — solo planners, up to 5 active weddings
-- Pro: $59/month per planner — agencies, unlimited weddings, team members, advanced AI
-- Free 30-day trial on either tier, no credit card required to start
+- Fewer disconnected spreadsheets and subscriptions
+- Faster vendor follow-up and clearer team handoffs
+- More repeatable planning workflows across several weddings
+- Better couple visibility without extra planner status updates
+- Higher operational throughput per planner
 
-## Audience
+### Common Questions
 
-Designed for professional wedding planners (independent and agency), not couples planning their own wedding. Couples engage through the portal their planner invites them to, not through self-signup. The marketing site at thespecialwedding.io targets planners; the couple portal is at thespecialwedding.io/couple after invitation.
+- Existing guest lists can be imported from spreadsheets.
+- Each wedding has its own workspace, guest list, budget, seating, branding, and couple-facing portal.
+- Planner teams can collaborate through staff seats on the Signature and Enterprise plans.
+- Vendors can be invited into dedicated workspaces with role-based access to timelines, contracts, and file exchanges.
+- Customers can export their data. After cancellation, account data is retained for 30 days before permanent deletion.
+- The Special Wedding differs from generic CRMs because it includes wedding-specific tools such as seating charts, guest RSVPs, timelines, guest memories, vendor contracts, and planner AI workflows.
 
 ## Resources
 
-- Marketing site: https://thespecialwedding.io
-- Planner portal sign-in: https://thespecialwedding.io/admin/login
+### Templates
+
+The public template library contains 9 free wedding planner templates at https://thespecialwedding.io/resources/templates:
+
+- Couple Intake Questionnaire: 17 fields
+- Wedding Day Order of Events: 18 fields
+- Guest Dietary & Access Survey: 9 fields
+- Vendor Onboarding Brief: 14 fields
+- Photographer & Videographer Shot List: 10 fields
+- Wedding Party Logistics: 9 fields
+- Vendor Performance Review: 11 fields
+- Engagement Session Brief: 8 fields
+- Day-Of Emergency Contact Sheet: 8 fields
+
+### Useful Links
+
+- Marketing homepage and pricing: https://thespecialwedding.io/#pricing
+- Product features: https://thespecialwedding.io/features
+- Workspace showcase: https://thespecialwedding.io/#showcase
+- Blog and resources: https://thespecialwedding.io/resources/blog
+- Free templates: https://thespecialwedding.io/resources/templates
+- FAQ: https://thespecialwedding.io/resources/faq
+- Public vendor directory: https://thespecialwedding.io/vendors
+- Planner sign-in handoff: https://thespecialwedding.io/login
 - Couple portal sign-in: https://thespecialwedding.io/couple
-- Public blog and resources: https://thespecialwedding.io/resources
-- Templates library: https://thespecialwedding.io/resources/templates
-- Vendor self-signup: https://thespecialwedding.io/vendors
-- Pricing page: https://thespecialwedding.io/pricing
 
-## Company
+## Optional Context
 
-The Special Wedding is operated by JOATLABS. The platform is purpose-built for professional wedding planning workflows rather than generic project management retrofitted for events. Engineering is in active development with a focus on AI-assisted planning workflows, real-time couple-planner communication, and end-to-end day-of execution support.
+The Special Wedding is operated by JOATLABS. The product is purpose-built for professional wedding planning workflows rather than generic project management retrofitted for events.
+
+Related public content includes planner education, software comparisons, pricing strategy articles, AI workflow guides, contract guidance, seating strategy resources, and blog articles synced through the BabyLoveGrowth publishing pipeline.

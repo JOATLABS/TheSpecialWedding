@@ -88,6 +88,7 @@ Be specific about cultural considerations in your recommendations.""",
         "credits": 1,
         "ttl_hours": 0,
         "cacheable": False,
+        "response_format": "text",
         "description": "Interactive AI chat assistant for wedding planning",
         "system_prompt": """You are an expert wedding planning assistant with deep knowledge of:
 - Wedding budgets and vendor pricing across different regions
@@ -101,6 +102,8 @@ You are conversational and helpful. Answer questions directly and concisely.
 When discussing budgets, consider the cultural context and regional pricing.
 When you don't know something specific, say so rather than making up information.
 Keep responses focused and actionable - wedding planners are busy!
+Format responses in clean markdown: short paragraphs, numbered steps when useful,
+and bullet lists for grouped recommendations. Do not wrap the whole answer in JSON.
 
 If the user provides wedding context (cultural style, location, guest count, budget), use it to give more tailored advice.""",
     },
@@ -185,6 +188,7 @@ Return ONLY valid JSON with strategic reasoning:
         "credits": 1,
         "ttl_hours": 0,
         "cacheable": False,
+        "response_format": "text",
         "description": "Draft communication emails",
         # The drafter legitimately needs the recipient's contact info to
         # produce a usable email; bypass the default PII redaction for
@@ -199,6 +203,7 @@ Keep it concise (2-3 short paragraphs max).""",
         "credits": 2,
         "ttl_hours": 6,
         "cacheable": True,
+        "response_format": "text",
         "description": "Generate wedding progress report",
         "system_prompt": """Generate a wedding progress summary for the couple.
 Include:
@@ -316,6 +321,7 @@ Icon guide:
         "credits": 1,
         "ttl_hours": 0,
         "cacheable": False,
+        "response_format": "text",
         "description": "Generate contract section content",
         "system_prompt": """You are a legal writing assistant specializing in wedding vendor contracts.
 
@@ -1260,11 +1266,14 @@ class AIService:
                         "warning": "Showing cached insights (AI service temporarily unavailable). Try refreshing later.",
                     }
 
+            if isinstance(e, AIGenerationError):
+                raise
+
             raise AIGenerationError(f"AI generation failed: {str(e)}")
 
     async def _call_gemini(
         self, feature: str, prompt: str, context: Dict[str, Any], model: str
-    ) -> Dict[str, Any]:
+    ) -> Any:
         """
         Make the actual Gemini API call using the new SDK with proper async.
 
@@ -1389,32 +1398,7 @@ class AIService:
             # Log the raw response for debugging
             logger.info(f"Gemini raw response (first 500 chars): {response_text[:500]}")
 
-            # Try to parse as JSON if expected
-            try:
-                # Sometimes Gemini wraps JSON in markdown code blocks
-                text_to_parse = response_text.strip()
-                if text_to_parse.startswith("```json"):
-                    text_to_parse = text_to_parse[7:]  # Remove ```json
-                if text_to_parse.startswith("```"):
-                    text_to_parse = text_to_parse[3:]  # Remove ```
-                if text_to_parse.endswith("```"):
-                    text_to_parse = text_to_parse[:-3]  # Remove trailing ```
-                text_to_parse = text_to_parse.strip()
-
-                parsed = json.loads(text_to_parse)
-                logger.info(
-                    f"Successfully parsed JSON with keys: {list(parsed.keys()) if isinstance(parsed, dict) else 'not a dict'}"
-                )
-                return parsed
-            except json.JSONDecodeError as e:
-                # Raise error instead of returning raw text — this triggers the
-                # cached fallback path in generate(), which is much better than
-                # returning {"text": ..., "raw": True} that breaks downstream
-                # code expecting structured JSON keys like "insights", "suggestions", etc.
-                logger.warning(
-                    f"Failed to parse as JSON for {feature}: {e}. Raising AIInvalidResponseError."
-                )
-                raise AIInvalidResponseError()
+            return self._decode_ai_response(feature, response_text)
 
         except (
             AIRateLimitError,
@@ -1511,6 +1495,48 @@ class AIService:
                 message="AI service encountered an unexpected error. Please try again.",
                 error_code="unknown_error",
             )
+
+    @staticmethod
+    def _decode_ai_response(feature: str, response_text: str) -> Any:
+        """Decode model output according to the feature contract.
+
+        Most AI features in this service are structured JSON contracts, but
+        conversational/drafting features are intentionally plain markdown/text.
+        Treating every response as JSON made chat and contract-section drafting
+        fail whenever the model correctly returned prose.
+        """
+        feature_config = AI_FEATURES.get(feature, {})
+        response_format = feature_config.get("response_format", "json")
+        text = response_text.strip()
+
+        if response_format == "text":
+            return {"text": text}
+
+        try:
+            # Sometimes Gemini wraps JSON in markdown code blocks.
+            text_to_parse = text
+            if text_to_parse.startswith("```json"):
+                text_to_parse = text_to_parse[7:]
+            if text_to_parse.startswith("```"):
+                text_to_parse = text_to_parse[3:]
+            if text_to_parse.endswith("```"):
+                text_to_parse = text_to_parse[:-3]
+            text_to_parse = text_to_parse.strip()
+
+            parsed = json.loads(text_to_parse)
+            logger.info(
+                f"Successfully parsed JSON with keys: {list(parsed.keys()) if isinstance(parsed, dict) else 'not a dict'}"
+            )
+            return parsed
+        except json.JSONDecodeError as e:
+            # Raise error instead of returning raw text — this triggers the
+            # cached fallback path in generate(), which is much better than
+            # returning {"text": ..., "raw": True} that breaks downstream
+            # code expecting structured JSON keys like "insights", "suggestions", etc.
+            logger.warning(
+                f"Failed to parse as JSON for {feature}: {e}. Raising AIInvalidResponseError."
+            )
+            raise AIInvalidResponseError()
 
     # =========================================================================
     # Prompt-injection mitigation + PII redaction

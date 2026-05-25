@@ -112,9 +112,7 @@ async def test_notify_wedding_created_builds_couple_tab_action_url(
     assert captured["notification_type"] == "wedding_created"
     assert captured["wedding_id"] == "wedding-1"
     assert "Alex & Jamie" in captured["message"]
-    assert captured["action_url"] == (
-        "/admin/planner/weddings/wedding-1?tab=couple"
-    )
+    assert captured["action_url"] == ("/admin/planner/weddings/wedding-1?tab=couple")
 
 
 @pytest.mark.asyncio
@@ -151,9 +149,7 @@ async def test_notify_couple_portal_accepted_carries_form_metadata(
     # Must point at the canonical planner-side send route at
     # app/admin/forms/[id]/send/page.tsx — there is no
     # /admin/planner/forms/* route, so the older form would 404.
-    assert captured["action_url"].startswith(
-        "/admin/forms/form-seed-1/send"
-    )
+    assert captured["action_url"].startswith("/admin/forms/form-seed-1/send")
     assert "/admin/planner/forms" not in captured["action_url"]
     assert "prefill_email=couple%40example.com" in captured["action_url"]
 
@@ -177,6 +173,26 @@ async def test_notify_couple_portal_accepted_falls_back_when_no_form_id(
 
     assert captured["metadata"]["form_id"] is None
     assert "/forms/" not in captured["action_url"]
+
+
+@pytest.mark.asyncio
+async def test_notify_guest_message_points_to_unified_inbox(
+    patched_planner_notification_service,
+):
+    service, captured = patched_planner_notification_service
+
+    await service.notify_guest_message(
+        planner_id="planner-1",
+        wedding_id="wedding/needs encoding",
+        guest_name="Ayo Guest",
+        message_preview="Can you help me?",
+        guest_id="guest-1",
+    )
+
+    assert captured["notification_type"] == "guest_message"
+    assert captured["action_url"] == (
+        "/admin/communications/inbox?wedding_id=wedding%2Fneeds%20encoding"
+    )
 
 
 # =============================================================================

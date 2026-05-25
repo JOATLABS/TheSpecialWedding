@@ -730,7 +730,7 @@ class PlannerNotificationService:
             wedding_id=wedding_id,
             metadata={"guest_name": guest_name, "guest_id": guest_id},
             priority="high",
-            action_url=f"/admin/planner/weddings/{wedding_id}/messages",
+            action_url=f"/admin/communications/inbox?wedding_id={quote(wedding_id, safe='')}",
         )
 
     async def notify_payment_received(

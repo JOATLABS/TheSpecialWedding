@@ -4,13 +4,16 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
+    check_wedding_access,
     enforce_team_permission,
     require_team_or_planner,
 )
 from app.services.reminder_service import ReminderService
+from app.services.wedding_service import WeddingService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+wedding_service = WeddingService()
 
 
 def get_reminder_service() -> ReminderService:
@@ -26,6 +29,7 @@ def get_reminder_service() -> ReminderService:
 
 @router.post("/reminders/send", tags=["Admin"])
 async def send_reminder(
+    wedding_slug: str,
     event_type: str,
     message: str,
     target_group: str,
@@ -33,7 +37,14 @@ async def send_reminder(
     reminder_service: ReminderService = Depends(get_reminder_service),
 ):
     enforce_team_permission(current_user, "send_reminders")
-    return await reminder_service.send_reminders(event_type, message, target_group)
+    wedding = await wedding_service.get_wedding_by_slug(wedding_slug)
+    if not wedding:
+        raise HTTPException(status_code=404, detail="Wedding not found")
+    if not await check_wedding_access(current_user, wedding["_id"]):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+    return await reminder_service.send_reminders(
+        event_type, message, target_group, str(wedding["_id"])
+    )
 
 
 @router.get("/reminders/logs", tags=["Admin"])

@@ -1002,6 +1002,30 @@ class AssignVendorRequest(BaseModel):
     service_notes: Optional[str] = None
 
 
+class UpdateVendorAssignmentRequest(BaseModel):
+    """Partial update to a vendor assignment.
+
+    Used by ``PATCH /admin/assignments/{assignment_id}`` to re-link an
+    existing assignment to a different budget category (or unlink it)
+    without violating the partial unique ``(wedding_id, vendor_profile_id)``
+    index. The caller MUST be allowed to express "do not touch this field"
+    vs. "set to null"; we rely on ``model_fields_set`` at the service layer
+    so unset fields are skipped while explicit ``None`` clears them.
+
+    Notes
+    -----
+    - ``budget_category_id`` accepts ``None`` to detach from any category
+      (turns the assignment into a "floating" wedding-level link).
+    - ``service_notes`` accepts ``None`` to clear free-text notes.
+    - Status is intentionally NOT mutable here — that lives on the
+      dedicated ``PATCH /assignments/{id}/status`` route which enforces
+      the documented status state machine.
+    """
+
+    budget_category_id: Optional[str] = None
+    service_notes: Optional[str] = None
+
+
 class SignContractRequest(BaseModel):
     """Request when vendor signs contract"""
 

@@ -58,7 +58,6 @@ async function probeBackendReachable(apiBase: string): Promise<void> {
         cache: 'no-store',
       });
       if (response.ok) {
-        // eslint-disable-next-line no-console
         console.log(`${PROBE_TAG} backend reachable at ${url} (attempt ${attempt})`);
         return;
       }
@@ -67,7 +66,6 @@ async function probeBackendReachable(apiBase: string): Promise<void> {
       lastError = err instanceof Error ? err.message : String(err);
     }
 
-    // eslint-disable-next-line no-console
     console.warn(`${PROBE_TAG} attempt ${attempt}/${PROBE_ATTEMPTS} failed: ${lastError}`);
 
     if (attempt < PROBE_ATTEMPTS) {
@@ -99,7 +97,6 @@ export async function runSsrBootProbe(): Promise<void> {
     apiBase = getServerApiBaseUrl();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    // eslint-disable-next-line no-console
     console.error(`${PROBE_TAG} cannot resolve API base URL: ${message}`);
     process.exit(1);
   }
@@ -108,7 +105,6 @@ export async function runSsrBootProbe(): Promise<void> {
     await probeBackendReachable(apiBase);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    // eslint-disable-next-line no-console
     console.error(`${PROBE_TAG} ${message}`);
     process.exit(1);
   }

@@ -69,9 +69,11 @@ export default function ChatInput({
           disabled={disabled || sending}
         />
         <button
+          type="button"
           onClick={onSend}
-          disabled={!value.trim() || sending}
-          className={`flex items-center justify-center w-10 h-10 ${colors.button} text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition flex-shrink-0`}
+          disabled={disabled || !value.trim() || sending}
+          aria-label={sending ? 'Sending message' : 'Send message'}
+          className={`relative z-10 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${colors.button} text-white transition disabled:cursor-not-allowed disabled:opacity-50`}
         >
           {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
         </button>

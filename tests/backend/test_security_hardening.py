@@ -683,6 +683,33 @@ def test_ai_sanitizer_handles_deeply_nested_structures():
     assert out["a"][0]["b"][0]["c"] == "&lt;x&gt;"
 
 
+def test_ai_decoder_allows_text_contract_features():
+    from app.services.ai_service import AIService
+
+    response = AIService._decode_ai_response(
+        "chat",
+        "Here is the plan:\n\n1. Confirm the budget.\n2. Send reminders.",
+    )
+
+    assert response == {
+        "text": "Here is the plan:\n\n1. Confirm the budget.\n2. Send reminders."
+    }
+
+
+def test_ai_decoder_keeps_json_contracts_strict():
+    from app.services.ai_service import AIInvalidResponseError, AIService
+
+    response = AIService._decode_ai_response(
+        "dashboard_insights",
+        '```json\n{"insights": [{"title": "RSVPs", "priority": "high"}]}\n```',
+    )
+
+    assert response["insights"][0]["title"] == "RSVPs"
+
+    with pytest.raises(AIInvalidResponseError):
+        AIService._decode_ai_response("dashboard_insights", "plain prose")
+
+
 # =============================================================================
 # F2 — Redis-backed rate limiter (with in-memory fallback)
 # =============================================================================

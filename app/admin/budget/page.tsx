@@ -18,11 +18,14 @@ import {
   getVendorDirectory,
   getWeddingVendors,
   assignVendorToWedding,
+  updateVendorAssignment,
+  deleteVendorAssignment,
   type VendorProfile,
   type VendorAssignment
 } from '../../services/vendorManagementApi';
 import { formatDate } from '@/utils/dateFormat';
 import { Sparkles, X, Loader2, AlertCircle, Lightbulb } from 'lucide-react';
+import UnlinkedVendorsPanel from '../../components/budget/UnlinkedVendorsPanel';
 import { CampaignSponsoredRail } from '../vendors/components/CampaignSponsoredRail';
 import type {
   BudgetCategory,
@@ -378,7 +381,129 @@ export default function BudgetDashboard() {
     return vendorAssignments.find(a => a.budget_category_id === categoryId);
   }, [vendorAssignments]);
 
-  // Handle vendor assignment when creating/updating category
+  // Look up an assignment by vendor (regardless of which category, or no
+  // category at all). Drives the dropdown context badges and the
+  // detect-and-PATCH branch in handleVendorAssignment — if this returns
+  // a value, POST /assign would 409 because the wedding ↔ vendor pair is
+  // unique per the partial index in app/core/database_indexes.py.
+  const findAssignmentForVendor = useCallback(
+    (vendorId: string): VendorAssignment | undefined => {
+      return vendorAssignments.find(
+        a => a.vendor_profile_id === vendorId
+          && a.wedding_id === selectedWedding
+      );
+    },
+    [vendorAssignments, selectedWedding]
+  );
+
+  // Assignments that need attention on this wedding. Two cases:
+  //   (a) Floating — budget_category_id is null/missing. Typically
+  //       seeded via POST /assign with no category (e.g. the Vendor
+  //       Directory tab) before the user picks where the vendor
+  //       belongs in the budget.
+  //   (b) Orphaned — budget_category_id points to a category that no
+  //       longer exists (the user deleted the category from the budget
+  //       page; handleDeleteCategory does not cascade to assignments
+  //       by design — we surface them here so the user can re-link or
+  //       archive intentionally).
+  //
+  // Both cases share the same UI treatment (link to a category, or
+  // remove from the wedding). Driven directly off vendorAssignments
+  // and categories so the panel reflects mutations without a refetch.
+  const unlinkedAssignments = useMemo(() => {
+    const categoryIds = new Set(categories.map(c => c.id));
+    return vendorAssignments.filter(
+      a => !a.budget_category_id
+        || !categoryIds.has(a.budget_category_id)
+    );
+  }, [vendorAssignments, categories]);
+
+  // Link an unlinked assignment to a budget category. Routed through
+  // the same PATCH endpoint used by handleVendorAssignment so the
+  // backend's cross-wedding guard runs in one place.
+  const handleLinkUnlinkedToCategory = useCallback(
+    async (assignmentId: string, categoryId: string) => {
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+      const updated = await updateVendorAssignment(token, assignmentId, {
+        budget_category_id: categoryId,
+      });
+      // Reconcile by replacing the assignment in place. We also drop
+      // any stale assignment that was previously pointed at this
+      // category to mirror the existing one-assignment-per-category
+      // display invariant (BudgetCategoryCard renders a single
+      // assigned vendor).
+      setVendorAssignments(prev => {
+        const filtered = prev.filter(
+          a => a._id !== updated._id
+            && a.budget_category_id !== categoryId
+        );
+        return [...filtered, updated];
+      });
+      toast.success(`Linked ${updated.vendor_name} to category`);
+    },
+    [token]
+  );
+
+  // Soft-delete an assignment from the wedding (vendor stays in the
+  // directory). Backend sets is_deleted: True, which both removes the
+  // row from get_wedding_vendors and frees the (wedding, vendor) pair
+  // for a future re-assignment.
+  const handleRemoveAssignment = useCallback(
+    async (assignmentId: string) => {
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+      await deleteVendorAssignment(token, assignmentId);
+      setVendorAssignments(prev => prev.filter(a => a._id !== assignmentId));
+      toast.success('Vendor removed from this wedding');
+    },
+    [token]
+  );
+
+  // Build a human label for a vendor option in the dropdown, with a
+  // suffix that tells the user where (if anywhere) the vendor is
+  // currently linked on this wedding. Critical so they understand
+  // selecting a vendor that's "on Florals" will MOVE the link, not
+  // duplicate it.
+  const describeVendorOption = useCallback(
+    (vendor: VendorProfile): string => {
+      const base = `${vendor.business_name} (${vendor.service_category})${
+        vendor.is_preferred ? ' ★' : ''
+      }`;
+      const existing = findAssignmentForVendor(vendor._id);
+      if (!existing) return base;
+
+      const editingCategoryId = editingCategory?.id;
+      if (editingCategoryId && existing.budget_category_id === editingCategoryId) {
+        return `${base} — on this category`;
+      }
+      if (!existing.budget_category_id) {
+        return `${base} — on this wedding (unlinked)`;
+      }
+      const otherCategory = categories.find(
+        c => c.id === existing.budget_category_id
+      );
+      const label = otherCategory?.name || 'another category';
+      return `${base} — on this wedding (${label})`;
+    },
+    [findAssignmentForVendor, editingCategory, categories]
+  );
+
+  // Handle vendor assignment when creating/updating category.
+  //
+  // The wedding ↔ vendor link is unique per (wedding_id, vendor_profile_id)
+  // — see app/core/database_indexes.py:911 (the partial unique index) and
+  // vendor_service.assign_vendor_to_wedding (the pre-check). The
+  // budget_category_id is just a mutable PROPERTY of that link, not part
+  // of the join key. So if the user picks a vendor who's already on this
+  // wedding — whether they're floating (no category) or linked to another
+  // category — the correct move is to PATCH the existing assignment's
+  // budget_category_id, NOT to POST a new row. Posting would 409 on the
+  // (wedding, vendor) uniqueness rule, which is exactly the bug the user
+  // reported (vendor previously assigned from the Vendor Directory tab
+  // could not be linked to a category).
   const handleVendorAssignment = async (categoryId: string) => {
     if (!token || !selectedWedding || !selectedVendorId) return;
 
@@ -386,21 +511,49 @@ export default function BudgetDashboard() {
     if (!vendor) return;
 
     try {
-      const assignment = await assignVendorToWedding(token, {
-        vendor_profile_id: selectedVendorId,
-        wedding_id: selectedWedding,
-        budget_category_id: categoryId,
-      });
-      // Update local state
+      const existing = vendorAssignments.find(
+        a => a.vendor_profile_id === selectedVendorId
+          && a.wedding_id === selectedWedding
+      );
+
+      let assignment: VendorAssignment;
+      if (existing) {
+        // Already-on-this-wedding case (floating OR linked elsewhere).
+        // No-op if it's already pointed at this category — saves a
+        // round-trip and a needless updated_at touch.
+        if (existing.budget_category_id === categoryId) {
+          return;
+        }
+        assignment = await updateVendorAssignment(token, existing._id, {
+          budget_category_id: categoryId,
+        });
+      } else {
+        // Net-new wedding ↔ vendor link.
+        assignment = await assignVendorToWedding(token, {
+          vendor_profile_id: selectedVendorId,
+          wedding_id: selectedWedding,
+          budget_category_id: categoryId,
+        });
+      }
+
+      // Reconcile local state: drop the prior copy of THIS assignment
+      // (by _id) plus anything else previously pointed at this
+      // category — guarding against stale duplicates if the user
+      // toggled vendors in the modal mid-edit.
       setVendorAssignments(prev => {
-        // Remove any existing assignment for this category
-        const filtered = prev.filter(a => a.budget_category_id !== categoryId);
+        const filtered = prev.filter(
+          a => a._id !== assignment._id
+            && a.budget_category_id !== categoryId
+        );
         return [...filtered, assignment];
       });
     } catch (err: any) {
       console.error('Failed to assign vendor:', err);
-      // Don't fail the whole operation, just log the error
-      toast.error('Category saved, but vendor assignment failed');
+      // Surface the real server detail so the user sees WHY it failed
+      // (e.g. cross-wedding category, deleted vendor) instead of a
+      // generic "vendor assignment failed" that hides the cause.
+      const detail = err?.message || 'Vendor assignment failed';
+      toast.error(`Category saved, but ${detail.toLowerCase()}`);
     }
   };
 
@@ -681,6 +834,19 @@ export default function BudgetDashboard() {
         </Card>
       )}
 
+      {/* Unlinked Vendors — vendors attached to the wedding (e.g. from
+          the Vendor Directory tab) that don't yet belong to a budget
+          category. Without surfacing them here, the (wedding, vendor)
+          uniqueness rule blocks them from being re-assigned silently. */}
+      {selectedWedding && unlinkedAssignments.length > 0 && (
+        <UnlinkedVendorsPanel
+          unlinkedAssignments={unlinkedAssignments}
+          categories={categories}
+          onLinkToCategory={handleLinkUnlinkedToCategory}
+          onRemoveAssignment={handleRemoveAssignment}
+        />
+      )}
+
       {/* Categories Section */}
       {selectedWedding && (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[2fr_1fr] items-start">
@@ -864,7 +1030,7 @@ export default function BudgetDashboard() {
                     type="number"
                     min="0"
                     max="100"
-                    step="0.1"
+                    step="0.01"
                     value={categoryForm.percentage_of_total}
                     onChange={(e) => handlePercentageChange(parseFloat(e.target.value) || 0)}
                     className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
@@ -887,8 +1053,7 @@ export default function BudgetDashboard() {
                     <option value="">-- No vendor assigned --</option>
                     {vendorDirectory.map((vendor) => (
                       <option key={vendor._id} value={vendor._id}>
-                        {vendor.business_name} ({vendor.service_category})
-                        {vendor.is_preferred && ' ★'}
+                        {describeVendorOption(vendor)}
                       </option>
                     ))}
                   </select>

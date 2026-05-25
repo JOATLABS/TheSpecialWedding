@@ -11,6 +11,11 @@ import resend
 from app.core.database import mongo
 from app.utils.rsvp_links import build_guest_otp_url
 from app.utils.contact_sanitizer import sanitize_email, validate_email_format
+from app.utils.wedding_event_types import (
+    attending_matches_reminder_event,
+    is_all_wedding_events,
+    normalize_reminder_event_type,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -303,17 +308,38 @@ class ResendEmailService:
         target_group: str = "all",
     ) -> Dict[str, Any]:
         """Send reminder emails to guests who have RSVP'd"""
+        try:
+            event_type = normalize_reminder_event_type(event_type)
+        except ValueError as exc:
+            return {"sent": 0, "failed": 0, "error": str(exc)}
+        if target_group not in {"guests", "plus-ones", "all"}:
+            return {"sent": 0, "failed": 0, "error": "Invalid target group"}
+
         # Get wedding details
         wedding = await self.wedding_collection.find_one({"slug": wedding_slug})
         if not wedding:
             return {"sent": 0, "failed": 0, "error": "Wedding not found"}
 
         # Get event details
-        event = next(
-            (e for e in wedding.get("events", []) if e["type"] == event_type), None
-        )
-        if not event:
+        event = None
+        if not is_all_wedding_events(event_type):
+            event = next(
+                (e for e in wedding.get("events", []) if e["type"] == event_type),
+                None,
+            )
+        if not event and not is_all_wedding_events(event_type):
             return {"sent": 0, "failed": 0, "error": "Event not found"}
+        event_name = (
+            "All Events"
+            if is_all_wedding_events(event_type)
+            else event_type.replace("_", " ").title()
+        )
+        event_date = (
+            wedding.get("date", "")
+            if is_all_wedding_events(event_type)
+            else event.get("date", "")
+        )
+        event_details = event.get("details", {}) if event else {}
 
         # Get custom from_email or use wedding-specific or default
         from_email = wedding.get("reminder_from_email") or os.getenv(
@@ -323,22 +349,46 @@ class ResendEmailService:
 
         # Default subject if not provided
         if not custom_subject:
-            event_name = event_type.replace("_", " ").title()
-            custom_subject = f"Reminder: {event_name} - {event['date']}"
+            custom_subject = f"Reminder: {event_name}"
+            if event_date:
+                custom_subject = f"{custom_subject} - {event_date}"
 
         sent = 0
         failed = 0
         skipped_no_email = 0
         skipped_opted_out = 0
 
+        wedding_guests = []
+        guest_id_values = []
+        guest_id_strings = []
+        async for guest in self.guest_collection.find({"wedding_id": wedding["_id"]}):
+            wedding_guests.append(guest)
+            guest_id = guest.get("_id")
+            if guest_id is None:
+                continue
+            for value in (guest_id, str(guest_id)):
+                if value not in guest_id_values:
+                    guest_id_values.append(value)
+            guest_id_string = str(guest_id)
+            if guest_id_string not in guest_id_strings:
+                guest_id_strings.append(guest_id_string)
+
+        rsvp_lookup = {}
+        if guest_id_values:
+            async for rsvp in self.rsvp_collection.find(
+                {"guest_id": {"$in": guest_id_values}}
+            ):
+                if attending_matches_reminder_event(
+                    rsvp.get("attending", []), event_type
+                ):
+                    rsvp_lookup[str(rsvp["guest_id"])] = rsvp
+
         # Get guests based on target group
         if target_group in ["guests", "all"]:
-            guests = self.guest_collection.find({"wedding_id": wedding["_id"]})
-
-            async for guest in guests:
+            for guest in wedding_guests:
                 # Check if guest has RSVP'd for this event
-                rsvp = await self.rsvp_collection.find_one({"guest_id": guest["_id"]})
-                if not rsvp or event_type not in rsvp.get("attending", []):
+                rsvp = rsvp_lookup.get(str(guest["_id"]))
+                if not rsvp:
                     continue
 
                 email = guest.get("email")
@@ -360,20 +410,16 @@ class ResendEmailService:
                     html_content = html_content.replace(
                         "{guest_name}", guest.get("name", "Guest")
                     )
+                    html_content = html_content.replace("{event_type}", event_name)
+                    html_content = html_content.replace("{event_date}", event_date)
                     html_content = html_content.replace(
-                        "{event_type}", event_type.replace("_", " ").title()
+                        "{venue_name}", event_details.get("venue_name", "")
                     )
                     html_content = html_content.replace(
-                        "{event_date}", event.get("date", "")
+                        "{location}", event_details.get("location", "")
                     )
                     html_content = html_content.replace(
-                        "{venue_name}", event.get("details", {}).get("venue_name", "")
-                    )
-                    html_content = html_content.replace(
-                        "{location}", event.get("details", {}).get("location", "")
-                    )
-                    html_content = html_content.replace(
-                        "{time}", event.get("details", {}).get("time", "")
+                        "{time}", event_details.get("time", "")
                     )
                     html_content = html_content.replace("{couple_names}", from_name)
                 else:
@@ -381,8 +427,8 @@ class ResendEmailService:
                     html_content = self._generate_default_reminder_html(
                         guest_name=guest.get("name", "Guest"),
                         event_type=event_type,
-                        event_date=event.get("date", ""),
-                        event_details=event.get("details", {}),
+                        event_date=event_date,
+                        event_details=event_details,
                         couple_names=from_name,
                         plus_ones=guest.get("plus_ones", []),
                     )
@@ -412,19 +458,16 @@ class ResendEmailService:
         # Send reminders to plus-ones
         if target_group in ["plus-ones", "all"]:
             plus_one_collection = mongo.db["plus_ones"]
-            # Get all guests for this wedding to find their plus-ones
-            wedding_guests = await self.guest_collection.find(
-                {"wedding_id": wedding["_id"]}, projection={"_id": 1}
-            ).to_list(length=None)
-            guest_ids = [str(g["_id"]) for g in wedding_guests]
 
             plus_ones = await plus_one_collection.find(
-                {"guest_id": {"$in": guest_ids}}
+                {"guest_id": {"$in": guest_id_strings}}
             ).to_list(length=None)
 
             for plus_one in plus_ones:
                 # Check if plus-one is attending this event
-                if event_type not in plus_one.get("attending", []):
+                if not attending_matches_reminder_event(
+                    plus_one.get("attending", []), event_type
+                ):
                     continue
 
                 email = plus_one.get("email")
@@ -443,28 +486,24 @@ class ResendEmailService:
                     html_content = html_content.replace(
                         "{guest_name}", plus_one.get("name", "Guest")
                     )
+                    html_content = html_content.replace("{event_type}", event_name)
+                    html_content = html_content.replace("{event_date}", event_date)
                     html_content = html_content.replace(
-                        "{event_type}", event_type.replace("_", " ").title()
+                        "{venue_name}", event_details.get("venue_name", "")
                     )
                     html_content = html_content.replace(
-                        "{event_date}", event.get("date", "")
+                        "{location}", event_details.get("location", "")
                     )
                     html_content = html_content.replace(
-                        "{venue_name}", event.get("details", {}).get("venue_name", "")
-                    )
-                    html_content = html_content.replace(
-                        "{location}", event.get("details", {}).get("location", "")
-                    )
-                    html_content = html_content.replace(
-                        "{time}", event.get("details", {}).get("time", "")
+                        "{time}", event_details.get("time", "")
                     )
                     html_content = html_content.replace("{couple_names}", from_name)
                 else:
                     html_content = self._generate_default_reminder_html(
                         guest_name=plus_one.get("name", "Guest"),
                         event_type=event_type,
-                        event_date=event.get("date", ""),
-                        event_details=event.get("details", {}),
+                        event_date=event_date,
+                        event_details=event_details,
                         couple_names=from_name,
                         plus_ones=[],
                     )
@@ -638,7 +677,11 @@ class ResendEmailService:
         plus_ones: Optional[List[Any]] = None,
     ) -> str:
         """Generate default reminder HTML"""
-        event_title = event_type.replace("_", " ").title()
+        event_title = (
+            "All Events"
+            if is_all_wedding_events(event_type)
+            else event_type.replace("_", " ").title()
+        )
         venue_name = event_details.get("venue_name", "Venue details coming soon")
         location = event_details.get("location", "")
         time = event_details.get("time", "")

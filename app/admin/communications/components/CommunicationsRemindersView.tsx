@@ -16,7 +16,13 @@ import { MessageEnrichment } from '@/components/ui/MessageEnrichment';
 import { extractGuestList } from '@/admin/utils/guestListResponse';
 import WeddingPicker from '@/admin/components/WeddingPicker';
 import { Sparkles, X } from 'lucide-react';
-import { BUILT_IN_WEDDING_EVENT_OPTIONS, getWeddingEventLabel, getWeddingEventOptions } from '@/utils/weddingEvents';
+import {
+ ALL_WEDDING_EVENTS,
+ ALL_WEDDING_EVENTS_OPTION,
+ BUILT_IN_WEDDING_EVENT_OPTIONS,
+ getWeddingEventLabel,
+ getWeddingEventOptions,
+} from '@/utils/weddingEvents';
 import PageHeader from '../../components/PageHeader';
 
 export type CommunicationsTab = 'invites' | 'reminders' | 'individual' | 'history';
@@ -145,12 +151,26 @@ export default function CommunicationsRemindersView({
  const requestedTemplate = searchParams.get('template') || '';
  const requestedChannel = searchParams.get('channel');
 
- const reminderEventOptions = useMemo(() => {
+ const actualReminderEventOptions = useMemo(() => {
  if (selectedWeddingData?.events?.length) {
  return getWeddingEventOptions(selectedWeddingData.events);
  }
  return BUILT_IN_WEDDING_EVENT_OPTIONS.map((option) => ({ value: option.value, label: option.label }));
  }, [selectedWeddingData]);
+ const reminderEventOptions = useMemo(
+ () => [ALL_WEDDING_EVENTS_OPTION, ...actualReminderEventOptions],
+ [actualReminderEventOptions]
+ );
+ const selectedReminderEventLabel = useMemo(
+ () => getWeddingEventLabel(
+ eventType,
+ selectedWeddingData?.events?.find((event) => event.type === eventType)?.custom_type_label
+ ),
+ [eventType, selectedWeddingData]
+ );
+ const reminderRecipientDescription = eventType === ALL_WEDDING_EVENTS
+ ? 'This will be sent once to each selected recipient who has RSVP’d for at least one event.'
+ : `This will be sent to guests who have RSVP’d for the ${selectedReminderEventLabel} event.`;
 
  const hasTabAccess = useMemo(() => {
  if (activeTab === 'invites') return canAccessInvites;
@@ -342,9 +362,9 @@ export default function CommunicationsRemindersView({
  useEffect(() => {
  if (reminderEventOptions.length === 0) return;
  if (!reminderEventOptions.some((option) => option.value === eventType)) {
- setEventType(reminderEventOptions[0].value);
+ setEventType(actualReminderEventOptions[0]?.value ?? ALL_WEDDING_EVENTS);
  }
- }, [eventType, reminderEventOptions]);
+ }, [actualReminderEventOptions, eventType, reminderEventOptions]);
 
  useEffect(() => {
  if (!forcedTab) {
@@ -497,10 +517,12 @@ export default function CommunicationsRemindersView({
  const baseUrl = getApiBaseUrl();
  let totalSent = 0;
  let totalFailed = 0;
+ const sendErrors: string[] = [];
 
  // Send SMS reminders
  if (channel === 'sms' || channel === 'both') {
  const params = new URLSearchParams({
+ wedding_slug: selectedWeddingData.slug,
  event_type: eventType,
  message: customMessage,
  target_group: targetGroup,
@@ -522,7 +544,8 @@ export default function CommunicationsRemindersView({
  const errorData = await response.json().catch(() => ({}));
  const detail = errorData.detail || 'SMS reminder send failed';
  console.error('SMS reminder error:', detail);
- setError(`SMS error: ${detail}`);
+ sendErrors.push(`SMS error: ${detail}`);
+ totalFailed += 1;
  }
  }
 
@@ -551,12 +574,17 @@ export default function CommunicationsRemindersView({
  const errorData = await response.json().catch(() => ({}));
  const detail = errorData.detail || 'Email reminder send failed';
  console.error('Email reminder error:', detail);
- setError(`Email error: ${detail}`);
+ sendErrors.push(`Email error: ${detail}`);
+ totalFailed += 1;
  }
  }
 
- if (totalSent === 0 && !error) {
- setError('No reminders sent. Make sure guests have RSVP\'d for the selected event type.');
+ if (totalSent === 0) {
+ setError(sendErrors[0] || (
+ eventType === ALL_WEDDING_EVENTS
+ ? 'No reminders sent. Make sure guests have RSVP’d for at least one event.'
+ : 'No reminders sent. Make sure guests have RSVP’d for the selected event type.'
+ ));
  } else {
  const channelText = channel === 'both' ? 'SMS and email' : channel;
  setSuccess(`Successfully sent ${totalSent} reminders via ${channelText}!${totalFailed > 0 ? ` (${totalFailed} failed)` : ''}`);
@@ -817,7 +845,7 @@ export default function CommunicationsRemindersView({
          recipient_context: targetGroup === 'guests' ? 'wedding guest' : 'plus one',
          couple_names: selectedWeddingData?.couple_names,
          wedding_date: selectedWeddingData?.date,
-         event_name: eventType.replace('_', ' '),
+         event_name: eventType === ALL_WEDDING_EVENTS ? 'all wedding events' : selectedReminderEventLabel,
        }),
      });
 
@@ -1404,12 +1432,7 @@ export default function CommunicationsRemindersView({
  rows={4}
  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  />
- <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-        This will be sent to guests who have RSVP’d for the {getWeddingEventLabel(
-          eventType,
-          selectedWeddingData?.events?.find((event) => event.type === eventType)?.custom_type_label
-        )} event.
- </p>
+ <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{reminderRecipientDescription}</p>
  <p className="text-sm text-yellow-600 mt-1">
         Note: If no messages are sent, guests may not have RSVP’d yet. Use “Send Invites” first to get responses.
  </p>

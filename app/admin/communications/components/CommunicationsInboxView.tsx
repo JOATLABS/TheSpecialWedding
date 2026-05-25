@@ -408,7 +408,7 @@ export default function CommunicationsInboxView() {
   }, [baseUrl, token]);
 
   const fetchEmails = useCallback(async () => {
-    if (!token) return;
+    if (!token || !userProfile) return;
     if (!canAccessGuestInbox) {
       setEmails([]);
       setPages(0);
@@ -440,10 +440,10 @@ export default function CommunicationsInboxView() {
     } finally {
       setEmailLoading(false);
     }
-  }, [baseUrl, canAccessGuestInbox, filterUnread, page, token]);
+  }, [baseUrl, canAccessGuestInbox, filterUnread, page, token, userProfile]);
 
   const fetchCoupleConversations = useCallback(async () => {
-    if (!token) return;
+    if (!token || !userProfile) return;
     if (!canAccessCoupleMessages) {
       setCoupleConversations([]);
       setConversationsLoading(false);
@@ -470,10 +470,10 @@ export default function CommunicationsInboxView() {
     } finally {
       setConversationsLoading(false);
     }
-  }, [baseUrl, canAccessCoupleMessages, selectedWeddingId, token]);
+  }, [baseUrl, canAccessCoupleMessages, selectedWeddingId, token, userProfile]);
 
   const fetchSupportThreads = useCallback(async () => {
-    if (!token) return;
+    if (!token || !userProfile) return;
     if (!canAccessSupportThreads) {
       setSmsTickets([]);
       setSupportTickets([]);
@@ -510,7 +510,7 @@ export default function CommunicationsInboxView() {
     } finally {
       setSupportLoading(false);
     }
-  }, [baseUrl, canAccessSupportThreads, token]);
+  }, [baseUrl, canAccessSupportThreads, token, userProfile]);
 
   useEffect(() => { fetchWeddings(); }, [fetchWeddings]);
   useEffect(() => { fetchEmails(); }, [fetchEmails]);
@@ -863,6 +863,8 @@ export default function CommunicationsInboxView() {
       return;
     }
 
+    if (requestedConversation && !userProfile) return;
+
     if (requestedConversation === 'couple') {
       handledQueryRef.current = querySelectionKey;
       setQueryError(null);
@@ -937,6 +939,7 @@ export default function CommunicationsInboxView() {
     requestedConversationRaw,
     requestedTicketId,
     requestedWeddingId,
+    userProfile,
   ]);
 
   useEffect(() => {
@@ -1167,7 +1170,7 @@ export default function CommunicationsInboxView() {
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="scrollbar-visible-thin min-h-0 flex-1 overflow-y-auto p-4">
           {detailLoading ? (
             <div className="text-center text-gray-400 py-8">
               <RefreshCw className="w-5 h-5 mx-auto mb-2 animate-spin" />
@@ -1293,7 +1296,7 @@ export default function CommunicationsInboxView() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="scrollbar-visible-thin min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
           {detailLoading ? (
             <div className="text-center text-gray-400 py-8">
               <RefreshCw className="w-5 h-5 mx-auto mb-2 animate-spin" />
@@ -1417,7 +1420,7 @@ export default function CommunicationsInboxView() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="scrollbar-visible-thin min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
           {detailLoading ? (
             <div className="text-center text-gray-400 py-8">
               <RefreshCw className="w-5 h-5 mx-auto mb-2 animate-spin" />
@@ -1532,7 +1535,7 @@ export default function CommunicationsInboxView() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="scrollbar-visible-thin min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
           {detailLoading ? (
             <div className="text-center text-gray-400 py-8">
               <RefreshCw className="w-5 h-5 mx-auto mb-2 animate-spin" />
@@ -1648,12 +1651,15 @@ export default function CommunicationsInboxView() {
           </div>
         </div>
 
-        <div ref={containerRef} className="flex h-[calc(100vh-250px)] min-h-[600px] gap-0">
+        <div
+          ref={containerRef}
+          className="flex h-[calc(100svh-220px)] min-h-[520px] max-h-[760px] min-w-0 gap-0 lg:h-[calc(100vh-250px)] lg:min-h-[600px] lg:max-h-none"
+          style={{ '--inbox-list-width': `${listWidthPercent}%` } as React.CSSProperties}
+        >
           <div
-            className={`bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden flex flex-col flex-shrink-0 h-full ${mobileShowDetail ? 'hidden lg:block' : ''}`}
-            style={{ width: `${listWidthPercent}%` }}
+            className={`flex h-full min-h-0 w-full flex-shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:w-[var(--inbox-list-width)] ${mobileShowDetail ? 'hidden lg:flex' : ''}`}
           >
-            <div className="flex-1 divide-y divide-gray-100 dark:divide-slate-800 overflow-y-auto">
+            <div className="scrollbar-visible-thin flex-1 divide-y divide-gray-100 overflow-y-auto dark:divide-slate-800">
               {loading ? (
                 <div className="p-8 text-center text-gray-400">
                   <RefreshCw className="w-6 h-6 mx-auto mb-2 animate-spin" />
@@ -1726,9 +1732,9 @@ export default function CommunicationsInboxView() {
             <GripVertical className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors" />
           </div>
 
-          <div className={`flex-1 min-w-0 h-full ${!mobileShowDetail ? 'hidden lg:block' : ''}`}>
+          <div className={`h-full min-h-0 min-w-0 flex-1 ${!mobileShowDetail ? 'hidden lg:block' : ''}`}>
             {selectedItem ? (
-              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 flex flex-col h-full">
+              <div className="flex h-full min-h-0 flex-col rounded-xl border border-gray-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
                 {selectedItem.type === 'email' && selectedEmailDetail
                   ? renderEmailDetail()
                   : selectedItem.type === 'couple'

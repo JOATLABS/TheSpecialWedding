@@ -12,7 +12,10 @@ from twilio.rest import Client  # type: ignore
 from app.core.database import mongo
 from app.utils.contact_sanitizer import normalize_phone_e164
 from app.utils.rsvp_links import build_guest_otp_url
-from app.utils.wedding_event_types import normalize_event_type
+from app.utils.wedding_event_types import (
+    attending_matches_reminder_event,
+    normalize_reminder_event_type,
+)
 
 # ---------------------------------------------------------------------------
 # Throttling configuration
@@ -81,28 +84,53 @@ class TwilioReminderService:
         self.plus_one_collection = mongo.db["plus_ones"]
         self.log_collection = mongo.db["reminders_sent"]
 
-    async def send_reminders(self, event_type: str, message: str, target_group: str):
+    async def send_reminders(
+        self, event_type: str, message: str, target_group: str, wedding_id: str
+    ):
         try:
-            event_type = normalize_event_type(event_type)
+            event_type = normalize_reminder_event_type(event_type)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         if target_group not in {"guests", "plus-ones", "all"}:
             raise HTTPException(status_code=400, detail="Invalid target group")
+        if not wedding_id:
+            raise HTTPException(status_code=400, detail="Wedding scope is required")
 
         logs = []
         now = datetime.now(timezone.utc)
         skipped_no_phone = 0
         skipped_opted_out = 0
 
-        # Pre-fetch all RSVPs attending this event type to avoid N+1 queries
+        wedding_guests = []
+        guest_id_values = []
+        guest_id_strings = []
+        async for guest in self.guest_collection.find({"wedding_id": wedding_id}):
+            wedding_guests.append(guest)
+            guest_id = guest.get("_id")
+            if guest_id is None:
+                continue
+            for value in (guest_id, str(guest_id)):
+                if value not in guest_id_values:
+                    guest_id_values.append(value)
+            guest_id_string = str(guest_id)
+            if guest_id_string not in guest_id_strings:
+                guest_id_strings.append(guest_id_string)
+
+        # Pre-fetch RSVPs for this wedding's guests to avoid N+1 queries.
         rsvp_lookup = {}
-        async for rsvp in self.rsvp_collection.find({"attending": event_type}):
-            rsvp_lookup[rsvp["guest_id"]] = rsvp
+        if guest_id_values:
+            async for rsvp in self.rsvp_collection.find(
+                {"guest_id": {"$in": guest_id_values}}
+            ):
+                if attending_matches_reminder_event(
+                    rsvp.get("attending", []), event_type
+                ):
+                    rsvp_lookup[str(rsvp["guest_id"])] = rsvp
 
         # Guests
         if target_group in {"guests", "all"}:
-            async for guest in self.guest_collection.find({}):
-                rsvp = rsvp_lookup.get(guest["_id"])
+            for guest in wedding_guests:
+                rsvp = rsvp_lookup.get(str(guest["_id"]))
                 if rsvp:
                     phone = guest.get("phone")
                     sms_opt_in = guest.get("sms_opt_in", False)
@@ -122,6 +150,7 @@ class TwilioReminderService:
                             event_type,
                             status,
                             now,
+                            wedding_id,
                         )
                     )
                     # Throttle to stay within Twilio MPS / API rate limits
@@ -130,8 +159,12 @@ class TwilioReminderService:
 
         # Plus-ones
         if target_group in {"plus-ones", "all"}:
-            async for po in self.plus_one_collection.find({}):
-                if event_type in po.get("attending", []):
+            async for po in self.plus_one_collection.find(
+                {"guest_id": {"$in": guest_id_strings}}
+            ):
+                if attending_matches_reminder_event(
+                    po.get("attending", []), event_type
+                ):
                     phone = po.get("phone")
                     sms_opt_in = po.get("sms_opt_in", None)
                     if sms_opt_in is False:  # Explicitly opted out
@@ -150,6 +183,7 @@ class TwilioReminderService:
                             event_type,
                             status,
                             now,
+                            wedding_id,
                         )
                     )
                     # Throttle to stay within Twilio MPS / API rate limits
