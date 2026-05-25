@@ -1955,9 +1955,7 @@ class VendorService:
             raise
         except Exception as e:
             logger.error(f"Error soft-deleting assignment: {str(e)}")
-            raise HTTPException(
-                status_code=500, detail="Failed to delete assignment"
-            )
+            raise HTTPException(status_code=500, detail="Failed to delete assignment")
 
     # =========================================================================
     # CONTRACT TEMPLATES
