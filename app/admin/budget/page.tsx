@@ -317,9 +317,16 @@ export default function BudgetDashboard() {
         prev.map((cat) => (cat.id === editingCategory.id ? updatedCategory : cat))
       );
 
-      // Handle vendor assignment if a vendor was selected
+      const existingAssignment = vendorAssignments.find(
+        a => a.budget_category_id === editingCategory.id
+      );
+
+      // Handle vendor assignment changes. Choosing "No vendor" explicitly
+      // detaches the old category link while keeping the vendor on the wedding.
       if (selectedVendorId) {
         await handleVendorAssignment(editingCategory.id);
+      } else if (existingAssignment) {
+        await handleDetachAssignmentFromCategory(existingAssignment);
       }
 
       setShowCategoryModal(false);
@@ -458,6 +465,21 @@ export default function BudgetDashboard() {
       await deleteVendorAssignment(token, assignmentId);
       setVendorAssignments(prev => prev.filter(a => a._id !== assignmentId));
       toast.success('Vendor removed from this wedding');
+    },
+    [token]
+  );
+
+  const handleDetachAssignmentFromCategory = useCallback(
+    async (assignment: VendorAssignment) => {
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+      const updated = await updateVendorAssignment(token, assignment._id, {
+        budget_category_id: null,
+      });
+      setVendorAssignments(prev =>
+        prev.map(item => item._id === updated._id ? updated : item)
+      );
     },
     [token]
   );
