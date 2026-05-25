@@ -18,10 +18,8 @@ import WeddingPicker from '@/admin/components/WeddingPicker';
 import { Sparkles, X } from 'lucide-react';
 import {
  ALL_WEDDING_EVENTS,
- ALL_WEDDING_EVENTS_OPTION,
- BUILT_IN_WEDDING_EVENT_OPTIONS,
  getWeddingEventLabel,
- getWeddingEventOptions,
+ getWeddingReminderEventOptions,
 } from '@/utils/weddingEvents';
 import PageHeader from '../../components/PageHeader';
 
@@ -124,7 +122,7 @@ export default function CommunicationsRemindersView({
  const [emailPreviewHtml, setEmailPreviewHtml] = useState<string>('');
 
  // Form states
- const [eventType, setEventType] = useState<string>('traditional');
+ const [eventType, setEventType] = useState<string>(ALL_WEDDING_EVENTS);
  const [targetGroup, setTargetGroup] = useState<string>('guests');
  const [customMessage, setCustomMessage] = useState<string>('');
  const [inviteMessage, setInviteMessage] = useState<string>('');
@@ -151,15 +149,9 @@ export default function CommunicationsRemindersView({
  const requestedTemplate = searchParams.get('template') || '';
  const requestedChannel = searchParams.get('channel');
 
- const actualReminderEventOptions = useMemo(() => {
- if (selectedWeddingData?.events?.length) {
- return getWeddingEventOptions(selectedWeddingData.events);
- }
- return BUILT_IN_WEDDING_EVENT_OPTIONS.map((option) => ({ value: option.value, label: option.label }));
- }, [selectedWeddingData]);
  const reminderEventOptions = useMemo(
- () => [ALL_WEDDING_EVENTS_OPTION, ...actualReminderEventOptions],
- [actualReminderEventOptions]
+ () => getWeddingReminderEventOptions(selectedWeddingData?.events),
+ [selectedWeddingData]
  );
  const selectedReminderEventLabel = useMemo(
  () => getWeddingEventLabel(
@@ -362,9 +354,9 @@ export default function CommunicationsRemindersView({
  useEffect(() => {
  if (reminderEventOptions.length === 0) return;
  if (!reminderEventOptions.some((option) => option.value === eventType)) {
- setEventType(actualReminderEventOptions[0]?.value ?? ALL_WEDDING_EVENTS);
+ setEventType(ALL_WEDDING_EVENTS);
  }
- }, [actualReminderEventOptions, eventType, reminderEventOptions]);
+ }, [eventType, reminderEventOptions]);
 
  useEffect(() => {
  if (!forcedTab) {
