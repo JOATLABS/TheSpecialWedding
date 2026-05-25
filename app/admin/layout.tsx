@@ -14,6 +14,7 @@ import {
 import Sidebar from './components/Sidebar';
 import TopHeader from './components/TopHeader';
 import TrialBanner from './components/TrialBanner';
+import PlannerActionToastListener from './components/PlannerActionToastListener';
 import { AIChatWidget } from '@/components/ai/AIChatWidget';
 import { Toaster } from 'sonner';
 import { usePathname } from 'next/navigation';
@@ -72,7 +73,12 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
       banner={<TrialBanner />}
       afterShell={
         <>
-          {(userProfile?.is_wedding_planner || userProfile?.is_team_member) ? <AIChatWidget /> : null}
+          {(userProfile?.is_wedding_planner || userProfile?.is_team_member) ? (
+            <>
+              <AIChatWidget />
+              <PlannerActionToastListener />
+            </>
+          ) : null}
           <Toaster position="top-right" richColors theme="system" />
         </>
       }

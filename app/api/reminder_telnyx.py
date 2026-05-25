@@ -74,7 +74,7 @@ async def send_reminder_telnyx(
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     return await telnyx_reminder_service.send_reminders(
-        payload.event_type, payload.message, payload.target_group
+        payload.event_type, payload.message, payload.target_group, str(wedding["_id"])
     )
 
 

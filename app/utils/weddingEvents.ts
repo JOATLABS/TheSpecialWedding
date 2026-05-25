@@ -1,5 +1,8 @@
 import type { WeddingEvent } from '@/types/wedding';
 
+export const ALL_WEDDING_EVENTS = 'all';
+export const ALL_WEDDING_EVENTS_OPTION = { value: ALL_WEDDING_EVENTS, label: 'All' } as const;
+
 export const BUILT_IN_WEDDING_EVENT_OPTIONS = [
   { value: 'traditional', label: 'Traditional Ceremony' },
   { value: 'white_wedding', label: 'White Wedding' },
@@ -36,6 +39,10 @@ export function isBuiltInWeddingEventType(type?: string): type is BuiltInWedding
 }
 
 export function getWeddingEventLabel(type?: string, customTypeLabel?: string): string {
+  if (type === ALL_WEDDING_EVENTS) {
+    return 'All Events';
+  }
+
   if (customTypeLabel?.trim()) {
     return customTypeLabel.trim();
   }

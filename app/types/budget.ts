@@ -9,6 +9,7 @@ export interface BudgetSubcategory {
 
 export interface BudgetCategory {
   id: string;
+  _id?: string;
   wedding_id: string;
   name: string;
   description?: string;

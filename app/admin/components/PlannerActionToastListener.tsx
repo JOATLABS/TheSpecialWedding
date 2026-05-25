@@ -31,6 +31,8 @@ import { getApiBaseUrl } from '@/utils/env';
 interface NotificationDetail {
   id?: string | null;
   type?: string;
+  title?: string | null;
+  message?: string | null;
   wedding_id?: string | null;
   action_url?: string | null;
   metadata?: {
@@ -41,6 +43,30 @@ interface NotificationDetail {
 }
 
 const COUPLE_INTAKE_TEMPLATE_ID = 'couple_intake';
+const MESSAGE_NOTIFICATION_TYPES = new Set([
+  'couple_message',
+  'guest_message',
+  'support_ticket_response',
+]);
+
+export function getPlannerRealtimeNotificationKind(
+  type?: string | null,
+): 'wedding_created' | 'couple_portal_accepted' | 'message' | null {
+  if (type === 'wedding_created') return 'wedding_created';
+  if (type === 'couple_portal_accepted') return 'couple_portal_accepted';
+  if (type && MESSAGE_NOTIFICATION_TYPES.has(type)) return 'message';
+  return null;
+}
+
+export function getPlannerMessageToastTargetUrl(detail: NotificationDetail): string {
+  const fallbackInboxUrl = detail.wedding_id
+    ? `/admin/communications/inbox?wedding_id=${encodeURIComponent(detail.wedding_id)}`
+    : '/admin/communications/inbox';
+  const actionUrl = detail.action_url || '';
+  return actionUrl.startsWith('/admin/communications/inbox')
+    ? actionUrl
+    : fallbackInboxUrl;
+}
 
 function buildCoupleTabUrl(weddingId: string): string {
   // Frontend route, NOT the backend API path. The backend exposes
@@ -382,22 +408,66 @@ export default function PlannerActionToastListener() {
     [router, token],
   );
 
+  const renderMessageToast = useCallback(
+    (detail: NotificationDetail) => {
+      const targetUrl = getPlannerMessageToastTargetUrl(detail);
+      const title = detail.title || 'New inbox message';
+      const message = detail.message || 'A new message arrived in the planner inbox.';
+
+      toast.custom(
+        (id) => (
+          <div className="flex min-w-[320px] max-w-[380px] flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+            <div className="text-sm font-semibold text-slate-950 dark:text-slate-100">
+              {title}
+            </div>
+            <div className="line-clamp-3 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+              {message}
+            </div>
+            <div className="mt-1 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => toast.dismiss(id)}
+                className="px-2 py-1 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+              >
+                Dismiss
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  router.push(targetUrl);
+                  toast.dismiss(id);
+                }}
+                className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+              >
+                Open inbox
+              </button>
+            </div>
+          </div>
+        ),
+        { duration: 10000 },
+      );
+    },
+    [router],
+  );
+
   useEffect(() => {
     function onNotification(event: Event) {
       const custom = event as CustomEvent<NotificationDetail | undefined>;
       const detail = custom.detail || {};
-      const type = detail.type;
-      if (type === 'wedding_created') {
+      const kind = getPlannerRealtimeNotificationKind(detail.type);
+      if (kind === 'wedding_created') {
         renderWeddingCreatedToast(detail);
-      } else if (type === 'couple_portal_accepted') {
+      } else if (kind === 'couple_portal_accepted') {
         void renderCoupleAcceptedToast(detail);
+      } else if (kind === 'message') {
+        renderMessageToast(detail);
       }
     }
     window.addEventListener('notification-received', onNotification);
     return () => {
       window.removeEventListener('notification-received', onNotification);
     };
-  }, [renderCoupleAcceptedToast, renderWeddingCreatedToast]);
+  }, [renderCoupleAcceptedToast, renderMessageToast, renderWeddingCreatedToast]);
 
   void resolvingFormId;
   return null;

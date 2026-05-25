@@ -166,10 +166,15 @@ export function VendorPaymentModal({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg">
+      {/* Chrome aligned with the Edit Category modal on /admin/budget:
+          solid slate-800 surface in dark mode, a subtle border so the
+          card reads as elevated against the backdrop, and brand-rose
+          accents instead of the previous status-green tones (green is
+          reserved for "paid" indicators app-wide). */}
+      <DialogContent className="sm:max-w-lg dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Link2 className="h-5 w-5 text-green-600" aria-hidden="true" />
+          <DialogTitle className="flex items-center gap-2 text-xl font-bold text-wedding-navy dark:text-white">
+            <Link2 className="h-5 w-5 text-wedding-rose" aria-hidden="true" />
             Create Payment Link
           </DialogTitle>
           <DialogDescription>
@@ -188,15 +193,15 @@ export function VendorPaymentModal({
                   onClick={() => setPaymentFlow('couple_to_vendor')}
                   className={`p-3 rounded-lg border-2 text-left transition-all ${
                     paymentFlow === 'couple_to_vendor'
-                      ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                      ? 'border-wedding-rose bg-rose-50/60 dark:bg-rose-900/20'
+                      : 'border-gray-200 dark:border-slate-700 hover:border-wedding-rose/40'
                   }`}
                   role="radio"
                   aria-checked={paymentFlow === 'couple_to_vendor'}
                   aria-label={`Couple pays vendor: ${coupleNames || 'Couple'} pays ${vendorName}`}
                 >
-                  <div className="font-medium text-sm">Couple pays Vendor</div>
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="font-medium text-sm text-wedding-navy dark:text-white">Couple pays Vendor</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     {coupleNames || 'Couple'} → {vendorName}
                   </div>
                 </button>
@@ -205,15 +210,15 @@ export function VendorPaymentModal({
                   onClick={() => setPaymentFlow('planner_to_vendor')}
                   className={`p-3 rounded-lg border-2 text-left transition-all ${
                     paymentFlow === 'planner_to_vendor'
-                      ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                      ? 'border-wedding-rose bg-rose-50/60 dark:bg-rose-900/20'
+                      : 'border-gray-200 dark:border-slate-700 hover:border-wedding-rose/40'
                   }`}
                   role="radio"
                   aria-checked={paymentFlow === 'planner_to_vendor'}
                   aria-label={`Planner pays vendor: ${plannerName || 'You'} pays ${vendorName}`}
                 >
-                  <div className="font-medium text-sm">I pay Vendor</div>
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="font-medium text-sm text-wedding-navy dark:text-white">I pay Vendor</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     {plannerName || 'You'} → {vendorName}
                   </div>
                 </button>
@@ -300,48 +305,53 @@ export function VendorPaymentModal({
 
         {step === 'confirm' && (
           <div className="space-y-4 py-4">
-            <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-3">
-              <h3 className="font-medium text-sm text-gray-700 dark:text-gray-300">Payment Link Summary</h3>
+            {/* Summary card — densified surface (slate-700 inside slate-800
+                parent) so it reads as a nested card rather than a wash. */}
+            <div className="bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 rounded-lg p-4 space-y-3">
+              <h3 className="font-semibold text-sm text-wedding-navy dark:text-slate-100">Payment Link Summary</h3>
 
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Amount:</span>
-                  <span className="font-semibold text-lg">${parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  <span className="text-gray-500 dark:text-gray-400">Amount:</span>
+                  <span className="font-semibold text-lg text-wedding-navy dark:text-white">${parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Description:</span>
-                  <span>{description || `Payment to ${vendorName}`}</span>
+                  <span className="text-gray-500 dark:text-gray-400">Description:</span>
+                  <span className="text-gray-900 dark:text-gray-100">{description || `Payment to ${vendorName}`}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Payment from:</span>
-                  <span>{paymentFlow === 'couple_to_vendor' ? (coupleNames || 'Couple') : (plannerName || 'You')}</span>
+                  <span className="text-gray-500 dark:text-gray-400">Payment from:</span>
+                  <span className="text-gray-900 dark:text-gray-100">{paymentFlow === 'couple_to_vendor' ? (coupleNames || 'Couple') : (plannerName || 'You')}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Payment to:</span>
-                  <span>{vendorName}</span>
+                  <span className="text-gray-500 dark:text-gray-400">Payment to:</span>
+                  <span className="text-gray-900 dark:text-gray-100">{vendorName}</span>
                 </div>
                 {dueDate && (
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Due date:</span>
-                    <span>{formatAdminDate(dueDate)}</span>
+                    <span className="text-gray-500 dark:text-gray-400">Due date:</span>
+                    <span className="text-gray-900 dark:text-gray-100">{formatAdminDate(dueDate)}</span>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Send Immediately Toggle */}
-            <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+            {/* Send Immediately Toggle — neutral surface (not blue/green
+                accent) so it doesn't compete with the rose CTA below. */}
+            <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/40 border border-slate-200 dark:border-slate-600 rounded-lg">
               <div>
-                <div className="font-medium text-sm">Send immediately</div>
-                <div className="text-xs text-gray-500">
+                <div className="font-medium text-sm text-wedding-navy dark:text-white">Send immediately</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">
                   Email payment link to {paymentFlow === 'couple_to_vendor' ? (coupleEmail || 'couple') : (plannerEmail || 'you')}
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setSendImmediately(!sendImmediately)}
+                aria-pressed={sendImmediately}
+                aria-label="Send payment link immediately"
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  sendImmediately ? 'bg-green-500' : 'bg-gray-300'
+                  sendImmediately ? 'bg-wedding-rose' : 'bg-gray-300 dark:bg-slate-600'
                 }`}
               >
                 <span
@@ -352,7 +362,7 @@ export function VendorPaymentModal({
               </button>
             </div>
 
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200 text-sm p-3 rounded-md">
+            <div className="bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 text-sm p-3 rounded-md border border-amber-200 dark:border-amber-800">
               <strong>Note:</strong> Payment links are powered by Stripe. The payer will receive a secure link to complete payment via credit card or bank transfer.
             </div>
           </div>

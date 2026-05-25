@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const path = require('path')
+
 const buildRemotePattern = (value, defaultProtocol = 'https') => {
   if (!value) return null
 
@@ -26,6 +28,8 @@ const remotePatterns = [
 ].filter(Boolean)
 
 const nextConfig = {
+  outputFileTracingRoot: path.join(__dirname),
+
   images: {
     formats: ['image/avif', 'image/webp'],
     remotePatterns,

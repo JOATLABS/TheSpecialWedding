@@ -109,6 +109,7 @@ export default function WeddingPlannerDashboard() {
  const metricsAbortRef = useRef<AbortController | null>(null);
  const engagementLoadedRef = useRef(false);
  const sseRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+ const insightAutoRequestRef = useRef<string | null>(null);
  const engagementMap = React.useMemo(() => {
    const map = new Map<string, WeddingEngagementSignal>();
    engagementSignals.forEach((s) => map.set(s.wedding_id, s));
@@ -239,6 +240,29 @@ export default function WeddingPlannerDashboard() {
    setAiInsights([]);
    setInsightsError('');
  }, []);
+
+ // Load the selected wedding's insights once the dashboard data lands so the
+ // planner does not have to discover the refresh icon before seeing guidance.
+ // This uses the cache-friendly path (`forceRefresh=false`) and is guarded so
+ // a successful empty response or a temporary error cannot loop credits away.
+ useEffect(() => {
+   if (!token || !selectedInsightWedding || insightsLoading || aiInsights.length > 0 || insightsError) {
+     return;
+   }
+   if (insightAutoRequestRef.current === selectedInsightWedding) {
+     return;
+   }
+
+   insightAutoRequestRef.current = selectedInsightWedding;
+   void fetchAIInsights(selectedInsightWedding, false);
+ }, [
+   aiInsights.length,
+   fetchAIInsights,
+   insightsError,
+   insightsLoading,
+   selectedInsightWedding,
+   token,
+ ]);
 
  // Role-gate effect. Deps are narrowed to stable primitives instead of the
  // full `userProfile` object so this effect doesn't re-fire — and re-push
@@ -733,7 +757,7 @@ export default function WeddingPlannerDashboard() {
           )}
 
           <p className="text-xs text-slate-400 dark:text-slate-500 mt-4 text-center">
-            Insights load when requested • 2 credits per refresh
+            Insights load automatically on sign-in • 2 credits per refresh
           </p>
         </div>
       )}

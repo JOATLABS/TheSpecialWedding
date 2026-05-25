@@ -27,10 +27,12 @@ from app.services.reminder_service_twilio import (
     twilio_configured,
 )
 from app.services.sse_manager import sse_manager
+from app.services.wedding_service import WeddingService
 from app.utils.contact_sanitizer import normalize_phone_e164
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+wedding_service = WeddingService()
 
 # Initialize services only if Twilio is configured
 twilio_reminder_service: Optional[TwilioReminderService] = None
@@ -76,8 +78,9 @@ def get_twilio_status():
 
 @router.post("/reminders/twilio/send", tags=["Admin"])
 async def send_reminder_twilio(
+    wedding_slug: str = Query(..., description="Wedding slug to scope recipients"),
     event_type: str = Query(
-        ..., description="Event type: traditional, white_wedding, or reception"
+        ..., description="Event type: all, traditional, white_wedding, or reception"
     ),
     message: str = Query(..., description="Message to send"),
     target_group: str = Query(
@@ -90,8 +93,14 @@ async def send_reminder_twilio(
     if not twilio_configured or not twilio_reminder_service:
         raise HTTPException(status_code=503, detail="Twilio service not configured")
 
+    wedding = await wedding_service.get_wedding_by_slug(wedding_slug)
+    if not wedding:
+        raise HTTPException(status_code=404, detail="Wedding not found")
+    if not await check_wedding_access(current_user, wedding["_id"]):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
     return await twilio_reminder_service.send_reminders(
-        event_type, message, target_group
+        event_type, message, target_group, str(wedding["_id"])
     )
 
 

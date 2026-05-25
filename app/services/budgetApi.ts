@@ -33,7 +33,10 @@ class BudgetApiService {
     );
     if (!response.ok) throw new Error('Failed to fetch budget categories');
     const budgetData = await response.json();
-    return budgetData.categories || [];
+    const categories = budgetData?.data?.categories ?? budgetData.categories ?? [];
+    return Array.isArray(categories)
+      ? categories.map((category) => this.normaliseCategory(category))
+      : [];
   }
 
   async createBudgetCategory(token: string, data: CreateBudgetCategoryRequest): Promise<BudgetCategory> {
@@ -47,8 +50,7 @@ class BudgetApiService {
     );
     if (!response.ok) throw new Error('Failed to create budget category');
     const payload = await response.json();
-    // Backend returns {message, category}, extract just the category
-    return payload.category || payload;
+    return this.normaliseCategory(this.unwrapCategoryPayload(payload));
   }
 
   async updateBudgetCategory(token: string, categoryId: string, data: UpdateBudgetCategoryRequest): Promise<BudgetCategory> {
@@ -62,8 +64,7 @@ class BudgetApiService {
     );
     if (!response.ok) throw new Error('Failed to update budget category');
     const payload = await response.json();
-    // Backend returns {message, category}, extract just the category
-    return payload.category || payload;
+    return this.normaliseCategory(this.unwrapCategoryPayload(payload));
   }
 
   async deleteBudgetCategory(token: string, categoryId: string): Promise<void> {
@@ -309,7 +310,7 @@ class BudgetApiService {
     if (!response.ok) throw new Error('Failed to record payment');
 
     const payload = await response.json();
-    return payload.payment as PaymentRecord;
+    return this.unwrapPaymentPayload(payload);
   }
 
   async getPaymentHistory(token: string, weddingId: string): Promise<PaymentRecord[]> {
@@ -321,7 +322,8 @@ class BudgetApiService {
     if (!response.ok) throw new Error('Failed to fetch payment history');
 
     const payload = await response.json();
-    return Array.isArray(payload.payments) ? payload.payments as PaymentRecord[] : [];
+    const payments = this.unwrapPaymentListPayload(payload);
+    return Array.isArray(payments) ? payments : [];
   }
 
   async updatePayment(
@@ -344,7 +346,7 @@ class BudgetApiService {
     }
 
     const payload = await response.json();
-    return payload.payment as PaymentRecord;
+    return this.unwrapPaymentPayload(payload);
   }
 
   async deletePayment(token: string, paymentId: string): Promise<void> {
@@ -409,6 +411,110 @@ class BudgetApiService {
       created_at: String(raw.created_at ?? ''),
       updated_at: String(raw.updated_at ?? raw.created_at ?? ''),
     };
+  }
+
+  private unwrapCategoryPayload(payload: unknown): unknown {
+    if (!payload || typeof payload !== 'object') {
+      return payload;
+    }
+
+    const raw = payload as Record<string, unknown>;
+    const data = raw.data;
+
+    if (data && typeof data === 'object' && 'category' in data) {
+      return (data as Record<string, unknown>).category;
+    }
+
+    if ('category' in raw) {
+      return raw.category;
+    }
+
+    return payload;
+  }
+
+  private unwrapPaymentPayload(payload: unknown): PaymentRecord {
+    const payment = this.unwrapNamedPayload(payload, 'payment');
+
+    if (!payment || typeof payment !== 'object') {
+      throw new Error('Invalid payment payload received from server');
+    }
+
+    return payment as PaymentRecord;
+  }
+
+  private unwrapPaymentListPayload(payload: unknown): unknown {
+    return this.unwrapNamedPayload(payload, 'payments');
+  }
+
+  private unwrapNamedPayload(payload: unknown, key: string): unknown {
+    if (!payload || typeof payload !== 'object') {
+      return payload;
+    }
+
+    const raw = payload as Record<string, unknown>;
+    const data = raw.data;
+
+    if (data && typeof data === 'object' && key in data) {
+      return (data as Record<string, unknown>)[key];
+    }
+
+    if (key in raw) {
+      return raw[key];
+    }
+
+    return payload;
+  }
+
+  private normaliseCategory(category: unknown): BudgetCategory {
+    if (!category || typeof category !== 'object') {
+      throw new Error('Invalid budget category payload received from server');
+    }
+
+    const raw = category as Record<string, unknown>;
+    const identifier = typeof raw.id === 'string'
+      ? raw.id
+      : typeof raw._id === 'string'
+        ? raw._id
+        : typeof (raw._id as { $oid?: string })?.$oid === 'string'
+          ? (raw._id as { $oid: string }).$oid
+          : '';
+
+    if (!identifier || typeof raw.name !== 'string') {
+      throw new Error('Invalid budget category payload received from server');
+    }
+
+    return {
+      ...(raw as unknown as BudgetCategory),
+      id: identifier,
+      _id: identifier,
+      name: raw.name,
+      description: typeof raw.description === 'string' ? raw.description : undefined,
+      budgeted_amount: Number(raw.budgeted_amount ?? 0),
+      actual_spent: Number(raw.actual_spent ?? 0),
+      payment_status: this.normalisePaymentStatus(raw.payment_status),
+      priority: this.normalisePriority(raw.priority),
+      percentage_of_total: raw.percentage_of_total == null
+        ? undefined
+        : Number(raw.percentage_of_total),
+      subcategories: Array.isArray(raw.subcategories) ? raw.subcategories : [],
+      vendor_quotes: Array.isArray(raw.vendor_quotes) ? raw.vendor_quotes : [],
+      payments: Array.isArray(raw.payments) ? raw.payments : [],
+      created_at: String(raw.created_at ?? ''),
+      updated_at: String(raw.updated_at ?? raw.created_at ?? ''),
+    };
+  }
+
+  private normalisePaymentStatus(status: unknown): BudgetCategory['payment_status'] {
+    return status === 'partial' || status === 'paid' || status === 'overdue'
+      ? status
+      : 'pending';
+  }
+
+  private normalisePriority(priority: unknown): BudgetCategory['priority'] {
+    const parsed = Number(priority);
+    return parsed === 1 || parsed === 2 || parsed === 3 || parsed === 4 || parsed === 5
+      ? parsed
+      : 3;
   }
 }
 

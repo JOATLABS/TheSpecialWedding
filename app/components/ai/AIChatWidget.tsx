@@ -5,6 +5,8 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { usePathname } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   X,
   Send,
@@ -17,46 +19,68 @@ import {
   ChevronUp
 } from 'lucide-react';
 
-// Simple markdown renderer for AI responses
-function renderMarkdown(text: string): React.ReactNode {
-  // Split by double newlines to get paragraphs
-  const paragraphs = text.split(/\n\n+/);
-
-  return paragraphs.map((paragraph, pIdx) => {
-    // Check if it's a bullet list
-    if (paragraph.match(/^[\*\-]\s/m)) {
-      const items = paragraph.split(/\n/).filter(line => line.trim());
-      return (
-        <ul key={pIdx} className="list-disc list-inside space-y-1 my-2">
-          {items.map((item, iIdx) => (
-            <li key={iIdx} className="text-sm">
-              {renderInlineMarkdown(item.replace(/^[\*\-]\s+/, ''))}
-            </li>
-          ))}
-        </ul>
-      );
-    }
-
-    // Regular paragraph
-    return (
-      <p key={pIdx} className="text-sm mb-2 last:mb-0">
-        {renderInlineMarkdown(paragraph)}
-      </p>
-    );
-  });
+export function isInboxComposerSurface(pathname: string | null): boolean {
+  return pathname === '/admin/inbox' || pathname?.startsWith('/admin/communications/inbox') === true;
 }
 
-// Render inline markdown (bold, italic)
-function renderInlineMarkdown(text: string): React.ReactNode {
-  // Replace **bold** with <strong>
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+export function getAIWidgetPositionClasses(pathname: string | null, isOpen: boolean): string {
+  if (isInboxComposerSurface(pathname)) {
+    return isOpen
+      ? 'bottom-24 right-4 sm:right-6'
+      : 'bottom-24 right-4 sm:right-6';
+  }
+  return isOpen ? 'bottom-6 right-4 sm:right-6' : 'bottom-6 right-6';
+}
 
-  return parts.map((part, idx) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={idx} className="font-semibold">{part.slice(2, -2)}</strong>;
-    }
-    return part;
-  });
+export function getAIWidgetPanelSizeClasses(pathname: string | null): string {
+  return isInboxComposerSurface(pathname)
+    ? 'h-[min(600px,calc(100svh-8rem))]'
+    : 'h-[min(600px,calc(100svh-3rem))]';
+}
+
+export function formatAIChatError(message: string): string {
+  const trimmed = message.trim().replace(/^AI generation failed:\s*/i, '');
+  if (/please try again\.?$/i.test(trimmed)) {
+    return trimmed.replace(/\.+$/g, '.');
+  }
+  return `${trimmed || 'AI chat failed'}. Please try again.`;
+}
+
+function AssistantMarkdown({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children }) => <p className="mb-2 leading-relaxed last:mb-0">{children}</p>,
+        ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-4">{children}</ul>,
+        ol: ({ children }) => <ol className="my-2 list-decimal space-y-1 pl-4">{children}</ol>,
+        li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+        strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+        a: ({ children, href }) => (
+          <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium underline decoration-slate-400 underline-offset-2"
+          >
+            {children}
+          </a>
+        ),
+        code: ({ children }) => (
+          <code className="rounded bg-white/60 px-1 py-0.5 text-[0.85em] text-slate-800 dark:bg-slate-900/70 dark:text-slate-100">
+            {children}
+          </code>
+        ),
+        pre: ({ children }) => (
+          <pre className="my-2 overflow-x-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">
+            {children}
+          </pre>
+        ),
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
 }
 
 interface ChatMessage {
@@ -467,11 +491,20 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
       }
 
       const data = await response.json();
+      const responseText = typeof data.response === 'string'
+        ? data.response
+        : typeof data.response?.text === 'string'
+          ? data.response.text
+          : '';
+
+      if (!responseText.trim()) {
+        throw new Error('AI returned an empty response');
+      }
 
       const assistantMessage: ChatMessage = {
         id: `msg_${Date.now() + 1}`,
         role: 'assistant',
-        content: data.response,
+        content: responseText,
         timestamp: new Date(),
         creditsUsed: data.credits_used
       };
@@ -490,7 +523,7 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to get response';
-      setError(`${errorMessage}. Please try again.`);
+      setError(formatAIChatError(errorMessage));
       toast.error('AI chat failed');
     } finally {
       setIsLoading(false);
@@ -538,8 +571,10 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-slate-700 to-slate-900 text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
+        data-testid="ai-chat-launcher"
+        className={`fixed z-40 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-slate-700 to-slate-900 text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 ${getAIWidgetPositionClasses(pathname, false)}`}
         title="Chat with AI Assistant"
+        aria-label="Chat with AI Assistant"
       >
         <Sparkles className="h-6 w-6" />
       </button>
@@ -548,7 +583,7 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
 
   // Chat panel when open
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex h-[600px] w-[400px] flex-col overflow-hidden rounded-2xl bg-white dark:bg-slate-800 shadow-2xl ring-1 ring-gray-200 dark:ring-slate-700">
+    <div className={`fixed z-40 flex w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-gray-200 dark:bg-slate-800 dark:ring-slate-700 sm:w-[400px] ${getAIWidgetPositionClasses(pathname, true)} ${getAIWidgetPanelSizeClasses(pathname)}`}>
       {/* Header */}
       <div className="flex items-center justify-between bg-gradient-to-r from-slate-700 to-slate-900 px-4 py-3 text-white">
         <div className="flex items-center gap-2">
@@ -656,7 +691,7 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-white dark:bg-slate-800">
+      <div className="scrollbar-visible-thin flex-1 space-y-4 overflow-y-auto bg-white p-4 dark:bg-slate-800">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 dark:text-gray-400">
             <Sparkles className="h-10 w-10 mb-3 text-slate-400 dark:text-slate-500" />
@@ -698,7 +733,7 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
               }`}
             >
               <div className="text-sm">
-                {message.role === 'assistant' ? renderMarkdown(message.content) : message.content}
+                {message.role === 'assistant' ? <AssistantMarkdown content={message.content} /> : message.content}
               </div>
               <div className={`flex items-center gap-2 mt-1 text-xs ${
                 message.role === 'user' ? 'text-slate-300' : 'text-gray-400 dark:text-gray-500'
@@ -730,9 +765,9 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
 
         {error && (
           <div className="flex justify-center">
-            <div className="bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg px-4 py-2 text-sm flex items-center gap-2">
-              <AlertCircle className="h-4 w-4" />
-              {error}
+            <div className="flex max-w-[90%] items-start gap-2 rounded-lg bg-red-50 px-4 py-2 text-sm leading-relaxed text-red-700 dark:bg-red-900/30 dark:text-red-300">
+              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <span>{error}</span>
             </div>
           </div>
         )}
