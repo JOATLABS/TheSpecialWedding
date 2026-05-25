@@ -100,3 +100,9 @@ export function getWeddingEventOptions(
 
   return options;
 }
+
+export function getWeddingReminderEventOptions(
+  events?: Array<Pick<WeddingEvent, 'type' | 'custom_type_label'>>
+): Array<{ value: string; label: string }> {
+  return [ALL_WEDDING_EVENTS_OPTION, ...getWeddingEventOptions(events)];
+}
