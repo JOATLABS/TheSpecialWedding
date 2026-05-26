@@ -4,6 +4,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Guest } from '@/types/table';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
+import {
+  applyBillingBlockTarget,
+  resolvePaymentRequiredResponse,
+} from '@/utils/adminApiAuthGuard';
 
 interface UseGuestsOptions {
   autoFetch?: boolean;
@@ -26,7 +30,7 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
   const [error, setError] = useState<string | null>(null);
 
   // Get token and logout from AdminContext (single source of truth for auth)
-  const { token, logout } = useAdmin();
+  const { token, logout, userProfile } = useAdmin();
 
   // Track current request to prevent race conditions
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -74,8 +78,14 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
         return;
       }
       if (res.status === 402) {
-        window.location.href = '/admin/planner/billing';
-        return;
+        const resolution = await resolvePaymentRequiredResponse(res, {
+          profile: userProfile,
+          navigation: 'hard',
+        });
+        if (resolution.kind === 'billing_block') {
+          applyBillingBlockTarget(resolution.target, { logout });
+          return;
+        }
       }
 
       if (!res.ok) {
@@ -138,7 +148,7 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
         setLoading(false);
       }
     }
-  }, [weddingId, token, logout]);
+  }, [weddingId, token, logout, userProfile]);
 
   // Optimistic update for table assignment
   const updateGuestTable = useCallback((guestId: string, tableId: string | null) => {

@@ -54,7 +54,7 @@ not be deleted by cleanup — that's what lets the seed phase stay cheap.
 
 | Driver | Purpose | Cleanup |
 | --- | --- | --- |
-| `verify_team_member_gate_via_test_clock.py` | PR1 — team-member login is blocked when the planner's subscription is `past_due` / `unpaid` and cleared when the planner recovers. Template for phase-gated runners. | `cleanup_team_member_gate_verify_state.py` |
+| `verify_team_member_gate_via_test_clock.py` | PR1 / task #20 — team-member login and stale sessions are blocked when the planner's subscription is `past_due` / `unpaid`, planner feature routes 402, and Chrome checkpoints validate the shared `billingBlockTarget` targets before recovery clears the gate. Reuses the legacy clock id when present, otherwise a named `team-member-gate` clock. Template for phase-gated runners. | `cleanup_team_member_gate_verify_state.py` |
 | `verify_metrics_snapshot_no_body.py` | Metrics cron contract - proves `POST /metrics/snapshot` works with auth headers and no request body, then confirms latest/history reads expose the inserted snapshot. | `cleanup_metrics_snapshot_no_body_state.py` |
 | `verify_planner_trial_lifecycle.py` | Scenario A — 30-day planner trial: trial-end webhook, usage-limit flip, `subscription_status` transitions, with fresh clock per run. | `cleanup_planner_trial_verify_state.py` |
 | `verify_planner_active_lifecycle.py` | Scenarios B/C/D — active subscription UX, wedding + AI-credit caps, plan upgrade/downgrade (incl. plan_snapshot grandfather), cancel/resubscribe, and past-due recovery. Reusable clock. | `cleanup_planner_active_verify_state.py` |
@@ -72,6 +72,13 @@ now have a driver + cleanup pair in this directory.
 ```bash
 # From repo root, with the dev backend running on localhost:8000:
 python testbed/verify_team_member_gate_via_test_clock.py
+
+# If localhost:3000 is occupied, keep the driver and frontend on the same
+# alternate port:
+export TESTBED_FRONTEND_PORT=3100
+export FRONTEND_URL=http://127.0.0.1:3100
+export TESTBED_FRONTEND_CMD="./node_modules/.bin/next dev --webpack --hostname 127.0.0.1"
+python testbed/testbed.py up --with-frontend
 
 # Clean up partial state so the next SEED phase starts fresh:
 python testbed/cleanup_team_member_gate_verify_state.py

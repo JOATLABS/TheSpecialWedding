@@ -3,27 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
-import { isBlockedSubscriptionStatus, normalizeSubscriptionStatus } from '@/utils/subscriptionStatus';
-import { isAllowedForExpired } from '@/utils/adminApiAuthGuard';
-import { getSubscriptionBlockReason, isTeamMemberRole } from '@/utils/roles';
-
-// Pages a blocked team member can still REACH without being force-logged-out.
-// /admin/login is where they'll be deposited by the redirect, and
-// /admin/team/accept must keep working so an invite acceptance flow isn't
-// broken by a stale block tag. Anywhere else, we treat the block as a
-// session-level event: hard-logout + redirect to /admin/login?error=<reason>
-// so Step 4's banner surfaces the backend detail inline. See CLAUDE.md →
-// "PR1 — Team-Member Subscription Gate" Step 6.
-const TEAM_MEMBER_BLOCKED_ALLOWED_PATHS = [
-  '/admin/login',
-  '/admin/team/accept',
-];
-
-function isTeamMemberBlockedAllowedPath(path: string): boolean {
-  return TEAM_MEMBER_BLOCKED_ALLOWED_PATHS.some(
-    (p) => path === p || path.startsWith(p + '/'),
-  );
-}
+import { applyBillingBlockTarget } from '@/utils/adminApiAuthGuard';
 
 function getRootAdminRedirect(path: string): string | null {
   if (path === '/admin/planner' || path.startsWith('/admin/planner/')) {
@@ -52,7 +32,7 @@ function getNonRootAdminRedirect(path: string): string | null {
 export default function AdminRouteGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { isAuthenticated, isLoading, userProfile, logout } = useAdmin();
+  const { isAuthenticated, isLoading, userProfile, logout, billingBlockTarget } = useAdmin();
 
   useEffect(() => {
     // Don't do anything while still loading auth state
@@ -70,6 +50,11 @@ export default function AdminRouteGuard({ children }: { children: React.ReactNod
 
     // Subscription gate: redirect unpaid/expired/blocked planners to billing
     if (isAuthenticated && userProfile) {
+      if (billingBlockTarget) {
+        applyBillingBlockTarget(billingBlockTarget, { router, logout });
+        return;
+      }
+
       if (userProfile.is_root_admin) {
         const redirectPath = getRootAdminRedirect(pathname);
         if (redirectPath && redirectPath !== pathname) {
@@ -85,40 +70,8 @@ export default function AdminRouteGuard({ children }: { children: React.ReactNod
         }
       }
 
-      const ud = userProfile.user_data || {};
-      const status = normalizeSubscriptionStatus(ud.subscription_status || userProfile.subscription_status);
-      const isPlanner = userProfile.is_wedding_planner;
-      const isBlocked = isBlockedSubscriptionStatus(status);
-
-      if (isPlanner && isBlocked && !isAllowedForExpired(pathname)) {
-        router.replace('/admin/planner/billing');
-        return;
-      }
-
-      // Team-member subscription gate. Backend tags the profile with
-      // `_subscription_blocked = true` whenever the owning planner is blocked.
-      // Unlike the planner branch above, team members have no self-serve
-      // billing surface — only the planner can resolve it. We therefore
-      // treat the block as a session-level event: hard-logout + redirect to
-      // /admin/login?error=<reason> so Step 4's banner surfaces the reason
-      // inline. `logout()` does `window.location.replace(...)`, which is a
-      // hard navigation and discards the stale in-memory profile. See
-      // CLAUDE.md → "PR1 — Team-Member Subscription Gate" Step 6, and
-      // AGENTS.md → "Known Open Issues" item 8 (future unification of
-      // billing-block navigation target).
-      const teamBlocked =
-        userProfile._subscription_blocked === true && isTeamMemberRole(userProfile);
-      if (teamBlocked && !isTeamMemberBlockedAllowedPath(pathname)) {
-        const reason = getSubscriptionBlockReason(userProfile);
-        logout({
-          message: reason,
-          redirectTo: `/admin/login?error=${encodeURIComponent(reason)}`,
-          showToast: false,
-        });
-        return;
-      }
     }
-  }, [isAuthenticated, isLoading, logout, pathname, router, userProfile]);
+  }, [billingBlockTarget, isAuthenticated, isLoading, logout, pathname, router, userProfile]);
 
   // Show loading state while checking authentication
   if (isLoading) {
@@ -155,19 +108,8 @@ export default function AdminRouteGuard({ children }: { children: React.ReactNod
       }
     }
 
-    const ud = userProfile.user_data || {};
-    const status = normalizeSubscriptionStatus(ud.subscription_status || userProfile.subscription_status);
-    const isPlanner = userProfile.is_wedding_planner;
-    const isBlocked = isBlockedSubscriptionStatus(status);
-
-    if (isPlanner && isBlocked && !isAllowedForExpired(pathname)) {
+    if (billingBlockTarget) {
       return null; // Don't render — useEffect above will redirect
-    }
-
-    const teamBlocked =
-      userProfile._subscription_blocked === true && isTeamMemberRole(userProfile);
-    if (teamBlocked && !isTeamMemberBlockedAllowedPath(pathname)) {
-      return null; // Don't render — useEffect above will logout + redirect
     }
   }
 

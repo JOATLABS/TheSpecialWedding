@@ -8,8 +8,8 @@ Purpose
 Verify end-to-end that when a planner's Stripe subscription transitions to
 a blocked status (past_due via failed renewal), every team-member under that
 planner is also blocked — including profile hydration, planner-area API calls,
-and the /admin proxy redirect. And that when the subscription recovers, they
-become unblocked again.
+the /admin proxy redirect, and the frontend `billingBlockTarget` navigation
+policy. And that when the subscription recovers, they become unblocked again.
 
 The flow uses REAL Stripe test-clock time travel (no manual Mongo flag flips)
 so the failing-charge webhook fires for real and Stripe sends a real dunning
@@ -20,9 +20,14 @@ Accounts (both plus-variants; base accounts never touched)
   Planner       : test_planner2+teamgate@thespecialwedding.io
   Team member   : test_team_member+teamgate@thespecialwedding.io
 
-Stripe test clock (re-used by explicit user instruction)
---------------------------------------------------------
-  clock_1TNGs4JbfaNLE8qUOMEjk2ZU
+Stripe test clock
+-----------------
+  Preferred legacy id: clock_1TNGs4JbfaNLE8qUOMEjk2ZU
+  Fallback name      : team-member-gate
+
+The legacy clock id is reused when it exists. If that id has been deleted from
+Stripe test mode, the driver reuses or creates a named replacement clock so the
+verification can still run from a clean sandbox.
 
 Phases
 ------
@@ -30,8 +35,9 @@ Phases
           accept team member. Planner active. Team member unblocked.
   FAIL  — swap default PM to will-fail card 4000 0000 0000 0341, advance
           clock past renewal. Renewal charge fails → webhook → past_due.
-          Stripe sends a real dunning email to the planner alias. This is
-          the checkpoint the user reviews in Chrome + Gmail.
+          Stripe sends a real dunning email to the planner alias. The driver
+          asserts stale team-member sessions and planner feature routes 402,
+          then pauses for Chrome + Gmail `billingBlockTarget` review.
   FIX   — swap PM back to 4242, advance clock. Stripe retry succeeds →
           subscription returns to active. Team member unblocked again.
 
@@ -46,7 +52,7 @@ Usage
 Requirements
 ------------
   - Backend running at localhost:8000 (or BACKEND_URL)
-  - Frontend running at localhost:3000
+  - Frontend running at FRONTEND_URL, or at TESTBED_FRONTEND_PORT / localhost:3000
   - Stripe CLI forwarding: stripe listen --forward-to localhost:8000/stripe/webhook
   - STRIPE_SECRET_KEY in .env
   - MongoDB reachable at MONGO_URI / MONGO_DB
@@ -83,7 +89,13 @@ logger = logging.getLogger("verify_gate")
 
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+
+def _default_frontend_url() -> str:
+    return f"http://localhost:{os.getenv('TESTBED_FRONTEND_PORT', '3000')}"
+
+
+FRONTEND_URL = os.getenv("FRONTEND_URL", _default_frontend_url())
 MONGO_URI = os.getenv("MONGO_URI") or os.getenv("MONGODB_URI")
 MONGO_DB = os.getenv("MONGO_DB") or os.getenv("MONGO_NAME", "wedding")
 
@@ -95,7 +107,9 @@ PLANNER_PASSWORD = "TeamGatePlanner2026!"  # pragma: allowlist secret
 TEAM_MEMBER_EMAIL = "test_team_member+teamgate@thespecialwedding.io"
 TEAM_MEMBER_PASSWORD = "TeamGateMember2026!"  # pragma: allowlist secret
 
-TEST_CLOCK_ID = "clock_1TNGs4JbfaNLE8qUOMEjk2ZU"
+LEGACY_TEST_CLOCK_ID = "clock_1TNGs4JbfaNLE8qUOMEjk2ZU"
+TEST_CLOCK_NAME = "team-member-gate"
+TEST_CLOCK_ID = os.getenv("TEAM_MEMBER_GATE_CLOCK_ID", LEGACY_TEST_CLOCK_ID)
 PLAN_ID = "plan_signature"
 
 # Stripe test PaymentMethod tokens.
@@ -109,6 +123,33 @@ PM_TOKEN_GOOD = "pm_card_visa"  # 4242, always succeeds
 PM_TOKEN_WILL_FAIL_ON_RENEWAL = "pm_card_chargeCustomerFail"
 
 WEBHOOK_SETTLE_SECONDS = 10
+
+BILLING_BLOCK_TARGET_E2E_CHECKPOINTS = (
+    {
+        "marker": "BILLING_TARGET_PLANNER_SOFT_NAV",
+        "expectations": (
+            "Chrome: as the blocked PLANNER, open /admin and /admin/guests; "
+            "billingBlockTarget must send both to /admin/planner/billing.",
+            "Chrome: trigger guests quick-remind, guest list, or table list "
+            "raw-fetch 402 handling; expect the same /admin/planner/billing "
+            "target with no route-local fallback.",
+            "Chrome devtools: the planner path should preserve the fresh "
+            "session and avoid duplicate generic billing toasts.",
+        ),
+    },
+    {
+        "marker": "BILLING_TARGET_TEAM_MEMBER_LOGOUT",
+        "expectations": (
+            "Chrome: if the TEAM MEMBER session from CHECKPOINT 0 is still "
+            "open, reload /admin or /admin/guests; profile hydration should "
+            "derive a logout billingBlockTarget.",
+            "Chrome: blocked team-member navigation must land on "
+            "/admin/login?error=... and must not visit /admin/planner/billing.",
+            "Chrome: fresh team-member login still receives the 402 inline "
+            "owner-subscription message and no admin_token cookie is issued.",
+        ),
+    },
+)
 
 # ---------------------------------------------------------------------------
 # Guard rails
@@ -253,6 +294,138 @@ def wait_for_clock_ready(clock_id: str, max_polls: int = 20) -> None:
         logger.info(f"  ⏳ Clock status={clock.status} (poll {attempt}/{max_polls})")
         time.sleep(5)
     raise RuntimeError(f"Clock {clock_id} never reached ready state")
+
+
+def resolve_test_clock():
+    """Return the reusable team-member-gate Stripe test clock.
+
+    Older runs pinned a concrete test-clock id. Stripe test clocks can be
+    deleted from the dashboard, so a dead id should not make the whole live
+    verifier unusable. Prefer the configured/legacy id, then a named clock,
+    then create a replacement.
+    """
+    global TEST_CLOCK_ID
+
+    try:
+        clock = stripe.test_helpers.TestClock.retrieve(TEST_CLOCK_ID)
+        return clock
+    except stripe.error.InvalidRequestError as exc:
+        if getattr(exc, "code", None) != "resource_missing":
+            raise
+        logger.warning(
+            f"  ⚠️ Configured test clock {TEST_CLOCK_ID} is missing; "
+            f"looking for a named {TEST_CLOCK_NAME!r} replacement…"
+        )
+
+    for clock in stripe.test_helpers.TestClock.list(limit=100).auto_paging_iter():
+        if getattr(clock, "name", None) == TEST_CLOCK_NAME and clock.status == "ready":
+            TEST_CLOCK_ID = clock.id
+            logger.info(f"  ✅ Reusing named test clock {TEST_CLOCK_ID}")
+            return clock
+
+    clock = stripe.test_helpers.TestClock.create(
+        name=TEST_CLOCK_NAME,
+        frozen_time=int(time.time()),
+    )
+    TEST_CLOCK_ID = clock.id
+    logger.info(f"  ✅ Created replacement test clock {TEST_CLOCK_ID}")
+    wait_for_clock_ready(TEST_CLOCK_ID)
+    return stripe.test_helpers.TestClock.retrieve(TEST_CLOCK_ID)
+
+
+def format_billing_block_target_checkpoint() -> str:
+    lines = [
+        "",
+        "  Task #20 billingBlockTarget E2E checkpoints:",
+    ]
+    for checkpoint in BILLING_BLOCK_TARGET_E2E_CHECKPOINTS:
+        lines.append("")
+        lines.append(f"  [{checkpoint['marker']}]")
+        for expectation in checkpoint["expectations"]:
+            lines.append(f"    - {expectation}")
+    return "\n".join(lines)
+
+
+def expect_status(resp, expected_status: int, label: str) -> None:
+    if resp.status_code != expected_status:
+        raise RuntimeError(
+            f"{label} expected HTTP {expected_status}, got "
+            f"{resp.status_code}: {resp.text[:500]}"
+        )
+
+
+def expect_profile_blocked(resp, label: str) -> dict:
+    expect_status(resp, 200, label)
+    payload = resp.json()
+    if payload.get("_subscription_blocked") is not True:
+        raise RuntimeError(f"{label} did not expose _subscription_blocked=true")
+    return payload
+
+
+def assert_fail_phase_billing_gate_state(state: dict) -> None:
+    """Backend-observable half of the task #20 E2E scenario.
+
+    Chrome owns the visible navigation assertion, but the live driver should
+    still prove the server state that feeds `billingBlockTarget`: planner
+    profile is fresh/blocked, stale team-member profile is fresh/blocked,
+    feature routes 402, and fresh team-member login is denied.
+    """
+    logger.info("Asserting task #20 billing-block backend state…")
+
+    planner_token = get_planner_token()
+    planner_profile = expect_profile_blocked(
+        api_get("/admin/profile", token=planner_token),
+        "planner /admin/profile on past_due",
+    )
+    planner_status = planner_profile.get("subscription_status")
+    if planner_status not in ("past_due", "unpaid"):
+        raise RuntimeError(
+            "planner profile should expose a blocked subscription_status, "
+            f"got {planner_status!r}"
+        )
+    expect_status(
+        api_get("/admin/weddings", token=planner_token),
+        402,
+        "planner /admin/weddings on past_due",
+    )
+    logger.info("  ✅ Planner profile is fresh/blocked; feature route returns 402")
+
+    team_member_token = state.get("team_member_active_token")
+    if not team_member_token:
+        raise RuntimeError("seed phase did not preserve a team-member token")
+
+    team_profile = expect_profile_blocked(
+        api_get("/admin/profile", token=team_member_token),
+        "stale team-member /admin/profile after owner past_due",
+    )
+    user_data = team_profile.get("user_data") or {}
+    if user_data.get("_blocked_reason_source") != "owner_subscription":
+        raise RuntimeError(
+            "team-member profile should identify owner_subscription as the "
+            f"block source, got {user_data.get('_blocked_reason_source')!r}"
+        )
+    team_weddings = api_get("/admin/weddings", token=team_member_token)
+    expect_status(
+        team_weddings,
+        402,
+        "stale team-member /admin/weddings after owner past_due",
+    )
+    if "contact your planner" not in team_weddings.text.lower():
+        raise RuntimeError(
+            "team-member feature 402 should direct them to contact their planner"
+        )
+    logger.info("  ✅ Stale team-member profile is blocked; feature route returns 402")
+
+    fresh_login = api_post(
+        "/admin/token",
+        json={"email": TEAM_MEMBER_EMAIL, "password": TEAM_MEMBER_PASSWORD},
+    )
+    expect_status(fresh_login, 402, "fresh team-member login after owner past_due")
+    if "contact your planner" not in fresh_login.text.lower():
+        raise RuntimeError(
+            "team-member login 402 should direct them to contact their planner"
+        )
+    logger.info("  ✅ Fresh team-member login is denied with owner billing message")
 
 
 # ---------------------------------------------------------------------------
@@ -459,10 +632,22 @@ def seed_phase(admin_token: str) -> dict:
         )
     logger.info(f"  ✅ Team member accepted: {TEAM_MEMBER_EMAIL}")
 
+    # 9. Capture a real active-session team-member token before FAIL. After
+    #    the owner goes past_due, fresh login is intentionally denied; this
+    #    token lets the driver prove stale-session profile hydration and
+    #    feature-route 402 behavior end-to-end.
+    team_member_token = get_team_member_token()
+    team_profile = api_get("/admin/profile", token=team_member_token)
+    expect_status(team_profile, 200, "team-member /admin/profile during SEED")
+    if team_profile.json().get("_subscription_blocked") is True:
+        raise RuntimeError("team member is unexpectedly blocked during SEED")
+    logger.info("  ✅ Team member active-session token captured for FAIL checks")
+
     return {
         "customer_id": customer.id,
         "subscription_id": subscription.id,
         "planner_user_id": user_id,
+        "team_member_active_token": team_member_token,
     }
 
 
@@ -523,11 +708,12 @@ def fail_phase(state: dict) -> None:
         try:
             inv = stripe.Invoice.retrieve(sub.latest_invoice)
             # Stripe's newer API dropped `Invoice.paid` (replaced by `status`
-            # == "paid" and amount_paid/amount_remaining). Use .get() so the
-            # diagnostic never aborts the verification run.
-            inv_status = inv.get("status")
-            inv_attempts = inv.get("attempt_count")
-            inv_paid = inv.get("paid", inv_status == "paid")
+            # == "paid" and amount_paid/amount_remaining). Use getattr() so
+            # SDKs that model StripeObject without dict.get() support keep this
+            # diagnostic from aborting the verification run.
+            inv_status = getattr(inv, "status", None)
+            inv_attempts = getattr(inv, "attempt_count", None)
+            inv_paid = getattr(inv, "paid", inv_status == "paid")
             logger.info(
                 f"  📋 Latest invoice status    : {inv_status} "
                 f"(attempt_count={inv_attempts}, paid={inv_paid})"
@@ -540,7 +726,11 @@ def fail_phase(state: dict) -> None:
             " retry settings or webhook forwarding."
         )
 
-    # 4. Checkpoint — user confirms in Gmail + Chrome.
+    # 4. Assert backend-observable billing-block state before the browser
+    #    checkpoint. This is the scripted half of the task #20 E2E scenario.
+    assert_fail_phase_billing_gate_state(state)
+
+    # 5. Checkpoint — user confirms in Gmail + Chrome.
     pause_for_user(
         "CHECKPOINT A — Verify the FAIL state.\n"
         "\n"
@@ -567,6 +757,7 @@ def fail_phase(state: dict) -> None:
         f"        password : {PLANNER_PASSWORD}\n"
         "     Expect: login succeeds, planner is routed to /admin/planner/billing\n"
         "             with a past_due banner and CTA to update the card."
+        f"{format_billing_block_target_checkpoint()}"
     )
 
 
@@ -662,7 +853,6 @@ def main() -> int:
     logger.info(f"  Backend         : {BACKEND_URL}")
     logger.info(f"  Frontend        : {FRONTEND_URL}")
     logger.info(f"  Mongo DB        : {MONGO_DB}")
-    logger.info(f"  Test clock      : {TEST_CLOCK_ID}")
     logger.info(f"  Planner email   : {PLANNER_EMAIL}")
     logger.info(f"  Team member     : {TEAM_MEMBER_EMAIL}")
     logger.info(f"  Plan            : {PLAN_ID}")
@@ -680,10 +870,11 @@ def main() -> int:
 
     # Confirm the clock exists and is live.
     try:
-        clock = stripe.test_helpers.TestClock.retrieve(TEST_CLOCK_ID)
+        clock = resolve_test_clock()
     except stripe.error.StripeError as exc:
         logger.error(f"Cannot retrieve test clock {TEST_CLOCK_ID}: {exc}")
         return 1
+    logger.info(f"  Test clock      : {TEST_CLOCK_ID}")
     logger.info(
         f"  ✅ Clock live — status={clock.status} frozen_at="
         f"{datetime.fromtimestamp(clock.frozen_time, tz=timezone.utc).isoformat()}"
