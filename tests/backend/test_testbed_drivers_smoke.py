@@ -28,6 +28,9 @@ os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("FRONTEND_URL", "https://app.example.com")
+os.environ.setdefault("ROOT_ADMIN_PASSWORD", "test-password")
+os.environ.setdefault("STRIPE_SECRET_KEY", "sk_test_dummy")
+os.environ.setdefault("MONGO_URI", "mongodb://localhost:27017/test")
 
 # Suppress the input(...) prompt the verifiers use as a phase gate so
 # any accidental top-level import path (none currently, but cheap
@@ -52,6 +55,7 @@ VERIFIER_MODULES = [
     "testbed.verify_homepage_starter_pack_lead_magnet",
     "testbed.verify_form_idempotency_submit",
     "testbed.verify_guest_help_sms_inbox_lifecycle",
+    "testbed.verify_team_member_gate_via_test_clock",
 ]
 
 
@@ -71,6 +75,7 @@ CLEANUP_MODULES = [
     "testbed.cleanup_homepage_starter_pack_lead_magnet_state",
     "testbed.cleanup_form_idempotency_submit_state",
     "testbed.cleanup_guest_help_sms_inbox_state",
+    "testbed.cleanup_team_member_gate_verify_state",
 ]
 
 
@@ -118,3 +123,35 @@ def test_house_rules_every_verifier_has_paired_cleanup():
         if not any(c.startswith(leading) for c in cleanup_tags):
             unmatched.append(tag)
     assert not unmatched, f"verifiers missing paired cleanups: {unmatched}"
+
+
+def test_team_member_gate_driver_covers_billing_block_target_e2e():
+    """Task #20's frontend refactor needs a live browser checkpoint, not
+    only unit coverage around the pure resolver.
+    """
+    driver = importlib.import_module("testbed.verify_team_member_gate_via_test_clock")
+
+    checkpoints = getattr(driver, "BILLING_BLOCK_TARGET_E2E_CHECKPOINTS", ())
+    markers = {checkpoint.get("marker") for checkpoint in checkpoints}
+
+    assert "BILLING_TARGET_PLANNER_SOFT_NAV" in markers
+    assert "BILLING_TARGET_TEAM_MEMBER_LOGOUT" in markers
+
+    checkpoint_text = "\n".join(
+        "\n".join(checkpoint.get("expectations", ())) for checkpoint in checkpoints
+    )
+    assert "/admin/planner/billing" in checkpoint_text
+    assert "/admin/login?error=" in checkpoint_text
+    assert "guests quick-remind" in checkpoint_text
+
+
+def test_team_member_gate_driver_frontend_url_follows_testbed_port(monkeypatch):
+    """The live billing-block checkpoint should follow the testbed frontend
+    port when FRONTEND_URL is not explicitly overridden.
+    """
+    driver = importlib.import_module("testbed.verify_team_member_gate_via_test_clock")
+
+    monkeypatch.delenv("FRONTEND_URL", raising=False)
+    monkeypatch.setenv("TESTBED_FRONTEND_PORT", "3100")
+
+    assert driver._default_frontend_url() == "http://localhost:3100"

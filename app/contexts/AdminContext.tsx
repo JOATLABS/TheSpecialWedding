@@ -16,11 +16,12 @@ import {
     refreshAdminAuthToken,
     wasAdminSessionRemembered,
 } from '@/utils/adminAuthStorage';
-import { redirectOnBillingBlock } from '@/utils/adminApiAuthGuard';
 import {
-    DEFAULT_TEAM_MEMBER_BLOCK_REASON,
-    isTeamMemberRole,
-} from '@/utils/roles';
+    applyBillingBlockTarget,
+    getBillingBlockTargetForProfile,
+    resolvePaymentRequiredResponse,
+    type BillingBlockTarget,
+} from '@/utils/adminApiAuthGuard';
 
 export interface UserProfile {
     id?: string;
@@ -60,6 +61,7 @@ type AdminContextType = {
     authStatus: 'loading' | 'authenticated' | 'unauthenticated';
     token: string | null;
     userProfile: UserProfile | null;
+    billingBlockTarget: BillingBlockTarget | null;
     // Auth methods
     login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
     logout: (options?: { message?: string; redirectTo?: string; showToast?: boolean }) => void;
@@ -81,6 +83,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
+    const userProfileRef = useRef<UserProfile | null>(null);
     const sessionCheckRef = useRef<Promise<'success' | 'unauthenticated' | 'error'> | null>(null);
     const lastSessionCheckAtRef = useRef(0);
     // In-flight guard for /admin/profile (+ /admin/team/permissions
@@ -91,6 +94,15 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
     // friction we observed live with one planner.  When set, callers
     // share the existing promise instead of spawning another round trip.
     const profileFetchRef = useRef<Promise<void> | null>(null);
+
+    useEffect(() => {
+        userProfileRef.current = userProfile;
+    }, [userProfile]);
+
+    const billingBlockTarget = useMemo(
+        () => getBillingBlockTargetForProfile(userProfile, pathname, { navigation: 'client' }),
+        [pathname, userProfile],
+    );
 
     useEffect(() => {
         let cancelled = false;
@@ -260,10 +272,15 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                     setUserProfile(profile);
                     setAuthStatus('authenticated');
                 } else if (response.status === 402) {
-                    // Subscription blocked — user is authenticated but expired/cancelled.
-                    // This shouldn't happen anymore since backend tags instead of 402s on profile,
-                    // but handle it gracefully as a safety net.
-                    console.warn('Subscription blocked (402) — redirecting to billing');
+                    const resolution = await resolvePaymentRequiredResponse(response, {
+                        profile: userProfileRef.current,
+                        navigation: 'hard',
+                    });
+                    if (resolution.kind === 'billing_block') {
+                        applyBillingBlockTarget(resolution.target, { logout });
+                        return;
+                    }
+                    console.warn('Subscription blocked (402) without a billing target');
                 } else if (response.status === 401) {
                     // Token expired or invalid — session is dead
                     expireSession();
@@ -280,7 +297,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         })();
 
         return profileFetchRef.current;
-    }, [token, expireSession]);
+    }, [token, expireSession, logout]);
 
     // Always refresh the profile when the active token changes so role-sensitive
     // pages never act on a stale profile from a previous session.
@@ -408,6 +425,16 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                     },
                     credentials: 'include',
                 });
+                if (res.status === 402) {
+                    const resolution = await resolvePaymentRequiredResponse(res, {
+                        profile: userProfileRef.current,
+                        navigation: 'hard',
+                    });
+                    if (resolution.kind === 'billing_block') {
+                        applyBillingBlockTarget(resolution.target, { logout });
+                    }
+                    return;
+                }
                 if (!res.ok) return;
                 const data = await res.json();
                 const freshStatus = normalizeSubscriptionStatus(
@@ -427,7 +454,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
         const intervalId = setInterval(checkSubscriptionStatus, POLL_INTERVAL_MS);
         return () => clearInterval(intervalId);
-    }, [token, userProfile?.is_wedding_planner, userProfile?.subscription_status, fetchUserProfile]);
+    }, [token, userProfile?.is_wedding_planner, userProfile?.subscription_status, fetchUserProfile, logout]);
 
     const login = useCallback(async (email: string, password: string, rememberMe = true) => {
         try {
@@ -551,7 +578,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 // ── RACE CONDITION FIX (Prong 2): Verify subscription status ──
                 // If webhook hasn't updated users collection yet, the subscription
                 // endpoint may have fresher data. Fetch it to override the profile if needed.
-                let billingBlocked = false;
+                let subscriptionStatusOverride: string | null = null;
                 if (profile.is_wedding_planner) {
                     try {
                         const subResponse = await fetch(`${baseUrl}/stripe/subscription`, {
@@ -568,7 +595,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                             const freshStatus = normalizeSubscriptionStatus(subData.status || subData.subscription_status);
                             if (isBlockedSubscriptionStatus(freshStatus)) {
                                 console.info(`Subscription verification: endpoint returned blocked status '${freshStatus}', overriding profile`);
-                                billingBlocked = true;
+                                subscriptionStatusOverride = freshStatus;
                             }
                         }
                     } catch (error) {
@@ -577,16 +604,23 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                     }
                 }
 
-                // If subscription verification didn't set billingBlocked, check profile flags
-                if (!billingBlocked) {
-                    const subscriptionStatus =
-                        normalizeSubscriptionStatus(
-                            profile.user_data?.subscription_status ||
-                            profile.subscription_status
-                        );
-                    billingBlocked =
-                        profile._subscription_blocked ||
-                        isBlockedSubscriptionStatus(subscriptionStatus);
+                const profileForBillingTarget = subscriptionStatusOverride
+                    ? {
+                        ...profile,
+                        subscription_status: subscriptionStatusOverride,
+                        user_data: {
+                            ...(profile.user_data || {}),
+                            subscription_status: subscriptionStatusOverride,
+                        },
+                    }
+                    : profile;
+                const loginBillingTarget = getBillingBlockTargetForProfile(
+                    profileForBillingTarget,
+                    '/admin/planner',
+                    { navigation: 'client' },
+                );
+                if (profileForBillingTarget !== profile) {
+                    setUserProfile(profileForBillingTarget);
                 }
 
                 // Use a client-side transition here. A hard browser reload
@@ -596,8 +630,8 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 if (profile.is_root_admin) {
                     router.replace('/admin');
                 } else if (profile.is_wedding_planner || profile.role === 'team_member' || profile.is_team_member === true) {
-                    if (billingBlocked && profile.is_wedding_planner) {
-                        router.replace('/admin/planner/billing');
+                    if (loginBillingTarget) {
+                        applyBillingBlockTarget(loginBillingTarget, { router, logout });
                         return;
                     }
                     router.replace('/admin/planner');
@@ -617,7 +651,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 // Parse the error to get subscription info
                 let detail = 'Your subscription requires attention.';
                 try {
-                    const errData = await profileResponse.json();
+                    const errData = await profileResponse.clone().json();
                     detail = errData.detail || detail;
                 } catch {}
 
@@ -632,17 +666,25 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                     credentials: 'include',
                 });
 
+                let retryProfileData: UserProfile | null = null;
                 if (retryProfile.ok) {
-                    const profile = await retryProfile.json();
+                    retryProfileData = await retryProfile.json();
                     flushSync(() => {
                         setToken(activeToken);
-                        setUserProfile(profile);
+                        setUserProfile(retryProfileData);
                         setAuthStatus('authenticated');
                     });
                 }
 
+                const resolution = await resolvePaymentRequiredResponse(profileResponse, {
+                    profile: retryProfileData ?? userProfileRef.current,
+                    navigation: 'client',
+                });
                 toast.warning(detail);
-                router.replace('/admin/planner/billing');
+                if (resolution.kind === 'billing_block') {
+                    applyBillingBlockTarget(resolution.target, { router, logout });
+                    return;
+                }
                 return;
             } else {
                 // Profile fetch failed — do not grant access without a confirmed role.
@@ -697,7 +739,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             toast.error(err.message || 'Login failed due to a network error');
             throw err;
         }
-    }, [router]);
+    }, [logout, router]);
 
     const apiRequest = useCallback(async <T = any>(path: string, method = 'GET', body?: unknown): Promise<T | undefined> => {
         if (!token) {
@@ -739,43 +781,15 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             //     consume the JSON body before falling through to the helper
             //     so the team-member branch can preserve the backend detail.
             if (response.status === 402) {
-                let paymentBody: any = null;
-                try {
-                    paymentBody = await response.clone().json();
-                } catch {
-                    paymentBody = null;
+                const resolution = await resolvePaymentRequiredResponse(response, {
+                    profile: userProfile,
+                    navigation: 'hard',
+                });
+                if (resolution.kind === 'non_billing_payment_required') {
+                    throw new Error(resolution.message);
                 }
-
-                const detail = paymentBody?.detail;
-                const nonBillingCode =
-                    typeof detail === 'object' && detail !== null
-                        ? detail.error
-                        : paymentBody?.error;
-                if (nonBillingCode === 'insufficient_credits') {
-                    const message =
-                        (typeof detail === 'object' && detail?.message) ||
-                        paymentBody?.message ||
-                        'Insufficient AI credits.';
-                    throw new Error(message);
-                }
-
-                if (isTeamMemberRole(userProfile)) {
-                    let reason = DEFAULT_TEAM_MEMBER_BLOCK_REASON;
-                    if (
-                        paymentBody &&
-                        typeof paymentBody.detail === 'string' &&
-                        paymentBody.detail.trim()
-                    ) {
-                        reason = paymentBody.detail;
-                    }
-                    logout({
-                        message: reason,
-                        redirectTo: `/admin/login?error=${encodeURIComponent(reason)}`,
-                        showToast: false,
-                    });
-                    return undefined;
-                }
-                if (redirectOnBillingBlock(response)) {
+                if (resolution.kind === 'billing_block') {
+                    applyBillingBlockTarget(resolution.target, { logout });
                     return undefined;
                 }
             }
@@ -830,6 +844,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         authStatus,
         token,
         userProfile,
+        billingBlockTarget,
         // Auth methods
         login,
         logout,
@@ -842,6 +857,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         token,
         isLoading,
         userProfile,
+        billingBlockTarget,
         login,
         logout,
         expireSession,

@@ -10,8 +10,10 @@ import { buildGuestOtpVerifyUrl } from '@/utils/rsvpLinks';
 import PageHeader from '../components/PageHeader';
 import WeddingPicker from '../components/WeddingPicker';
 import { MessageEnrichment } from '@/components/ui/MessageEnrichment';
-import { redirectOnBillingBlock } from '@/utils/adminApiAuthGuard';
-import { DEFAULT_TEAM_MEMBER_BLOCK_REASON, isTeamMemberRole } from '@/utils/roles';
+import {
+  applyBillingBlockTarget,
+  resolvePaymentRequiredResponse,
+} from '@/utils/adminApiAuthGuard';
 import { usePagination } from '@/admin/hooks/usePagination';
 import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
 import {
@@ -995,29 +997,19 @@ export default function AdminGuestsPage() {
         return { kind: 'authHandled' };
       }
 
-      // 402: subscription block. Two distinct flows, identical to
-      // AdminContext.apiRequest:
-      //   - team member → logout to /admin/login?error=<detail>
-      //   - planner    → hard-redirect to /admin/planner/billing
+      // 402: subscription block. Reuse AdminContext's centralized billing
+      // target policy even though this raw fetch keeps success/failure bodies
+      // separate for partial reminder delivery.
       if (response.status === 402) {
-        if (isTeamMemberRole(userProfile)) {
-          let reason = DEFAULT_TEAM_MEMBER_BLOCK_REASON;
-          try {
-            const data = await response.clone().json();
-            if (data && typeof data.detail === 'string' && data.detail.trim()) {
-              reason = data.detail;
-            }
-          } catch {
-            // Fall through to default phrasing.
-          }
-          logout({
-            message: reason,
-            redirectTo: `/admin/login?error=${encodeURIComponent(reason)}`,
-            showToast: false,
-          });
-          return { kind: 'authHandled' };
+        const resolution = await resolvePaymentRequiredResponse(response, {
+          profile: userProfile,
+          navigation: 'hard',
+        });
+        if (resolution.kind === 'non_billing_payment_required') {
+          return { kind: 'fail', reason: resolution.message };
         }
-        if (redirectOnBillingBlock(response)) {
+        if (resolution.kind === 'billing_block') {
+          applyBillingBlockTarget(resolution.target, { logout });
           return { kind: 'authHandled' };
         }
       }

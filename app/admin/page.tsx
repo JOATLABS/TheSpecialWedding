@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import PageHeader from './components/PageHeader';
 import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
-import { isBlockedSubscriptionStatus, normalizeSubscriptionStatus } from '@/utils/subscriptionStatus';
+import { applyBillingBlockTarget } from '@/utils/adminApiAuthGuard';
 
 interface MetricsSnapshot {
   id?: string;
@@ -116,7 +116,7 @@ const formatTimestamp = (value?: string | null, timezone: string = DEFAULT_TIMEZ
 
 export default function AdminMetricsDashboard() {
   const router = useRouter();
-  const { token, userProfile, fetchUserProfile } = useAdmin();
+  const { token, userProfile, fetchUserProfile, logout, billingBlockTarget } = useAdmin();
   const [latestSnapshot, setLatestSnapshot] = useState<MetricsSnapshot | null>(null);
   const [history, setHistory] = useState<MetricsSnapshot[]>([]);
   const [historyHours, setHistoryHours] = useState<number>(HISTORY_OPTIONS[0].hours);
@@ -269,7 +269,6 @@ export default function AdminMetricsDashboard() {
   // SecurityError. `router.replace` also avoids polluting the back stack.
   const isPlanner = !!userProfile?.is_wedding_planner;
   const isTeamMember = userProfile?.role === 'team_member' || !!userProfile?.is_team_member;
-  const effectiveSubStatus = userProfile?.user_data?.subscription_status || userProfile?.subscription_status;
   const hasUserProfile = !!userProfile;
   useEffect(() => {
     if (!token) {
@@ -282,18 +281,17 @@ export default function AdminMetricsDashboard() {
       return;
     }
 
-    // Only ROOT_ADMIN can access Platform Health Overview
-    // Redirect planners and team members to the planner dashboard (or billing if unpaid/expired)
-    if (isPlanner || isTeamMember) {
-      const subStatus = normalizeSubscriptionStatus(effectiveSubStatus);
-      if (isBlockedSubscriptionStatus(subStatus)) {
-        router.replace('/admin/planner/billing');
-      } else {
-        router.replace('/admin/planner');
-      }
+    if (billingBlockTarget) {
+      applyBillingBlockTarget(billingBlockTarget, { router, logout });
       return;
     }
-  }, [token, hasUserProfile, isPlanner, isTeamMember, effectiveSubStatus, fetchUserProfile, router]);
+
+    // Only ROOT_ADMIN can access Platform Health Overview.
+    if (isPlanner || isTeamMember) {
+      router.replace('/admin/planner');
+      return;
+    }
+  }, [token, hasUserProfile, isPlanner, isTeamMember, billingBlockTarget, fetchUserProfile, router, logout]);
 
   useEffect(() => {
     // Only fetch metrics if user is ROOT_ADMIN (after profile is loaded)
