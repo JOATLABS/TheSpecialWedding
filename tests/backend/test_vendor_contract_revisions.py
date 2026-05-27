@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 from bson import ObjectId
 from fastapi import HTTPException
+from pymongo.errors import DuplicateKeyError
 
 from app.models.vendor import ContractKind, ContractStatus
 from app.services.vendor_service import vendor_service
@@ -87,6 +88,38 @@ class FakeCollection:
                 if _matches_query(document, query)
             ]
         )
+
+
+class UniqueCurrentContractCollection(FakeCollection):
+    async def update_one(
+        self, query: dict, update: dict, session=None
+    ) -> SimpleNamespace:
+        if update.get("$set", {}).get("is_current_version") is True:
+            target = next(
+                (
+                    document
+                    for document in self.documents
+                    if _matches_query(document, query)
+                ),
+                None,
+            )
+            if target is not None:
+                root_contract_id = update["$set"].get(
+                    "root_contract_id", target.get("root_contract_id")
+                )
+                for document in self.documents:
+                    if document is target:
+                        continue
+                    if (
+                        document.get("root_contract_id") == root_contract_id
+                        and document.get("is_current_version") is True
+                    ):
+                        raise DuplicateKeyError(
+                            "E11000 duplicate key error collection: "
+                            "wedding.vendor_contracts index: "
+                            "idx_vendor_contract_single_current_version"
+                        )
+        return await super().update_one(query, update, session=session)
 
 
 class DummyEmailService:
@@ -463,6 +496,49 @@ async def test_sending_child_version_supersedes_previous_current_and_keeps_singl
     assert stored_child["is_current_version"] is True
     assert stored_child["status"] == ContractStatus.SENT.value
     assert sum(1 for doc in contracts.documents if doc.get("is_current_version")) == 1
+
+
+@pytest.mark.asyncio
+async def test_sending_child_version_releases_existing_current_before_promoting_child(
+    configured_vendor_service,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _, _, _ = configured_vendor_service
+    original = make_contract_doc(
+        status=ContractStatus.VIEWED.value, access_token="old-token"
+    )
+    child = make_contract_doc(
+        status=ContractStatus.DRAFT.value,
+        contract_id=ObjectId(),
+        root_contract_id=str(original["_id"]),
+        parent_contract_id=str(original["_id"]),
+        supersedes_contract_id=str(original["_id"]),
+        version_number=2,
+        contract_kind=ContractKind.REVISION.value,
+        is_current_version=False,
+        access_token="new-token",
+    )
+    contracts = UniqueCurrentContractCollection([deepcopy(original), deepcopy(child)])
+    monkeypatch.setattr(service, "vendor_contracts", contracts)
+
+    result = await service.send_contract(
+        contract_id=str(child["_id"]),
+        created_by="planner@example.com",
+        message="Please review",
+    )
+
+    stored_original = next(
+        doc for doc in contracts.documents if doc["_id"] == original["_id"]
+    )
+    stored_child = next(
+        doc for doc in contracts.documents if doc["_id"] == child["_id"]
+    )
+
+    assert result["sent_to"] == "vendor@example.com"
+    assert stored_original["is_current_version"] is False
+    assert stored_original["superseded_by_contract_id"] == str(child["_id"])
+    assert stored_child["is_current_version"] is True
+    assert stored_child["status"] == ContractStatus.SENT.value
 
 
 @pytest.mark.asyncio
