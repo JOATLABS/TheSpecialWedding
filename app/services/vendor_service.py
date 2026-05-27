@@ -548,6 +548,32 @@ class VendorService:
             },
         )
 
+    async def _restore_contract_version_snapshot(
+        self, contract: Dict[str, Any]
+    ) -> None:
+        """Best-effort rollback for version metadata changed before a child send."""
+        contract_id = contract.get("id") or contract.get("_id")
+        if not contract_id:
+            return
+
+        await self.vendor_contracts.update_one(
+            {
+                "_id": validate_object_id(str(contract_id), "contract ID"),
+                "is_soft_deleted": {"$ne": True},
+            },
+            {
+                "$set": {
+                    "is_current_version": contract.get("is_current_version", True),
+                    "superseded_at": contract.get("superseded_at"),
+                    "superseded_by_contract_id": contract.get(
+                        "superseded_by_contract_id"
+                    ),
+                    "updated_at": contract.get("updated_at")
+                    or datetime.now(timezone.utc),
+                }
+            },
+        )
+
     @staticmethod
     def _get_vendor_service_label(
         service_category: str,
@@ -3124,19 +3150,29 @@ class VendorService:
                 "superseded_at": None,
                 **token_update,
             }
-            await self.vendor_contracts.update_one(
-                {
-                    "_id": ObjectId(contract_id),
-                    "is_soft_deleted": {"$ne": True},
-                },
-                {"$set": send_update},
-            )
 
+            superseded_marked = False
             if superseded_contract:
                 await self._mark_contract_as_superseded(
                     contract_id=superseded_contract["id"],
                     superseded_by_contract_id=contract_id,
                 )
+                superseded_marked = True
+
+            try:
+                await self.vendor_contracts.update_one(
+                    {
+                        "_id": ObjectId(contract_id),
+                        "is_soft_deleted": {"$ne": True},
+                    },
+                    {"$set": send_update},
+                )
+            except Exception:
+                if superseded_contract and superseded_marked:
+                    await self._restore_contract_version_snapshot(superseded_contract)
+                raise
+
+            if superseded_contract:
                 await self._revoke_contract_access_token(superseded_contract["id"])
 
             await self._log_contract_activity(
