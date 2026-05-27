@@ -56,6 +56,7 @@ VERIFIER_MODULES = [
     "testbed.verify_form_idempotency_submit",
     "testbed.verify_guest_help_sms_inbox_lifecycle",
     "testbed.verify_team_member_gate_via_test_clock",
+    "testbed.verify_public_vendor_contract_signing",
 ]
 
 
@@ -76,6 +77,7 @@ CLEANUP_MODULES = [
     "testbed.cleanup_form_idempotency_submit_state",
     "testbed.cleanup_guest_help_sms_inbox_state",
     "testbed.cleanup_team_member_gate_verify_state",
+    "testbed.cleanup_public_vendor_contract_signing_state",
 ]
 
 
