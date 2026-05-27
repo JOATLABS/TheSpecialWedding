@@ -246,6 +246,12 @@ class VendorService:
             raise
 
     @staticmethod
+    def _transaction_unavailable_error(exc: HTTPException, operation_name: str) -> bool:
+        """Return True when a required-transaction wrapper hit standalone Mongo."""
+        expected_detail = f"{operation_name} requires MongoDB transaction support"
+        return exc.status_code == 503 and exc.detail == expected_detail
+
+    @staticmethod
     def _serialize_doc(doc: Dict) -> Dict:
         """Normalize a MongoDB document for API response: ensure both 'id' and '_id' are string."""
         if "_id" in doc:
@@ -3242,54 +3248,101 @@ class VendorService:
                 )
 
             signed_at = datetime.now(timezone.utc)
+            signature_update = {
+                "status": ContractStatus.SIGNED.value,
+                "signed_at": signed_at,
+                "signed_by_name": signer_name,
+                "signed_by_email": signer_email,
+                "signature_ip": signature_ip,
+                # Hard-lock the contract once signed so future
+                # update_contract calls 409 even if the status later flips
+                # (e.g. cancelled-after-sign). This represents the
+                # immutability of the signed version itself, not the live
+                # relationship.
+                "contract_status_locked_at": signed_at,
+                "updated_at": signed_at,
+            }
 
-            async def _sign_in_transaction(session: Any) -> None:
-                await self.vendor_contracts.update_one(
+            async def _mark_contract_signed(session: Any = None) -> None:
+                result = await self.vendor_contracts.update_one(
                     {
                         "_id": ObjectId(contract_id),
                         "is_soft_deleted": {"$ne": True},
+                        "access_token_hash": contract.get("access_token_hash"),
+                        "token_revoked_at": contract.get("token_revoked_at"),
+                        "status": {
+                            "$in": [
+                                ContractStatus.SENT.value,
+                                ContractStatus.VIEWED.value,
+                            ]
+                        },
+                    },
+                    {"$set": signature_update},
+                    session=session,
+                )
+                if result.matched_count:
+                    return
+
+                latest = await self.get_contract(contract_id)
+                if latest.get("status") == ContractStatus.SIGNED.value:
+                    raise HTTPException(
+                        status_code=400, detail="Contract has already been signed"
+                    )
+                raise HTTPException(
+                    status_code=409,
+                    detail="Contract changed while signing. Please refresh and try again.",
+                )
+
+            async def _mark_assignment_contracted(session: Any = None) -> None:
+                if not contract.get("vendor_profile_id"):
+                    return
+                await self.vendor_assignments.update_one(
+                    {
+                        "vendor_profile_id": contract["vendor_profile_id"],
+                        "wedding_id": contract["wedding_id"],
+                        "is_deleted": {"$ne": True},
                     },
                     {
                         "$set": {
-                            "status": ContractStatus.SIGNED.value,
-                            "signed_at": signed_at,
-                            "signed_by_name": signer_name,
-                            "signed_by_email": signer_email,
-                            "signature_ip": signature_ip,
-                            # Hard-lock the contract once signed so future
-                            # update_contract calls 409 even if the status
-                            # later flips (e.g. cancelled-after-sign). This
-                            # represents the immutability of the signed
-                            # version itself, not the live relationship.
-                            "contract_status_locked_at": signed_at,
+                            "status": "contracted",
+                            "contract_id": contract_id,
+                            "contracted_amount": contract["total_amount"],
                             "updated_at": signed_at,
                         }
                     },
                     session=session,
                 )
 
-                if contract.get("vendor_profile_id"):
-                    await self.vendor_assignments.update_one(
-                        {
-                            "vendor_profile_id": contract["vendor_profile_id"],
-                            "wedding_id": contract["wedding_id"],
-                            "is_deleted": {"$ne": True},
-                        },
-                        {
-                            "$set": {
-                                "status": "contracted",
-                                "contract_id": contract_id,
-                                "contracted_amount": contract["total_amount"],
-                                "updated_at": signed_at,
-                            }
-                        },
-                        session=session,
-                    )
+            async def _sign_in_transaction(session: Any) -> None:
+                await _mark_contract_signed(session=session)
+                await _mark_assignment_contracted(session=session)
 
-            await self._run_required_transaction(
-                "Vendor contract signing",
-                _sign_in_transaction,
-            )
+            try:
+                await self._run_required_transaction(
+                    "Vendor contract signing",
+                    _sign_in_transaction,
+                )
+            except HTTPException as exc:
+                if not self._transaction_unavailable_error(
+                    exc, "Vendor contract signing"
+                ):
+                    raise
+
+                logger.warning(
+                    "MongoDB transactions unavailable while signing vendor "
+                    "contract %s; applying standalone-safe signature write",
+                    contract_id,
+                )
+                await _mark_contract_signed()
+                try:
+                    await _mark_assignment_contracted()
+                except Exception as projection_error:
+                    logger.error(
+                        "Contract %s signed, but assignment projection failed "
+                        "outside a transaction: %s",
+                        contract_id,
+                        projection_error,
+                    )
 
             planner_email = contract["created_by"]
             subject = f"Contract Signed: {contract['vendor_name']}"

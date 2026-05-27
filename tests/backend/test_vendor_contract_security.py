@@ -526,6 +526,161 @@ async def test_sign_contract_rolls_back_on_transaction_failure(
 
 
 @pytest.mark.asyncio
+async def test_sign_contract_falls_back_when_transactions_are_unavailable(
+    configured_vendor_service, monkeypatch
+) -> None:
+    context = configured_vendor_service
+    service = context["service"]
+    contract = make_contract_doc(access_token="standalone-token")
+    context["contracts"].documents.append(deepcopy(contract))
+    context["assignments"].documents.append(
+        {
+            "_id": ObjectId(),
+            "vendor_profile_id": "vendor-1",
+            "wedding_id": "wedding-1",
+            "status": "quoted",
+        }
+    )
+
+    async def transaction_unavailable(_operation_name, _operation):
+        raise HTTPException(
+            status_code=503,
+            detail="Vendor contract signing requires MongoDB transaction support",
+        )
+
+    monkeypatch.setattr(
+        vendor_service, "_run_required_transaction", transaction_unavailable
+    )
+
+    result = await service.sign_contract(
+        contract_id=str(contract["_id"]),
+        token="standalone-token",
+        signer_name="Vendor Signer",
+        signer_email="vendor@example.com",
+        signature_ip="203.0.113.10",
+    )
+
+    assert result["message"] == "Contract signed successfully"
+    stored = context["contracts"].documents[0]
+    assert stored["status"] == ContractStatus.SIGNED.value
+    assert stored["signed_by_name"] == "Vendor Signer"
+    assert stored["signature_ip"] == "203.0.113.10"
+    assert stored["contract_status_locked_at"] is not None
+    assert context["assignments"].documents[0]["status"] == "contracted"
+    assert context["assignments"].documents[0]["contract_id"] == str(contract["_id"])
+    assert context["email_service"].sent
+
+
+@pytest.mark.asyncio
+async def test_sign_contract_rejects_invalid_token_before_standalone_fallback(
+    configured_vendor_service, monkeypatch
+) -> None:
+    context = configured_vendor_service
+    service = context["service"]
+    contract = make_contract_doc(access_token="valid-token")
+    context["contracts"].documents.append(deepcopy(contract))
+
+    async def should_not_enter_transaction(_operation_name, _operation):
+        raise AssertionError("invalid token must fail before signing writes")
+
+    monkeypatch.setattr(
+        vendor_service, "_run_required_transaction", should_not_enter_transaction
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.sign_contract(
+            contract_id=str(contract["_id"]),
+            token="wrong-token",
+            signer_name="Vendor Signer",
+            signer_email="vendor@example.com",
+        )
+
+    assert exc_info.value.status_code == 404
+    assert context["contracts"].documents[0]["status"] == ContractStatus.SENT.value
+
+
+@pytest.mark.asyncio
+async def test_sign_contract_standalone_fallback_rechecks_token_state_before_write(
+    configured_vendor_service, monkeypatch
+) -> None:
+    context = configured_vendor_service
+    service = context["service"]
+    contract = make_contract_doc(access_token="revoked-during-sign-token")
+    context["contracts"].documents.append(deepcopy(contract))
+
+    async def transaction_unavailable_after_revoke(_operation_name, _operation):
+        context["contracts"].documents[0]["token_revoked_at"] = datetime.now(
+            timezone.utc
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Vendor contract signing requires MongoDB transaction support",
+        )
+
+    monkeypatch.setattr(
+        vendor_service,
+        "_run_required_transaction",
+        transaction_unavailable_after_revoke,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.sign_contract(
+            contract_id=str(contract["_id"]),
+            token="revoked-during-sign-token",
+            signer_name="Vendor Signer",
+            signer_email="vendor@example.com",
+        )
+
+    assert exc_info.value.status_code == 409
+    assert context["contracts"].documents[0]["status"] == ContractStatus.SENT.value
+
+
+@pytest.mark.asyncio
+async def test_sign_contract_standalone_fallback_does_not_show_vendor_error_for_projection_failure(
+    configured_vendor_service, monkeypatch
+) -> None:
+    context = configured_vendor_service
+    service = context["service"]
+    contract = make_contract_doc(access_token="fallback-projection-token")
+    context["contracts"].documents.append(deepcopy(contract))
+    context["assignments"].documents.append(
+        {
+            "_id": ObjectId(),
+            "vendor_profile_id": "vendor-1",
+            "wedding_id": "wedding-1",
+            "status": "quoted",
+        }
+    )
+
+    async def transaction_unavailable(_operation_name, _operation):
+        raise HTTPException(
+            status_code=503,
+            detail="Vendor contract signing requires MongoDB transaction support",
+        )
+
+    async def failing_assignment_projection(query, update, session=None):
+        raise RuntimeError("assignment projection unavailable")
+
+    monkeypatch.setattr(
+        vendor_service, "_run_required_transaction", transaction_unavailable
+    )
+    monkeypatch.setattr(
+        context["assignments"], "update_one", failing_assignment_projection
+    )
+
+    result = await service.sign_contract(
+        contract_id=str(contract["_id"]),
+        token="fallback-projection-token",
+        signer_name="Vendor Signer",
+        signer_email="vendor@example.com",
+    )
+
+    assert result["message"] == "Contract signed successfully"
+    assert context["contracts"].documents[0]["status"] == ContractStatus.SIGNED.value
+    assert context["assignments"].documents[0]["status"] == "quoted"
+
+
+@pytest.mark.asyncio
 async def test_record_payment_rolls_back_on_transaction_failure(
     configured_vendor_service, monkeypatch
 ) -> None:
