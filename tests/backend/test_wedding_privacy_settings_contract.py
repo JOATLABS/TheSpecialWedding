@@ -325,3 +325,31 @@ def test_update_wedding_admin_invalidates_old_and_new_privacy_slugs(monkeypatch)
     assert result == {"message": "Wedding updated successfully"}
     assert invalidate_mock.await_args_list[0].args == ("old-slug",)
     assert invalidate_mock.await_args_list[1].args == ("new-slug",)
+
+
+def test_direct_privacy_settings_update_invalidates_public_privacy_cache():
+    update_result = SimpleNamespace(matched_count=1)
+    service = GuestVerificationService.__new__(GuestVerificationService)
+    service.weddings_collection = SimpleNamespace(  # type: ignore[assignment]
+        find_one=AsyncMock(return_value={"slug": "james-and-mel"}),
+        update_one=AsyncMock(return_value=update_result),
+    )
+    service.invalidate_wedding_privacy_info = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    result = asyncio.run(
+        service.update_wedding_privacy_settings(
+            "wedding_1",
+            {
+                "privacy_mode": "public",
+                "guest_auth_required": False,
+            },
+        )
+    )
+
+    assert result == {"message": "Privacy settings updated successfully"}
+    service.weddings_collection.find_one.assert_awaited_once_with(  # type: ignore[attr-defined]
+        {"_id": "wedding_1"}, {"slug": 1}
+    )
+    service.invalidate_wedding_privacy_info.assert_awaited_once_with(  # type: ignore[attr-defined]
+        "james-and-mel"
+    )

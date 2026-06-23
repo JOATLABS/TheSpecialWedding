@@ -78,6 +78,8 @@ def _build_otp_success_response(result: dict) -> dict:
         response["message"] = (
             "We couldn't text you, so we sent your code by email instead."
         )
+    if result.get("reused_existing"):
+        response["reused_existing"] = True
 
     return response
 
@@ -114,13 +116,18 @@ async def send_otp_by_contact(payload: OTPRequestByContact):
         if not result.get("success"):
             error = result.get("error", "Failed to send OTP")
             logger.warning(f"OTP send failed: {error}")
-            raise HTTPException(status_code=400, detail=error)
+            _raise_otp_http_error(result)
 
-        return {
+        response = {
             "success": True,
             "message": "OTP sent successfully",
             "contact_type": result.get("contact_type", "unknown"),
         }
+        if result.get("reused_existing"):
+            response["reused_existing"] = True
+        if result.get("fallback_used"):
+            response["fallback_used"] = True
+        return response
     except HTTPException:
         raise
     except Exception as e:

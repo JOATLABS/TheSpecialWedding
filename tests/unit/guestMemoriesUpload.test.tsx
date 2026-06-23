@@ -22,6 +22,13 @@ function removeShowPickerPrototype() {
   );
 }
 
+async function setControlledInputValue(input: HTMLInputElement, value: string) {
+  const user = userEvent.setup({ document: window.document });
+  await user.clear(input);
+  await user.click(input);
+  await user.paste(value);
+}
+
 const contextPayload = {
   wedding: {
     slug: 'james-and-mel',
@@ -49,7 +56,7 @@ const contextPayload = {
   },
 };
 
-describe('GuestMemoriesUploadClient upload picker', () => {
+describe('GuestMemoriesUploadClient upload picker', { concurrency: false }, () => {
   before(async () => {
     domHandle = installDom();
     originalShowPickerDescriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'showPicker');
@@ -87,7 +94,9 @@ describe('GuestMemoriesUploadClient upload picker', () => {
     }
   });
 
-  after(() => {
+  after(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    domHandle?.cleanup();
     domHandle = null;
   });
 
@@ -97,13 +106,15 @@ describe('GuestMemoriesUploadClient upload picker', () => {
     );
 
     await view.findByText('James and Mel');
-    const firstContinue = view.getAllByRole('button', { name: /^continue$/i })[0];
-    const user = userEvent.setup({ document: window.document });
     const guestNameInput = view.getByRole('textbox', { name: 'Your display name' }) as HTMLInputElement;
-    await user.type(guestNameInput, 'Alex Guest');
+    await setControlledInputValue(guestNameInput, 'Alex Guest');
     assert.equal(guestNameInput.value, 'Alex Guest');
+    const firstContinue = view.getAllByRole('button', { name: /^continue$/i })[0];
     await waitFor(() => {
-      assert.equal(firstContinue.hasAttribute('disabled'), false);
+      assert.equal(
+        view.getAllByRole('button', { name: /^continue$/i })[0].hasAttribute('disabled'),
+        false,
+      );
     });
 
     fireEvent.click(firstContinue);
@@ -124,12 +135,11 @@ describe('GuestMemoriesUploadClient upload picker', () => {
         showPickerCalls.push(args);
       },
     });
+    const view = await renderIntoUploadStep();
+
     mock.method(window.HTMLInputElement.prototype, 'click', function (...args: unknown[]) {
       clickCalls.push(args);
     });
-
-    const view = await renderIntoUploadStep();
-
     const uploadButton = view.getByRole('button', { name: /tap to add photos or videos/i });
     fireEvent.click(uploadButton);
 
@@ -140,12 +150,11 @@ describe('GuestMemoriesUploadClient upload picker', () => {
   it('falls back to click when showPicker is unavailable', async () => {
     const clickCalls: unknown[][] = [];
     removeShowPickerPrototype();
+    const view = await renderIntoUploadStep();
+
     mock.method(window.HTMLInputElement.prototype, 'click', function (...args: unknown[]) {
       clickCalls.push(args);
     });
-
-    const view = await renderIntoUploadStep();
-
     const uploadButton = view.getByRole('button', { name: /tap to add photos or videos/i });
     fireEvent.click(uploadButton);
 

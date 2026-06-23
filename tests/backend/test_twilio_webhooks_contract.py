@@ -90,6 +90,8 @@ class FakeCollection:
     @staticmethod
     def _value_matches(actual: object, expected: object) -> bool:
         if isinstance(expected, dict):
+            if "$ne" in expected:
+                return actual != expected["$ne"] and str(actual) != str(expected["$ne"])
             if "$in" in expected:
                 return actual in expected["$in"] or str(actual) in {
                     str(item) for item in expected["$in"]
@@ -101,6 +103,21 @@ class FakeCollection:
             return False
         return actual == expected or str(actual) == str(expected)
 
+    @staticmethod
+    def _values_for_key(doc: dict, key: str) -> list[object]:
+        values: list[object] = [doc]
+        for part in key.split("."):
+            next_values: list[object] = []
+            for value in values:
+                if isinstance(value, list):
+                    next_values.extend(
+                        item.get(part) for item in value if isinstance(item, dict)
+                    )
+                elif isinstance(value, dict):
+                    next_values.append(value.get(part))
+            values = next_values
+        return values or [None]
+
     @classmethod
     def _matches(cls, doc: dict, query: dict) -> bool:
         for key, expected in query.items():
@@ -108,7 +125,12 @@ class FakeCollection:
                 if not any(cls._matches(doc, clause) for clause in expected):
                     return False
                 continue
-            if not cls._value_matches(doc.get(key), expected):
+            values = cls._values_for_key(doc, key)
+            if isinstance(expected, dict) and "$ne" in expected:
+                if not all(cls._value_matches(value, expected) for value in values):
+                    return False
+                continue
+            if not any(cls._value_matches(value, expected) for value in values):
                 return False
         return True
 
@@ -528,7 +550,9 @@ async def test_incoming_guest_reply_duplicate_message_sid_is_idempotent(
     assert first["action"] == "support_ticket_reply"
     assert second["action"] == "support_ticket_reply"
     assert len(support_ticket["guest_messages"]) == 1
-    assert support_ticket["guest_messages"][0]["message_sid"] == "SM-inbound-help-retry-1"
+    assert (
+        support_ticket["guest_messages"][0]["message_sid"] == "SM-inbound-help-retry-1"
+    )
     assert len(planner_notifications.inserted) == 1
 
 
