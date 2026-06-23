@@ -1,14 +1,17 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import {
+  AlertCircle,
+  ArrowLeft,
   ArrowRight,
   CalendarDays,
   Camera,
   CheckCircle2,
-  Heart,
+  HelpCircle,
   ImagePlus,
   Loader2,
   RefreshCcw,
@@ -18,6 +21,7 @@ import {
   X,
 } from 'lucide-react';
 
+import { BrandLockup } from '@/components/brand/BrandLockup';
 import {
   NOT_SURE_EVENT_VALUE,
   createPublicGuestMemoriesUploadPlan,
@@ -29,6 +33,7 @@ import {
 import { getWeddingEventLabel } from '@/utils/weddingEvents';
 
 type UploadStep = 0 | 1 | 2;
+type UploadFileStatus = 'ready' | 'uploading' | 'uploaded' | 'finalizing' | 'saved' | 'failed';
 
 interface SelectedUploadFile {
   id: string;
@@ -36,6 +41,9 @@ interface SelectedUploadFile {
   previewUrl: string;
   eventType: string;
   mediaType: 'image' | 'video';
+  status: UploadFileStatus;
+  assetId?: string;
+  error?: string;
 }
 
 const STEP_ITEMS = [
@@ -73,6 +81,38 @@ function buildPreviewType(file: File): 'image' | 'video' {
   return file.type.startsWith('video/') ? 'video' : 'image';
 }
 
+function fileStatusLabel(status: UploadFileStatus): string {
+  switch (status) {
+    case 'uploading':
+      return 'Uploading';
+    case 'uploaded':
+      return 'Uploaded';
+    case 'finalizing':
+      return 'Finalizing';
+    case 'saved':
+      return 'Saved';
+    case 'failed':
+      return 'Needs retry';
+    default:
+      return 'Ready';
+  }
+}
+
+function fileStatusClassName(status: UploadFileStatus): string {
+  switch (status) {
+    case 'failed':
+      return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300';
+    case 'uploading':
+    case 'finalizing':
+      return 'border-wedding-gold/50 bg-wedding-gold/15 text-wedding-navy dark:text-wedding-gold';
+    case 'uploaded':
+    case 'saved':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300';
+    default:
+      return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+  }
+}
+
 async function uploadFileToPresignedUrl(file: File, uploadUrl: string): Promise<void> {
   const response = await fetch(uploadUrl, {
     method: 'PUT',
@@ -104,10 +144,14 @@ export default function GuestMemoriesUploadClient({
   const [submitting, setSubmitting] = useState(false);
   const [uploadingLabel, setUploadingLabel] = useState<string>('');
   const [successCount, setSuccessCount] = useState<number>(0);
+  const [lastSavedCount, setLastSavedCount] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const selectedFilesRef = useRef<SelectedUploadFile[]>([]);
 
   const uploadCloseLabel = formatDateLabel(context?.guest_media.upload_closes_at);
   const totalSelectedBytes = selectedFiles.reduce((sum, item) => sum + item.file.size, 0);
+  const failedFileCount = selectedFiles.filter((item) => item.status === 'failed').length;
+  const activeUploadCount = selectedFiles.length;
 
   useEffect(() => {
     let cancelled = false;
@@ -141,12 +185,22 @@ export default function GuestMemoriesUploadClient({
   }, [slug, uploadToken]);
 
   useEffect(() => {
-    return () => {
-      selectedFiles.forEach((item) => URL.revokeObjectURL(item.previewUrl));
-    };
+    selectedFilesRef.current = selectedFiles;
   }, [selectedFiles]);
 
+  useEffect(() => {
+    return () => {
+      selectedFilesRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+    };
+  }, []);
+
   const eventOptions = context?.events ?? [];
+
+  const updateFileState = (fileId: string, patch: Partial<SelectedUploadFile>) => {
+    setSelectedFiles((current) =>
+      current.map((item) => (item.id === fileId ? { ...item, ...patch } : item)),
+    );
+  };
 
   const validateFileBeforeAdd = (file: File): string | null => {
     if (!context) return 'Upload settings are still loading.';
@@ -186,6 +240,7 @@ export default function GuestMemoriesUploadClient({
         previewUrl: URL.createObjectURL(file),
         eventType: batchEventType,
         mediaType: buildPreviewType(file),
+        status: 'ready',
       });
     }
 
@@ -199,17 +254,18 @@ export default function GuestMemoriesUploadClient({
     }
 
     setSelectedFiles(updatedFiles);
+    setLastSavedCount(0);
     event.target.value = '';
   };
 
   const removeFile = (fileId: string) => {
+    if (submitting) return;
     setSelectedFiles((current) => {
-      const nextFiles = current.filter((item) => item.id !== fileId);
       const removed = current.find((item) => item.id === fileId);
       if (removed) {
         URL.revokeObjectURL(removed.previewUrl);
       }
-      return nextFiles;
+      return current.filter((item) => item.id !== fileId);
     });
   };
 
@@ -234,6 +290,7 @@ export default function GuestMemoriesUploadClient({
     selectedFiles.forEach((item) => URL.revokeObjectURL(item.previewUrl));
     setSelectedFiles([]);
     setSuccessCount(0);
+    setLastSavedCount(0);
     setUploadingLabel('');
     setStep(2);
   };
@@ -249,14 +306,29 @@ export default function GuestMemoriesUploadClient({
       return;
     }
 
+    const uploadCandidates = selectedFiles.filter((item) => item.status !== 'saved');
+    if (uploadCandidates.length === 0) {
+      toast.success('Everything selected has already been saved.');
+      return;
+    }
+
     setSubmitting(true);
     setUploadingLabel('Preparing uploads...');
+    setSuccessCount(0);
+    setLastSavedCount(0);
+    setSelectedFiles((current) =>
+      current.map((item) =>
+        uploadCandidates.some((candidate) => candidate.id === item.id)
+          ? { ...item, status: 'ready', assetId: undefined, error: undefined }
+          : item,
+      ),
+    );
 
     try {
       const plan = await createPublicGuestMemoriesUploadPlan(slug, uploadToken, {
         uploader_name: guestName.trim(),
         batch_event_type: batchEventType,
-        files: selectedFiles.map((item) => ({
+        files: uploadCandidates.map((item) => ({
           filename: item.file.name,
           content_type: item.file.type,
           size_bytes: item.file.size,
@@ -264,211 +336,286 @@ export default function GuestMemoriesUploadClient({
         })),
       });
 
-      const successfulAssetIds: string[] = [];
+      const successfulUploads: Array<{ assetId: string; fileId: string }> = [];
 
       for (let index = 0; index < plan.assets.length; index += 1) {
         const assetPlan = plan.assets[index];
-        const localFile = selectedFiles[index];
+        const localFile = uploadCandidates[index];
         if (!localFile) continue;
 
         setUploadingLabel(`Uploading ${index + 1} of ${plan.assets.length}...`);
+        updateFileState(localFile.id, {
+          status: 'uploading',
+          assetId: assetPlan.asset_id,
+          error: undefined,
+        });
+
         try {
           await uploadFileToPresignedUrl(localFile.file, assetPlan.upload_url);
-          successfulAssetIds.push(assetPlan.asset_id);
+          updateFileState(localFile.id, { status: 'uploaded' });
+          successfulUploads.push({ assetId: assetPlan.asset_id, fileId: localFile.id });
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Upload failed';
+          updateFileState(localFile.id, { status: 'failed', error: message });
           toast.error(`${localFile.file.name}: ${message}`);
         }
       }
 
-      if (successfulAssetIds.length === 0) {
+      if (successfulUploads.length === 0) {
         throw new Error('None of the selected files uploaded successfully.');
       }
 
       setUploadingLabel('Finalizing your upload...');
+      setSelectedFiles((current) =>
+        current.map((item) =>
+          successfulUploads.some((upload) => upload.fileId === item.id)
+            ? { ...item, status: 'finalizing' }
+            : item,
+        ),
+      );
+
       const finalized = await finalizePublicGuestMemoriesUpload(slug, uploadToken, {
         upload_batch_id: plan.upload_batch_id,
-        asset_ids: successfulAssetIds,
+        asset_ids: successfulUploads.map((upload) => upload.assetId),
       });
 
-      setSuccessCount(finalized.uploaded_count);
-      selectedFiles.forEach((item) => URL.revokeObjectURL(item.previewUrl));
-      setSelectedFiles([]);
+      const failedFinalizeReasons = new Map(
+        finalized.failed_assets.map((asset) => [asset.asset_id, asset.reason]),
+      );
+      const savedUploads = successfulUploads.filter((upload) => !failedFinalizeReasons.has(upload.assetId));
+      const savedFileIds = new Set(savedUploads.map((upload) => upload.fileId));
+
+      if (savedUploads.length > 0) {
+        setSelectedFiles((current) => {
+          const savedItems = current.filter((item) => savedFileIds.has(item.id));
+          savedItems.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+          return current
+            .filter((item) => !savedFileIds.has(item.id))
+            .map((item) => {
+              const failedReason = item.assetId ? failedFinalizeReasons.get(item.assetId) : undefined;
+              return failedReason ? { ...item, status: 'failed', error: failedReason } : item;
+            });
+        });
+      } else {
+        setSelectedFiles((current) =>
+          current.map((item) => {
+            const failedReason = item.assetId ? failedFinalizeReasons.get(item.assetId) : undefined;
+            return failedReason ? { ...item, status: 'failed', error: failedReason } : item;
+          }),
+        );
+      }
+
+      setLastSavedCount(savedUploads.length);
       setUploadingLabel('');
 
-      if (finalized.failed_count > 0) {
-        toast.warning(`${finalized.uploaded_count} file(s) were saved, but ${finalized.failed_count} need another try.`);
-      } else {
-        toast.success(`Saved ${finalized.uploaded_count} memory${finalized.uploaded_count === 1 ? '' : 'ies'} for the couple.`);
+      const failedCount = uploadCandidates.length - savedUploads.length;
+      if (failedCount > 0) {
+        toast.warning(`${savedUploads.length} file(s) were saved, but ${failedCount} need another try.`);
+        return;
       }
+
+      setSuccessCount(finalized.uploaded_count);
+      toast.success(`Saved ${finalized.uploaded_count} memory${finalized.uploaded_count === 1 ? '' : 'ies'} for the couple.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not finish the upload.';
+      setUploadingLabel('');
       toast.error(message);
     } finally {
       setSubmitting(false);
     }
   };
 
+  const Shell = ({ children }: { children: ReactNode }) => (
+    <div className="min-h-screen bg-light-bg text-light-text transition-colors duration-300 dark:bg-dark-bg dark:text-dark-text">
+      <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+        <header className="flex items-center justify-between border-b border-slate-200/70 pb-4 dark:border-slate-800">
+          <Link href={`/${slug}`} aria-label="Back to wedding page" className="min-w-0">
+            <span className="block dark:hidden">
+              <BrandLockup variant="mark" surface="light" size="sm" />
+            </span>
+            <span className="hidden dark:block">
+              <BrandLockup variant="mark" surface="dark" size="sm" />
+            </span>
+          </Link>
+          <Link
+            href={`/${slug}#rsvp`}
+            className="inline-flex items-center gap-2 rounded-lg border border-wedding-rose/25 bg-white/70 px-3 py-2 text-sm font-medium text-wedding-navy transition hover:border-wedding-rose/50 hover:bg-wedding-blush/60 dark:border-wedding-rose/30 dark:bg-slate-900/70 dark:text-slate-100 dark:hover:bg-slate-800"
+          >
+            <HelpCircle className="h-4 w-4 text-wedding-rose" />
+            Need help?
+          </Link>
+        </header>
+        {children}
+      </div>
+    </div>
+  );
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(244,114,182,0.18),_transparent_40%),linear-gradient(180deg,_#fff8fb,_#fff)] flex items-center justify-center px-6">
-        <div className="rounded-3xl border border-rose-100 bg-white/90 px-8 py-10 shadow-[0_24px_80px_rgba(188,24,93,0.12)] backdrop-blur">
-          <Loader2 className="mx-auto h-10 w-10 animate-spin text-rose-500" />
-          <p className="mt-4 text-sm font-medium text-slate-600">Opening your wedding upload link...</p>
-        </div>
-      </div>
+      <Shell>
+        <main className="flex flex-1 items-center justify-center">
+          <div className="w-full max-w-md rounded-xl border border-wedding-rose/20 bg-white/85 px-6 py-8 text-center shadow-lg backdrop-blur dark:border-white/10 dark:bg-slate-900/75">
+            <Loader2 className="mx-auto h-9 w-9 animate-spin text-wedding-rose" />
+            <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-300">Opening your wedding upload link...</p>
+          </div>
+        </main>
+      </Shell>
     );
   }
 
   if (loadError || !context) {
     return (
-      <div className="min-h-screen bg-slate-950 text-white px-6 py-16">
-        <div className="mx-auto max-w-xl rounded-[2rem] border border-white/10 bg-white/5 p-8 shadow-2xl">
-          <p className="inline-flex items-center rounded-full border border-rose-400/30 bg-rose-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-rose-200">
-            Upload unavailable
-          </p>
-          <h1 className="mt-6 text-3xl font-semibold">This memories link isn&apos;t available right now.</h1>
-          <p className="mt-4 text-sm leading-7 text-slate-300">
-            {loadError || 'The upload link may have expired, been rotated, or uploads may be closed for this wedding.'}
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-rose-50"
-            >
-              <RefreshCcw className="h-4 w-4" /> Try again
-            </button>
-            <Link
-              href={`/${slug}`}
-              className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-sm font-medium text-white transition hover:border-white/30 hover:bg-white/5"
-            >
-              Back to wedding page
-            </Link>
-          </div>
-        </div>
-      </div>
+      <Shell>
+        <main className="flex flex-1 items-center justify-center py-10">
+          <section className="w-full max-w-xl rounded-xl border border-wedding-rose/20 bg-white/85 p-6 shadow-lg backdrop-blur dark:border-white/10 dark:bg-slate-900/75 sm:p-8">
+            <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-wedding-rose/15 text-wedding-rose">
+              <AlertCircle className="h-6 w-6" />
+            </div>
+            <h1 className="mt-5 text-3xl font-heading font-semibold text-wedding-navy dark:text-white">This memories link isn&apos;t available right now.</h1>
+            <p className="mt-4 text-sm leading-7 text-slate-600 dark:text-slate-300">
+              {loadError || 'The upload link may have expired, been rotated, or uploads may be closed for this wedding.'}
+            </p>
+            <div className="mt-7 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-wedding-rose px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-wedding-blush disabled:opacity-60"
+              >
+                <RefreshCcw className="h-4 w-4" /> Try again
+              </button>
+              <Link
+                href={`/${slug}`}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-wedding-rose/50 hover:bg-wedding-blush/50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              >
+                Back to wedding page
+              </Link>
+            </div>
+          </section>
+        </main>
+      </Shell>
     );
   }
 
-  if (successCount > 0) {
+  if (successCount > 0 && selectedFiles.length === 0) {
     return (
-      <div className="min-h-screen bg-[linear-gradient(180deg,_#fffafc,_#fff3f7)] px-6 py-10">
-        <div className="mx-auto max-w-lg rounded-[2rem] border border-rose-100 bg-white p-8 shadow-[0_28px_90px_rgba(225,29,72,0.12)]">
-          <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600">
-            <CheckCircle2 className="h-7 w-7" />
-          </div>
-          <p className="mt-6 text-xs font-semibold uppercase tracking-[0.24em] text-rose-500">Upload complete</p>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-900">Thank you for sharing the moment.</h1>
-          <p className="mt-4 text-sm leading-7 text-slate-600">
-            {context.wedding.couple_names} received {successCount} new {successCount === 1 ? 'memory' : 'memories'} from you.
-            Videos may take a little time to finish processing before the couple can play them back.
-          </p>
-          <div className="mt-8 space-y-3">
-            <button
-              type="button"
-              onClick={resetUploads}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-rose-700"
-            >
-              <ImagePlus className="h-4 w-4" /> Upload more
-            </button>
-            <Link
-              href={`/${slug}`}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
-            >
-              Done
-            </Link>
-          </div>
-        </div>
-      </div>
+      <Shell>
+        <main className="flex flex-1 items-center justify-center py-10">
+          <section className="w-full max-w-xl rounded-xl border border-wedding-rose/20 bg-white/85 p-6 shadow-lg backdrop-blur dark:border-white/10 dark:bg-slate-900/75 sm:p-8">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300">
+              <CheckCircle2 className="h-7 w-7" />
+            </div>
+            <h1 className="mt-5 text-3xl font-heading font-semibold text-wedding-navy dark:text-white">Thank you for sharing the moment.</h1>
+            <p className="mt-4 text-sm leading-7 text-slate-600 dark:text-slate-300">
+              {context.wedding.couple_names} received {successCount} new {successCount === 1 ? 'memory' : 'memories'} from you.
+              Videos may take a little time to finish processing before the couple can play them back.
+            </p>
+            <div className="mt-7 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={resetUploads}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-wedding-rose px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-wedding-blush"
+              >
+                <ImagePlus className="h-4 w-4" /> Upload more
+              </button>
+              <Link
+                href={`/${slug}`}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-wedding-rose/50 hover:bg-wedding-blush/50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              >
+                Done
+              </Link>
+            </div>
+          </section>
+        </main>
+      </Shell>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,_rgba(244,114,182,0.16),_transparent_34%),radial-gradient(circle_at_bottom_left,_rgba(251,191,36,0.14),_transparent_32%),linear-gradient(180deg,_#fff8fb,_#fff)] px-4 py-5 sm:px-6 sm:py-8">
-      <div className="mx-auto max-w-2xl">
-        <div className="overflow-hidden rounded-[2rem] border border-white/80 bg-white/90 shadow-[0_30px_100px_rgba(188,24,93,0.12)] backdrop-blur">
-          <div className="border-b border-rose-100/80 bg-[linear-gradient(135deg,_rgba(255,255,255,0.96),_rgba(255,244,248,0.9))] px-6 py-7 sm:px-8">
-            <div className="flex items-start justify-between gap-4">
+    <Shell>
+      <main className="grid flex-1 gap-6 py-6 lg:grid-cols-[minmax(0,1fr),320px] lg:py-8">
+        <section className="rounded-xl border border-slate-200/80 bg-white/85 shadow-lg shadow-slate-900/5 backdrop-blur dark:border-slate-800 dark:bg-slate-900/75">
+          <div className="border-b border-slate-200/80 px-5 py-5 dark:border-slate-800 sm:px-7">
+            <Link
+              href={`/${slug}`}
+              className="mb-5 inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-wedding-navy dark:text-slate-400 dark:hover:text-white"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Wedding page
+            </Link>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <p className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-rose-500">
-                  <Heart className="h-3.5 w-3.5" /> Share your memories
-                </p>
-                <h1 className="mt-4 text-3xl font-semibold text-slate-900 sm:text-4xl">{context.wedding.couple_names}</h1>
-                <p className="mt-3 max-w-xl text-sm leading-7 text-slate-600">
-                  Snap the best parts of the day, upload them here, and the couple will get them privately in their portal.
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-wedding-rose">Guest memories</p>
+                <h1 className="mt-2 text-3xl font-heading font-semibold text-wedding-navy dark:text-white sm:text-4xl">
+                  {context.wedding.couple_names}
+                </h1>
+                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 dark:text-slate-300">
+                  Add your photos and videos from the celebration. The couple receives every memory privately in their portal.
                 </p>
               </div>
-              <div className="hidden rounded-[1.5rem] bg-rose-50 px-4 py-3 text-right sm:block">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-rose-500">Window closes</p>
-                <p className="mt-1 text-sm font-medium text-slate-900">{uploadCloseLabel || 'Soon'}</p>
+              <div className="rounded-lg border border-wedding-gold/40 bg-wedding-gold/10 px-4 py-3 text-left sm:text-right">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-wedding-navy/70 dark:text-wedding-gold">Upload window</p>
+                <p className="mt-1 text-sm font-semibold text-wedding-navy dark:text-white">{uploadCloseLabel || 'Available now'}</p>
               </div>
             </div>
 
-            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+            <div className="mt-6 grid gap-2 sm:grid-cols-3">
               {STEP_ITEMS.map(({ id, label, icon: Icon }) => {
                 const isActive = step === id;
                 const isComplete = step > id;
                 return (
-                  <div
+                  <button
                     key={id}
-                    className={`rounded-2xl border px-4 py-3 transition ${
+                    type="button"
+                    onClick={() => setStep(id)}
+                    className={`flex items-center gap-3 rounded-lg border px-3 py-3 text-left transition ${
                       isActive
-                        ? 'border-rose-200 bg-rose-50'
+                        ? 'border-wedding-rose/50 bg-wedding-blush/70 text-wedding-navy'
                         : isComplete
-                          ? 'border-emerald-200 bg-emerald-50'
-                          : 'border-slate-200 bg-slate-50'
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-wedding-rose/30 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
                     }`}
                   >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`flex h-10 w-10 items-center justify-center rounded-2xl ${
-                          isActive
-                            ? 'bg-rose-600 text-white'
-                            : isComplete
-                              ? 'bg-emerald-500 text-white'
-                              : 'bg-white text-slate-500'
-                        }`}
-                      >
-                        {isComplete ? <CheckCircle2 className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Step {id + 1}</p>
-                        <p className="text-sm font-medium text-slate-900">{label}</p>
-                      </div>
-                    </div>
-                  </div>
+                    <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${isActive ? 'bg-wedding-rose text-slate-950' : 'bg-slate-100 dark:bg-slate-900'}`}>
+                      {isComplete ? <CheckCircle2 className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
+                    </span>
+                    <span>
+                      <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] opacity-70">Step {id + 1}</span>
+                      <span className="block text-sm font-semibold">{label}</span>
+                    </span>
+                  </button>
                 );
               })}
             </div>
-
-            <div className="mt-5 block rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:hidden">
-              <span className="font-semibold">Upload window:</span> {uploadCloseLabel || 'Available now'}
-            </div>
           </div>
 
-          <div className="px-6 py-7 sm:px-8">
+          <div className="px-5 py-6 sm:px-7">
+            {lastSavedCount > 0 && activeUploadCount > 0 ? (
+              <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
+                {lastSavedCount} file{lastSavedCount === 1 ? '' : 's'} saved. Retry the remaining file{activeUploadCount === 1 ? '' : 's'} below.
+              </div>
+            ) : null}
+
             {step === 0 && (
               <div className="space-y-5">
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">Who are you?</p>
-                  <p className="mt-1 text-sm text-slate-500">Your name helps the couple know who captured each memory.</p>
+                  <h2 className="text-xl font-heading font-semibold text-wedding-navy dark:text-white">Who should the couple thank?</h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Your name helps them recognize who captured each memory.</p>
                 </div>
                 <label className="block">
-                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Your display name</span>
+                  <span className="mb-2 block text-sm font-medium text-wedding-navy dark:text-slate-200">Your display name</span>
                   <input
                     type="text"
                     value={guestName}
                     onChange={(event) => setGuestName(event.target.value)}
                     placeholder="e.g. Maya, Tunde, Auntie Bisi"
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 shadow-sm outline-none transition focus:border-rose-300 focus:ring-4 focus:ring-rose-100"
+                    className="w-full rounded-lg border border-wedding-rose/20 bg-white px-4 py-3 text-base text-slate-900 shadow-inner outline-none transition focus:border-wedding-rose focus:ring-2 focus:ring-wedding-rose/40 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </label>
                 <button
                   type="button"
                   onClick={() => setStep(1)}
                   disabled={!guestName.trim()}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-wedding-rose px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-wedding-blush disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-40"
                 >
                   Continue <ArrowRight className="h-4 w-4" />
                 </button>
@@ -478,12 +625,10 @@ export default function GuestMemoriesUploadClient({
             {step === 1 && (
               <div className="space-y-5">
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">What part of the celebration did you capture?</p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Pick one default event now. You can change individual photos and videos later.
-                  </p>
+                  <h2 className="text-xl font-heading font-semibold text-wedding-navy dark:text-white">What part of the celebration did you capture?</h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Choose a default event now. You can still adjust each file after selecting media.</p>
                 </div>
-                <div className="space-y-3">
+                <div className="grid gap-3">
                   {eventOptions.map((option) => {
                     const selected = batchEventType === option.value;
                     return (
@@ -491,41 +636,44 @@ export default function GuestMemoriesUploadClient({
                         key={option.value}
                         type="button"
                         onClick={() => setBatchEventType(option.value)}
-                        className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
+                        className={`w-full rounded-lg border px-4 py-4 text-left transition ${
                           selected
-                            ? 'border-rose-300 bg-rose-50 shadow-sm'
-                            : 'border-slate-200 bg-white hover:border-slate-300'
+                            ? 'border-wedding-rose/60 bg-wedding-blush/70 shadow-sm'
+                            : 'border-slate-200 bg-white hover:border-wedding-rose/30 dark:border-slate-700 dark:bg-slate-800'
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900">{eventLabel(option)}</p>
-                            {option.date && (
-                              <p className="mt-1 text-xs text-slate-500">{formatDateLabel(option.date)}</p>
-                            )}
-                          </div>
-                          <div
-                            className={`mt-0.5 h-5 w-5 rounded-full border-2 ${
-                              selected ? 'border-rose-500 bg-rose-500' : 'border-slate-300'
+                        <span className="flex items-start justify-between gap-4">
+                          <span>
+                            <span className="block text-sm font-semibold text-wedding-navy dark:text-white">{eventLabel(option)}</span>
+                            {option.date ? (
+                              <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">{formatDateLabel(option.date)}</span>
+                            ) : null}
+                          </span>
+                          <span
+                            className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border ${
+                              selected ? 'border-wedding-rose bg-wedding-rose' : 'border-slate-300 dark:border-slate-600'
                             }`}
-                          />
-                        </div>
+                            aria-hidden="true"
+                          >
+                            {selected ? <span className="h-2 w-2 rounded-full bg-white" /> : null}
+                          </span>
+                        </span>
                       </button>
                     );
                   })}
                 </div>
-                <div className="flex gap-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <button
                     type="button"
                     onClick={() => setStep(0)}
-                    className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                    className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-wedding-rose/40 hover:bg-wedding-blush/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                   >
                     Back
                   </button>
                   <button
                     type="button"
                     onClick={() => setStep(2)}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-wedding-rose px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-wedding-blush"
                   >
                     Add media <ArrowRight className="h-4 w-4" />
                   </button>
@@ -534,18 +682,18 @@ export default function GuestMemoriesUploadClient({
             )}
 
             {step === 2 && (
-              <div className="space-y-6">
-                <div className="flex items-start justify-between gap-4">
+              <div className="space-y-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <p className="text-sm font-semibold text-slate-900">Upload your photos and videos</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      JPEG, PNG, WebP, MP4, and QuickTime files are supported. You can tag each file separately if needed.
+                    <h2 className="text-xl font-heading font-semibold text-wedding-navy dark:text-white">Upload your photos and videos</h2>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      JPEG, PNG, WebP, MP4, and QuickTime files are supported.
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setStep(1)}
-                    className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+                    className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-wedding-rose/40 hover:bg-wedding-blush/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                   >
                     Change event
                   </button>
@@ -555,15 +703,15 @@ export default function GuestMemoriesUploadClient({
                   type="button"
                   onClick={openFilePicker}
                   disabled={submitting}
-                  className="flex w-full cursor-pointer flex-col items-center justify-center rounded-[1.75rem] border border-dashed border-rose-300 bg-rose-50/70 px-6 py-10 text-center transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-70"
+                  className="flex w-full cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-wedding-rose/50 bg-wedding-blush/50 px-6 py-9 text-center transition hover:border-wedding-rose hover:bg-wedding-blush disabled:cursor-not-allowed disabled:opacity-70 dark:bg-slate-800/70"
                 >
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-rose-600 shadow-sm">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-white text-wedding-rose shadow-sm dark:bg-slate-900">
                     <Camera className="h-6 w-6" />
-                  </div>
-                  <p className="mt-4 text-base font-semibold text-slate-900">Tap to add photos or videos</p>
-                  <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">
-                    Your phone can use the camera, your gallery, or your files app. Guests can upload up to {context.limits.max_files_per_batch} items per batch.
-                  </p>
+                  </span>
+                  <span className="mt-4 text-base font-semibold text-wedding-navy dark:text-white">Tap to add photos or videos</span>
+                  <span className="mt-2 max-w-md text-sm leading-6 text-slate-600 dark:text-slate-300">
+                    Use your camera, gallery, or files app. Guests can upload up to {context.limits.max_files_per_batch} items per batch.
+                  </span>
                 </button>
                 <input
                   ref={fileInputRef}
@@ -576,17 +724,17 @@ export default function GuestMemoriesUploadClient({
                   aria-hidden="true"
                 />
 
-                <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 sm:grid-cols-3">
+                <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300 sm:grid-cols-3">
                   <div>
-                    <p className="font-semibold text-slate-900">{selectedFiles.length} selected</p>
+                    <p className="font-semibold text-wedding-navy dark:text-white">{selectedFiles.length} selected</p>
                     <p className="mt-1 text-xs">Up to {context.limits.max_files_per_batch} files</p>
                   </div>
                   <div>
-                    <p className="font-semibold text-slate-900">{formatBytes(totalSelectedBytes)}</p>
+                    <p className="font-semibold text-wedding-navy dark:text-white">{formatBytes(totalSelectedBytes)}</p>
                     <p className="mt-1 text-xs">Total batch size</p>
                   </div>
                   <div>
-                    <p className="font-semibold text-slate-900">
+                    <p className="font-semibold text-wedding-navy dark:text-white">
                       {eventLabel(eventOptions.find((option) => option.value === batchEventType) || { value: NOT_SURE_EVENT_VALUE, label: 'Not sure' })}
                     </p>
                     <p className="mt-1 text-xs">Default event tag</p>
@@ -594,106 +742,118 @@ export default function GuestMemoriesUploadClient({
                 </div>
 
                 {selectedFiles.length > 0 ? (
-                  <div className="space-y-4">
-                    {selectedFiles.map((item) => (
+                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+                    {selectedFiles.map((item, index) => (
                       <div
                         key={item.id}
-                        className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm"
+                        className={`grid gap-4 p-4 sm:grid-cols-[132px,1fr] ${index > 0 ? 'border-t border-slate-200 dark:border-slate-700' : ''}`}
                       >
-                        <div className="grid gap-4 p-4 sm:grid-cols-[140px,1fr]">
-                          <div className="overflow-hidden rounded-2xl bg-slate-100">
-                            {item.mediaType === 'image' ? (
-                              <img
-                                src={item.previewUrl}
-                                alt={item.file.name}
-                                className="h-36 w-full object-cover"
-                              />
-                            ) : (
-                              <video
-                                src={item.previewUrl}
-                                className="h-36 w-full object-cover"
-                                muted
-                                playsInline
-                                controls
-                              />
-                            )}
-                          </div>
-                          <div>
-                            <div className="flex items-start justify-between gap-4">
-                              <div>
-                                <p className="text-sm font-semibold text-slate-900">{item.file.name}</p>
-                                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-700">
-                                    {item.mediaType === 'image' ? <ImagePlus className="h-3.5 w-3.5" /> : <Video className="h-3.5 w-3.5" />}
-                                    {item.mediaType === 'image' ? 'Photo' : 'Video'}
-                                  </span>
-                                  <span>{formatBytes(item.file.size)}</span>
-                                </div>
+                        <div className="overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
+                          {item.mediaType === 'image' ? (
+                            <img
+                              src={item.previewUrl}
+                              alt={item.file.name}
+                              className="h-32 w-full object-cover"
+                            />
+                          ) : (
+                            <video
+                              src={item.previewUrl}
+                              className="h-32 w-full object-cover"
+                              muted
+                              playsInline
+                              controls
+                            />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-wedding-navy dark:text-white">{item.file.name}</p>
+                              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                  {item.mediaType === 'image' ? <ImagePlus className="h-3.5 w-3.5" /> : <Video className="h-3.5 w-3.5" />}
+                                  {item.mediaType === 'image' ? 'Photo' : 'Video'}
+                                </span>
+                                <span>{formatBytes(item.file.size)}</span>
+                                <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 font-medium ${fileStatusClassName(item.status)}`}>
+                                  {item.status === 'uploading' || item.status === 'finalizing' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                                  {item.status === 'failed' ? <AlertCircle className="h-3.5 w-3.5" /> : null}
+                                  {fileStatusLabel(item.status)}
+                                </span>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => removeFile(item.id)}
-                                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
-                                aria-label={`Remove ${item.file.name}`}
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
                             </div>
-
-                            <label className="mt-4 block">
-                              <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Captured during</span>
-                              <select
-                                value={item.eventType}
-                                onChange={(event) => {
-                                  const nextEventType = event.target.value;
-                                  setSelectedFiles((current) =>
-                                    current.map((currentItem) =>
-                                      currentItem.id === item.id
-                                        ? { ...currentItem, eventType: nextEventType }
-                                        : currentItem,
-                                    ),
-                                  );
-                                }}
-                                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-rose-300 focus:ring-4 focus:ring-rose-100"
-                              >
-                                {eventOptions.map((option) => (
-                                  <option key={option.value} value={option.value}>
-                                    {eventLabel(option)}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
+                            <button
+                              type="button"
+                              onClick={() => removeFile(item.id)}
+                              disabled={submitting}
+                              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-wedding-rose/40 hover:bg-wedding-blush/40 hover:text-wedding-navy disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                              aria-label={`Remove ${item.file.name}`}
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
                           </div>
+
+                          {item.error ? (
+                            <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
+                              {item.error}
+                            </p>
+                          ) : null}
+
+                          <label className="mt-4 block">
+                            <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Captured during</span>
+                            <select
+                              value={item.eventType}
+                              disabled={submitting}
+                              onChange={(event) => {
+                                const nextEventType = event.target.value;
+                                setSelectedFiles((current) =>
+                                  current.map((currentItem) =>
+                                    currentItem.id === item.id
+                                      ? { ...currentItem, eventType: nextEventType, error: undefined, status: currentItem.status === 'failed' ? 'ready' : currentItem.status }
+                                      : currentItem,
+                                  ),
+                                );
+                              }}
+                              className="w-full rounded-lg border border-wedding-rose/20 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-wedding-rose focus:ring-2 focus:ring-wedding-rose/40 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            >
+                              {eventOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {eventLabel(option)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-[1.75rem] border border-dashed border-slate-200 px-6 py-10 text-center text-sm text-slate-500">
+                  <div className="rounded-xl border border-dashed border-slate-200 px-6 py-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
                     Add at least one photo or video to continue.
                   </div>
                 )}
 
                 <div className="space-y-3">
-                  {uploadingLabel && (
-                    <div className="flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-medium text-white">
+                  {uploadingLabel ? (
+                    <div className="flex items-center gap-2 rounded-lg bg-wedding-navy px-4 py-3 text-sm font-medium text-white">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       {uploadingLabel}
                     </div>
-                  )}
+                  ) : null}
                   <button
                     type="button"
                     onClick={handleSubmit}
                     disabled={submitting || selectedFiles.length === 0}
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-wedding-rose px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-wedding-blush disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-                    Share with the couple
+                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : failedFileCount > 0 ? <RefreshCcw className="h-4 w-4" /> : <UploadCloud className="h-4 w-4" />}
+                    {failedFileCount > 0 ? 'Retry failed upload(s)' : 'Share with the couple'}
                   </button>
                   <button
                     type="button"
                     onClick={() => setStep(1)}
-                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                    disabled={submitting}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-wedding-rose/40 hover:bg-wedding-blush/40 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                   >
                     Back
                   </button>
@@ -701,8 +861,42 @@ export default function GuestMemoriesUploadClient({
               </div>
             )}
           </div>
-        </div>
-      </div>
-    </div>
+        </section>
+
+        <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+          <section className="rounded-xl border border-slate-200/80 bg-white/80 p-5 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/75">
+            <h2 className="text-lg font-heading font-semibold text-wedding-navy dark:text-white">Day-of upload limits</h2>
+            <dl className="mt-4 space-y-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-slate-500 dark:text-slate-400">Photos</dt>
+                <dd className="font-semibold text-slate-800 dark:text-slate-100">{formatBytes(context.limits.max_image_size_bytes)}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-slate-500 dark:text-slate-400">Videos</dt>
+                <dd className="font-semibold text-slate-800 dark:text-slate-100">{formatBytes(context.limits.max_video_size_bytes)}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-slate-500 dark:text-slate-400">Batch</dt>
+                <dd className="font-semibold text-slate-800 dark:text-slate-100">{formatBytes(context.limits.max_batch_size_bytes)}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="rounded-xl border border-wedding-rose/20 bg-wedding-blush/60 p-5 dark:border-wedding-rose/30 dark:bg-slate-900/75">
+            <h2 className="text-lg font-heading font-semibold text-wedding-navy dark:text-white">Need help?</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+              If the upload link is not working on your phone, use the wedding help option and the planner can respond.
+            </p>
+            <Link
+              href={`/${slug}#rsvp`}
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-wedding-rose/30 bg-white px-4 py-3 text-sm font-semibold text-wedding-navy transition hover:bg-wedding-blush dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            >
+              <HelpCircle className="h-4 w-4 text-wedding-rose" />
+              Open wedding help
+            </Link>
+          </section>
+        </aside>
+      </main>
+    </Shell>
   );
 }

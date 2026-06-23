@@ -24,6 +24,12 @@ This directory contains documentation for all performance optimizations implemen
 - Uses repo-local `loadtests/locustfile.py`
 - Completed: April 2, 2026
 
+### Active. [Guest Memories Load Test](./guest-memories-load-test.md)
+- Adds a write-aware Locust profile for the public guest memories upload path
+- Measures context, upload-plan, direct object-storage PUT, finalize, and end-to-end upload behavior by media profile
+- Uses repo-local `loadtests/guest_memories_locustfile.py`
+- Run only against staging clones or disposable testbed weddings
+
 ### 1. [Database Indexes](./database-indexes.md)
 - Added 20+ compound indexes
 - 60-70% query performance improvement
@@ -65,7 +71,9 @@ Live performance baseline tests live in `testbed/`:
 
 Load testing inputs use:
 - `loadtests/locustfile.py` - Mixed read-only Locust scenarios for public, planner, and couple traffic
+- `loadtests/guest_memories_locustfile.py` - Write-aware guest memories upload profile for staging breakpoint testing
 - `docs/performance/locust-load-test-plan.md` - Runbook, stages, guardrails, and success criteria
+- `docs/performance/guest-memories-load-test.md` - Guest memories upload runbook, media profiles, and breakpoint recording guidance
 - `docs/performance/baselines/` - Accepted baseline reports and JSON artifacts
 
 ## Monitoring

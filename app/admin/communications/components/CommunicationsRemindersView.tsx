@@ -22,6 +22,7 @@ import {
  getWeddingReminderEventOptions,
 } from '@/utils/weddingEvents';
 import PageHeader from '../../components/PageHeader';
+import { buildEventReminderEmailPayload } from './reminderPayloads';
 
 export type CommunicationsTab = 'invites' | 'reminders' | 'individual' | 'history';
 
@@ -549,13 +550,13 @@ export default function CommunicationsRemindersView({
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json',
  },
- body: JSON.stringify({
- wedding_slug: selectedWeddingData.slug,
- event_type: eventType,
- custom_subject: emailSubject || null,
- custom_html: emailHtml || customMessage || null,
- target_group: targetGroup
- }),
+ body: JSON.stringify(buildEventReminderEmailPayload({
+ weddingSlug: selectedWeddingData.slug,
+ eventType,
+ customMessage,
+ emailSubject,
+ targetGroup,
+ })),
  });
 
  if (response.ok) {
