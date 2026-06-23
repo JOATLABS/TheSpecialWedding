@@ -41,8 +41,10 @@
   --theme-primary-light: #a8bdd4;
   --theme-secondary-light: #e8d5a0;
   --theme-accent-light: #e0b8b3;
-  --theme-font-heading: var(--font-playfair-display), Georgia, serif;
-  --theme-font-body: var(--font-inter), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-playfair-display: Georgia, 'Times New Roman', serif;
+  --font-inter: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --theme-font-heading: var(--font-playfair-display);
+  --theme-font-body: var(--font-inter);
 }
 
 @layer base {

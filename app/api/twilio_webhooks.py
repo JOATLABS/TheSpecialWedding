@@ -286,9 +286,24 @@ async def _append_inbound_sms_to_ticket(
     if message_sid:
         update["$set"]["message_sid"] = message_sid
 
-    await mongo.db["support_tickets"].update_one({"_id": ticket["_id"]}, update)
+    update_query: dict[str, Any] = {"_id": ticket["_id"]}
+    if message_sid:
+        update_query["guest_messages.message_sid"] = {"$ne": message_sid}
 
-    ticket.setdefault("guest_messages", []).append(guest_message)
+    result = await mongo.db["support_tickets"].update_one(update_query, update)
+    if message_sid and result.matched_count == 0:
+        logger.info(
+            "Ignoring duplicate inbound Twilio MessageSid %s for support ticket %s",
+            message_sid,
+            ticket.get("_id"),
+        )
+        return ticket
+
+    guest_messages = ticket.setdefault("guest_messages", [])
+    if not message_sid or not any(
+        message.get("message_sid") == message_sid for message in guest_messages
+    ):
+        guest_messages.append(guest_message)
     ticket.update(update["$set"])
     ticket.pop("resolved_at", None)
     await _create_sms_guest_message_notification(ticket, body_text)

@@ -9,13 +9,8 @@ import {
   LayoutDashboard,
   Heart,
   Users,
-  Mail,
-  DollarSign,
-  HelpCircle,
   Sparkles,
   CheckCircle,
-  Megaphone,
-  Zap
 } from 'lucide-react';
 
 interface OnboardingModalProps {
@@ -35,127 +30,67 @@ interface OnboardingStep {
 const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: 'welcome',
-    title: 'Welcome to Planner HQ',
-    description: 'Your dashboard now brings together wedding health, couple collaboration, AI guidance, and operations tooling in one place. This tour highlights the fastest way to work through it.',
+    title: 'Start With The Wedding Setup Prompt',
+    description: 'Your dashboard now points you to the next guest-facing setup step for each wedding, then drops you into the exact configuration tab that needs attention.',
     icon: <Sparkles className="w-12 h-12 text-purple-500" />,
     features: [
-      'See portfolio-wide activity without bouncing between modules',
-      'Guide couples through their own shared portal experience',
-      'Manage payments, forms, contracts, and messaging from connected tools',
-      'Use AI insights to surface the next best action for each wedding',
+      'See which wedding still needs schedule, RSVP, access, or theme work',
+      'Use one action to continue setup from the dashboard',
+      'Keep optional tabs visible without blocking launch readiness',
+      'Preview the couple site once the essentials are ready',
+    ]
+  },
+  {
+    id: 'site-essentials',
+    title: 'Finish The Guest Essentials',
+    description: 'The setup checklist focuses first on the information guests need before the wedding website should be shared.',
+    icon: <Heart className="w-12 h-12 text-pink-500" />,
+    features: [
+      'Schedule: date, time, venue, address, and attire',
+      'RSVP: guest-facing copy and help handoff',
+      'Access: public, private, or password-protected visibility',
+      'Theme: colors and typography for the public page',
+    ]
+  },
+  {
+    id: 'optional-content',
+    title: 'Add The Experience Layers',
+    description: 'Once the essentials are stable, the same configuration page walks you through the content that makes the site feel complete.',
+    icon: <Users className="w-12 h-12 text-green-500" />,
+    features: [
+      'Vendors: assigned partners, contracts, quotes, and payments',
+      'Registry: gift links guests can open from the site',
+      'FAQ: travel, hotel, dress code, and guest questions',
+      'Story: couple story, photos, and wedding party',
     ]
   },
   {
     id: 'dashboard',
-    title: 'Your Dashboard Pulse',
-    description: 'The planner dashboard is the command surface for the workday. It shows summary stats, quick-launch actions, AI insights, progress tracking, and the recent activity stream side by side.',
+    title: 'Run The Wedding From The Dashboard',
+    description: 'The setup prompt stays small so the dashboard can still work as your daily command surface for guests, communications, and activity.',
     icon: <LayoutDashboard className="w-12 h-12 text-blue-500" />,
     features: [
-      'Review guest, RSVP, and wedding totals at a glance',
-      'Jump straight into guests, reminders, and gallery uploads',
-      'Read AI insights for the selected wedding without leaving the dashboard',
-      'Track wedding progress and recent activity from one screen',
-    ]
-  },
-  {
-    id: 'weddings',
-    title: 'Wedding Operations',
-    description: 'Every wedding still has its own workspace, but the dashboard now makes it easier to jump into the ones that need attention and manage them as a portfolio instead of isolated records.',
-    icon: <Heart className="w-12 h-12 text-pink-500" />,
-    features: [
-      'Open the right wedding directly from the dashboard list',
-      'Monitor progress percentages and days remaining per couple',
-      'Launch each wedding website or workspace in one click',
-      'Keep event details, venues, and RSVP context connected to the same record',
-    ]
-  },
-  {
-    id: 'couples',
-    title: 'Couple Collaboration',
-    description: 'The platform now gives couples their own portal for forms, payments, updates, FAQ content, registry links, and day-of context, so you stop managing approvals through fragmented messages.',
-    icon: <Users className="w-12 h-12 text-green-500" />,
-    features: [
-      'Share a guided dashboard with each couple',
-      'Keep forms, FAQs, registry links, and updates in one portal',
-      'Let couples review payment status without extra follow-up',
-      'Reduce back-and-forth by keeping the couple experience wired to your data',
-    ]
-  },
-  {
-    id: 'inbox',
-    title: 'Messaging & Activity',
-    description: 'Planner communication now lives in a cleaner workflow. The split-panel inbox and recent activity stream make it easier to see what changed, who needs a response, and what was already handled.',
-    icon: <Mail className="w-12 h-12 text-indigo-500" />,
-    features: [
-      'Reply to couples from a dedicated inbox instead of scattered threads',
-      'Track unread message counts across the platform',
-      'Review project activity without digging through wedding records',
-      'Keep updates, notes, and communication attached to the right account',
-    ]
-  },
-  {
-    id: 'business',
-    title: 'Packages, Contracts & Payments',
-    description: 'Business workflows are now more connected, from AI-assisted packages and contracts to payment schedules couples can review inside their portal.',
-    icon: <DollarSign className="w-12 h-12 text-yellow-500" />,
-    features: [
-      'Create and preview service packages from the planner workspace',
-      'Generate polished contracts with AI-assisted drafting',
-      'Track payments, balances, and billing milestones in one place',
-      'Give couples visibility into what is due without extra admin work',
-    ]
-  },
-  {
-    id: 'support',
-    title: 'Team Readiness & Support',
-    description: 'As your studio grows, the platform now supports tighter internal coordination through team access controls, knowledge base content, and operational visibility.',
-    icon: <HelpCircle className="w-12 h-12 text-cyan-500" />,
-    features: [
-      'Assign planners only to the weddings they should touch',
-      'Use the knowledge base to reduce repeated training and support requests',
-      'Spot opportunities and activity from the dashboard without context switching',
-      'Keep the whole team working from the same source of truth',
-    ]
-  },
-  {
-    id: 'vendor-network',
-    title: 'Grow Through Your Vendor Network',
-    description: 'The platform is also a vendor marketplace. Source from the public directory, invite vendors into token-based contract workspaces, or let advertising vendors bring leads directly to your inbox — all without a separate subscription.',
-    icon: <Megaphone className="w-12 h-12 text-rose-500" />,
-    features: [
-      'Browse photographers, venues, and caterers in the public vendor directory',
-      'Invite contract vendors into token-based workspaces for signatures, deliverables, and payments',
-      'Compare quotes side by side with AI-assisted summaries',
-      'Receive CPL leads from advertising vendors directly in the planner inbox',
-    ]
-  },
-  {
-    id: 'real-time',
-    title: 'Everyone Stays in Sync, Automatically',
-    description: 'Changes you save push live to the couple portal the second they happen. Inbound emails thread against the right couple. Every write is captured in the activity audit log. Planning stops being email tag.',
-    icon: <Zap className="w-12 h-12 text-amber-500" />,
-    features: [
-      'Server-sent events update the couple portal in real time — no refresh needed',
-      'Forwarded vendor and guest emails auto-thread into the right couple inbox',
-      'See every change to a wedding in the activity audit log, filterable by team member',
-      'Team members share one real-time workspace instead of status-update emails',
+      'Review portfolio stats without losing the setup context',
+      'Jump into guests, reminders, and gallery uploads from quick actions',
+      'Use recent activity and AI insights after the public site is configured',
+      'Open each wedding workspace or public site from the same list',
     ]
   },
   {
     id: 'ready',
-    title: 'You\'re Ready',
-    description: 'Start each day from the planner dashboard. It is now the fastest path to wedding triage, couple communication, financial follow-up, and team coordination.',
+    title: 'You Know What To Do Next',
+    description: 'Start from the dashboard, follow the next setup action, save the wedding, and come back when you want the broader operational view.',
     icon: <CheckCircle className="w-12 h-12 text-green-500" />,
     features: [
-      'Review AI insights before jumping into detail pages',
-      'Use the inbox and activity feed as your operational heartbeat',
-      'Drive couples back into the portal for forms, approvals, and updates',
-      'Keep weddings moving forward from one connected system',
+      'The setup prompt stays visible after this tour is dismissed',
+      'The configuration page keeps the checklist above the tabs',
+      'Required essentials show amber until they are ready',
+      'Ready essentials show green so you can move on confidently',
     ]
   }
 ];
 
-export default function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingModalProps) {
+export default function OnboardingModal({ isOpen, onComplete }: OnboardingModalProps) {
   const { apiRequest } = useAdmin();
   const [currentStep, setCurrentStep] = useState(0);
   const [completing, setCompleting] = useState(false);
@@ -245,7 +180,7 @@ export default function OnboardingModal({ isOpen, onClose, onComplete }: Onboard
         </button>
 
         {/* Content */}
-        <div className="p-8">
+        <div className="p-5 sm:p-8">
           {/* Icon */}
           <div className="flex justify-center mb-6">
             <div className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-2xl">
@@ -259,12 +194,12 @@ export default function OnboardingModal({ isOpen, onClose, onComplete }: Onboard
           </h2>
 
           {/* Description */}
-          <p className="text-center text-gray-600 dark:text-gray-400 mb-8 max-w-lg mx-auto">
+          <p className="text-center text-gray-600 dark:text-gray-400 mb-6 max-w-lg mx-auto">
             {step.description}
           </p>
 
           {/* Features */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
             {step.features.map((feature, index) => (
               <div
                 key={index}
@@ -277,7 +212,7 @@ export default function OnboardingModal({ isOpen, onClose, onComplete }: Onboard
           </div>
 
           {/* Progress Dots */}
-          <div className="flex justify-center gap-2 mb-8">
+          <div className="flex justify-center gap-2 mb-6">
             {ONBOARDING_STEPS.map((_, index) => (
               <button
                 key={index}

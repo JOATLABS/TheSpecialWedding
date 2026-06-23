@@ -47,6 +47,24 @@ from app.api.aurinko_redirector import (  # noqa: E402
 )
 
 
+def _collect_registered_routes(app) -> set[tuple[str, str]]:
+    registered: set[tuple[str, str]] = set()
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        methods = getattr(route, "methods", None)
+        if path is not None and methods is not None:
+            registered.update((method, path) for method in methods)
+            continue
+
+        effective_route_contexts = getattr(route, "effective_route_contexts", None)
+        if effective_route_contexts is None:
+            continue
+
+        for context in effective_route_contexts():
+            registered.update((method, context.path) for method in context.methods)
+    return registered
+
+
 def _make_redirector_test_client() -> "TestClient":
     """Mount only the redirector router.
 
@@ -83,12 +101,7 @@ def test_redirector_route_is_included_in_main_app_without_startup() -> None:
     """Pin app registration without entering the Mongo-backed lifespan."""
     from app.main import app
 
-    registered = {
-        (m, route.path)
-        for route in app.routes
-        if hasattr(route, "methods")
-        for m in route.methods
-    }
+    registered = _collect_registered_routes(app)
     assert ("GET", "/v1/auth/callback") in registered, (
         "app.main must include the bare Aurinko redirector route; otherwise "
         "Google/Aurinko callbacks 404 even though the router module is correct."

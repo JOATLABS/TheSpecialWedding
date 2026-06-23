@@ -19,6 +19,35 @@ type PrivacyInfo = Pick<
   'id' | 'couple_names' | 'privacy_mode' | 'requires_password' | 'requires_guest_verification' | 'verification_requirements'
 >;
 
+const OTP_EXPIRY_SECONDS = 5 * 60;
+const OTP_RESEND_COOLDOWN_SECONDS = 65;
+
+const getResponseErrorMessage = async (
+  response: Response,
+  fallback: string,
+) => {
+  try {
+    const errorData = await response.json();
+    const detail = errorData?.detail;
+
+    if (typeof detail === 'string') {
+      return detail;
+    }
+
+    if (detail?.message && typeof detail.message === 'string') {
+      return detail.message;
+    }
+
+    if (errorData?.message && typeof errorData.message === 'string') {
+      return errorData.message;
+    }
+  } catch {
+    return fallback;
+  }
+
+  return fallback;
+};
+
 export default function GuestVerificationModal({
   slug,
   onVerified,
@@ -41,6 +70,7 @@ export default function GuestVerificationModal({
   const [otpContact, setOtpContact] = useState('');
   const [otpContactType, setOtpContactType] = useState('');
   const [otpCountdown, setOtpCountdown] = useState(0);
+  const [otpResendCooldown, setOtpResendCooldown] = useState(0);
   const [weddingId, setWeddingId] = useState('');
 
   const API_BASE_URL = getApiBaseUrl();
@@ -80,6 +110,30 @@ export default function GuestVerificationModal({
       });
     }
   }, [onVerified, privacyInfo, slug]);
+
+  useEffect(() => {
+    if (!otpStep || otpCountdown <= 0) {
+      return;
+    }
+
+    const countdown = window.setInterval(() => {
+      setOtpCountdown((prev) => Math.max(prev - 1, 0));
+    }, 1000);
+
+    return () => window.clearInterval(countdown);
+  }, [otpCountdown, otpStep]);
+
+  useEffect(() => {
+    if (!otpStep || otpResendCooldown <= 0) {
+      return;
+    }
+
+    const cooldown = window.setInterval(() => {
+      setOtpResendCooldown((prev) => Math.max(prev - 1, 0));
+    }, 1000);
+
+    return () => window.clearInterval(cooldown);
+  }, [otpResendCooldown, otpStep]);
 
   const handleVerification = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,8 +179,9 @@ export default function GuestVerificationModal({
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Verification failed');
+        throw new Error(
+          await getResponseErrorMessage(response, 'Verification failed')
+        );
       }
 
       const result = await response.json();
@@ -166,25 +221,20 @@ export default function GuestVerificationModal({
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to send verification code');
+        throw new Error(
+          await getResponseErrorMessage(
+            response,
+            'Failed to send verification code',
+          )
+        );
       }
 
-      const result = await response.json();
+      await response.json();
       setOtpStep(true);
       setOtpContact(contact);
       setOtpContactType(contactType);
-      setOtpCountdown(5 * 60);
-      // Start countdown
-      const countdown = setInterval(() => {
-        setOtpCountdown((prev) => {
-          if (prev <= 1) {
-            clearInterval(countdown);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
+      setOtpCountdown(OTP_EXPIRY_SECONDS);
+      setOtpResendCooldown(OTP_RESEND_COOLDOWN_SECONDS);
 
     } catch (err: any) {
       setError(err.message || 'Failed to send verification code');
@@ -211,6 +261,7 @@ export default function GuestVerificationModal({
     setOtpContact('');
     setOtpContactType('');
     setOtpCountdown(0);
+    setOtpResendCooldown(0);
     setError('');
   };
 
@@ -309,20 +360,23 @@ export default function GuestVerificationModal({
               </div>
 
               <div className="text-center space-y-2">
-                {otpCountdown > 0 ? (
-                  <p className="text-sm text-gray-600">
-                    Code expires in {formatTime(otpCountdown)}
-                  </p>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={resendOtp}
-                    disabled={sendingOtp}
-                    className="text-sm text-rose-600 hover:text-rose-700 disabled:text-gray-400"
-                  >
-                    {sendingOtp ? 'Sending...' : 'Send new code'}
-                  </button>
-                )}
+                <p className="text-sm text-gray-600">
+                  {otpCountdown > 0
+                    ? `Code expires in ${formatTime(otpCountdown)}`
+                    : 'Code expired'}
+                </p>
+                <button
+                  type="button"
+                  onClick={resendOtp}
+                  disabled={sendingOtp || otpResendCooldown > 0}
+                  className="text-sm text-rose-600 hover:text-rose-700 disabled:text-gray-400"
+                >
+                  {sendingOtp
+                    ? 'Sending...'
+                    : otpResendCooldown > 0
+                      ? `Send new code in ${otpResendCooldown}s`
+                      : 'Send new code'}
+                </button>
                 <button
                   type="button"
                   onClick={goBackToContact}

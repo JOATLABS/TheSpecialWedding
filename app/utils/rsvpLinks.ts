@@ -8,6 +8,7 @@ export function getPublicFrontendBaseUrl(): string {
   const configured =
     process.env.NEXT_PUBLIC_SITE_URL ||
     process.env.FRONTEND_URL ||
+    (typeof window !== 'undefined' ? window.location.origin : '') ||
     DEFAULT_PUBLIC_FRONTEND_URL;
 
   return normalizeBaseUrl(configured);

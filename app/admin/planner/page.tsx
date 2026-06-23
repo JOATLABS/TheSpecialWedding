@@ -12,21 +12,20 @@ import { CampaignSponsoredRail } from '../vendors/components/CampaignSponsoredRa
 import { fetchEngagementSignals, type WeddingEngagementSignal } from '@/services/behavioralAnalyticsApi';
 import { Users, Mail, ImagePlus } from 'lucide-react';
 import WeddingPicker from '../components/WeddingPicker';
+import { canManageCouplePortal } from '@/admin/utils/teamAccess';
+import type { Wedding as WeddingDetails } from '@/types/wedding';
+import type { WeddingSetupTab } from '@/admin/weddings/setupGuide';
+import {
+  DashboardWeddingSetupPrompt,
+  type DashboardWeddingSetupPromptWedding,
+} from './DashboardWeddingSetupPrompt';
 
-interface Wedding {
- id: string;
- couple_names: string;
- date: string;
- slug: string;
+interface Wedding extends Omit<WeddingDetails, 'venue'> {
+ _id?: string;
  venue?: string;
  guest_count?: number;
  assigned_planner_email?: string;
  status?: string;
- events?: Array<{
- type: string;
- date: string;
- details?: any;
- }>;
  created_at?: string;
  rsvp_stats?: {
  confirmed: number;
@@ -37,6 +36,31 @@ interface Wedding {
  progress_percentage?: number;
  days_until_wedding?: number;
 }
+
+type RawDashboardWedding = Omit<Partial<Wedding>, 'venue'> & {
+  _id?: string;
+  venue?: unknown;
+};
+
+const normalizeDashboardWedding = (wedding: RawDashboardWedding): Wedding => {
+ const id = String(wedding.id || wedding._id || '');
+ const venue =
+ typeof wedding.venue === 'string'
+ ? wedding.venue
+ : typeof wedding.venue === 'object' && wedding.venue && 'name' in wedding.venue
+ ? String((wedding.venue as { name?: unknown }).name || '')
+ : undefined;
+
+ return {
+ ...wedding,
+ id,
+ venue,
+ slug: wedding.slug || '',
+ couple_names: wedding.couple_names || '',
+ date: wedding.date || '',
+ events: Array.isArray(wedding.events) ? wedding.events : [],
+ } as Wedding;
+};
 
 interface RSVPStats {
  total_guests: number;
@@ -102,6 +126,8 @@ export default function WeddingPlannerDashboard() {
  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
  const [hasUserDismissedOnboarding, setHasUserDismissedOnboarding] = useState(false);
  const [showAdRail, setShowAdRail] = useState(false);
+ const [setupDetailsLoaded, setSetupDetailsLoaded] = useState(false);
+ const canViewCoupleTab = canManageCouplePortal(userProfile);
 
  // Engagement signals state
  const [engagementSignals, setEngagementSignals] = useState<WeddingEngagementSignal[]>([]);
@@ -130,7 +156,30 @@ export default function WeddingPlannerDashboard() {
  try {
  const data = await apiRequest<any>('/admin/planner/metrics?include_revenue=false');
  if (data) {
- setWeddings(data.weddings);
+ const metricWeddings: Wedding[] = Array.isArray(data.weddings)
+ ? data.weddings.map(normalizeDashboardWedding)
+ : [];
+ let dashboardWeddings: Wedding[] = metricWeddings;
+ let detailsLoaded = false;
+
+ try {
+ const detailedWeddings = await apiRequest<any[]>('/admin/planner/weddings');
+ if (Array.isArray(detailedWeddings)) {
+ detailsLoaded = true;
+ const metricsById = new Map(metricWeddings.map((wedding) => [wedding.id, wedding]));
+ dashboardWeddings = detailedWeddings
+ .map(normalizeDashboardWedding)
+ .map((wedding) => ({
+ ...(metricsById.get(wedding.id) || {}),
+ ...wedding,
+ }));
+ }
+ } catch (detailsError) {
+ console.warn('[Planner] Failed to load detailed wedding setup data:', detailsError);
+ }
+
+ setWeddings(dashboardWeddings);
+ setSetupDetailsLoaded(detailsLoaded);
  setStats({
  total_guests: data.summary.total_guests,
  total_plus_ones_allowed: data.summary.total_plus_ones_allowed || 0,
@@ -144,12 +193,14 @@ export default function WeddingPlannerDashboard() {
  });
  setRecentActivity(data.recent_activity);
  } else {
+ setSetupDetailsLoaded(false);
  return;
  }
  } catch (error) {
  if (error instanceof DOMException && error.name === 'AbortError') {
  return;
  }
+ setSetupDetailsLoaded(false);
  setError('Failed to fetch dashboard data');
  } finally {
  if (metricsAbortRef.current === controller) {
@@ -159,6 +210,10 @@ export default function WeddingPlannerDashboard() {
  setLoading(false);
  }
  }, [apiRequest, token]);
+
+ const handleOpenWeddingSetup = useCallback((weddingId: string, setupTab: WeddingSetupTab) => {
+ router.push(`/admin/weddings/${weddingId}?setupTab=${setupTab}`);
+ }, [router]);
 
  const loadEngagementSignals = useCallback(async () => {
    if (!token || engagementLoadedRef.current) {
@@ -401,6 +456,13 @@ export default function WeddingPlannerDashboard() {
  </div>
  </div>
  )}
+
+ <DashboardWeddingSetupPrompt
+ weddings={weddings as DashboardWeddingSetupPromptWedding[]}
+ canViewCoupleTab={canViewCoupleTab}
+ setupDetailsLoaded={setupDetailsLoaded}
+ onOpenSetup={handleOpenWeddingSetup}
+ />
 
  {/* Stats Cards — compact: label + number on a single row, optional
      +plus-ones inline. No icon chips; the labels carry the meaning. */}
