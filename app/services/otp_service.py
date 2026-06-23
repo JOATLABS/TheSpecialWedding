@@ -150,7 +150,32 @@ class OTPService:
         # Ensure TTL index exists
         await self._ensure_indexes()
 
+        guest = await self.guest_collection.find_one({"_id": ObjectId(guest_id)})
+        if not guest:
+            logger.warning(f"Guest not found for guest_id: {guest_id}")
+            return {
+                "success": False,
+                "error": "Guest not found",
+                "error_code": "guest_not_found",
+            }
+
+        # Check available contact methods
+        has_phone = guest.get("phone") and guest.get("phone").strip()
+        has_email = guest.get("email") and guest.get("email").strip()
+
+        if not has_phone and not has_email:
+            logger.warning(f"Guest has no phone or email: {guest_id}")
+            return {
+                "success": False,
+                "error": "No contact method on file. Please contact the wedding planner.",
+                "error_code": "no_contact",
+            }
+
+        # Determine primary contact method for OTP record
+        primary_contact_type = "phone" if has_phone else "email"
+
         # Check for existing OTP and handle rate limiting
+        reusable_otp = None
         last_otp = await self.otp_collection.find_one({"guest_id": guest_id})
         if last_otp:
             expires_at = _ensure_utc(last_otp.get("expires_at"))
@@ -178,33 +203,19 @@ class OTPService:
                             "error_code": "rate_limited",
                             "retry_after": remaining,
                         }
-
-        guest = await self.guest_collection.find_one({"_id": ObjectId(guest_id)})
-        if not guest:
-            logger.warning(f"Guest not found for guest_id: {guest_id}")
-            return {
-                "success": False,
-                "error": "Guest not found",
-                "error_code": "guest_not_found",
-            }
-
-        # Check available contact methods
-        has_phone = guest.get("phone") and guest.get("phone").strip()
-        has_email = guest.get("email") and guest.get("email").strip()
-
-        if not has_phone and not has_email:
-            logger.warning(f"Guest has no phone or email: {guest_id}")
-            return {
-                "success": False,
-                "error": "No contact method on file. Please contact the wedding planner.",
-                "error_code": "no_contact",
-            }
-
-        # Determine primary contact method for OTP record
-        primary_contact_type = "phone" if has_phone else "email"
+                    elif last_otp.get(
+                        "contact_type"
+                    ) == primary_contact_type and last_otp.get("otp"):
+                        reusable_otp = str(last_otp["otp"])
 
         try:
-            otp = await self.generate_otp(guest_id, contact_type=primary_contact_type)
+            otp = (
+                reusable_otp
+                if reusable_otp
+                else await self.generate_otp(
+                    guest_id, contact_type=primary_contact_type
+                )
+            )
         except Exception as e:
             logger.error(f"Failed to save OTP for guest_id {guest_id}: {str(e)}")
             return {
@@ -226,11 +237,14 @@ class OTPService:
                 )
 
                 if status == "success":
-                    return {
+                    response = {
                         "success": True,
                         "contact_type": "phone",
                         "fallback_used": False,
                     }
+                    if reusable_otp:
+                        response["reused_existing"] = True
+                    return response
 
                 logger.error(
                     "Failed to send OTP SMS to guest_id %s: %s (error_code: %s)",
@@ -259,6 +273,8 @@ class OTPService:
                 )
             else:
                 # No email fallback — return specific error based on SMS failure type
+                if not reusable_otp:
+                    await self.otp_collection.delete_many({"guest_id": guest_id})
                 user_error = self._get_user_friendly_sms_error(sms_error_code)
                 return {
                     "success": False,
@@ -285,13 +301,18 @@ class OTPService:
             )
             if result.get("success"):
                 fallback_used = has_phone and sms_error_code is not None
-                return {
+                response = {
                     "success": True,
                     "contact_type": "email",
                     "fallback_used": fallback_used,
                     "sms_error_code": sms_error_code if fallback_used else None,
                 }
+                if reusable_otp:
+                    response["reused_existing"] = True
+                return response
             else:
+                if not reusable_otp:
+                    await self.otp_collection.delete_many({"guest_id": guest_id})
                 logger.error(
                     f"Failed to send OTP email to guest_id {guest_id}: {result.get('error')}"
                 )
@@ -549,14 +570,31 @@ class OTPService:
             logger.warning(
                 f"Guest not found for contact: {contact} in wedding: {wedding_id}"
             )
-            return {"success": False, "error": "Guest not found for this wedding"}
+            return {
+                "success": False,
+                "error": "Guest not found for this wedding",
+                "error_code": "guest_not_found",
+            }
 
         guest_id = str(guest["_id"])
+
+        # Determine contact type for OTP record
+        is_phone_contact = self._guest_phone_matches_contact(guest, normalized_contact)
+        is_email_contact = self._guest_email_matches_contact(guest, normalized_contact)
+        if not is_phone_contact and not is_email_contact:
+            return {
+                "success": False,
+                "error": "No valid contact method found",
+                "error_code": "no_contact",
+            }
+
+        contact_type = "phone" if is_phone_contact else "email"
 
         # Ensure TTL index exists
         await self._ensure_indexes()
 
         # Check for existing OTP and handle rate limiting
+        reusable_otp = None
         last_otp = await self.otp_collection.find_one({"guest_id": guest_id})
         if last_otp:
             expires_at = _ensure_utc(last_otp.get("expires_at"))
@@ -584,17 +622,16 @@ class OTPService:
                             "error_code": "rate_limited",
                             "retry_after": remaining,
                         }
-
-        # Determine contact type for OTP record
-        is_phone_contact = self._guest_phone_matches_contact(guest, normalized_contact)
-        is_email_contact = self._guest_email_matches_contact(guest, normalized_contact)
-        if not is_phone_contact and not is_email_contact:
-            return {"success": False, "error": "No valid contact method found"}
-
-        contact_type = "phone" if is_phone_contact else "email"
+                    elif last_otp.get("contact_type") == contact_type and last_otp.get(
+                        "otp"
+                    ):
+                        reusable_otp = str(last_otp["otp"])
 
         # Generate and store OTP with contact type
-        otp = await self.generate_otp(guest_id, contact_type=contact_type)
+        if reusable_otp:
+            otp = reusable_otp
+        else:
+            otp = await self.generate_otp(guest_id, contact_type=contact_type)
 
         # Send SMS or email
         message = f"Your wedding RSVP verification code is: {otp}. Valid for 5 minutes."
@@ -606,6 +643,8 @@ class OTPService:
 
             twilio_service = self._get_twilio_service()
             if not twilio_service:
+                if not reusable_otp:
+                    await self.otp_collection.delete_many({"guest_id": guest_id})
                 return {
                     "success": False,
                     "error": self._get_user_friendly_sms_error("not_configured"),
@@ -618,12 +657,17 @@ class OTPService:
                 result.get("error_code") if isinstance(result, dict) else None
             )
             if status == "success":
-                return {
+                response = {
                     "success": True,
                     "contact_type": "phone",
                     "fallback_used": False,
                 }
+                if reusable_otp:
+                    response["reused_existing"] = True
+                return response
             else:
+                if not reusable_otp:
+                    await self.otp_collection.delete_many({"guest_id": guest_id})
                 user_error = self._get_user_friendly_sms_error(sms_error_code)
                 return {
                     "success": False,
@@ -650,15 +694,28 @@ class OTPService:
                 email_type="otp",
             )
             if result.get("success"):
-                return {"success": True, "contact_type": "email"}
+                response = {
+                    "success": True,
+                    "contact_type": "email",
+                }
+                if reusable_otp:
+                    response["reused_existing"] = True
+                return response
             else:
+                if not reusable_otp:
+                    await self.otp_collection.delete_many({"guest_id": guest_id})
                 logger.error(f"Failed to send OTP email: {result.get('error')}")
                 return {
                     "success": False,
                     "error": f"Failed to send email: {result.get('error')}",
+                    "error_code": "send_failed",
                 }
 
-        return {"success": False, "error": "No valid contact method found"}
+        return {
+            "success": False,
+            "error": "No valid contact method found",
+            "error_code": "no_contact",
+        }
 
     def _generate_otp_email_html(self, otp_code: str, guest_name: str) -> str:
         """Generate HTML for OTP verification email."""

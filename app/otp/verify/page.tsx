@@ -27,6 +27,8 @@ function VerifyOTPContent() {
   const [editMode, setEditMode] = useState(false); // Allow editing existing RSVP
   const [resendCooldown, setResendCooldown] = useState(65);
   const [contactType, setContactType] = useState<'phone' | 'email'>('phone');
+  const [initialOtpSending, setInitialOtpSending] = useState(false);
+  const [otpDeliveryFailed, setOtpDeliveryFailed] = useState(false);
   const isSubmittingRef = useRef(false);
   const searchParams = useSearchParams();
   const slug = searchParams.get('slug') ?? '';
@@ -38,6 +40,69 @@ function VerifyOTPContent() {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const setOtpDeliveryMessage = useCallback((data: { contact_type?: 'phone' | 'email'; fallback_used?: boolean }, isResend = false) => {
+    const sentVia = data.contact_type || 'phone';
+    setContactType(sentVia);
+    setOtpDeliveryFailed(false);
+
+    if (data.fallback_used) {
+      setSuccessMessage("We couldn't text you, so we sent your code by email instead. Please check your inbox.");
+      return;
+    }
+
+    if (sentVia === 'email') {
+      setSuccessMessage(
+        isResend
+          ? 'A new code has been sent to your email. Please check your inbox.'
+          : 'A verification code has been sent to your email. Please check your inbox.',
+      );
+      return;
+    }
+
+    setSuccessMessage(
+      isResend
+        ? 'A new code has been sent to your phone.'
+        : 'A verification code has been sent to your phone.',
+    );
+  }, []);
+
+  const requestInitialOtpForToken = useCallback(async (inviteToken: string) => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const storageKey = `guest_otp_initial_request:${slug}:${inviteToken}`;
+    let storageMarked = false;
+    try {
+      if (window.sessionStorage.getItem(storageKey) === 'sent') {
+        return;
+      }
+      window.sessionStorage.setItem(storageKey, 'sent');
+      storageMarked = true;
+    } catch {
+      storageMarked = false;
+    }
+
+    setInitialOtpSending(true);
+    setOtpDeliveryFailed(false);
+    setSuccessMessage('');
+    setError('');
+
+    try {
+      const data = await requestGuestSessionOtp();
+      setOtpDeliveryMessage(data);
+    } catch (err) {
+      if (storageMarked) {
+        window.sessionStorage.removeItem(storageKey);
+      }
+      setOtpDeliveryFailed(true);
+      setResendCooldown(0);
+      setError(err instanceof Error ? err.message : 'Failed to send verification code');
+    } finally {
+      setInitialOtpSending(false);
+    }
+  }, [setOtpDeliveryMessage, slug]);
 
   // Fetch wedding and guest data after OTP verification
   const fetchWeddingData = useCallback(async () => {
@@ -101,6 +166,7 @@ function VerifyOTPContent() {
       try {
         if (token) {
           await exchangeGuestInviteToken(slug, token);
+          await requestInitialOtpForToken(token);
           const cleanParams = new URLSearchParams();
           cleanParams.set('slug', slug);
           window.history.replaceState({}, '', `/otp/verify?${cleanParams.toString()}`);
@@ -133,7 +199,7 @@ function VerifyOTPContent() {
     return () => {
       active = false;
     };
-  }, [fetchWeddingData, slug, token]);
+  }, [fetchWeddingData, requestInitialOtpForToken, slug, token]);
 
   const handleVerifyOTP = async () => {
     // Prevent double-submit
@@ -181,20 +247,9 @@ function VerifyOTPContent() {
 
     try {
       const data = await requestGuestSessionOtp();
-
-      // Track which channel the code was sent to
-      const sentVia = data.contact_type || 'phone';
-      setContactType(sentVia);
-
-      // Show appropriate success message
-      if (data.fallback_used) {
-        setSuccessMessage("We couldn't text you, so we sent your code by email instead. Please check your inbox.");
-      } else if (sentVia === 'email') {
-        setSuccessMessage('A new code has been sent to your email. Please check your inbox.');
-      } else {
-        setSuccessMessage('A new code has been sent to your phone.');
-      }
+      setOtpDeliveryMessage(data, true);
     } catch (err) {
+      setOtpDeliveryFailed(true);
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
     } finally {
       setLoading(false);
@@ -294,9 +349,13 @@ function VerifyOTPContent() {
           </div>
           <h2 className="text-2xl font-semibold text-white text-center mb-4">Enter Verification Code</h2>
           <p className="text-center text-slate-300 mb-6">
-            {contactType === 'email'
-              ? 'A 6-digit code was sent to your email. Check your inbox (and spam folder).'
-              : 'A 6-digit code was sent to your phone.'}
+            {initialOtpSending
+              ? 'Sending your verification code...'
+              : otpDeliveryFailed
+                ? 'We could not send a code automatically. Please try again or contact the wedding planner for help.'
+                : contactType === 'email'
+                  ? 'Enter the 6-digit code sent to your email. Check your inbox and spam folder.'
+                  : 'Enter the 6-digit code sent to your phone.'}
           </p>
           <div className="flex flex-col gap-4">
             <input

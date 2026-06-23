@@ -908,6 +908,10 @@ class GuestVerificationService:
                     detail="Password is required for password-protected weddings",
                 )
 
+            existing_wedding = await self.weddings_collection.find_one(
+                {"_id": wedding_id}, {"slug": 1}
+            )
+
             # Update wedding with new privacy settings
             result = await self.weddings_collection.update_one(
                 {"_id": wedding_id},
@@ -921,6 +925,10 @@ class GuestVerificationService:
 
             if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="Wedding not found")
+
+            await self.invalidate_wedding_privacy_info(
+                existing_wedding.get("slug") if existing_wedding else None
+            )
 
             return {"message": "Privacy settings updated successfully"}
 

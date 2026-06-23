@@ -24,6 +24,7 @@ export function installDom(): DomHandle {
 
   const { window } = dom;
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const originalSelf = Object.getOwnPropertyDescriptor(globalThis, 'self');
   const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
   const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   const originalLocation = Object.getOwnPropertyDescriptor(globalThis, 'location');
@@ -35,6 +36,7 @@ export function installDom(): DomHandle {
   const originalGetComputedStyle = Object.getOwnPropertyDescriptor(globalThis, 'getComputedStyle');
 
   Object.defineProperty(globalThis, 'window', { configurable: true, writable: true, value: window });
+  Object.defineProperty(globalThis, 'self', { configurable: true, writable: true, value: window });
   Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: window.document });
   Object.defineProperty(globalThis, 'navigator', { configurable: true, writable: true, value: window.navigator });
   Object.defineProperty(globalThis, 'location', { configurable: true, writable: true, value: window.location });
@@ -110,6 +112,7 @@ export function installDom(): DomHandle {
     cleanup: () => {
       dom.window.close();
       restoreProperty('window', originalWindow);
+      restoreProperty('self', originalSelf);
       restoreProperty('document', originalDocument);
       restoreProperty('navigator', originalNavigator);
       restoreProperty('location', originalLocation);

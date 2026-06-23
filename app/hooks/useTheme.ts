@@ -1,6 +1,23 @@
 import { useEffect } from 'react';
 import { Wedding } from '@/types/wedding';
 
+const DEFAULT_THEME = {
+  primary_color: '#1e3a5f',
+  secondary_color: '#d4af37',
+  accent_color: '#c8847e',
+  background_style: 'gradient',
+  font_style: 'elegant',
+} as const;
+
+const validHexColor = (value: unknown, fallback: string) => {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const trimmed = value.trim();
+  return /^#[0-9a-f]{6}$/i.test(trimmed) ? trimmed : fallback;
+};
+
 /**
  * Lighten a hex color for readability on dark backgrounds.
  * percent: 0 = no change, 1 = white
@@ -19,17 +36,20 @@ export const useTheme = (wedding: Wedding | null) => {
     if (!wedding?.theme_config) return;
 
     const theme = wedding.theme_config;
+    const primaryColor = validHexColor(theme.primary_color, DEFAULT_THEME.primary_color);
+    const secondaryColor = validHexColor(theme.secondary_color, DEFAULT_THEME.secondary_color);
+    const accentColor = validHexColor(theme.accent_color, DEFAULT_THEME.accent_color);
     const root = document.documentElement;
 
     // Apply CSS custom properties (light mode originals)
-    root.style.setProperty('--theme-primary', theme.primary_color);
-    root.style.setProperty('--theme-secondary', theme.secondary_color);
-    root.style.setProperty('--theme-accent', theme.accent_color);
+    root.style.setProperty('--theme-primary', primaryColor);
+    root.style.setProperty('--theme-secondary', secondaryColor);
+    root.style.setProperty('--theme-accent', accentColor);
 
     // Compute lightened variants for dark mode readability
-    root.style.setProperty('--theme-primary-light', lightenHex(theme.primary_color, 0.6));
-    root.style.setProperty('--theme-secondary-light', lightenHex(theme.secondary_color, 0.5));
-    root.style.setProperty('--theme-accent-light', lightenHex(theme.accent_color, 0.45));
+    root.style.setProperty('--theme-primary-light', lightenHex(primaryColor, 0.6));
+    root.style.setProperty('--theme-secondary-light', lightenHex(secondaryColor, 0.5));
+    root.style.setProperty('--theme-accent-light', lightenHex(accentColor, 0.45));
 
     // Apply font style
     switch (theme.font_style) {
@@ -66,11 +86,11 @@ export const useTheme = (wedding: Wedding | null) => {
 
   // Return theme utilities
   return {
-    getPrimaryColor: () => wedding?.theme_config?.primary_color || '#1e3a5f',
-    getSecondaryColor: () => wedding?.theme_config?.secondary_color || '#d4af37',
-    getAccentColor: () => wedding?.theme_config?.accent_color || '#c8847e',
-    getBackgroundStyle: () => wedding?.theme_config?.background_style || 'gradient',
-    getFontStyle: () => wedding?.theme_config?.font_style || 'elegant',
+    getPrimaryColor: () => validHexColor(wedding?.theme_config?.primary_color, DEFAULT_THEME.primary_color),
+    getSecondaryColor: () => validHexColor(wedding?.theme_config?.secondary_color, DEFAULT_THEME.secondary_color),
+    getAccentColor: () => validHexColor(wedding?.theme_config?.accent_color, DEFAULT_THEME.accent_color),
+    getBackgroundStyle: () => wedding?.theme_config?.background_style || DEFAULT_THEME.background_style,
+    getFontStyle: () => wedding?.theme_config?.font_style || DEFAULT_THEME.font_style,
     getBackgroundGradient: () => {
       if (!wedding?.theme_config || wedding.theme_config.background_style !== 'gradient') {
         return 'from-wedding-ivory to-rose-50';

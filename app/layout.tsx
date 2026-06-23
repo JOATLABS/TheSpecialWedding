@@ -2,22 +2,9 @@
 import './styles/globals.css'
 import Script from 'next/script'
 import type { Metadata } from 'next'
-import { Inter, Playfair_Display } from 'next/font/google'
 import { MARKETING_FEATURES } from './data/marketingFeatures';
 
 const TOOL_COUNT = MARKETING_FEATURES.length;
-const inter = Inter({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  display: 'swap',
-  variable: '--font-inter',
-})
-const playfairDisplay = Playfair_Display({
-  subsets: ['latin'],
-  weight: ['500', '600', '700'],
-  display: 'swap',
-  variable: '--font-playfair-display',
-})
 
 export const metadata: Metadata = {
   // Title kept within 45-60 char band so it doesn't get truncated in
@@ -99,7 +86,7 @@ export default function RootLayout({
   const umamiSrc = process.env.NEXT_PUBLIC_UMAMI_SRC;
 
   return (
-    <html lang="en" className={`${inter.variable} ${playfairDisplay.variable}`}>
+    <html lang="en">
       <head>
         <script
           type="application/ld+json"
