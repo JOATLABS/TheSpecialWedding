@@ -725,7 +725,6 @@ class VendorSignupService:
                     "target_audience": "root_admin",
                     "is_dismissible": True,
                     "priority": "high",
-                    "user_id": vendor_id,
                 },
                 created_by="system",
             )

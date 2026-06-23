@@ -9,11 +9,13 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException
 
 from app.constants.roles import is_wedding_planner_role
+from app.constants.registration_sources import REGISTRATION_SOURCE_PUBLIC_SIGNUP
 from app.core.cache import CacheKeys, cache
 from app.core.database import mongo
 from app.core.events import EventFactory, event_bus
 from app.dependencies.auth_extended import invalidate_auth_cache
 from app.services.email_service_resend import ResendEmailService
+from app.services.notification_service import NotificationService
 from app.services.planner_onboarding_email_service import (
     planner_onboarding_email_service,
 )
@@ -105,6 +107,96 @@ class UserManagementService:
         return "".join(
             secrets.choice(string.ascii_letters + string.digits) for _ in range(32)
         )
+
+    async def _notify_root_admin_account_created(
+        self, user_data: dict, source_label: str
+    ) -> None:
+        """Notify root admin that a planner account appeared without direct creation."""
+        email = user_data.get("email") or "unknown email"
+        first_name = (user_data.get("first_name") or "").strip()
+        last_name = (user_data.get("last_name") or "").strip()
+        full_name = " ".join(part for part in [first_name, last_name] if part).strip()
+        display_name = user_data.get("company_name") or full_name or email
+        status = user_data.get("subscription_status") or "unknown"
+        role = user_data.get("role") or "unknown"
+        plan_id = user_data.get("plan_id") or "none"
+        created_at = user_data.get("created_at")
+        if isinstance(created_at, datetime):
+            created_at_text = created_at.isoformat()
+        else:
+            created_at_text = str(created_at or "unknown")
+
+        title = "New Planner Account Created"
+        message = (
+            f"{display_name} ({email}) created a {source_label} account. "
+            f"Role: {role}. Status: {status}. Plan: {plan_id}. "
+            f"Created: {created_at_text}."
+        )
+
+        try:
+            await NotificationService().create_notification(
+                notification_data={
+                    "title": title,
+                    "message": message,
+                    "type": "planner_account_created",
+                    "target_audience": "root_admin",
+                    "is_dismissible": True,
+                    "priority": "high",
+                },
+                created_by="system",
+            )
+        except Exception as notification_error:
+            self.logger.error(
+                "Failed to create root-admin account notification for %s: %s",
+                email,
+                notification_error,
+            )
+
+        if not self.email_service.configured:
+            return
+
+        root_admin_email = os.getenv(
+            "ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io"
+        )
+        safe_display_name = html_lib.escape(display_name)
+        safe_email = html_lib.escape(email)
+        safe_source = html_lib.escape(source_label)
+        safe_role = html_lib.escape(role)
+        safe_status = html_lib.escape(status)
+        safe_plan = html_lib.escape(plan_id)
+        safe_created = html_lib.escape(created_at_text)
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #111827;">
+            <h2 style="margin: 0 0 12px 0;">New planner account created</h2>
+            <p style="margin: 0 0 16px 0;">A planner account was created from {safe_source}.</p>
+            <table style="border-collapse: collapse; width: 100%; max-width: 560px;">
+                <tr><td style="padding: 6px 0; color: #6b7280;">Account</td><td style="padding: 6px 0; font-weight: 600;">{safe_display_name}</td></tr>
+                <tr><td style="padding: 6px 0; color: #6b7280;">Email</td><td style="padding: 6px 0;">{safe_email}</td></tr>
+                <tr><td style="padding: 6px 0; color: #6b7280;">Role</td><td style="padding: 6px 0;">{safe_role}</td></tr>
+                <tr><td style="padding: 6px 0; color: #6b7280;">Status</td><td style="padding: 6px 0;">{safe_status}</td></tr>
+                <tr><td style="padding: 6px 0; color: #6b7280;">Plan</td><td style="padding: 6px 0;">{safe_plan}</td></tr>
+                <tr><td style="padding: 6px 0; color: #6b7280;">Created</td><td style="padding: 6px 0;">{safe_created}</td></tr>
+            </table>
+        </body>
+        </html>
+        """
+
+        try:
+            await self.email_service.send_email(
+                to_email=root_admin_email,
+                subject=f"New Planner Account: {display_name}",
+                html_content=html_content,
+                from_name="Special Wedding Platform",
+                email_type="planner_account_created",
+            )
+        except Exception as email_error:
+            self.logger.error(
+                "Failed to email root admin about new account %s: %s",
+                email,
+                email_error,
+            )
 
     def _build_user_query(
         self,
@@ -1046,6 +1138,11 @@ class UserManagementService:
                 },
             )
 
+            await self._notify_root_admin_account_created(
+                {**user_data, "_id": result.inserted_id},
+                source_label="admin invitation setup",
+            )
+
             # Build response
             response = {
                 "message": "Account setup completed successfully",
@@ -1122,7 +1219,7 @@ class UserManagementService:
                 "verification_token_expires": verification_expires,
                 "pending_expires_at": pending_expires_at,
                 "created_at": datetime.now(timezone.utc),
-                "registration_source": "public_signup",
+                "registration_source": REGISTRATION_SOURCE_PUBLIC_SIGNUP,
             }
 
             result = await self.users_collection.insert_one(user_data)
@@ -1147,6 +1244,11 @@ class UserManagementService:
                 self.logger.warning(
                     f"Failed to auto-complete invitation for {email}: {e}"
                 )
+
+            await self._notify_root_admin_account_created(
+                {**user_data, "_id": result.inserted_id},
+                source_label="public signup",
+            )
 
             # Send email verification email
             if self.email_service.configured:

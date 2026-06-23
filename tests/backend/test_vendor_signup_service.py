@@ -4,6 +4,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import mongomock
 import pytest
@@ -206,3 +207,36 @@ async def test_approve_vendor_fails_closed_when_frontend_url_missing(
     assert vendor["vendor_account_status"] == "pending_approval"
     assert vendor["is_active"] is False
     assert vendor["password_hash"] is None
+
+
+@pytest.mark.asyncio
+async def test_vendor_signup_admin_alert_targets_root_admin_not_vendor(
+    service_and_db,
+):
+    service, _raw_db, vendor_id = service_and_db
+    calls = []
+
+    async def _capture_notification(notification_data, created_by):
+        calls.append(
+            {
+                "notification_data": notification_data,
+                "created_by": created_by,
+            }
+        )
+        return {"id": "notification-1"}
+
+    service.notification_service = SimpleNamespace(
+        create_notification=_capture_notification
+    )
+
+    await service._notify_admin_new_signup(
+        vendor_email="vendor@example.com",
+        business_name="Vendor Studio",
+        vendor_id=str(vendor_id),
+    )
+
+    assert calls[0]["created_by"] == "system"
+    notification = calls[0]["notification_data"]
+    assert notification["target_audience"] == "root_admin"
+    assert notification["type"] == "vendor_signup"
+    assert "user_id" not in notification

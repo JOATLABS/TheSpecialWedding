@@ -101,6 +101,7 @@ interface EndpointPerformance {
   p99_ms: number;
   request_count: number;
   error_count: number;
+  auth_rejection_count?: number;
   error_rate: number;
   status: 'healthy' | 'moderate' | 'warning' | 'critical';
 }
@@ -109,6 +110,7 @@ interface PerformanceMetrics {
   summary?: {
     total_requests_24h: number;
     total_errors_24h: number;
+    auth_rejections_24h?: number;
     overall_error_rate: number;
     overall_avg_response_time_ms: number;
     overall_avg_response_time_seconds?: number;
@@ -1446,7 +1448,7 @@ export default function PlatformInfrastructurePage() {
       {activeTab === 'performance' && (
         <div className="space-y-6">
           {/* Performance Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-7 gap-4">
             <Card className="p-4">
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Requests (24h)</p>
               <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
@@ -1466,9 +1468,15 @@ export default function PlatformInfrastructurePage() {
               </p>
             </Card>
             <Card className="p-4">
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Error Rate</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Operational Error Rate</p>
               <p className={`text-2xl font-bold ${(metrics.performance?.summary?.overall_error_rate ?? 0) > 5 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                 {(metrics.performance?.summary?.overall_error_rate ?? 0).toFixed(2)}%
+              </p>
+            </Card>
+            <Card className="p-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Auth/Billing Rejections</p>
+              <p className={`text-2xl font-bold ${(metrics.performance?.summary?.auth_rejections_24h ?? 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}>
+                {(metrics.performance?.summary?.auth_rejections_24h ?? 0).toLocaleString()}
               </p>
             </Card>
             <Card className="p-4">
@@ -1507,7 +1515,8 @@ export default function PlatformInfrastructurePage() {
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">P99</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Max</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Requests</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Error Rate</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Operational Errors</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Auth/Billing</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-slate-900 divide-y divide-gray-200 dark:divide-gray-700">
@@ -1540,6 +1549,9 @@ export default function PlatformInfrastructurePage() {
                             <span className={endpoint.error_rate > 5 ? 'text-red-600 dark:text-red-400 font-semibold' : endpoint.error_rate > 1 ? 'text-orange-600 dark:text-orange-400' : 'text-gray-600 dark:text-gray-400'}>
                               {endpoint.error_rate.toFixed(1)}%
                             </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                            {(endpoint.auth_rejection_count ?? 0).toLocaleString()}
                           </td>
                         </tr>
                       );
