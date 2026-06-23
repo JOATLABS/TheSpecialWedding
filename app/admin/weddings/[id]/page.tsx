@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
 import { canManageCouplePortal } from '@/admin/utils/teamAccess';
@@ -30,6 +30,13 @@ import {
   normalizePrivacySettingsForMode,
   type PrivacyMode,
 } from './privacySettings';
+import { WeddingSetupGuide } from './WeddingSetupGuide';
+import {
+  buildWeddingSetupSummary,
+  isWeddingSetupTab,
+  type WeddingSetupStatus,
+  type WeddingSetupTab,
+} from '../setupGuide';
 // Direct imports — avoids Turbopack barrel-evaluation bug with lucide-react
 // (Turbopack instantiates ALL 900+ icon module factories when importing from the barrel,
 // and message-circle.js factory fails during this process)
@@ -105,10 +112,23 @@ const buildMediaOptions = (
   return options;
 };
 
+const getSetupStatusDotClass = (status?: WeddingSetupStatus) => {
+  if (status === 'complete') {
+    return 'bg-emerald-500 dark:bg-emerald-400';
+  }
+
+  if (status === 'attention') {
+    return 'bg-amber-500 dark:bg-amber-400';
+  }
+
+  return 'bg-slate-300 dark:bg-slate-600';
+};
+
 export default function WeddingDetailsPage() {
  const { token, userProfile, isLoading: authLoading } = useAdmin();
  const params = useParams();
  const router = useRouter();
+ const searchParams = useSearchParams();
  const weddingId = params.id as string;
 
  const [wedding, setWedding] = useState<Wedding | null>(null);
@@ -116,7 +136,7 @@ export default function WeddingDetailsPage() {
 	 const [saving, setSaving] = useState(false);
 	 const [error, setError] = useState<string>('');
 	 const [eventTimeErrors, setEventTimeErrors] = useState<Record<number, string>>({});
-	 const [activeTab, setActiveTab] = useState<'events' | 'vendors' | 'rsvp' | 'privacy' | 'registry' | 'faq' | 'theme' | 'story' | 'couple'>('events');
+	 const [activeTab, setActiveTab] = useState<WeddingSetupTab>('events');
  const [syncing, setSyncing] = useState(false);
  const [guests, setGuests] = useState<Guest[]>([]);
  const [uploadedMedia, setUploadedMedia] = useState<WeddingMediaItem[]>([]);
@@ -129,6 +149,17 @@ export default function WeddingDetailsPage() {
  const [vendorAssignmentsLoading, setVendorAssignmentsLoading] = useState(false);
  const [vendorAssignmentsError, setVendorAssignmentsError] = useState<string | null>(null);
  const [vendorBudgetCategories, setVendorBudgetCategories] = useState<BudgetCategory[]>([]);
+
+ useEffect(() => {
+ const setupTab = searchParams.get('setupTab');
+ if (!isWeddingSetupTab(setupTab)) {
+ return;
+ }
+ if (setupTab === 'couple' && !canViewCoupleTab) {
+ return;
+ }
+ setActiveTab(setupTab);
+ }, [canViewCoupleTab, searchParams]);
 
  const fetchWedding = useCallback(async () => {
  try {
@@ -648,6 +679,14 @@ const addEvent = () => {
  );
  }
 
+ const setupSummary = buildWeddingSetupSummary(wedding, {
+ canViewCoupleTab,
+ vendorAssignmentCount: vendorAssignments.length,
+ });
+ const setupStepByTab = new Map(
+ setupSummary.steps.map((step) => [step.tab, step])
+ );
+
  return (
  <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 dark:from-slate-900 dark:to-slate-800 p-4 sm:p-6">
  <div className="max-w-7xl mx-auto">
@@ -661,16 +700,16 @@ const addEvent = () => {
  <h1 className="text-xl sm:text-3xl font-bold text-white break-words">{wedding.couple_names}</h1>
  <p className="text-blue-100 mt-1 sm:mt-2 text-sm sm:text-base">Configure wedding details and content</p>
  </div>
- <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
+ <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:gap-3">
  <Link
  href="/admin/weddings"
- className="rounded-lg border border-white/70 bg-white/90 px-4 py-2 text-center text-sm font-semibold text-wedding-navy shadow-sm transition-colors hover:bg-white sm:flex-initial sm:px-6 sm:py-3 sm:text-base flex-1 dark:border-white/20 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
+ className="rounded-lg border border-white/70 bg-white/90 px-4 py-2 text-center text-sm font-semibold text-wedding-navy shadow-sm transition-colors hover:bg-white sm:flex-initial sm:px-6 sm:py-3 sm:text-base dark:border-white/20 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
  >
  Back
  </Link>
  <Link
  href={`/admin/seating?weddingId=${weddingId}`}
- className="bg-wedding-sage/80 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold hover:bg-wedding-sage transition-colors text-sm sm:text-base flex-1 sm:flex-initial text-center"
+ className="rounded-lg bg-wedding-sage/80 px-4 py-2 text-center text-sm font-semibold text-white transition-colors hover:bg-wedding-sage sm:flex-initial sm:px-6 sm:py-3 sm:text-base"
  >
  Seating Plan
  </Link>
@@ -679,12 +718,12 @@ const addEvent = () => {
  weddingTitle={wedding?.couple_names || 'Wedding'}
  variant="outline"
  size="default"
- className="border-white/70 bg-white/90 text-sm text-wedding-navy hover:bg-white sm:text-base dark:border-white/20 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
+ className="w-full justify-center border-white/70 bg-white/90 text-sm text-wedding-navy hover:bg-white sm:w-auto sm:text-base dark:border-white/20 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
  />
  <button
  onClick={saveWedding}
  disabled={saving}
- className="rounded-lg bg-wedding-navy px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-wedding-navy/90 disabled:opacity-50 sm:flex-initial sm:px-6 sm:py-3 sm:text-base flex-1 dark:bg-white dark:text-wedding-navy dark:hover:bg-slate-100"
+ className="w-full rounded-lg bg-wedding-navy px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-wedding-navy/90 disabled:opacity-50 sm:w-auto sm:flex-initial sm:px-6 sm:py-3 sm:text-base dark:bg-white dark:text-wedding-navy dark:hover:bg-slate-100"
  >
  {saving ? 'Saving...' : 'Save Changes'}
  </button>
@@ -700,6 +739,14 @@ const addEvent = () => {
  </div>
  )}
 
+ <WeddingSetupGuide
+ wedding={wedding}
+ activeTab={activeTab}
+ canViewCoupleTab={canViewCoupleTab}
+ vendorAssignmentCount={vendorAssignments.length}
+ onSelectTab={(tab) => setActiveTab(tab)}
+ />
+
  {/* Tabs */}
  <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
  <div className="border-b border-gray-200 dark:border-gray-700">
@@ -714,7 +761,9 @@ const addEvent = () => {
  'theme',
  'story',
  ...(canViewCoupleTab ? (['couple'] as const) : []),
- ] as const).map((tab) => (
+ ] as const).map((tab) => {
+ const setupStep = setupStepByTab.get(tab);
+ return (
  <button
  key={tab}
  onClick={() => setActiveTab(tab)}
@@ -726,8 +775,16 @@ const addEvent = () => {
  >
  {tab === 'couple' && <HeartHandshake className="w-4 h-4" />}
  {tab === 'rsvp' ? 'RSVP' : tab === 'faq' ? 'FAQ' : tab === 'story' ? 'Story' : tab === 'couple' ? 'Couple' : tab}
+ {setupStep && (
+ <span
+ aria-hidden="true"
+ className={`h-2 w-2 rounded-full ${getSetupStatusDotClass(setupStep.status)}`}
+ />
+ )}
+ {setupStep && <span className="sr-only"> {setupStep.statusLabel}</span>}
  </button>
- ))}
+ );
+ })}
  </nav>
  </div>
 

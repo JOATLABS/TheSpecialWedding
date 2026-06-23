@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import NextImage from 'next/image';
 import {
@@ -101,7 +101,7 @@ export function useResponsiveWorkspaceSidebar(defaultDesktopOpen = true) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(defaultDesktopOpen);
   const lastIsMobileRef = useRef<boolean | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const handleResize = () => {
       const nextIsMobile = window.innerWidth < 1024;
       setIsMobile(nextIsMobile);
@@ -137,7 +137,9 @@ export function WorkspaceShellFrame({
       {sidebar}
 
       <div
-        className="relative z-10 flex min-h-screen flex-col transition-[margin] duration-300 ease-out"
+        className={`relative z-10 flex min-h-screen flex-col ${
+          isMobile ? 'transition-none' : 'transition-[margin] duration-300 ease-out'
+        }`}
         style={{ marginLeft: !isMobile ? (isSidebarOpen ? '18rem' : '5rem') : '0' }}
       >
         {banner}
@@ -183,10 +185,14 @@ export function WorkspaceSidebar({
       <aside
         id="workspace-sidebar"
         className={`
-          fixed left-0 top-0 z-50 flex h-screen flex-col border-r border-slate-200/50 bg-white/80 backdrop-blur-xl transition-[width,transform] duration-300 ease-out dark:border-slate-700/50 dark:bg-slate-900/80
+          fixed left-0 top-0 z-50 flex h-screen flex-col border-r border-slate-200/50 bg-white/80 backdrop-blur-xl dark:border-slate-700/50 dark:bg-slate-900/80
+          ${isMobile && !isOpen ? 'transition-none' : 'transition-[width,transform] duration-300 ease-out'}
           ${isMobile ? (isOpen ? 'translate-x-0' : '-translate-x-full') : ''}
         `}
-        style={{ width: isOpen ? '18rem' : '5rem' }}
+        style={{
+          width: isMobile ? '18rem' : isOpen ? '18rem' : '5rem',
+          transform: isMobile && !isOpen ? 'translateX(-100%)' : undefined,
+        }}
         role="navigation"
         aria-label={navigationLabel}
       >

@@ -51,7 +51,10 @@ describe('EventLocationSection map fallback', () => {
 
     await view.findByText('Map unavailable');
 
-    assert.equal(view.getByText('The Celebration Hall').textContent, 'The Celebration Hall');
+    assert.equal(
+      view.getByRole('heading', { name: 'The Celebration Hall' }).textContent,
+      'The Celebration Hall',
+    );
     assert.equal(
       view.getByRole('link', { name: 'Open in Google Maps' }).getAttribute('href'),
       'https://www.google.com/maps/search/?api=1&query=123%20Wedding%20Lane%2C%20Oklahoma%20City%2C%20OK',

@@ -606,7 +606,7 @@ export default function GuestMemoriesUploadClient({
                   <input
                     type="text"
                     value={guestName}
-                    onChange={(event) => setGuestName(event.target.value)}
+                    onInput={(event) => setGuestName(event.currentTarget.value)}
                     placeholder="e.g. Maya, Tunde, Auntie Bisi"
                     className="w-full rounded-lg border border-wedding-rose/20 bg-white px-4 py-3 text-base text-slate-900 shadow-inner outline-none transition focus:border-wedding-rose focus:ring-2 focus:ring-wedding-rose/40 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
