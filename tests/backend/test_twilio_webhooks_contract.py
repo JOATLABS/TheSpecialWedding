@@ -460,6 +460,156 @@ async def test_incoming_guest_reply_appends_to_existing_public_help_ticket_witho
 
 
 @pytest.mark.asyncio
+async def test_incoming_guest_reply_duplicate_message_sid_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ticket_id = ObjectId("65f000000000000000000105")
+    now = datetime.now(timezone.utc)
+    support_ticket = {
+        "_id": ticket_id,
+        "phone": "+15551234567",
+        "message": "Public help request from Ayo Guest (Friend).",
+        "guest_name": "Ayo Guest",
+        "wedding_id": "wedding-1",
+        "wedding_name": "Ayo & Casey",
+        "assigned_to": "planner-a@example.com",
+        "status": "new",
+        "source": "sms",
+        "origin": "public_help_form",
+        "created_at": now,
+        "updated_at": now,
+        "is_read": True,
+        "guest_messages": [],
+    }
+    support_tickets = FakeCollection([support_ticket])
+    planner_notifications = FakeCollection()
+
+    class FakeSMSService:
+        def send_sms(self, _to_number: str, _message: str) -> None:
+            raise AssertionError("existing-thread replies should not auto-ack")
+
+    monkeypatch.setattr(
+        twilio_webhooks, "_validate_twilio_signature", lambda *_args, **_kwargs: True
+    )
+    monkeypatch.setattr(
+        twilio_webhooks,
+        "mongo",
+        SimpleNamespace(
+            get_guest_collection=lambda: FakeGuestCollection(),
+            get_users_collection=lambda: FakeCollection(),
+            db={
+                "weddings": FakeCollection(),
+                "support_tickets": support_tickets,
+                "planner_notifications": planner_notifications,
+                "errors": FakeCollection(),
+            },
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "app.services.sms_service",
+        SimpleNamespace(SMSService=FakeSMSService),
+    )
+
+    request = FakeRequest(
+        FormData(
+            {
+                "From": "+15551234567",
+                "Body": "Hello, I cannot RSVP",
+                "MessageSid": "SM-inbound-help-retry-1",
+            }
+        ),
+        "/webhook/twilio/incoming",
+    )
+
+    first = await twilio_webhooks.handle_twilio_incoming_message(request, None)
+    second = await twilio_webhooks.handle_twilio_incoming_message(request, None)
+
+    assert first["action"] == "support_ticket_reply"
+    assert second["action"] == "support_ticket_reply"
+    assert len(support_ticket["guest_messages"]) == 1
+    assert support_ticket["guest_messages"][0]["message_sid"] == "SM-inbound-help-retry-1"
+    assert len(planner_notifications.inserted) == 1
+
+
+@pytest.mark.asyncio
+async def test_help_keyword_appends_to_existing_public_help_ticket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ticket_id = ObjectId("65f000000000000000000106")
+    now = datetime.now(timezone.utc)
+    support_ticket = {
+        "_id": ticket_id,
+        "phone": "+15551234567",
+        "message": "Public help request from Ayo Guest (Friend).",
+        "guest_name": "Ayo Guest",
+        "wedding_id": "wedding-1",
+        "wedding_name": "Ayo & Casey",
+        "assigned_to": "planner-a@example.com",
+        "status": "new",
+        "source": "sms",
+        "origin": "public_help_form",
+        "created_at": now,
+        "updated_at": now,
+        "is_read": True,
+        "guest_messages": [],
+    }
+    support_tickets = FakeCollection([support_ticket])
+    planner_notifications = FakeCollection()
+    sent_messages: list[tuple[str, str]] = []
+
+    class FakeSMSService:
+        def send_sms(self, to_number: str, message: str) -> None:
+            sent_messages.append((to_number, message))
+
+    monkeypatch.setattr(
+        twilio_webhooks, "_validate_twilio_signature", lambda *_args, **_kwargs: True
+    )
+    monkeypatch.setattr(
+        twilio_webhooks,
+        "mongo",
+        SimpleNamespace(
+            get_guest_collection=lambda: FakeGuestCollection(),
+            get_users_collection=lambda: FakeCollection(),
+            db={
+                "weddings": FakeCollection(),
+                "support_tickets": support_tickets,
+                "planner_notifications": planner_notifications,
+                "errors": FakeCollection(),
+            },
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "app.services.sms_service",
+        SimpleNamespace(SMSService=FakeSMSService),
+    )
+
+    request = FakeRequest(
+        FormData(
+            {
+                "From": "+15551234567",
+                "Body": "HELP",
+                "MessageSid": "SM-inbound-help-keyword-1",
+            }
+        ),
+        "/webhook/twilio/incoming",
+    )
+
+    result = await twilio_webhooks.handle_twilio_incoming_message(request, None)
+
+    assert result == {
+        "status": "ok",
+        "action": "help_existing_ticket",
+        "ticket_id": str(ticket_id),
+    }
+    assert sent_messages
+    assert "the planner will respond by text" in sent_messages[0][1]
+    assert support_ticket["guest_messages"][-1]["message"] == "HELP"
+    assert planner_notifications.inserted[0]["planner_id"] == "planner-a@example.com"
+
+
+@pytest.mark.asyncio
 async def test_incoming_guest_reply_reopens_resolved_sms_ticket(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

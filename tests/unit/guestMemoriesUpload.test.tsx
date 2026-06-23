@@ -9,6 +9,8 @@ import { installDom } from './testDom';
 let GuestMemoriesUploadClient: typeof import('../../app/[slug]/upload/[uploadToken]/upload-client').default;
 let domHandle: ReturnType<typeof installDom> | null = null;
 let originalShowPickerDescriptor: PropertyDescriptor | undefined;
+let originalCreateObjectUrlDescriptor: PropertyDescriptor | undefined;
+let originalRevokeObjectUrlDescriptor: PropertyDescriptor | undefined;
 type InputPrototypeWithOptionalShowPicker = HTMLInputElement & {
   showPicker?: () => void;
 };
@@ -51,6 +53,8 @@ describe('GuestMemoriesUploadClient upload picker', () => {
   before(async () => {
     domHandle = installDom();
     originalShowPickerDescriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'showPicker');
+    originalCreateObjectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, 'createObjectURL');
+    originalRevokeObjectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL');
     ({ default: GuestMemoriesUploadClient } = await import('../../app/[slug]/upload/[uploadToken]/upload-client'));
   });
 
@@ -70,6 +74,16 @@ describe('GuestMemoriesUploadClient upload picker', () => {
       Object.defineProperty(window.HTMLInputElement.prototype, 'showPicker', originalShowPickerDescriptor);
     } else {
       removeShowPickerPrototype();
+    }
+    if (originalCreateObjectUrlDescriptor) {
+      Object.defineProperty(URL, 'createObjectURL', originalCreateObjectUrlDescriptor);
+    } else {
+      Reflect.deleteProperty(URL, 'createObjectURL');
+    }
+    if (originalRevokeObjectUrlDescriptor) {
+      Object.defineProperty(URL, 'revokeObjectURL', originalRevokeObjectUrlDescriptor);
+    } else {
+      Reflect.deleteProperty(URL, 'revokeObjectURL');
     }
   });
 
@@ -136,5 +150,72 @@ describe('GuestMemoriesUploadClient upload picker', () => {
     fireEvent.click(uploadButton);
 
     assert.equal(clickCalls.length, 1);
+  });
+
+  it('keeps failed files available for retry instead of clearing the batch', async () => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      writable: true,
+      value: () => 'blob:guest-memory-preview',
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      writable: true,
+      value: () => {},
+    });
+
+    mock.restoreAll();
+    mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/guest-media/public/') && !url.includes('/upload-plan') && !url.includes('/finalize')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => contextPayload,
+        } as Response;
+      }
+      if (url.includes('/upload-plan')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            upload_batch_id: 'batch-1',
+            assets: [
+              {
+                asset_id: 'asset-1',
+                upload_url: 'https://uploads.example.test/asset-1',
+                key: 'guest-media/test/asset-1.jpg',
+                content_type: 'image/jpeg',
+                media_type: 'image',
+                event_type: 'ceremony',
+                filename: 'failed-photo.jpg',
+              },
+            ],
+          }),
+        } as Response;
+      }
+      if (init?.method === 'PUT') {
+        return {
+          ok: false,
+          status: 500,
+          text: async () => 'storage error',
+        } as Response;
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const view = await renderIntoUploadStep();
+    const fileInput = view.container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['guest-memory'], 'failed-photo.jpg', { type: 'image/jpeg' });
+
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    await view.findByText('failed-photo.jpg');
+
+    fireEvent.click(view.getByRole('button', { name: 'Share with the couple' }));
+
+    await view.findByText('Needs retry');
+    await view.findByText('Upload failed with status 500');
+    assert.ok(view.getByRole('button', { name: 'Retry failed upload(s)' }));
+    assert.ok(view.queryByRole('heading', { name: 'Thank you for sharing the moment.' }) === null);
   });
 });

@@ -119,6 +119,17 @@ def _drop_driver_state(h: Harness) -> None:
             f"  ✅ planner_notifications: removed {deleted_notifications.deleted_count}"
         )
 
+    deleted_reminders = h.mongo["reminders_sent"].delete_many(
+        {
+            "$or": [
+                {"message_sid": {"$regex": "^SM_testbed_guest_help_"}},
+                {"wedding_id": {"$in": wedding_ids or ["__none__"]}},
+            ]
+        }
+    )
+    if deleted_reminders.deleted_count:
+        h.log.info(f"  ✅ reminders_sent: removed {deleted_reminders.deleted_count}")
+
     for email in planner_emails:
         _delete_stripe_customers_by_email(h, email)
         h.delete_user_chain(email)
@@ -262,6 +273,57 @@ def _post_twilio_inbound(h: Harness, *, phone: str, body: str, sid: str) -> dict
     return resp.json()
 
 
+def _post_twilio_status(
+    h: Harness,
+    *,
+    sid: str,
+    status: str,
+    to_number: str,
+    error_code: str = "",
+) -> dict:
+    path = "/webhook/twilio/status"
+    payload = {
+        "MessageSid": sid,
+        "MessageStatus": status,
+        "To": to_number,
+    }
+    if error_code:
+        payload["ErrorCode"] = error_code
+
+    resp = requests.post(
+        f"{h.config.backend_url}{path}",
+        data=payload,
+        headers=_twilio_signature_headers(h, path, payload),
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Twilio status failed: {resp.status_code} {resp.text}")
+    return resp.json()
+
+
+def _assert_invalid_twilio_signature_rejected(h: Harness) -> None:
+    if not os.getenv("TWILIO_AUTH_TOKEN"):
+        h.log.warning("  ⚠️ Skipping invalid-signature assertion: TWILIO_AUTH_TOKEN is not set")
+        return
+
+    path = "/webhook/twilio/incoming"
+    payload = {
+        "From": GUEST_PHONE,
+        "Body": "This forged message should be rejected",
+        "MessageSid": "SM_testbed_invalid_signature",
+    }
+    resp = requests.post(
+        f"{h.config.backend_url}{path}",
+        data=payload,
+        headers={"X-Twilio-Signature": "definitely-invalid"},
+        timeout=30,
+    )
+    if resp.status_code != 401:
+        raise RuntimeError(
+            f"invalid Twilio signature was not rejected: {resp.status_code} {resp.text}"
+        )
+
+
 def main() -> int:
     h = Harness(driver_name=DRIVER_NAME)
     h.preflight()
@@ -373,10 +435,109 @@ def main() -> int:
         ],
     )
 
+    h.phase("GUEST_HELP_SMS_IDEMPOTENCY", "Retry same Twilio MessageSid")
+    notification_count_before_duplicate = _notification_count(
+        h, PLANNER_A_EMAIL, ticket_id
+    )
+    duplicate = _post_twilio_inbound(
+        h,
+        phone=GUEST_PHONE,
+        body=first_reply,
+        sid="SM_testbed_guest_help_reply_1",
+    )
+    if duplicate.get("action") != "support_ticket_reply":
+        raise RuntimeError(f"duplicate inbound did not resolve to same ticket: {duplicate}")
+    after_duplicate = h.mongo["support_tickets"].find_one({"_id": ObjectId(ticket_id)})
+    duplicate_messages = [
+        message
+        for message in after_duplicate.get("guest_messages", [])
+        if message.get("message_sid") == "SM_testbed_guest_help_reply_1"
+    ]
+    if len(duplicate_messages) != 1:
+        raise RuntimeError(
+            f"duplicate MessageSid appended {len(duplicate_messages)} guest messages"
+        )
+    if (
+        _notification_count(h, PLANNER_A_EMAIL, ticket_id)
+        != notification_count_before_duplicate
+    ):
+        raise RuntimeError("duplicate MessageSid created a duplicate notification")
+
+    help_reply = _post_twilio_inbound(
+        h,
+        phone=GUEST_PHONE,
+        body="HELP",
+        sid="SM_testbed_guest_help_keyword_1",
+    )
+    if help_reply.get("action") != "help_existing_ticket":
+        raise RuntimeError(f"HELP did not stay attached to existing ticket: {help_reply}")
+    after_help = h.mongo["support_tickets"].find_one({"_id": ObjectId(ticket_id)})
+    if not any(
+        message.get("message_sid") == "SM_testbed_guest_help_keyword_1"
+        for message in after_help.get("guest_messages", [])
+    ):
+        raise RuntimeError("HELP keyword was not recorded on the existing SMS ticket")
+    if (
+        h.mongo["support_tickets"].count_documents(
+            {"phone": GUEST_PHONE, "source": "sms"}
+        )
+        != 1
+    ):
+        raise RuntimeError("HELP keyword created a duplicate SMS ticket")
+
+    h.checkpoint(
+        "GUEST_HELP_SMS_P3_IDEMPOTENT_HELP",
+        expectations=[
+            "Retrying the same inbound MessageSid does not duplicate guest messages.",
+            "Retrying the same inbound MessageSid does not duplicate planner notifications.",
+            "HELP from the same phone stays attached to the existing planner-scoped ticket.",
+        ],
+    )
+
+    h.phase("GUEST_HELP_SMS_STATUS_AND_SECURITY", "Status callback and signature rejection")
+    status_sid = "SM_testbed_guest_help_status_1"
+    h.mongo["reminders_sent"].insert_one(
+        {
+            "message_sid": status_sid,
+            "provider": "twilio",
+            "recipient_phone": GUEST_PHONE,
+            "guest_id": None,
+            "wedding_id": wedding_id,
+            "message": "Testbed delivery status fixture",
+            "sent_at": datetime.now(timezone.utc),
+            "delivery_status": "queued",
+            "delivery_events": [],
+        }
+    )
+    status_result = _post_twilio_status(
+        h,
+        sid=status_sid,
+        status="delivered",
+        to_number=GUEST_PHONE,
+    )
+    if status_result.get("status") != "success":
+        raise RuntimeError(f"status callback did not update reminder log: {status_result}")
+    reminder_log = h.mongo["reminders_sent"].find_one({"message_sid": status_sid})
+    if reminder_log.get("delivery_status") != "delivered":
+        raise RuntimeError(f"delivery_status was not updated: {reminder_log}")
+    if not reminder_log.get("delivery_events"):
+        raise RuntimeError("status callback did not append a delivery event")
+
+    _assert_invalid_twilio_signature_rejected(h)
+
+    h.checkpoint(
+        "GUEST_HELP_SMS_P4_STATUS_SECURITY",
+        expectations=[
+            "Twilio status callback updates reminders_sent.delivery_status.",
+            "Twilio status callback appends delivery_events.",
+            "Forged inbound Twilio signature is rejected when TWILIO_AUTH_TOKEN is configured.",
+        ],
+    )
+
     h.banner("PASS — Guest Help SMS Inbox Lifecycle")
     h.log.info(
         "Verified public help form → SMS support ticket → inbound reply → inbox "
-        "visibility → notification scoping."
+        "visibility → notification scoping → idempotent inbound retries → status callbacks."
     )
     return 0
 

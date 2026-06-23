@@ -1,7 +1,0 @@
-# dependency|description|manager=package list
-# Supported managers: apt-get, dnf, yum, brew
-# Each manager field can contain one or more packages separated by spaces.
-tmux|tmux terminal multiplexer|apt-get=tmux|dnf=tmux|yum=tmux|brew=tmux
-npm|Node.js and npm CLI|apt-get=nodejs npm|dnf=nodejs|yum=nodejs|brew=node
-docker|Docker Engine|apt-get=docker.io|dnf=docker|yum=docker|brew=docker
-docker_compose|Docker Compose plugin|apt-get=docker-compose-plugin|dnf=docker-compose|yum=docker-compose|brew=docker

@@ -13,7 +13,7 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
   const [selectedEventType, setSelectedEventType] = useState<string>(() => wedding.events?.find(
     (event) => event.details?.location && event.details.location.trim() !== ''
   )?.type || '');
-  const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapStatus, setMapStatus] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle');
   const [mapUrl, setMapUrl] = useState<string>('');
 
   // Get events with location details
@@ -29,21 +29,48 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
 
   // Fetch secure map URL when location changes
   useEffect(() => {
+    let cancelled = false;
+
     const fetchMapUrl = async () => {
-      if (selectedEvent?.details?.location) {
-        try {
-          const response = await fetch(`/api/maps?location=${encodeURIComponent(selectedEvent.details.location)}`);
-          if (response.ok) {
-            const data = await response.json();
-            setMapUrl(data.embedUrl);
+      if (!selectedEvent?.details?.location) {
+        setMapUrl('');
+        setMapStatus('idle');
+        return;
+      }
+
+      setMapUrl('');
+      setMapStatus('loading');
+
+      try {
+        const response = await fetch(`/api/maps?location=${encodeURIComponent(selectedEvent.details.location)}`);
+        if (!response.ok) {
+          if (!cancelled) {
+            setMapStatus('unavailable');
           }
-        } catch (error) {
-          console.error('Failed to load map:', error);
+          return;
+        }
+
+        const data = await response.json();
+        if (!cancelled) {
+          if (typeof data.embedUrl === 'string' && data.embedUrl.trim()) {
+            setMapUrl(data.embedUrl);
+          } else {
+            setMapStatus('unavailable');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load map:', error);
+        if (!cancelled) {
+          setMapStatus('unavailable');
         }
       }
     };
 
     fetchMapUrl();
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedEvent?.details?.location]);
 
   // Format event type for display
@@ -178,8 +205,11 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
 
       {/* Map */}
       <div className="h-[400px] sm:h-[450px]">
-        <div className="bg-white/70 dark:bg-gray-800/70 rounded-lg overflow-hidden h-full relative group cursor-pointer transition-colors duration-300" onClick={handleMapClick}>
-          {selectedEvent?.details?.location && mapUrl ? (
+        <div
+          className={`bg-white/70 dark:bg-gray-800/70 rounded-lg overflow-hidden h-full relative group transition-colors duration-300 ${mapUrl && mapStatus !== 'unavailable' ? 'cursor-pointer' : ''}`}
+          onClick={mapUrl && mapStatus !== 'unavailable' ? handleMapClick : undefined}
+        >
+          {selectedEvent?.details?.location && mapUrl && mapStatus !== 'unavailable' ? (
             <>
               <iframe
                 width="100%"
@@ -189,7 +219,8 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
                 allowFullScreen
                 referrerPolicy="no-referrer-when-downgrade"
                 src={mapUrl}
-                onLoad={() => setMapLoaded(true)}
+                onLoad={() => setMapStatus('ready')}
+                onError={() => setMapStatus('unavailable')}
               />
 
               {/* Overlay with instructions */}
@@ -205,15 +236,45 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
               </div>
 
               {/* Loading spinner */}
-              {!mapLoaded && (
+              {mapStatus === 'loading' && (
                 <div className="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-700">
                   <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-300 dark:border-gray-500 border-t-transparent"></div>
                 </div>
               )}
             </>
-          ) : selectedEvent?.details?.location && !mapUrl ? (
-            <div className="h-full flex items-center justify-center bg-gray-100 dark:bg-gray-700">
+          ) : selectedEvent?.details?.location && mapStatus === 'loading' ? (
+            <div className="h-full flex items-center justify-center bg-gray-100 dark:bg-gray-700" aria-label="Loading map">
               <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-300 dark:border-gray-500 border-t-transparent"></div>
+            </div>
+          ) : selectedEvent?.details?.location ? (
+            <div className="flex h-full items-center justify-center bg-gray-100 px-6 text-center dark:bg-gray-700">
+              <div className="max-w-md">
+                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-wedding-rose">Map unavailable</p>
+                <p className="mt-3 text-lg font-semibold theme-primary">
+                  {selectedEvent.details?.venue_name || formatEventType(selectedEvent.type)}
+                </p>
+                <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                  {selectedEvent.details.location}
+                </p>
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-center">
+                  <a
+                    href={getGoogleMapsUrl(selectedEvent.details.location)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center rounded-lg bg-wedding-rose px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-wedding-blush"
+                  >
+                    Open in Google Maps
+                  </a>
+                  <a
+                    href={getAppleMapsUrl(selectedEvent.details.location)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-wedding-rose/40 hover:bg-wedding-blush/40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                  >
+                    Open in Apple Maps
+                  </a>
+                </div>
+              </div>
             </div>
           ) : (
             <div className="h-full flex items-center justify-center bg-gray-100 dark:bg-gray-700">

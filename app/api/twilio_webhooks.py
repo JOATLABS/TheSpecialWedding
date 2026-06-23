@@ -251,6 +251,17 @@ async def _append_inbound_sms_to_ticket(
     body_text: str,
     message_sid: Optional[str],
 ) -> dict:
+    if message_sid and any(
+        message.get("message_sid") == message_sid
+        for message in ticket.get("guest_messages", [])
+    ):
+        logger.info(
+            "Ignoring duplicate inbound Twilio MessageSid %s for support ticket %s",
+            message_sid,
+            ticket.get("_id"),
+        )
+        return ticket
+
     now = datetime.now(timezone.utc)
     guest_message = {
         "message": body_text,
@@ -1254,6 +1265,29 @@ async def handle_twilio_incoming_message(
                 "unsubscribe. Msg&data rates may apply."
             )
             sms_service.send_sms(from_number, help_msg)
+
+            existing_ticket = await _find_existing_sms_ticket_for_inbound(
+                from_number,
+                wedding_id=wedding_id,
+                assigned_to=assigned_planner_email,
+            )
+            if existing_ticket:
+                updated_ticket = await _append_inbound_sms_to_ticket(
+                    existing_ticket,
+                    from_number=from_number,
+                    body_text=body_text,
+                    message_sid=message_sid,
+                )
+                logger.info(
+                    "HELP SMS appended to support ticket %s from %s",
+                    updated_ticket.get("_id"),
+                    from_number,
+                )
+                return {
+                    "status": "ok",
+                    "action": "help_existing_ticket",
+                    "ticket_id": str(updated_ticket.get("_id")),
+                }
 
             # Create help ticket for planner
             if assigned_planner_email:
