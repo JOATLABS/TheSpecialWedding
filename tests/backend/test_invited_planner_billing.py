@@ -4,6 +4,7 @@ import sys
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException, status
@@ -18,6 +19,19 @@ import app.services.user_management_service as user_management_service_module  #
 
 class DummyEmailService:
     configured = False
+
+
+class RecordingNotificationService:
+    calls = []
+
+    async def create_notification(self, notification_data, created_by):
+        self.calls.append(
+            {
+                "notification_data": deepcopy(notification_data),
+                "created_by": created_by,
+            }
+        )
+        return {"id": f"notification-{len(self.calls)}"}
 
 
 def _matches(document, query):
@@ -120,6 +134,7 @@ def fake_storage():
         "users": [],
         "admin_users": [],
         "user_invitations": [],
+        "_notification_calls": [],
     }
 
 
@@ -131,6 +146,12 @@ def user_management_service(monkeypatch, fake_storage):
         user_management_service_module,
         "ResendEmailService",
         lambda: DummyEmailService(),
+    )
+    RecordingNotificationService.calls = fake_storage["_notification_calls"]
+    monkeypatch.setattr(
+        user_management_service_module,
+        "NotificationService",
+        RecordingNotificationService,
     )
     return user_management_service_module.UserManagementService(), fake_storage
 
@@ -177,6 +198,53 @@ def test_zero_day_invited_planner_requires_payment_after_setup(user_management_s
     stored_invitation = storage["user_invitations"][0]
     assert stored_invitation["status"] == "completed"
     assert "expires_at" not in stored_invitation
+
+    notification = storage["_notification_calls"][0]["notification_data"]
+    assert notification["target_audience"] == "root_admin"
+    assert notification["type"] == "planner_account_created"
+    assert "user_id" not in notification
+    assert "invited-planner@example.com" in notification["message"]
+    assert storage["_notification_calls"][0]["created_by"] == "system"
+
+
+def test_public_planner_registration_notifies_root_admin(user_management_service):
+    service, storage = user_management_service
+    service.get_trial_settings = AsyncMock(
+        return_value={
+            "default_trial_days": 30,
+            "trial_warning_days": 7,
+            "auto_expire_trials": True,
+            "allow_multiple_trials": True,
+        }
+    )
+
+    result = asyncio.run(
+        service.register_wedding_planner(
+            {
+                "email": "public-planner@example.com",
+                "password": "ValidPass123!",
+                "role": "wedding_planner",
+                "first_name": "Public",
+                "last_name": "Planner",
+                "company_name": "Public Planner Studio",
+                "selected_plan_id": "plan_signature",
+            }
+        )
+    )
+
+    assert result["email"] == "public-planner@example.com"
+    assert result["verification_required"] is True
+
+    stored_user = storage["users"][0]
+    assert stored_user["registration_source"] == "public_signup"
+    assert stored_user["subscription_status"] == "pending_payment"
+
+    notification = storage["_notification_calls"][0]["notification_data"]
+    assert notification["target_audience"] == "root_admin"
+    assert notification["type"] == "planner_account_created"
+    assert "user_id" not in notification
+    assert "Public Planner Studio" in notification["message"]
+    assert "public-planner@example.com" in notification["message"]
 
 
 @pytest.mark.parametrize(

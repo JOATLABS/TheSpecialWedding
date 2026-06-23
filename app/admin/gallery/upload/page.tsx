@@ -11,6 +11,7 @@ import PageHeader from '../../components/PageHeader';
 import WeddingPicker from '../../components/WeddingPicker';
 import { toast } from 'sonner';
 import { Upload, Images, ChevronDown, Heart, FolderOpen } from 'lucide-react';
+import { uploadGalleryFileViaPresignedUrl } from './galleryUploadClient';
 
 interface Wedding {
   id?: string;
@@ -160,25 +161,15 @@ export default function AdminGalleryUploadPage() {
     setUploading(true);
     try {
       let successCount = 0;
+      const baseUrl = getApiBaseUrl();
       for (const file of files) {
-        const fd = new FormData();
-        fd.append('file', file);
-        fd.append('wedding_slug', selectedWeddingSlug);
-        fd.append('folder', selectedFolder);
-
-        const baseUrl = getApiBaseUrl();
-        const res = await fetch(
-          `${baseUrl}/admin/gallery/upload`,
-          {
-            method: 'POST',
-            body: fd,
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        if (!res.ok) {
-          const errorData = await res.json();
-          throw new Error(errorData.detail || 'Upload failed');
-        }
+        await uploadGalleryFileViaPresignedUrl({
+          baseUrl,
+          token,
+          file,
+          weddingSlug: selectedWeddingSlug,
+          folder: selectedFolder,
+        });
         successCount++;
       }
       toast.success(`Successfully uploaded ${successCount} image${successCount > 1 ? 's' : ''}`);

@@ -36,6 +36,7 @@ from app.services.ai_service import (
     InsufficientCreditsError,
     ai_service,
 )
+from app.services.ai_cache_service import ai_cache_service
 from app.utils.rsvp_status import (
     RSVP_STATUS_CONFIRMED,
     RSVP_STATUS_DECLINED,
@@ -671,6 +672,7 @@ async def get_budget_insights(
 async def get_dashboard_insights(
     wedding_id: str,
     force_refresh: bool = False,
+    cache_only: bool = False,
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
@@ -685,17 +687,6 @@ async def get_dashboard_insights(
 
     Cost: 2 credits
     """
-    # Check if AI service is properly initialized
-    if not ai_service._client:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "error": "ai_not_configured",
-                "message": "AI service is not configured. Please contact the administrator.",
-                "hint": "GEMINI_API_KEY environment variable may be missing.",
-            },
-        )
-
     try:
         user_id = str((current_user.user_data or {}).get("_id", ""))
 
@@ -709,6 +700,45 @@ async def get_dashboard_insights(
         wedding = await get_wedding_by_id(wedding_id)
         if not wedding:
             raise HTTPException(status_code=404, detail="Wedding not found")
+
+        if cache_only:
+            subscription_plan = await ai_service._resolve_subscription_plan(user_id)
+            cached = await ai_cache_service.get_latest_cached_response(
+                feature="dashboard_insights",
+                tenant_id=wedding_id,
+                subscription_plan=subscription_plan,
+            )
+            if cached:
+                response = cached.get("response", {})
+                insights = (
+                    response.get("insights", []) if isinstance(response, dict) else []
+                )
+                return {
+                    "insights": insights,
+                    "wedding_id": wedding_id,
+                    "cached": True,
+                    "credits_used": 0,
+                    "cache_only": True,
+                }
+            return {
+                "insights": [],
+                "wedding_id": wedding_id,
+                "cached": False,
+                "credits_used": 0,
+                "cache_only": True,
+                "requires_generation": True,
+            }
+
+        # Check if AI service is properly initialized only when generation is allowed.
+        if not ai_service._client:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "ai_not_configured",
+                    "message": "AI service is not configured. Please contact the administrator.",
+                    "hint": "GEMINI_API_KEY environment variable may be missing.",
+                },
+            )
 
         # Gather comprehensive wedding data for analysis
         budget_data = await get_budget_data(wedding_id)

@@ -233,7 +233,7 @@ export default function WeddingPlannerDashboard() {
  }, [apiRequest, token]);
 
  // Fetch AI insights for selected wedding
- const fetchAIInsights = useCallback(async (weddingId: string, forceRefresh = false) => {
+ const fetchAIInsights = useCallback(async (weddingId: string, forceRefresh = false, cacheOnly = false) => {
    if (!weddingId || !token) return;
 
    setInsightsLoading(true);
@@ -241,9 +241,15 @@ export default function WeddingPlannerDashboard() {
 
    try {
      const baseUrl = getApiBaseUrl();
-     const url = `${baseUrl}/admin/ai/weddings/${weddingId}/insights${forceRefresh ? '?force_refresh=true' : ''}`;
+     const url = new URL(`${baseUrl}/admin/ai/weddings/${weddingId}/insights`);
+     if (forceRefresh) {
+       url.searchParams.set('force_refresh', 'true');
+     }
+     if (cacheOnly) {
+       url.searchParams.set('cache_only', 'true');
+     }
 
-     const response = await fetch(url, {
+     const response = await fetch(url.toString(), {
        headers: {
          'Authorization': `Bearer ${token}`,
          'Content-Type': 'application/json',
@@ -253,6 +259,9 @@ export default function WeddingPlannerDashboard() {
      if (response.ok) {
        const data = await response.json();
        setAiInsights(data.insights || []);
+       if (data.requires_generation) {
+         setInsightsError('');
+       }
        // Show warning if using cached fallback
        if (data.warning) {
          setInsightsError('');  // Clear any previous error
@@ -309,7 +318,7 @@ export default function WeddingPlannerDashboard() {
    }
 
    insightAutoRequestRef.current = selectedInsightWedding;
-   void fetchAIInsights(selectedInsightWedding, false);
+   void fetchAIInsights(selectedInsightWedding, false, true);
  }, [
    aiInsights.length,
    fetchAIInsights,

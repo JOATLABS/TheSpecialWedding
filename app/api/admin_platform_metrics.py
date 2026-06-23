@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from app.core.database import mongo
 from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
+from app.middleware.audit_logging import _normalize_route_template
 from app.utils.query_validation import (
     validated_boolean_filter,
     validated_enum_filter,
@@ -91,6 +92,77 @@ def _derive_severity(explicit: Optional[str], status_code: Optional[int]) -> str
     if status_code >= 400:
         return "warning"
     return "info"
+
+
+def _coerce_status_code(value: Any) -> Optional[int]:
+    """Return an integer HTTP status code when audit data has a usable value."""
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_auth_or_billing_rejection_status(value: Any) -> bool:
+    """Statuses that are expected auth/authz/billing denials, not platform errors."""
+    return _coerce_status_code(value) in {401, 402, 403}
+
+
+def _is_operational_error_status(value: Any) -> bool:
+    """Return True when a request failure should count against platform health."""
+    status_code = _coerce_status_code(value)
+    if status_code is None:
+        return False
+    return status_code >= 400 and status_code not in {401, 402, 403}
+
+
+def _normalize_performance_route_key(value: Any) -> str:
+    """Normalize stored route keys so legacy audit rows collapse into stable buckets."""
+    if not isinstance(value, str) or not value:
+        return "unknown"
+    return _normalize_route_template(value)
+
+
+def _merge_endpoint_performance_buckets(
+    endpoint_metrics_raw: Iterable[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Merge legacy high-cardinality route keys before ranking endpoint performance."""
+    buckets: Dict[str, Dict[str, Any]] = {}
+
+    for endpoint in endpoint_metrics_raw:
+        route_key = _normalize_performance_route_key(endpoint.get("_id"))
+        response_times = list(endpoint.get("response_times") or [])
+        response_statuses = list(endpoint.get("response_statuses") or [])
+
+        bucket = buckets.setdefault(
+            route_key,
+            {
+                "_id": route_key,
+                "response_times": [],
+                "response_statuses": [],
+            },
+        )
+        bucket["response_times"].extend(response_times)
+        bucket["response_statuses"].extend(response_statuses)
+
+    merged: List[Dict[str, Any]] = []
+    for bucket in buckets.values():
+        response_times = bucket["response_times"]
+        if not response_times:
+            continue
+        total_requests = len(response_times)
+        bucket["total_requests"] = total_requests
+        bucket["avg_response_time_ms"] = sum(response_times) / total_requests
+        bucket["min_response_time_ms"] = min(response_times)
+        bucket["max_response_time_ms"] = max(response_times)
+        merged.append(bucket)
+
+    return sorted(
+        merged,
+        key=lambda endpoint: endpoint.get("avg_response_time_ms", 0),
+        reverse=True,
+    )
 
 
 def _extract_error_summary(error: Dict[str, Any]) -> Dict[str, Any]:
@@ -962,19 +1034,17 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
                     "min_response_time_ms": {"$min": "$response_time_ms"},
                     "max_response_time_ms": {"$max": "$response_time_ms"},
                     "total_requests": {"$sum": 1},
-                    "error_count": {
-                        "$sum": {"$cond": [{"$gte": ["$response_status", 400]}, 1, 0]}
-                    },
                     "response_times": {"$push": "$response_time_ms"},
+                    "response_statuses": {"$push": "$response_status"},
                 }
             },
             {"$match": {"total_requests": {"$gte": 1}}},
-            {"$sort": {"avg_response_time_ms": -1}},
-            {"$limit": 20},
         ]
 
         perf_cursor = mongo.db["audit_logs"].aggregate(endpoint_performance_pipeline)
-        endpoint_metrics_raw = await perf_cursor.to_list(length=20)
+        endpoint_metrics_raw = _merge_endpoint_performance_buckets(
+            await perf_cursor.to_list(length=None)
+        )[:20]
 
         # Calculate percentiles and format response
         endpoint_performance: List[Dict[str, Any]] = []
@@ -982,8 +1052,18 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
 
         for endpoint in endpoint_metrics_raw:
             response_times = sorted(endpoint.get("response_times", []))
+            response_statuses = endpoint.get("response_statuses", [])
             total_requests = endpoint.get("total_requests", 0)
-            error_count = endpoint.get("error_count", 0)
+            error_count = sum(
+                1
+                for response_status in response_statuses
+                if _is_operational_error_status(response_status)
+            )
+            auth_rejection_count = sum(
+                1
+                for response_status in response_statuses
+                if _is_auth_or_billing_rejection_status(response_status)
+            )
 
             # Calculate percentiles
             p50 = (
@@ -1024,6 +1104,7 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
                 "p99_ms": round(p99, 1),
                 "request_count": total_requests,
                 "error_count": error_count,
+                "auth_rejection_count": auth_rejection_count,
                 "error_rate": round(error_rate, 2),
                 "status": status,
             }
@@ -1046,10 +1127,8 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
                     "_id": None,
                     "avg_response_time_ms": {"$avg": "$response_time_ms"},
                     "total_requests": {"$sum": 1},
-                    "total_errors": {
-                        "$sum": {"$cond": [{"$gte": ["$response_status", 400]}, 1, 0]}
-                    },
                     "response_times": {"$push": "$response_time_ms"},
+                    "response_statuses": {"$push": "$response_status"},
                 }
             },
         ]
@@ -1057,7 +1136,17 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
         overall_result = await overall_cursor.to_list(length=1)
         overall_doc = overall_result[0] if overall_result else {}
         total_requests_24h = int(overall_doc.get("total_requests", 0) or 0)
-        total_errors_24h = int(overall_doc.get("total_errors", 0) or 0)
+        overall_response_statuses = overall_doc.get("response_statuses", [])
+        total_errors_24h = sum(
+            1
+            for response_status in overall_response_statuses
+            if _is_operational_error_status(response_status)
+        )
+        auth_rejections_24h = sum(
+            1
+            for response_status in overall_response_statuses
+            if _is_auth_or_billing_rejection_status(response_status)
+        )
         overall_error_rate = (
             (total_errors_24h / total_requests_24h * 100)
             if total_requests_24h > 0
@@ -1179,6 +1268,7 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
                 "summary": {
                     "total_requests_24h": total_requests_24h,
                     "total_errors_24h": total_errors_24h,
+                    "auth_rejections_24h": auth_rejections_24h,
                     "overall_error_rate": round(overall_error_rate, 2),
                     "overall_avg_response_time_ms": round(overall_avg_ms, 1),
                     "overall_avg_response_time_seconds": round(

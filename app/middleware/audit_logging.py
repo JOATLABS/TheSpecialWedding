@@ -233,14 +233,31 @@ _UUID_SEGMENT_RE = re.compile(
     re.IGNORECASE,
 )
 _NUMERIC_SEGMENT_RE = re.compile(r"/\d+(?=/|$)")
+_PREFIXED_ID_SEGMENT_RE = re.compile(
+    r"/(?:acct|camp|cs|cus|evt|link|pi|price|sess|sub|wedding)_[A-Za-z0-9][A-Za-z0-9_-]*(?=/|$)"
+)
 
 
 def _normalize_route_template(path: str) -> str:
     """Group high-cardinality REST paths into stable performance buckets."""
     normalized = _UUID_SEGMENT_RE.sub("/{id}", path)
     normalized = _OBJECT_ID_SEGMENT_RE.sub("/{id}", normalized)
+    normalized = _PREFIXED_ID_SEGMENT_RE.sub("/{id}", normalized)
     normalized = _NUMERIC_SEGMENT_RE.sub("/{id}", normalized)
     return normalized
+
+
+def _extract_route_template(request: Request) -> Optional[str]:
+    """Read the FastAPI route template after routing has matched the request."""
+    route = request.scope.get("route")
+    route_path = getattr(route, "path", None)
+    if not isinstance(route_path, str) or not route_path:
+        return None
+
+    root_path = request.scope.get("root_path") or ""
+    if root_path and not route_path.startswith(root_path):
+        return f"{root_path}{route_path}"
+    return route_path
 
 
 def _ensure_audit_file_handler(log_file_path: str) -> None:
@@ -416,7 +433,8 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             "user_agent": request_info["user_agent"],
             "method": request_info["method"],
             "path": request_info["path"],
-            "route_template": _normalize_route_template(request_info["path"]),
+            "route_template": request_info.get("route_template")
+            or _normalize_route_template(request_info["path"]),
             "host": request_info.get("host"),
             "referer": request_info.get("referer"),
             "origin": request_info.get("origin"),
@@ -497,6 +515,9 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
             response_time = time.time() - start_time
+            route_template = _extract_route_template(request)
+            if route_template:
+                request_info["route_template"] = route_template
             # Create audit entry
             audit_entry = self._create_audit_entry(
                 request_info, response.status_code, response_time
@@ -515,6 +536,9 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
 
         except Exception as e:
             response_time = time.time() - start_time
+            route_template = _extract_route_template(request)
+            if route_template:
+                request_info["route_template"] = route_template
 
             # Create error audit entry
             audit_entry = self._create_audit_entry(
