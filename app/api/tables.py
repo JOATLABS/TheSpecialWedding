@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from typing import List
 
 from bson import ObjectId
@@ -12,11 +13,46 @@ from app.dependencies.auth_extended import (
     enforce_team_permission,
     require_admin_or_planner,
 )
-from app.models.table import AssignGuestsRequest, TableModel, UpdateTableRequest
+from app.models.table import (
+    AssignGuestsRequest,
+    SeatingLayoutRequest,
+    TableModel,
+    UpdateTableRequest,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _serialize_seating_layout(layout: dict | None, wedding_id: str) -> dict:
+    if not layout:
+        return {
+            "id": None,
+            "wedding_id": wedding_id,
+            "canvas_width": 1600,
+            "canvas_height": 1000,
+            "outline": [],
+            "background_image_data_url": None,
+            "background_image_name": None,
+            "background_locked": True,
+            "scale_pixels": None,
+            "scale_distance": None,
+            "scale_unit": "ft",
+            "fixtures": [],
+            "updated_at": None,
+        }
+
+    serialized = layout.copy()
+    serialized["id"] = str(serialized.pop("_id"))
+    serialized.setdefault("background_image_data_url", None)
+    serialized.setdefault("background_image_name", None)
+    serialized.setdefault("background_locked", True)
+    serialized.setdefault("scale_pixels", None)
+    serialized.setdefault("scale_distance", None)
+    serialized.setdefault("scale_unit", "ft")
+    serialized.setdefault("fixtures", [])
+    return serialized
 
 
 @router.get("/tables/{wedding_id}", tags=["Seating"])
@@ -39,6 +75,49 @@ async def list_tables(
             del table["_id"]
 
     return tables
+
+
+@router.get("/tables/{wedding_id}/venue-layout", tags=["Seating"])
+async def get_venue_layout(
+    wedding_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """Fetch the saved venue outline for the seating canvas."""
+    if not await check_wedding_access(current_user, wedding_id):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+    layout = await mongo.db["seating_layouts"].find_one({"wedding_id": wedding_id})
+    return _serialize_seating_layout(layout, wedding_id)
+
+
+@router.put("/tables/{wedding_id}/venue-layout", tags=["Seating"])
+async def update_venue_layout(
+    wedding_id: str,
+    layout: SeatingLayoutRequest,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+):
+    """Save the venue outline used behind positioned seating tables."""
+    enforce_team_permission(current_user, "manage_seating")
+    if not await check_wedding_access(current_user, wedding_id):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+    now = datetime.now(timezone.utc)
+    layout_data = layout.dict()
+    layout_data.update(
+        {
+            "wedding_id": wedding_id,
+            "updated_at": now,
+            "updated_by": current_user.email,
+        }
+    )
+
+    await mongo.db["seating_layouts"].update_one(
+        {"wedding_id": wedding_id},
+        {"$set": layout_data, "$setOnInsert": {"created_at": now}},
+        upsert=True,
+    )
+
+    saved_layout = await mongo.db["seating_layouts"].find_one({"wedding_id": wedding_id})
+    return _serialize_seating_layout(saved_layout, wedding_id)
 
 
 @router.post("/tables", tags=["Seating"])

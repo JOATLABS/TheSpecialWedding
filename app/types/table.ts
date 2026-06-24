@@ -84,3 +84,58 @@ export interface AssignGuestsRequest {
   guest_ids: string[];
   table_id: string;
 }
+
+export interface VenueLayoutPoint {
+  x: number;
+  y: number;
+}
+
+export type VenueFixtureType =
+  | 'dance_floor'
+  | 'bar'
+  | 'stage'
+  | 'entrance'
+  | 'restrooms'
+  | 'kitchen'
+  | 'vendor_path';
+
+export interface VenueFixture {
+  id: string;
+  type: VenueFixtureType;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation?: number;
+}
+
+export interface VenueLayout {
+  id?: string | null;
+  wedding_id: string;
+  canvas_width: number;
+  canvas_height: number;
+  outline: VenueLayoutPoint[];
+  background_image_data_url?: string | null;
+  background_image_name?: string | null;
+  background_locked?: boolean;
+  scale_pixels?: number | null;
+  scale_distance?: number | null;
+  scale_unit?: 'ft' | 'm';
+  fixtures: VenueFixture[];
+  updated_at?: string | null;
+  updated_by?: string;
+}
+
+export interface UpdateVenueLayoutRequest {
+  canvas_width: number;
+  canvas_height: number;
+  outline: VenueLayoutPoint[];
+  background_image_data_url?: string | null;
+  background_image_name?: string | null;
+  background_locked?: boolean;
+  scale_pixels?: number | null;
+  scale_distance?: number | null;
+  scale_unit?: 'ft' | 'm';
+  fixtures: VenueFixture[];
+}

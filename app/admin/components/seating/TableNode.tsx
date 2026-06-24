@@ -73,6 +73,7 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
           so dragged guests inside aren't clipped */}
       <div
         ref={setDroppableRef}
+        data-testid={`table-drop-${table.id}`}
         className={`
           relative w-72 ${borderRadius}
           bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl

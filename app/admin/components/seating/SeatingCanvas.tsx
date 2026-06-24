@@ -1,6 +1,8 @@
 import React from 'react';
-import { Table, Guest } from '@/types/table';
+import { Table, Guest, VenueFixture, VenueLayout, VenueLayoutPoint } from '@/types/table';
 import { TableNode } from './TableNode';
+import { FloorPlanLayer, FloorPlanMode } from './FloorPlanLayer';
+import { VenueFixtureNode } from './VenueFixtureNode';
 
 interface SeatingCanvasProps {
   tables: Table[];
@@ -9,6 +11,12 @@ interface SeatingCanvasProps {
   onTableDelete: (id: string) => void;
   onGuestAssign?: (guestId: string, tableId: string) => void;
   zoom?: number;
+  venueLayout: VenueLayout;
+  floorPlanMode: FloorPlanMode;
+  floorPlanOutline: VenueLayoutPoint[];
+  venueFixtures: VenueFixture[];
+  onFloorPlanPointAdd: (point: VenueLayoutPoint) => void;
+  onFloorPlanPointMove: (index: number, point: VenueLayoutPoint) => void;
 }
 
 export function SeatingCanvas({
@@ -18,7 +26,16 @@ export function SeatingCanvas({
   onTableDelete,
   onGuestAssign,
   zoom = 1,
+  venueLayout,
+  floorPlanMode,
+  floorPlanOutline,
+  venueFixtures,
+  onFloorPlanPointAdd,
+  onFloorPlanPointMove,
 }: SeatingCanvasProps) {
+  const scaledWidth = venueLayout.canvas_width * zoom;
+  const scaledHeight = venueLayout.canvas_height * zoom;
+
   return (
     <div className="relative w-full h-full overflow-auto">
       {/* Dot grid background — subtle, elegant, works in both themes */}
@@ -40,37 +57,76 @@ export function SeatingCanvas({
 
       {/* Zoomable canvas content */}
       <div
-        className="relative w-full h-full origin-top-left"
+        className="relative"
         style={{
-          transform: `scale(${zoom})`,
-          minWidth: zoom < 1 ? `${100 / zoom}%` : '100%',
-          minHeight: zoom < 1 ? `${100 / zoom}%` : '100%',
+          width: `${scaledWidth}px`,
+          height: `${scaledHeight}px`,
+          minWidth: '100%',
+          minHeight: '100%',
         }}
       >
-        {tables.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="text-center">
-              <div className="w-20 h-20 mx-auto mb-3 rounded-full border-2 border-dashed border-slate-300/50 dark:border-slate-600/50 flex items-center justify-center">
-                <span className="text-3xl text-slate-300 dark:text-slate-600">+</span>
+        <div
+          className="relative origin-top-left"
+          style={{
+            width: `${venueLayout.canvas_width}px`,
+            height: `${venueLayout.canvas_height}px`,
+            transform: `scale(${zoom})`,
+          }}
+        >
+          <FloorPlanLayer
+            layout={venueLayout}
+            outline={floorPlanOutline}
+            mode={floorPlanMode}
+            onPointAdd={onFloorPlanPointAdd}
+            onPointMove={onFloorPlanPointMove}
+          />
+
+          {venueFixtures.map((fixture) => (
+            <VenueFixtureNode
+              key={fixture.id}
+              fixture={fixture}
+              disabled={floorPlanMode === 'draw'}
+            />
+          ))}
+
+          {tables.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+              <div className="text-center">
+                <div className="w-20 h-20 mx-auto mb-3 rounded-full border-2 border-dashed border-slate-300/50 dark:border-slate-600/50 flex items-center justify-center">
+                  <span className="text-3xl text-slate-300 dark:text-slate-600">+</span>
+                </div>
+                <p className="text-sm text-slate-400 dark:text-slate-500 font-medium">
+                  Add tables to get started
+                </p>
+                <p className="text-xs text-slate-400/60 dark:text-slate-500/60 mt-1">
+                  Draw the room outline, then drag guests onto tables
+                </p>
               </div>
+            </div>
+          )}
+
+          {tables.map((table) => (
+            <TableNode
+              key={table.id}
+              table={table}
+              guests={guests.filter((g) => g.table_id === table.id)}
+              onDelete={onTableDelete}
+            />
+          ))}
+        </div>
+
+        {floorPlanMode === 'draw' && floorPlanOutline.length === 0 && tables.length > 0 && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+            <div className="text-center">
               <p className="text-sm text-slate-400 dark:text-slate-500 font-medium">
-                Add tables to get started
+                Click around the room edge to draw the venue outline
               </p>
               <p className="text-xs text-slate-400/60 dark:text-slate-500/60 mt-1">
-                Drag guests from the sidebar onto tables
+                Use at least three points, then save the floor plan
               </p>
             </div>
           </div>
         )}
-
-        {tables.map((table) => (
-          <TableNode
-            key={table.id}
-            table={table}
-            guests={guests.filter((g) => g.table_id === table.id)}
-            onDelete={onTableDelete}
-          />
-        ))}
       </div>
     </div>
   );

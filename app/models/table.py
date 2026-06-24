@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -42,3 +42,40 @@ class UpdateTableRequest(BaseModel):
 class AssignGuestsRequest(BaseModel):
     guest_ids: list[str] = Field(...)
     table_id: str = Field(...)
+
+
+class SeatingLayoutPoint(BaseModel):
+    x: float = Field(..., ge=0, le=5000)
+    y: float = Field(..., ge=0, le=5000)
+
+
+class SeatingLayoutFixture(BaseModel):
+    id: str = Field(..., min_length=1, max_length=80)
+    type: Literal[
+        "dance_floor",
+        "bar",
+        "stage",
+        "entrance",
+        "restrooms",
+        "kitchen",
+        "vendor_path",
+    ]
+    label: str = Field(..., min_length=1, max_length=80)
+    x: float = Field(..., ge=0, le=5000)
+    y: float = Field(..., ge=0, le=5000)
+    width: float = Field(default=180, ge=24, le=2000)
+    height: float = Field(default=120, ge=24, le=2000)
+    rotation: Optional[float] = Field(default=0, ge=-360, le=360)
+
+
+class SeatingLayoutRequest(BaseModel):
+    canvas_width: float = Field(default=1600, ge=600, le=5000)
+    canvas_height: float = Field(default=1000, ge=400, le=5000)
+    outline: list[SeatingLayoutPoint] = Field(default_factory=list, max_length=80)
+    background_image_data_url: Optional[str] = Field(default=None, max_length=1_800_000)
+    background_image_name: Optional[str] = Field(default=None, max_length=160)
+    background_locked: bool = True
+    scale_pixels: Optional[float] = Field(default=None, ge=1, le=5000)
+    scale_distance: Optional[float] = Field(default=None, ge=0.1, le=10000)
+    scale_unit: Literal["ft", "m"] = "ft"
+    fixtures: list[SeatingLayoutFixture] = Field(default_factory=list, max_length=80)

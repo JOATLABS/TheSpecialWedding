@@ -1,5 +1,6 @@
 import React from 'react';
 import { useDraggable } from '@dnd-kit/core';
+import { GripVertical } from 'lucide-react';
 import { Guest } from '@/types/table';
 
 interface GuestItemProps {
@@ -7,31 +8,28 @@ interface GuestItemProps {
   compact?: boolean;
 }
 
+export function getGuestItemStyle(isDragging: boolean): React.CSSProperties {
+  return {
+    opacity: isDragging ? 0.35 : 1,
+    transition: isDragging ? 'none' : 'opacity 200ms ease, box-shadow 200ms ease',
+  };
+}
+
 export function GuestItem({ guest, compact = false }: GuestItemProps) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `guest-${guest.id}`,
     data: { type: 'guest', guest },
   });
 
-  const style: React.CSSProperties = {
-    ...(transform
-      ? {
-          transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-          zIndex: 999,
-        }
-      : {}),
-    opacity: isDragging ? 0.3 : 1,
-    transition: isDragging ? 'none' : 'opacity 200ms ease, box-shadow 200ms ease',
-  };
+  const style = getGuestItemStyle(isDragging);
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      {...listeners}
-      {...attributes}
+      data-testid={`guest-item-${guest.id}`}
       className={`
-        relative mb-1.5 rounded-xl text-sm cursor-grab active:cursor-grabbing
+        relative mb-1.5 rounded-xl text-sm
         border backdrop-blur-md shadow-sm
         ${compact ? 'px-2.5 py-2' : 'px-3 py-3'}
         ${isDragging
@@ -40,6 +38,22 @@ export function GuestItem({ guest, compact = false }: GuestItemProps) {
       `}
     >
       <div className="flex items-center gap-2">
+        <button
+          type="button"
+          {...listeners}
+          {...attributes}
+          aria-label={`Drag ${guest.name} to a table`}
+          title="Drag guest"
+          className={`
+            -ml-1 flex flex-shrink-0 items-center justify-center rounded-md
+            text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300
+            cursor-grab active:cursor-grabbing focus:outline-none focus:ring-2 focus:ring-primary-400/40
+            ${compact ? 'h-5 w-5' : 'h-6 w-6'}
+          `}
+          style={{ touchAction: 'none' }}
+        >
+          <GripVertical className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} aria-hidden="true" />
+        </button>
         <div
           className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
             guest.table_id
