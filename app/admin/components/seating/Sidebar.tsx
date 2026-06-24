@@ -28,9 +28,9 @@ export function Sidebar({ guests }: SidebarProps) {
   });
 
   return (
-    <div className="w-80 h-full flex flex-col z-20 border-r border-white/30 dark:border-slate-700/30 bg-white/50 dark:bg-slate-900/40 backdrop-blur-md print:hidden" role="region" aria-label="Unseated guests sidebar">
+    <div className="h-80 w-full flex-shrink-0 flex flex-col z-20 border-b border-white/30 bg-white/50 backdrop-blur-md print:hidden dark:border-slate-700/30 dark:bg-slate-900/40 lg:h-full lg:w-80 lg:border-b-0 lg:border-r" role="region" aria-label="Unseated guests sidebar">
       {/* Header */}
-      <div className="p-5 border-b border-white/20 dark:border-slate-700/20">
+      <div className="p-4 border-b border-white/20 dark:border-slate-700/20 lg:p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-slate-800 dark:text-gray-100 flex items-center gap-2">
             <Users className="w-4 h-4 text-slate-500 dark:text-slate-400" aria-hidden="true" />
@@ -59,7 +59,7 @@ export function Sidebar({ guests }: SidebarProps) {
 
       {/* Guest List */}
       <div
-        className="flex-1 overflow-y-auto p-4 space-y-6"
+        className="flex-1 overflow-y-auto p-3 space-y-4 sm:p-4 lg:space-y-6"
         style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(148,163,184,0.3) transparent' }}
       >
         {Object.entries(groups).map(([groupName, groupGuests]) => (

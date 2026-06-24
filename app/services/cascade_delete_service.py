@@ -27,6 +27,7 @@ WEDDING_DEPENDENT_COLLECTIONS = [
     "plus_ones",  # References guest_id, which references wedding_id
     "rsvps",  # References guest_id
     "tables",
+    "seating_layouts",
     "activity_logs",
     "forms",
     "form_responses",

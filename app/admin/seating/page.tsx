@@ -19,9 +19,15 @@ import PageHeader from '../components/PageHeader';
 import WeddingPicker from '../components/WeddingPicker';
 import { useTables } from '@/admin/hooks/useTables';
 import { useGuests } from '@/admin/hooks/useGuests';
+import { useVenueLayout } from '@/admin/hooks/useVenueLayout';
 import { SeatingCanvas } from '@/admin/components/seating/SeatingCanvas';
 import { Sidebar } from '@/admin/components/seating/Sidebar';
 import { GuestItem } from '@/admin/components/seating/GuestItem';
+import {
+  DEFAULT_FLOOR_PLAN_RECTANGLE,
+  FloorPlanMode,
+  pointsToSvgPoints,
+} from '@/admin/components/seating/FloorPlanLayer';
 import { GlassButton } from '@/admin/components/ui/glass/GlassButton';
 import { SeatingConstraintsModal } from '@/admin/components/seating/SeatingConstraintsModal';
 import { PrintableSeatingChart } from '@/admin/components/seating/PrintableSeatingChart';
@@ -39,8 +45,19 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Map,
+  MousePointer2,
+  PenLine,
+  Save,
+  Undo2,
+  Eraser,
+  Upload,
+  Lock,
+  Unlock,
+  PlusCircle,
+  Ruler,
 } from 'lucide-react';
-import { Table, Guest } from '@/types/table';
+import { Table, Guest, VenueFixture, VenueFixtureType, VenueLayoutPoint } from '@/types/table';
 
 interface Wedding {
   id?: string;
@@ -96,7 +113,41 @@ function extractTableName(t: AISuggestionTable): string {
 type ActiveDragData =
   | { type: 'guest'; guest: Guest }
   | { type: 'table'; table: Table }
+  | { type: 'fixture'; fixture: VenueFixture }
   | null;
+
+const MAX_FLOOR_PLAN_IMAGE_BYTES = 1_500_000;
+
+const FIXTURE_TEMPLATES: Record<
+  VenueFixtureType,
+  { label: string; width: number; height: number }
+> = {
+  dance_floor: { label: 'Dance Floor', width: 260, height: 180 },
+  bar: { label: 'Bar', width: 180, height: 90 },
+  stage: { label: 'Stage', width: 260, height: 120 },
+  entrance: { label: 'Entrance', width: 180, height: 80 },
+  restrooms: { label: 'Restrooms', width: 180, height: 90 },
+  kitchen: { label: 'Kitchen', width: 200, height: 100 },
+  vendor_path: { label: 'Vendor Path', width: 320, height: 70 },
+};
+
+const FIXTURE_TYPES = Object.keys(FIXTURE_TEMPLATES) as VenueFixtureType[];
+
+function createVenueFixture(type: VenueFixtureType, existing: VenueFixture[]): VenueFixture {
+  const template = FIXTURE_TEMPLATES[type];
+  const count = existing.filter((fixture) => fixture.type === type).length + 1;
+  const suffix = count > 1 ? ` ${count}` : '';
+  return {
+    id: `${type}-${Date.now().toString(36)}-${count}`,
+    type,
+    label: `${template.label}${suffix}`,
+    x: 180 + (existing.length % 4) * 170,
+    y: 160 + Math.floor(existing.length / 4) * 120,
+    width: template.width,
+    height: template.height,
+    rotation: 0,
+  };
+}
 
 export default function SeatingPage() {
   const { token } = useAdmin();
@@ -126,9 +177,29 @@ export default function SeatingPage() {
   } = useTables(selectedWedding);
 
   const { guests, setGuests, refetch: refetchGuests } = useGuests(selectedWedding);
+  const {
+    layout: venueLayout,
+    loading: venueLayoutLoading,
+    saving: venueLayoutSaving,
+    error: venueLayoutError,
+    saveLayout: saveVenueLayout,
+  } = useVenueLayout(selectedWedding);
 
   // Active drag state for DragOverlay
   const [activeDrag, setActiveDrag] = useState<ActiveDragData>(null);
+  const [floorPlanMode, setFloorPlanMode] = useState<FloorPlanMode>('select');
+  const [floorPlanOutline, setFloorPlanOutline] = useState<VenueLayoutPoint[]>([]);
+  const [floorPlanBackgroundImageDataUrl, setFloorPlanBackgroundImageDataUrl] = useState<string | null>(null);
+  const [floorPlanBackgroundImageName, setFloorPlanBackgroundImageName] = useState<string | null>(null);
+  const [floorPlanBackgroundLocked, setFloorPlanBackgroundLocked] = useState(true);
+  const [floorPlanScalePixels, setFloorPlanScalePixels] = useState<number | null>(null);
+  const [floorPlanScaleDistance, setFloorPlanScaleDistance] = useState<number | null>(null);
+  const [floorPlanScaleUnit, setFloorPlanScaleUnit] = useState<'ft' | 'm'>('ft');
+  const [venueFixtures, setVenueFixtures] = useState<VenueFixture[]>([]);
+  const [fixtureMenuOpen, setFixtureMenuOpen] = useState(false);
+  const [scaleMenuOpen, setScaleMenuOpen] = useState(false);
+  const [floorPlanSaveState, setFloorPlanSaveState] = useState<'idle' | 'saved' | 'error'>('idle');
+  const floorPlanImageInputRef = useRef<HTMLInputElement | null>(null);
 
   // AI state
   const [aiLoading, setAiLoading] = useState(false);
@@ -169,6 +240,8 @@ export default function SeatingPage() {
       setActiveDrag({ type: 'guest', guest: active.data.current.guest as Guest });
     } else if (type === 'table') {
       setActiveDrag({ type: 'table', table: active.data.current.table as Table });
+    } else if (type === 'fixture') {
+      setActiveDrag({ type: 'fixture', fixture: active.data.current.fixture as VenueFixture });
     }
   };
 
@@ -186,6 +259,17 @@ export default function SeatingPage() {
       const newX = Math.max(0, table.x + delta.x / canvasZoom);
       const newY = Math.max(0, table.y + delta.y / canvasZoom);
       handleTableMove(table.id, newX, newY);
+    } else if (type === 'fixture') {
+      const fixture = active.data.current.fixture as VenueFixture;
+      const newX = Math.min(
+        Math.max(0, fixture.x + delta.x / canvasZoom),
+        Math.max(0, venueLayout.canvas_width - fixture.width)
+      );
+      const newY = Math.min(
+        Math.max(0, fixture.y + delta.y / canvasZoom),
+        Math.max(0, venueLayout.canvas_height - fixture.height)
+      );
+      handleFixtureMove(fixture.id, newX, newY);
     } else if (type === 'guest' && over) {
       const guest = active.data.current.guest as Guest;
 
@@ -236,6 +320,22 @@ export default function SeatingPage() {
     }
   }, [selectedWedding, fetchTables]);
 
+  useEffect(() => {
+    setFloorPlanMode('select');
+    setFloorPlanOutline(venueLayout.outline || []);
+    setFloorPlanBackgroundImageDataUrl(venueLayout.background_image_data_url ?? null);
+    setFloorPlanBackgroundImageName(venueLayout.background_image_name ?? null);
+    setFloorPlanBackgroundLocked(venueLayout.background_locked ?? true);
+    setFloorPlanScalePixels(venueLayout.scale_pixels ?? null);
+    setFloorPlanScaleDistance(venueLayout.scale_distance ?? null);
+    setFloorPlanScaleUnit(venueLayout.scale_unit ?? 'ft');
+    setVenueFixtures(venueLayout.fixtures ?? []);
+  }, [venueLayout.id, venueLayout.updated_at, venueLayout]);
+
+  useEffect(() => {
+    setFloorPlanSaveState('idle');
+  }, [selectedWedding]);
+
   const handleAddTable = async () => {
     if (!selectedWedding) return;
     await createTable({
@@ -251,6 +351,140 @@ export default function SeatingPage() {
   const handleTableMove = (id: string, x: number, y: number) => {
     setTables((prev) => prev.map((t) => (t.id === id ? { ...t, x, y } : t)));
     updateTable(id, { x: Math.round(x), y: Math.round(y) });
+  };
+
+  const handleFixtureMove = (id: string, x: number, y: number) => {
+    setFloorPlanSaveState('idle');
+    setVenueFixtures((prev) =>
+      prev.map((fixture) =>
+        fixture.id === id ? { ...fixture, x: Math.round(x), y: Math.round(y) } : fixture
+      )
+    );
+  };
+
+  const handleFloorPlanPointAdd = (point: VenueLayoutPoint) => {
+    setFloorPlanSaveState('idle');
+    setFloorPlanOutline((prev) => [...prev, point]);
+  };
+
+  const handleFloorPlanPointMove = (index: number, point: VenueLayoutPoint) => {
+    setFloorPlanSaveState('idle');
+    setFloorPlanOutline((prev) =>
+      prev.map((currentPoint, currentIndex) =>
+        currentIndex === index ? point : currentPoint
+      )
+    );
+  };
+
+  const handleFloorPlanUndo = () => {
+    setFloorPlanSaveState('idle');
+    setFloorPlanOutline((prev) => prev.slice(0, -1));
+  };
+
+  const handleFloorPlanClear = () => {
+    setFloorPlanSaveState('idle');
+    setFloorPlanOutline([]);
+  };
+
+  const handleFloorPlanRectangle = () => {
+    setFloorPlanSaveState('idle');
+    setFloorPlanMode('draw');
+    setFloorPlanOutline(DEFAULT_FLOOR_PLAN_RECTANGLE);
+  };
+
+  const handleFloorPlanImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setFloorPlanSaveState('error');
+      setAiError('Upload an image floor plan. PDF rendering will be added in a later pass.');
+      return;
+    }
+    if (file.size > MAX_FLOOR_PLAN_IMAGE_BYTES) {
+      setFloorPlanSaveState('error');
+      setAiError('Floor plan images must be under 1.5 MB for this version.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') return;
+      setFloorPlanBackgroundImageDataUrl(reader.result);
+      setFloorPlanBackgroundImageName(file.name);
+      setFloorPlanBackgroundLocked(true);
+      setFloorPlanSaveState('idle');
+    };
+    reader.onerror = () => {
+      setFloorPlanSaveState('error');
+      setAiError('Unable to read that floor plan image. Try another file.');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleFloorPlanImageClear = () => {
+    setFloorPlanBackgroundImageDataUrl(null);
+    setFloorPlanBackgroundImageName(null);
+    setFloorPlanBackgroundLocked(true);
+    setFloorPlanSaveState('idle');
+  };
+
+  const handleFixtureAdd = (type: VenueFixtureType) => {
+    setVenueFixtures((prev) => [...prev, createVenueFixture(type, prev)]);
+    setFixtureMenuOpen(false);
+    setFloorPlanSaveState('idle');
+  };
+
+  const handleScaleChange = (
+    field: 'pixels' | 'distance',
+    value: string
+  ) => {
+    const parsed = Number(value);
+    const safeValue = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    if (field === 'pixels') {
+      setFloorPlanScalePixels(safeValue);
+    } else {
+      setFloorPlanScaleDistance(safeValue);
+    }
+    setFloorPlanSaveState('idle');
+  };
+
+  const handleFloorPlanSave = async () => {
+    if (floorPlanOutline.length > 0 && floorPlanOutline.length < 3) {
+      setFloorPlanSaveState('error');
+      return;
+    }
+
+    try {
+      await saveVenueLayout({
+        canvas_width: venueLayout.canvas_width,
+        canvas_height: venueLayout.canvas_height,
+        outline: floorPlanOutline.map((point) => ({
+          x: Math.round(point.x),
+          y: Math.round(point.y),
+        })),
+        background_image_data_url: floorPlanBackgroundImageDataUrl,
+        background_image_name: floorPlanBackgroundImageName,
+        background_locked: floorPlanBackgroundLocked,
+        scale_pixels: floorPlanScalePixels,
+        scale_distance: floorPlanScaleDistance,
+        scale_unit: floorPlanScaleUnit,
+        fixtures: venueFixtures.map((fixture) => ({
+          ...fixture,
+          x: Math.round(fixture.x),
+          y: Math.round(fixture.y),
+          width: Math.round(fixture.width),
+          height: Math.round(fixture.height),
+          rotation: Math.round(fixture.rotation ?? 0),
+        })),
+      });
+      setFloorPlanSaveState('saved');
+      setFloorPlanMode('select');
+    } catch (err) {
+      console.error('Failed to save floor plan:', err);
+      setFloorPlanSaveState('error');
+    }
   };
 
   const handleGuestAssign = async (guestId: string, tableId: string) => {
@@ -501,6 +735,57 @@ export default function SeatingPage() {
   const seatedCount = guests.filter((g) => g.table_id).length;
   const unseatedCount = guests.filter((g) => !g.table_id).length;
   const totalCapacity = tables.reduce((sum, t) => sum + t.capacity, 0);
+  const savedFloorPlanSignature = JSON.stringify({
+    outline: pointsToSvgPoints(venueLayout.outline || []),
+    background: venueLayout.background_image_data_url ?? null,
+    backgroundName: venueLayout.background_image_name ?? null,
+    backgroundLocked: venueLayout.background_locked ?? true,
+    scalePixels: venueLayout.scale_pixels ?? null,
+    scaleDistance: venueLayout.scale_distance ?? null,
+    scaleUnit: venueLayout.scale_unit ?? 'ft',
+    fixtures: venueLayout.fixtures ?? [],
+  });
+  const draftFloorPlanSignature = JSON.stringify({
+    outline: pointsToSvgPoints(floorPlanOutline),
+    background: floorPlanBackgroundImageDataUrl,
+    backgroundName: floorPlanBackgroundImageName,
+    backgroundLocked: floorPlanBackgroundLocked,
+    scalePixels: floorPlanScalePixels,
+    scaleDistance: floorPlanScaleDistance,
+    scaleUnit: floorPlanScaleUnit,
+    fixtures: venueFixtures,
+  });
+  const floorPlanDirty = savedFloorPlanSignature !== draftFloorPlanSignature;
+  const floorPlanCanSave = floorPlanOutline.length === 0 || floorPlanOutline.length >= 3;
+  const floorPlanScaleLabel =
+    floorPlanScalePixels && floorPlanScaleDistance
+      ? `${floorPlanScalePixels}px = ${floorPlanScaleDistance}${floorPlanScaleUnit}`
+      : null;
+  const floorPlanStatus = venueLayoutLoading
+    ? 'Loading floor plan'
+    : venueLayoutSaving
+    ? 'Saving floor plan'
+    : floorPlanSaveState === 'saved'
+    ? 'Floor plan saved'
+    : floorPlanSaveState === 'error' || venueLayoutError
+    ? 'Floor plan needs attention'
+    : floorPlanDirty
+    ? 'Unsaved floor plan'
+    : floorPlanScaleLabel
+    ? `Floor plan ready · ${floorPlanScaleLabel}`
+    : floorPlanOutline.length >= 3
+    ? 'Floor plan ready'
+    : 'No floor plan yet';
+  const draftVenueLayout = {
+    ...venueLayout,
+    background_image_data_url: floorPlanBackgroundImageDataUrl,
+    background_image_name: floorPlanBackgroundImageName,
+    background_locked: floorPlanBackgroundLocked,
+    scale_pixels: floorPlanScalePixels,
+    scale_distance: floorPlanScaleDistance,
+    scale_unit: floorPlanScaleUnit,
+    fixtures: venueFixtures,
+  };
 
   return (
     <div className="space-y-6 print:space-y-0">
@@ -658,14 +943,206 @@ export default function SeatingPage() {
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
         >
-          <div className="print:hidden flex h-[calc(100vh-340px)] overflow-hidden bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl shadow-sm border border-white/50 dark:border-slate-700/50">
+          <div className="print:hidden flex min-h-[760px] flex-col overflow-hidden bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl shadow-sm border border-white/50 dark:border-slate-700/50 lg:h-[calc(100vh-340px)] lg:min-h-0 lg:flex-row">
             {/* Guest Sidebar */}
             <Sidebar guests={guests} />
 
             {/* Canvas Area */}
-            <div className="flex-1 relative">
+            <div className="flex-1 relative min-h-[470px] lg:min-h-0">
+              {/* Floor Plan Controls */}
+              <div className="absolute top-3 left-3 right-3 z-30 rounded-lg border border-white/30 dark:border-slate-700/30 bg-white/85 dark:bg-slate-800/85 backdrop-blur-md shadow-sm sm:right-auto sm:max-w-[calc(100%-7rem)]">
+                <input
+                  ref={floorPlanImageInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleFloorPlanImageUpload}
+                  aria-label="Upload venue floor plan image"
+                />
+                <div className="flex flex-wrap items-center gap-1 p-1">
+                  <div className="flex items-center gap-1 border-r border-slate-200/70 dark:border-slate-700/70 pr-1 mr-1">
+                    <button
+                      onClick={() => setFloorPlanMode('select')}
+                      className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors ${
+                        floorPlanMode === 'select'
+                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                          : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700'
+                      }`}
+                      title="Select and move tables"
+                      aria-label="Select and move tables"
+                      aria-pressed={floorPlanMode === 'select'}
+                    >
+                      <MousePointer2 className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Select</span>
+                    </button>
+                    <button
+                      onClick={() => setFloorPlanMode('draw')}
+                      className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors ${
+                        floorPlanMode === 'draw'
+                          ? 'bg-blue-600 text-white'
+                          : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700'
+                      }`}
+                      title="Draw or adjust venue outline"
+                      aria-label="Draw venue outline"
+                      aria-pressed={floorPlanMode === 'draw'}
+                    >
+                      <PenLine className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Draw</span>
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={handleFloorPlanRectangle}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700"
+                    title="Start from a rectangular room"
+                    aria-label="Start from a rectangular room"
+                  >
+                    <Map className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Room</span>
+                  </button>
+                  <button
+                    onClick={() => floorPlanImageInputRef.current?.click()}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700"
+                    title="Upload venue floor plan image"
+                    aria-label="Upload venue floor plan image"
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Upload</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setFloorPlanBackgroundLocked((locked) => !locked);
+                      setFloorPlanSaveState('idle');
+                    }}
+                    disabled={!floorPlanBackgroundImageDataUrl}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
+                    title={floorPlanBackgroundLocked ? 'Unlock backdrop' : 'Lock backdrop'}
+                    aria-label={floorPlanBackgroundLocked ? 'Unlock backdrop' : 'Lock backdrop'}
+                    aria-pressed={floorPlanBackgroundLocked}
+                  >
+                    {floorPlanBackgroundLocked ? (
+                      <Lock className="h-3.5 w-3.5" />
+                    ) : (
+                      <Unlock className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setFixtureMenuOpen((open) => !open)}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700"
+                    title="Add venue fixture"
+                    aria-label="Add venue fixture"
+                    aria-expanded={fixtureMenuOpen}
+                  >
+                    <PlusCircle className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Fixture</span>
+                  </button>
+                  <button
+                    onClick={() => setScaleMenuOpen((open) => !open)}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700"
+                    title="Set floor plan scale"
+                    aria-label="Set floor plan scale"
+                    aria-expanded={scaleMenuOpen}
+                  >
+                    <Ruler className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Scale</span>
+                  </button>
+                  <button
+                    onClick={handleFloorPlanUndo}
+                    disabled={floorPlanOutline.length === 0}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
+                    title="Undo last floor plan point"
+                    aria-label="Undo last floor plan point"
+                  >
+                    <Undo2 className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={handleFloorPlanClear}
+                    disabled={floorPlanOutline.length === 0}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
+                    title="Clear floor plan"
+                    aria-label="Clear floor plan"
+                  >
+                    <Eraser className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={handleFloorPlanImageClear}
+                    disabled={!floorPlanBackgroundImageDataUrl}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
+                    title="Remove uploaded floor plan image"
+                    aria-label="Remove uploaded floor plan image"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={handleFloorPlanSave}
+                    disabled={!floorPlanDirty || !floorPlanCanSave || venueLayoutSaving}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md bg-slate-900 px-2 text-xs font-semibold text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
+                    title="Save floor plan"
+                    aria-label="Save floor plan"
+                  >
+                    <Save className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Save</span>
+                  </button>
+                </div>
+                {fixtureMenuOpen && (
+                  <div className="grid grid-cols-2 gap-1 border-t border-slate-200/70 p-1 dark:border-slate-700/70 sm:grid-cols-4">
+                    {FIXTURE_TYPES.map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => handleFixtureAdd(type)}
+                        className="rounded-md px-2 py-1.5 text-left text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700"
+                      >
+                        {FIXTURE_TEMPLATES[type].label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {scaleMenuOpen && (
+                  <div className="flex flex-wrap items-center gap-1 border-t border-slate-200/70 p-1 text-[11px] font-medium text-slate-500 dark:border-slate-700/70 dark:text-slate-400">
+                    <input
+                      type="number"
+                      min="1"
+                      inputMode="decimal"
+                      value={floorPlanScalePixels ?? ''}
+                      onChange={(event) => handleScaleChange('pixels', event.target.value)}
+                      placeholder="100"
+                      className="h-7 w-16 rounded-md border border-slate-200 bg-white/80 px-2 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-blue-400/30 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200"
+                      aria-label="Scale pixels"
+                    />
+                    <span>px =</span>
+                    <input
+                      type="number"
+                      min="0.1"
+                      inputMode="decimal"
+                      value={floorPlanScaleDistance ?? ''}
+                      onChange={(event) => handleScaleChange('distance', event.target.value)}
+                      placeholder="10"
+                      className="h-7 w-16 rounded-md border border-slate-200 bg-white/80 px-2 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-blue-400/30 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200"
+                      aria-label="Scale distance"
+                    />
+                    <select
+                      value={floorPlanScaleUnit}
+                      onChange={(event) => {
+                        setFloorPlanScaleUnit(event.target.value as 'ft' | 'm');
+                        setFloorPlanSaveState('idle');
+                      }}
+                      className="h-7 rounded-md border border-slate-200 bg-white/80 px-1 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-blue-400/30 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200"
+                      aria-label="Scale unit"
+                    >
+                      <option value="ft">ft</option>
+                      <option value="m">m</option>
+                    </select>
+                  </div>
+                )}
+                <div className="border-t border-slate-200/70 px-2 py-1 text-[11px] font-medium leading-snug text-slate-500 dark:border-slate-700/70 dark:text-slate-400 break-words">
+                  {floorPlanStatus}
+                  {floorPlanBackgroundImageName ? ` · ${floorPlanBackgroundImageName}` : ''}
+                  {venueFixtures.length > 0 ? ` · ${venueFixtures.length} fixtures` : ''}
+                </div>
+              </div>
+
               {/* Canvas Zoom Controls */}
-              <div className="absolute top-3 right-3 z-20 flex items-center gap-1 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md rounded-lg border border-white/30 dark:border-slate-700/30 p-1">
+              <div className="absolute bottom-3 right-3 z-30 flex items-center gap-1 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md rounded-lg border border-white/30 dark:border-slate-700/30 p-1 sm:top-3 sm:bottom-auto">
                 <button
                   onClick={() => setCanvasZoom((z) => Math.max(0.25, z - 0.15))}
                   className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
@@ -698,6 +1175,12 @@ export default function SeatingPage() {
                 onTableMove={handleTableMove}
                 onTableDelete={handleTableDelete}
                 zoom={canvasZoom}
+                venueLayout={draftVenueLayout}
+                floorPlanMode={floorPlanMode}
+                floorPlanOutline={floorPlanOutline}
+                venueFixtures={venueFixtures}
+                onFloorPlanPointAdd={handleFloorPlanPointAdd}
+                onFloorPlanPointMove={handleFloorPlanPointMove}
               />
             </div>
           </div>
@@ -722,6 +1205,12 @@ export default function SeatingPage() {
               <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl border border-primary-300/50 dark:border-primary-600/50 rounded-2xl shadow-2xl px-4 py-2 pointer-events-none ring-2 ring-primary-400/30">
                 <span className="font-semibold text-slate-800 dark:text-gray-100 text-sm">
                   {activeDrag.table.name}
+                </span>
+              </div>
+            ) : activeDrag?.type === 'fixture' ? (
+              <div className="bg-white/85 dark:bg-slate-800/85 backdrop-blur-xl border border-slate-300/70 dark:border-slate-600/60 rounded-xl shadow-2xl px-3 py-2 pointer-events-none ring-2 ring-slate-300/40">
+                <span className="font-semibold text-slate-800 dark:text-gray-100 text-xs">
+                  {activeDrag.fixture.label}
                 </span>
               </div>
             ) : null}

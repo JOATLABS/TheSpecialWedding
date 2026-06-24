@@ -20,6 +20,7 @@ class SeatingExportService:
     def __init__(self):
         self.tables_collection = mongo.db["tables"]
         self.guests_collection = mongo.db["guests"]
+        self.layouts_collection = mongo.db["seating_layouts"]
 
     async def generate_seating_chart_pdf(
         self,
@@ -55,6 +56,7 @@ class SeatingExportService:
         guests = await self.guests_collection.find({"wedding_id": wedding_id}).to_list(
             length=None
         )
+        seating_layout = await self.layouts_collection.find_one({"wedding_id": wedding_id})
 
         # Build guest lookup by table_id (T5: normalize ObjectId → string consistently)
         guests_by_table: Dict[str, List[dict]] = {}
@@ -78,7 +80,12 @@ class SeatingExportService:
         # Generate HTML based on layout style
         if layout_style == "visual":
             html = self._generate_visual_layout(
-                tables, guests_by_table, unseated_guests, wedding_name, paper_size
+                tables,
+                guests_by_table,
+                unseated_guests,
+                wedding_name,
+                paper_size,
+                seating_layout,
             )
         else:
             html = self._generate_list_layout(
@@ -96,6 +103,7 @@ class SeatingExportService:
         unseated_guests: List[dict],
         wedding_name: str,
         paper_size: str = "poster",
+        seating_layout: Optional[dict] = None,
     ) -> str:
         """Generate visual floor plan layout with positioned tables."""
 
@@ -118,15 +126,23 @@ class SeatingExportService:
         page_size = page_sizes.get(paper_size, page_sizes["poster"])
         fonts = font_scales.get(paper_size, font_scales["poster"])
 
-        # Calculate canvas bounds from table positions
+        # Calculate canvas bounds from the venue outline and table positions.
+        layout_width = int((seating_layout or {}).get("canvas_width", 800))
+        layout_height = int((seating_layout or {}).get("canvas_height", 600))
         if tables:
             max_x = max((t.get("x", 0) + 180 for t in tables), default=800)
             max_y = max((t.get("y", 0) + 180 for t in tables), default=600)
         else:
             max_x, max_y = 800, 600
+        max_x = max(max_x, layout_width)
+        max_y = max(max_y, layout_height)
 
         # Scale factor for tabloid size
         scale = 0.5 if paper_size == "tabloid" else 1.0
+
+        floor_plan_html = self._render_floor_plan_layers(
+            seating_layout, max_x, max_y, scale
+        )
 
         # Generate table cards
         tables_html = ""
@@ -182,6 +198,37 @@ class SeatingExportService:
             border-radius: 12px;
             background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
             overflow: visible;
+        }}
+        .floor-plan {{
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }}
+        .floor-plan-image {{
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            opacity: 0.34;
+            pointer-events: none;
+        }}
+        .fixture-card {{
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed #60a5fa;
+            border-radius: 8px;
+            background: rgba(239, 246, 255, 0.74);
+            color: #1e40af;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            font-size: {fonts["small"]};
+            font-weight: 700;
+            text-align: center;
+            padding: 4px 8px;
         }}
         .table-card {{
             position: absolute;
@@ -269,6 +316,7 @@ class SeatingExportService:
     </div>
 
     <div class="canvas">
+        {floor_plan_html}
         {tables_html}
     </div>
 
@@ -289,6 +337,60 @@ class SeatingExportService:
 </html>
 """
         return html
+
+    def _render_floor_plan_layers(
+        self, seating_layout: Optional[dict], width: int, height: int, scale: float
+    ) -> str:
+        """Render the saved venue context under table cards for visual PDF exports."""
+        if not seating_layout:
+            return ""
+
+        layers: list[str] = []
+        background_image = seating_layout.get("background_image_data_url")
+        if background_image:
+            layers.append(
+                f'<img class="floor-plan-image" src="{self._escape_html(background_image)}" alt="" />'
+            )
+
+        points = seating_layout.get("outline") or []
+        if len(points) >= 3:
+            safe_points: list[str] = []
+            for point in points:
+                try:
+                    x = float(point.get("x", 0))
+                    y = float(point.get("y", 0))
+                except (TypeError, ValueError):
+                    continue
+                safe_points.append(f"{x:.1f},{y:.1f}")
+
+            if len(safe_points) >= 3:
+                points_attr = " ".join(safe_points)
+                layers.append(
+                    f"""
+        <svg class="floor-plan" viewBox="0 0 {width} {height}" aria-hidden="true">
+            <polygon points="{points_attr}" fill="#3b82f6" fill-opacity="0.06" stroke="#3b82f6" stroke-opacity="0.7" stroke-width="6" stroke-linejoin="round" stroke-dasharray="18 12" />
+        </svg>
+        """
+                )
+
+        for fixture in seating_layout.get("fixtures") or []:
+            try:
+                x = int(float(fixture.get("x", 0)) * scale)
+                y = int(float(fixture.get("y", 0)) * scale)
+                fixture_width = int(float(fixture.get("width", 160)) * scale)
+                fixture_height = int(float(fixture.get("height", 90)) * scale)
+            except (TypeError, ValueError):
+                continue
+            label = self._escape_html(fixture.get("label", "Fixture"))
+            layers.append(
+                f"""
+        <div class="fixture-card" style="left: {x}px; top: {y}px; width: {fixture_width}px; height: {fixture_height}px;">
+            {label}
+        </div>
+        """
+            )
+
+        return "".join(layers)
 
     def _render_table_card(
         self, table: dict, guests: List[dict], fonts: dict, scale: float = 1.0

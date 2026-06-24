@@ -215,6 +215,30 @@ async def create_table_indexes():
         return False
 
 
+async def create_seating_layout_indexes():
+    """
+    Create indexes for seating_layouts collection.
+
+    Key queries:
+    1. Get the venue outline by wedding_id (seating page)
+    """
+    collection = mongo.db["seating_layouts"]
+
+    try:
+        await collection.create_index(
+            [("wedding_id", ASCENDING)],
+            name="idx_seating_layout_wedding_id",
+            unique=True,
+        )
+        logger.info("Created index: idx_seating_layout_wedding_id")
+
+        logger.info("All seating layout indexes created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating seating layout indexes: {str(e)}")
+        return False
+
+
 async def create_guest_indexes():
     """
     Create indexes for guests collection
@@ -2540,6 +2564,7 @@ async def create_all_indexes():
         await create_support_ticket_indexes()
         await create_wedding_indexes()
         await create_table_indexes()  # Seating orchestration
+        await create_seating_layout_indexes()  # Venue floor plan under seating canvas
         await create_guest_indexes()
         await create_plus_one_indexes()
         await create_rsvp_indexes()
