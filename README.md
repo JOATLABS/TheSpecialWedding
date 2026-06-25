@@ -68,7 +68,7 @@ app/
 
 cloudflare-workers/    # Cron workers (trial, metrics, backup, uptime)
 scripts/               # Seed scripts, setup, changelog tools
-docs/                  # Architecture docs, migration guides, QA reports
+docs/                  # Production docs: per-feature guides, architecture, roadmap
 ```
 
 ## Getting Started
@@ -174,9 +174,8 @@ Set all environment variables in the Coolify dashboard. The container exposes po
 
 Recommended next deployment path:
 
-- [Split-service Coolify rollout guide](docs/plans/COOLIFY_SPLIT_DEPLOY_GUIDE.md)
+- A split-service Coolify rollout (frontend and backend as separate services) — see the [platform roadmap](docs/ROADMAP.md).
 - [GitHub secret sync script](scripts/deploy/sync_github_secrets.sh)
-- [Deployment strategy status](docs/plans/DEPLOYMENT_STRATEGY_STATUS.md)
 
 Repo rollout status:
 
@@ -184,7 +183,7 @@ Repo rollout status:
 - manual production promotion by immutable SHA: [`.github/workflows/promote-coolify-production.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/promote-coolify-production.yml)
 - shared deploy verification and rollback logic: [`.github/workflows/coolify-deploy-shared.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/coolify-deploy-shared.yml)
 
-Historical deployment docs for older Vercel/DigitalOcean or droplet-only setups remain in `docs/`, but they are no longer the primary source of truth.
+For the production architecture and platform direction, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Roles
 

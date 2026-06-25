@@ -172,6 +172,5 @@ Do these only after the one-planner baseline identifies the bottleneck:
 
 ## Implementation Plan
 
-The detailed task plan is stored at:
-
-[`docs/superpowers/plans/2026-04-30-performance-baseline-and-efficiency.md`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/docs/superpowers/plans/2026-04-30-performance-baseline-and-efficiency.md)
+The rerun flow above is the durable source of truth for regenerating the
+performance baseline; the testbed scripts under `testbed/` implement it.
