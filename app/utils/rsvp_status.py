@@ -3,6 +3,18 @@ from typing import Any, Literal, Mapping
 RSVP_STATUS_CONFIRMED = "confirmed"
 RSVP_STATUS_DECLINED = "declined"
 RSVP_STATUS_PENDING = "pending"
+RSVP_FILTER_ALL = "all"
+RSVP_FILTER_RESPONDED = "responded"
+RSVP_FILTER_NOT_INVITED = "not_invited"
+
+GUEST_RSVP_STATUS_FILTERS = {
+    RSVP_FILTER_ALL,
+    RSVP_FILTER_RESPONDED,
+    RSVP_STATUS_CONFIRMED,
+    RSVP_STATUS_DECLINED,
+    RSVP_STATUS_PENDING,
+    RSVP_FILTER_NOT_INVITED,
+}
 
 RSVPStatus = Literal["confirmed", "declined", "pending"]
 
