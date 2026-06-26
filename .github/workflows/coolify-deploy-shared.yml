@@ -250,7 +250,7 @@ jobs:
       name: ${{ inputs.environment_name }}
       url: ${{ needs.prepare.outputs.api-url }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Read current backend image reference
         id: current-image
@@ -327,7 +327,7 @@ jobs:
       name: ${{ inputs.environment_name }}
       url: ${{ needs.prepare.outputs.frontend-url }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Read current frontend image reference
         id: current-image
@@ -407,7 +407,7 @@ jobs:
       name: ${{ inputs.environment_name }}
       url: ${{ needs.prepare.outputs.frontend-url }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v6
         with:
@@ -468,7 +468,7 @@ jobs:
       name: ${{ inputs.environment_name }}
       url: ${{ needs.prepare.outputs.frontend-url }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Roll back backend
         if: >-
