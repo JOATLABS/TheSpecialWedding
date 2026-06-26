@@ -56,7 +56,9 @@ class SeatingExportService:
         guests = await self.guests_collection.find({"wedding_id": wedding_id}).to_list(
             length=None
         )
-        seating_layout = await self.layouts_collection.find_one({"wedding_id": wedding_id})
+        seating_layout = await self.layouts_collection.find_one(
+            {"wedding_id": wedding_id}
+        )
 
         # Build guest lookup by table_id (T5: normalize ObjectId → string consistently)
         guests_by_table: Dict[str, List[dict]] = {}

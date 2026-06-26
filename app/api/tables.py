@@ -116,7 +116,9 @@ async def update_venue_layout(
         upsert=True,
     )
 
-    saved_layout = await mongo.db["seating_layouts"].find_one({"wedding_id": wedding_id})
+    saved_layout = await mongo.db["seating_layouts"].find_one(
+        {"wedding_id": wedding_id}
+    )
     return _serialize_seating_layout(saved_layout, wedding_id)
 
 

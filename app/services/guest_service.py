@@ -179,7 +179,9 @@ class GuestService:
             ]
         }
 
-    def _rsvp_object_true_count_expression(self, attending_field: str) -> dict[str, Any]:
+    def _rsvp_object_true_count_expression(
+        self, attending_field: str
+    ) -> dict[str, Any]:
         return {
             "$cond": [
                 {"$eq": [{"$type": attending_field}, "object"]},
@@ -502,9 +504,7 @@ class GuestService:
                                             "then": 2,
                                         },
                                         {
-                                            "case": {
-                                                "$eq": ["$invite_sent", True]
-                                            },
+                                            "case": {"$eq": ["$invite_sent", True]},
                                             "then": 1,
                                         },
                                     ],
@@ -523,9 +523,7 @@ class GuestService:
                     {"rsvp_status_detail": RSVP_STATUS_CONFIRMED}
                 )
             elif rsvp_status == RSVP_STATUS_DECLINED:
-                post_lookup_clauses.append(
-                    {"rsvp_status_detail": RSVP_STATUS_DECLINED}
-                )
+                post_lookup_clauses.append({"rsvp_status_detail": RSVP_STATUS_DECLINED})
             elif rsvp_status == RSVP_STATUS_PENDING:
                 post_lookup_clauses.append({"invite_sent": True, "has_rsvp": False})
             elif rsvp_status == RSVP_FILTER_NOT_INVITED:
