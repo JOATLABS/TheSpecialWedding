@@ -3,7 +3,11 @@ from __future__ import annotations
 import pytest
 from bson import ObjectId
 
+from app.models.rsvp import RSVPModel
+from app.services.admin_rsvp_service import AdminRSVPService
 from app.services.guest_service import GuestService
+from app.services.rsvp_service import RSVPService
+from app.utils.rsvp_storage import DEPRECATED_RSVP_FIELDS_UNSET
 from app.utils.rsvp_status import (
     GUEST_RSVP_STATUS_FILTERS,
     RSVP_FILTER_NOT_INVITED,
@@ -58,6 +62,29 @@ class _AggregateSpyCollection:
         return _FakeCursor([{"items": [], "totalCount": []}])
 
 
+class _UpdateResult:
+    upserted_id = None
+
+
+class _UpdateSpyCollection:
+    def __init__(self, find_one_doc: dict | None = None):
+        self.find_one_doc = find_one_doc
+        self.update_calls: list[tuple[dict, dict, bool]] = []
+        self.delete_many_calls: list[dict] = []
+
+    async def find_one(self, query: dict) -> dict | None:
+        return self.find_one_doc
+
+    async def update_one(
+        self, query: dict, update: dict, upsert: bool = False
+    ) -> _UpdateResult:
+        self.update_calls.append((query, update, upsert))
+        return _UpdateResult()
+
+    async def delete_many(self, query: dict) -> None:
+        self.delete_many_calls.append(query)
+
+
 async def _empty_summary(_wedding_id: str) -> dict:
     return {}
 
@@ -67,16 +94,71 @@ async def _empty_filter_options(_wedding_id: str) -> dict:
 
 
 def test_rsvp_status_helper_classifies_empty_attending_as_declined() -> None:
-    assert get_rsvp_status({"attending": ["ceremony"]}) == RSVP_STATUS_CONFIRMED
+    assert get_rsvp_status({"attending": ["custom_brunch"]}) == RSVP_STATUS_CONFIRMED
     assert get_rsvp_status({"attending": []}) == RSVP_STATUS_DECLINED
-    assert get_rsvp_status({"attending": {"ceremony": False}}) == RSVP_STATUS_DECLINED
+    assert (
+        get_rsvp_status({"attending": {"custom_brunch": False}}) == RSVP_STATUS_DECLINED
+    )
     assert get_rsvp_status({"attending": None}) == RSVP_STATUS_PENDING
+
+
+@pytest.mark.asyncio
+async def test_public_rsvp_save_unsets_abandoned_attendance_fields() -> None:
+    guest_id = ObjectId()
+    service = RSVPService.__new__(RSVPService)
+    service.rsvp_collection = _UpdateSpyCollection()
+    service.guest_collection = _UpdateSpyCollection()
+    service.plus_one_collection = _UpdateSpyCollection()
+
+    async def _noop_notify(**_kwargs):
+        return None
+
+    service._notify_planner_rsvp = _noop_notify
+
+    await service._submit_rsvp_for_guest_doc(
+        {
+            "_id": guest_id,
+            "name": "Test Guest",
+            "wedding_id": "wedding_1",
+            "plus_one_allowed": False,
+            "number_of_plus_ones_allowed": 0,
+        },
+        RSVPModel(attending=[], phone="4053148119"),
+    )
+
+    _query, update, upsert = service.rsvp_collection.update_calls[0]
+    assert upsert is True
+    assert update["$set"]["attending"] == []
+    assert update["$unset"] == DEPRECATED_RSVP_FIELDS_UNSET
+
+
+@pytest.mark.asyncio
+async def test_admin_rsvp_save_unsets_abandoned_attendance_fields() -> None:
+    guest_id = ObjectId()
+    service = AdminRSVPService.__new__(AdminRSVPService)
+    service.guest_collection = _UpdateSpyCollection({"_id": guest_id})
+    service.rsvp_collection = _UpdateSpyCollection()
+
+    result = await service.admin_create_or_update_rsvp(
+        guest_id=str(guest_id),
+        wedding_id="wedding_1",
+        attending=["after_party"],
+        dietary=None,
+        confirmed_by_admin=True,
+    )
+
+    _query, update, upsert = service.rsvp_collection.update_calls[0]
+    assert upsert is True
+    assert update["$set"]["attending"] == ["after_party"]
+    assert update["$unset"] == DEPRECATED_RSVP_FIELDS_UNSET
+    assert result["status"] == RSVP_STATUS_CONFIRMED
 
 
 @pytest.mark.asyncio
 async def test_guest_summary_counts_declined_rsvps_outside_confirmed_total() -> None:
     confirmed_guest_id = ObjectId()
     declined_guest_id = ObjectId()
+    legacy_empty_guest_id = ObjectId()
     pending_guest_id = ObjectId()
     not_invited_guest_id = ObjectId()
 
@@ -94,6 +176,12 @@ async def test_guest_summary_counts_declined_rsvps_outside_confirmed_total() -> 
                 "wedding_id": "wedding_1",
                 "invite_sent": True,
                 "number_of_plus_ones_allowed": 3,
+            },
+            {
+                "_id": legacy_empty_guest_id,
+                "wedding_id": "wedding_1",
+                "invite_sent": True,
+                "number_of_plus_ones_allowed": 0,
             },
             {
                 "_id": pending_guest_id,
@@ -114,10 +202,15 @@ async def test_guest_summary_counts_declined_rsvps_outside_confirmed_total() -> 
             {
                 "guest_id": str(confirmed_guest_id),
                 "wedding_id": "wedding_1",
-                "attending": ["ceremony"],
+                "attending": ["custom_brunch"],
             },
             {
                 "guest_id": str(declined_guest_id),
+                "wedding_id": "wedding_1",
+                "attending": [],
+            },
+            {
+                "guest_id": str(legacy_empty_guest_id),
                 "wedding_id": "wedding_1",
                 "attending": [],
             },
@@ -133,11 +226,11 @@ async def test_guest_summary_counts_declined_rsvps_outside_confirmed_total() -> 
 
     summary = await service._build_guest_summary("wedding_1")
 
-    assert summary["totalGuests"] == 4
-    assert summary["invitedGuests"] == 3
-    assert summary["respondedGuests"] == 2
+    assert summary["totalGuests"] == 5
+    assert summary["invitedGuests"] == 4
+    assert summary["respondedGuests"] == 3
     assert summary["confirmedGuests"] == 1
-    assert summary["declinedGuests"] == 1
+    assert summary["declinedGuests"] == 2
     assert summary["pendingGuests"] == 1
     assert summary["notInvitedGuests"] == 1
     assert summary["totalPlusOneSlots"] == 10
@@ -189,11 +282,12 @@ async def test_guest_list_builds_server_side_rsvp_status_filters(
 
     assert collection.pipeline is not None
     assert any("$lookup" in stage for stage in collection.pipeline)
+    assert any(stage == {"$match": expected_match} for stage in collection.pipeline), (
+        collection.pipeline
+    )
     assert any(
-        stage == {"$match": expected_match} for stage in collection.pipeline
-    ), collection.pipeline
-    assert any(
-        stage == {
+        stage
+        == {
             "$project": {
                 "rsvp_docs": 0,
                 "plus_one_docs": 0,

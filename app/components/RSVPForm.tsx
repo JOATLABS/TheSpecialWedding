@@ -3,7 +3,7 @@
 'use client';
 
 import { useForm } from 'react-hook-form';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useWedding } from '@/hooks/useWedding';
 import { formatDate } from '@/utils/dateFormat';
@@ -51,33 +51,38 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
  * For computed rgba() we also read the wedding object directly.
  */
 
-// Glass card component — uses couple's theme accent for section title
 function FormCard({ title, children, className = '' }: {
   title: string;
   children: React.ReactNode;
   className?: string;
 }) {
   return (
-    <div className={`rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl overflow-hidden ${className}`}>
-      <div className="px-6 py-4 border-b border-white/10">
+    <section className={`rounded-xl border border-white/10 bg-white/[0.035] overflow-hidden ${className}`}>
+      <div className="px-5 py-3 border-b border-white/10">
         <h2
-          className="text-xs font-semibold uppercase tracking-[0.3em]"
+          className="text-xs font-semibold uppercase tracking-[0.18em]"
           style={{ color: 'var(--rsvp-accent, #D4A5A5)' }}
         >
           {title}
         </h2>
       </div>
-      <div className="p-6">
+      <div className="p-5">
         {children}
       </div>
-    </div>
+    </section>
   );
 }
 
 export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewWeddingPage }: RSVPFormProps) {
   const wedding = useWedding();
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({
+  const initialAttendanceChoice = existingRsvp
+    ? existingRsvp.attending && existingRsvp.attending.length > 0
+      ? 'yes'
+      : 'no'
+    : '';
+  const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm({
     defaultValues: {
+      attendance_choice: initialAttendanceChoice,
       attending: existingRsvp?.attending || [],
       phone: guest.phone || '',
       dietary: existingRsvp?.dietary || '',
@@ -86,7 +91,17 @@ export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewW
     },
   });
   const [submitted, setSubmitted] = useState(false);
+  const [submittedAttendance, setSubmittedAttendance] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const attendanceChoiceValue = watch('attendance_choice');
+  const isAttending = attendanceChoiceValue === 'yes';
+  const isDeclining = attendanceChoiceValue === 'no';
+
+  useEffect(() => {
+    if (isDeclining) {
+      setValue('attending', []);
+    }
+  }, [isDeclining, setValue]);
 
   /* ─── theme colors (safe fallbacks to original wedding-rose) ─── */
   const tc = wedding?.theme_config;
@@ -193,7 +208,7 @@ export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewW
         return `${year}${pad(month)}${pad(day)}T${pad(hour)}${pad(min)}00`;
       };
 
-      const uidBase = `${guest.id || guest.name || 'guest'}-${wedding.id || wedding.slug || 'wedding'}`
+      const uidBase = `${guest.id || guest.name || 'guest'}-${wedding.id || wedding.slug || 'event'}`
         .replace(/\s+/g, '-')
         .toLowerCase();
       const vevents = events.map((event, index) => {
@@ -217,8 +232,8 @@ export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewW
         const eventTimezone = event.details?.timezone || weddingTimezone;
 
         const eventLabel = getWeddingEventLabel(event.type, event.custom_type_label);
-        const summary = `${eventLabel} - ${wedding.couple_names || 'Wedding'}`;
-        const location = event.details?.venue_name || event.details?.location || 'Wedding Venue';
+        const summary = `${eventLabel} - ${wedding.couple_names || 'Event'}`;
+        const location = event.details?.venue_name || event.details?.location || 'Event Venue';
         const attire = event.details?.attire ? `Attire: ${event.details.attire}` : '';
         const description = attire
           ? `You are cordially invited! ${attire}`
@@ -231,7 +246,7 @@ export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewW
           `SUMMARY:${summary}`,
           `LOCATION:${location}`,
           `DESCRIPTION:${description}`,
-          `UID:${uidBase}-${event.type}-${eventDate}-${index}@wedding-rsvp`,
+          `UID:${uidBase}-${event.type}-${eventDate}-${index}@event-rsvp`,
           'END:VEVENT'
         ].join('\r\n');
       }).filter(Boolean);
@@ -239,7 +254,7 @@ export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewW
       const ics = [
         'BEGIN:VCALENDAR',
         'VERSION:2.0',
-        'PRODID:-//Wedding RSVP//EN',
+        'PRODID:-//Event RSVP//EN',
         'CALSCALE:GREGORIAN',
         'METHOD:PUBLISH',
         `X-WR-TIMEZONE:${weddingTimezone}`,
@@ -251,7 +266,7 @@ export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewW
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = 'wedding_invite.ics';
+      link.download = 'event_invite.ics';
       link.style.display = 'none';
       document.body.appendChild(link);
       setTimeout(() => {
@@ -266,33 +281,51 @@ export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewW
   const onSubmit = async (data: any) => {
     setError(null);
 
-    const phonePattern = /^\+?\d{10,15}$/;
-    for (let i = 0; i < plusOnes.length; i++) {
-      const p = plusOnes[i];
-      const guestLabel = `Guest ${i + 1}`;
-      if (!p.name.trim()) {
-        setError(`${guestLabel}: Please enter a name, or remove empty guest cards.`);
-        return;
-      }
-      if (p.name.trim().length < 2) {
-        setError(`${guestLabel}: Name must be at least 2 characters.`);
-        return;
-      }
-      if (p.name.trim().length > 100) {
-        setError(`${guestLabel}: Name must be 100 characters or fewer.`);
-        return;
-      }
-      if (p.phone && p.phone.trim() && !phonePattern.test(p.phone.trim())) {
-        setError(`${guestLabel}: Phone number must be 10-15 digits, optionally starting with +.`);
-        return;
-      }
-    }
-
     try {
       const attendingRaw = data.attending;
       const attendingList: string[] = Array.isArray(attendingRaw)
         ? attendingRaw
         : (typeof attendingRaw === 'string' && attendingRaw ? [attendingRaw] : []);
+      const isAttendingSubmission = data.attendance_choice === 'yes'
+        ? true
+        : data.attendance_choice === 'no'
+          ? false
+          : null;
+
+      if (isAttendingSubmission === null) {
+        setError('Please tell us whether you will attend.');
+        return;
+      }
+
+      const selectedEvents = isAttendingSubmission ? attendingList : [];
+      if (isAttendingSubmission && selectedEvents.length === 0) {
+        setError('Please select at least one event you plan to attend.');
+        return;
+      }
+
+      const phonePattern = /^\+?\d{10,15}$/;
+      if (isAttendingSubmission) {
+        for (let i = 0; i < plusOnes.length; i++) {
+          const p = plusOnes[i];
+          const guestLabel = `Guest ${i + 1}`;
+          if (!p.name.trim()) {
+            setError(`${guestLabel}: Please enter a name, or remove empty guest cards.`);
+            return;
+          }
+          if (p.name.trim().length < 2) {
+            setError(`${guestLabel}: Name must be at least 2 characters.`);
+            return;
+          }
+          if (p.name.trim().length > 100) {
+            setError(`${guestLabel}: Name must be 100 characters or fewer.`);
+            return;
+          }
+          if (p.phone && p.phone.trim() && !phonePattern.test(p.phone.trim())) {
+            setError(`${guestLabel}: Phone number must be 10-15 digits, optionally starting with +.`);
+            return;
+          }
+        }
+      }
 
       const filledPlusOnes = plusOnes
         .filter(p => p.name.trim())
@@ -300,25 +333,27 @@ export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewW
           name: p.name.trim(),
           phone: p.phone?.trim() || undefined,
           email: p.email?.trim() || undefined,
-          attending: attendingList,
+          attending: selectedEvents,
           dietary: p.dietary?.trim() || undefined,
           sms_opt_in: !!p.sms_opt_in,
           email_opt_in: !!p.email_opt_in,
         }));
 
       const submissionData = {
-        attending: attendingList,
+        attending: selectedEvents,
         phone: (data.phone || '').trim() || undefined,
         dietary: (data.dietary || '').trim() || undefined,
         sms_opt_in: !!data.sms_opt_in,
         email_opt_in: !!data.email_opt_in,
-        plus_ones: filledPlusOnes,
+        plus_ones: isAttendingSubmission ? filledPlusOnes : [],
       };
 
-      console.log('[RSVP] submissionData:', JSON.stringify(submissionData, null, 2));
       await submitGuestSessionRsvp(slug, submissionData);
+      setSubmittedAttendance(isAttendingSubmission);
       setSubmitted(true);
-      generateICS();
+      if (isAttendingSubmission) {
+        generateICS();
+      }
       onSuccess?.();
     } catch (err: any) {
       setError(err.message);
@@ -327,7 +362,7 @@ export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewW
 
   if (submitted) {
     return (
-      <div className="rounded-[2.5rem] border border-white/10 bg-white/5 backdrop-blur-xl p-10 text-center">
+      <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-8 text-center">
         <div
           className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6"
           style={{ backgroundColor: accentRgba(0.2) }}
@@ -338,10 +373,18 @@ export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewW
         </div>
         <h2 className="text-2xl font-semibold text-white mb-3">Thank you, {guest.name}</h2>
         <p className="text-slate-200 mb-1">Your RSVP has been received.</p>
-        <p className="text-sm text-slate-400 mb-6">A calendar invite has been downloaded.</p>
+        <p className="text-sm text-slate-400 mb-6">
+          {submittedAttendance
+            ? 'A calendar invite has been downloaded.'
+            : 'Thank you for letting us know you cannot attend.'}
+        </p>
 
         <div className="mt-8 pt-6 border-t border-white/10 space-y-4">
-          <p className="text-sm text-slate-300">We look forward to celebrating with you.</p>
+          <p className="text-sm text-slate-300">
+            {submittedAttendance
+              ? 'We look forward to celebrating with you.'
+              : 'We will miss you at the celebration.'}
+          </p>
 
           {onViewWeddingPage && (
             <button
@@ -350,19 +393,21 @@ export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewW
               className="w-full py-4 font-semibold rounded-full shadow-lg hover:opacity-90 transition-all"
               style={accentBtnStyle}
             >
-              View {wedding.couple_names ? `${wedding.couple_names}'s` : 'Wedding'} Page
+              View {wedding.couple_names ? `${wedding.couple_names}'s` : 'Event'} Page
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={generateICS}
-            className="w-full py-3 border border-white/20 rounded-full text-sm text-slate-300 hover:text-white transition-all"
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = accentRgba(0.5); }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.2)'; }}
-          >
-            Download Calendar Invite Again
-          </button>
+          {submittedAttendance && (
+            <button
+              type="button"
+              onClick={generateICS}
+              className="w-full py-3 border border-white/20 rounded-full text-sm text-slate-300 hover:text-white transition-all"
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = accentRgba(0.5); }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.2)'; }}
+            >
+              Download Calendar Invite Again
+            </button>
+          )}
         </div>
       </div>
     );
@@ -372,30 +417,82 @@ export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewW
     <div className="space-y-6">
       {/* Header */}
       <div className="text-center pb-6 border-b border-white/10">
-        <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-5 py-1.5 text-xs uppercase tracking-[0.3em] backdrop-blur mb-4">
+        <div className="inline-flex items-center gap-2 border-b border-white/20 px-2 pb-2 text-xs uppercase tracking-[0.22em] mb-4">
           You&apos;re Invited
         </div>
         <h1 className="text-3xl font-semibold text-white mb-2">Welcome, {guest.name}</h1>
         <p className="text-slate-200 mb-4">
-          Please RSVP for <span className="font-semibold" style={{ color: accent }}>{wedding.couple_names}&apos;s</span> wedding
+          Please RSVP for <span className="font-semibold" style={{ color: accent }}>{wedding.couple_names}&apos;s</span> event
         </p>
         <p className="text-sm text-slate-400">
           Fields marked with <span className="font-bold" style={{ color: accent }}>*</span> are required.
-          Please select the events you will attend and provide your contact details.
+          Please tell us if you will attend and provide your contact details.
         </p>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <FormCard title="Attendance *">
+          <fieldset>
+            <legend className="sr-only">Will you attend?</legend>
+            <p className="text-sm text-slate-400 mb-4">
+              Please choose one so the planner can count your response correctly.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label
+                className={`flex items-center gap-3 rounded-2xl border p-4 cursor-pointer transition-all ${
+                  isAttending
+                    ? 'bg-white/10'
+                    : 'bg-white/[0.03] hover:bg-white/10'
+                }`}
+                style={{ borderColor: isAttending ? accentRgba(0.6) : 'rgba(255,255,255,0.1)' }}
+              >
+                <input
+                  type="radio"
+                  value="yes"
+                  {...register('attendance_choice', { required: 'Please tell us whether you will attend.' })}
+                  className="w-4 h-4"
+                  style={{ ...checkboxStyle, ...focusRingStyle }}
+                />
+                <span className="text-sm font-medium text-slate-100">I will attend</span>
+              </label>
+              <label
+                className={`flex items-center gap-3 rounded-2xl border p-4 cursor-pointer transition-all ${
+                  isDeclining
+                    ? 'bg-white/10'
+                    : 'bg-white/[0.03] hover:bg-white/10'
+                }`}
+                style={{ borderColor: isDeclining ? accentRgba(0.6) : 'rgba(255,255,255,0.1)' }}
+              >
+                <input
+                  type="radio"
+                  value="no"
+                  {...register('attendance_choice', { required: 'Please tell us whether you will attend.' })}
+                  className="w-4 h-4"
+                  style={{ ...checkboxStyle, ...focusRingStyle }}
+                />
+                <span className="text-sm font-medium text-slate-100">I cannot attend</span>
+              </label>
+            </div>
+            {errors.attendance_choice && (
+              <p className="text-xs mt-2" style={{ color: accent }}>
+                {(errors.attendance_choice as any).message || 'Please choose one option'}
+              </p>
+            )}
+          </fieldset>
+        </FormCard>
+
         {/* Events */}
-        <FormCard title="Events">
+        <FormCard title={isAttending ? 'Events *' : 'Events'}>
           <p className="text-sm text-slate-400 mb-4">
-            Select the events you plan to attend. If you cannot attend any events, you may leave all unchecked.
+            {isAttending
+              ? 'Select at least one event you plan to attend.'
+              : 'Events are disabled when you cannot attend.'}
           </p>
           <div className="space-y-3">
             {eventOptions.map((event: any) => (
               <label
                 key={event.value}
-                className="flex items-start p-4 rounded-2xl border border-white/10 bg-white/5 cursor-pointer transition-all hover:bg-white/10"
+                className="flex items-start p-4 rounded-xl border border-white/10 bg-white/[0.03] cursor-pointer transition-all hover:bg-white/10"
                 onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = accentRgba(0.4); }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)'; }}
               >
@@ -403,6 +500,7 @@ export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewW
                   type="checkbox"
                   value={event.value}
                   {...register('attending')}
+                  disabled={isDeclining}
                   className="mt-0.5 w-4 h-4 rounded border-white/30 bg-white/10 focus:ring-offset-0 focus:ring-1"
                   style={{ ...checkboxStyle, ...focusRingStyle }}
                 />
@@ -462,10 +560,10 @@ export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewW
         {/* Notifications */}
         <FormCard title="Notifications">
           <p className="text-sm text-slate-400 mb-4">
-            Optional. Choose how you&apos;d like to receive wedding updates and reminders.
+            Optional. Choose how you&apos;d like to receive updates and reminders.
           </p>
           <div className="space-y-4">
-            <div className="p-4 rounded-2xl border border-white/10 bg-white/5">
+            <div className="p-4 rounded-xl border border-white/10 bg-white/[0.03]">
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
                   type="checkbox"
@@ -491,7 +589,7 @@ export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewW
               </p>
             </div>
 
-            <div className="p-4 rounded-2xl border border-white/10 bg-white/5">
+            <div className="p-4 rounded-xl border border-white/10 bg-white/[0.03]">
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
                   type="checkbox"
@@ -510,7 +608,7 @@ export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewW
         </FormCard>
 
         {/* Plus Ones */}
-        {guest.plus_one_allowed && guest.number_of_plus_ones_allowed > 0 && (
+        {guest.plus_one_allowed && guest.number_of_plus_ones_allowed > 0 && !isDeclining && (
           <FormCard title="Additional Guests">
             <p className="text-sm text-slate-400 mb-4">
               You may bring up to {guest.number_of_plus_ones_allowed} additional {guest.number_of_plus_ones_allowed === 1 ? 'guest' : 'guests'}.
@@ -519,7 +617,7 @@ export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewW
 
             <div className="space-y-4">
               {plusOnes.map((plusOne, index) => (
-                <div key={index} className="p-5 rounded-2xl border border-white/10 bg-white/5">
+                <div key={index} className="p-5 rounded-xl border border-white/10 bg-white/[0.03]">
                   <div className="flex justify-between items-center mb-4">
                     <span className="text-sm font-medium text-white">Guest {index + 1}</span>
                     <button

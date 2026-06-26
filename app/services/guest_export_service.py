@@ -16,6 +16,11 @@ from typing import Dict, List, Optional
 from urllib.parse import quote
 
 from app.core.database import mongo
+from app.utils.rsvp_status import (
+    RSVP_STATUS_CONFIRMED,
+    RSVP_STATUS_DECLINED,
+    get_rsvp_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -111,10 +116,10 @@ class GuestExportService:
         guest_id = str(guest.get("_id", guest.get("id", "")))
         rsvp = rsvp_map.get(guest_id, {})
 
-        attending = rsvp.get("attending", [])
-        if attending:
+        status_detail = get_rsvp_status(rsvp) if rsvp else None
+        if status_detail == RSVP_STATUS_CONFIRMED:
             status = "Attending"
-        elif rsvp.get("submitted_at"):
+        elif status_detail == RSVP_STATUS_DECLINED:
             status = "Declined"
         else:
             status = "Pending"

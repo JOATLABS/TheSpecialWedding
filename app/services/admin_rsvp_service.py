@@ -7,6 +7,8 @@ from fastapi import HTTPException
 from app.core.database import mongo
 from app.utils.csv_export import CSVExportUtils
 from app.utils.id_utils import to_object_id
+from app.utils.rsvp_storage import DEPRECATED_RSVP_FIELDS_UNSET
+from app.utils.rsvp_status import get_rsvp_status
 from app.utils.wedding_event_types import normalize_event_type_list
 
 
@@ -91,6 +93,7 @@ class AdminRSVPService:
                             "token": guest.get("token"),
                             "attending": rsvp.get("attending", []),
                             "dietary": rsvp.get("dietary"),
+                            "confirmed_by_admin": rsvp.get("confirmed_by_admin"),
                             "submitted_at": (
                                 rsvp.get("submitted_at").isoformat()
                                 if rsvp.get("submitted_at")
@@ -290,7 +293,7 @@ class AdminRSVPService:
 
             result = await self.rsvp_collection.update_one(
                 {"$or": [{"guest_id": ObjectId(guest_id)}, {"guest_id": guest_id}]},
-                {"$set": rsvp_data},
+                {"$set": rsvp_data, "$unset": DEPRECATED_RSVP_FIELDS_UNSET},
                 upsert=True,
             )
 
@@ -298,6 +301,7 @@ class AdminRSVPService:
             return {
                 "message": f"RSVP {action} successfully",
                 "guest_id": guest_id,
+                "status": get_rsvp_status(rsvp_data),
                 "attending": attending,
                 "dietary": dietary,
                 "confirmed_by_admin": confirmed_by_admin,

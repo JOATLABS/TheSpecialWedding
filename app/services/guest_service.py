@@ -199,7 +199,8 @@ class GuestService:
         }
 
     def _rsvp_status_expression(
-        self, attending_field: str = "$rsvp_attending"
+        self,
+        attending_field: str = "$rsvp_attending",
     ) -> dict[str, Any]:
         array_count = self._rsvp_array_count_expression(attending_field)
         object_true_count = self._rsvp_object_true_count_expression(attending_field)
@@ -446,7 +447,6 @@ class GuestService:
                 add_fields["rsvp_attending"] = {
                     "$arrayElemAt": ["$rsvp_docs.attending", 0]
                 }
-
             if requires_plus_one_lookup:
                 pipeline.append(
                     {
@@ -492,7 +492,7 @@ class GuestService:
                                                     RSVP_STATUS_CONFIRMED,
                                                 ]
                                             },
-                                            "then": 3,
+                                            "then": 4,
                                         },
                                         {
                                             "case": {
@@ -501,7 +501,7 @@ class GuestService:
                                                     RSVP_STATUS_DECLINED,
                                                 ]
                                             },
-                                            "then": 2,
+                                            "then": 3,
                                         },
                                         {
                                             "case": {"$eq": ["$invite_sent", True]},
