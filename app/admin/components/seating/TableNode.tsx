@@ -8,9 +8,10 @@ interface TableNodeProps {
   table: Table;
   guests: Guest[];
   onDelete: (id: string) => void;
+  hasLayoutWarning?: boolean;
 }
 
-export function TableNode({ table, guests, onDelete }: TableNodeProps) {
+export function TableNode({ table, guests, onDelete, hasLayoutWarning = false }: TableNodeProps) {
   // Draggable for moving the table itself (outer positioned wrapper)
   const {
     attributes,
@@ -57,6 +58,8 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
     ? 'ring-2 ring-blue-400/60 dark:ring-blue-400/40'
     : isOverCapacity
     ? 'ring-2 ring-red-400/60 dark:ring-red-500/40'
+    : hasLayoutWarning
+    ? 'ring-2 ring-amber-400/70 dark:ring-amber-300/60'
     : '';
 
   // Background tint based on state

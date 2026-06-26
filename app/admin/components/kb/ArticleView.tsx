@@ -27,6 +27,37 @@ interface ArticleViewProps {
   onBack: () => void;
 }
 
+function normalizeHeadingText(value: string): string {
+  return value
+    .replace(/\s+#+\s*$/, '')
+    .replace(/[`*_~[\]()]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+export function stripDuplicateArticleTitleHeading(title: string, content?: string | null): string {
+  if (!content) {
+    return '';
+  }
+
+  const leadingWhitespaceLength = content.length - content.trimStart().length;
+  const body = content.slice(leadingWhitespaceLength);
+  const headingMatch = body.match(/^#\s+(.+?)\s*#*\s*(?:\r?\n|$)/);
+
+  if (!headingMatch) {
+    return content;
+  }
+
+  if (normalizeHeadingText(headingMatch[1]) !== normalizeHeadingText(title)) {
+    return content;
+  }
+
+  return `${content.slice(0, leadingWhitespaceLength)}${body
+    .slice(headingMatch[0].length)
+    .replace(/^\r?\n/, '')}`;
+}
+
 // Category display names
 const categoryDisplayNames: Record<string, string> = {
   'getting-started': 'Getting Started',
@@ -53,6 +84,7 @@ export default function ArticleView({ article, isRootAdmin, onEdit, onBack }: Ar
 
   const canEdit = isRootAdmin;
   const categoryName = categoryDisplayNames[article.category] || article.category;
+  const articleBody = stripDuplicateArticleTitleHeading(article.title, article.content);
 
   const handleFeedback = async (helpful: boolean) => {
     try {
@@ -89,7 +121,11 @@ export default function ArticleView({ article, isRootAdmin, onEdit, onBack }: Ar
   };
 
   const handleShare = () => {
-    const url = `${window.location.origin}/admin/support?article=${article.slug}`;
+    const params = new URLSearchParams({
+      tab: 'knowledge_base',
+      article: article.slug,
+    });
+    const url = `${window.location.origin}/admin/support?${params.toString()}`;
     navigator.clipboard.writeText(url);
     alert('Article link copied to clipboard!');
   };
@@ -188,7 +224,7 @@ export default function ArticleView({ article, isRootAdmin, onEdit, onBack }: Ar
         <div className="p-6 sm:p-8">
           <div className="prose prose-slate dark:prose-invert max-w-none prose-headings:font-semibold prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-code:bg-gray-100 dark:prose-code:bg-slate-700 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 dark:prose-pre:bg-slate-700">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {article.content || ''}
+              {articleBody}
             </ReactMarkdown>
           </div>
         </div>

@@ -15,8 +15,12 @@ interface SeatingCanvasProps {
   floorPlanMode: FloorPlanMode;
   floorPlanOutline: VenueLayoutPoint[];
   venueFixtures: VenueFixture[];
+  selectedFixtureId?: string | null;
+  tableWarningIds?: ReadonlySet<string>;
+  fixtureWarningIds?: ReadonlySet<string>;
   onFloorPlanPointAdd: (point: VenueLayoutPoint) => void;
   onFloorPlanPointMove: (index: number, point: VenueLayoutPoint) => void;
+  onFixtureSelect?: (fixtureId: string) => void;
 }
 
 export function SeatingCanvas({
@@ -30,8 +34,12 @@ export function SeatingCanvas({
   floorPlanMode,
   floorPlanOutline,
   venueFixtures,
+  selectedFixtureId = null,
+  tableWarningIds,
+  fixtureWarningIds,
   onFloorPlanPointAdd,
   onFloorPlanPointMove,
+  onFixtureSelect,
 }: SeatingCanvasProps) {
   const scaledWidth = venueLayout.canvas_width * zoom;
   const scaledHeight = venueLayout.canvas_height * zoom;
@@ -86,6 +94,9 @@ export function SeatingCanvas({
               key={fixture.id}
               fixture={fixture}
               disabled={floorPlanMode === 'draw'}
+              selected={selectedFixtureId === fixture.id}
+              hasLayoutWarning={fixtureWarningIds?.has(fixture.id) ?? false}
+              onSelect={onFixtureSelect}
             />
           ))}
 
@@ -111,6 +122,7 @@ export function SeatingCanvas({
               table={table}
               guests={guests.filter((g) => g.table_id === table.id)}
               onDelete={onTableDelete}
+              hasLayoutWarning={tableWarningIds?.has(table.id) ?? false}
             />
           ))}
         </div>

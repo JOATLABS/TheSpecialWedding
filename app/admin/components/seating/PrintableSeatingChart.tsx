@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useRef, useCallback } from 'react';
-import { Table, Guest } from '@/types/table';
+import { Table, Guest, VenueLayout } from '@/types/table';
 import { X, Printer, Download } from 'lucide-react';
+import { pointsToSvgPoints } from './FloorPlanLayer';
 
 interface SeatingChartTheme {
   accentColor?: string;   // Default: ${accentColor} (gold)
@@ -18,7 +19,18 @@ interface PrintableSeatingChartProps {
   weddingDate: string;
   onClose: () => void;
   theme?: SeatingChartTheme;
+  venueLayout?: VenueLayout;
 }
+
+const fixturePrintStyles: Record<string, { fill: string; stroke: string }> = {
+  dance_floor: { fill: '#DBEAFE', stroke: '#60A5FA' },
+  bar: { fill: '#FEF3C7', stroke: '#F59E0B' },
+  stage: { fill: '#E9D5FF', stroke: '#A855F7' },
+  entrance: { fill: '#D1FAE5', stroke: '#10B981' },
+  restrooms: { fill: '#E0E7FF', stroke: '#6366F1' },
+  kitchen: { fill: '#FFEDD5', stroke: '#F97316' },
+  vendor_path: { fill: '#F1F5F9', stroke: '#64748B' },
+};
 
 export function PrintableSeatingChart({
   tables,
@@ -27,6 +39,7 @@ export function PrintableSeatingChart({
   weddingDate,
   onClose,
   theme,
+  venueLayout,
 }: PrintableSeatingChartProps) {
   // T9: Dynamic branding — use wedding theme or fall back to elegant defaults
   const accentColor = theme?.accentColor || '${accentColor}';
@@ -39,6 +52,17 @@ export function PrintableSeatingChart({
   const padding = 120;
   const tableCardW = 260;
   const tableCardH = 240;
+  const venueCanvasW = venueLayout?.canvas_width ?? 0;
+  const venueCanvasH = venueLayout?.canvas_height ?? 0;
+  const venueOutline = venueLayout?.outline ?? [];
+  const venueFixtures = venueLayout?.fixtures ?? [];
+  const hasVenueContext = Boolean(
+    venueLayout &&
+      (venueOutline.length >= 3 ||
+        venueFixtures.length > 0 ||
+        venueLayout.background_image_data_url ||
+        (venueLayout.scale_pixels && venueLayout.scale_distance))
+  );
 
   const maxX = tables.length > 0
     ? Math.max(...tables.map((t) => t.x)) + tableCardW + padding
@@ -47,8 +71,16 @@ export function PrintableSeatingChart({
     ? Math.max(...tables.map((t) => t.y)) + tableCardH + padding
     : 800;
 
-  const canvasW = Math.max(1200, maxX + padding);
-  const canvasH = Math.max(800, maxY + padding + 160); // extra for header
+  const canvasW = Math.max(1200, maxX + padding, venueCanvasW + padding);
+  const canvasH = Math.max(800, maxY + padding + 160, venueCanvasH + padding + 200); // extra for header
+  const tablesAreaMinH = Math.max(canvasH - 200, venueCanvasH + 40);
+  const scaleRulerLength = Math.min(
+    venueLayout?.scale_pixels ?? 0,
+    Math.max(80, venueCanvasW - 160)
+  );
+  const scaleRulerLabel = venueLayout?.scale_pixels && venueLayout.scale_distance
+    ? `${venueLayout.scale_distance}${venueLayout.scale_unit ?? 'ft'}`
+    : '';
 
   // Group guests per table
   const guestsByTable = (tableId: string) => guests.filter((g) => g.table_id === tableId);
@@ -154,7 +186,7 @@ export function PrintableSeatingChart({
 
           .tables-area {
             position: relative;
-            min-height: ${canvasH - 200}px;
+            min-height: ${tablesAreaMinH}px;
             padding: 20px;
           }
 
@@ -296,7 +328,7 @@ export function PrintableSeatingChart({
       </html>
     `);
     printWindow.document.close();
-  }, [accentColor, bodyFont, canvasW, canvasH, coupleName, headerColor, headingFont, padding, tableCardW]);
+  }, [accentColor, bodyFont, canvasW, canvasH, coupleName, headerColor, headingFont, padding, tableCardW, tablesAreaMinH]);
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex flex-col">
@@ -354,7 +386,130 @@ export function PrintableSeatingChart({
               </div>
 
               {/* Tables positioned on canvas */}
-              <div style={{ position: 'relative', minHeight: canvasH - 200, padding: 20 }}>
+              <div style={{ position: 'relative', minHeight: tablesAreaMinH, padding: 20 }}>
+                {hasVenueContext && venueLayout && (
+                  <svg
+                    data-testid="printable-floor-plan-layer"
+                    aria-label="Printable venue floor plan"
+                    viewBox={`0 0 ${venueLayout.canvas_width} ${venueLayout.canvas_height}`}
+                    preserveAspectRatio="none"
+                    style={{
+                      position: 'absolute',
+                      left: 20,
+                      top: 20,
+                      width: venueLayout.canvas_width,
+                      height: venueLayout.canvas_height,
+                      pointerEvents: 'none',
+                      zIndex: 0,
+                    }}
+                  >
+                    {venueLayout.background_image_data_url && (
+                      <image
+                        href={venueLayout.background_image_data_url}
+                        x={0}
+                        y={0}
+                        width={venueLayout.canvas_width}
+                        height={venueLayout.canvas_height}
+                        preserveAspectRatio="xMidYMid meet"
+                        opacity={venueLayout.background_locked === false ? 0.28 : 0.36}
+                      />
+                    )}
+
+                    {venueOutline.length >= 3 && (
+                      <polygon
+                        points={pointsToSvgPoints(venueOutline)}
+                        fill="rgba(96, 165, 250, 0.08)"
+                        stroke="#3B82F6"
+                        strokeWidth={4}
+                        strokeDasharray="18 12"
+                        strokeLinejoin="round"
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    )}
+
+                    {scaleRulerLabel && (
+                      <g transform={`translate(80 ${Math.max(80, venueLayout.canvas_height - 72)})`}>
+                        <line
+                          x1={0}
+                          y1={0}
+                          x2={scaleRulerLength}
+                          y2={0}
+                          stroke="#334155"
+                          strokeWidth={3}
+                          vectorEffect="non-scaling-stroke"
+                        />
+                        <line
+                          x1={0}
+                          y1={-10}
+                          x2={0}
+                          y2={10}
+                          stroke="#334155"
+                          strokeWidth={3}
+                          vectorEffect="non-scaling-stroke"
+                        />
+                        <line
+                          x1={scaleRulerLength}
+                          y1={-10}
+                          x2={scaleRulerLength}
+                          y2={10}
+                          stroke="#334155"
+                          strokeWidth={3}
+                          vectorEffect="non-scaling-stroke"
+                        />
+                        <rect
+                          x={-8}
+                          y={-34}
+                          width={Math.max(82, scaleRulerLabel.length * 9 + 18)}
+                          height={24}
+                          rx={6}
+                          fill="rgba(255, 255, 255, 0.9)"
+                          stroke="#CBD5E1"
+                          vectorEffect="non-scaling-stroke"
+                        />
+                        <text
+                          x={8}
+                          y={-17}
+                          fill="#334155"
+                          fontSize={12}
+                          fontWeight={700}
+                        >
+                          {scaleRulerLabel}
+                        </text>
+                      </g>
+                    )}
+
+                    {venueFixtures.map((fixture) => {
+                      const style = fixturePrintStyles[fixture.type] ?? fixturePrintStyles.vendor_path;
+                      return (
+                        <g
+                          key={fixture.id}
+                          transform={`translate(${fixture.x} ${fixture.y}) rotate(${fixture.rotation ?? 0} ${fixture.width / 2} ${fixture.height / 2})`}
+                        >
+                          <rect
+                            width={fixture.width}
+                            height={fixture.height}
+                            rx={10}
+                            fill={style.fill}
+                            stroke={style.stroke}
+                            strokeWidth={3}
+                            vectorEffect="non-scaling-stroke"
+                          />
+                          <text
+                            x={fixture.width / 2}
+                            y={fixture.height / 2}
+                            fill="#1E293B"
+                            fontSize={Math.max(12, Math.min(22, fixture.width / 10))}
+                            fontWeight={700}
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                          >
+                            {fixture.label}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                )}
                 {tables.map((table) => {
                   const tableGuests = guestsByTable(table.id);
                   const isRound = table.shape === 'round';
@@ -372,6 +527,7 @@ export function PrintableSeatingChart({
                         border: '1px solid rgba(233,196,106,0.4)',
                         boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
                         overflow: 'hidden',
+                        zIndex: 2,
                       }}
                     >
                       {/* Table header */}

@@ -114,7 +114,8 @@ export default function SupportPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(searchParamsText);
-    setActiveTab(normalizeSupportTab(params.get('tab'), Boolean(isRootAdmin)));
+    const requestedTab = params.get('tab') ?? (params.get('article') ? 'knowledge_base' : null);
+    setActiveTab(normalizeSupportTab(requestedTab, Boolean(isRootAdmin)));
   }, [isRootAdmin, searchParamsText]);
 
   const handleTabChange = useCallback((tab: SupportTab) => {

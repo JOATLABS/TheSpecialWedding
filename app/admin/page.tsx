@@ -221,13 +221,23 @@ export default function AdminMetricsDashboard() {
             typeof problem?.detail === 'string'
               ? problem.detail
               : `Failed to load acquisition funnel (HTTP ${response.status})`;
-          throw new Error(detail);
+          const funnelError = new Error(detail) as Error & {
+            optionalAnalyticsUnavailable?: boolean;
+          };
+          funnelError.optionalAnalyticsUnavailable = response.status === 503;
+          throw funnelError;
         }
         const payload = (await response.json()) as AcquisitionFunnel;
         setFunnelData(payload);
       } catch (err) {
-        console.error('Error loading acquisition funnel', err);
-        setFunnelError(err instanceof Error ? err.message : 'Failed to load acquisition funnel');
+        const message = err instanceof Error ? err.message : 'Failed to load acquisition funnel';
+        const expectedUnavailable =
+          err instanceof Error &&
+          Boolean((err as Error & { optionalAnalyticsUnavailable?: boolean }).optionalAnalyticsUnavailable);
+        if (!expectedUnavailable) {
+          console.error('Error loading acquisition funnel', err);
+        }
+        setFunnelError(message);
         setFunnelData(null);
       } finally {
         setFunnelLoading(false);

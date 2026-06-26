@@ -22,6 +22,7 @@ import {
     resolvePaymentRequiredResponse,
     type BillingBlockTarget,
 } from '@/utils/adminApiAuthGuard';
+import { isAbortLikeFetchError } from '@/admin/utils/adminFetchErrors';
 
 export interface UserProfile {
     id?: string;
@@ -286,6 +287,9 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                     expireSession();
                 }
             } catch (error) {
+                if (isAbortLikeFetchError(error)) {
+                    return;
+                }
                 // Log error without exposing sensitive information
                 // Only log if we have a token, to avoid noisy logs during login flow
                 if (token) {

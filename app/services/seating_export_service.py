@@ -231,6 +231,15 @@ class SeatingExportService:
             font-weight: 700;
             text-align: center;
             padding: 4px 8px;
+            transform-origin: center center;
+        }}
+        .scale-ruler {{
+            position: absolute;
+            height: 28px;
+            color: #334155;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            font-size: {fonts["small"]};
+            font-weight: 700;
         }}
         .table-card {{
             position: absolute;
@@ -381,16 +390,43 @@ class SeatingExportService:
                 y = int(float(fixture.get("y", 0)) * scale)
                 fixture_width = int(float(fixture.get("width", 160)) * scale)
                 fixture_height = int(float(fixture.get("height", 90)) * scale)
+                rotation = int(float(fixture.get("rotation", 0)))
             except (TypeError, ValueError):
                 continue
             label = self._escape_html(fixture.get("label", "Fixture"))
             layers.append(
                 f"""
-        <div class="fixture-card" style="left: {x}px; top: {y}px; width: {fixture_width}px; height: {fixture_height}px;">
+        <div class="fixture-card" style="left: {x}px; top: {y}px; width: {fixture_width}px; height: {fixture_height}px; transform: rotate({rotation}deg);">
             {label}
         </div>
         """
             )
+
+        scale_pixels = seating_layout.get("scale_pixels")
+        scale_distance = seating_layout.get("scale_distance")
+        if scale_pixels and scale_distance:
+            try:
+                ruler_width = int(float(scale_pixels) * scale)
+                ruler_x = int(80 * scale)
+                ruler_y = int(
+                    max(80, float(seating_layout.get("canvas_height", height)) - 72)
+                    * scale
+                )
+            except (TypeError, ValueError):
+                ruler_width = 0
+                ruler_x = 0
+                ruler_y = 0
+            if ruler_width > 0:
+                scale_unit = self._escape_html(seating_layout.get("scale_unit", "ft"))
+                label = self._escape_html(f"{scale_distance}{scale_unit}")
+                layers.append(
+                    f"""
+        <div class="scale-ruler" style="left: {ruler_x}px; top: {ruler_y - 28}px; width: {ruler_width}px;">
+            <div style="display: inline-block; margin-bottom: 4px; padding: 2px 6px; background: rgba(255,255,255,0.86); border: 1px solid #cbd5e1; border-radius: 6px;">{label}</div>
+            <div style="height: 12px; border-left: 3px solid #334155; border-right: 3px solid #334155; border-bottom: 3px solid #334155;"></div>
+        </div>
+        """
+                )
 
         return "".join(layers)
 

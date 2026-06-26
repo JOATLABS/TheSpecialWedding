@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   DndContext,
@@ -11,7 +11,6 @@ import {
   useSensors,
   PointerSensor,
   KeyboardSensor,
-  pointerWithin,
 } from '@dnd-kit/core';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
@@ -56,8 +55,19 @@ import {
   Unlock,
   PlusCircle,
   Ruler,
+  AlertTriangle,
+  Trash2,
+  HelpCircle,
+  ChevronRight,
 } from 'lucide-react';
 import { Table, Guest, VenueFixture, VenueFixtureType, VenueLayoutPoint } from '@/types/table';
+import { validateSeatingLayout } from '@/admin/utils/seatingLayoutValidation';
+import { seatingCollisionDetection } from '@/admin/utils/seatingCollisionDetection';
+import {
+  buildSeatingPlannerGuideSteps,
+  getActiveSeatingGuideStep,
+  type SeatingGuideAction,
+} from '@/admin/utils/seatingPlannerGuide';
 
 interface Wedding {
   id?: string;
@@ -117,6 +127,8 @@ type ActiveDragData =
   | null;
 
 const MAX_FLOOR_PLAN_IMAGE_BYTES = 1_500_000;
+const MIN_FIXTURE_SIZE = 24;
+const MAX_FIXTURE_SIZE = 2000;
 
 const FIXTURE_TEMPLATES: Record<
   VenueFixtureType,
@@ -147,6 +159,17 @@ function createVenueFixture(type: VenueFixtureType, existing: VenueFixture[]): V
     height: template.height,
     rotation: 0,
   };
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function parseFixtureNumber(value: string, fallback: number, min: number, max: number): number {
+  if (value.trim() === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return clampNumber(parsed, min, max);
 }
 
 export default function SeatingPage() {
@@ -196,8 +219,11 @@ export default function SeatingPage() {
   const [floorPlanScaleDistance, setFloorPlanScaleDistance] = useState<number | null>(null);
   const [floorPlanScaleUnit, setFloorPlanScaleUnit] = useState<'ft' | 'm'>('ft');
   const [venueFixtures, setVenueFixtures] = useState<VenueFixture[]>([]);
+  const [selectedFixtureId, setSelectedFixtureId] = useState<string | null>(null);
   const [fixtureMenuOpen, setFixtureMenuOpen] = useState(false);
   const [scaleMenuOpen, setScaleMenuOpen] = useState(false);
+  const [seatingGuideOpen, setSeatingGuideOpen] = useState(false);
+  const [seatingGuideDismissed, setSeatingGuideDismissed] = useState(false);
   const [floorPlanSaveState, setFloorPlanSaveState] = useState<'idle' | 'saved' | 'error'>('idle');
   const floorPlanImageInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -330,11 +356,40 @@ export default function SeatingPage() {
     setFloorPlanScaleDistance(venueLayout.scale_distance ?? null);
     setFloorPlanScaleUnit(venueLayout.scale_unit ?? 'ft');
     setVenueFixtures(venueLayout.fixtures ?? []);
+    setSelectedFixtureId((currentId) =>
+      currentId && venueLayout.fixtures?.some((fixture) => fixture.id === currentId)
+        ? currentId
+        : null
+    );
   }, [venueLayout.id, venueLayout.updated_at, venueLayout]);
 
   useEffect(() => {
     setFloorPlanSaveState('idle');
+    setSeatingGuideDismissed(false);
   }, [selectedWedding]);
+
+  useEffect(() => {
+    if (!selectedWedding || seatingGuideDismissed || venueLayoutLoading) return;
+
+    const hasVenueLayoutStarted =
+      floorPlanOutline.length >= 3 ||
+      Boolean(floorPlanBackgroundImageDataUrl) ||
+      Boolean(floorPlanScalePixels && floorPlanScaleDistance) ||
+      venueFixtures.length > 0;
+
+    if (!hasVenueLayoutStarted) {
+      setSeatingGuideOpen(true);
+    }
+  }, [
+    selectedWedding,
+    seatingGuideDismissed,
+    venueLayoutLoading,
+    floorPlanOutline.length,
+    floorPlanBackgroundImageDataUrl,
+    floorPlanScalePixels,
+    floorPlanScaleDistance,
+    venueFixtures.length,
+  ]);
 
   const handleAddTable = async () => {
     if (!selectedWedding) return;
@@ -355,11 +410,26 @@ export default function SeatingPage() {
 
   const handleFixtureMove = (id: string, x: number, y: number) => {
     setFloorPlanSaveState('idle');
+    setSelectedFixtureId(id);
     setVenueFixtures((prev) =>
       prev.map((fixture) =>
         fixture.id === id ? { ...fixture, x: Math.round(x), y: Math.round(y) } : fixture
       )
     );
+  };
+
+  const handleFixtureUpdate = (id: string, patch: Partial<VenueFixture>) => {
+    setFloorPlanSaveState('idle');
+    setSelectedFixtureId(id);
+    setVenueFixtures((prev) =>
+      prev.map((fixture) => (fixture.id === id ? { ...fixture, ...patch } : fixture))
+    );
+  };
+
+  const handleFixtureDelete = (id: string) => {
+    setFloorPlanSaveState('idle');
+    setSelectedFixtureId((currentId) => (currentId === id ? null : currentId));
+    setVenueFixtures((prev) => prev.filter((fixture) => fixture.id !== id));
   };
 
   const handleFloorPlanPointAdd = (point: VenueLayoutPoint) => {
@@ -431,7 +501,10 @@ export default function SeatingPage() {
   };
 
   const handleFixtureAdd = (type: VenueFixtureType) => {
-    setVenueFixtures((prev) => [...prev, createVenueFixture(type, prev)]);
+    const nextFixture = createVenueFixture(type, venueFixtures);
+    setFloorPlanMode('select');
+    setVenueFixtures((prev) => [...prev, nextFixture]);
+    setSelectedFixtureId(nextFixture.id);
     setFixtureMenuOpen(false);
     setFloorPlanSaveState('idle');
   };
@@ -472,10 +545,11 @@ export default function SeatingPage() {
         scale_unit: floorPlanScaleUnit,
         fixtures: venueFixtures.map((fixture) => ({
           ...fixture,
+          label: fixture.label.trim() || FIXTURE_TEMPLATES[fixture.type].label,
           x: Math.round(fixture.x),
           y: Math.round(fixture.y),
-          width: Math.round(fixture.width),
-          height: Math.round(fixture.height),
+          width: Math.round(clampNumber(fixture.width, MIN_FIXTURE_SIZE, MAX_FIXTURE_SIZE)),
+          height: Math.round(clampNumber(fixture.height, MIN_FIXTURE_SIZE, MAX_FIXTURE_SIZE)),
           rotation: Math.round(fixture.rotation ?? 0),
         })),
       });
@@ -484,6 +558,38 @@ export default function SeatingPage() {
     } catch (err) {
       console.error('Failed to save floor plan:', err);
       setFloorPlanSaveState('error');
+    }
+  };
+
+  const handleSeatingGuideToggle = () => {
+    if (seatingGuideOpen) {
+      setSeatingGuideDismissed(true);
+    }
+    setSeatingGuideOpen((open) => !open);
+  };
+
+  const handleSeatingGuideAction = (action: SeatingGuideAction) => {
+    setSeatingGuideOpen(true);
+    switch (action) {
+      case 'add-room':
+        handleFloorPlanRectangle();
+        break;
+      case 'add-reference':
+        setFixtureMenuOpen(false);
+        setScaleMenuOpen(true);
+        break;
+      case 'add-fixture':
+        setScaleMenuOpen(false);
+        setFixtureMenuOpen(true);
+        break;
+      case 'add-table':
+        void handleAddTable();
+        break;
+      case 'save-layout':
+        void handleFloorPlanSave();
+        break;
+      default:
+        break;
     }
   };
 
@@ -735,6 +841,39 @@ export default function SeatingPage() {
   const seatedCount = guests.filter((g) => g.table_id).length;
   const unseatedCount = guests.filter((g) => !g.table_id).length;
   const totalCapacity = tables.reduce((sum, t) => sum + t.capacity, 0);
+  const selectedFixture = venueFixtures.find((fixture) => fixture.id === selectedFixtureId) ?? null;
+  const layoutIssues = useMemo(
+    () => validateSeatingLayout({
+      tables,
+      fixtures: venueFixtures,
+      outline: floorPlanOutline,
+      canvasWidth: venueLayout.canvas_width,
+      canvasHeight: venueLayout.canvas_height,
+    }),
+    [
+      tables,
+      venueFixtures,
+      floorPlanOutline,
+      venueLayout.canvas_width,
+      venueLayout.canvas_height,
+    ]
+  );
+  const tableWarningIds = useMemo(
+    () => new Set(
+      layoutIssues
+        .filter((issue) => issue.targetType === 'table' && issue.targetId)
+        .map((issue) => issue.targetId as string)
+    ),
+    [layoutIssues]
+  );
+  const fixtureWarningIds = useMemo(
+    () => new Set(
+      layoutIssues
+        .filter((issue) => issue.targetType === 'fixture' && issue.targetId)
+        .map((issue) => issue.targetId as string)
+    ),
+    [layoutIssues]
+  );
   const savedFloorPlanSignature = JSON.stringify({
     outline: pointsToSvgPoints(venueLayout.outline || []),
     background: venueLayout.background_image_data_url ?? null,
@@ -761,6 +900,32 @@ export default function SeatingPage() {
     floorPlanScalePixels && floorPlanScaleDistance
       ? `${floorPlanScalePixels}px = ${floorPlanScaleDistance}${floorPlanScaleUnit}`
       : null;
+  const seatingGuideSteps = useMemo(
+    () =>
+      buildSeatingPlannerGuideSteps({
+        hasRoomOutline: floorPlanOutline.length >= 3,
+        hasVenueReference: Boolean(floorPlanBackgroundImageDataUrl) || Boolean(floorPlanScaleLabel),
+        fixtureCount: venueFixtures.length,
+        tableCount: tables.length,
+        seatedGuestCount: seatedCount,
+        unseatedGuestCount: unseatedCount,
+        layoutIssueCount: layoutIssues.length,
+        floorPlanDirty,
+      }),
+    [
+      floorPlanOutline.length,
+      floorPlanBackgroundImageDataUrl,
+      floorPlanScaleLabel,
+      venueFixtures.length,
+      tables.length,
+      seatedCount,
+      unseatedCount,
+      layoutIssues.length,
+      floorPlanDirty,
+    ]
+  );
+  const activeSeatingGuideStep = getActiveSeatingGuideStep(seatingGuideSteps);
+  const seatingGuideCompleteCount = seatingGuideSteps.filter((step) => step.done).length;
   const floorPlanStatus = venueLayoutLoading
     ? 'Loading floor plan'
     : venueLayoutSaving
@@ -771,6 +936,8 @@ export default function SeatingPage() {
     ? 'Floor plan needs attention'
     : floorPlanDirty
     ? 'Unsaved floor plan'
+    : layoutIssues.length > 0
+    ? `${layoutIssues.length} layout checks need review`
     : floorPlanScaleLabel
     ? `Floor plan ready · ${floorPlanScaleLabel}`
     : floorPlanOutline.length >= 3
@@ -938,7 +1105,7 @@ export default function SeatingPage() {
       {selectedWedding ? (
         <DndContext
           sensors={sensors}
-          collisionDetection={pointerWithin}
+          collisionDetection={seatingCollisionDetection}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
@@ -948,9 +1115,9 @@ export default function SeatingPage() {
             <Sidebar guests={guests} />
 
             {/* Canvas Area */}
-            <div className="flex-1 relative min-h-[470px] lg:min-h-0">
+            <div className="flex min-h-[470px] flex-1 flex-col lg:min-h-0">
               {/* Floor Plan Controls */}
-              <div className="absolute top-3 left-3 right-3 z-30 rounded-lg border border-white/30 dark:border-slate-700/30 bg-white/85 dark:bg-slate-800/85 backdrop-blur-md shadow-sm sm:right-auto sm:max-w-[calc(100%-7rem)]">
+              <div className="relative z-30 m-3 shrink-0 rounded-lg border border-white/30 dark:border-slate-700/30 bg-white/85 dark:bg-slate-800/85 backdrop-blur-md shadow-sm">
                 <input
                   ref={floorPlanImageInputRef}
                   type="file"
@@ -1047,6 +1214,29 @@ export default function SeatingPage() {
                     <span className="hidden sm:inline">Scale</span>
                   </button>
                   <button
+                    onClick={handleSeatingGuideToggle}
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors ${
+                      seatingGuideOpen
+                        ? 'bg-emerald-600 text-white'
+                        : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700'
+                    }`}
+                    title="Open seating setup guide"
+                    aria-label="Open seating setup guide"
+                    aria-expanded={seatingGuideOpen}
+                  >
+                    <HelpCircle className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Guide</span>
+                    <span
+                      className={`rounded px-1 text-[10px] font-semibold ${
+                        seatingGuideOpen
+                          ? 'bg-white/20 text-white'
+                          : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {seatingGuideCompleteCount}/{seatingGuideSteps.length}
+                    </span>
+                  </button>
+                  <button
                     onClick={handleFloorPlanUndo}
                     disabled={floorPlanOutline.length === 0}
                     className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
@@ -1134,54 +1324,222 @@ export default function SeatingPage() {
                     </select>
                   </div>
                 )}
+                {selectedFixture && (
+                  <div
+                    data-testid="fixture-editor"
+                    className="grid grid-cols-2 gap-1 border-t border-slate-200/70 p-1 text-[11px] font-medium text-slate-500 dark:border-slate-700/70 dark:text-slate-400 sm:grid-cols-[minmax(9rem,1.5fr)_repeat(3,4.5rem)_2rem]"
+                  >
+                    <input
+                      type="text"
+                      value={selectedFixture.label}
+                      onChange={(event) =>
+                        handleFixtureUpdate(selectedFixture.id, { label: event.target.value })
+                      }
+                      className="col-span-2 h-7 rounded-md border border-slate-200 bg-white/80 px-2 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-blue-400/30 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 sm:col-span-1"
+                      aria-label="Fixture label"
+                    />
+                    <input
+                      type="number"
+                      min={MIN_FIXTURE_SIZE}
+                      max={MAX_FIXTURE_SIZE}
+                      value={Math.round(selectedFixture.width)}
+                      onChange={(event) =>
+                        handleFixtureUpdate(selectedFixture.id, {
+                          width: parseFixtureNumber(
+                            event.target.value,
+                            selectedFixture.width,
+                            MIN_FIXTURE_SIZE,
+                            MAX_FIXTURE_SIZE
+                          ),
+                        })
+                      }
+                      className="h-7 rounded-md border border-slate-200 bg-white/80 px-2 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-blue-400/30 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200"
+                      aria-label="Fixture width"
+                    />
+                    <input
+                      type="number"
+                      min={MIN_FIXTURE_SIZE}
+                      max={MAX_FIXTURE_SIZE}
+                      value={Math.round(selectedFixture.height)}
+                      onChange={(event) =>
+                        handleFixtureUpdate(selectedFixture.id, {
+                          height: parseFixtureNumber(
+                            event.target.value,
+                            selectedFixture.height,
+                            MIN_FIXTURE_SIZE,
+                            MAX_FIXTURE_SIZE
+                          ),
+                        })
+                      }
+                      className="h-7 rounded-md border border-slate-200 bg-white/80 px-2 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-blue-400/30 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200"
+                      aria-label="Fixture height"
+                    />
+                    <input
+                      type="number"
+                      min="-360"
+                      max="360"
+                      value={Math.round(selectedFixture.rotation ?? 0)}
+                      onChange={(event) =>
+                        handleFixtureUpdate(selectedFixture.id, {
+                          rotation: parseFixtureNumber(
+                            event.target.value,
+                            selectedFixture.rotation ?? 0,
+                            -360,
+                            360
+                          ),
+                        })
+                      }
+                      className="h-7 rounded-md border border-slate-200 bg-white/80 px-2 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-blue-400/30 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200"
+                      aria-label="Fixture rotation"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleFixtureDelete(selectedFixture.id)}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+                      title={`Delete ${selectedFixture.label}`}
+                      aria-label={`Delete ${selectedFixture.label}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+                {seatingGuideOpen && (
+                  <div
+                    data-testid="seating-guide-panel"
+                    className="border-t border-emerald-200/70 bg-emerald-50/80 p-2 text-slate-700 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-slate-200"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-emerald-800 dark:text-emerald-200">
+                          <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                          <span>Planner setup guide</span>
+                          <span className="rounded bg-white/80 px-1.5 py-0.5 text-[10px] text-emerald-700 dark:bg-slate-900/60 dark:text-emerald-200">
+                            {seatingGuideCompleteCount}/{seatingGuideSteps.length}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] font-medium leading-snug text-slate-600 dark:text-slate-300">
+                          {activeSeatingGuideStep.description}
+                        </p>
+                      </div>
+                      {activeSeatingGuideStep.action && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleSeatingGuideAction(activeSeatingGuideStep.action as SeatingGuideAction)
+                          }
+                          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-emerald-700 px-2 text-[11px] font-semibold text-white transition-colors hover:bg-emerald-600 dark:bg-emerald-500 dark:text-emerald-950 dark:hover:bg-emerald-400"
+                        >
+                          {activeSeatingGuideStep.actionLabel}
+                          <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
+                      )}
+                    </div>
+                    <ol className="mt-2 flex gap-1 overflow-x-auto pb-1 sm:grid sm:grid-cols-3 sm:overflow-visible sm:pb-0">
+                      {seatingGuideSteps.map((step, index) => {
+                        const isCurrent = step.id === activeSeatingGuideStep.id;
+                        return (
+                          <li
+                            key={step.id}
+                            aria-current={isCurrent ? 'step' : undefined}
+                            className={`flex w-36 shrink-0 items-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-semibold sm:w-auto ${
+                              step.done
+                                ? 'border-emerald-200 bg-white/70 text-emerald-800 dark:border-emerald-500/30 dark:bg-slate-900/50 dark:text-emerald-200'
+                                : isCurrent
+                                ? 'border-emerald-500 bg-white text-slate-800 dark:border-emerald-400 dark:bg-slate-900 dark:text-slate-100'
+                                : 'border-emerald-100 bg-white/50 text-slate-500 dark:border-emerald-500/20 dark:bg-slate-900/30 dark:text-slate-400'
+                            }`}
+                          >
+                            <span
+                              className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] ${
+                                step.done
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300'
+                              }`}
+                            >
+                              {step.done ? <Check className="h-3 w-3" aria-hidden="true" /> : index + 1}
+                            </span>
+                            <span className="min-w-0 truncate">{step.title}</span>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  </div>
+                )}
                 <div className="border-t border-slate-200/70 px-2 py-1 text-[11px] font-medium leading-snug text-slate-500 dark:border-slate-700/70 dark:text-slate-400 break-words">
                   {floorPlanStatus}
                   {floorPlanBackgroundImageName ? ` · ${floorPlanBackgroundImageName}` : ''}
                   {venueFixtures.length > 0 ? ` · ${venueFixtures.length} fixtures` : ''}
                 </div>
+                {layoutIssues.length > 0 && (
+                  <div
+                    data-testid="layout-issues"
+                    className="border-t border-amber-200/80 bg-amber-50/80 px-2 py-1.5 text-[11px] font-medium leading-snug text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-200"
+                  >
+                    <div className="mb-1 flex items-center gap-1 font-semibold">
+                      <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>Layout checks</span>
+                    </div>
+                    <ul className="space-y-0.5">
+                      {layoutIssues.slice(0, 3).map((issue) => (
+                        <li key={issue.id}>{issue.message}</li>
+                      ))}
+                    </ul>
+                    {layoutIssues.length > 3 && (
+                      <div className="mt-0.5 text-amber-700/80 dark:text-amber-200/80">
+                        +{layoutIssues.length - 3} more
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {/* Canvas Zoom Controls */}
-              <div className="absolute bottom-3 right-3 z-30 flex items-center gap-1 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md rounded-lg border border-white/30 dark:border-slate-700/30 p-1 sm:top-3 sm:bottom-auto">
-                <button
-                  onClick={() => setCanvasZoom((z) => Math.max(0.25, z - 0.15))}
-                  className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
-                  title="Zoom out"
-                >
-                  <ZoomOut className="w-4 h-4" />
-                </button>
-                <span className="text-xs font-medium text-slate-600 dark:text-slate-300 min-w-[40px] text-center">
-                  {Math.round(canvasZoom * 100)}%
-                </span>
-                <button
-                  onClick={() => setCanvasZoom((z) => Math.min(2, z + 0.15))}
-                  className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
-                  title="Zoom in"
-                >
-                  <ZoomIn className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setCanvasZoom(1)}
-                  className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
-                  title="Reset zoom"
-                >
-                  <Maximize2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
+              <div className="relative min-h-[360px] flex-1">
+                {/* Canvas Zoom Controls */}
+                <div className="absolute bottom-3 right-3 z-30 flex items-center gap-1 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md rounded-lg border border-white/30 dark:border-slate-700/30 p-1 sm:top-3 sm:bottom-auto">
+                  <button
+                    onClick={() => setCanvasZoom((z) => Math.max(0.25, z - 0.15))}
+                    className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
+                    title="Zoom out"
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-300 min-w-[40px] text-center">
+                    {Math.round(canvasZoom * 100)}%
+                  </span>
+                  <button
+                    onClick={() => setCanvasZoom((z) => Math.min(2, z + 0.15))}
+                    className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
+                    title="Zoom in"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setCanvasZoom(1)}
+                    className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
+                    title="Reset zoom"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
 
-              <SeatingCanvas
-                tables={tables}
-                guests={guests}
-                onTableMove={handleTableMove}
-                onTableDelete={handleTableDelete}
-                zoom={canvasZoom}
-                venueLayout={draftVenueLayout}
-                floorPlanMode={floorPlanMode}
-                floorPlanOutline={floorPlanOutline}
-                venueFixtures={venueFixtures}
-                onFloorPlanPointAdd={handleFloorPlanPointAdd}
-                onFloorPlanPointMove={handleFloorPlanPointMove}
-              />
+                <SeatingCanvas
+                  tables={tables}
+                  guests={guests}
+                  onTableMove={handleTableMove}
+                  onTableDelete={handleTableDelete}
+                  zoom={canvasZoom}
+                  venueLayout={draftVenueLayout}
+                  floorPlanMode={floorPlanMode}
+                  floorPlanOutline={floorPlanOutline}
+                  venueFixtures={venueFixtures}
+                  selectedFixtureId={selectedFixtureId}
+                  tableWarningIds={tableWarningIds}
+                  fixtureWarningIds={fixtureWarningIds}
+                  onFloorPlanPointAdd={handleFloorPlanPointAdd}
+                  onFloorPlanPointMove={handleFloorPlanPointMove}
+                  onFixtureSelect={setSelectedFixtureId}
+                />
+              </div>
             </div>
           </div>
 
@@ -1340,6 +1698,7 @@ export default function SeatingPage() {
           guests={guests}
           coupleName={selectedWeddingInfo.couple_names}
           weddingDate={selectedWeddingInfo.date}
+          venueLayout={draftVenueLayout}
           onClose={() => setShowPrintPreview(false)}
         />
       )}

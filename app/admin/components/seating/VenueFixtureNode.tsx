@@ -15,6 +15,9 @@ import { VenueFixture } from '@/types/table';
 interface VenueFixtureNodeProps {
   fixture: VenueFixture;
   disabled?: boolean;
+  selected?: boolean;
+  hasLayoutWarning?: boolean;
+  onSelect?: (fixtureId: string) => void;
 }
 
 const fixtureStyles: Record<VenueFixture['type'], string> = {
@@ -48,7 +51,13 @@ function FixtureIcon({ type }: { type: VenueFixture['type'] }) {
   }
 }
 
-export function VenueFixtureNode({ fixture, disabled = false }: VenueFixtureNodeProps) {
+export function VenueFixtureNode({
+  fixture,
+  disabled = false,
+  selected = false,
+  hasLayoutWarning = false,
+  onSelect,
+}: VenueFixtureNodeProps) {
   const {
     attributes,
     listeners,
@@ -68,11 +77,12 @@ export function VenueFixtureNode({ fixture, disabled = false }: VenueFixtureNode
     width: fixture.width,
     height: fixture.height,
     transform: transform
-      ? `translate3d(${fixture.x + transform.x}px, ${fixture.y + transform.y}px, 0)`
-      : `translate3d(${fixture.x}px, ${fixture.y}px, 0)`,
+      ? `translate3d(${fixture.x + transform.x}px, ${fixture.y + transform.y}px, 0) rotate(${fixture.rotation ?? 0}deg)`
+      : `translate3d(${fixture.x}px, ${fixture.y}px, 0) rotate(${fixture.rotation ?? 0}deg)`,
     zIndex: isDragging ? 35 : 5,
     opacity: isDragging ? 0.72 : 1,
     transition: isDragging ? 'none' : 'opacity 180ms ease, box-shadow 180ms ease',
+    transformOrigin: 'center center',
   };
 
   return (
@@ -83,6 +93,8 @@ export function VenueFixtureNode({ fixture, disabled = false }: VenueFixtureNode
       className={`
         group flex items-center justify-center rounded-lg border-2 border-dashed
         px-3 text-center shadow-sm backdrop-blur-sm
+        ${selected ? 'ring-2 ring-slate-900/70 dark:ring-white/70' : ''}
+        ${hasLayoutWarning ? 'ring-2 ring-amber-400/80 dark:ring-amber-300/70' : ''}
         ${fixtureStyles[fixture.type]}
       `}
     >
@@ -91,6 +103,7 @@ export function VenueFixtureNode({ fixture, disabled = false }: VenueFixtureNode
         {...listeners}
         {...attributes}
         disabled={disabled}
+        onClick={() => onSelect?.(fixture.id)}
         aria-label={`Move ${fixture.label}`}
         title={`Move ${fixture.label}`}
         className="flex h-full w-full items-center justify-center gap-2 text-xs font-semibold leading-tight disabled:cursor-default cursor-grab active:cursor-grabbing"
