@@ -68,12 +68,16 @@ export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick, onViewWe
     }
   };
 
-  const attendingLabels = rsvp.attending?.map(e => eventLabels[e] || e).join(', ') || 'No events selected';
+  const isDeclined = !rsvp.attending || rsvp.attending.length === 0;
+  const attendanceLabel = isDeclined ? 'Not attending' : 'Attending';
+  const attendingLabels = isDeclined
+    ? 'Not attending'
+    : rsvp.attending?.map(e => eventLabels[e] || e).join(', ') || 'Attending, no specific events selected';
 
   return (
     <div className="space-y-6">
       {/* Main Card */}
-      <div className="rounded-[2.5rem] border border-white/10 bg-white/5 backdrop-blur-xl overflow-hidden">
+      <div className="rounded-2xl border border-white/10 bg-white/[0.04] overflow-hidden">
         {/* Gradient accent bar — uses couple's theme colors */}
         <div
           className="h-1"
@@ -85,17 +89,17 @@ export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick, onViewWe
         <div className="p-8 sm:p-10 text-center">
           {/* Success icon */}
           <div
-            className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6"
+            className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5"
             style={{ backgroundColor: accentRgba(0.2) }}
           >
-            <svg className="w-10 h-10" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-8 h-8" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
           </div>
 
           {/* Header */}
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-5 py-1.5 text-xs uppercase tracking-[0.3em] backdrop-blur mb-4">
-            RSVP Confirmed
+          <div className="inline-flex items-center gap-2 border-b border-white/20 px-2 pb-2 text-xs uppercase tracking-[0.22em] mb-4">
+            RSVP Received
           </div>
 
           <h2 className="text-3xl font-semibold text-white mb-3">
@@ -108,7 +112,7 @@ export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick, onViewWe
       </div>
 
       {/* RSVP Details Card */}
-      <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
+      <div className="rounded-xl border border-white/10 bg-white/[0.035] p-5">
         <h3
           className="text-xs font-semibold uppercase tracking-[0.3em] mb-4"
           style={{ color: accent }}
@@ -117,26 +121,31 @@ export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick, onViewWe
         </h3>
 
         <div className="space-y-4">
-          <div className="p-4 rounded-2xl border border-white/10 bg-white/5">
-            <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Events Attending</p>
+          <div className="p-4 rounded-xl border border-white/10 bg-white/[0.03]">
+            <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Attendance</p>
+            <p className="text-white font-medium">{attendanceLabel}</p>
+          </div>
+
+          <div className="p-4 rounded-xl border border-white/10 bg-white/[0.03]">
+            <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Events</p>
             <p className="text-white font-medium">{attendingLabels}</p>
           </div>
 
           {rsvp.dietary && (
-            <div className="p-4 rounded-2xl border border-white/10 bg-white/5">
+            <div className="p-4 rounded-xl border border-white/10 bg-white/[0.03]">
               <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Dietary Restrictions</p>
               <p className="text-white font-medium">{rsvp.dietary}</p>
             </div>
           )}
 
           {rsvp.plus_ones && rsvp.plus_ones.length > 0 && (
-            <div className="p-4 rounded-2xl border border-white/10 bg-white/5">
+            <div className="p-4 rounded-xl border border-white/10 bg-white/[0.03]">
               <p className="text-xs text-slate-400 uppercase tracking-wider mb-3">
                 Additional Guests ({rsvp.plus_ones.length})
               </p>
               <div className="space-y-3">
                 {rsvp.plus_ones.map((po, index) => (
-                  <div key={index} className="p-3 rounded-xl border border-white/5 bg-white/5">
+                  <div key={index} className="p-3 rounded-lg border border-white/5 bg-white/[0.03]">
                     <p className="text-white font-medium">{po.name}</p>
                     {po.attending && po.attending.length > 0 && (
                       <p className="text-xs text-slate-400 mt-1">
@@ -165,7 +174,7 @@ export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick, onViewWe
         Edit My RSVP
       </button>
 
-      {/* View Wedding Page Button */}
+      {/* View Event Page Button */}
       {onViewWeddingPage && (
         <button
           onClick={onViewWeddingPage}
@@ -173,7 +182,7 @@ export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick, onViewWe
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = accentRgba(0.5); }}
           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.2)'; }}
         >
-          View Wedding Page
+          View Event Page
         </button>
       )}
 

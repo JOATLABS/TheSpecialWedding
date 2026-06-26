@@ -23,7 +23,7 @@ def get_rsvp_status(rsvp: Mapping[str, Any] | None) -> RSVPStatus:
     """
     Classify an RSVP row from its canonical attending payload.
 
-    The current RSVP schema stores attending as a list of event identifiers.
+    The RSVP schema stores attending as a list of event identifiers.
     Legacy rows may store a dict of event -> bool. A submitted RSVP with an
     empty attending selection is a declined RSVP, not a confirmed one.
     """

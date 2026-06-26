@@ -155,6 +155,7 @@ class GuestVerificationService:
             "submitted_at": existing_rsvp.get("submitted_at"),
             "attending": existing_rsvp.get("attending", []),
             "dietary": existing_rsvp.get("dietary"),
+            "confirmed_by_admin": existing_rsvp.get("confirmed_by_admin"),
             "plus_ones": plus_ones,
         }
 

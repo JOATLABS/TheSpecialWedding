@@ -10,11 +10,11 @@ import {
 } from '../../app/admin/utils/guestRsvpStatus';
 
 describe('guest RSVP status helpers', () => {
-  it('classifies modern RSVP attending arrays for visible badges and exports', () => {
+  it('classifies dynamic RSVP event selections for visible badges and exports', () => {
     const guest = { invite_sent: true };
 
     assert.equal(
-      getGuestRsvpDisplayStatus(guest, { attending: ['ceremony'] }),
+      getGuestRsvpDisplayStatus(guest, { attending: ['after_party'] }),
       'confirmed',
     );
     assert.equal(
@@ -27,20 +27,28 @@ describe('guest RSVP status helpers', () => {
     );
   });
 
-  it('keeps legacy event maps aligned with backend RSVP semantics', () => {
+  it('keeps legacy event selections aligned with the original declined contract', () => {
     const guest = { invite_sent: true };
 
     assert.equal(
+      getGuestRsvpDisplayStatus(guest, { attending: [] }),
+      'declined',
+    );
+    assert.equal(
       getGuestRsvpDisplayStatus(guest, {
-        attending: { ceremony: false, reception: false },
+        attending: { custom_brunch: false, after_party: false },
       }),
       'declined',
     );
     assert.equal(
       getGuestRsvpDisplayStatus(guest, {
-        attending: { ceremony: false, reception: true },
+        attending: { custom_brunch: false, after_party: true },
       }),
       'confirmed',
+    );
+    assert.equal(
+      getGuestRsvpExportLabel(guest, { attending: [] }),
+      'Declined',
     );
   });
 
@@ -68,9 +76,8 @@ describe('guest RSVP status helpers', () => {
       'not_invited',
     ]);
     assert.equal(getGuestRsvpStatusLabel('declined'), 'Declined');
-    assert.deepEqual(getRsvpAttendingList({ attending: ['reception'] }), [
-      'reception',
+    assert.deepEqual(getRsvpAttendingList({ attending: ['after_party'] }), [
+      'after_party',
     ]);
   });
 });
-

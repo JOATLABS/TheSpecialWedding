@@ -687,9 +687,10 @@ class PlannerNotificationService:
         guest_id: Optional[str] = None,
     ):
         """Trigger notification when RSVP status changes"""
-        status_text = (
-            "confirmed attendance" if status == "confirmed" else f"responded: {status}"
-        )
+        status_text = {
+            "confirmed": "confirmed attendance",
+            "declined": "declined the invitation",
+        }.get(status, f"responded: {status}")
         guest_text = f" for {guest_count} guests" if guest_count > 1 else ""
 
         return await self.create_notification(

@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from app.core.database import mongo
 from app.models.rsvp import RSVPModel
 from app.services.activity_log_service import activity_log_service
+from app.utils.rsvp_storage import DEPRECATED_RSVP_FIELDS_UNSET
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,8 @@ class RSVPService:
                     "attending": rsvp_data.attending,
                     "dietary": rsvp_data.dietary,
                     "submitted_at": datetime.now(timezone.utc),
-                }
+                },
+                "$unset": DEPRECATED_RSVP_FIELDS_UNSET,
             },
             upsert=True,
         )

@@ -576,6 +576,14 @@ export default function AdminGuestsPage() {
     return plusOnesByGuestId.get(normalizeId(guestId)) ?? [];
   }, [plusOnesByGuestId]);
 
+  const getRsvpEventSummary = (
+    rsvpStatus: ReturnType<typeof getGuestRsvpDisplayStatus>,
+    labels: string[],
+  ) => {
+    if (rsvpStatus === 'declined') return 'Not attending';
+    return labels.join(', ') || 'Attending, events not selected';
+  };
+
   const getGroupLabel = (groupId: string | undefined) => {
     if (!groupId) return '-';
     const preset = PRESET_GROUPS.find(g => g.id === groupId);
@@ -1481,7 +1489,7 @@ export default function AdminGuestsPage() {
                 label-on-top, number-below at a tighter grain than before;
                 related metrics share a color so the eye groups them.
                 Plus-one metrics live in their own subgroup at the end. */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-2 mb-6">
               {/* Total guest records — the universe everything else slices */}
               <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Total records</p>
@@ -1497,7 +1505,7 @@ export default function AdminGuestsPage() {
                 <p className="text-xs text-gray-500 dark:text-gray-400">Not invited</p>
                 <p className="text-xl font-bold text-gray-500 dark:text-gray-400">{summary.notInvitedGuests}</p>
               </div>
-              {/* Responded — total who have an RSVP record (confirmed + declined) */}
+              {/* Responded — total who have an RSVP record */}
               <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Responded</p>
                 <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{summary.respondedGuests}</p>
@@ -1507,12 +1515,12 @@ export default function AdminGuestsPage() {
                 <p className="text-xs text-gray-500 dark:text-gray-400">Pending response</p>
                 <p className="text-xl font-bold text-yellow-600 dark:text-yellow-400">{summary.pendingGuests}</p>
               </div>
-              {/* Confirmed — responded with attending events */}
+              {/* Confirmed — responded with at least one selected event */}
               <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Confirmed</p>
                 <p className="text-xl font-bold text-green-600 dark:text-green-400">{summary.confirmedGuests}</p>
               </div>
-              {/* Declined — responded with attending=[] */}
+              {/* Declined — responded with no selected events */}
               <button
                 type="button"
                 onClick={() => updateFilter('rsvpStatus', 'declined')}
@@ -2009,7 +2017,7 @@ export default function AdminGuestsPage() {
                                           <div>
                                             <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">RSVP Details</h4>
                                             <dl className="space-y-1 text-sm">
-                                              <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Attending:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{rsvpStatus === 'declined' ? 'Declined all events' : rsvpAttendingLabels.join(', ') || 'None'}</dd></div>
+                                              <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Attending:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{getRsvpEventSummary(rsvpStatus, rsvpAttendingLabels)}</dd></div>
                                               <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Dietary:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{rsvp.dietary || 'None'}</dd></div>
                                               {rsvp.confirmed_by_admin && <div className="text-xs text-blue-500">(Confirmed by admin)</div>}
                                             </dl>
@@ -2160,7 +2168,7 @@ export default function AdminGuestsPage() {
                                 <div className="flex gap-6 text-sm">
                                   <div>
                                     <span className="font-medium text-gray-700 dark:text-gray-300">Attending:</span>
-                                    <span className="ml-2">{rsvpStatus === 'declined' ? 'Declined all events' : rsvpAttendingLabels.join(', ') || 'None'}</span>
+                                    <span className="ml-2">{getRsvpEventSummary(rsvpStatus, rsvpAttendingLabels)}</span>
                                   </div>
                                   {rsvp.dietary && (
                                     <div>
@@ -2543,10 +2551,6 @@ export default function AdminGuestsPage() {
                         placeholder="e.g., Vegetarian, Gluten-free"
                       />
                     </div>
-
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Setting attending events will mark this guest as RSVP&apos;d (confirmed by admin).
-                    </p>
                   </div>
                 </div>
               </div>
