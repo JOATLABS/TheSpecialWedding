@@ -98,3 +98,38 @@ def test_parse_date_safe_preserves_aware_datetimes_in_utc() -> None:
     assert parsed is not None
     assert parsed.tzinfo is not None
     assert parsed.utcoffset().total_seconds() == 0
+
+
+def test_planner_wedding_venue_normalizes_legacy_object_shape() -> None:
+    venue = planner_metrics_api._normalize_planner_wedding_venue(
+        {"name": "Verification Venue", "location": "123 Verification Lane"}
+    )
+
+    assert venue == "Verification Venue - 123 Verification Lane"
+
+
+def test_cached_planner_wedding_normalizes_legacy_venue_shape() -> None:
+    payload = planner_metrics_api._normalize_cached_planner_wedding(
+        {
+            "_id": ObjectId("507f1f77bcf86cd799439011"),
+            "couple_names": "Legacy Venue Couple",
+            "venue": {"venue_name": "Ballroom", "address": "Main Street"},
+        }
+    )
+
+    assert payload["id"] == "507f1f77bcf86cd799439011"
+    assert payload["venue"] == "Ballroom - Main Street"
+
+
+def test_planner_wedding_document_mapper_accepts_legacy_venue_shape() -> None:
+    wedding = planner_metrics_api._planner_wedding_model_from_document(
+        {
+            "_id": ObjectId("507f1f77bcf86cd799439011"),
+            "couple_names": "Legacy Venue Couple",
+            "date": "2026-10-18",
+            "slug": "legacy-venue-couple",
+            "venue": {"name": "Verification Venue", "location": "123 Verification Lane"},
+        }
+    )
+
+    assert wedding.venue == "Verification Venue - 123 Verification Lane"

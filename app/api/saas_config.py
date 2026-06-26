@@ -149,7 +149,7 @@ def _get_default_saas_config():
             },
             {
                 "title": "Seating orchestration",
-                "description": "Drag-and-drop tables, respect family groupings, and export final charts instantly.",
+                "description": "Map the venue, place fixtures and tables, respect family groupings, and export final charts.",
                 "category": "Planning",
                 "status": "available",
                 "order": 5,

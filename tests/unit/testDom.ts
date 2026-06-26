@@ -34,6 +34,10 @@ export function installDom(): DomHandle {
   const originalCustomEvent = Object.getOwnPropertyDescriptor(globalThis, 'CustomEvent');
   const originalMutationObserver = Object.getOwnPropertyDescriptor(globalThis, 'MutationObserver');
   const originalGetComputedStyle = Object.getOwnPropertyDescriptor(globalThis, 'getComputedStyle');
+  const originalRequestAnimationFrame = Object.getOwnPropertyDescriptor(globalThis, 'requestAnimationFrame');
+  const originalCancelAnimationFrame = Object.getOwnPropertyDescriptor(globalThis, 'cancelAnimationFrame');
+  const originalMatchMedia = Object.getOwnPropertyDescriptor(globalThis, 'matchMedia');
+  const originalResizeObserver = Object.getOwnPropertyDescriptor(globalThis, 'ResizeObserver');
 
   Object.defineProperty(globalThis, 'window', { configurable: true, writable: true, value: window });
   Object.defineProperty(globalThis, 'self', { configurable: true, writable: true, value: window });
@@ -52,17 +56,23 @@ export function installDom(): DomHandle {
   });
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-  if (!globalThis.requestAnimationFrame) {
-    globalThis.requestAnimationFrame = (callback: FrameRequestCallback) =>
-      setTimeout(() => callback(Date.now()), 0) as unknown as number;
-  }
+  Object.defineProperty(globalThis, 'requestAnimationFrame', {
+    configurable: true,
+    writable: true,
+    value: (callback: FrameRequestCallback) =>
+      setTimeout(() => callback(Date.now()), 0) as unknown as number,
+  });
 
-  if (!globalThis.cancelAnimationFrame) {
-    globalThis.cancelAnimationFrame = (id: number) => clearTimeout(id);
-  }
+  Object.defineProperty(globalThis, 'cancelAnimationFrame', {
+    configurable: true,
+    writable: true,
+    value: (id: number) => clearTimeout(id),
+  });
 
-  if (!globalThis.matchMedia) {
-    globalThis.matchMedia = ((query: string) => ({
+  Object.defineProperty(globalThis, 'matchMedia', {
+    configurable: true,
+    writable: true,
+    value: ((query: string) => ({
       matches: false,
       media: query,
       onchange: null,
@@ -71,16 +81,18 @@ export function installDom(): DomHandle {
       addEventListener: () => {},
       removeEventListener: () => {},
       dispatchEvent: () => false,
-    })) as typeof globalThis.matchMedia;
-  }
+    })) as typeof globalThis.matchMedia,
+  });
 
-  if (!globalThis.ResizeObserver) {
-    globalThis.ResizeObserver = class ResizeObserver {
+  Object.defineProperty(globalThis, 'ResizeObserver', {
+    configurable: true,
+    writable: true,
+    value: class ResizeObserver {
       observe() {}
       unobserve() {}
       disconnect() {}
-    };
-  }
+    },
+  });
 
   if (!window.HTMLElement.prototype.scrollIntoView) {
     window.HTMLElement.prototype.scrollIntoView = () => {};
@@ -122,6 +134,10 @@ export function installDom(): DomHandle {
       restoreProperty('CustomEvent', originalCustomEvent);
       restoreProperty('MutationObserver', originalMutationObserver);
       restoreProperty('getComputedStyle', originalGetComputedStyle);
+      restoreProperty('requestAnimationFrame', originalRequestAnimationFrame);
+      restoreProperty('cancelAnimationFrame', originalCancelAnimationFrame);
+      restoreProperty('matchMedia', originalMatchMedia);
+      restoreProperty('ResizeObserver', originalResizeObserver);
     },
   };
 }

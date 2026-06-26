@@ -33,6 +33,7 @@ import {
   getRsvpAttendingList,
   type GuestRsvpStatusFilter,
 } from '@/admin/utils/guestRsvpStatus';
+import { isAbortLikeFetchError } from '@/admin/utils/adminFetchErrors';
 
 // ==================== INTERFACES ====================
 
@@ -351,13 +352,16 @@ export default function AdminGuestsPage() {
       } else {
         if (plusOnesResult.status === 'fulfilled') {
           console.error('[PlusOnes] Fetch failed:', plusOnesResult.value.status);
-        } else {
+        } else if (!isAbortLikeFetchError(plusOnesResult.reason)) {
           console.error('[PlusOnes] Fetch error:', plusOnesResult.reason);
         }
         setPlusOnes([]);
       }
 
-    } catch {
+    } catch (error) {
+      if (isAbortLikeFetchError(error)) {
+        return;
+      }
       setError('Failed to load guest data');
       setGuests([]);
       setPaginationTotalItems(0);

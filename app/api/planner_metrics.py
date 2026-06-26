@@ -53,6 +53,25 @@ def _safe_isoformat(value: Any) -> str:
     return ""
 
 
+def _normalize_planner_wedding_venue(value: Any) -> Optional[str]:
+    """Convert legacy venue objects to the string shape the planner API returns."""
+    if value is None or isinstance(value, str):
+        return value
+
+    if isinstance(value, dict):
+        name = value.get("name") or value.get("venue_name") or value.get("title")
+        location = value.get("location") or value.get("address")
+        if name and location:
+            return f"{name} - {location}"
+        if name:
+            return str(name)
+        if location:
+            return str(location)
+        return None
+
+    return str(value)
+
+
 def _parse_date_safe(value: Optional[Any]) -> Optional[datetime]:
     """Safely parse a date/datetime value and normalize it to UTC."""
     if not value:
@@ -138,13 +157,43 @@ def _build_owned_weddings_query(
 
 
 def _normalize_cached_planner_wedding(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
     if "id" in payload:
-        return payload
-    if "_id" in payload:
-        normalized = dict(payload)
-        normalized["id"] = str(normalized.pop("_id"))
+        normalized["venue"] = _normalize_planner_wedding_venue(normalized.get("venue"))
         return normalized
-    return payload
+    if "_id" in payload:
+        normalized["id"] = str(normalized.pop("_id"))
+        normalized["venue"] = _normalize_planner_wedding_venue(normalized.get("venue"))
+        return normalized
+    normalized["venue"] = _normalize_planner_wedding_venue(normalized.get("venue"))
+    return normalized
+
+
+def _planner_wedding_model_from_document(
+    wedding: dict[str, Any],
+) -> PlannerWeddingModel:
+    return PlannerWeddingModel(
+        id=str(wedding["_id"]),
+        couple_names=wedding.get("couple_names", ""),
+        date=wedding.get("date", ""),
+        slug=wedding.get("slug", ""),
+        assigned_planner_email=wedding.get("assigned_planner_email"),
+        assigned_planner_id=wedding.get("assigned_planner_id"),
+        status=wedding.get("status", "active"),
+        venue=_normalize_planner_wedding_venue(wedding.get("venue")),
+        guest_count=wedding.get("guest_count", 0),
+        created_at=_safe_isoformat(wedding.get("created_at")),
+        updated_at=_safe_isoformat(wedding.get("updated_at")),
+        events=wedding.get("events", []),
+        privacy_settings=wedding.get("privacy_settings"),
+        rsvp_config=wedding.get("rsvp_config"),
+        theme_config=wedding.get("theme_config"),
+        registries=wedding.get("registries", []),
+        faqs=wedding.get("faqs", []),
+        our_story=wedding.get("our_story"),
+        wedding_party=wedding.get("wedding_party", []),
+        featured_image=wedding.get("featured_image"),
+    )
 
 
 def _enforce_weddings_directory_access(current_user: ExtendedAuthUser) -> None:
@@ -855,30 +904,7 @@ async def get_planner_weddings(
         # Convert ObjectId to string and format response
         wedding_list: List[PlannerWeddingModel] = []
         for wedding in weddings:
-            wedding_list.append(
-                PlannerWeddingModel(
-                    id=str(wedding["_id"]),
-                    couple_names=wedding.get("couple_names", ""),
-                    date=wedding.get("date", ""),
-                    slug=wedding.get("slug", ""),
-                    assigned_planner_email=wedding.get("assigned_planner_email"),
-                    assigned_planner_id=wedding.get("assigned_planner_id"),
-                    status=wedding.get("status", "active"),
-                    venue=wedding.get("venue"),
-                    guest_count=wedding.get("guest_count", 0),
-                    created_at=_safe_isoformat(wedding.get("created_at")),
-                    updated_at=_safe_isoformat(wedding.get("updated_at")),
-                    events=wedding.get("events", []),
-                    privacy_settings=wedding.get("privacy_settings"),
-                    rsvp_config=wedding.get("rsvp_config"),
-                    theme_config=wedding.get("theme_config"),
-                    registries=wedding.get("registries", []),
-                    faqs=wedding.get("faqs", []),
-                    our_story=wedding.get("our_story"),
-                    wedding_party=wedding.get("wedding_party", []),
-                    featured_image=wedding.get("featured_image"),
-                )
-            )
+            wedding_list.append(_planner_wedding_model_from_document(wedding))
 
         # Sort by date (upcoming first)
         wedding_list.sort(key=lambda x: x.date or "9999-12-31")

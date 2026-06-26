@@ -1,5 +1,3 @@
-'use client';
-
 import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -29,7 +27,8 @@ type ComparisonRow = {
   planningPod: FeatureState;
 };
 
-/* Values aligned with /compare evidence.ts research (April 6, 2026 audit) */
+/* Values aligned with /compare evidence.ts research (April 6, 2026 audit);
+ * the venue floor-plan row was refreshed against public vendor docs in June 2026. */
 const comparison: ComparisonRow[] = [
   { feature: 'Guest Management & RSVPs', you: true, honeybook: 'adjacent', aislePlanner: true, planningPod: true },
   { feature: 'Client Portal / Couple Portal', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: false },
@@ -38,6 +37,7 @@ const comparison: ComparisonRow[] = [
   { feature: 'Real-Time Push Notifications', you: true, honeybook: 'adjacent', aislePlanner: false, planningPod: false },
   { feature: 'Inbound Email Threading', you: true, honeybook: true, aislePlanner: false, planningPod: false },
   { feature: 'Seating Charts', you: true, honeybook: false, aislePlanner: true, planningPod: true },
+  { feature: 'Venue Floor Plans & Fixtures', you: true, honeybook: false, aislePlanner: true, planningPod: true },
   { feature: 'AI Contract Generation & E-Sign', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: false },
   { feature: 'Service Packages', you: true, honeybook: 'adjacent', aislePlanner: false, planningPod: false },
   { feature: 'AI Cash Flow Predictions', you: true, honeybook: false, aislePlanner: false, planningPod: false },
@@ -121,7 +121,7 @@ export default function FeaturesPage() {
       {/* ── Feature Grid ── */}
       <section className="mx-auto max-w-6xl px-6 py-12 sm:px-10">
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {features.map((f) => (
+          {features.map((f, index) => (
             <article
               key={f.title}
               className="group rounded-2xl border border-white/8 bg-white/[0.03] p-7 transition hover:border-wedding-rose/30"
@@ -133,6 +133,7 @@ export default function FeaturesPage() {
                   fill
                   sizes="(min-width: 1024px) 30vw, (min-width: 640px) 45vw, 90vw"
                   className="object-cover object-top transition duration-500 group-hover:scale-[1.02]"
+                  priority={index === 0}
                 />
               </div>
               <div className="flex items-start justify-between gap-3">
@@ -209,7 +210,7 @@ export default function FeaturesPage() {
           </table>
         </div>
         <p className="mt-4 text-xs leading-relaxed text-slate-500">
-          ✓ = confirmed &nbsp; ~ = adjacent capability &nbsp; — = not found. Pricing and feature statuses reflect publicly documented capabilities as of April 2026. For source-backed detail on each row, see the <Link href="/compare" className="underline hover:text-slate-300">full comparison pages</Link>.
+          ✓ = confirmed &nbsp; ~ = adjacent capability &nbsp; — = not found. Pricing and most feature statuses reflect publicly documented capabilities as of April 2026; venue floor-plan status was refreshed against public vendor docs in June 2026. For source-backed detail on each row, see the <Link href="/compare" className="underline hover:text-slate-300">full comparison pages</Link>.
         </p>
       </section>
 

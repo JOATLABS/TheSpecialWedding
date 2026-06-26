@@ -13,6 +13,8 @@ import { fetchEngagementSignals, type WeddingEngagementSignal } from '@/services
 import { Users, Mail, ImagePlus } from 'lucide-react';
 import WeddingPicker from '../components/WeddingPicker';
 import { canManageCouplePortal } from '@/admin/utils/teamAccess';
+import { isAbortLikeFetchError } from '@/admin/utils/adminFetchErrors';
+import { isIgnorableEngagementSignalsError } from '@/admin/utils/engagementSignals';
 import type { Wedding as WeddingDetails } from '@/types/wedding';
 import type { WeddingSetupTab } from '@/admin/weddings/setupGuide';
 import {
@@ -175,7 +177,9 @@ export default function WeddingPlannerDashboard() {
  }));
  }
  } catch (detailsError) {
+ if (!isAbortLikeFetchError(detailsError)) {
  console.warn('[Planner] Failed to load detailed wedding setup data:', detailsError);
+ }
  }
 
  setWeddings(dashboardWeddings);
@@ -197,7 +201,7 @@ export default function WeddingPlannerDashboard() {
  return;
  }
  } catch (error) {
- if (error instanceof DOMException && error.name === 'AbortError') {
+ if (isAbortLikeFetchError(error)) {
  return;
  }
  setSetupDetailsLoaded(false);
@@ -225,12 +229,15 @@ export default function WeddingPlannerDashboard() {
      if (!data) {
        return;
      }
-     engagementLoadedRef.current = true;
-     setEngagementSignals(data.signals);
-   } catch (err) {
-     console.error('[Planner] Failed to load engagement signals:', err);
-   }
- }, [apiRequest, token]);
+	     engagementLoadedRef.current = true;
+	     setEngagementSignals(data.signals);
+	   } catch (err) {
+	     if (isIgnorableEngagementSignalsError(err)) {
+	       return;
+	     }
+	     console.error('[Planner] Failed to load engagement signals:', err);
+	   }
+	 }, [apiRequest, token]);
 
  // Fetch AI insights for selected wedding
  const fetchAIInsights = useCallback(async (weddingId: string, forceRefresh = false, cacheOnly = false) => {

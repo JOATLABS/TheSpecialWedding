@@ -23,6 +23,9 @@ def test_visual_pdf_layout_includes_floor_plan_backdrop_and_fixtures():
             "canvas_width": 1600,
             "canvas_height": 1000,
             "background_image_data_url": "data:image/png;base64,abc123",
+            "scale_pixels": 100,
+            "scale_distance": 10,
+            "scale_unit": "ft",
             "outline": [
                 {"x": 120, "y": 100},
                 {"x": 1480, "y": 100},
@@ -38,6 +41,7 @@ def test_visual_pdf_layout_includes_floor_plan_backdrop_and_fixtures():
                     "y": 420,
                     "width": 260,
                     "height": 180,
+                    "rotation": 15,
                 }
             ],
         },
@@ -47,5 +51,8 @@ def test_visual_pdf_layout_includes_floor_plan_backdrop_and_fixtures():
     assert 'src="data:image/png;base64,abc123"' in html
     assert 'points="120.0,100.0 1480.0,100.0 1480.0,900.0 120.0,900.0"' in html
     assert 'class="fixture-card"' in html
+    assert "rotate(15deg)" in html
+    assert 'class="scale-ruler"' in html
+    assert "10ft" in html
     assert "Dance Floor" in html
     assert "Ada Lovelace" in html

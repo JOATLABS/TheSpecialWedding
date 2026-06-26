@@ -275,30 +275,73 @@ View a summary in Guest Management to share with your caterer.
         "estimated_read_minutes": 4,
     },
     {
-        "title": "Using the Seating Planner",
+        "title": "Using the Seating Planner and Venue Floor Plan",
         "slug": "using-the-seating-planner",
-        "excerpt": "Drag-and-drop seating arrangements with AI-powered suggestions to seat your guests perfectly.",
-        "content": """# Using the Seating Planner
+        "excerpt": "Create a seating chart on top of the real event-space layout, including venue outline, fixtures, tables, guests, layout checks, and exports.",
+        "content": """# Using the Seating Planner and Venue Floor Plan
 
-The seating planner gives you a visual drag-and-drop canvas to arrange tables and assign guests.
+The seating planner helps planners build a seating chart against the real shape of the venue instead of a blank canvas. You can map the room, upload a venue reference, add fixed venue elements, place tables, assign guests, review layout checks, and export a chart for the venue team.
 
 ## Accessing the Seating Planner
 
 From any wedding detail page, click **Seating Plan** in the header. You can also access it from **Seating** in the sidebar.
 
-## Creating Tables
+## Guided Setup
 
-1. Click **Add Table** in the top toolbar
-2. A new table appears on the canvas
-3. Set the table name (e.g., "Table 1", "Head Table", "Family Table")
-4. Set the capacity (number of seats)
+The floor-plan toolbar includes a **Guide** button. Open it any time you want the recommended order:
 
-## Assigning Guests
+1. Map the room.
+2. Add a venue reference.
+3. Place fixtures.
+4. Place tables.
+5. Seat guests.
+6. Review layout checks, save, and export.
 
-- Drag guests from the sidebar guest list onto a table
-- The sidebar shows unassigned guests and their group
-- Tables show current occupancy vs capacity
-- Guests already seated show which table they're at
+The guide uses the current chart state, so completed steps update as the planner works.
+
+## Map the Event Space
+
+Use the floor-plan toolbar at the top of the canvas:
+
+- **Room** starts with a rectangular venue outline.
+- **Draw** lets you adjust or draw the venue boundary.
+- **Upload** adds an image reference, such as a venue-provided floor plan.
+- **Lock** keeps the uploaded backdrop from moving while you work.
+- **Scale** records the real-world distance for the plan, such as 100px = 10ft.
+
+Save the floor plan after important changes so exports and future edits use the same layout.
+
+## Add Venue Fixtures
+
+Use **Fixture** to place non-table elements that affect the seating layout, such as:
+
+- Dance floor
+- Bar
+- Stage
+- Entrance
+- Restrooms
+- Kitchen
+- Vendor path
+
+Select a fixture to rename it, resize it, rotate it, or delete it. Fixtures appear in layout checks and exports.
+
+## Add and Place Tables
+
+1. Click **Add Table** to create a new table.
+2. Drag tables around the canvas to position them.
+3. Click a table to edit its name, shape, or capacity.
+4. Use the zoom controls when working on dense layouts.
+
+Tables can be moved independently from the floor plan and fixtures.
+
+## Assign Guests
+
+- Unseated guests appear in the sidebar.
+- Drag the handle on one guest card onto a table to seat that guest.
+- Tables show current occupancy vs capacity.
+- Guests already seated show which table they are assigned to.
+
+If the whole guest-list item moves instead of one guest, start the drag from the guest handle and drop over the target table.
 
 ## AI Suggestions
 
@@ -310,24 +353,40 @@ Click **AI Suggest** to get intelligent seating recommendations based on:
 
 Review the suggestions and accept or modify as needed.
 
-## Exporting & Printing
+## Review Layout Checks
+
+The planner warns when items need attention, such as tables outside the room outline, overlapping fixtures, or objects placed outside the canvas. Review these warnings before sharing the layout with the venue or catering team.
+
+## Exporting and Printing
 
 - **Export** — Download the seating chart as a file
-- **Print** — Print a formatted seating chart for the venue
+- **PDF** — Export a venue-ready chart with the floor plan, fixtures, tables, and seating details
+- **Print** — Print a formatted chart for the venue
 
 ## Tips
 
-- Seat families together when possible
-- Keep the wedding party near the head table
-- Consider dietary needs — group similar diets for easier catering
-- Use AI suggestions as a starting point, then fine-tune manually
+- Build the room outline before adding tables.
+- Lock the uploaded venue reference before dragging tables.
+- Add large fixtures before seating guests so the layout reflects real guest flow.
+- Seat families and household groups together when possible.
+- Keep dietary needs visible for catering handoff.
+- Use AI suggestions as a starting point, then fine-tune manually.
 """,
         "category": "wedding-configuration",
-        "tags": ["seating", "tables", "drag-drop", "ai", "planning"],
+        "tags": [
+            "seating",
+            "tables",
+            "floor-plan",
+            "venue-layout",
+            "fixtures",
+            "drag-drop",
+            "ai",
+            "planning",
+        ],
         "is_official": True,
         "featured": False,
         "order": 2,
-        "estimated_read_minutes": 3,
+        "estimated_read_minutes": 5,
     },
     {
         "title": "Configuring Wedding Theme and Colors",

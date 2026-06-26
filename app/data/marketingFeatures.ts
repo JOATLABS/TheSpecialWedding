@@ -104,9 +104,9 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     title: 'Seating Chart Orchestrator',
     category: 'Guest Pipeline',
     image: '/seating.webp',
-    tagline: 'Turn the confirmed guest list into tables, meal counts, and seating assignments without rebuilding from a spreadsheet.',
+    tagline: 'Build seating on top of the real venue layout, from room outline and fixtures to guest assignments and export-ready charts.',
     description:
-      "This is the seating surface. Confirmed guests, plus-ones, meal notes, households, VIPs, and group constraints flow in from Guest Management, then the planner arranges tables from the same record. When six guests cancel twelve days before the wedding, the chart, meal counts, and export data update without another CSV round trip. AI can flag awkward placements or propose table groupings when family rules collide, but the planner stays in control.",
+      'This is the event-space-aware seating surface. Planners can map the room, upload a venue reference, add fixtures like stages and bars, place tables, drag one guest at a time onto the right table, and review layout checks before exporting the final chart. Guest records, meal counts, household context, and AI grouping suggestions still stay connected to the same source of truth.',
     ai: true,
   },
   {

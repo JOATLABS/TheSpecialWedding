@@ -71,6 +71,16 @@ export function FloorPlanLayer({
   const pointsValue = pointsToSvgPoints(outline);
   const canCloseOutline = outline.length >= 3;
   const isDrawing = mode === 'draw';
+  const showScaleRuler = Boolean(layout.scale_pixels && layout.scale_distance);
+  const scaleRulerLength = Math.min(
+    layout.scale_pixels ?? 0,
+    Math.max(80, layout.canvas_width - 160)
+  );
+  const scaleRulerX = 80;
+  const scaleRulerY = Math.max(80, layout.canvas_height - 72);
+  const scaleRulerLabel = layout.scale_pixels && layout.scale_distance
+    ? `${layout.scale_distance}${layout.scale_unit ?? 'ft'}`
+    : '';
 
   const getPoint = (event: React.PointerEvent<SVGSVGElement | SVGCircleElement>) => {
     if (!svgRef.current) return null;
@@ -123,6 +133,18 @@ export function FloorPlanLayer({
       onPointerUp={finishPointMove}
       onPointerCancel={finishPointMove}
     >
+      {isDrawing && (
+        <rect
+          data-testid="floor-plan-hit-area"
+          x={0}
+          y={0}
+          width={layout.canvas_width}
+          height={layout.canvas_height}
+          fill="transparent"
+          pointerEvents="all"
+        />
+      )}
+
       {layout.background_image_data_url && (
         <image
           data-testid="floor-plan-background-image"
@@ -133,6 +155,7 @@ export function FloorPlanLayer({
           height={layout.canvas_height}
           preserveAspectRatio="xMidYMid meet"
           opacity={layout.background_locked === false ? 0.32 : 0.42}
+          pointerEvents="none"
         />
       )}
 
@@ -145,17 +168,72 @@ export function FloorPlanLayer({
           strokeDasharray="18 12"
           strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
         />
+      )}
+
+      {showScaleRuler && (
+        <g
+          data-testid="floor-plan-scale-ruler"
+          className="text-slate-700 dark:text-slate-200"
+          pointerEvents="none"
+        >
+          <line
+            x1={scaleRulerX}
+            y1={scaleRulerY}
+            x2={scaleRulerX + scaleRulerLength}
+            y2={scaleRulerY}
+            className="stroke-slate-700 dark:stroke-slate-200"
+            strokeWidth={3}
+            vectorEffect="non-scaling-stroke"
+          />
+          <line
+            x1={scaleRulerX}
+            y1={scaleRulerY - 10}
+            x2={scaleRulerX}
+            y2={scaleRulerY + 10}
+            className="stroke-slate-700 dark:stroke-slate-200"
+            strokeWidth={3}
+            vectorEffect="non-scaling-stroke"
+          />
+          <line
+            x1={scaleRulerX + scaleRulerLength}
+            y1={scaleRulerY - 10}
+            x2={scaleRulerX + scaleRulerLength}
+            y2={scaleRulerY + 10}
+            className="stroke-slate-700 dark:stroke-slate-200"
+            strokeWidth={3}
+            vectorEffect="non-scaling-stroke"
+          />
+          <rect
+            x={scaleRulerX - 8}
+            y={scaleRulerY - 34}
+            width={Math.max(82, scaleRulerLabel.length * 9 + 18)}
+            height={24}
+            rx={6}
+            className="fill-white/85 stroke-slate-200 dark:fill-slate-950/80 dark:stroke-slate-700"
+            vectorEffect="non-scaling-stroke"
+          />
+          <text
+            x={scaleRulerX + 8}
+            y={scaleRulerY - 17}
+            className="fill-slate-700 text-xs font-semibold dark:fill-slate-200"
+          >
+            {scaleRulerLabel}
+          </text>
+        </g>
       )}
 
       {outline.length > 1 && !canCloseOutline && (
         <polyline
+          data-testid="floor-plan-polyline"
           points={pointsValue}
           className="fill-none stroke-blue-500/70 dark:stroke-blue-300/70"
           strokeWidth={4}
           strokeDasharray="18 12"
           strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
         />
       )}
 
@@ -170,6 +248,7 @@ export function FloorPlanLayer({
             className="fill-white stroke-blue-500 dark:fill-slate-950 dark:stroke-blue-300 cursor-move"
             strokeWidth={3}
             vectorEffect="non-scaling-stroke"
+            pointerEvents="auto"
             onPointerDown={(event) => handlePointPointerDown(event, index)}
           />
         ))}

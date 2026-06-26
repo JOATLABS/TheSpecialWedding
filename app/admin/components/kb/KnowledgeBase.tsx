@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
 import ArticleList from './ArticleList';
@@ -60,6 +61,11 @@ type ViewMode = 'list' | 'view' | 'create' | 'edit' | 'my-articles';
 
 export default function KnowledgeBase({ isRootAdmin }: KnowledgeBaseProps) {
   const { apiRequest } = useAdmin();
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const searchParamsText = searchParams.toString();
+  const articleSlug = searchParams.get('article');
 
   // State
   const [viewMode, setViewMode] = useState<ViewMode>('list');
@@ -145,11 +151,47 @@ export default function KnowledgeBase({ isRootAdmin }: KnowledgeBaseProps) {
     }
   }, [apiRequest]);
 
+  const updateArticleUrl = useCallback((slug: string | null) => {
+    const params = new URLSearchParams(searchParamsText);
+    params.set('tab', 'knowledge_base');
+    if (slug) {
+      params.set('article', slug);
+    } else {
+      params.delete('article');
+    }
+
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [pathname, router, searchParamsText]);
+
+  const openArticleBySlug = useCallback(async (slug: string) => {
+    try {
+      setLoading(true);
+      const fullArticle = await apiRequest<KBArticle>(
+        `/admin/kb/articles/slug/${slug}`,
+        'GET'
+      );
+      if (!fullArticle) return;
+      setSelectedArticle(fullArticle);
+      setViewMode('view');
+    } catch (error) {
+      console.error('Error fetching article:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [apiRequest]);
+
   // Initial load
   useEffect(() => {
     fetchCategories();
     fetchArticles();
   }, [fetchCategories, fetchArticles]);
+
+  useEffect(() => {
+    if (!articleSlug) return;
+    if (viewMode === 'view' && selectedArticle?.slug === articleSlug) return;
+    openArticleBySlug(articleSlug);
+  }, [articleSlug, openArticleBySlug, selectedArticle?.slug, viewMode]);
 
   // Handle category change
   const handleCategoryChange = (category: string) => {
@@ -183,6 +225,7 @@ export default function KnowledgeBase({ isRootAdmin }: KnowledgeBaseProps) {
       );
       setSelectedArticle(fullArticle || null);
       setViewMode('view');
+      updateArticleUrl(article.slug);
     } catch (error) {
       console.error('Error fetching article:', error);
     }
@@ -190,6 +233,9 @@ export default function KnowledgeBase({ isRootAdmin }: KnowledgeBaseProps) {
 
   // Handle back navigation
   const handleBack = () => {
+    if (articleSlug) {
+      updateArticleUrl(null);
+    }
     setSelectedArticle(null);
     setViewMode('list');
     // Refresh articles after potential edits

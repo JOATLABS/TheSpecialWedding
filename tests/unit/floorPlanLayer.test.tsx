@@ -98,6 +98,7 @@ describe('floor plan drawing layer', () => {
       />
     );
     const svg = view.getByTestId('floor-plan-svg') as unknown as SVGSVGElement;
+    const polygon = view.getByTestId('floor-plan-polygon');
     svg.getScreenCTM = () => null;
     svg.getBoundingClientRect = () => ({
       left: 0,
@@ -111,11 +112,37 @@ describe('floor plan drawing layer', () => {
       toJSON: () => ({}),
     });
 
-    assert.equal(view.getByTestId('floor-plan-polygon').getAttribute('points'), '120,100 1480,100 1480,900');
+    assert.equal(polygon.getAttribute('points'), '120,100 1480,100 1480,900');
+    assert.equal(polygon.getAttribute('pointer-events'), 'none');
+    assert.equal(view.getByTestId('floor-plan-hit-area').getAttribute('pointer-events'), 'all');
 
-    fireEvent.pointerDown(svg, { clientX: 120, clientY: 900 });
+    fireEvent.pointerDown(view.getByTestId('floor-plan-hit-area'), { clientX: 120, clientY: 900 });
 
     assert.deepEqual(addedPoints, [{ x: 120, y: 900 }]);
+  });
+
+  it('keeps partial outline strokes passive while drawing new floor plan points', () => {
+    const view = render(
+      <FloorPlanLayer
+        layout={layout}
+        outline={[
+          { x: 120, y: 100 },
+          { x: 1480, y: 100 },
+        ]}
+        mode="draw"
+        onPointAdd={() => {}}
+        onPointMove={() => {}}
+      />
+    );
+
+    assert.equal(
+      view.getByTestId('floor-plan-polyline').getAttribute('pointer-events'),
+      'none'
+    );
+    assert.equal(
+      view.getByTestId('floor-plan-point-0').getAttribute('pointer-events'),
+      'auto'
+    );
   });
 
   it('renders an uploaded floor plan backdrop under the room outline', () => {
@@ -140,6 +167,32 @@ describe('floor plan drawing layer', () => {
     const image = view.getByTestId('floor-plan-background-image');
     assert.equal(image.getAttribute('href'), 'data:image/png;base64,abc123');
     assert.equal(image.getAttribute('preserveAspectRatio'), 'xMidYMid meet');
+    assert.equal(image.getAttribute('pointer-events'), 'none');
     assert.equal(view.getByTestId('floor-plan-polygon').getAttribute('points'), '120,100 1480,100 1480,900');
+  });
+
+  it('renders a visible scale ruler when scale metadata is set', () => {
+    const view = render(
+      <FloorPlanLayer
+        layout={{
+          ...layout,
+          scale_pixels: 100,
+          scale_distance: 10,
+          scale_unit: 'ft',
+        }}
+        outline={[
+          { x: 120, y: 100 },
+          { x: 1480, y: 100 },
+          { x: 1480, y: 900 },
+        ]}
+        mode="select"
+        onPointAdd={() => {}}
+        onPointMove={() => {}}
+      />
+    );
+
+    const ruler = view.getByTestId('floor-plan-scale-ruler');
+    assert.equal(ruler.textContent?.includes('10ft'), true);
+    assert.equal(ruler.getAttribute('pointer-events'), 'none');
   });
 });
