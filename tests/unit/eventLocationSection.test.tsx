@@ -1,7 +1,7 @@
 import { after, afterEach, before, describe, it, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
-import { cleanup, render } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 
 import { EventLocationSection } from '../../app/components/landing-page/EventLocationSection';
 import { installDom } from './testDom';
@@ -63,5 +63,10 @@ describe('EventLocationSection map fallback', () => {
       view.getByRole('link', { name: 'Open in Apple Maps' }).getAttribute('href'),
       'https://maps.apple.com/?q=123%20Wedding%20Lane%2C%20Oklahoma%20City%2C%20OK',
     );
+
+    await act(async () => {
+      view.unmount();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
   });
 });
