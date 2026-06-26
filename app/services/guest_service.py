@@ -11,8 +11,11 @@ from app.core.database import mongo
 from app.utils.contact_sanitizer import sanitize_phone
 from app.utils.id_utils import normalize_doc_id, to_object_id, to_str_id
 from app.utils.rsvp_status import (
+    RSVP_FILTER_NOT_INVITED,
+    RSVP_FILTER_RESPONDED,
     RSVP_STATUS_CONFIRMED,
     RSVP_STATUS_DECLINED,
+    RSVP_STATUS_PENDING,
     get_rsvp_status,
 )
 from app.utils.token_generator import generate_token
@@ -165,6 +168,62 @@ class GuestService:
             sort_key: sort_direction_value,
             "name": 1,
             "_id": 1,
+        }
+
+    def _rsvp_array_count_expression(self, attending_field: str) -> dict[str, Any]:
+        return {
+            "$cond": [
+                {"$isArray": attending_field},
+                {"$size": attending_field},
+                -1,
+            ]
+        }
+
+    def _rsvp_object_true_count_expression(self, attending_field: str) -> dict[str, Any]:
+        return {
+            "$cond": [
+                {"$eq": [{"$type": attending_field}, "object"]},
+                {
+                    "$size": {
+                        "$filter": {
+                            "input": {"$objectToArray": attending_field},
+                            "as": "entry",
+                            "cond": {"$toBool": "$$entry.v"},
+                        }
+                    }
+                },
+                0,
+            ]
+        }
+
+    def _rsvp_status_expression(
+        self, attending_field: str = "$rsvp_attending"
+    ) -> dict[str, Any]:
+        array_count = self._rsvp_array_count_expression(attending_field)
+        object_true_count = self._rsvp_object_true_count_expression(attending_field)
+
+        return {
+            "$switch": {
+                "branches": [
+                    {
+                        "case": {"$gt": [array_count, 0]},
+                        "then": RSVP_STATUS_CONFIRMED,
+                    },
+                    {
+                        "case": {"$eq": [array_count, 0]},
+                        "then": RSVP_STATUS_DECLINED,
+                    },
+                    {
+                        "case": {"$gt": [object_true_count, 0]},
+                        "then": RSVP_STATUS_CONFIRMED,
+                    },
+                    {
+                        "case": {"$eq": [{"$type": attending_field}, "object"]},
+                        "then": RSVP_STATUS_DECLINED,
+                    },
+                ],
+                "default": RSVP_STATUS_PENDING,
+            }
         }
 
     async def _build_guest_summary(self, wedding_id: str) -> dict[str, int]:
@@ -374,25 +433,16 @@ class GuestService:
                                             ]
                                         }
                                     }
-                                }
+                                },
+                                {"$project": {"attending": 1}},
                             ],
                             "as": "rsvp_docs",
                         }
                     }
                 )
                 add_fields["has_rsvp"] = {"$gt": [{"$size": "$rsvp_docs"}, 0]}
-                add_fields["rsvp_sort_order"] = {
-                    "$cond": [
-                        {"$gt": [{"$size": "$rsvp_docs"}, 0]},
-                        2,
-                        {
-                            "$cond": [
-                                {"$eq": ["$invite_sent", True]},
-                                1,
-                                0,
-                            ]
-                        },
-                    ]
+                add_fields["rsvp_attending"] = {
+                    "$arrayElemAt": ["$rsvp_docs.attending", 0]
                 }
 
             if requires_plus_one_lookup:
@@ -419,12 +469,66 @@ class GuestService:
             if add_fields:
                 pipeline.append({"$addFields": add_fields})
 
+            if requires_rsvp_lookup:
+                pipeline.append(
+                    {
+                        "$addFields": {
+                            "rsvp_status_detail": self._rsvp_status_expression()
+                        }
+                    }
+                )
+                pipeline.append(
+                    {
+                        "$addFields": {
+                            "rsvp_sort_order": {
+                                "$switch": {
+                                    "branches": [
+                                        {
+                                            "case": {
+                                                "$eq": [
+                                                    "$rsvp_status_detail",
+                                                    RSVP_STATUS_CONFIRMED,
+                                                ]
+                                            },
+                                            "then": 3,
+                                        },
+                                        {
+                                            "case": {
+                                                "$eq": [
+                                                    "$rsvp_status_detail",
+                                                    RSVP_STATUS_DECLINED,
+                                                ]
+                                            },
+                                            "then": 2,
+                                        },
+                                        {
+                                            "case": {
+                                                "$eq": ["$invite_sent", True]
+                                            },
+                                            "then": 1,
+                                        },
+                                    ],
+                                    "default": 0,
+                                }
+                            }
+                        }
+                    }
+                )
+
             post_lookup_clauses: list[dict[str, Any]] = []
-            if rsvp_status == "responded":
+            if rsvp_status == RSVP_FILTER_RESPONDED:
                 post_lookup_clauses.append({"has_rsvp": True})
-            elif rsvp_status == "pending":
+            elif rsvp_status == RSVP_STATUS_CONFIRMED:
+                post_lookup_clauses.append(
+                    {"rsvp_status_detail": RSVP_STATUS_CONFIRMED}
+                )
+            elif rsvp_status == RSVP_STATUS_DECLINED:
+                post_lookup_clauses.append(
+                    {"rsvp_status_detail": RSVP_STATUS_DECLINED}
+                )
+            elif rsvp_status == RSVP_STATUS_PENDING:
                 post_lookup_clauses.append({"invite_sent": True, "has_rsvp": False})
-            elif rsvp_status == "not_invited":
+            elif rsvp_status == RSVP_FILTER_NOT_INVITED:
                 post_lookup_clauses.append(
                     {"invite_sent": {"$ne": True}, "has_rsvp": False}
                 )
@@ -463,6 +567,8 @@ class GuestService:
                         "rsvp_docs": 0,
                         "plus_one_docs": 0,
                         "has_rsvp": 0,
+                        "rsvp_attending": 0,
+                        "rsvp_status_detail": 0,
                         "plus_one_count": 0,
                         "rsvp_sort_order": 0,
                     }

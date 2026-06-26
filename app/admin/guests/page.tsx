@@ -24,6 +24,15 @@ import {
   type GuestListSummary,
 } from '@/admin/utils/guestListResponse';
 import { loadGuestActivityItems } from '@/admin/utils/guestActivityResponse';
+import {
+  GUEST_RSVP_STATUS_BADGE_STYLES,
+  GUEST_RSVP_STATUS_FILTER_OPTIONS,
+  getGuestRsvpDisplayStatus,
+  getGuestRsvpExportLabel,
+  getGuestRsvpStatusLabel,
+  getRsvpAttendingList,
+  type GuestRsvpStatusFilter,
+} from '@/admin/utils/guestRsvpStatus';
 
 // ==================== INTERFACES ====================
 
@@ -85,7 +94,6 @@ interface PlusOne {
 type SortField = 'name' | 'email' | 'phone' | 'role' | 'group_id' | 'rsvp_status' | 'plus_ones';
 type SortDirection = 'asc' | 'desc';
 type ViewMode = 'table' | 'cards';
-type RsvpStatusFilter = 'all' | 'responded' | 'pending' | 'not_invited';
 type PlusOneStatusFilter = 'all' | 'allowed' | 'submitted' | 'none';
 type PhoneIssueFilter = 'all' | 'invalid_or_unreachable' | 'no_contact';
 type SmsStatusFilter = 'all' | 'opted_in' | 'opted_out';
@@ -96,7 +104,7 @@ interface GuestColumnFilters {
   phone: string;
   groupId: string;
   role: string;
-  rsvpStatus: RsvpStatusFilter;
+  rsvpStatus: GuestRsvpStatusFilter;
   plusOneStatus: PlusOneStatusFilter;
   phoneIssue: PhoneIssueFilter;
   smsStatus: SmsStatusFilter;
@@ -384,7 +392,7 @@ export default function AdminGuestsPage() {
       phone: searchParams.get('phone') || '',
       groupId: searchParams.get('group_id') || '',
       role: searchParams.get('role') || '',
-      rsvpStatus: (searchParams.get('rsvp_status') as RsvpStatusFilter) || 'all',
+      rsvpStatus: (searchParams.get('rsvp_status') as GuestRsvpStatusFilter) || 'all',
       plusOneStatus: (searchParams.get('plus_one_status') as PlusOneStatusFilter) || 'all',
       phoneIssue: (searchParams.get('phone_issue') as PhoneIssueFilter) || 'all',
       smsStatus: (searchParams.get('sms_status') as SmsStatusFilter) || 'all',
@@ -395,7 +403,7 @@ export default function AdminGuestsPage() {
       phone: searchParams.get('phone') || '',
       groupId: searchParams.get('group_id') || '',
       role: searchParams.get('role') || '',
-      rsvpStatus: (searchParams.get('rsvp_status') as RsvpStatusFilter) || 'all',
+      rsvpStatus: (searchParams.get('rsvp_status') as GuestRsvpStatusFilter) || 'all',
       plusOneStatus: (searchParams.get('plus_one_status') as PlusOneStatusFilter) || 'all',
       phoneIssue: (searchParams.get('phone_issue') as PhoneIssueFilter) || 'all',
       smsStatus: (searchParams.get('sms_status') as SmsStatusFilter) || 'all',
@@ -767,7 +775,7 @@ export default function AdminGuestsPage() {
       group_id: guest.group_id || '',
       plus_one_allowed: guest.plus_one_allowed,
       number_of_plus_ones_allowed: guest.number_of_plus_ones_allowed || 0,
-      rsvp_attending: rsvp?.attending || [],
+      rsvp_attending: getRsvpAttendingList(rsvp),
       rsvp_dietary: rsvp?.dietary || '',
     });
   };
@@ -1160,7 +1168,7 @@ export default function AdminGuestsPage() {
     const rows = filteredAndSortedGuests.map(guest => {
       const guestId = guest.id || guest._id || '';
       const rsvp = getRSVPForGuest(guestId);
-      const status = rsvp ? 'RSVP\'d' : guest.invite_sent ? 'Pending' : 'Not Invited';
+      const status = getGuestRsvpExportLabel(guest, rsvp);
       return [
         guest.name,
         guest.email || '',
@@ -1501,10 +1509,15 @@ export default function AdminGuestsPage() {
                 <p className="text-xl font-bold text-green-600 dark:text-green-400">{summary.confirmedGuests}</p>
               </div>
               {/* Declined — responded with attending=[] */}
-              <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+              <button
+                type="button"
+                onClick={() => updateFilter('rsvpStatus', 'declined')}
+                className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 text-left transition-colors hover:border-red-300 hover:bg-red-50 dark:hover:border-red-700 dark:hover:bg-red-950/20 focus:outline-none focus:ring-2 focus:ring-red-500"
+                aria-label="Show declined guests"
+              >
                 <p className="text-xs text-gray-500 dark:text-gray-400">Declined</p>
                 <p className="text-xl font-bold text-red-600 dark:text-red-400">{summary.declinedGuests}</p>
-              </div>
+              </button>
               {/* Plus-one capacity — sum of `number_of_plus_ones_allowed` */}
               <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Plus-one capacity</p>
@@ -1659,13 +1672,14 @@ export default function AdminGuestsPage() {
                   </select>
                   <select
                     value={filters.rsvpStatus}
-                    onChange={(e) => updateFilter('rsvpStatus', e.target.value as RsvpStatusFilter)}
+                    onChange={(e) => updateFilter('rsvpStatus', e.target.value as GuestRsvpStatusFilter)}
                     className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                   >
-                    <option value="all">All RSVP states</option>
-                    <option value="responded">RSVP&apos;d</option>
-                    <option value="pending">Awaiting RSVP</option>
-                    <option value="not_invited">Not invited</option>
+                    {GUEST_RSVP_STATUS_FILTER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                   <select
                     value={filters.plusOneStatus}
@@ -1855,6 +1869,11 @@ export default function AdminGuestsPage() {
                         {filteredAndSortedGuests.map((guest) => {
                           const guestId = guest.id || guest._id || '';
                           const rsvp = getRSVPForGuest(guestId);
+                          const rsvpStatus = getGuestRsvpDisplayStatus(guest, rsvp);
+                          const rsvpBadgeClassName = GUEST_RSVP_STATUS_BADGE_STYLES[rsvpStatus];
+                          const rsvpAttendingLabels = getRsvpAttendingList(rsvp).map(
+                            getSelectedWeddingEventLabel
+                          );
                           const guestPlusOnes = getPlusOnesForGuest(guestId);
                           const isSelected = selectedGuests.has(guestId);
                           const isExpanded = expandedGuest === guestId;
@@ -1887,19 +1906,9 @@ export default function AdminGuestsPage() {
                                   {getGroupLabel(guest.group_id)}
                                 </td>
                                 <td className="px-4 py-3">
-                                  {rsvp ? (
-                                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                                      {rsvp.confirmed_by_admin ? 'Confirmed' : 'RSVP\'d'}
-                                    </span>
-                                  ) : guest.invite_sent ? (
-                                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                                      Pending
-                                    </span>
-                                  ) : (
-                                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                                      Not Invited
-                                    </span>
-                                  )}
+                                  <span className={`px-2 py-1 text-xs font-semibold rounded-full ${rsvpBadgeClassName}`}>
+                                    {getGuestRsvpStatusLabel(rsvpStatus)}
+                                  </span>
                                 </td>
                                 <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
                                   {guest.plus_one_allowed ? (
@@ -1996,7 +2005,7 @@ export default function AdminGuestsPage() {
                                           <div>
                                             <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">RSVP Details</h4>
                                             <dl className="space-y-1 text-sm">
-                                              <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Attending:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{rsvp.attending.map(getSelectedWeddingEventLabel).join(', ') || 'None'}</dd></div>
+                                              <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Attending:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{rsvpStatus === 'declined' ? 'Declined all events' : rsvpAttendingLabels.join(', ') || 'None'}</dd></div>
                                               <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Dietary:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{rsvp.dietary || 'None'}</dd></div>
                                               {rsvp.confirmed_by_admin && <div className="text-xs text-blue-500">(Confirmed by admin)</div>}
                                             </dl>
@@ -2064,6 +2073,11 @@ export default function AdminGuestsPage() {
                     {filteredAndSortedGuests.map((guest) => {
                       const guestId = guest.id || guest._id || '';
                       const rsvp = getRSVPForGuest(guestId);
+                      const rsvpStatus = getGuestRsvpDisplayStatus(guest, rsvp);
+                      const rsvpBadgeClassName = GUEST_RSVP_STATUS_BADGE_STYLES[rsvpStatus];
+                      const rsvpAttendingLabels = getRsvpAttendingList(rsvp).map(
+                        getSelectedWeddingEventLabel
+                      );
                       const guestPlusOnes = getPlusOnesForGuest(guestId);
                       const isExpanded = expandedGuest === guestId;
                       const isSelected = selectedGuests.has(guestId);
@@ -2087,11 +2101,9 @@ export default function AdminGuestsPage() {
                                     }`}>
                                       {guest.role}
                                     </span>
-                                    {rsvp && (
-                                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                                        {rsvp.confirmed_by_admin ? 'Confirmed' : 'RSVP\'d'}
-                                      </span>
-                                    )}
+                                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${rsvpBadgeClassName}`}>
+                                      {getGuestRsvpStatusLabel(rsvpStatus)}
+                                    </span>
                                   </div>
                                   <div className="flex gap-4 text-sm text-gray-600 dark:text-gray-400 mt-1">
                                     {guest.email && <span>{guest.email}</span>}
@@ -2144,7 +2156,7 @@ export default function AdminGuestsPage() {
                                 <div className="flex gap-6 text-sm">
                                   <div>
                                     <span className="font-medium text-gray-700 dark:text-gray-300">Attending:</span>
-                                    <span className="ml-2">{rsvp.attending.map(getSelectedWeddingEventLabel).join(', ') || 'None'}</span>
+                                    <span className="ml-2">{rsvpStatus === 'declined' ? 'Declined all events' : rsvpAttendingLabels.join(', ') || 'None'}</span>
                                   </div>
                                   {rsvp.dietary && (
                                     <div>

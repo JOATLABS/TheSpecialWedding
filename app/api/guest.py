@@ -20,6 +20,7 @@ from app.services.guest_service import GuestService
 from app.services.sse_manager import sse_manager
 from app.utils.query_validation import validated_string_filter
 from app.utils.response import dict_response
+from app.utils.rsvp_status import GUEST_RSVP_STATUS_FILTERS, RSVP_FILTER_ALL
 
 logger = logging.getLogger(__name__)
 
@@ -130,9 +131,7 @@ async def list_guests(
         validated_group_id = validated_string_filter(group_id, max_length=100)
         validated_role = validated_string_filter(role, max_length=50)
         validated_rsvp_status = (
-            rsvp_status
-            if rsvp_status in {"all", "responded", "pending", "not_invited"}
-            else "all"
+            rsvp_status if rsvp_status in GUEST_RSVP_STATUS_FILTERS else RSVP_FILTER_ALL
         )
         validated_plus_one_status = (
             plus_one_status
