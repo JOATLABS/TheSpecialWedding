@@ -109,6 +109,8 @@ export default function HomepageTemplatesBand() {
         utm={BAND_UTM}
         surface="dark"
         testIdPrefix="homepage-band"
+        successCtaHref="/resources/demos#forms-canvas-demo"
+        successCtaLabel="See how templates become workflows"
       />
     </section>
   );

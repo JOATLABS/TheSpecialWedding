@@ -1,3 +1,4 @@
+import os
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -10,6 +11,26 @@ from app.services.wedding_service import WeddingService
 router = APIRouter()
 gallery_service = GalleryUploadService()
 wedding_service = WeddingService()
+DEMO_VIDEO_SEED_SOURCE = "system:demo_video_seed"
+NON_PRODUCTION_ENVIRONMENTS = {"development", "dev", "local", "test", "testing", "ci"}
+DEMO_GALLERY_ITEMS = [
+    {
+        "key": "demo-gallery/maya-jordan-microsite",
+        "url": "/wedding_microsite.webp",
+    },
+    {
+        "key": "demo-gallery/maya-jordan-gallery",
+        "url": "/gallery_management.webp",
+    },
+    {
+        "key": "demo-gallery/maya-jordan-memories",
+        "url": "/guest_memories.webp",
+    },
+    {
+        "key": "demo-gallery/maya-jordan-couple-portal",
+        "url": "/couple_portal_dashboard.webp",
+    },
+]
 
 
 class VerifiedGalleryRequest(BaseModel):
@@ -42,12 +63,31 @@ async def _list_gallery_page_for_wedding(
 ):
     wedding = await wedding_service.get_wedding_by_slug(wedding_slug)
     planner_scope = gallery_service.get_planner_scope_from_wedding(wedding)
-    return gallery_service.list_wedding_files_page(
-        folder="gallery",
-        wedding_slug=wedding_slug,
-        planner_scope=planner_scope,
-        limit=limit,
-        cursor=cursor,
+    try:
+        return gallery_service.list_wedding_files_page(
+            folder="gallery",
+            wedding_slug=wedding_slug,
+            planner_scope=planner_scope,
+            limit=limit,
+            cursor=cursor,
+        )
+    except HTTPException as exc:
+        if exc.status_code == 503 and _allow_demo_gallery_fallback(wedding):
+            items = DEMO_GALLERY_ITEMS[:limit]
+            return {
+                "items": items,
+                "next_cursor": None,
+                "has_more": False,
+            }
+        raise
+
+
+def _allow_demo_gallery_fallback(wedding: Optional[dict]) -> bool:
+    environment = os.getenv("ENVIRONMENT", os.getenv("NODE_ENV", "development")).strip().lower()
+    return (
+        environment in NON_PRODUCTION_ENVIRONMENTS
+        and isinstance(wedding, dict)
+        and wedding.get("seed_source") == DEMO_VIDEO_SEED_SOURCE
     )
 
 

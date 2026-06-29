@@ -60,6 +60,7 @@ STREAM_STATUSES = {
     "failed",
     "unconfigured",
 }
+DEMO_VIDEO_SEED_SOURCE = "system:demo_video_seed"
 
 
 def _safe_filename(filename: str) -> str:
@@ -215,6 +216,14 @@ class GuestMediaService:
 
     def hash_upload_token(self, token: str) -> str:
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    def _allow_demo_context_without_storage(self, wedding: dict[str, Any]) -> bool:
+        """Let local demo-video fixtures render the upload UI when R2 is offline."""
+        environment = str(getattr(settings.environment, "value", settings.environment)).lower()
+        return (
+            environment != "production"
+            and wedding.get("seed_source") == DEMO_VIDEO_SEED_SOURCE
+        )
 
     def _build_upload_token(
         self, wedding_id: str, wedding_slug: str, rotated_at: datetime
@@ -588,16 +597,16 @@ class GuestMediaService:
     async def get_public_upload_context(
         self, slug: str, upload_token: str
     ) -> dict[str, Any]:
-        if not self.storage.is_configured:
+        validated = await self.validate_public_upload_access(slug, upload_token)
+        wedding = validated["wedding"]
+        guest_media = validated["guest_media"]
+
+        if not self.storage.is_configured and not self._allow_demo_context_without_storage(wedding):
             raise HTTPException(
                 status_code=503,
                 detail=self.storage.issue
                 or "Guest media uploads are not currently available",
             )
-
-        validated = await self.validate_public_upload_access(slug, upload_token)
-        wedding = validated["wedding"]
-        guest_media = validated["guest_media"]
 
         return {
             "wedding": {

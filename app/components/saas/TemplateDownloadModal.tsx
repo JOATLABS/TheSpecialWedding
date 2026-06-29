@@ -48,6 +48,9 @@ export interface TemplateDownloadModalProps {
   surface?: 'light' | 'dark';
   /** Optional data-testid prefix to make Playwright assertions unambiguous. */
   testIdPrefix?: string;
+  /** Optional success-state handoff into the product proof funnel. */
+  successCtaHref?: string;
+  successCtaLabel?: string;
 }
 
 function readUtmFromUrl(): TemplateDownloadModalUtm {
@@ -84,6 +87,8 @@ export default function TemplateDownloadModal({
   utm,
   surface = 'light',
   testIdPrefix = 'template-download',
+  successCtaHref,
+  successCtaLabel,
 }: TemplateDownloadModalProps) {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
@@ -260,6 +265,15 @@ export default function TemplateDownloadModal({
                 {error}
               </p>
             )}
+            {successCtaHref && successCtaLabel ? (
+              <a
+                href={successCtaHref}
+                data-testid={`${testIdPrefix}-success-cta`}
+                className="inline-flex w-full items-center justify-center rounded-full bg-[#6b5d4f] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#574a3e]"
+              >
+                {successCtaLabel}
+              </a>
+            ) : null}
             <button
               type="button"
               onClick={onClose}

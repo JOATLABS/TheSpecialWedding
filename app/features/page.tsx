@@ -2,6 +2,8 @@ import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { PUBLIC_LOGIN_PATH } from '@/seo/crawlPolicy';
+import { getDemoVideoByFeatureId } from '@/data/demoVideos';
+import DemoVideoLauncher from '../components/saas/DemoVideoLauncher';
 import SaasNav from '../components/saas/SaasNav';
 import BreadcrumbSchema from '../components/seo/BreadcrumbSchema';
 import { MARKETING_FEATURES } from '../data/marketingFeatures';
@@ -121,50 +123,59 @@ export default function FeaturesPage() {
       {/* ── Feature Grid ── */}
       <section className="mx-auto max-w-6xl px-6 py-12 sm:px-10">
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {features.map((f, index) => (
-            <article
-              key={f.title}
-              className="group rounded-2xl border border-white/8 bg-white/[0.03] p-7 transition hover:border-wedding-rose/30"
-            >
-              <div className="relative mb-5 aspect-[16/10] overflow-hidden rounded-2xl border border-white/10 bg-slate-900/70">
-                <Image
-                  src={f.image}
-                  alt={`${f.title} — ${f.tagline}`}
-                  fill
-                  sizes="(min-width: 1024px) 30vw, (min-width: 640px) 45vw, 90vw"
-                  className="object-cover object-top transition duration-500 group-hover:scale-[1.02]"
-                  priority={index === 0}
-                />
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-wedding-rose/10 text-xl">
-                    {f.icon}
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase tracking-[0.25em] text-slate-500">{f.category}</p>
-                    <h3 className="mt-1 text-base font-semibold text-white">{f.title}</h3>
-                  </div>
+          {features.map((f, index) => {
+            const demo = getDemoVideoByFeatureId(f.id);
+
+            return (
+              <article
+                key={f.title}
+                className="group rounded-2xl border border-white/8 bg-white/[0.03] p-7 transition hover:border-wedding-rose/30"
+              >
+                <div className="relative mb-5 aspect-[16/10] overflow-hidden rounded-2xl border border-white/10 bg-slate-900/70">
+                  <Image
+                    src={f.image}
+                    alt={`${f.title} — ${f.tagline}`}
+                    fill
+                    sizes="(min-width: 1024px) 30vw, (min-width: 640px) 45vw, 90vw"
+                    className="object-cover object-top transition duration-500 group-hover:scale-[1.02]"
+                    priority={index === 0}
+                  />
                 </div>
-                {f.ai && (
-                  <span className="rounded-full border border-wedding-rose/30 bg-wedding-rose/15 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-wedding-rose">
-                    AI
-                  </span>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-wedding-rose/10 text-xl">
+                      {f.icon}
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.25em] text-slate-500">{f.category}</p>
+                      <h3 className="mt-1 text-base font-semibold text-white">{f.title}</h3>
+                    </div>
+                  </div>
+                  {f.ai && (
+                    <span className="rounded-full border border-wedding-rose/30 bg-wedding-rose/15 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-wedding-rose">
+                      AI
+                    </span>
+                  )}
+                </div>
+                <p className="mt-4 text-sm font-medium text-slate-300">{f.tagline}</p>
+                <p className="mt-2 text-sm leading-relaxed text-slate-400">{f.description}</p>
+                {f.blogSlug && (
+                  <Link
+                    href={`/resources/blog/${f.blogSlug}`}
+                    className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-wedding-rose transition hover:text-wedding-blush"
+                  >
+                    Read the story
+                    <span aria-hidden="true">→</span>
+                  </Link>
                 )}
-              </div>
-              <p className="mt-4 text-sm font-medium text-slate-300">{f.tagline}</p>
-              <p className="mt-2 text-sm leading-relaxed text-slate-400">{f.description}</p>
-              {f.blogSlug && (
-                <Link
-                  href={`/resources/blog/${f.blogSlug}`}
-                  className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-wedding-rose transition hover:text-wedding-blush"
-                >
-                  Read the story
-                  <span aria-hidden="true">→</span>
-                </Link>
-              )}
-            </article>
-          ))}
+                {demo ? (
+                  <div className={f.blogSlug ? 'mt-3' : 'mt-4'}>
+                    <DemoVideoLauncher demo={demo} />
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
         </div>
       </section>
 

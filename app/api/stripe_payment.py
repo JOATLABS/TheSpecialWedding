@@ -675,9 +675,18 @@ async def get_connect_status(
     """
     try:
         user_id = str(current_user.user_data.get("_id"))
+        email = normalize_planner_email(current_user.user_data.get("email"))
         from app.core.database import mongo
 
-        user = await mongo.db["users"].find_one({"_id": ObjectId(user_id)})
+        normalized_user_id = normalize_query_id(user_id)
+        id_query = (
+            {"$in": [normalized_user_id, user_id]}
+            if normalized_user_id != user_id
+            else user_id
+        )
+        user = await mongo.db["users"].find_one({"_id": id_query})
+        if not user and email:
+            user = await mongo.db["users"].find_one({"email": email})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         connect_id = user.get("stripe_connect_id")

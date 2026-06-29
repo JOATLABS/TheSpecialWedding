@@ -63,6 +63,10 @@ test.describe('Homepage starter-pack lead capture', () => {
     // Success state with Resend link is the Batch 13 contract.
     await expect(page.getByTestId('homepage-band-success')).toBeVisible();
     await expect(page.getByTestId('homepage-band-resend')).toBeVisible();
+    await expect(page.getByTestId('homepage-band-success-cta')).toHaveAttribute(
+      'href',
+      '/resources/demos#forms-canvas-demo',
+    );
 
     // Network call body must include the starter-pack sentinel and the
     // homepage_band UTM forwarded by the band component.
