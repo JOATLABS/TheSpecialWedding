@@ -4,7 +4,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getDemoVideoByFeatureId } from "@/data/demoVideos";
 import { MARKETING_FEATURES } from "@/data/marketingFeatures";
+import DemoVideoLauncher from "@/components/saas/DemoVideoLauncher";
 
 type IdleWindow = Window & {
   requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
@@ -20,6 +22,7 @@ export function FeatureShowcase() {
   const sectionRef = useRef<HTMLDivElement | null>(null);
   const activeFeature = features[activeIdx];
   const nextFeature = features[(activeIdx + 1) % features.length];
+  const activeDemo = getDemoVideoByFeatureId(activeFeature.id);
 
   const selectFeature = useCallback((index: number) => {
     setActiveIdx(index);
@@ -192,6 +195,11 @@ export function FeatureShowcase() {
               >
                 Read the story
               </Link>
+            ) : null}
+            {activeDemo ? (
+              <div className={activeFeature.blogSlug ? "mt-3" : "mt-5"}>
+                <DemoVideoLauncher demo={activeDemo} />
+              </div>
             ) : null}
           </div>
 

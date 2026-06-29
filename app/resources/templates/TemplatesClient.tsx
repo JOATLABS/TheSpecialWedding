@@ -94,6 +94,8 @@ export default function TemplatesClient({ templates, surface = 'light' }: Templa
         subhead="Drop your email and we'll send the PDF straight to your inbox."
         surface={surface}
         testIdPrefix="templates-card"
+        successCtaHref="/resources/demos#forms-canvas-demo"
+        successCtaLabel="See how templates become workflows"
       />
     </>
   );

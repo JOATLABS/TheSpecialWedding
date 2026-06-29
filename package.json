@@ -30,6 +30,14 @@
     "deps:update": "node scripts/update-deps.mjs --auto",
     "deps:update:dry": "node scripts/update-deps.mjs --dry-run",
     "deps:update:interactive": "node scripts/update-deps.mjs",
+    "demo:requirements": "tsx scripts/demo-videos/validate-demo-video-production.ts",
+    "demo:seed": "sh -c 'if [ -x .venv.nosync/bin/python ]; then PYTHON_BIN=.venv.nosync/bin/python; else PYTHON_BIN=python3; fi; exec \"$PYTHON_BIN\" scripts/demo-videos/seed-demo-video-workspace.py \"$@\"' --",
+    "demo:auth-state": "tsx scripts/demo-videos/create-demo-storage-state.ts",
+    "demo:record": "tsx scripts/demo-videos/record-demo-video.ts",
+    "demo:render": "tsx scripts/demo-videos/render-demo-video.ts",
+    "demo:capture-all": "tsx scripts/demo-videos/capture-all-demo-videos.ts",
+    "demo:verify-routes": "tsx scripts/demo-videos/verify-demo-routes.ts",
+    "demo:remotion:studio": "remotion studio remotion/index.ts",
     "repo:check-copy-artifacts": "node scripts/check-finder-copy-artifacts.mjs",
     "pre-deploy": "npm run security && npm run build"
   },
@@ -69,6 +77,9 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
+    "@remotion/captions": "4.0.484",
+    "@remotion/cli": "4.0.484",
+    "@remotion/media": "4.0.484",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
@@ -88,9 +99,11 @@
     "playwright": "^1.59.1",
     "postcss": "^8.5.14",
     "puppeteer": "^25.2.1",
+    "remotion": "4.0.484",
     "tailwindcss": "^3.4.19",
     "tsx": "^4.22.4",
-    "typescript": "5.8.3"
+    "typescript": "5.8.3",
+    "zod": "4.3.6"
   },
   "overrides": {
     "postcss": "$postcss"

@@ -26,7 +26,10 @@ const supportedNodeMaxExclusive = [25, 0, 0];
 const supportedNodeMajors = new Set([20, 24]);
 const supportedNpmMin = [10, 0, 0];
 const ignorableTreeProblemPatterns = [
+  /^extraneous: @emnapi\/core@/,
   /^extraneous: @emnapi\/runtime@/,
+  /^extraneous: @emnapi\/wasi-threads@/,
+  /^extraneous: @tybys\/wasm-util@/,
 ];
 
 function parseVersion(raw) {

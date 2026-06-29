@@ -21,6 +21,7 @@ import {
   DashboardWeddingSetupPrompt,
   type DashboardWeddingSetupPromptWedding,
 } from './DashboardWeddingSetupPrompt';
+import { buildAdminApiUrl } from './buildAdminApiUrl';
 
 interface Wedding extends Omit<WeddingDetails, 'venue'> {
  _id?: string;
@@ -247,8 +248,10 @@ export default function WeddingPlannerDashboard() {
    setInsightsError('');
 
    try {
-     const baseUrl = getApiBaseUrl();
-     const url = new URL(`${baseUrl}/admin/ai/weddings/${weddingId}/insights`);
+     const url = buildAdminApiUrl(
+       getApiBaseUrl(),
+       `/admin/ai/weddings/${weddingId}/insights`,
+     );
      if (forceRefresh) {
        url.searchParams.set('force_refresh', 'true');
      }

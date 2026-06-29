@@ -2,8 +2,10 @@ import Link from "next/link";
 import { DeferredHomeEffects } from "./components/landing-page/DeferredHomeEffects.client";
 import { FeatureShowcase } from "./components/landing-page/FeatureShowcase.client";
 import { PricingSignupSection } from "./components/landing-page/PricingSignupSection.client";
+import DemoVideoLauncher from "./components/saas/DemoVideoLauncher";
 import HomepageTemplatesBand from "./components/saas/HomepageTemplatesBand";
 import SaasNav from "./components/saas/SaasNav";
+import { HERO_DEMO_VIDEO } from "./data/demoVideos";
 import { PUBLIC_LOGIN_PATH } from "./seo/crawlPolicy";
 import { serializeJsonLd } from "./seo/jsonLd";
 import type { ThemeConfig } from "./types/wedding";
@@ -167,9 +169,9 @@ const faqPageJsonLd = {
 };
 
 const metrics = [
-  { label: "Planner hours reclaimed", value: "18/wk" },
-  { label: "Vendor follow-up lift", value: "42%" },
-  { label: "Guest workflows automated", value: "11" },
+  { label: "Demo hours reclaimed", value: "18/wk" },
+  { label: "Demo follow-up lift", value: "42%" },
+  { label: "Demo guest workflows", value: "11" },
 ];
 
 const heroDashboardSizes = "(min-width: 1280px) 604px, (min-width: 1024px) 46vw, calc(100vw - 48px)";
@@ -219,12 +221,11 @@ export default function HomePage() {
                 {/* SYNC-WITH-SEED: trial_days — update when SEED_VERSION bumps paid trial length */}
                 Start 30-day trial
               </Link>
-              <Link
-                href="#showcase"
-                className="inline-flex items-center justify-center rounded-full border border-white/25 px-6 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/10"
-              >
-                See the workspace
-              </Link>
+              <DemoVideoLauncher
+                demo={HERO_DEMO_VIDEO}
+                label="Watch 2-minute walkthrough"
+                variant="hero"
+              />
             </div>
             <dl className="mt-12 grid max-w-2xl grid-cols-3 gap-4 border-t border-white/10 pt-6">
               {metrics.map((metric) => (
@@ -234,6 +235,9 @@ export default function HomePage() {
                 </div>
               ))}
             </dl>
+            <p className="mt-3 max-w-2xl text-xs leading-5 text-slate-500">
+              Example metrics from the seeded product walkthrough; replace with verified customer outcomes before scaling paid campaigns.
+            </p>
           </div>
 
           <div className="relative">
@@ -282,6 +286,9 @@ export default function HomePage() {
             </div>
             <p className="max-w-md text-sm leading-6 text-slate-300 sm:leading-7 lg:justify-self-end">
               Featured planner workflows shown with real product screenshots so planners can inspect website setup, guest operations, communications, vendors, payments, and team controls before signing up.
+              <Link href="/resources/demos" className="ml-1 font-semibold text-wedding-rose transition hover:text-wedding-blush">
+                Browse demo scripts.
+              </Link>
             </p>
           </div>
           <FeatureShowcase />
@@ -292,7 +299,7 @@ export default function HomePage() {
 
       <PricingSignupSection pricing={fallbackPricing} theme={defaultTheme} />
 
-      <SectionBridge label="What planners say" />
+      <SectionBridge label="Example proof" />
 
       <section className="bg-slate-950 px-6 py-16 sm:px-8 lg:px-12">
         <div className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-3">
@@ -302,7 +309,7 @@ export default function HomePage() {
               <div className="mt-6 border-t border-white/10 pt-5">
                 <p className="font-semibold text-white">{testimonial.name}</p>
                 <p className="text-sm text-slate-400">{testimonial.role}</p>
-                <p className="mt-3 text-sm font-semibold text-emerald-200">{testimonial.result}</p>
+                <p className="mt-3 text-sm font-semibold text-emerald-200">Example outcome: {testimonial.result}</p>
               </div>
             </article>
           ))}
