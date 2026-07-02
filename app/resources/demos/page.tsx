@@ -85,15 +85,15 @@ export default function ProductDemosPage() {
             Product proof library
           </p>
           <h1 className="mt-4 text-3xl font-semibold leading-tight text-white sm:text-4xl md:text-5xl">
-            Real walkthroughs, scripted before they are recorded.
+            Real walkthroughs of the planner operating system.
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-slate-300">
-            The videos are planned as human browser walkthroughs against seeded demo data. Published clips will replace the scripts here as recordings are attached.
+            Watch the recorded product walkthroughs across planner, couple, guest, vendor, payment, seating, and team workflows.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <DemoVideoLauncher
               demo={HERO_DEMO_VIDEO}
-              label="Open 2-minute script"
+              label="Watch 2-minute walkthrough"
               variant="outline"
             />
             <Link
@@ -129,7 +129,7 @@ export default function ProductDemosPage() {
               </ol>
             </div>
             <div className="space-y-3">
-              <DemoVideoLauncher demo={HERO_DEMO_VIDEO} label="View full script" variant="outline" />
+              <DemoVideoLauncher demo={HERO_DEMO_VIDEO} label="Watch full walkthrough" variant="outline" />
               <Link
                 href="/features"
                 className="inline-flex w-full items-center justify-center rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-white transition hover:border-wedding-rose/50 hover:text-wedding-rose"
@@ -150,7 +150,7 @@ export default function ProductDemosPage() {
             <h2 className="mt-3 text-3xl font-semibold text-white">Highest-conversion clips</h2>
           </div>
           <p className="max-w-md text-sm leading-6 text-slate-400">
-            These seven scripts are the first recording batch because they prove the buyer journey fastest.
+            These seven demos prove the buyer journey fastest, from first planner login to guest, vendor, and couple proof.
           </p>
         </div>
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -210,7 +210,7 @@ export default function ProductDemosPage() {
         </Link>
         <span className="mx-2">or</span>
         <Link href="#planner-command-center-walkthrough" className="font-semibold text-slate-300 transition hover:text-white">
-          return to the hero script
+          return to the hero walkthrough
         </Link>
       </footer>
     </main>
