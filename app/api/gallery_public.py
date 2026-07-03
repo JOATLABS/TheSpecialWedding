@@ -83,7 +83,9 @@ async def _list_gallery_page_for_wedding(
 
 
 def _allow_demo_gallery_fallback(wedding: Optional[dict]) -> bool:
-    environment = os.getenv("ENVIRONMENT", os.getenv("NODE_ENV", "development")).strip().lower()
+    environment = (
+        os.getenv("ENVIRONMENT", os.getenv("NODE_ENV", "development")).strip().lower()
+    )
     return (
         environment in NON_PRODUCTION_ENVIRONMENTS
         and isinstance(wedding, dict)

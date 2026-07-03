@@ -219,7 +219,9 @@ class GuestMediaService:
 
     def _allow_demo_context_without_storage(self, wedding: dict[str, Any]) -> bool:
         """Let local demo-video fixtures render the upload UI when R2 is offline."""
-        environment = str(getattr(settings.environment, "value", settings.environment)).lower()
+        environment = str(
+            getattr(settings.environment, "value", settings.environment)
+        ).lower()
         return (
             environment != "production"
             and wedding.get("seed_source") == DEMO_VIDEO_SEED_SOURCE
@@ -601,7 +603,10 @@ class GuestMediaService:
         wedding = validated["wedding"]
         guest_media = validated["guest_media"]
 
-        if not self.storage.is_configured and not self._allow_demo_context_without_storage(wedding):
+        if (
+            not self.storage.is_configured
+            and not self._allow_demo_context_without_storage(wedding)
+        ):
             raise HTTPException(
                 status_code=503,
                 detail=self.storage.issue
