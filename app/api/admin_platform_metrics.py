@@ -364,6 +364,29 @@ def _audit_severity_query(bucket: str) -> Dict[str, Any]:
     return {"response_status": {"$gte": 400}}
 
 
+def _audit_expected_noise_exclusion_query() -> Dict[str, Any]:
+    """Exclude handled client/auth noise from the platform-error dashboard.
+
+    Audit logs keep these rows for compliance and forensic review, but the root
+    admin platform-health view should not page the operator for expected auth
+    denials or public bot probes against non-existent wedding slugs.
+    """
+
+    return {
+        "$nor": [
+            {"response_status": {"$in": [401, 402, 403]}},
+            {
+                "response_status": 404,
+                "method": "GET",
+                "$or": [
+                    {"route_template": "/weddings/privacy-info/{slug}"},
+                    {"path": {"$regex": "^/weddings/privacy-info/"}},
+                ],
+            },
+        ]
+    }
+
+
 def _build_errors_query(
     since: datetime,
     severity: str = "all",
@@ -381,6 +404,7 @@ def _build_audit_logs_query(since: datetime, severity: str = "all") -> Dict[str,
     return _merge_query_filters(
         {"timestamp": {"$gte": since}},
         _audit_severity_query(severity),
+        _audit_expected_noise_exclusion_query(),
     )
 
 

@@ -1,5 +1,6 @@
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -14,6 +15,7 @@ os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
 from app.api.admin_platform_metrics import (  # noqa: E402
+    _build_audit_logs_query,
     _generate_troubleshooting_hints,
     _is_auth_or_billing_rejection_status,
     _is_operational_error_status,
@@ -90,3 +92,13 @@ def test_merge_endpoint_performance_buckets_normalizes_legacy_route_keys():
     assert ai_bucket["response_statuses"] == [200, 500, 401]
 
     assert by_endpoint["/stripe/checkout-session/{id}"]["total_requests"] == 1
+
+
+def test_audit_error_query_excludes_expected_auth_and_public_slug_noise():
+    query = _build_audit_logs_query(datetime.fromisoformat("2026-07-03T00:00:00+00:00"))
+    query_text = repr(query)
+
+    assert "'response_status': {'$gte': 400}" in query_text
+    assert "'response_status': {'$in': [401, 402, 403]}" in query_text
+    assert "'route_template': '/weddings/privacy-info/{slug}'" in query_text
+    assert "'path': {'$regex': '^/weddings/privacy-info/'}" in query_text

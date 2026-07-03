@@ -3,6 +3,8 @@ import './styles/globals.css'
 import Script from 'next/script'
 import type { Metadata } from 'next'
 import { MARKETING_FEATURES } from './data/marketingFeatures';
+import { UmamiRuntimeLoader } from './components/analytics/UmamiRuntimeLoader';
+import { resolveUmamiScriptConfig } from './utils/umamiScriptConfig';
 
 const TOOL_COUNT = MARKETING_FEATURES.length;
 
@@ -82,8 +84,7 @@ export default function RootLayout({
   // Umami Analytics (self-hosted via Coolify).
   // Website UUID comes from the Umami dashboard after the site is registered.
   // Script URL points at the self-hosted instance (e.g. https://umami.thespecialwedding.io/script.js).
-  const umamiWebsiteId = process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID;
-  const umamiSrc = process.env.NEXT_PUBLIC_UMAMI_SRC;
+  const umamiConfig = resolveUmamiScriptConfig();
 
   return (
     <html lang="en">
@@ -125,14 +126,15 @@ export default function RootLayout({
         {children}
 
         {/* Umami Analytics — self-hosted on Coolify, privacy-first, no cookies. */}
-        {umamiWebsiteId && umamiSrc && (
+        {umamiConfig && (
           <Script
             async
-            src={umamiSrc}
-            data-website-id={umamiWebsiteId}
+            src={umamiConfig.src}
+            data-website-id={umamiConfig.websiteId}
             strategy="afterInteractive"
           />
         )}
+        <UmamiRuntimeLoader />
       </body>
     </html>
   )
