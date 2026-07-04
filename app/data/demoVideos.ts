@@ -40,7 +40,26 @@ const defaultChecklist = [
   'End on the activation action the viewer should remember.',
 ] as const;
 
-export const HERO_DEMO_VIDEO: DemoVideo = {
+const DEMO_VIDEO_RECORDED_AT = '2026-07-01';
+const DEMO_VIDEO_APP_BUILD_LABEL = 'Public-safe browser walkthrough';
+const DEMO_VIDEO_PUBLIC_ROOT = '/demo-videos';
+
+function attachPublishedDemoAssets(demo: DemoVideo): DemoVideo {
+  return {
+    ...demo,
+    status: 'published',
+    assetUrl: `${DEMO_VIDEO_PUBLIC_ROOT}/exports/${demo.id}-16x9.mp4`,
+    thumbnailUrl: `${DEMO_VIDEO_PUBLIC_ROOT}/thumbnails/${demo.id}-16x9.png`,
+    captionUrl: `${DEMO_VIDEO_PUBLIC_ROOT}/captions/${demo.id}.json`,
+    transcriptUrl: `${DEMO_VIDEO_PUBLIC_ROOT}/transcripts/${demo.id}.md`,
+    socialAssetUrl: `${DEMO_VIDEO_PUBLIC_ROOT}/exports/${demo.id}-9x16.mp4`,
+    socialThumbnailUrl: `${DEMO_VIDEO_PUBLIC_ROOT}/thumbnails/${demo.id}-9x16.png`,
+    recordedAt: demo.recordedAt ?? DEMO_VIDEO_RECORDED_AT,
+    appBuildLabel: demo.appBuildLabel ?? DEMO_VIDEO_APP_BUILD_LABEL,
+  };
+}
+
+const HERO_DEMO_VIDEO_DRAFT: DemoVideo = {
   id: 'planner-command-center-walkthrough',
   title: '2-minute planner walkthrough',
   audience: 'Professional planners evaluating whether the workspace is real before starting a trial.',
@@ -104,8 +123,9 @@ export const HERO_DEMO_VIDEO: DemoVideo = {
     'Hero footage should be recorded locally with seeded demo data, then packaged in Remotion with captions and a CTA outro.',
 };
 
-export const DEMO_VIDEO_PLAYLIST: readonly DemoVideo[] = [
-  HERO_DEMO_VIDEO,
+export const HERO_DEMO_VIDEO: DemoVideo = attachPublishedDemoAssets(HERO_DEMO_VIDEO_DRAFT);
+
+const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
   {
     id: 'morning-view-demo',
     featureId: 'dashboard',
@@ -637,7 +657,12 @@ export const DEMO_VIDEO_PLAYLIST: readonly DemoVideo[] = [
     recordingChecklist: defaultChecklist,
     captureNotes: 'Use a demo team member name; do not expose real staff accounts.',
   },
-] as const;
+];
+
+export const DEMO_VIDEO_PLAYLIST: readonly DemoVideo[] = [
+  HERO_DEMO_VIDEO,
+  ...FEATURE_DEMO_VIDEO_DRAFTS.map(attachPublishedDemoAssets),
+];
 
 export const FEATURE_DEMO_VIDEOS = DEMO_VIDEO_PLAYLIST.filter(
   (demo): demo is DemoVideo & { featureId: MarketingFeature['id'] } =>
@@ -655,5 +680,5 @@ export function getDemoVideoByFeatureId(featureId: string): DemoVideo | undefine
 export function getDemoVideoStatusLabel(status: DemoVideoStatus): string {
   if (status === 'published') return 'Watch demo';
   if (status === 'recording') return 'Recording in progress';
-  return 'Demo script ready';
+  return 'Preview demo';
 }

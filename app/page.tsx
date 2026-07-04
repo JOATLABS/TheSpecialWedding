@@ -287,7 +287,7 @@ export default function HomePage() {
             <p className="max-w-md text-sm leading-6 text-slate-300 sm:leading-7 lg:justify-self-end">
               Featured planner workflows shown with real product screenshots so planners can inspect website setup, guest operations, communications, vendors, payments, and team controls before signing up.
               <Link href="/resources/demos" className="ml-1 font-semibold text-wedding-rose transition hover:text-wedding-blush">
-                Browse demo scripts.
+                Browse product demos.
               </Link>
             </p>
           </div>

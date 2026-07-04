@@ -18,9 +18,9 @@ const DEMOS_PATH = '/resources/demos';
 const DEMOS_URL = `https://thespecialwedding.io${DEMOS_PATH}`;
 
 export const metadata: Metadata = {
-  title: 'Product Demo Scripts | The Special Wedding',
+  title: 'Product Demo Library | The Special Wedding',
   description:
-    'Watch or preview the planned product demo library for The Special Wedding, from the planner dashboard to couple portal, microsite, guests, seating, vendors, contracts, and team workflows.',
+    'Watch the product demo library for The Special Wedding, from the planner dashboard to couple portal, microsite, guests, seating, vendors, contracts, and team workflows.',
   alternates: {
     canonical: DEMOS_PATH,
   },
@@ -45,7 +45,7 @@ const demosJsonLd = {
   url: DEMOS_URL,
   name: 'The Special Wedding Product Demo Library',
   description:
-    'Product demo scripts and videos showing the major planner, couple, guest, vendor, and team workflows inside The Special Wedding.',
+    'Product demo videos showing the major planner, couple, guest, vendor, and team workflows inside The Special Wedding.',
   hasPart: DEMO_VIDEO_PLAYLIST.map((demo) => ({
     '@type': 'CreativeWork',
     name: demo.title,
