@@ -105,7 +105,7 @@ export default function DemoVideoModal({ demo, open, onClose }: DemoVideoModalPr
               <div className="mt-5 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
                   <Clock3 className="h-4 w-4 text-wedding-rose" aria-hidden="true" />
-                  <p className="mt-2 text-xs uppercase tracking-[0.18em] text-slate-500">Target length</p>
+                  <p className="mt-2 text-xs uppercase tracking-[0.18em] text-slate-500">Length</p>
                   <p className="mt-1 text-sm font-semibold text-white">{durationMinutes} min</p>
                 </div>
                 <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
@@ -115,7 +115,7 @@ export default function DemoVideoModal({ demo, open, onClose }: DemoVideoModalPr
                 </div>
                 <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
                   <PlayCircle className="h-4 w-4 text-wedding-rose" aria-hidden="true" />
-                  <p className="mt-2 text-xs uppercase tracking-[0.18em] text-slate-500">Highlights</p>
+                  <p className="mt-2 text-xs uppercase tracking-[0.18em] text-slate-500">Moments</p>
                   <p className="mt-1 text-sm font-semibold text-white">{demo.script.length}</p>
                 </div>
               </div>

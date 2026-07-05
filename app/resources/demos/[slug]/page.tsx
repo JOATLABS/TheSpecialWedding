@@ -75,7 +75,6 @@ export default async function MarketingDemoVideoPage({ params }: DemoVideoPagePa
   const contentUrl = getMarketingDemoVideoContentUrl(video);
   const captionsUrl = getMarketingDemoVideoCaptionsUrl(video);
   const thumbnailUrl = getMarketingDemoVideoThumbnailUrl(video);
-  const shouldIndex = isMarketingDemoVideoIndexable(video);
 
   const videoJsonLd = {
     '@context': 'https://schema.org',
@@ -105,7 +104,7 @@ export default async function MarketingDemoVideoPage({ params }: DemoVideoPagePa
         items={[
           { name: 'Home', href: '/' },
           { name: 'Resources', href: '/resources/blog' },
-          { name: 'Product Demos', href: '/resources/demos' },
+          { name: 'Planner OS Walkthroughs', href: '/resources/demos' },
           { name: video.title, href: canonicalPath },
         ]}
       />
@@ -118,7 +117,7 @@ export default async function MarketingDemoVideoPage({ params }: DemoVideoPagePa
         <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[1fr_0.42fr] lg:items-end">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.3em] text-wedding-rose">
-              Product demo video
+              Planner operating proof
             </p>
             <h1 className="mt-4 max-w-3xl text-3xl font-semibold leading-tight sm:text-5xl">
               {video.title}
@@ -138,9 +137,9 @@ export default async function MarketingDemoVideoPage({ params }: DemoVideoPagePa
                 </dd>
               </div>
               <div>
-                <dt>Status</dt>
+                <dt>Focus</dt>
                 <dd className="mt-1 text-sm normal-case tracking-normal text-slate-200">
-                  {video.publicationStatus === 'published' ? 'Published' : 'Review-ready'}
+                  Planner operations
                 </dd>
               </div>
             </dl>
@@ -149,12 +148,6 @@ export default async function MarketingDemoVideoPage({ params }: DemoVideoPagePa
       </section>
 
       <section className="mx-auto max-w-6xl px-6 py-10 sm:px-10">
-        {!shouldIndex && (
-          <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">
-            This page is wired for R2/CDN publishing, but it is excluded from search indexing until the final
-            upload, pacing review, and audio direction are approved.
-          </div>
-        )}
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl shadow-black/30">
           <video
             className="h-full w-full bg-black object-contain"
@@ -187,7 +180,7 @@ export default async function MarketingDemoVideoPage({ params }: DemoVideoPagePa
             href="/resources/demos"
             className="inline-flex items-center justify-center rounded-full border border-white/15 px-6 py-3 text-sm font-semibold text-white transition hover:border-wedding-rose/50 hover:text-wedding-rose"
           >
-            Browse all product demos
+            View planner proof library
           </Link>
         </div>
       </section>
@@ -208,15 +201,15 @@ export default async function MarketingDemoVideoPage({ params }: DemoVideoPagePa
           </ol>
         </article>
         <aside className="rounded-2xl border border-white/10 bg-white/[0.04] p-6">
-          <h2 className="text-2xl font-semibold">Transcript summary</h2>
+          <h2 className="text-2xl font-semibold">Operator story</h2>
           <div className="mt-5 space-y-3 text-sm leading-6 text-slate-300">
             {video.transcriptSummary.map((line) => (
               <p key={line}>{line}</p>
             ))}
           </div>
           <div className="mt-6 rounded-xl border border-white/10 bg-slate-900/80 p-4 text-xs leading-6 text-slate-400">
-            Final marketing MP4s should be uploaded to R2 under this page&apos;s stable object keys. This
-            route provides the canonical SEO endpoint; the CDN object provides the video bytes.
+            These walkthrough pages are designed for serious planner evaluation: calm workspace proof,
+            visible operations, and a direct path from interest to starting one real wedding.
           </div>
         </aside>
       </section>
