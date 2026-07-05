@@ -41,10 +41,10 @@ const MARKETING_VIDEO_CDN_BASE_URL =
 export const MARKETING_DEMO_VIDEO_PAGES: readonly MarketingDemoVideoPage[] = [
   {
     slug: 'planner-command-center-social-highlights',
-    title: 'Planner Command Center Social Highlights',
+    title: 'Planner Command Center Walkthrough',
     seoTitle: 'Planner Command Center Demo Video | The Special Wedding',
     description:
-      'A public-safe vertical walkthrough showing how a planner manages weddings, guests, communications, memories, couple portal, seating, vendors, contracts, budget, payments, and notifications from one workspace.',
+      'A vertical walkthrough showing how a professional planner starts from one calm command center instead of rebuilding the day across disconnected tools.',
     audience: 'Professional wedding planners evaluating the real operating workspace before starting a trial.',
     durationSeconds: 80,
     width: 1080,
@@ -123,9 +123,9 @@ export const MARKETING_DEMO_VIDEO_PAGES: readonly MarketingDemoVideoPage[] = [
       },
     ],
     transcriptSummary: [
-      'Real planner workspace for the day-to-day command center.',
-      'Planner dashboard, new wedding setup, configuration, guest operations, preview-safe communications, guest memories, couple website, couple portal, seating, vendor contracts, budget, payments, packages, money, and notifications.',
-      'Current review candidate is visual-only pending final pacing and audio approval.',
+      'A real planner workspace for the day-to-day command center.',
+      'The walkthrough follows the operating thread from portfolio view to guest operations, communications, memories, couple experience, seating, vendors, budgets, and payments.',
+      'The point is not a feature tour; it is proof that the gaps between planner tools can disappear.',
     ],
   },
   {
@@ -133,7 +133,7 @@ export const MARKETING_DEMO_VIDEO_PAGES: readonly MarketingDemoVideoPage[] = [
     title: 'Full Planner Platform Walkthrough',
     seoTitle: 'Full Wedding Planner Software Walkthrough | The Special Wedding',
     description:
-      'A full-width public-safe review reel covering the planner portfolio, new wedding setup, configuration, shared calendar, guest management, communications, forms, guest memories, gallery, public microsite, couple portal, seating, vendors, contracts, quotes, budgets, payments, team collaboration, and support workflows.',
+      'A full-width walkthrough of the connected planner operating system, from client setup through guest, couple, vendor, budget, payment, team, and day-of operations.',
     audience: 'Planner studios and agency teams evaluating the full workflow surface before adopting the platform.',
     durationSeconds: 486,
     width: 1920,
@@ -212,9 +212,9 @@ export const MARKETING_DEMO_VIDEO_PAGES: readonly MarketingDemoVideoPage[] = [
       },
     ],
     transcriptSummary: [
-      'Full public-safe review reel assembled from 24 accepted browser-recorded clips.',
-      'The reel covers planner, couple, guest, vendor, contract, budget, payment, team, and support surfaces.',
-      'Current full review candidate is pending final human pacing review and final audio direction.',
+      'A full planner walkthrough following the connected path a studio needs to run more than one wedding at a time.',
+      'The reel shows planner, couple, guest, vendor, contract, budget, payment, team, and support surfaces as one operating system.',
+      'The business outcome is the absence of chaos: fewer handoffs, fewer duplicate records, and fewer places for the client experience to drift.',
     ],
   },
 ];
