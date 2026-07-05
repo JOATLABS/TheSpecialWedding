@@ -5,7 +5,7 @@ import { PricingSignupSection } from "./components/landing-page/PricingSignupSec
 import DemoVideoLauncher from "./components/saas/DemoVideoLauncher";
 import HomepageTemplatesBand from "./components/saas/HomepageTemplatesBand";
 import SaasNav from "./components/saas/SaasNav";
-import { HERO_DEMO_VIDEO } from "./data/demoVideos";
+import { FEATURE_DEMO_VIDEOS, HERO_DEMO_VIDEO, toPublicDemoVideo } from "./data/demoVideos";
 import { PUBLIC_LOGIN_PATH } from "./seo/crawlPolicy";
 import { serializeJsonLd } from "./seo/jsonLd";
 import type { ThemeConfig } from "./types/wedding";
@@ -190,6 +190,10 @@ function SectionBridge({ label }: { label: string }) {
 
 export default function HomePage() {
   const year = new Date().getFullYear();
+  const heroDemo = toPublicDemoVideo(HERO_DEMO_VIDEO);
+  const featureDemosByFeatureId = Object.fromEntries(
+    FEATURE_DEMO_VIDEOS.map((demo) => [demo.featureId, toPublicDemoVideo(demo)]),
+  );
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-slate-950 text-white">
@@ -222,7 +226,7 @@ export default function HomePage() {
                 Start 30-day trial
               </Link>
               <DemoVideoLauncher
-                demo={HERO_DEMO_VIDEO}
+                demo={heroDemo}
                 label="Watch 2-minute walkthrough"
                 variant="hero"
               />
@@ -291,7 +295,7 @@ export default function HomePage() {
               </Link>
             </p>
           </div>
-          <FeatureShowcase />
+          <FeatureShowcase demoVideosByFeatureId={featureDemosByFeatureId} />
         </div>
       </section>
 

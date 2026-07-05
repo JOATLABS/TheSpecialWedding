@@ -2,7 +2,7 @@ import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { PUBLIC_LOGIN_PATH } from '@/seo/crawlPolicy';
-import { getDemoVideoByFeatureId } from '@/data/demoVideos';
+import { getDemoVideoByFeatureId, toPublicDemoVideo } from '@/data/demoVideos';
 import DemoVideoLauncher from '../components/saas/DemoVideoLauncher';
 import SaasNav from '../components/saas/SaasNav';
 import BreadcrumbSchema from '../components/seo/BreadcrumbSchema';
@@ -170,7 +170,7 @@ export default function FeaturesPage() {
                 )}
                 {demo ? (
                   <div className={f.blogSlug ? 'mt-3' : 'mt-4'}>
-                    <DemoVideoLauncher demo={demo} />
+                    <DemoVideoLauncher demo={toPublicDemoVideo(demo)} />
                   </div>
                 ) : null}
               </article>

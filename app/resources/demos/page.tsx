@@ -7,6 +7,7 @@ import {
   FEATURE_DEMO_VIDEOS,
   HERO_DEMO_VIDEO,
   type DemoVideo,
+  toPublicDemoVideo,
 } from '@/data/demoVideos';
 import { PUBLIC_LOGIN_PATH } from '@/seo/crawlPolicy';
 import { serializeJsonLd } from '@/seo/jsonLd';
@@ -99,6 +100,13 @@ export const metadata: Metadata = {
     siteName: 'The Special Wedding',
     type: 'website',
   },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Watch The Special Wedding Planner OS in Action',
+    description:
+      'Business-outcome product walkthroughs for planners evaluating one connected workspace before starting a trial.',
+    images: ['/og-image.png'],
+  },
   robots: {
     index: true,
     follow: true,
@@ -179,7 +187,7 @@ export default function ProductDemosPage() {
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <DemoVideoLauncher
-                demo={HERO_DEMO_VIDEO}
+                demo={toPublicDemoVideo(HERO_DEMO_VIDEO)}
                 label="Watch 2-minute walkthrough"
                 variant="outline"
               />
@@ -268,7 +276,7 @@ export default function ProductDemosPage() {
               </p>
               <p className="mt-4 text-sm leading-6 text-slate-500">{demo.audience}</p>
               <div className="mt-5">
-                <DemoVideoLauncher demo={demo} label="Watch proof clip" />
+                <DemoVideoLauncher demo={toPublicDemoVideo(demo)} label="Watch proof clip" />
               </div>
             </article>
           ))}
@@ -326,7 +334,7 @@ export default function ProductDemosPage() {
                   <h3 className="text-lg font-semibold text-white">{demo.title}</h3>
                   <p className="mt-2 text-sm leading-6 text-slate-400">{demo.audience}</p>
                 </div>
-                <DemoVideoLauncher demo={demo} label="Watch clip" />
+                <DemoVideoLauncher demo={toPublicDemoVideo(demo)} label="Watch clip" />
               </div>
             </article>
           ))}
