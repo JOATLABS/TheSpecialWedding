@@ -3,15 +3,15 @@
 import PlayCircle from 'lucide-react/dist/esm/icons/play-circle';
 import { useState } from 'react';
 
-import type { DemoVideo } from '@/data/demoVideos';
-import { getDemoVideoStatusLabel } from '@/data/demoVideos';
+import type { PublicDemoVideo } from '@/data/publicDemoVideos';
+import { getPublicDemoVideoStatusLabel } from '@/data/publicDemoVideos';
 
 import DemoVideoModal from './DemoVideoModal';
 
 type DemoVideoLauncherVariant = 'hero' | 'outline' | 'link';
 
 interface DemoVideoLauncherProps {
-  demo: DemoVideo;
+  demo: PublicDemoVideo;
   label?: string;
   variant?: DemoVideoLauncherVariant;
   className?: string;
@@ -36,7 +36,7 @@ export default function DemoVideoLauncher({
   className = '',
 }: DemoVideoLauncherProps) {
   const [open, setOpen] = useState(false);
-  const computedLabel = label ?? getDemoVideoStatusLabel(demo.status);
+  const computedLabel = label ?? getPublicDemoVideoStatusLabel(demo.status);
 
   return (
     <>

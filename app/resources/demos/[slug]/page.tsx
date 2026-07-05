@@ -58,6 +58,12 @@ export async function generateMetadata({ params }: DemoVideoPageParams): Promise
         },
       ],
     },
+    twitter: {
+      card: 'summary_large_image',
+      title: video.title,
+      description: video.description,
+      images: [thumbnailUrl],
+    },
     robots: {
       index: shouldIndex,
       follow: shouldIndex,

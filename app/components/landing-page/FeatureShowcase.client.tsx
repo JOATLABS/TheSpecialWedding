@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getDemoVideoByFeatureId } from "@/data/demoVideos";
+import type { PublicDemoVideo } from "@/data/publicDemoVideos";
 import { MARKETING_FEATURES } from "@/data/marketingFeatures";
 import DemoVideoLauncher from "@/components/saas/DemoVideoLauncher";
 
@@ -13,7 +13,11 @@ type IdleWindow = Window & {
   cancelIdleCallback?: (handle: number) => void;
 };
 
-export function FeatureShowcase() {
+type FeatureShowcaseProps = {
+  demoVideosByFeatureId: Record<string, PublicDemoVideo>;
+};
+
+export function FeatureShowcase({ demoVideosByFeatureId }: FeatureShowcaseProps) {
   const features = MARKETING_FEATURES;
   const [activeIdx, setActiveIdx] = useState(0);
   const [isDescriptionOpen, setIsDescriptionOpen] = useState(false);
@@ -22,7 +26,7 @@ export function FeatureShowcase() {
   const sectionRef = useRef<HTMLDivElement | null>(null);
   const activeFeature = features[activeIdx];
   const nextFeature = features[(activeIdx + 1) % features.length];
-  const activeDemo = getDemoVideoByFeatureId(activeFeature.id);
+  const activeDemo = demoVideosByFeatureId[activeFeature.id];
 
   const selectFeature = useCallback((index: number) => {
     setActiveIdx(index);

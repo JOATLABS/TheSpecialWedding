@@ -6,11 +6,10 @@ import PlayCircle from 'lucide-react/dist/esm/icons/play-circle';
 import X from 'lucide-react/dist/esm/icons/x';
 import { useEffect } from 'react';
 
-import type { DemoVideo } from '@/data/demoVideos';
-import { getDemoVideoStatusLabel } from '@/data/demoVideos';
+import type { PublicDemoVideo } from '@/data/publicDemoVideos';
 
 interface DemoVideoModalProps {
-  demo: DemoVideo;
+  demo: PublicDemoVideo;
   open: boolean;
   onClose: () => void;
 }
@@ -35,7 +34,6 @@ export default function DemoVideoModal({ demo, open, onClose }: DemoVideoModalPr
 
   if (!open) return null;
 
-  const statusLabel = getDemoVideoStatusLabel(demo.status);
   const durationMinutes = Math.max(1, Math.round(demo.durationSeconds / 60));
   const hasPlayableAsset = Boolean(demo.assetUrl);
 
@@ -54,7 +52,7 @@ export default function DemoVideoModal({ demo, open, onClose }: DemoVideoModalPr
         <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5 sm:p-6">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-wedding-rose">
-              {statusLabel}
+              Planner proof
             </p>
             <h2 id="demo-video-title" className="mt-2 text-2xl font-semibold text-white sm:text-3xl">
               {demo.title}
@@ -115,24 +113,19 @@ export default function DemoVideoModal({ demo, open, onClose }: DemoVideoModalPr
                 </div>
                 <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
                   <PlayCircle className="h-4 w-4 text-wedding-rose" aria-hidden="true" />
-                  <p className="mt-2 text-xs uppercase tracking-[0.18em] text-slate-500">Moments</p>
-                  <p className="mt-1 text-sm font-semibold text-white">{demo.script.length}</p>
+                  <p className="mt-2 text-xs uppercase tracking-[0.18em] text-slate-500">Focus</p>
+                  <p className="mt-1 text-sm font-semibold text-white">Planner proof</p>
                 </div>
               </div>
             </div>
 
             <div className="space-y-5">
               <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
-                <h3 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-300">What you'll see</h3>
-                <ol className="mt-4 space-y-4">
-                  {demo.script.map((step) => (
-                    <li key={`${step.timestamp}-${step.action}`} className="border-l border-wedding-rose/35 pl-4">
-                      <p className="text-xs font-semibold text-wedding-rose">{step.timestamp}</p>
-                      <p className="mt-1 text-sm font-semibold text-white">{step.action}</p>
-                      <p className="mt-1 text-sm leading-6 text-slate-300">{step.voiceover}</p>
-                    </li>
-                  ))}
-                </ol>
+                <h3 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-300">Why planners watch</h3>
+                <p className="mt-4 text-sm leading-6 text-slate-300">{demo.audience}</p>
+                <p className="mt-4 text-sm leading-6 text-slate-400">
+                  Use this walkthrough to see the operating system in motion before starting a trial with a real wedding.
+                </p>
               </section>
 
               <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">

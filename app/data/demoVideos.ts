@@ -1,6 +1,7 @@
 import type { MarketingFeature } from './marketingFeatures';
+import type { PublicDemoVideo, PublicDemoVideoStatus } from './publicDemoVideos';
 
-export type DemoVideoStatus = 'scripted' | 'recording' | 'published';
+export type DemoVideoStatus = PublicDemoVideoStatus;
 
 export type DemoVideoPriority = 'hero' | 'phase-one' | 'phase-two';
 
@@ -675,6 +676,29 @@ const demoByFeatureId = new Map(
 
 export function getDemoVideoByFeatureId(featureId: string): DemoVideo | undefined {
   return demoByFeatureId.get(featureId);
+}
+
+export function toPublicDemoVideo(demo: DemoVideo): PublicDemoVideo {
+  return {
+    id: demo.id,
+    featureId: demo.featureId,
+    title: demo.title,
+    audience: demo.audience,
+    durationSeconds: demo.durationSeconds,
+    status: demo.status,
+    assetUrl: demo.assetUrl,
+    thumbnailUrl: demo.thumbnailUrl,
+    captionUrl: demo.captionUrl,
+    transcriptUrl: demo.transcriptUrl,
+    socialAssetUrl: demo.socialAssetUrl,
+    socialThumbnailUrl: demo.socialThumbnailUrl,
+    recordedAt: demo.recordedAt,
+  };
+}
+
+export function getPublicDemoVideoByFeatureId(featureId: string): PublicDemoVideo | undefined {
+  const demo = getDemoVideoByFeatureId(featureId);
+  return demo ? toPublicDemoVideo(demo) : undefined;
 }
 
 export function getDemoVideoStatusLabel(status: DemoVideoStatus): string {
