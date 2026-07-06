@@ -5,6 +5,7 @@ import { chromium } from 'playwright';
 
 import { DEMO_VIDEO_PLAYLIST } from '../../app/data/demoVideos';
 import { parseCliArgs, resolveFromRepo } from './cli';
+import { assertPublicSafeStorageState } from './public-safe-storage';
 
 type CaptureFixtures = {
   primaryWeddingId: string;
@@ -12,6 +13,7 @@ type CaptureFixtures = {
   guestMemoriesUploadToken: string;
   formId: string;
   coupleFormId: string;
+  vendorProfileId: string;
   vendorContractId: string;
   vendorContractToken: string;
   vendorPortalToken: string;
@@ -57,6 +59,7 @@ function resolveRoute(route: string, routeParams: Record<string, string>): strin
 function routeParamsForDemo(demoId: string, fixtures: CaptureFixtures): Record<string, string> {
   const common = {
     id: fixtures.primaryWeddingId,
+    weddingId: fixtures.primaryWeddingId,
     slug: fixtures.primarySlug,
     uploadToken: fixtures.guestMemoriesUploadToken,
     token: fixtures.vendorPortalToken,
@@ -68,7 +71,12 @@ function routeParamsForDemo(demoId: string, fixtures: CaptureFixtures): Record<s
   }
 
   if (demoId === 'contract-sign-pay-demo') {
-    return { ...common, id: fixtures.vendorContractId, token: fixtures.vendorContractToken };
+    return {
+      ...common,
+      id: fixtures.vendorContractId,
+      token: fixtures.vendorContractToken,
+      vendorProfileId: fixtures.vendorProfileId,
+    };
   }
 
   return common;
@@ -114,12 +122,15 @@ function filterBenignNetworkIssues(
 
 async function main(): Promise<void> {
   const args = parseCliArgs(process.argv.slice(2));
-  const baseUrl = args.values.get('base-url') ?? 'http://127.0.0.1:3100';
+  const baseUrl = args.values.get('base-url') ?? 'http://localhost:3100';
   const fixturesPath = args.values.get('fixtures') ?? resolveFromRepo('output', 'demo-videos', 'capture-fixtures.json');
   const receiptPath = args.values.get('receipt') ?? resolveFromRepo('output', 'demo-videos', 'route-audit-receipt.json');
-  const storageState = args.values.get('storage-state') ?? resolveFromRepo('output', 'demo-videos', 'state', 'demo-mixed.json');
+  const storageState = args.values.get('storage-state') ?? resolveFromRepo('output', 'demo-videos', 'state', 'demo-public-safe.json');
   const demoFilters = args.repeatedValues.get('demo');
   const fixtures = readFixtures(fixturesPath);
+  if (!args.flags.has('allow-personal-state')) {
+    assertPublicSafeStorageState(storageState);
+  }
   const demos = demoFilters?.length
     ? DEMO_VIDEO_PLAYLIST.filter((demo) => demoFilters.includes(demo.id))
     : [...DEMO_VIDEO_PLAYLIST];

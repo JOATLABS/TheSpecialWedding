@@ -1,7 +1,5 @@
 "use client";
 
-import Image from "next/image";
-import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PublicDemoVideo } from "@/data/publicDemoVideos";
@@ -20,28 +18,27 @@ type FeatureShowcaseProps = {
 export function FeatureShowcase({ demoVideosByFeatureId }: FeatureShowcaseProps) {
   const features = MARKETING_FEATURES;
   const [activeIdx, setActiveIdx] = useState(0);
-  const [isDescriptionOpen, setIsDescriptionOpen] = useState(false);
-  const [isVisible, setIsVisible] = useState(false);
   const [shouldLoadMedia, setShouldLoadMedia] = useState(false);
   const sectionRef = useRef<HTMLDivElement | null>(null);
   const activeFeature = features[activeIdx];
   const nextFeature = features[(activeIdx + 1) % features.length];
   const activeDemo = demoVideosByFeatureId[activeFeature.id];
 
-  const selectFeature = useCallback((index: number) => {
-    setActiveIdx(index);
-    setIsDescriptionOpen(false);
-  }, []);
+  const selectFeature = useCallback(
+    (index: number) => {
+      setActiveIdx((index + features.length) % features.length);
+      setShouldLoadMedia(true);
+    },
+    [features.length],
+  );
 
   const selectPreviousFeature = useCallback(() => {
-    setActiveIdx((index) => (index - 1 + features.length) % features.length);
-    setIsDescriptionOpen(false);
-  }, [features.length]);
+    selectFeature(activeIdx - 1);
+  }, [activeIdx, selectFeature]);
 
   const selectNextFeature = useCallback(() => {
-    setActiveIdx((index) => (index + 1) % features.length);
-    setIsDescriptionOpen(false);
-  }, [features.length]);
+    selectFeature(activeIdx + 1);
+  }, [activeIdx, selectFeature]);
 
   useEffect(() => {
     if (!sectionRef.current) {
@@ -50,7 +47,6 @@ export function FeatureShowcase({ demoVideosByFeatureId }: FeatureShowcaseProps)
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        setIsVisible(entry.isIntersecting);
         if (entry.isIntersecting) {
           setShouldLoadMedia(true);
         }
@@ -63,21 +59,6 @@ export function FeatureShowcase({ demoVideosByFeatureId }: FeatureShowcaseProps)
   }, []);
 
   useEffect(() => {
-    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const isSmallScreen = window.matchMedia("(max-width: 639px)").matches;
-
-    if (!isVisible || document.hidden || prefersReducedMotion || isSmallScreen) {
-      return undefined;
-    }
-
-    const timer = window.setInterval(() => {
-      setActiveIdx((index) => (index + 1) % features.length);
-    }, 6500);
-
-    return () => window.clearInterval(timer);
-  }, [features.length, isVisible]);
-
-  useEffect(() => {
     if (!shouldLoadMedia || !nextFeature?.image) {
       return undefined;
     }
@@ -86,28 +67,9 @@ export function FeatureShowcase({ demoVideosByFeatureId }: FeatureShowcaseProps)
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let idleId: number | null = null;
 
-    // CONTRACT (preload):
-    //   - ``nextFeature.image`` is a static path under ``/public`` ending
-    //     in ``.webp`` (or any browser-renderable format).
-    //   - The browser fetches this exact byte-for-byte URL — no Next.js
-    //     image-optimizer transform.  When the slide rotates and the
-    //     ``<picture>`` below requests this same URL, it comes from the
-    //     HTTP cache instead of the network.
-    //   - ``decoding=async`` and ``fetchPriority=low`` keep this from
-    //     contending with above-the-fold work.
-    //   - We deliberately do NOT preload the AVIF variant.  The browser
-    //     selects the format from ``<picture>`` based on ``Accept``; the
-    //     URL fetched here is the same as what the ``<img>`` fallback
-    //     requests, which is the WebP — a safe, universal choice.
-    //
-    // Replaces the prior hand-built ``/_next/image?url=...&w=...&q=75``
-    // URL, which was brittle to Next.js internals.
     const preloadNextImage = () => {
       const preload = new window.Image();
       preload.decoding = "async";
-      // Some browsers expose ``fetchPriority`` on HTMLImageElement;
-      // guarded write keeps strict TS checks happy without losing the
-      // hint where supported.
       (preload as unknown as { fetchPriority?: string }).fetchPriority = "low";
       preload.src = nextFeature.image;
     };
@@ -129,134 +91,74 @@ export function FeatureShowcase({ demoVideosByFeatureId }: FeatureShowcaseProps)
   }, [shouldLoadMedia, nextFeature?.image]);
 
   return (
-    <div ref={sectionRef} className="space-y-4 sm:space-y-6">
-      <div className="grid overflow-hidden rounded-xl border border-white/10 bg-white/[0.04] shadow-2xl shadow-black/30 sm:rounded-2xl lg:grid-cols-[minmax(0,1fr)_390px]">
-        <div className="border-b border-white/10 bg-[#071020] p-1.5 sm:p-3 lg:border-b-0 lg:border-r">
-          <div className="hidden items-center gap-2 border-b border-white/10 px-3 py-2 sm:flex" aria-hidden="true">
-            <span className="h-2.5 w-2.5 rounded-full bg-red-400/70" />
-            <span className="h-2.5 w-2.5 rounded-full bg-yellow-400/70" />
-            <span className="h-2.5 w-2.5 rounded-full bg-green-400/70" />
-          </div>
-          <div className="relative aspect-[16/9] rounded-lg bg-[#071020] sm:rounded-b-xl sm:rounded-t-none">
-            {/*
-              Raw <picture> instead of <Image> here so browsers that
-              support AVIF (Chrome 85+, Firefox 93+, Safari 16+) get the
-              smallest pre-generated file directly from /public, with no
-              Next.js image-optimizer transform on the request path.
-              The thumbnail grid below stays on <Image> because each
-              thumb is 96 px and the cumulative bandwidth is small.
-
-              CONTRACT: every entry in MARKETING_FEATURES has both
-              ``<name>.webp`` and ``<name>.avif`` siblings under
-              /public.  The .avif source is derived by suffix swap.
-            */}
-            {shouldLoadMedia ? (
-              <picture>
-                <source
-                  srcSet={activeFeature.image.replace(/\.webp$/, ".avif")}
-                  type="image/avif"
+    <div
+      ref={sectionRef}
+      className="space-y-4 sm:space-y-5"
+      role="region"
+      aria-roledescription="carousel"
+      aria-label="Product walkthrough carousel"
+    >
+      <div className="relative overflow-hidden rounded-xl border border-white/10 bg-white/[0.04] shadow-2xl shadow-black/30 sm:rounded-2xl">
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="border-b border-white/10 bg-[#071020] p-1.5 sm:p-3 lg:border-b-0 lg:border-r lg:border-white/10">
+            <div className="hidden items-center gap-2 border-b border-white/10 px-3 py-2 sm:flex" aria-hidden="true">
+              <span className="h-2.5 w-2.5 rounded-full bg-red-400/70" />
+              <span className="h-2.5 w-2.5 rounded-full bg-yellow-400/70" />
+              <span className="h-2.5 w-2.5 rounded-full bg-green-400/70" />
+            </div>
+            <div className="relative aspect-[16/9] rounded-lg bg-[#071020] sm:rounded-b-xl sm:rounded-t-none">
+              {shouldLoadMedia ? (
+                <picture>
+                  <source srcSet={activeFeature.image.replace(/\.webp$/, ".avif")} type="image/avif" />
+                  <source srcSet={activeFeature.image} type="image/webp" />
+                  <img
+                    key={activeFeature.id}
+                    src={activeFeature.image}
+                    alt={`${activeFeature.title}: ${activeFeature.tagline}`}
+                    loading="lazy"
+                    decoding="async"
+                    className="absolute inset-0 h-full w-full object-contain object-top"
+                  />
+                </picture>
+              ) : (
+                <span
+                  className="absolute inset-0 bg-[radial-gradient(circle_at_28%_18%,rgba(212,165,165,0.16),transparent_44%),linear-gradient(135deg,rgba(15,23,42,0.86),rgba(7,16,32,1))]"
+                  aria-hidden="true"
                 />
-                <source srcSet={activeFeature.image} type="image/webp" />
-                <img
-                  key={activeFeature.id}
-                  src={activeFeature.image}
-                  alt={`${activeFeature.title}: ${activeFeature.tagline}`}
-                  loading="lazy"
-                  decoding="async"
-                  className="absolute inset-0 h-full w-full object-contain object-top"
-                />
-              </picture>
-            ) : (
-              <span
-                className="absolute inset-0 bg-[radial-gradient(circle_at_28%_18%,rgba(212,165,165,0.16),transparent_44%),linear-gradient(135deg,rgba(15,23,42,0.86),rgba(7,16,32,1))]"
-                aria-hidden="true"
-              />
-            )}
+              )}
+            </div>
           </div>
-        </div>
 
-        <aside className="flex flex-col justify-between p-4 sm:p-6">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-wedding-rose">
-              {activeFeature.category}
-            </p>
-            <h3 className="mt-3 text-2xl font-semibold leading-tight text-white sm:text-3xl">{activeFeature.title}</h3>
-            <p className="mt-3 text-sm font-semibold leading-6 text-slate-200 sm:mt-4">{activeFeature.tagline}</p>
-            <p className={`mt-3 text-sm leading-6 text-slate-300 sm:mt-4 sm:leading-7 ${isDescriptionOpen ? "" : "line-clamp-2 sm:line-clamp-none"}`}>
-              {activeFeature.description}
-            </p>
-            <button
-              type="button"
-              onClick={() => setIsDescriptionOpen((current) => !current)}
-              className="mt-3 text-sm font-semibold text-wedding-rose transition hover:text-wedding-blush sm:hidden"
-            >
-              {isDescriptionOpen ? "Show less" : "Read more"}
-            </button>
-            {activeFeature.blogSlug ? (
-              <Link
-                href={`/resources/blog/${activeFeature.blogSlug}`}
-                className="mt-5 inline-flex text-sm font-semibold text-wedding-rose transition hover:text-wedding-blush"
-              >
-                Read the story
-              </Link>
-            ) : null}
+          <aside className="flex min-h-[260px] flex-col justify-center p-5 sm:p-7">
+            <h3 className="text-3xl font-semibold leading-tight text-white sm:text-4xl">{activeFeature.title}</h3>
+            <p className="mt-4 text-base font-semibold leading-7 text-slate-200">{activeFeature.tagline}</p>
             {activeDemo ? (
-              <div className={activeFeature.blogSlug ? "mt-3" : "mt-5"}>
+              <div className="mt-6">
                 <DemoVideoLauncher demo={activeDemo} />
               </div>
             ) : null}
-          </div>
+          </aside>
+        </div>
 
-          <div className="mt-4 space-y-3 border-t border-white/10 pt-4 sm:mt-6 sm:flex sm:items-center sm:justify-between sm:space-y-0 sm:pt-5">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-                {String(activeIdx + 1).padStart(2, "0")} / {String(features.length).padStart(2, "0")}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-[42px_minmax(0,1fr)_42px] gap-2 sm:hidden">
-              <button
-                type="button"
-                onClick={selectPreviousFeature}
-                aria-label="Previous feature"
-                className="flex h-11 items-center justify-center rounded-lg border border-white/10 bg-white/[0.05] text-slate-200 transition hover:border-wedding-rose/50 hover:text-white"
-              >
-                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-              </button>
-              <label className="sr-only" htmlFor="mobile-feature-select">
-                Choose product surface
-              </label>
-              <select
-                id="mobile-feature-select"
-                value={activeIdx}
-                onChange={(event) => selectFeature(Number(event.target.value))}
-                className="h-11 min-w-0 rounded-lg border border-white/10 bg-slate-950 px-3 text-sm font-semibold text-white outline-none transition focus:border-wedding-rose/70"
-              >
-                {features.map((feature, index) => (
-                  <option key={feature.id} value={index}>
-                    {String(index + 1).padStart(2, "0")} - {feature.title}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={selectNextFeature}
-                aria-label="Next feature"
-                className="flex h-11 items-center justify-center rounded-lg border border-white/10 bg-white/[0.05] text-slate-200 transition hover:border-wedding-rose/50 hover:text-white"
-              >
-                <ChevronRight className="h-4 w-4" aria-hidden="true" />
-              </button>
-            </div>
-
-            <Link href="#pricing" className="hidden text-sm font-semibold text-wedding-rose transition hover:text-wedding-blush sm:inline-flex">
-              {/* SYNC-WITH-SEED: trial_days */}
-              Start 30-day trial
-            </Link>
-          </div>
-        </aside>
+        <button
+          type="button"
+          onClick={selectPreviousFeature}
+          className="absolute left-3 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-slate-950/80 text-white shadow-lg shadow-black/30 backdrop-blur transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wedding-rose sm:left-5"
+          aria-label="Previous feature"
+        >
+          <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          onClick={selectNextFeature}
+          className="absolute right-3 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-slate-950/80 text-white shadow-lg shadow-black/30 backdrop-blur transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wedding-rose sm:right-5"
+          aria-label="Next feature"
+        >
+          <ChevronRight className="h-5 w-5" aria-hidden="true" />
+        </button>
       </div>
 
-      <div className="hidden gap-3 sm:grid sm:grid-cols-2 lg:grid-cols-4">
+      <div className="flex flex-wrap items-center justify-center gap-2" aria-label="Choose a feature">
         {features.map((feature, index) => {
           const isActive = index === activeIdx;
 
@@ -265,45 +167,12 @@ export function FeatureShowcase({ demoVideosByFeatureId }: FeatureShowcaseProps)
               key={feature.id}
               type="button"
               onClick={() => selectFeature(index)}
-              className={`grid grid-cols-[84px_1fr] gap-3 rounded-xl border p-2 text-left transition sm:grid-cols-[96px_1fr] ${
-                isActive
-                  ? "border-wedding-rose/70 bg-wedding-rose/10 shadow-lg shadow-wedding-rose/10"
-                  : "border-white/10 bg-white/[0.035] hover:border-white/25 hover:bg-white/[0.06]"
+              className={`h-2.5 rounded-full transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wedding-rose ${
+                isActive ? "w-8 bg-wedding-rose" : "w-2.5 bg-white/25 hover:bg-white/45"
               }`}
-            >
-              <span className="relative block aspect-[16/10] overflow-hidden rounded-lg bg-[#071020]">
-                {/* The button label below carries the feature title for
-                    screen readers, so the WCAG-correct value here is
-                    alt="". However, BLG's Technical Audit flags every
-                    empty alt as "Missing Alt Text" regardless of whether
-                    it's intentionally decorative — see
-                    docs/plans/babylovegrowth_integration_mockup.md.
-                    Use the feature title as a meaningful alt to
-                    satisfy both auditors. */}
-                {shouldLoadMedia ? (
-                  <Image
-                    src={feature.image}
-                    alt={`${feature.title} preview`}
-                    fill
-                    sizes="96px"
-                    className="object-cover object-top"
-                    loading="lazy"
-                    fetchPriority={isActive ? "auto" : "low"}
-                  />
-                ) : (
-                  <span
-                    className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(212,165,165,0.18),transparent_45%),linear-gradient(135deg,rgba(15,23,42,0.85),rgba(7,16,32,1))]"
-                    aria-hidden="true"
-                  />
-                )}
-              </span>
-              <span className="min-w-0 self-center">
-                <span className="block text-[9px] font-semibold uppercase tracking-[0.18em] text-wedding-rose">
-                  {feature.category}
-                </span>
-                <span className="mt-1 block truncate text-sm font-semibold text-white">{feature.title}</span>
-              </span>
-            </button>
+              aria-label={`Show ${feature.title}`}
+              aria-current={isActive ? "true" : undefined}
+            />
           );
         })}
       </div>

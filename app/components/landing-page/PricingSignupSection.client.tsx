@@ -13,7 +13,6 @@ const SignupModal = dynamic(() => import("@/components/saas/SignupModal").then((
 type PricingTier = {
   id: string;
   name: string;
-  tagline: string;
   price: string;
   period: string;
   features: string[];
@@ -94,11 +93,10 @@ export function PricingSignupSection({ pricing, theme }: Props) {
             .map<PricingTier>((plan) => ({
               id: plan._id,
               name: plan.name,
-              tagline: plan.is_featured ? "Most popular for growing planner studios." : `For ${plan.name.toLowerCase()} planning teams.`,
               price: `$${plan.price_monthly}`,
               period: getPlanPeriod(plan),
               features: plan.features_list?.length ? plan.features_list : [],
-              cta: plan.trial_days ? `Start ${plan.trial_days}-day trial` : `Choose ${plan.name}`,
+              cta: plan.price_monthly === 0 ? "Start free" : `Choose ${plan.name}`,
               popular: Boolean(plan.is_featured),
               savings: plan.is_featured ? "Most popular" : undefined,
             }));
@@ -142,7 +140,7 @@ export function PricingSignupSection({ pricing, theme }: Props) {
           {displayPricing.map((tier) => (
             <article
               key={tier.id}
-              className={`relative rounded-xl border p-4 sm:rounded-2xl sm:p-6 ${
+              className={`relative flex h-full flex-col rounded-xl border p-4 sm:rounded-2xl sm:p-6 ${
                 tier.popular ? "border-rose-300/60 bg-white/[0.08]" : "border-white/10 bg-white/[0.04]"
               }`}
             >
@@ -152,7 +150,6 @@ export function PricingSignupSection({ pricing, theme }: Props) {
                 </span>
               ) : null}
               <h3 className="pr-32 text-2xl font-semibold text-white">{tier.name}</h3>
-              <p className="mt-2 text-sm leading-5 text-slate-300 sm:mt-3 sm:min-h-14 sm:leading-6">{tier.tagline}</p>
               <div className="mt-4 flex items-end gap-1 sm:mt-6">
                 <span className="text-3xl font-semibold text-white sm:text-4xl">{tier.price}</span>
                 <span className="pb-1 text-sm text-slate-400">{tier.period}</span>
@@ -165,17 +162,19 @@ export function PricingSignupSection({ pricing, theme }: Props) {
                   </li>
                 ))}
               </ul>
-              <button
-                type="button"
-                onClick={() => openSignup(tier.id)}
-                className={`mt-5 w-full rounded-full px-5 py-2.5 text-sm font-semibold transition sm:mt-8 sm:py-3 ${
-                  tier.popular
-                    ? "bg-white text-slate-950 hover:bg-rose-50"
-                    : "border border-white/20 text-white hover:bg-white/10"
-                }`}
-              >
-                {tier.cta}
-              </button>
+              <div className="mt-auto pt-5 sm:pt-8">
+                <button
+                  type="button"
+                  onClick={() => openSignup(tier.id)}
+                  className={`w-full rounded-full px-5 py-2.5 text-sm font-semibold transition sm:py-3 ${
+                    tier.popular
+                      ? "bg-white text-slate-950 hover:bg-rose-50"
+                      : "border border-white/20 text-white hover:bg-white/10"
+                  }`}
+                >
+                  {tier.cta}
+                </button>
+              </div>
             </article>
           ))}
         </div>

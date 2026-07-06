@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 import { HERO_DEMO_VIDEO, toPublicDemoVideo } from '../../app/data/demoVideos';
 
-const PUBLIC_DEMO_COPY_FILES = [
+const REMOVED_DEMO_ROUTE_FILES = [
   'app/resources/demos/page.tsx',
   'app/resources/demos/[slug]/page.tsx',
+] as const;
+
+const PUBLIC_DEMO_COPY_FILES = [
   'app/components/saas/DemoVideoModal.tsx',
   'app/data/marketingDemoVideos.ts',
 ] as const;
@@ -37,13 +40,38 @@ function patternsForFile(filePath: string): readonly RegExp[] {
   return INTERNAL_COPY_PATTERNS.filter((pattern) => pattern.source !== 'Review-ready');
 }
 
+const DEMO_MODAL_JUNK_PATTERNS = [
+  /Why planners watch/i,
+  /Built for/i,
+  /More ways to watch/i,
+  /Open vertical social cut/i,
+  /Read transcript/i,
+  /Planner proof/i,
+  /Length/i,
+  /Format/i,
+  /Focus/i,
+] as const;
+
 describe('public demo video copy', () => {
+  it('keeps the standalone demo route removed', () => {
+    for (const filePath of REMOVED_DEMO_ROUTE_FILES) {
+      assert.equal(existsSync(filePath), false, `${filePath} should not exist`);
+    }
+  });
+
   it('keeps internal production language off public demo surfaces', () => {
     for (const filePath of PUBLIC_DEMO_COPY_FILES) {
       const source = readFileSync(filePath, 'utf8');
       for (const pattern of patternsForFile(filePath)) {
         assert.equal(pattern.test(source), false, `${filePath} contains ${pattern}`);
       }
+    }
+  });
+
+  it('keeps the demo modal focused on video playback', () => {
+    const source = readFileSync('app/components/saas/DemoVideoModal.tsx', 'utf8');
+    for (const pattern of DEMO_MODAL_JUNK_PATTERNS) {
+      assert.equal(pattern.test(source), false, `Demo modal contains ${pattern}`);
     }
   });
 

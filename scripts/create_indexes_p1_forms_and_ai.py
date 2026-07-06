@@ -18,7 +18,7 @@ the new query shapes shipped in Phases 1, A, B, C, D:
 
 Plus three TTL indexes that match the data we're already retaining
 window-bounded:
-  • marketing_leads created_at — 90 days
+  • marketing_leads first_downloaded_at — 90 days
   • ai_usage_log created_at — 30 days
   • ai_cache expires_at — field-based (delete-when-datetime-passes)
 
@@ -113,9 +113,11 @@ INDEXES = [
         {"unique": True, "sparse": True, "name": "idx_email_template_unique"},
     ),
     # 90-day TTL on marketing leads — GDPR-friendly automatic expiry.
+    # first_downloaded_at exists on legacy and current rows; created_at
+    # was added later and cannot be the only retention anchor.
     (
         "marketing_leads",
-        [("created_at", 1)],
+        [("first_downloaded_at", 1)],
         {"expireAfterSeconds": 60 * 60 * 24 * 90, "name": "idx_marketing_leads_ttl"},
     ),
     # ── ai_cache ─────────────────────────────────────────────────────

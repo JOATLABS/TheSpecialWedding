@@ -107,8 +107,7 @@ export default function FeaturesPage() {
               href="#pricing"
               className="rounded-full bg-wedding-rose px-6 py-3 text-base font-semibold text-slate-900 shadow-lg shadow-wedding-rose/30 transition hover:bg-wedding-blush"
             >
-              {/* SYNC-WITH-SEED: trial_days */}
-              Start 30-day trial
+              Start free
             </a>
             <Link
               href="/resources/blog"
@@ -141,35 +140,10 @@ export default function FeaturesPage() {
                     priority={index === 0}
                   />
                 </div>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-wedding-rose/10 text-xl">
-                      {f.icon}
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase tracking-[0.25em] text-slate-500">{f.category}</p>
-                      <h3 className="mt-1 text-base font-semibold text-white">{f.title}</h3>
-                    </div>
-                  </div>
-                  {f.ai && (
-                    <span className="rounded-full border border-wedding-rose/30 bg-wedding-rose/15 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-wedding-rose">
-                      AI
-                    </span>
-                  )}
-                </div>
-                <p className="mt-4 text-sm font-medium text-slate-300">{f.tagline}</p>
-                <p className="mt-2 text-sm leading-relaxed text-slate-400">{f.description}</p>
-                {f.blogSlug && (
-                  <Link
-                    href={`/resources/blog/${f.blogSlug}`}
-                    className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-wedding-rose transition hover:text-wedding-blush"
-                  >
-                    Read the story
-                    <span aria-hidden="true">→</span>
-                  </Link>
-                )}
+                <h3 className="text-lg font-semibold text-white">{f.title}</h3>
+                <p className="mt-3 text-sm font-medium leading-6 text-slate-300">{f.tagline}</p>
                 {demo ? (
-                  <div className={f.blogSlug ? 'mt-3' : 'mt-4'}>
+                  <div className="mt-5">
                     <DemoVideoLauncher demo={toPublicDemoVideo(demo)} />
                   </div>
                 ) : null}
@@ -233,8 +207,7 @@ export default function FeaturesPage() {
             Replace 10+ subscriptions with one platform.
           </h2>
           <p className="mt-4 text-base text-slate-300">
-            {/* SYNC-WITH-SEED: trial_days */}
-            Start a 30-day free trial today — no credit card required.
+            Start with one wedding free.
           </p>
           <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
             <Link

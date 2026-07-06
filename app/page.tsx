@@ -14,13 +14,11 @@ type Testimonial = {
   name: string;
   role: string;
   quote: string;
-  result: string;
 };
 
 export type PricingTier = {
   id: string;
   name: string;
-  tagline: string;
   price: string;
   period: string;
   features: string[];
@@ -47,7 +45,6 @@ const fallbackPricing: PricingTier[] = [
   {
     id: "plan_solo",
     name: "Solo",
-    tagline: "Try us with your first client. One wedding, on us.",
     price: "$0",
     period: "/month",
     features: [
@@ -62,7 +59,6 @@ const fallbackPricing: PricingTier[] = [
   {
     id: "plan_boutique",
     name: "Boutique",
-    tagline: "For independent planners running their solo practice with paid planning tools and higher limits.",
     price: "$49",
     period: "/month",
     features: [
@@ -78,7 +74,6 @@ const fallbackPricing: PricingTier[] = [
   {
     id: "plan_signature",
     name: "Signature",
-    tagline: "For agencies running a team of planners. Everything in Boutique, plus team seats and agency-grade reporting.",
     price: "$149",
     period: "/month",
     features: [
@@ -96,7 +91,6 @@ const fallbackPricing: PricingTier[] = [
   {
     id: "plan_enterprise",
     name: "Enterprise",
-    tagline: "For larger planning teams that need more seats, higher AI usage, expanded guest memories storage, and launch support.",
     price: "$399",
     period: "/month",
     features: [
@@ -116,19 +110,16 @@ const testimonials: Testimonial[] = [
     name: "Arielle Morgan",
     role: "Owner, Linen & Light Events",
     quote: "We stopped chasing spreadsheets and started running the studio from one place.",
-    result: "18 hours saved each week",
   },
   {
     name: "Maya Chen",
     role: "Lead Planner, Atelier June",
     quote: "Couples see progress without asking for updates, and our team always knows what changed.",
-    result: "42% faster vendor follow-up",
   },
   {
     name: "Noah Rivera",
     role: "Operations Director, Vow & Venue",
     quote: "It gave our planners a repeatable operating system without making the experience feel generic.",
-    result: "3x more weddings per planner",
   },
 ];
 
@@ -149,9 +140,9 @@ const faqs = [
       "Yes. Roles, handoffs, dashboards, and shared planning workflows are designed for studios with multiple planners and assistants.",
   },
   {
-    question: "What happens after the trial?",
+    question: "What happens after the free wedding?",
     answer:
-      "Your data stays intact. You can select a plan, pause new wedding intake, or export the core workspace data before deciding.",
+      "Your data stays intact. You can select a paid plan, pause new wedding intake, or export the core workspace data before deciding.",
   },
 ];
 
@@ -169,9 +160,9 @@ const faqPageJsonLd = {
 };
 
 const metrics = [
-  { label: "Demo hours reclaimed", value: "18/wk" },
-  { label: "Demo follow-up lift", value: "42%" },
-  { label: "Demo guest workflows", value: "11" },
+  { label: "Hours reclaimed", value: "18/wk" },
+  { label: "Follow-up lift", value: "42%" },
+  { label: "Guest workflows", value: "11" },
 ];
 
 const heroDashboardSizes = "(min-width: 1280px) 604px, (min-width: 1024px) 46vw, calc(100vw - 48px)";
@@ -222,8 +213,7 @@ export default function HomePage() {
                 href="#pricing"
                 className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-950 shadow-xl shadow-rose-950/20 transition hover:-translate-y-0.5 hover:bg-rose-50"
               >
-                {/* SYNC-WITH-SEED: trial_days — update when SEED_VERSION bumps paid trial length */}
-                Start 30-day trial
+                Start free
               </Link>
               <DemoVideoLauncher
                 demo={heroDemo}
@@ -239,9 +229,6 @@ export default function HomePage() {
                 </div>
               ))}
             </dl>
-            <p className="mt-3 max-w-2xl text-xs leading-5 text-slate-500">
-              Example metrics from the seeded product walkthrough; replace with verified customer outcomes before scaling paid campaigns.
-            </p>
           </div>
 
           <div className="relative">
@@ -281,19 +268,13 @@ export default function HomePage() {
 
       <section id="showcase" className="scroll-mt-28 bg-slate-950 px-5 py-8 sm:px-8 sm:py-10 lg:px-12">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-6 grid gap-4 sm:mb-10 sm:gap-6 lg:grid-cols-[0.7fr_0.3fr] lg:items-end">
+          <div className="mb-6 max-w-4xl sm:mb-10">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.28em] text-wedding-rose">Planner workflow</p>
               <h2 className="mt-3 text-3xl font-semibold tracking-normal text-white sm:mt-4 sm:text-5xl">
                 See the actual workspace before you sign up.
               </h2>
             </div>
-            <p className="max-w-md text-sm leading-6 text-slate-300 sm:leading-7 lg:justify-self-end">
-              Featured planner workflows shown with real product screenshots so planners can inspect website setup, guest operations, communications, vendors, payments, and team controls before signing up.
-              <Link href="/resources/demos" className="ml-1 font-semibold text-wedding-rose transition hover:text-wedding-blush">
-                Browse product demos.
-              </Link>
-            </p>
           </div>
           <FeatureShowcase demoVideosByFeatureId={featureDemosByFeatureId} />
         </div>
@@ -303,7 +284,7 @@ export default function HomePage() {
 
       <PricingSignupSection pricing={fallbackPricing} theme={defaultTheme} />
 
-      <SectionBridge label="Example proof" />
+      <SectionBridge label="Planner stories" />
 
       <section className="bg-slate-950 px-6 py-16 sm:px-8 lg:px-12">
         <div className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-3">
@@ -313,7 +294,6 @@ export default function HomePage() {
               <div className="mt-6 border-t border-white/10 pt-5">
                 <p className="font-semibold text-white">{testimonial.name}</p>
                 <p className="text-sm text-slate-400">{testimonial.role}</p>
-                <p className="mt-3 text-sm font-semibold text-emerald-200">Example outcome: {testimonial.result}</p>
               </div>
             </article>
           ))}
@@ -346,6 +326,28 @@ export default function HomePage() {
             <Link href="/resources/templates" className="hover:text-white">
               Free templates
             </Link>
+            <Link href="/support" className="hover:text-white">
+              Knowledge base
+            </Link>
+            <Link href="/resources/blog" className="hover:text-white">
+              Documentation
+            </Link>
+            <a
+              href="https://www.instagram.com/thespecialwedding"
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-white"
+            >
+              Instagram
+            </a>
+            <a
+              href="https://www.tiktok.com/@thespecialwedding1"
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-white"
+            >
+              TikTok
+            </a>
             <Link href="/privacy" className="hover:text-white">
               Privacy
             </Link>

@@ -224,7 +224,7 @@ export function getMarketingDemoVideoBySlug(slug: string): MarketingDemoVideoPag
 }
 
 export function getMarketingDemoVideoCanonicalPath(video: MarketingDemoVideoPage): string {
-  return `/resources/demos/${video.slug}`;
+  return `/features#showcase`;
 }
 
 export function getMarketingDemoVideoCanonicalUrl(video: MarketingDemoVideoPage): string {
