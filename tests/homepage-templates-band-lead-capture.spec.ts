@@ -65,7 +65,7 @@ test.describe('Homepage starter-pack lead capture', () => {
     await expect(page.getByTestId('homepage-band-resend')).toBeVisible();
     await expect(page.getByTestId('homepage-band-success-cta')).toHaveAttribute(
       'href',
-      '/resources/demos#forms-canvas-demo',
+      '/features#showcase',
     );
 
     // Network call body must include the starter-pack sentinel and the

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { chromium, type BrowserContext } from 'playwright';
 
 import { getRequiredValue, parseCliArgs, resolveFromRepo } from './cli';
+import { assertPublicSafeStorageState } from './public-safe-storage';
 
 async function login(
   context: BrowserContext,
@@ -25,15 +26,15 @@ async function login(
 
 async function main(): Promise<void> {
   const args = parseCliArgs(process.argv.slice(2));
-  const baseUrl = args.values.get('base-url') ?? 'http://127.0.0.1:3100';
+  const baseUrl = args.values.get('base-url') ?? 'http://localhost:3100';
   const outputPath = path.resolve(
-    args.values.get('output') ?? resolveFromRepo('output', 'demo-videos', 'state', 'demo-mixed.json'),
+    args.values.get('output') ?? resolveFromRepo('output', 'demo-videos', 'state', 'demo-public-safe.json'),
   );
 
-  const plannerEmail = args.values.get('planner-email') ?? process.env.SMOKE_PLANNER_EMAIL;
-  const plannerPassword = args.values.get('planner-password') ?? process.env.SMOKE_PLANNER_PASSWORD;
-  const coupleEmail = args.values.get('couple-email') ?? process.env.SMOKE_COUPLE_EMAIL;
-  const couplePassword = args.values.get('couple-password') ?? process.env.SMOKE_COUPLE_PASSWORD;
+  const plannerEmail = args.values.get('planner-email') ?? process.env.DEMO_VIDEO_PLANNER_EMAIL ?? process.env.SMOKE_PLANNER_EMAIL;
+  const plannerPassword = args.values.get('planner-password') ?? process.env.DEMO_VIDEO_PLANNER_PASSWORD ?? process.env.SMOKE_PLANNER_PASSWORD;
+  const coupleEmail = args.values.get('couple-email') ?? process.env.DEMO_VIDEO_COUPLE_EMAIL ?? process.env.SMOKE_COUPLE_EMAIL;
+  const couplePassword = args.values.get('couple-password') ?? process.env.DEMO_VIDEO_COUPLE_PASSWORD ?? process.env.SMOKE_COUPLE_PASSWORD;
 
   if (!plannerEmail || !plannerPassword) {
     throw new Error('Planner credentials are required. Pass --planner-email/--planner-password or SMOKE_PLANNER_*.');
@@ -52,6 +53,10 @@ async function main(): Promise<void> {
   await context.storageState({ path: outputPath });
   await context.close();
   await browser.close();
+
+  if (!args.flags.has('allow-personal-state')) {
+    assertPublicSafeStorageState(outputPath);
+  }
 
   console.log(`Demo browser storage state written to ${outputPath}`);
 }

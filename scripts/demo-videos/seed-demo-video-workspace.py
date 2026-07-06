@@ -18,6 +18,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from bson import ObjectId
 
@@ -27,19 +28,209 @@ if str(ROOT) not in sys.path:
 
 
 DEMO_SEED_SOURCE = "system:demo_video_seed"
-DEFAULT_PRIMARY_WEDDING_ID = "wedding_demo_video_maya_jordan"
-DEFAULT_PRIMARY_SLUG = "maya-jordan-demo"
-DEFAULT_SECONDARY_WEDDING_ID = "wedding_demo_video_harper_sol"
-DEFAULT_SECONDARY_SLUG = "harper-sol-demo"
+DEMO_TIMEZONE = ZoneInfo("America/Chicago")
+DEFAULT_PRIMARY_WEDDING_ID = "wedding_demo_video_sofia_daniel"
+DEFAULT_PRIMARY_SLUG = "sofia-daniel-demo"
+DEFAULT_PRIMARY_COUPLE_NAMES = "Sofia & Daniel"
+DEFAULT_PRIMARY_PARTNER1_NAME = "Sofia"
+DEFAULT_PRIMARY_PARTNER2_NAME = "Daniel"
+DEMO_COUPLE_ID = "couple_demo_video_sofia_daniel"
+DEMO_COUPLE_EMAIL = "sofia.daniel@joshloveweds.com"
+DEMO_COUPLE_PASSWORD = "DemoCouple2026!"
+DEFAULT_SECONDARY_WEDDING_ID = "wedding_demo_video_avery_morgan"
+DEFAULT_SECONDARY_SLUG = "avery-morgan-demo"
+DEFAULT_SECONDARY_COUPLE_NAMES = "Avery & Morgan"
+LEGACY_DEMO_WEDDING_IDS = (
+    "wedding_demo_video_peace_emmanuel",
+    "wedding_demo_video_maya_jordan",
+)
+LEGACY_DEMO_COUPLE_IDS = (
+    "couple_demo_video_peace_emmanuel",
+    "couple_demo_video_maya_jordan",
+)
+LEGACY_DEMO_COUPLE_EMAILS = (
+    "peace.emmanuel@joshloveweds.com",
+    "maya.jordan@joshloveweds.com",
+)
+PERSONAL_DEMO_COUPLE_NAMES = {"peace & emmanuel", "emmanuel & peace"}
+PERSONAL_DEMO_SLUGS = {"peace-emmanuel", "emmanuel-peace", "peace-emmanuel-demo", "emmanuel-peace-demo"}
+STALE_MARKETING_DEMO_COUPLE_NAMES = PERSONAL_DEMO_COUPLE_NAMES | {"smoke & couple"}
 NON_PRODUCTION_ENVIRONMENTS = {"development", "dev", "local", "test", "testing", "ci"}
+ALLOW_STOCK_PEACE_EMMANUEL_MEDIA = (
+    os.getenv("DEMO_VIDEO_ALLOW_STOCK_PEACE_EMMANUEL_MEDIA", "").strip().lower()
+    in {"1", "true", "yes", "on"}
+)
 DEMO_SUBSCRIPTION_ID = "demo_video_signature_subscription"
 DEMO_PLAN_ID = "plan_signature"
 DEMO_PUBLIC_FORM_ID = "form_demo_couple_intake"
 DEMO_COUPLE_FORM_ID = "64f200000000000000000001"
 DEMO_VENDOR_CONTRACT_ID = "64f100000000000000000001"
 DEMO_VENDOR_CONTRACT_TOKEN = "demo-vendor-contract-token"
+DEMO_VENDOR_PROFILE_ID = "64f400000000000000000001"
+DEMO_VENDOR_ASSIGNMENT_ID = "64f400000000000000000101"
+DEMO_VENDOR_DIRECTORY_FIXTURES = [
+    {
+        "profile_id": DEMO_VENDOR_PROFILE_ID,
+        "assignment_id": DEMO_VENDOR_ASSIGNMENT_ID,
+        "contract_id": DEMO_VENDOR_CONTRACT_ID,
+        "token": DEMO_VENDOR_CONTRACT_TOKEN,
+        "business_name": "Luna & Co. Photography",
+        "contact_name": "Elena Rivera",
+        "email": "hello@lunalanephoto.com",
+        "phone": "(555) 014-1188",
+        "website": "https://lunalanephoto.com",
+        "service_category": "photographer",
+        "service_subcategories": ["Wedding photography", "Second shooter", "Engagement session"],
+        "service_description": "Editorial wedding photography with timeline review, family-shot planning, and a six-week gallery delivery window.",
+        "typical_price_min": 5200,
+        "typical_price_max": 7800,
+        "budget_category_id": "budget_demo_photo",
+        "status": "contracted",
+        "quoted_amount": 6800.0,
+        "contracted_amount": 6800.0,
+        "paid_amount": 1700.0,
+        "contract_title": "Photography Services Agreement",
+        "contract_number": "CON-DEMO-VIDEO-001",
+        "contract_status": "sent",
+        "deposit_amount": 1700,
+        "city": "Chicago",
+        "state": "IL",
+    },
+    {
+        "profile_id": "64f400000000000000000002",
+        "assignment_id": "64f400000000000000000102",
+        "contract_id": "64f100000000000000000002",
+        "token": "demo-vendor-contract-token-floral",
+        "business_name": "Ever After Floral Studio",
+        "contact_name": "Nadia Blake",
+        "email": "studio@everafterfloral.co",
+        "phone": "(555) 014-2299",
+        "website": "https://everafterfloral.co",
+        "service_category": "decorator",
+        "service_subcategories": ["Floral design", "Reception installation", "Ceremony backdrop"],
+        "service_description": "Full floral and decor production with ceremony installation, reception flip, and strike crew.",
+        "typical_price_min": 8500,
+        "typical_price_max": 14000,
+        "budget_category_id": "budget_demo_guest_experience",
+        "status": "confirmed",
+        "quoted_amount": 9200.0,
+        "contracted_amount": 9200.0,
+        "paid_amount": 3000.0,
+        "contract_title": "Floral & Decor Production Agreement",
+        "contract_number": "CON-DEMO-VIDEO-002",
+        "contract_status": "signed",
+        "deposit_amount": 3000,
+        "city": "Chicago",
+        "state": "IL",
+    },
+    {
+        "profile_id": "64f400000000000000000003",
+        "assignment_id": "64f400000000000000000103",
+        "contract_id": "64f100000000000000000003",
+        "token": "demo-vendor-contract-token-mc",
+        "business_name": "Elton Mensah MC Services",
+        "contact_name": "Elton Mensah",
+        "email": "bookings@eltonmensahmc.com",
+        "phone": "(555) 014-6631",
+        "website": "https://eltonmensahmc.com",
+        "service_category": "mc",
+        "service_subcategories": ["Reception hosting", "Program flow", "Family introductions"],
+        "service_description": "Master of ceremonies for reception entrances, cultural program flow, and guest engagement.",
+        "typical_price_min": 1200,
+        "typical_price_max": 2500,
+        "budget_category_id": "budget_demo_planning",
+        "status": "contracted",
+        "quoted_amount": 1500.0,
+        "contracted_amount": 1500.0,
+        "paid_amount": 500.0,
+        "contract_title": "Master of Ceremonies Agreement",
+        "contract_number": "CON-DEMO-VIDEO-003",
+        "contract_status": "viewed",
+        "deposit_amount": 500,
+        "city": "Oklahoma City",
+        "state": "OK",
+    },
+    {
+        "profile_id": "64f400000000000000000004",
+        "assignment_id": "64f400000000000000000104",
+        "contract_id": "64f100000000000000000004",
+        "token": "demo-vendor-contract-token-venue",
+        "business_name": "The Glasshouse at Riverbend",
+        "contact_name": "Marisol Chen",
+        "email": "events@glasshouseriverbend.com",
+        "phone": "(555) 014-4410",
+        "website": "https://glasshouseriverbend.com",
+        "service_category": "venue",
+        "service_subcategories": ["Reception venue", "Ceremony garden", "In-house bar"],
+        "service_description": "Modern garden venue with ceremony lawn, reception hall, and private wedding-suite access.",
+        "typical_price_min": 30000,
+        "typical_price_max": 48000,
+        "budget_category_id": "budget_demo_venue",
+        "status": "quoted",
+        "quoted_amount": 42000.0,
+        "contracted_amount": 42000.0,
+        "paid_amount": 12000.0,
+        "contract_title": "Venue Rental & Bar Service Agreement",
+        "contract_number": "CON-DEMO-VIDEO-004",
+        "contract_status": "draft",
+        "deposit_amount": 12000,
+        "city": "Oklahoma City",
+        "state": "OK",
+    },
+    {
+        "profile_id": "64f400000000000000000005",
+        "assignment_id": "64f400000000000000000105",
+        "business_name": "Harvest Table Catering",
+        "contact_name": "Priya Shah",
+        "email": "events@harvesttablecatering.com",
+        "phone": "(555) 014-7300",
+        "website": "https://harvesttablecatering.com",
+        "service_category": "caterer",
+        "service_subcategories": ["Dinner service", "Cocktail hour", "Late-night bites"],
+        "service_description": "Seasonal plated dinner service with cocktail-hour bites and late-night snack station.",
+        "typical_price_min": 15000,
+        "typical_price_max": 28000,
+        "budget_category_id": "budget_demo_venue",
+        "status": "confirmed",
+        "quoted_amount": 18000.0,
+        "contracted_amount": 18000.0,
+        "paid_amount": 6000.0,
+        "city": "Tulsa",
+        "state": "OK",
+    },
+    {
+        "profile_id": "64f400000000000000000006",
+        "assignment_id": "64f400000000000000000106",
+        "business_name": "Atlas Coach",
+        "contact_name": "Marcus Hill",
+        "email": "routes@atlascoach.co",
+        "phone": "(555) 014-8802",
+        "website": "https://atlascoach.co",
+        "service_category": "transportation",
+        "service_subcategories": ["Guest shuttle", "Hotel pickup", "Late-night return route"],
+        "service_description": "Guest transportation provider for hotel-to-venue shuttles and late-night return routes.",
+        "typical_price_min": 2800,
+        "typical_price_max": 5200,
+        "budget_category_id": "budget_demo_guest_experience",
+        "status": "quoted",
+        "quoted_amount": 4600.0,
+        "contracted_amount": 4600.0,
+        "paid_amount": 2000.0,
+        "city": "Oklahoma City",
+        "state": "OK",
+    },
+]
 DEMO_CLIENT_CONTRACT_ID = "64f300000000000000000001"
 DEMO_CLIENT_PORTAL_TOKEN = "demo-contract-payment-portal-token"
+DEMO_SEATING_TABLE_IDS = {
+    "head": "64f600000000000000000001",
+    "friends": "64f600000000000000000002",
+    "family": "64f600000000000000000003",
+    "couple_friends": "64f600000000000000000004",
+    "extended_family": "64f600000000000000000005",
+    "vendor": "64f600000000000000000006",
+}
+DEMO_SEATING_LAYOUT_ID = "64f600000000000000000101"
 
 
 def _utc_now() -> datetime:
@@ -50,6 +241,62 @@ def _date_from_now(days: int) -> str:
     return (_utc_now() + timedelta(days=days)).date().isoformat()
 
 
+def _normalise_demo_label(value: str | None) -> str:
+    return " ".join(str(value or "").replace("-", " ").lower().split())
+
+
+def _is_personal_peace_emmanuel_demo(
+    *,
+    couple_names: str | None = None,
+    partner1_name: str | None = None,
+    partner2_name: str | None = None,
+    slug: str | None = None,
+) -> bool:
+    if _normalise_demo_label(couple_names) in PERSONAL_DEMO_COUPLE_NAMES:
+        return True
+    if _normalise_demo_label(slug) in PERSONAL_DEMO_SLUGS:
+        return True
+    partner_names = {_normalise_demo_label(partner1_name), _normalise_demo_label(partner2_name)}
+    return {"peace", "emmanuel"}.issubset(partner_names)
+
+
+def _stock_demo_media_allowed(
+    *,
+    couple_names: str | None = None,
+    partner1_name: str | None = None,
+    partner2_name: str | None = None,
+    slug: str | None = None,
+) -> bool:
+    if not _is_personal_peace_emmanuel_demo(
+        couple_names=couple_names,
+        partner1_name=partner1_name,
+        partner2_name=partner2_name,
+        slug=slug,
+    ):
+        return True
+    return ALLOW_STOCK_PEACE_EMMANUEL_MEDIA
+
+
+def _demo_featured_image(
+    *,
+    ready: bool,
+    couple_names: str | None,
+    partner1_name: str | None,
+    partner2_name: str | None,
+    slug: str | None,
+) -> str | None:
+    if not ready:
+        return None
+    if _stock_demo_media_allowed(
+        couple_names=couple_names,
+        partner1_name=partner1_name,
+        partner2_name=partner2_name,
+        slug=slug,
+    ):
+        return "/demo-gallery/elegant-couple-stairs.jpg"
+    return "/demo-gallery/elegant-reception-table.jpg"
+
+
 def _planner_email(args: argparse.Namespace) -> str:
     email = args.planner_email or os.getenv("SMOKE_PLANNER_EMAIL")
     if not email:
@@ -57,6 +304,12 @@ def _planner_email(args: argparse.Namespace) -> str:
             "Planner email is required. Pass --planner-email or set SMOKE_PLANNER_EMAIL."
         )
     return email.strip().lower()
+
+
+def _demo_env(name: str, default: str) -> str:
+    """Read demo-video-specific env without inheriting generic smoke wedding values."""
+
+    return os.getenv(f"DEMO_VIDEO_{name}", default)
 
 
 def _assert_demo_seed_allowed(args: argparse.Namespace) -> None:
@@ -69,6 +322,26 @@ def _assert_demo_seed_allowed(args: argparse.Namespace) -> None:
         "Refusing to seed demo-video data outside a local/test environment. "
         f"Current ENVIRONMENT/NODE_ENV is {environment!r}. "
         "Pass --allow-nonlocal only for an intentional disposable demo database."
+    )
+
+
+def _assert_public_demo_identity_allowed(args: argparse.Namespace) -> None:
+    if not _is_personal_peace_emmanuel_demo(
+        couple_names=args.primary_couple_names,
+        partner1_name=args.primary_partner1_name,
+        partner2_name=args.primary_partner2_name,
+        slug=args.primary_slug,
+    ):
+        return
+    if not ALLOW_STOCK_PEACE_EMMANUEL_MEDIA:
+        return
+    if getattr(args, "allow_personal_primary_media", False):
+        return
+    raise RuntimeError(
+        "Refusing to seed stock couple media for Peace & Emmanuel. "
+        "Use the default non-personal wedding detail media, or pass "
+        "--allow-personal-primary-media only when real approved personal media "
+        "has intentionally been loaded for capture."
     )
 
 
@@ -94,7 +367,7 @@ def _guest_doc(
     invited_days_ago: int,
     plus_ones: int = 0,
     table_id: str | None = None,
-    email_domain: str = "example.test",
+    email_domain: str = "guest.joshloveweds.com",
 ) -> dict[str, Any]:
     guest_id = ObjectId(hashlib.sha256(f"{wedding_id}:{index}".encode("utf-8")).hexdigest()[:24])
     invited_at = _utc_now() - timedelta(days=invited_days_ago)
@@ -250,6 +523,8 @@ async def _upsert_wedding(
     wedding_id: str,
     slug: str,
     couple_names: str,
+    partner1_name: str,
+    partner2_name: str,
     planner: dict[str, Any],
     date: str,
     ready: bool,
@@ -261,12 +536,22 @@ async def _upsert_wedding(
     planner_email = str(planner["email"])
     common = {
         "couple_names": couple_names,
+        "partner1_name": partner1_name,
+        "partner2_name": partner2_name,
+        "couple_portal_email": DEMO_COUPLE_EMAIL if ready else None,
         "date": date,
         "slug": slug,
         "assigned_planner_id": planner_id,
         "assigned_planner_email": planner_email,
         "status": "active",
         "venue": "The Glasshouse at Riverbend" if ready else "",
+        "featured_image": _demo_featured_image(
+            ready=ready,
+            couple_names=couple_names,
+            partner1_name=partner1_name,
+            partner2_name=partner2_name,
+            slug=slug,
+        ),
         "guest_count": 96 if ready else 54,
         "total_budget": 82500 if ready else 42000,
         "cultural_style": "modern multicultural",
@@ -289,8 +574,8 @@ async def _upsert_wedding(
             "fontFamily": "serif",
         },
         "registries": [
-            {"name": "Honeymoon Fund", "url": "https://example.test/honeymoon"},
-            {"name": "Home Essentials", "url": "https://example.test/registry"},
+            {"name": "Honeymoon Fund", "url": "https://registry.joshloveweds.com/honeymoon"},
+            {"name": "Home Essentials", "url": "https://registry.joshloveweds.com/home"},
         ],
         "faqs": [
             {
@@ -320,11 +605,79 @@ async def _upsert_wedding(
                     "attire": "Garden formal",
                 },
                 "order_of_events": [
-                    {"time": "4:00 PM", "title": "Ceremony"},
-                    {"time": "5:00 PM", "title": "Cocktail hour"},
-                    {"time": "6:30 PM", "title": "Reception"},
+                    {
+                        "id": f"{wedding_id}_traditional_processional",
+                        "time": "4:00 PM",
+                        "title": "Family processional",
+                        "description": "Parents, wedding party, and couple enter before the blessing.",
+                        "duration_minutes": 12,
+                        "order": 0,
+                        "notes": [
+                            {
+                                "id": f"{wedding_id}_note_processional_music",
+                                "author_role": "couple",
+                                "author_name": partner1_name,
+                                "text": "Please confirm the live drummer starts only after both moms are seated.",
+                                "status": "pending",
+                                "created_at": (now - timedelta(days=2, hours=4)).isoformat(),
+                            }
+                        ],
+                    },
+                    {
+                        "id": f"{wedding_id}_traditional_cocktail_hour",
+                        "time": "5:00 PM",
+                        "title": "Cocktail hour opens",
+                        "description": "Guests move to the terrace while portraits wrap.",
+                        "duration_minutes": 60,
+                        "order": 1,
+                        "notes": [],
+                    },
+                    {
+                        "id": f"{wedding_id}_traditional_reception",
+                        "time": "6:30 PM",
+                        "title": "Reception doors open",
+                        "description": "MC welcomes guests and cues wedding party entrance.",
+                        "duration_minutes": 15,
+                        "order": 2,
+                        "notes": [
+                            {
+                                "id": f"{wedding_id}_note_reception_mc_cue",
+                                "author_role": "couple",
+                                "author_name": partner2_name,
+                                "text": "Can Elton announce us after the second chorus instead of right at the intro?",
+                                "status": "seen",
+                                "created_at": (now - timedelta(days=1, hours=3)).isoformat(),
+                            },
+                            {
+                                "id": f"{wedding_id}_note_reception_mc_cue_reply",
+                                "author_role": "planner",
+                                "author_name": "Josh Akinwole",
+                                "text": "Yes, I added that cue to the MC run sheet and will confirm during sound check.",
+                                "status": "addressed",
+                                "reply_to": f"{wedding_id}_note_reception_mc_cue",
+                                "created_at": (now - timedelta(days=1, hours=2, minutes=35)).isoformat(),
+                            },
+                        ],
+                    },
                 ],
-                "event_notes": ["Planner arrival at 11:00 AM", "Golden-hour portraits at 6:05 PM"],
+                "event_notes": [
+                    {
+                        "id": f"{wedding_id}_event_note_family_photos",
+                        "author_role": "couple",
+                        "author_name": partner1_name,
+                        "text": "Please keep the immediate-family photo list separate from the extended-family list so portraits move faster.",
+                        "status": "pending",
+                        "created_at": (now - timedelta(days=2, hours=1)).isoformat(),
+                    },
+                    {
+                        "id": f"{wedding_id}_event_note_portraits",
+                        "author_role": "planner",
+                        "author_name": "Josh Akinwole",
+                        "text": "Golden-hour portraits are held for 6:05 PM; I will keep the couple hidden until the photographer is ready.",
+                        "status": "seen",
+                        "created_at": (now - timedelta(days=1, hours=22)).isoformat(),
+                    },
+                ],
             }
         ]
         if ready
@@ -341,26 +694,237 @@ async def _upsert_wedding(
     )
 
 
-async def _seed_people_and_activity(primary_id: str, secondary_id: str, planner_email: str) -> None:
+async def _seed_couple_portal_fixture(
+    primary_id: str,
+    planner: dict[str, Any],
+    *,
+    couple_names: str,
+    partner1_name: str,
+    partner2_name: str,
+) -> str:
+    from app.core.database import mongo
+    from app.utils.auth_utils import get_password_hash
+    from app.utils.messaging_roles import SENDER_ROLE_COUPLE, SENDER_ROLE_PLANNER
+
+    now = _utc_now()
+    planner_email = str(planner["email"])
+    planner_id = str(planner["_id"])
+
+    await mongo.get_couple_users_collection().delete_many(
+        {
+            "wedding_id": primary_id,
+            "$or": [
+                {"seed_source": {"$in": [DEMO_SEED_SOURCE, "system:setup_smoke_accounts"]}},
+                {"email": {"$regex": "^(demo|test)[^@]*@", "$options": "i"}},
+                {"_id": {"$regex": "^couple_demo_video_"}},
+            ],
+        }
+    )
+
+    await mongo.get_couple_users_collection().replace_one(
+        {"_id": DEMO_COUPLE_ID},
+        {
+            "_id": DEMO_COUPLE_ID,
+            "email": DEMO_COUPLE_EMAIL,
+            "partner1_name": partner1_name,
+            "partner2_name": partner2_name,
+            "wedding_id": primary_id,
+            "planner_id": planner_id,
+            "planner_email": planner_email,
+            "password_hash": get_password_hash(DEMO_COUPLE_PASSWORD),
+            "setup_completed": True,
+            "is_active": True,
+            "access_state": "active",
+            "wedding_archived": False,
+            "archived_at": None,
+            "invite_token": None,
+            "invite_token_expires": None,
+            "last_login": now - timedelta(days=1, hours=3),
+            "owner_cancelled_at": None,
+            "owner_cancelled_by_planner_id": None,
+            "owner_cancelled_by_planner_email": None,
+            "revoked_at": None,
+            "revoked_by": None,
+            "onboarding_completed": True,
+            "onboarding_completed_at": now - timedelta(days=15),
+            "onboarding_steps_completed": [
+                "welcome",
+                "overview",
+                "guest_tracker",
+                "messages",
+                "forms",
+            ],
+            "created_at": now - timedelta(days=21),
+            "updated_at": now,
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+        upsert=True,
+    )
+
+    await mongo.db["couple_messages"].delete_many(
+        {"wedding_id": primary_id, "seed_source": DEMO_SEED_SOURCE}
+    )
+    await mongo.db["couple_messages"].insert_many(
+        [
+            {
+                "_id": ObjectId("64f900000000000000000001"),
+                "wedding_id": primary_id,
+                "sender_role": SENDER_ROLE_COUPLE,
+                "sender_email": DEMO_COUPLE_EMAIL,
+                "sender_name": couple_names,
+                "content": "We uploaded the final family photo list and want JoshLoveWeds to confirm the order before Saturday.",
+                "read_by_couple": True,
+                "read_by_planner": False,
+                "created_at": now - timedelta(hours=6),
+                "seed_source": DEMO_SEED_SOURCE,
+            },
+            {
+                "_id": ObjectId("64f900000000000000000002"),
+                "wedding_id": primary_id,
+                "sender_role": SENDER_ROLE_PLANNER,
+                "sender_email": planner_email,
+                "sender_name": "Josh Akinwole",
+                "content": "Got it. I added it to the production timeline and will review the VIP groupings during our final walkthrough.",
+                "read_by_couple": True,
+                "read_by_planner": True,
+                "created_at": now - timedelta(hours=4),
+                "seed_source": DEMO_SEED_SOURCE,
+            },
+            {
+                "_id": ObjectId("64f900000000000000000003"),
+                "wedding_id": primary_id,
+                "sender_role": SENDER_ROLE_COUPLE,
+                "sender_email": DEMO_COUPLE_EMAIL,
+                "sender_name": couple_names,
+                "content": "Perfect. Can you also remind guests about arriving 15 minutes early for the ceremony?",
+                "read_by_couple": True,
+                "read_by_planner": False,
+                "created_at": now - timedelta(hours=2),
+                "seed_source": DEMO_SEED_SOURCE,
+            },
+        ]
+    )
+    return DEMO_COUPLE_EMAIL
+
+
+async def _seed_communications_fixture(
+    primary_id: str,
+    planner_email: str,
+    *,
+    wedding_slug: str,
+    couple_names: str,
+) -> None:
+    from app.core.database import mongo
+
+    now = _utc_now()
+
+    await mongo.db["reminders_sent"].delete_many(
+        {
+            "$or": [
+                {"wedding_id": primary_id, "seed_source": DEMO_SEED_SOURCE},
+                {"phone": "+13195296088"},
+                {"recipient": "+13195296088"},
+                {"to": "+13195296088"},
+            ]
+        }
+    )
+    await mongo.db["email_logs"].delete_many(
+        {
+            "$or": [
+                {"wedding_id": primary_id, "seed_source": DEMO_SEED_SOURCE},
+                {"to": {"$regex": "^(demo|test)[^@]*@", "$options": "i"}},
+                {"recipient": {"$regex": "^(demo|test)[^@]*@", "$options": "i"}},
+            ]
+        }
+    )
+
+    sms_logs = [
+            {
+                "_id": ObjectId("64fa00000000000000000001"),
+                "wedding_id": primary_id,
+                "wedding_slug": wedding_slug,
+                "guest_id": "demo_guest_amara",
+                "guest_name": "Amara Bennett",
+                "phone": "+13125555001",
+                "message": f"Hi Amara, this is a warm reminder from JoshLoveWeds for {couple_names}'s wedding weekend. Please arrive 15 minutes early for ceremony seating.",
+                "status": "success",
+            "provider": "twilio",
+            "type": "sms",
+            "target_type": "guest",
+            "event_type": "ceremony",
+            "delivery_status": "delivered",
+            "delivery_status_updated_at": now - timedelta(minutes=24),
+            "sent_at": now - timedelta(minutes=42),
+            "sent_by": planner_email,
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+            {
+                "_id": ObjectId("64fa00000000000000000002"),
+                "wedding_id": primary_id,
+                "wedding_slug": wedding_slug,
+                "guest_id": "demo_guest_mateo",
+                "guest_name": "Mateo Rivera",
+                "phone": "+13125555004",
+                "message": f"Hi Mateo, JoshLoveWeds is confirming RSVP details for {couple_names}. Please check the wedding site for schedule and FAQ updates.",
+            "status": "success",
+            "provider": "twilio",
+            "type": "sms",
+            "target_type": "guest",
+            "event_type": "all",
+            "delivery_status": "delivered",
+            "delivery_status_updated_at": now - timedelta(minutes=18),
+            "sent_at": now - timedelta(minutes=35),
+            "sent_by": planner_email,
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+    ]
+    await mongo.db["reminders_sent"].insert_many(sms_logs)
+
+    await mongo.db["email_logs"].insert_many(
+        [
+            {
+                "_id": ObjectId("64fb00000000000000000001"),
+                "wedding_id": primary_id,
+                "to": "family.hosts@joshloveweds.com",
+                "subject": f"{couple_names} - Final Weekend Details",
+                "message": "Final schedule, venue notes, and FAQ link shared with family hosts.",
+                "status": "success",
+                "provider": "resend",
+                "email_type": "weekend_details",
+                "sent_at": now - timedelta(minutes=28),
+                "sent_by": planner_email,
+                "seed_source": DEMO_SEED_SOURCE,
+            }
+        ]
+    )
+
+
+async def _seed_people_and_activity(
+    primary_id: str,
+    secondary_id: str,
+    planner_email: str,
+    *,
+    secondary_couple_names: str,
+) -> None:
     from app.core.database import mongo
 
     guest_names = [
-        ("Amara Bennett", "family", 16, 1, "table_head"),
-        ("Theo Bennett", "family", 16, 0, "table_head"),
-        ("Priya Shah", "friends", 15, 1, "table_two"),
-        ("Mateo Rivera", "friends", 15, 0, "table_two"),
-        ("Camille Brooks", "wedding_party", 14, 0, "table_head"),
-        ("Elliot Brooks", "wedding_party", 14, 0, "table_head"),
-        ("Noor Patel", "family", 13, 1, "table_three"),
-        ("Jonah Park", "friends", 13, 0, "table_two"),
-        ("Sofia Grant", "vendor_guest", 12, 0, "table_vendor"),
-        ("Miles Carter", "friends", 12, 1, "table_three"),
-        ("Leah Kim", "family", 11, 0, "table_three"),
-        ("Owen Reed", "family", 11, 0, "table_four"),
-        ("Nia Thompson", "friends", 10, 1, "table_four"),
-        ("Ari Cohen", "friends", 10, 0, "table_four"),
-        ("Grace Ellis", "family", 9, 0, "table_five"),
-        ("Henry Ellis", "family", 9, 0, "table_five"),
+        ("Amara Bennett", "family", 16, 1, DEMO_SEATING_TABLE_IDS["head"]),
+        ("Theo Bennett", "family", 16, 0, DEMO_SEATING_TABLE_IDS["head"]),
+        ("Priya Shah", "friends", 15, 1, DEMO_SEATING_TABLE_IDS["friends"]),
+        ("Mateo Rivera", "friends", 15, 0, DEMO_SEATING_TABLE_IDS["friends"]),
+        ("Camille Brooks", "wedding_party", 14, 0, DEMO_SEATING_TABLE_IDS["head"]),
+        ("Elliot Brooks", "wedding_party", 14, 0, DEMO_SEATING_TABLE_IDS["head"]),
+        ("Noor Patel", "family", 13, 1, DEMO_SEATING_TABLE_IDS["family"]),
+        ("Jonah Park", "friends", 13, 0, DEMO_SEATING_TABLE_IDS["friends"]),
+        ("Sofia Grant", "vendor_guest", 12, 0, DEMO_SEATING_TABLE_IDS["vendor"]),
+        ("Miles Carter", "friends", 12, 1, DEMO_SEATING_TABLE_IDS["family"]),
+        ("Leah Kim", "family", 11, 0, DEMO_SEATING_TABLE_IDS["family"]),
+        ("Owen Reed", "family", 11, 0, DEMO_SEATING_TABLE_IDS["couple_friends"]),
+        ("Nia Thompson", "friends", 10, 1, DEMO_SEATING_TABLE_IDS["couple_friends"]),
+        ("Ari Cohen", "friends", 10, 0, DEMO_SEATING_TABLE_IDS["couple_friends"]),
+        ("Grace Ellis", "family", 9, 0, DEMO_SEATING_TABLE_IDS["extended_family"]),
+        ("Henry Ellis", "family", 9, 0, DEMO_SEATING_TABLE_IDS["extended_family"]),
         ("Lena Walsh", "friends", 8, 1, None),
         ("Marco Walsh", "friends", 8, 0, None),
         ("Riley Quinn", "family", 7, 0, None),
@@ -447,7 +1011,7 @@ async def _seed_people_and_activity(primary_id: str, secondary_id: str, planner_
             message="Amara Bennett accepted the invitation (+1 guest)",
             activity_type="rsvp_received",
             hours_ago=2,
-            actor_email="amara.bennett@example.test",
+            actor_email="amara.bennett@guest.joshloveweds.com",
         ),
         _activity_doc(
             key="reminder_batch",
@@ -470,12 +1034,112 @@ async def _seed_people_and_activity(primary_id: str, secondary_id: str, planner_
             key="setup_secondary",
             wedding_id=secondary_id,
             planner_email=planner_email,
-            message="Harper & Sol still needs schedule and access setup",
+            message=f"{secondary_couple_names} still needs schedule and access setup",
             activity_type="wedding_updated",
             hours_ago=25,
         ),
     ]
     await _replace_seeded_docs(mongo.get_collection("activity_logs"), wedding_ids, activities)
+
+
+async def _seed_seating_fixture(primary_id: str, secondary_id: str) -> None:
+    from app.core.database import mongo
+
+    now = _utc_now()
+    table_specs = [
+        ("head", "Family Honor Table", "rectangle", 8, 220, 260),
+        ("friends", "College Friends", "round", 8, 540, 260),
+        ("family", "Parents & Elders", "round", 8, 980, 260),
+        ("couple_friends", "Close Friends", "round", 8, 220, 640),
+        ("extended_family", "Extended Family", "round", 8, 560, 660),
+        ("vendor", "Vendor Meals", "rectangle", 8, 980, 660),
+    ]
+    tables = [
+        {
+            "_id": ObjectId(DEMO_SEATING_TABLE_IDS[key]),
+            "wedding_id": primary_id,
+            "name": name,
+            "shape": shape,
+            "capacity": capacity,
+            "x": x,
+            "y": y,
+            "created_at": now - timedelta(days=4),
+            "updated_at": now,
+            "seed_source": DEMO_SEED_SOURCE,
+        }
+        for key, name, shape, capacity, x, y in table_specs
+    ]
+    wedding_ids = [primary_id, secondary_id]
+    await mongo.db["tables"].delete_many({"wedding_id": {"$in": wedding_ids}})
+    await mongo.db["tables"].insert_many(tables)
+
+    await mongo.db["seating_layouts"].delete_many({"wedding_id": {"$in": wedding_ids}})
+    await mongo.db["seating_layouts"].insert_one(
+        {
+            "_id": ObjectId(DEMO_SEATING_LAYOUT_ID),
+            "wedding_id": primary_id,
+            "canvas_width": 1600,
+            "canvas_height": 1000,
+            "outline": [
+                {"x": 80, "y": 80},
+                {"x": 1520, "y": 80},
+                {"x": 1520, "y": 920},
+                {"x": 80, "y": 920},
+            ],
+            "background_image_data_url": None,
+            "background_image_name": None,
+            "background_locked": True,
+            "scale_pixels": 300,
+            "scale_distance": 40,
+            "scale_unit": "ft",
+            "fixtures": [
+                {
+                    "id": "fixture_demo_stage",
+                    "type": "stage",
+                    "label": "Ceremony Stage",
+                    "x": 620,
+                    "y": 115,
+                    "width": 360,
+                    "height": 80,
+                    "rotation": 0,
+                },
+                {
+                    "id": "fixture_demo_dance_floor",
+                    "type": "dance_floor",
+                    "label": "Dance Floor",
+                    "x": 660,
+                    "y": 455,
+                    "width": 280,
+                    "height": 150,
+                    "rotation": 0,
+                },
+                {
+                    "id": "fixture_demo_bar",
+                    "type": "bar",
+                    "label": "Cocktail Bar",
+                    "x": 1240,
+                    "y": 120,
+                    "width": 180,
+                    "height": 90,
+                    "rotation": 0,
+                },
+                {
+                    "id": "fixture_demo_entrance",
+                    "type": "entrance",
+                    "label": "Guest Entrance",
+                    "x": 120,
+                    "y": 820,
+                    "width": 110,
+                    "height": 70,
+                    "rotation": 0,
+                },
+            ],
+            "created_at": now - timedelta(days=4),
+            "updated_at": now,
+            "updated_by": DEMO_SEED_SOURCE,
+            "seed_source": DEMO_SEED_SOURCE,
+        }
+    )
 
 
 async def _seed_ai_cache(primary_id: str, planner: dict[str, Any]) -> None:
@@ -517,19 +1181,130 @@ async def _seed_ai_cache(primary_id: str, planner: dict[str, Any]) -> None:
     )
 
 
-async def _seed_guest_media_fixture(primary_id: str) -> str:
+async def _seed_guest_media_fixture(
+    primary_id: str,
+    *,
+    couple_names: str,
+    partner1_name: str,
+    partner2_name: str,
+) -> str:
     from app.core.database import mongo
     from app.services.guest_media_service import guest_media_service
 
     wedding = await mongo.get_weddings_collection().find_one({"_id": primary_id})
     if not wedding:
         raise RuntimeError(f"Cannot seed guest media fixture; wedding {primary_id} was not found.")
+
+    # MongoDB stores datetimes at millisecond precision. The first ensure call may
+    # create last_rotated_at with Python microseconds, so reload before returning
+    # the route token that browser recordings will actually validate against.
+    await guest_media_service.ensure_guest_media_config(wedding)
+    wedding = await mongo.get_weddings_collection().find_one({"_id": primary_id})
+    if not wedding:
+        raise RuntimeError(f"Cannot reload guest media fixture; wedding {primary_id} was not found.")
     ensured = await guest_media_service.ensure_guest_media_config(wedding)
+    now = _utc_now()
+    wedding_slug = wedding.get("slug") or DEFAULT_PRIMARY_SLUG
+    stock_media_allowed = _stock_demo_media_allowed(
+        couple_names=couple_names,
+        partner1_name=partner1_name,
+        partner2_name=partner2_name,
+        slug=wedding_slug,
+    )
+    asset_collection = mongo.db["guest_media_assets"]
+    await asset_collection.delete_many(
+        {"wedding_id": primary_id, "seed_source": DEMO_SEED_SOURCE}
+    )
+    preview_urls = (
+        {
+            "couple": "/demo-gallery/elegant-couple-stairs.jpg",
+            "ceremony": "/demo-gallery/elegant-ceremony-aisle.jpg",
+            "reception": "/demo-gallery/elegant-reception-table.jpg",
+            "dance": "/demo-gallery/elegant-couple-stairs.jpg",
+        }
+        if stock_media_allowed
+        else {
+            "couple": "/demo-gallery/elegant-reception-table.jpg",
+            "ceremony": "/demo-gallery/elegant-reception-table.jpg",
+            "reception": "/demo-gallery/elegant-reception-table.jpg",
+            "dance": "/demo-gallery/elegant-reception-table.jpg",
+        }
+    )
+    memory_fixtures = (
+        [
+            ("guest_memory_pending_001", couple_names, "couple-staircase-portrait.jpg", "pending", None, preview_urls["couple"], 560_709),
+            ("guest_memory_pending_002", f"{partner1_name}'s Family", "ceremony-aisle-moment.jpg", "pending", "ceremony", preview_urls["ceremony"], 861_884),
+            ("guest_memory_pending_003", f"{partner2_name}'s Family", "reception-table-florals.jpg", "pending", "reception", preview_urls["reception"], 533_947),
+            ("guest_memory_pending_004", "Wedding Party", "first-dance-cheers.jpg", "pending", "reception", preview_urls["dance"], 237_061),
+            ("guest_memory_kept_001", f"{couple_names}'s Friends", "candlelit-reception-table.jpg", "kept", "reception", preview_urls["reception"], 533_947),
+            ("guest_memory_kept_002", f"{partner2_name} Family", "garden-ceremony-aisle.jpg", "kept", "ceremony", preview_urls["ceremony"], 861_884),
+            ("guest_memory_rejected_001", "Guest Upload", "overexposed-dance-floor.jpg", "rejected", "reception", preview_urls["dance"], 237_061),
+        ]
+        if stock_media_allowed
+        else [
+            ("guest_memory_pending_001", "Reception Design", "reception-table-florals.jpg", "pending", "reception", preview_urls["reception"], 533_947),
+            ("guest_memory_pending_002", "Ceremony Details", "ceremony-floral-detail.jpg", "pending", "ceremony", preview_urls["ceremony"], 533_947),
+            ("guest_memory_pending_003", "Cocktail Hour", "cocktail-table-detail.jpg", "pending", "reception", preview_urls["reception"], 533_947),
+            ("guest_memory_pending_004", "Reception Setup", "place-setting-detail.jpg", "pending", "reception", preview_urls["dance"], 533_947),
+            ("guest_memory_kept_001", "Table Design", "candlelit-reception-table.jpg", "kept", "reception", preview_urls["reception"], 533_947),
+            ("guest_memory_kept_002", "Floral Install", "garden-ceremony-florals.jpg", "kept", "ceremony", preview_urls["ceremony"], 533_947),
+            ("guest_memory_rejected_001", "Guest Upload", "overexposed-detail-shot.jpg", "rejected", "reception", preview_urls["dance"], 533_947),
+        ]
+    )
+    await asset_collection.insert_many(
+        [
+            {
+                "_id": asset_id,
+                "wedding_id": primary_id,
+                "wedding_slug": wedding_slug,
+                "upload_batch_id": f"demo_guest_batch_{index + 1:02d}",
+                "uploader_name": uploader_name,
+                "event_type": event_type,
+                "media_type": "image",
+                "mime_type": "image/jpeg",
+                "size_bytes": size_bytes,
+                "original_filename": filename,
+                "original_bucket": "local-demo-guest-memories",
+                "original_key": f"guest-media/{wedding_slug}/demo/{filename}",
+                "demo_preview_url": preview_url,
+                "stream_uid": None,
+                "stream_status": None,
+                "stream_playback_base_url": None,
+                "review_status": review_status,
+                "visibility": "couple_only",
+                "upload_status": "uploaded",
+                "uploaded_at": now - timedelta(minutes=45 + index * 7),
+                "reviewed_at": (
+                    now - timedelta(minutes=18 + index * 4)
+                    if review_status in {"kept", "rejected"}
+                    else None
+                ),
+                "created_at": now - timedelta(hours=2, minutes=index * 5),
+                "updated_at": now - timedelta(minutes=10 + index),
+                "seed_source": DEMO_SEED_SOURCE,
+            }
+            for index, (
+                asset_id,
+                uploader_name,
+                filename,
+                review_status,
+                event_type,
+                preview_url,
+                size_bytes,
+            ) in enumerate(memory_fixtures)
+        ],
+        ordered=False,
+    )
     return str(ensured["upload_token"])
 
 
 async def _seed_form_fixture(
-    primary_id: str, planner_email: str, couple_email: str | None
+    primary_id: str,
+    planner_email: str,
+    couple_email: str | None,
+    *,
+    couple_names: str,
+    partner1_name: str,
 ) -> tuple[str, str]:
     from bson import ObjectId
 
@@ -561,7 +1336,7 @@ async def _seed_form_fixture(
                 "type": "text",
                 "required": True,
                 "order": 1,
-                "placeholder": "Maya Bennett",
+                "placeholder": partner1_name,
             },
             {
                 "id": "priorities",
@@ -599,23 +1374,39 @@ async def _seed_form_fixture(
         {"_id": DEMO_PUBLIC_FORM_ID, **common_form, "shared_with_couple": False},
         upsert=True,
     )
+    couple_form = {
+        **common_form,
+        "title": "Final Detail Confirmation",
+        "description": "A final confirmation form for VIP contacts, arrival windows, and day-of preferences.",
+        "name": "Final Detail Confirmation",
+        "settings": {
+            **common_form["settings"],
+            "title": "Final Detail Confirmation",
+            "description": "A final confirmation form for VIP contacts, arrival windows, and day-of preferences.",
+        },
+        "submission_count": 0,
+        "unread_responses": 0,
+    }
     await mongo.get_forms_collection().replace_one(
         {"_id": couple_form_object_id},
-        {"_id": couple_form_object_id, **common_form},
+        {"_id": couple_form_object_id, **couple_form},
         upsert=True,
     )
     await mongo.get_collection("form_responses").delete_many(
         {"seed_source": DEMO_SEED_SOURCE}
     )
+    response_email = couple_email or DEMO_COUPLE_EMAIL
     await mongo.get_collection("form_responses").insert_one(
         {
             "_id": "form_response_demo_couple_intake_1",
             "form_id": DEMO_PUBLIC_FORM_ID,
             "wedding_id": primary_id,
-            "respondent_email": "maya.demo@example.test",
-            "respondent_name": "Maya Bennett",
+            "respondent_email": response_email,
+            "respondent_name": partner1_name,
+            "submitted_by_email": response_email,
+            "submitted_by_name": partner1_name,
             "responses": {
-                "full_name": "Maya Bennett",
+                "full_name": partner1_name,
                 "priorities": "Keep the ceremony calm, protect photo time, and make vendor handoffs invisible.",
                 "vip_count": 14,
             },
@@ -634,10 +1425,10 @@ async def _seed_form_fixture(
                 "form_id": DEMO_COUPLE_FORM_ID,
                 "wedding_id": primary_id,
                 "submitted_by": couple_email,
-                "submitted_by_name": "Maya & Jordan",
+                "submitted_by_name": couple_names,
                 "submitted_by_type": "couple",
                 "responses": {
-                    "full_name": "Maya Bennett",
+                    "full_name": partner1_name,
                     "priorities": "Keep the ceremony calm, protect photo time, and make vendor handoffs invisible.",
                     "vip_count": 14,
                 },
@@ -649,83 +1440,936 @@ async def _seed_form_fixture(
     return DEMO_PUBLIC_FORM_ID, DEMO_COUPLE_FORM_ID
 
 
-async def _seed_vendor_contract_fixture(primary_id: str, planner_email: str) -> str:
-    from bson import ObjectId
+async def _seed_budget_fixture(primary_id: str) -> None:
+    from app.core.database import mongo
 
+    now = _utc_now()
+    payment_records = [
+        {
+            "_id": ObjectId("64f700000000000000000001"),
+            "id": ObjectId("64f700000000000000000001"),
+            "category_id": "budget_demo_planning",
+            "vendor_name": "JoshLoveWeds",
+            "amount": 3200.0,
+            "payment_method": "transfer",
+            "payment_date": now - timedelta(days=16),
+            "description": "Planning retainer and production kickoff",
+            "status": "completed",
+            "notes": "Retainer logged from the signed planning agreement.",
+            "created_at": now - timedelta(days=16),
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+        {
+            "_id": ObjectId("64f700000000000000000002"),
+            "id": ObjectId("64f700000000000000000002"),
+            "category_id": "budget_demo_venue",
+            "vendor_name": "The Glasshouse at Riverbend",
+            "amount": 12000.0,
+            "payment_method": "transfer",
+            "payment_date": now - timedelta(days=14),
+            "description": "Venue deposit for ceremony and reception spaces",
+            "status": "completed",
+            "notes": "Contracted date hold and venue production deposit.",
+            "created_at": now - timedelta(days=14),
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+        {
+            "_id": ObjectId("64f700000000000000000003"),
+            "id": ObjectId("64f700000000000000000003"),
+            "category_id": "budget_demo_venue",
+            "vendor_name": "Harvest Table Catering",
+            "amount": 6000.0,
+            "payment_method": "card",
+            "payment_date": now - timedelta(days=12),
+            "description": "Catering deposit after tasting approval",
+            "status": "completed",
+            "notes": "Menu includes cocktail hour bites, dinner service, and late-night snacks.",
+            "created_at": now - timedelta(days=12),
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+        {
+            "_id": ObjectId("64f700000000000000000004"),
+            "id": ObjectId("64f700000000000000000004"),
+            "category_id": "budget_demo_photo",
+            "vendor_name": "Luna & Co. Photography",
+            "amount": 1700.0,
+            "payment_method": "transfer",
+            "payment_date": now - timedelta(days=10),
+            "description": "Photo and video retainer",
+            "status": "completed",
+            "notes": "Matches the assigned photography and video vendor.",
+            "created_at": now - timedelta(days=10),
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+        {
+            "_id": ObjectId("64f700000000000000000005"),
+            "id": ObjectId("64f700000000000000000005"),
+            "category_id": "budget_demo_attire",
+            "vendor_name": "Mira Bridal Atelier",
+            "amount": 5400.0,
+            "payment_method": "card",
+            "payment_date": now - timedelta(days=9),
+            "description": "Attire balance and alterations package",
+            "status": "completed",
+            "notes": "Includes final fittings and pressing.",
+            "created_at": now - timedelta(days=9),
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+        {
+            "_id": ObjectId("64f700000000000000000006"),
+            "id": ObjectId("64f700000000000000000006"),
+            "category_id": "budget_demo_attire",
+            "vendor_name": "Glow Room Beauty",
+            "amount": 2000.0,
+            "payment_method": "card",
+            "payment_date": now - timedelta(days=8),
+            "description": "Hair and makeup trial plus booking deposit",
+            "status": "completed",
+            "notes": "Bride, moms, and wedding party beauty team deposit.",
+            "created_at": now - timedelta(days=8),
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+        {
+            "_id": ObjectId("64f700000000000000000007"),
+            "id": ObjectId("64f700000000000000000007"),
+            "category_id": "budget_demo_guest_experience",
+            "vendor_name": "Paper Moon Stationery",
+            "amount": 2600.0,
+            "payment_method": "check",
+            "payment_date": now - timedelta(days=6),
+            "description": "Invitation suite, day-of signage, and escort cards",
+            "status": "completed",
+            "notes": "Proofs approved by the couple.",
+            "created_at": now - timedelta(days=6),
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+        {
+            "_id": ObjectId("64f700000000000000000008"),
+            "id": ObjectId("64f700000000000000000008"),
+            "category_id": "budget_demo_guest_experience",
+            "vendor_name": "Atlas Coach",
+            "amount": 2000.0,
+            "payment_method": "transfer",
+            "payment_date": now - timedelta(days=4),
+            "description": "Transportation retainer for hotel-to-venue shuttles",
+            "status": "pending",
+            "notes": "Pending bank confirmation; final route list due next week.",
+            "created_at": now - timedelta(days=4),
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+    ]
+    payments_by_category: dict[str, list[dict[str, Any]]] = {}
+    for payment in payment_records:
+        category_id = str(payment["category_id"])
+        payments_by_category.setdefault(category_id, []).append(
+            {
+                "id": str(payment["id"]),
+                "category_id": category_id,
+                "vendor_name": payment["vendor_name"],
+                "amount": payment["amount"],
+                "payment_method": payment["payment_method"],
+                "payment_date": payment["payment_date"],
+                "description": payment["description"],
+                "status": payment["status"],
+                "notes": payment["notes"],
+                "created_at": payment["created_at"],
+            }
+        )
+    categories = [
+        {
+            "_id": "budget_demo_planning",
+            "name": "Planning & Production",
+            "description": "Full-service planning, production management, and event-day staffing.",
+            "budgeted_amount": 12800.0,
+            "actual_spent": 3200.0,
+            "payment_status": "partial",
+            "priority": 1,
+            "percentage_of_total": 15.5,
+        },
+        {
+            "_id": "budget_demo_venue",
+            "name": "Venue & Catering",
+            "description": "Reception venue, catering package, staffing, and service fees.",
+            "budgeted_amount": 42000.0,
+            "actual_spent": 18000.0,
+            "payment_status": "partial",
+            "priority": 1,
+            "percentage_of_total": 50.9,
+        },
+        {
+            "_id": "budget_demo_photo",
+            "name": "Photography & Video",
+            "description": "Photography coverage, second shooter, gallery delivery, and short-form video.",
+            "budgeted_amount": 6800.0,
+            "actual_spent": 1700.0,
+            "payment_status": "partial",
+            "priority": 2,
+            "percentage_of_total": 8.2,
+        },
+        {
+            "_id": "budget_demo_attire",
+            "name": "Attire & Beauty",
+            "description": "Wedding attire, alterations, hair, makeup, and getting-ready support.",
+            "budgeted_amount": 9200.0,
+            "actual_spent": 7400.0,
+            "payment_status": "partial",
+            "priority": 3,
+            "percentage_of_total": 11.2,
+        },
+        {
+            "_id": "budget_demo_guest_experience",
+            "name": "Guest Experience",
+            "description": "Transportation, welcome bags, signage, stationery, and late-night snacks.",
+            "budgeted_amount": 11700.0,
+            "actual_spent": 4600.0,
+            "payment_status": "partial",
+            "priority": 3,
+            "percentage_of_total": 14.2,
+        },
+    ]
+    vendor_quote_records = [
+        {
+            "_id": ObjectId("64f800000000000000000001"),
+            "wedding_id": primary_id,
+            "vendor_id": "64f400000000000000000001",
+            "category_id": "budget_demo_photo",
+            "vendor_name": "DFam Productions",
+            "vendor_email": "bookings@dfamproductions.co",
+            "vendor_phone": "(405) 555-0198",
+            "service_category": "photography",
+            "quote_amount": 7600.0,
+            "quote_details": {
+                "coverage_hours": 10,
+                "photo_team": "2 photographers",
+                "video_team": "2 videographers",
+                "highlight_film": "5-7 minutes",
+                "gallery_delivery": "6 weeks",
+            },
+            "includes": [
+                "Engagement session",
+                "Wedding-day photo and video coverage",
+                "Drone coverage when venue rules allow",
+                "Edited online gallery",
+                "Short-form social preview reel",
+            ],
+            "excludes": [
+                "Same-day edit",
+                "Raw unedited footage",
+            ],
+            "terms_conditions": "30% retainer due on signing; remaining balance due 14 days before the wedding.",
+            "status": "pending",
+            "valid_until": now + timedelta(days=21),
+            "notes": "Strong fit for combined photography and videography coverage.",
+            "rating": 5,
+            "created_at": now - timedelta(days=5),
+            "updated_at": now - timedelta(days=2),
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+        {
+            "_id": ObjectId("64f800000000000000000002"),
+            "wedding_id": primary_id,
+            "vendor_id": "64f400000000000000000002",
+            "category_id": "budget_demo_photo",
+            "vendor_name": "Luna & Co. Photography",
+            "vendor_email": "hello@lunalanephoto.com",
+            "vendor_phone": "(555) 014-1188",
+            "service_category": "photography",
+            "quote_amount": 6800.0,
+            "quote_details": {
+                "coverage_hours": 10,
+                "photo_team": "2 photographers",
+                "video_team": "short-form add-on",
+                "gallery_delivery": "6 weeks",
+            },
+            "includes": [
+                "Timeline review",
+                "Two photographers",
+                "Preview gallery within 72 hours",
+                "Final edited gallery",
+            ],
+            "excludes": [
+                "Full ceremony film",
+                "Drone coverage",
+            ],
+            "terms_conditions": "25% retainer due on signing; final payment due 10 days before event.",
+            "status": "pending",
+            "valid_until": now + timedelta(days=14),
+            "notes": "Best still-photo package, but video scope is lighter than DFam.",
+            "rating": 4,
+            "created_at": now - timedelta(days=6),
+            "updated_at": now - timedelta(days=3),
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+        {
+            "_id": ObjectId("64f800000000000000000003"),
+            "wedding_id": primary_id,
+            "category_id": "budget_demo_photo",
+            "vendor_name": "Golden Hour Collective",
+            "vendor_email": "studio@goldenhourcollective.co",
+            "vendor_phone": "(405) 555-0142",
+            "service_category": "photography",
+            "quote_amount": 5900.0,
+            "quote_details": {
+                "coverage_hours": 8,
+                "photo_team": "lead photographer + second shooter",
+                "video_team": "not included",
+                "gallery_delivery": "8 weeks",
+            },
+            "includes": [
+                "Eight hours of wedding-day coverage",
+                "Second shooter",
+                "Online proofing gallery",
+                "Print release",
+            ],
+            "excludes": [
+                "Videography",
+                "Engagement session",
+                "Travel outside Oklahoma City metro",
+            ],
+            "terms_conditions": "40% retainer due on signing; overtime billed hourly.",
+            "status": "pending",
+            "valid_until": now + timedelta(days=10),
+            "notes": "Lowest price, but missing video and shorter coverage window.",
+            "rating": 3,
+            "created_at": now - timedelta(days=7),
+            "updated_at": now - timedelta(days=4),
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+    ]
+    await mongo.get_collection("budget_categories").delete_many(
+        {"wedding_id": primary_id, "seed_source": DEMO_SEED_SOURCE}
+    )
+    await mongo.get_collection("payment_records").delete_many(
+        {
+            "category_id": {"$in": [str(category["_id"]) for category in categories]},
+            "seed_source": DEMO_SEED_SOURCE,
+        }
+    )
+    await mongo.db["vendor_quotes"].delete_many(
+        {"wedding_id": primary_id, "seed_source": DEMO_SEED_SOURCE}
+    )
+    await mongo.get_collection("payment_records").insert_many(payment_records)
+    await mongo.db["vendor_quotes"].insert_many(vendor_quote_records)
+    await mongo.get_collection("budget_categories").insert_many(
+        [
+            {
+                **category,
+                "wedding_id": primary_id,
+                "subcategories": [],
+                "vendor_quotes": [
+                    str(quote["_id"])
+                    for quote in vendor_quote_records
+                    if quote.get("category_id") == category["_id"]
+                ],
+                "payments": payments_by_category.get(str(category["_id"]), []),
+                "created_at": now - timedelta(days=18),
+                "updated_at": now,
+                "seed_source": DEMO_SEED_SOURCE,
+            }
+            for category in categories
+        ]
+    )
+
+
+async def _seed_service_packages_fixture(planner: dict[str, Any]) -> None:
+    from app.core.database import mongo
+
+    now = _utc_now()
+    planner_id = str(planner["_id"])
+    packages = [
+        {
+            "_id": ObjectId("64f310000000000000000001"),
+            "planner_id": planner_id,
+            "name": "Signature Planning + Production",
+            "description": "Full-service planning, production management, budget oversight, vendor orchestration, and wedding-week command center.",
+            "services": [
+                {
+                    "name": "Planning command center setup",
+                    "description": "Build the couple portal, microsite, RSVP flow, shared calendar, and planning dashboard.",
+                    "included": True,
+                },
+                {
+                    "name": "Vendor and contract management",
+                    "description": "Coordinate vendor onboarding, contract status, payment milestones, and quote comparisons.",
+                    "included": True,
+                },
+                {
+                    "name": "Wedding-week production",
+                    "description": "Run-of-show, seating checks, guest communications, and event-day team briefings.",
+                    "included": True,
+                },
+            ],
+            "total_amount": 12800.0,
+            "currency": "usd",
+            "payment_schedule": [
+                {"name": "Retainer", "trigger": "on_signing", "amount": 3200.0},
+                {
+                    "name": "Design lock",
+                    "trigger": "fixed_date",
+                    "fixed_date": (now + timedelta(days=45)).date().isoformat(),
+                    "amount": 4800.0,
+                },
+                {
+                    "name": "Final production",
+                    "trigger": "days_before_wedding",
+                    "days_before": 21,
+                    "amount": 4800.0,
+                },
+            ],
+            "cancellation_policy": "Retainer is non-refundable once planning production begins. Date transfers are reviewed case by case.",
+            "late_payment_policy": "Late balances may pause vendor outreach and final production deliverables until resolved.",
+            "custom_terms": "Includes one lead planner, two event-day assistants, and all shared workspace setup.",
+            "is_template": False,
+            "status": "active",
+            "contracts_count": 3,
+            "created_at": now - timedelta(days=32),
+            "updated_at": now - timedelta(days=1),
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+        {
+            "_id": ObjectId("64f310000000000000000002"),
+            "planner_id": planner_id,
+            "name": "Month-of Coordination",
+            "description": "A lighter package for couples who planned most details and need final logistics, vendor confirmation, and event-week execution.",
+            "services": [
+                {
+                    "name": "Final detail intake",
+                    "description": "Import the couple's vendor list, timeline, RSVP status, and outstanding decisions.",
+                    "included": True,
+                },
+                {
+                    "name": "Timeline and seating review",
+                    "description": "Clean up run-of-show, seating constraints, and event-day communication plans.",
+                    "included": True,
+                },
+                {
+                    "name": "Event-day coordination",
+                    "description": "Lead vendor arrivals, cue ceremony/reception moments, and resolve guest-service issues.",
+                    "included": True,
+                },
+            ],
+            "total_amount": 4800.0,
+            "currency": "usd",
+            "payment_schedule": [
+                {"name": "Booking payment", "trigger": "on_signing", "percentage": 50.0},
+                {
+                    "name": "Wedding-week balance",
+                    "trigger": "days_before_wedding",
+                    "days_before": 14,
+                    "percentage": 50.0,
+                },
+            ],
+            "cancellation_policy": "Booking payment is non-refundable after kickoff.",
+            "late_payment_policy": "Final balance is due before the wedding-week production call.",
+            "custom_terms": "Best for couples with confirmed vendor contracts and a working guest list.",
+            "is_template": False,
+            "status": "active",
+            "contracts_count": 1,
+            "created_at": now - timedelta(days=24),
+            "updated_at": now - timedelta(days=3),
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+        {
+            "_id": ObjectId("64f310000000000000000003"),
+            "planner_id": planner_id,
+            "name": "Luxury Destination Weekend",
+            "description": "Template for multi-day celebrations with travel logistics, concierge guest support, and expanded vendor production.",
+            "services": [
+                {
+                    "name": "Weekend itinerary design",
+                    "description": "Build a multi-event guest itinerary, travel FAQ, and vendor arrival plan.",
+                    "included": True,
+                },
+                {
+                    "name": "Guest concierge workflow",
+                    "description": "Coordinate VIP arrivals, hotel blocks, shuttles, and event access messaging.",
+                    "included": True,
+                },
+                {
+                    "name": "Expanded production team",
+                    "description": "Plan staffing coverage across welcome party, ceremony, reception, and farewell brunch.",
+                    "included": True,
+                },
+            ],
+            "total_amount": 24500.0,
+            "currency": "usd",
+            "payment_schedule": [
+                {"name": "Strategy retainer", "trigger": "on_signing", "percentage": 30.0},
+                {"name": "Production lock", "trigger": "days_after_signing", "days_after": 60, "percentage": 40.0},
+                {"name": "Final logistics", "trigger": "days_before_wedding", "days_before": 30, "percentage": 30.0},
+            ],
+            "cancellation_policy": "Destination retainers are non-refundable once travel planning begins.",
+            "late_payment_policy": "Late balances may pause travel concierge and vendor-production handoffs.",
+            "custom_terms": "Template package used for destination inquiries; customize after discovery.",
+            "is_template": True,
+            "status": "draft",
+            "contracts_count": 0,
+            "created_at": now - timedelta(days=18),
+            "updated_at": now - timedelta(days=4),
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+    ]
+    await mongo.get_collection("packages").delete_many(
+        {"planner_id": planner_id, "seed_source": DEMO_SEED_SOURCE}
+    )
+    await mongo.get_collection("packages").insert_many(packages)
+
+
+def _demo_schedule_start(hour_offset: int) -> datetime:
+    now = datetime.now(DEMO_TIMEZONE)
+    start = (now + timedelta(hours=hour_offset)).replace(
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    if start.month != now.month:
+        start = now.replace(hour=20, minute=0, second=0, microsecond=0)
+    return start.astimezone(timezone.utc)
+
+
+def _calendar_fixture_doc(
+    *,
+    object_id: str,
+    planner: dict[str, Any],
+    primary_id: str,
+    title: str,
+    description: str,
+    start_date: datetime,
+    duration_minutes: int,
+    category: str,
+    priority: str,
+    schedule_item_type: str,
+    couple_names: str,
+    status: str = "pending",
+    couple_email: str | None = None,
+    color: str | None = None,
+) -> dict[str, Any]:
+    planner_email = str(planner["email"])
+    planner_id = str(planner["_id"])
+    end_date = start_date + timedelta(minutes=duration_minutes)
+    return {
+        "_id": ObjectId(object_id),
+        "planner_email": planner_email,
+        "owner_planner_id": planner_id,
+        "owner_planner_email": planner_email,
+        "created_by_user_id": planner_id,
+        "created_by_email": planner_email,
+        "assigned_user_ids": [planner_id],
+        "assigned_user_emails": [planner_email],
+        "wedding_id": primary_id,
+        "title": title,
+        "description": description,
+        "category": category,
+        "priority": priority,
+        "status": status,
+        "schedule_item_type": schedule_item_type,
+        "visibility_mode": "details",
+        "calendar_sync_policy": "owner_only",
+        "sync_target_override_enabled": False,
+        "sync_target_connection_ids": [],
+        "external_sync_requested": False,
+        "start_date": start_date,
+        "end_date": end_date,
+        "all_day": False,
+        "due_date": end_date if schedule_item_type == "task" else None,
+        "timezone": "America/Chicago",
+        "couple_attendee_emails": [couple_email] if couple_email else [],
+        "external_attendees": [],
+        "conference_provider": None,
+        "conference_url": None,
+        "invite_delivery_mode": "portal_only" if schedule_item_type == "meeting" else "none",
+        "meeting_status": "scheduled" if schedule_item_type == "meeting" else None,
+        "reminder_minutes": 60,
+        "is_recurring": False,
+        "recurrence_rule": None,
+        "color": color,
+        "notes": f"Demo-video fixture for the {couple_names} planning timeline.",
+        "attachments": [],
+        "created_at": _utc_now() - timedelta(days=5),
+        "updated_at": _utc_now(),
+        "version": 1,
+        "completed_at": None,
+        "external_conflict_status": "none",
+        "external_conflict_source": None,
+        "external_conflict_detected_at": None,
+        "external_last_modified_at": None,
+        "external_start_date": None,
+        "external_end_date": None,
+        "external_title": None,
+        "external_description": None,
+        "external_location": None,
+        "seed_source": DEMO_SEED_SOURCE,
+    }
+
+
+async def _seed_calendar_fixture(
+    primary_id: str,
+    planner: dict[str, Any],
+    couple_email: str | None,
+    *,
+    couple_names: str,
+) -> None:
+    from app.core.database import mongo
+
+    base_start = _demo_schedule_start(10)
+    docs = [
+        _calendar_fixture_doc(
+            object_id="64f500000000000000000001",
+            planner=planner,
+            primary_id=primary_id,
+            title=f"{couple_names} final timeline review",
+            description="Confirm ceremony handoff, cocktail hour flow, reception entrances, and vendor cue sheet.",
+            start_date=base_start,
+            duration_minutes=75,
+            category="meeting",
+            priority="high",
+            schedule_item_type="meeting",
+            couple_email=couple_email,
+            color="#0f766e",
+            couple_names=couple_names,
+        ),
+        _calendar_fixture_doc(
+            object_id="64f500000000000000000002",
+            planner=planner,
+            primary_id=primary_id,
+            title="Vendor load-in confirmation",
+            description="Verify venue access windows for decor, catering, photography, and entertainment teams.",
+            start_date=base_start + timedelta(hours=2),
+            duration_minutes=45,
+            category="reception",
+            priority="urgent",
+            schedule_item_type="task",
+            status="in_progress",
+            color="#d97706",
+            couple_names=couple_names,
+        ),
+        _calendar_fixture_doc(
+            object_id="64f500000000000000000003",
+            planner=planner,
+            primary_id=primary_id,
+            title="Family photo list final pass",
+            description="Review VIP groupings, couple portraits, and post-ceremony family photo order.",
+            start_date=base_start + timedelta(hours=4),
+            duration_minutes=60,
+            category="photography",
+            priority="medium",
+            schedule_item_type="meeting",
+            couple_email=couple_email,
+            color="#7c3aed",
+            couple_names=couple_names,
+        ),
+        _calendar_fixture_doc(
+            object_id="64f500000000000000000004",
+            planner=planner,
+            primary_id=primary_id,
+            title="RSVP and seating checkpoint",
+            description="Lock the current guest count, table assignments, and meal-note exceptions before final print.",
+            start_date=base_start + timedelta(hours=6),
+            duration_minutes=30,
+            category="guest_management",
+            priority="high",
+            schedule_item_type="task",
+            color="#2563eb",
+            couple_names=couple_names,
+        ),
+    ]
+
+    await mongo.get_planner_tasks_collection().delete_many(
+        {"wedding_id": primary_id, "seed_source": DEMO_SEED_SOURCE}
+    )
+    await mongo.get_planner_tasks_collection().insert_many(docs)
+
+
+async def _seed_vendor_directory_fixture(
+    primary_id: str,
+    planner_email: str,
+    *,
+    couple_names: str,
+) -> str:
+    from app.core.database import mongo
+
+    now = _utc_now()
+    for index, fixture in enumerate(DEMO_VENDOR_DIRECTORY_FIXTURES):
+        vendor_object_id = ObjectId(fixture["profile_id"])
+        assignment_object_id = ObjectId(fixture["assignment_id"])
+        vendor = {
+            "_id": vendor_object_id,
+            "created_by": planner_email,
+            "business_name": fixture["business_name"],
+            "contact_name": fixture["contact_name"],
+            "email": fixture["email"],
+            "phone": fixture["phone"],
+            "website": fixture["website"],
+            "address": f"{1200 + index * 37} Meridian Ave",
+            "city": fixture["city"],
+            "state": fixture["state"],
+            "country": "US",
+            "postal_code": "73102",
+            "service_category": fixture["service_category"],
+            "custom_service_category": None,
+            "service_subcategories": fixture["service_subcategories"],
+            "service_description": fixture["service_description"],
+            "typical_price_min": fixture["typical_price_min"],
+            "typical_price_max": fixture["typical_price_max"],
+            "currency": "USD",
+            "is_preferred": index < 4,
+            "source": "manual",
+            "tags": ["preferred", "wedding day ready"] if index < 4 else ["shortlisted"],
+            "notes": "Preferred for polished communication, clear scope, and reliable event-week follow-through.",
+            "internal_notes": "Confirmed scope, contact preferences, and event-week follow-through.",
+            "internal_rating": 5 if index in {0, 1, 3} else 4,
+            "portfolio_urls": [fixture["website"]],
+            "weddings_count": 3 if index < 4 else 1,
+            "total_revenue": float(fixture.get("contracted_amount") or fixture["quoted_amount"]),
+            "is_active": True,
+            "last_used_at": now - timedelta(days=3 + index),
+            "created_at": now - timedelta(days=24 - index),
+            "updated_at": now,
+            "seed_source": DEMO_SEED_SOURCE,
+        }
+        await mongo.get_collection("vendor_profiles").replace_one(
+            {"_id": vendor_object_id},
+            vendor,
+            upsert=True,
+        )
+
+        assignment = {
+            "_id": assignment_object_id,
+            "wedding_id": primary_id,
+            "vendor_profile_id": fixture["profile_id"],
+            "budget_category_id": fixture.get("budget_category_id"),
+            "status": fixture["status"],
+            "vendor_name": vendor["business_name"],
+            "vendor_email": vendor["email"],
+            "service_category": vendor["service_category"],
+            "custom_service_category": None,
+            "quote_ids": [],
+            "contract_id": fixture.get("contract_id"),
+            "service_notes": f"{vendor['business_name']} is attached to the {couple_names} production plan.",
+            "quoted_amount": fixture["quoted_amount"],
+            "contracted_amount": fixture["contracted_amount"],
+            "paid_amount": fixture["paid_amount"],
+            "is_deleted": False,
+            "created_by": planner_email,
+            "created_at": now - timedelta(days=12 - index),
+            "updated_at": now,
+            "seed_source": DEMO_SEED_SOURCE,
+        }
+        await mongo.get_collection("vendor_assignments").replace_one(
+            {"_id": assignment_object_id},
+            assignment,
+            upsert=True,
+        )
+    return DEMO_VENDOR_PROFILE_ID
+
+
+async def _seed_vendor_contract_fixture(
+    primary_id: str,
+    planner_email: str,
+    *,
+    couple_names: str,
+) -> str:
     from app.core.database import mongo
     from app.models.vendor import ContractKind, ContractStatus
     from app.services.vendor_service import vendor_service
 
     now = _utc_now()
-    contract_object_id = ObjectId(DEMO_VENDOR_CONTRACT_ID)
-    access_token_hash = vendor_service._hash_contract_access_token(DEMO_VENDOR_CONTRACT_TOKEN)
-    contract = {
-        "_id": contract_object_id,
-        "wedding_id": primary_id,
-        "vendor_profile_id": "vendor_demo_luna_photo",
-        "budget_category_id": "budget_demo_photo",
-        "vendor_name": "Luna & Co. Photography",
-        "vendor_email": "luna.vendor@example.test",
-        "service_category": "photographer",
-        "contract_title": "Photography Services Agreement",
-        "contract_number": "CON-DEMO-VIDEO-001",
-        "sections": [
-            {
-                "id": "scope",
-                "title": "Scope of Services",
-                "content": "Ten hours of wedding-day photography coverage, timeline review, and edited gallery delivery.",
-                "order": 0,
-            },
-            {
-                "id": "delivery",
-                "title": "Deliverables",
-                "content": "Preview gallery within 72 hours and final edited gallery within six weeks.",
-                "order": 1,
-            },
-        ],
-        "terms_and_conditions": "Demo terms for production video capture only.",
-        "cancellation_policy": "Demo cancellation policy with no legal effect.",
-        "custom_clauses": "Planner and vendor confirm all demo-video assets are non-private fixtures.",
-        "total_amount": 6800,
-        "currency": "USD",
-        "deposit_amount": 1700,
-        "status": ContractStatus.SENT.value,
-        "access_token_hash": access_token_hash,
-        "token_expires_at": now + timedelta(days=30),
-        "token_revoked_at": None,
-        "token_last_sent_at": now - timedelta(days=1),
-        "token_last_viewed_at": None,
-        "created_by": planner_email,
-        "created_at": now - timedelta(days=5),
-        "updated_at": now,
-        "version_number": 1,
-        "root_contract_id": str(contract_object_id),
-        "parent_contract_id": None,
-        "supersedes_contract_id": None,
-        "superseded_by_contract_id": None,
-        "is_current_version": True,
-        "contract_kind": ContractKind.ORIGINAL.value,
-        "amendment_reason": None,
-        "superseded_at": None,
-        "sent_at": now - timedelta(days=1),
-        "viewed_at": None,
-        "signed_at": None,
-        "signed_by_name": None,
-        "signed_by_email": None,
-        "signature_ip": None,
-        "internal_notes": "Demo-video fixture only.",
-        "is_soft_deleted": False,
-        "seed_source": DEMO_SEED_SOURCE,
-    }
-    await mongo.get_collection("vendor_contracts").replace_one(
-        {"_id": contract_object_id},
-        contract,
-        upsert=True,
+    wedding = await mongo.get_weddings_collection().find_one({"_id": primary_id}) or {}
+    planner = await mongo.get_users_collection().find_one({"email": planner_email}) or {}
+    planner_first_name = str(
+        planner.get("first_name")
+        or planner.get("user_data", {}).get("first_name")
+        or ""
+    ).strip()
+    planner_last_name = str(
+        planner.get("last_name")
+        or planner.get("user_data", {}).get("last_name")
+        or ""
+    ).strip()
+    planner_name = " ".join(
+        part for part in [planner_first_name, planner_last_name] if part
+    ).strip()
+    planner_company = str(
+        planner.get("company_name")
+        or planner.get("user_data", {}).get("company_name")
+        or "JoshLoveWeds"
+    ).strip()
+    wedding_date = wedding.get("date")
+    service_date = (
+        datetime.fromisoformat(str(wedding_date)).replace(tzinfo=timezone.utc)
+        if isinstance(wedding_date, str) and wedding_date
+        else None
     )
-    return str(contract_object_id)
+    service_location = str(
+        wedding.get("venue") or "The Glasshouse at Riverbend, Chicago, IL"
+    ).strip()
+    status_lookup = {
+        "draft": ContractStatus.DRAFT.value,
+        "sent": ContractStatus.SENT.value,
+        "viewed": ContractStatus.VIEWED.value,
+        "signed": ContractStatus.SIGNED.value,
+    }
+    await mongo.get_collection("vendor_payment_milestones").delete_many(
+        {"wedding_id": primary_id, "seed_source": DEMO_SEED_SOURCE}
+    )
+    for index, fixture in enumerate(
+        item for item in DEMO_VENDOR_DIRECTORY_FIXTURES if item.get("contract_id")
+    ):
+        contract_object_id = ObjectId(fixture["contract_id"])
+        access_token_hash = vendor_service._hash_contract_access_token(fixture["token"])
+        contract_status = status_lookup[str(fixture["contract_status"])]
+        sent_at = now - timedelta(days=4 - index) if contract_status != ContractStatus.DRAFT.value else None
+        viewed_at = now - timedelta(days=3 - index) if contract_status in {ContractStatus.VIEWED.value, ContractStatus.SIGNED.value} else None
+        signed_at = now - timedelta(days=2) if contract_status == ContractStatus.SIGNED.value else None
+        contract = {
+            "_id": contract_object_id,
+            "wedding_id": primary_id,
+            "vendor_profile_id": fixture["profile_id"],
+            "budget_category_id": fixture.get("budget_category_id"),
+            "vendor_name": fixture["business_name"],
+            "vendor_email": fixture["email"],
+            "vendor_phone": fixture["phone"],
+            "planner_name": planner_name or planner_company or "Wedding Planner",
+            "planner_company": planner_company or planner_name or "JoshLoveWeds",
+            "couple_names": couple_names,
+            "wedding_date": service_date,
+            "service_date": service_date,
+            "service_location": service_location,
+            "service_category": fixture["service_category"],
+            "custom_service_category": None,
+            "contract_title": fixture["contract_title"],
+            "contract_number": fixture["contract_number"],
+            "sections": [
+                {
+                    "id": "scope",
+                    "title": "Scope of Services",
+                    "content": f"{fixture['business_name']} will provide {fixture['service_description']}",
+                    "order": 0,
+                },
+                {
+                    "id": "delivery",
+                    "title": "Deliverables",
+                    "content": "Planner receives a confirmed scope, event-week contact, and final production notes before the wedding weekend.",
+                    "order": 1,
+                },
+            ],
+            "terms_and_conditions": "Planner and vendor will coordinate final timing, access, and setup requirements through the shared wedding workspace.",
+            "cancellation_policy": "Cancellation and rescheduling terms follow the signed proposal and require written confirmation from both parties.",
+            "custom_clauses": "Vendor must confirm final arrival window and emergency contact before event week.",
+            "total_amount": fixture["contracted_amount"],
+            "currency": "USD",
+            "deposit_amount": fixture["deposit_amount"],
+            "status": contract_status,
+            "access_token_hash": access_token_hash,
+            "token_expires_at": now + timedelta(days=30),
+            "token_revoked_at": None,
+            "token_last_sent_at": sent_at,
+            "token_last_viewed_at": viewed_at,
+            "created_by": planner_email,
+            "created_at": now - timedelta(days=8 - index),
+            "updated_at": now - timedelta(days=index),
+            "version_number": 1,
+            "root_contract_id": str(contract_object_id),
+            "parent_contract_id": None,
+            "supersedes_contract_id": None,
+            "superseded_by_contract_id": None,
+            "is_current_version": True,
+            "contract_kind": ContractKind.ORIGINAL.value,
+            "amendment_reason": None,
+            "superseded_at": None,
+            "sent_at": sent_at,
+            "viewed_at": viewed_at,
+            "signed_at": signed_at,
+            "signed_by_name": fixture["contact_name"] if signed_at else None,
+            "signed_by_email": fixture["email"] if signed_at else None,
+            "signature_ip": "127.0.0.1" if signed_at else None,
+            "internal_notes": f"Scope reviewed for the {couple_names} production plan.",
+            "is_soft_deleted": False,
+            "seed_source": DEMO_SEED_SOURCE,
+        }
+        await mongo.get_collection("vendor_contracts").replace_one(
+            {"_id": contract_object_id},
+            contract,
+            upsert=True,
+        )
+
+        remaining_amount = max(
+            float(fixture["contracted_amount"]) - float(fixture["paid_amount"]),
+            0.0,
+        )
+        milestone_docs = [
+            {
+                "_id": ObjectId(f"64f800000000000000000{index * 2 + 1:03d}"),
+                "contract_id": fixture["contract_id"],
+                "wedding_id": primary_id,
+                "vendor_profile_id": fixture["profile_id"],
+                "budget_category_id": fixture.get("budget_category_id"),
+                "description": f"{fixture['business_name']} retainer",
+                "amount": fixture["paid_amount"],
+                "currency": "USD",
+                "percentage_of_total": round(
+                    (float(fixture["paid_amount"]) / float(fixture["contracted_amount"])) * 100,
+                    1,
+                )
+                if fixture["contracted_amount"]
+                else None,
+                "due_date": now - timedelta(days=10 - index),
+                "days_before_event": None,
+                "status": "paid" if fixture["paid_amount"] > 0 else "pending",
+                "paid_amount": fixture["paid_amount"],
+                "paid_at": now - timedelta(days=9 - index) if fixture["paid_amount"] > 0 else None,
+                "payment_method": "bank_transfer" if fixture["paid_amount"] > 0 else None,
+                "vendor_name": fixture["business_name"],
+                "vendor_email": fixture["email"],
+                "created_by": planner_email,
+                "created_at": now - timedelta(days=12 - index),
+                "updated_at": now - timedelta(days=8 - index),
+                "seed_source": DEMO_SEED_SOURCE,
+            }
+        ]
+        if remaining_amount > 0:
+            milestone_docs.append(
+                {
+                    "_id": ObjectId(f"64f800000000000000000{index * 2 + 2:03d}"),
+                    "contract_id": fixture["contract_id"],
+                    "wedding_id": primary_id,
+                    "vendor_profile_id": fixture["profile_id"],
+                    "budget_category_id": fixture.get("budget_category_id"),
+                    "description": f"{fixture['business_name']} final balance",
+                    "amount": remaining_amount,
+                    "currency": "USD",
+                    "percentage_of_total": round(
+                        (remaining_amount / float(fixture["contracted_amount"])) * 100,
+                        1,
+                    ),
+                    "due_date": now + timedelta(days=14 + index * 3),
+                    "days_before_event": 30,
+                    "status": "pending",
+                    "paid_amount": 0.0,
+                    "paid_at": None,
+                    "payment_method": None,
+                    "vendor_name": fixture["business_name"],
+                    "vendor_email": fixture["email"],
+                    "created_by": planner_email,
+                    "created_at": now - timedelta(days=8 - index),
+                    "updated_at": now,
+                    "seed_source": DEMO_SEED_SOURCE,
+                }
+            )
+        await mongo.get_collection("vendor_payment_milestones").insert_many(
+            milestone_docs
+        )
+    return DEMO_VENDOR_CONTRACT_ID
 
 
-async def _seed_client_contract_portal_fixture(primary_id: str, planner: dict[str, Any]) -> str:
+async def _seed_client_contract_portal_fixture(
+    primary_id: str,
+    planner: dict[str, Any],
+    *,
+    couple_names: str,
+    partner1_name: str,
+    partner2_name: str,
+) -> str:
     from bson import ObjectId
 
     from app.core.database import mongo
@@ -733,6 +2377,7 @@ async def _seed_client_contract_portal_fixture(primary_id: str, planner: dict[st
     now = _utc_now()
     wedding = await mongo.get_weddings_collection().find_one({"_id": primary_id}) or {}
     planner_email = str(planner.get("email") or "")
+    planner_id = str(planner.get("_id") or planner_email)
     couple_email = wedding.get("couple_portal_email") or os.getenv("SMOKE_COUPLE_EMAIL")
     contract_object_id = ObjectId(DEMO_CLIENT_CONTRACT_ID)
     wedding_date = wedding.get("date")
@@ -755,21 +2400,21 @@ async def _seed_client_contract_portal_fixture(primary_id: str, planner: dict[st
     }
     contract = {
         "_id": contract_object_id,
-        "planner_id": planner_email,
+        "planner_id": planner_id,
         "wedding_id": primary_id,
         "vendor_profile_id": "vendor_demo_signature_planning",
         "vendor_name": "The Special Wedding Studio",
         "vendor_email": planner_email,
-        "contract_title": "Maya & Jordan - Signature Planning + Production",
+        "contract_title": f"{couple_names} - Signature Planning + Production",
         "contract_number": "CLIENT-DEMO-VIDEO-001",
         "token": DEMO_CLIENT_PORTAL_TOKEN,
         "status": "active",
         "couple": {
             "email": couple_email,
-            "partner1_name": "Maya",
-            "partner2_name": "Jordan",
-            "name": "Maya",
-            "partner_name": "Jordan",
+            "partner1_name": partner1_name,
+            "partner2_name": partner2_name,
+            "name": partner1_name,
+            "partner_name": partner2_name,
         },
         "wedding_date": wedding_date_value,
         "venue": "The Glasshouse at Meridian",
@@ -805,14 +2450,14 @@ async def _seed_client_contract_portal_fixture(primary_id: str, planner: dict[st
             {
                 "_id": ObjectId("64f300000000000000000101"),
                 "contract_id": str(contract_object_id),
-                "planner_id": planner_email,
+                "planner_id": planner_id,
                 "name": "Retainer",
                 "amount": 3200,
                 "currency": "usd",
                 "due_date": now - timedelta(days=7),
                 "status": "succeeded",
                 "paid_at": now - timedelta(days=7),
-                "receipt_url": "https://example.test/demo-retainer-receipt",
+                "receipt_url": "https://payments.joshloveweds.com/receipts/demo-retainer",
                 "created_at": now - timedelta(days=11),
                 "updated_at": now - timedelta(days=7),
                 "seed_source": DEMO_SEED_SOURCE,
@@ -820,7 +2465,7 @@ async def _seed_client_contract_portal_fixture(primary_id: str, planner: dict[st
             {
                 "_id": ObjectId("64f300000000000000000102"),
                 "contract_id": str(contract_object_id),
-                "planner_id": planner_email,
+                "planner_id": planner_id,
                 "name": "Design lock",
                 "amount": 4800,
                 "currency": "usd",
@@ -835,7 +2480,7 @@ async def _seed_client_contract_portal_fixture(primary_id: str, planner: dict[st
             {
                 "_id": ObjectId("64f300000000000000000103"),
                 "contract_id": str(contract_object_id),
-                "planner_id": planner_email,
+                "planner_id": planner_id,
                 "name": "Final production",
                 "amount": 4800,
                 "currency": "usd",
@@ -852,10 +2497,173 @@ async def _seed_client_contract_portal_fixture(primary_id: str, planner: dict[st
     return DEMO_CLIENT_PORTAL_TOKEN
 
 
+async def _seed_planner_notifications_fixture(
+    primary_id: str,
+    planner_email: str,
+    *,
+    couple_names: str,
+) -> None:
+    from app.core.database import mongo
+
+    now = _utc_now()
+    notifications = [
+        {
+            "_id": ObjectId("64f320000000000000000001"),
+            "planner_id": planner_email,
+            "wedding_id": primary_id,
+            "type": "rsvp_update",
+            "title": "12 RSVPs confirmed overnight",
+            "message": f"{couple_names} crossed 140 confirmed guests after the weekend reminder.",
+            "metadata": {"confirmed_count": 140, "source": "reminder_follow_up"},
+            "priority": "medium",
+            "action_url": f"/admin/guests?weddingId={primary_id}",
+            "is_read": False,
+            "created_at": now - timedelta(hours=2, minutes=10),
+            "read_at": None,
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+        {
+            "_id": ObjectId("64f320000000000000000002"),
+            "planner_id": planner_email,
+            "wedding_id": primary_id,
+            "type": "form_submission",
+            "title": "Couple intake updated",
+            "message": "Sofia added family-photo priorities and VIP arrival notes to the final detail form.",
+            "metadata": {"form": "Final Detail Confirmation", "respondent": "Sofia Carter"},
+            "priority": "high",
+            "action_url": "/admin/forms",
+            "is_read": False,
+            "created_at": now - timedelta(hours=5, minutes=35),
+            "read_at": None,
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+        {
+            "_id": ObjectId("64f320000000000000000003"),
+            "planner_id": planner_email,
+            "wedding_id": primary_id,
+            "type": "payment_received",
+            "title": "Client retainer payment received",
+            "message": "$3,200 retainer posted for the Signature Planning + Production agreement.",
+            "metadata": {"amount": 3200, "package": "Signature Planning + Production"},
+            "priority": "medium",
+            "action_url": "/admin/money",
+            "is_read": True,
+            "created_at": now - timedelta(days=1, hours=1),
+            "read_at": now - timedelta(hours=22),
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+        {
+            "_id": ObjectId("64f320000000000000000004"),
+            "planner_id": planner_email,
+            "wedding_id": primary_id,
+            "type": "contract_signed",
+            "title": "Photography contract signed",
+            "message": "Luna & Co. Photography signed the updated services agreement.",
+            "metadata": {"vendor": "Luna & Co. Photography", "contract_status": "signed"},
+            "priority": "medium",
+            "action_url": "/admin/vendors",
+            "is_read": True,
+            "created_at": now - timedelta(days=1, hours=4),
+            "read_at": now - timedelta(days=1, hours=3),
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+        {
+            "_id": ObjectId("64f320000000000000000005"),
+            "planner_id": planner_email,
+            "wedding_id": primary_id,
+            "type": "vendor_response",
+            "title": "Venue production note answered",
+            "message": "The Glasshouse confirmed ceremony rain-plan timing and vendor load-in access.",
+            "metadata": {"vendor": "The Glasshouse at Riverbend", "topic": "rain_plan"},
+            "priority": "medium",
+            "action_url": "/admin/planner/calendar",
+            "is_read": False,
+            "created_at": now - timedelta(days=2, hours=2),
+            "read_at": None,
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+        {
+            "_id": ObjectId("64f320000000000000000006"),
+            "planner_id": planner_email,
+            "wedding_id": primary_id,
+            "type": "reminder",
+            "title": "Final seating check due",
+            "message": "Review meal constraints and family grouping before the final RSVP sync.",
+            "metadata": {"workflow": "seating", "unseated": 8},
+            "priority": "low",
+            "action_url": f"/admin/seating?weddingId={primary_id}",
+            "is_read": True,
+            "created_at": now - timedelta(days=2, hours=8),
+            "read_at": now - timedelta(days=2, hours=7),
+            "seed_source": DEMO_SEED_SOURCE,
+        },
+    ]
+    await mongo.get_collection("planner_notifications").delete_many(
+        {"planner_id": planner_email, "seed_source": DEMO_SEED_SOURCE}
+    )
+    await mongo.get_collection("planner_notifications").insert_many(notifications)
+
+
 def _write_capture_fixtures(fixtures: dict[str, Any]) -> None:
     fixture_path = ROOT / "output" / "demo-videos" / "capture-fixtures.json"
     fixture_path.parent.mkdir(parents=True, exist_ok=True)
     fixture_path.write_text(f"{json.dumps(fixtures, indent=2, sort_keys=True)}\n")
+
+
+async def _remove_legacy_demo_fixtures(active_wedding_ids: set[str], planner_email: str) -> None:
+    from app.core.database import mongo
+
+    stale_wedding_ids = [
+        wedding_id
+        for wedding_id in LEGACY_DEMO_WEDDING_IDS
+        if wedding_id not in active_wedding_ids
+    ]
+    stale_names_pattern = r"^(peace\s*&\s*emmanuel|emmanuel\s*&\s*peace|smoke\s*&\s*couple)$"
+    stale_wedding_query = {
+        "$or": [
+            {"_id": {"$in": stale_wedding_ids}},
+            {
+                "assigned_planner_email": planner_email,
+                "couple_names": {"$regex": stale_names_pattern, "$options": "i"},
+            },
+            {
+                "assigned_planner_email": planner_email,
+                "slug": {"$in": sorted(PERSONAL_DEMO_SLUGS)},
+            },
+        ]
+    }
+    stale_weddings = await mongo.get_weddings_collection().find(
+        stale_wedding_query, {"_id": 1}
+    ).to_list(length=100)
+    stale_wedding_ids = sorted({str(wedding["_id"]) for wedding in stale_weddings} - active_wedding_ids)
+    if not stale_wedding_ids:
+        return
+
+    await mongo.get_weddings_collection().delete_many(
+        {
+            "_id": {"$in": stale_wedding_ids},
+            "$or": [
+                {"seed_source": DEMO_SEED_SOURCE},
+                {"created_by": DEMO_SEED_SOURCE},
+                {"assigned_planner_email": {"$exists": True}},
+            ],
+        }
+    )
+    await mongo.get_couple_users_collection().delete_many(
+        {
+            "$or": [
+                {"_id": {"$in": list(LEGACY_DEMO_COUPLE_IDS)}},
+                {"email": {"$in": list(LEGACY_DEMO_COUPLE_EMAILS)}},
+                {"wedding_id": {"$in": stale_wedding_ids}, "seed_source": DEMO_SEED_SOURCE},
+            ]
+        }
+    )
+
+    for collection_name in await mongo.db.list_collection_names():
+        collection = mongo.db[collection_name]
+        await collection.delete_many(
+            {"wedding_id": {"$in": stale_wedding_ids}, "seed_source": DEMO_SEED_SOURCE}
+        )
 
 
 async def seed_demo_workspace(args: argparse.Namespace) -> None:
@@ -865,6 +2673,8 @@ async def seed_demo_workspace(args: argparse.Namespace) -> None:
     planner = await _load_planner(planner_email)
     primary_id = args.primary_wedding_id
     secondary_id = args.secondary_wedding_id
+
+    await _remove_legacy_demo_fixtures({primary_id, secondary_id}, planner_email)
 
     await mongo.get_users_collection().update_one(
         {"_id": planner["_id"]},
@@ -882,7 +2692,15 @@ async def seed_demo_workspace(args: argparse.Namespace) -> None:
                 "ai_credits_remaining": 999,
                 "plan_id": DEMO_PLAN_ID,
                 "subscription_status": "active",
-                "seed_source": planner.get("seed_source") or DEMO_SEED_SOURCE,
+                "first_name": "Josh",
+                "last_name": "Akinwole",
+                "company_name": "JoshLoveWeds",
+                "business_name": "JoshLoveWeds",
+                "user_data.first_name": "Josh",
+                "user_data.last_name": "Akinwole",
+                "user_data.company_name": "JoshLoveWeds",
+                "user_data.business_name": "JoshLoveWeds",
+                "seed_source": DEMO_SEED_SOURCE,
                 "updated_at": _utc_now(),
             },
             "$unset": {
@@ -894,12 +2712,28 @@ async def seed_demo_workspace(args: argparse.Namespace) -> None:
             },
         },
     )
+    planner = {
+        **planner,
+        "first_name": "Josh",
+        "last_name": "Akinwole",
+        "company_name": "JoshLoveWeds",
+        "business_name": "JoshLoveWeds",
+        "user_data": {
+            **(planner.get("user_data") or {}),
+            "first_name": "Josh",
+            "last_name": "Akinwole",
+            "company_name": "JoshLoveWeds",
+            "business_name": "JoshLoveWeds",
+        },
+    }
     await _seed_demo_subscription(planner)
 
     await _upsert_wedding(
         wedding_id=primary_id,
         slug=args.primary_slug,
-        couple_names="Maya & Jordan",
+        couple_names=args.primary_couple_names,
+        partner1_name=args.primary_partner1_name,
+        partner2_name=args.primary_partner2_name,
         planner=planner,
         date=args.primary_date,
         ready=True,
@@ -907,21 +2741,81 @@ async def seed_demo_workspace(args: argparse.Namespace) -> None:
     await _upsert_wedding(
         wedding_id=secondary_id,
         slug=args.secondary_slug,
-        couple_names="Harper & Sol",
+        couple_names=args.secondary_couple_names,
+        partner1_name=args.secondary_couple_names.split(" & ", 1)[0],
+        partner2_name=(
+            args.secondary_couple_names.split(" & ", 1)[1]
+            if " & " in args.secondary_couple_names
+            else ""
+        ),
         planner=planner,
         date=args.secondary_date,
         ready=False,
     )
-    await _seed_people_and_activity(primary_id, secondary_id, planner_email)
-    await _seed_ai_cache(primary_id, planner)
-    upload_token = await _seed_guest_media_fixture(primary_id)
-    primary_wedding = await mongo.get_weddings_collection().find_one({"_id": primary_id}) or {}
-    couple_email = primary_wedding.get("couple_portal_email") or os.getenv("SMOKE_COUPLE_EMAIL")
-    public_form_id, couple_form_id = await _seed_form_fixture(
-        primary_id, planner_email, couple_email
+    couple_email = await _seed_couple_portal_fixture(
+        primary_id,
+        planner,
+        couple_names=args.primary_couple_names,
+        partner1_name=args.primary_partner1_name,
+        partner2_name=args.primary_partner2_name,
     )
-    vendor_contract_id = await _seed_vendor_contract_fixture(primary_id, planner_email)
-    client_portal_token = await _seed_client_contract_portal_fixture(primary_id, planner)
+    await _seed_people_and_activity(
+        primary_id,
+        secondary_id,
+        planner_email,
+        secondary_couple_names=args.secondary_couple_names,
+    )
+    await _seed_seating_fixture(primary_id, secondary_id)
+    await _seed_ai_cache(primary_id, planner)
+    upload_token = await _seed_guest_media_fixture(
+        primary_id,
+        couple_names=args.primary_couple_names,
+        partner1_name=args.primary_partner1_name,
+        partner2_name=args.primary_partner2_name,
+    )
+    public_form_id, couple_form_id = await _seed_form_fixture(
+        primary_id,
+        planner_email,
+        couple_email,
+        couple_names=args.primary_couple_names,
+        partner1_name=args.primary_partner1_name,
+    )
+    await _seed_budget_fixture(primary_id)
+    await _seed_service_packages_fixture(planner)
+    await _seed_calendar_fixture(
+        primary_id,
+        planner,
+        couple_email,
+        couple_names=args.primary_couple_names,
+    )
+    await _seed_communications_fixture(
+        primary_id,
+        planner_email,
+        wedding_slug=args.primary_slug,
+        couple_names=args.primary_couple_names,
+    )
+    vendor_profile_id = await _seed_vendor_directory_fixture(
+        primary_id,
+        planner_email,
+        couple_names=args.primary_couple_names,
+    )
+    vendor_contract_id = await _seed_vendor_contract_fixture(
+        primary_id,
+        planner_email,
+        couple_names=args.primary_couple_names,
+    )
+    client_portal_token = await _seed_client_contract_portal_fixture(
+        primary_id,
+        planner,
+        couple_names=args.primary_couple_names,
+        partner1_name=args.primary_partner1_name,
+        partner2_name=args.primary_partner2_name,
+    )
+    await _seed_planner_notifications_fixture(
+        primary_id,
+        planner_email,
+        couple_names=args.primary_couple_names,
+    )
 
     _write_capture_fixtures(
         {
@@ -933,6 +2827,7 @@ async def seed_demo_workspace(args: argparse.Namespace) -> None:
             "guestMemoriesUploadToken": upload_token,
             "formId": public_form_id,
             "coupleFormId": couple_form_id,
+            "vendorProfileId": vendor_profile_id,
             "vendorContractId": vendor_contract_id,
             "vendorContractToken": DEMO_VENDOR_CONTRACT_TOKEN,
             "clientContractPortalToken": client_portal_token,
@@ -952,12 +2847,33 @@ async def seed_demo_workspace(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Seed realistic local demo-video data")
     parser.add_argument("--planner-email")
-    parser.add_argument("--primary-wedding-id", default=os.getenv("SMOKE_WEDDING_ID", DEFAULT_PRIMARY_WEDDING_ID))
-    parser.add_argument("--primary-slug", default=os.getenv("SMOKE_PUBLIC_WEDDING_SLUG", DEFAULT_PRIMARY_SLUG))
-    parser.add_argument("--primary-date", default=os.getenv("SMOKE_WEDDING_DATE", _date_from_now(132)))
-    parser.add_argument("--secondary-wedding-id", default=DEFAULT_SECONDARY_WEDDING_ID)
-    parser.add_argument("--secondary-slug", default=DEFAULT_SECONDARY_SLUG)
-    parser.add_argument("--secondary-date", default=_date_from_now(294))
+    parser.add_argument("--primary-wedding-id", default=_demo_env("PRIMARY_WEDDING_ID", DEFAULT_PRIMARY_WEDDING_ID))
+    parser.add_argument("--primary-slug", default=_demo_env("PRIMARY_SLUG", DEFAULT_PRIMARY_SLUG))
+    parser.add_argument("--primary-date", default=_demo_env("PRIMARY_DATE", _date_from_now(132)))
+    parser.add_argument(
+        "--primary-couple-names",
+        default=_demo_env("PRIMARY_COUPLE_NAMES", DEFAULT_PRIMARY_COUPLE_NAMES),
+    )
+    parser.add_argument(
+        "--primary-partner1-name",
+        default=_demo_env("PRIMARY_PARTNER1_NAME", DEFAULT_PRIMARY_PARTNER1_NAME),
+    )
+    parser.add_argument(
+        "--primary-partner2-name",
+        default=_demo_env("PRIMARY_PARTNER2_NAME", DEFAULT_PRIMARY_PARTNER2_NAME),
+    )
+    parser.add_argument("--secondary-wedding-id", default=_demo_env("SECONDARY_WEDDING_ID", DEFAULT_SECONDARY_WEDDING_ID))
+    parser.add_argument("--secondary-slug", default=_demo_env("SECONDARY_SLUG", DEFAULT_SECONDARY_SLUG))
+    parser.add_argument("--secondary-date", default=_demo_env("SECONDARY_DATE", _date_from_now(294)))
+    parser.add_argument(
+        "--secondary-couple-names",
+        default=_demo_env("SECONDARY_COUPLE_NAMES", DEFAULT_SECONDARY_COUPLE_NAMES),
+    )
+    parser.add_argument(
+        "--allow-personal-primary-media",
+        action="store_true",
+        help="Allow stock/portrait-style media for Peace & Emmanuel only when approved real personal media is loaded.",
+    )
     parser.add_argument(
         "--allow-nonlocal",
         action="store_true",
@@ -965,6 +2881,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     _assert_demo_seed_allowed(args)
+    _assert_public_demo_identity_allowed(args)
     asyncio.run(seed_demo_workspace(args))
 
 

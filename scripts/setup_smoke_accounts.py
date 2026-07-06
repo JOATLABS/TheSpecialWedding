@@ -120,11 +120,11 @@ def normalize_public_slug(value: object) -> Optional[str]:
 def _slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9\s-]", "", value.lower())
     slug = re.sub(r"[\s_]+", "-", slug).strip("-")
-    return slug or "smoke-wedding"
+    return slug or "demo-wedding"
 
 
 def _display_name_from_scope(scope: str, suffix: str) -> str:
-    label = scope.replace("_", " ").strip().title() or "Smoke"
+    label = scope.replace("_", " ").strip().title() or "Demo"
     return f"{label} {suffix}"
 
 
@@ -146,11 +146,10 @@ def build_smoke_seed_config(
     planner_email = planner_email.strip().lower()
     company_name = _read_scoped_env(
         environ, "SMOKE_PLANNER_COMPANY_NAME"
-    ) or _display_name_from_scope(scope, "Smoke Planner")
+    ) or _display_name_from_scope(scope, "Event Studio")
     planner_first_name = (
         _read_scoped_env(environ, "SMOKE_PLANNER_FIRST_NAME")
-        or scope.title()
-        or "Smoke"
+        or "Alex"
     )
     planner_last_name = (
         _read_scoped_env(environ, "SMOKE_PLANNER_LAST_NAME") or "Planner"
@@ -163,8 +162,8 @@ def build_smoke_seed_config(
 
     couple_email = _read_scoped_env(environ, "SMOKE_COUPLE_EMAIL")
     couple_password = _read_scoped_env(environ, "SMOKE_COUPLE_PASSWORD")
-    partner1_name = _read_scoped_env(environ, "SMOKE_COUPLE_PARTNER1_NAME") or "Smoke"
-    partner2_name = _read_scoped_env(environ, "SMOKE_COUPLE_PARTNER2_NAME") or "Couple"
+    partner1_name = _read_scoped_env(environ, "SMOKE_COUPLE_PARTNER1_NAME") or "Taylor"
+    partner2_name = _read_scoped_env(environ, "SMOKE_COUPLE_PARTNER2_NAME") or "Jordan"
 
     couple_config: Optional[SmokeCoupleConfig] = None
     if couple_email and couple_password:
@@ -188,7 +187,7 @@ def build_smoke_seed_config(
         else:
             wedding_couple_names = couple_config.partner1_name
     if not wedding_couple_names:
-        wedding_couple_names = _display_name_from_scope(scope, "Smoke Wedding")
+        wedding_couple_names = "Taylor & Jordan"
 
     wedding_slug = normalize_public_slug(
         _read_scoped_env(environ, "SMOKE_PUBLIC_WEDDING_SLUG", "SMOKE_WEDDING_SLUG")
@@ -291,8 +290,8 @@ def _default_smoke_events(wedding_date: str) -> list[dict]:
             "type": "traditional",
             "date": wedding_date,
             "details": {
-                "venue_name": "Smoke Verification Venue",
-                "location": "Staging",
+                "venue_name": "Riverside Hall",
+                "location": "Oklahoma City, OK",
                 "time": "4:00 PM",
             },
             "order_of_events": [],

@@ -60,7 +60,7 @@ describe('sitemap entries', () => {
     assert.equal(urls.includes(`${baseUrl}/resources`), false);
     assert.equal(urls.includes(`${baseUrl}/resources/blog`), true);
     assert.equal(urls.includes(`${baseUrl}/resources/templates`), true);
-    assert.equal(urls.includes(`${baseUrl}/resources/demos`), true);
+    assert.equal(urls.includes(`${baseUrl}/resources/demos`), false);
     assert.equal(urls.includes(`${baseUrl}/resources/faq`), true);
     assert.equal(urls.includes(`${baseUrl}/resources?tab=templates`), false);
   });
