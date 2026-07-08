@@ -240,7 +240,7 @@ async def get_related_articles(
 
 
 # ==================== CREATE/UPDATE ENDPOINTS ====================
-# Community-driven: All planners can create articles
+# Platform documentation authoring: ROOT_ADMIN only
 
 
 @router.post("/kb/articles", tags=["Knowledge Base"])

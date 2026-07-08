@@ -182,4 +182,21 @@ describe('admin billing-block target policy', () => {
       }
     }
   });
+
+  it('renders public admin pages before the auth loading gate', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'app/components/AdminRouteGuard.tsx'),
+      'utf8',
+    );
+
+    const publicRenderIndex = source.indexOf('return <>{children}</>;');
+    const loadingGateIndex = source.indexOf('// Show loading state while checking authentication');
+
+    assert.notEqual(publicRenderIndex, -1, 'AdminRouteGuard must define a public-page render bypass');
+    assert.notEqual(loadingGateIndex, -1, 'AdminRouteGuard must retain the protected loading gate');
+    assert.ok(
+      publicRenderIndex < loadingGateIndex,
+      'public admin pages such as /admin/login must render before auth loading can show the spinner',
+    );
+  });
 });

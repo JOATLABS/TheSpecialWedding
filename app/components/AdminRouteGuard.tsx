@@ -33,14 +33,14 @@ export default function AdminRouteGuard({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname();
   const { isAuthenticated, isLoading, userProfile, logout, billingBlockTarget } = useAdmin();
+  const isPublicPage = pathname === '/admin/login' || pathname.startsWith('/admin/team/accept');
 
   useEffect(() => {
     // Don't do anything while still loading auth state
     if (isLoading) return;
 
     // Skip check for public pages (login, accept invite)
-    if (pathname === '/admin/login') return;
-    if (pathname.startsWith('/admin/team/accept')) return;
+    if (isPublicPage) return;
 
     // Redirect to login if not authenticated
     if (!isAuthenticated && pathname.startsWith('/admin')) {
@@ -71,7 +71,11 @@ export default function AdminRouteGuard({ children }: { children: React.ReactNod
       }
 
     }
-  }, [billingBlockTarget, isAuthenticated, isLoading, logout, pathname, router, userProfile]);
+  }, [billingBlockTarget, isAuthenticated, isLoading, isPublicPage, logout, pathname, router, userProfile]);
+
+  if (isPublicPage) {
+    return <>{children}</>;
+  }
 
   // Show loading state while checking authentication
   if (isLoading) {
@@ -86,7 +90,7 @@ export default function AdminRouteGuard({ children }: { children: React.ReactNod
   }
 
   // Don't render protected content if not authenticated (except public pages)
-  if (!isAuthenticated && pathname.startsWith('/admin') && pathname !== '/admin/login' && !pathname.startsWith('/admin/team/accept')) {
+  if (!isAuthenticated && pathname.startsWith('/admin')) {
     return null;
   }
 

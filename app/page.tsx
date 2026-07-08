@@ -4,9 +4,9 @@ import { FeatureShowcase } from "./components/landing-page/FeatureShowcase.clien
 import { PricingSignupSection } from "./components/landing-page/PricingSignupSection.client";
 import DemoVideoLauncher from "./components/saas/DemoVideoLauncher";
 import HomepageTemplatesBand from "./components/saas/HomepageTemplatesBand";
+import MarketingFooter from "./components/saas/MarketingFooter";
 import SaasNav from "./components/saas/SaasNav";
 import { FEATURE_DEMO_VIDEOS, HERO_DEMO_VIDEO, toPublicDemoVideo } from "./data/demoVideos";
-import { PUBLIC_LOGIN_PATH } from "./seo/crawlPolicy";
 import { serializeJsonLd } from "./seo/jsonLd";
 import type { ThemeConfig } from "./types/wedding";
 
@@ -101,7 +101,7 @@ const fallbackPricing: PricingTier[] = [
       "500GB guest memories storage",
       "Support-assisted launch planning",
     ],
-    cta: "Go Enterprise",
+    cta: "Choose Enterprise",
   },
 ];
 
@@ -180,7 +180,6 @@ function SectionBridge({ label }: { label: string }) {
 }
 
 export default function HomePage() {
-  const year = new Date().getFullYear();
   const heroDemo = toPublicDemoVideo(HERO_DEMO_VIDEO);
   const featureDemosByFeatureId = Object.fromEntries(
     FEATURE_DEMO_VIDEOS.map((demo) => [demo.featureId, toPublicDemoVideo(demo)]),
@@ -319,47 +318,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <footer className="border-t border-white/10 bg-black px-6 py-10 text-sm text-slate-400 sm:px-8 lg:px-12">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p>&copy; {year} The Special Wedding. All rights reserved.</p>
-          <div className="flex flex-wrap gap-5">
-            <Link href="/resources/templates" className="hover:text-white">
-              Free templates
-            </Link>
-            <Link href="/support" className="hover:text-white">
-              Knowledge base
-            </Link>
-            <Link href="/resources/blog" className="hover:text-white">
-              Documentation
-            </Link>
-            <a
-              href="https://www.instagram.com/thespecialwedding"
-              target="_blank"
-              rel="noreferrer"
-              className="hover:text-white"
-            >
-              Instagram
-            </a>
-            <a
-              href="https://www.tiktok.com/@thespecialwedding1"
-              target="_blank"
-              rel="noreferrer"
-              className="hover:text-white"
-            >
-              TikTok
-            </a>
-            <Link href="/privacy" className="hover:text-white">
-              Privacy
-            </Link>
-            <Link href="/terms" className="hover:text-white">
-              Terms
-            </Link>
-            <Link href={PUBLIC_LOGIN_PATH} className="hover:text-white">
-              Login
-            </Link>
-          </div>
-        </div>
-      </footer>
+      <MarketingFooter />
     </main>
   );
 }

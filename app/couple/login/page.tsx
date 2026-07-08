@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
 import { clearLegacyCoupleStorage, extractApiErrorMessage } from '@/couple/lib/auth';
 import { BrandLockup } from '@/components/brand/BrandLockup';
-import { PUBLIC_LOGIN_PATH } from '@/seo/crawlPolicy';
+import { PortalSwitch } from '@/components/auth/PortalSwitch';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -105,6 +105,8 @@ export default function CoupleLoginPage() {
           <div className="relative">
             <section>
               <GlassCard depth="near" blur="xl" className="px-5 py-6 sm:px-8 sm:py-7 xl:px-10">
+                <PortalSwitch active="couple" />
+
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-xs font-semibold uppercase text-wedding-navy/70 sm:text-sm">Wedding portal</p>
@@ -122,7 +124,7 @@ export default function CoupleLoginPage() {
                   <form className="space-y-4" onSubmit={handleSubmit} noValidate>
                     <div className="space-y-2">
                       <label htmlFor="email" className="text-sm font-medium text-wedding-navy">
-                        Email
+                        Wedding email
                       </label>
                       <input
                         id="email"
@@ -134,7 +136,7 @@ export default function CoupleLoginPage() {
                         required
                         aria-invalid={error !== null && !emailPattern.test(email)}
                         className="w-full rounded-xl border border-white/40 bg-white/60 px-4 py-3 text-base text-wedding-navy shadow-inner placeholder:text-wedding-navy/40 focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose/50"
-                        placeholder="your@email.com"
+                        placeholder="name@example.com"
                       />
                     </div>
 
@@ -201,10 +203,10 @@ export default function CoupleLoginPage() {
                       Forgot your password?
                     </Link>
                     <Link
-                      href={PUBLIC_LOGIN_PATH}
+                      href="/"
                       className="text-sm text-wedding-navy/60 hover:text-wedding-navy transition-colors"
                     >
-                      Planner Portal →
+                      Back to homepage
                     </Link>
                   </div>
 

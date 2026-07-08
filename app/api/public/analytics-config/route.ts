@@ -10,7 +10,6 @@ export function GET() {
     return NextResponse.json(
       { configured: false },
       {
-        status: 404,
         headers: {
           'Cache-Control': 'no-store',
         },

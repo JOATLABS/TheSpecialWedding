@@ -386,6 +386,7 @@ export default function KnowledgeBase({ isRootAdmin }: KnowledgeBaseProps) {
               selectedCategory={selectedCategory}
               onCategoryChange={handleCategoryChange}
               totalArticles={totalArticles}
+              canWrite={isRootAdmin}
             />
           </div>
         )}
