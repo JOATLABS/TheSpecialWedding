@@ -30,6 +30,36 @@ class KnowledgeBaseService:
         self.articles_collection = mongo.db["kb_articles"]
         self.users_collection = mongo.get_users_collection()
 
+    def _serialize_public_article(
+        self, article: dict, include_content: bool = False
+    ) -> dict:
+        """Return the fields safe for unauthenticated documentation readers."""
+        public_article = {
+            "id": str(article["_id"]),
+            "title": article.get("title", ""),
+            "slug": article.get("slug", ""),
+            "excerpt": article.get("excerpt", ""),
+            "category": article.get("category", "general"),
+            "tags": article.get("tags", []),
+            "is_official": bool(article.get("is_official", False)),
+            "featured": bool(article.get("featured", False)),
+            "author_name": article.get("author_name", "The Special Wedding"),
+            "view_count": int(article.get("view_count", 0) or 0),
+            "helpful_count": int(article.get("helpful_count", 0) or 0),
+            "card_image": article.get("card_image"),
+            "og_image": article.get("og_image"),
+            "estimated_read_minutes": int(
+                article.get("estimated_read_minutes", 5) or 5
+            ),
+            "created_at": article.get("created_at"),
+            "updated_at": article.get("updated_at"),
+        }
+
+        if include_content:
+            public_article["content"] = article.get("content", "")
+
+        return public_article
+
     async def create_article(
         self,
         article_data: KnowledgeBaseArticleCreateModel,
@@ -214,6 +244,73 @@ class KnowledgeBaseService:
             raise HTTPException(
                 status_code=500, detail=f"Error retrieving articles: {str(e)}"
             )
+
+    async def get_public_articles(
+        self,
+        page: int = 1,
+        limit: int = 20,
+        category: Optional[str] = None,
+        search: Optional[str] = None,
+        featured_only: bool = False,
+        official_only: bool = False,
+    ) -> dict:
+        """Get published KB articles with public-safe fields only."""
+        result = await self.get_articles(
+            page=page,
+            limit=limit,
+            category=category,
+            search=search,
+            status="published",
+            featured_only=featured_only,
+            official_only=official_only,
+        )
+
+        return {
+            **result,
+            "articles": [
+                self._serialize_public_article(article, include_content=False)
+                for article in result.get("articles", [])
+            ],
+        }
+
+    async def get_public_article_by_slug(
+        self, slug: str, increment_view: bool = True
+    ) -> dict:
+        """Get one published article for unauthenticated readers."""
+        try:
+            article = await self.articles_collection.find_one(
+                {"slug": slug, "status": "published"}
+            )
+
+            if not article:
+                raise HTTPException(status_code=404, detail="Article not found")
+
+            if increment_view:
+                await self.articles_collection.update_one(
+                    {"_id": article["_id"]}, {"$inc": {"view_count": 1}}
+                )
+                article["view_count"] = article.get("view_count", 0) + 1
+
+            return self._serialize_public_article(article, include_content=True)
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error getting public article by slug: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving article: {str(e)}"
+            )
+
+    async def search_public_articles(self, query: str, limit: int = 20) -> dict:
+        """Full-text search across published articles with public-safe fields."""
+        result = await self.search_articles(query=query, limit=limit)
+        return {
+            **result,
+            "articles": [
+                self._serialize_public_article(article, include_content=False)
+                for article in result.get("articles", [])
+            ],
+        }
 
     async def get_article_by_slug(self, slug: str, increment_view: bool = True) -> dict:
         """Get article by slug"""

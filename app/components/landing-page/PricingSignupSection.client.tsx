@@ -136,25 +136,20 @@ export function PricingSignupSection({ pricing, theme }: Props) {
             Start small, then scale the studio.
           </h2>
         </div>
-        <div className="grid gap-3 sm:gap-5 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid items-stretch gap-3 sm:gap-5 md:grid-cols-2 lg:auto-rows-fr lg:grid-cols-4">
           {displayPricing.map((tier) => (
             <article
               key={tier.id}
-              className={`relative flex h-full flex-col rounded-xl border p-4 sm:rounded-2xl sm:p-6 ${
+              className={`relative flex h-full min-h-full flex-col rounded-xl border p-4 sm:rounded-2xl sm:p-6 lg:min-h-[36rem] ${
                 tier.popular ? "border-rose-300/60 bg-white/[0.08]" : "border-white/10 bg-white/[0.04]"
               }`}
             >
-              {tier.savings ? (
-                <span className="absolute right-4 top-4 rounded-full bg-rose-300 px-3 py-1 text-xs font-semibold text-slate-950 sm:right-5 sm:top-5">
-                  {tier.savings}
-                </span>
-              ) : null}
-              <h3 className="pr-32 text-2xl font-semibold text-white">{tier.name}</h3>
+              <h3 className="text-2xl font-semibold text-white">{tier.name}</h3>
               <div className="mt-4 flex items-end gap-1 sm:mt-6">
                 <span className="text-3xl font-semibold text-white sm:text-4xl">{tier.price}</span>
                 <span className="pb-1 text-sm text-slate-400">{tier.period}</span>
               </div>
-              <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-[13px] leading-5 text-slate-200 sm:mt-6 sm:block sm:space-y-3 sm:text-sm sm:leading-normal">
+              <ul className="mt-4 grid flex-1 grid-cols-2 gap-x-4 gap-y-2 text-[13px] leading-5 text-slate-200 sm:mt-6 sm:block sm:space-y-3 sm:text-sm sm:leading-normal">
                 {tier.features.map((feature) => (
                   <li key={feature} className="flex gap-2 sm:gap-3">
                     <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-300" aria-hidden="true" />

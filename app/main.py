@@ -77,6 +77,7 @@ from app.api.planner_notifications import router as planner_notifications_router
 from app.api.platform_metrics import router as platform_metrics_router
 from app.api.plus_one import router as plus_one_router
 from app.api.public_contact import router as public_contact_router
+from app.api.public_knowledge_base import router as public_knowledge_base_router
 from app.api.reminder import router as reminder_router
 from app.api.reminder_telnyx import router as reminder_telnyx_router
 from app.api.reminder_twilio import router as reminder_twilio_router
@@ -837,6 +838,7 @@ app.include_router(
 app.include_router(saas_config_router, prefix="/saas", tags=["Subscription"])
 app.include_router(testimonials_router, prefix="/saas", tags=["Testimonials"])
 app.include_router(public_contact_router, tags=["Sales"])
+app.include_router(public_knowledge_base_router, tags=["Public Knowledge Base"])
 app.include_router(guest_help_router, tags=["Guest"])
 app.include_router(guest_verification_router, tags=["Guest"])
 app.include_router(forms_router, tags=["Forms"])  # Legacy + public form endpoints

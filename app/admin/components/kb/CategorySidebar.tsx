@@ -25,6 +25,7 @@ interface CategorySidebarProps {
   selectedCategory: string;
   onCategoryChange: (category: string) => void;
   totalArticles: number;
+  canWrite?: boolean;
 }
 
 // Category icons
@@ -49,7 +50,8 @@ export default function CategorySidebar({
   categories,
   selectedCategory,
   onCategoryChange,
-  totalArticles
+  totalArticles,
+  canWrite = false,
 }: CategorySidebarProps) {
   return (
     <Card className="p-4 sticky top-4">
@@ -113,7 +115,9 @@ export default function CategorySidebar({
       <div className="mt-6 pt-4 border-t border-gray-200 dark:border-slate-700">
         <p className="text-xs text-gray-500 dark:text-gray-400">
           <Lightbulb className="w-3 h-3 inline mr-1" />
-          Share your knowledge! Write an article to help other planners.
+          {canWrite
+            ? 'Share your knowledge. Write an article to help planners.'
+            : 'Read official planner docs and support guidance from the platform team.'}
         </p>
       </div>
     </Card>

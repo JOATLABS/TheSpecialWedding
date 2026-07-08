@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { useAdmin } from '@/contexts/AdminContext';
 import { BrandLockup } from '@/components/brand/BrandLockup';
+import { PortalSwitch } from '@/components/auth/PortalSwitch';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -120,6 +121,8 @@ export default function AdminLoginPage() {
           <div className="relative">
             <section>
               <GlassCard depth="near" blur="xl" className="px-5 py-6 sm:px-8 sm:py-7 xl:px-10">
+                <PortalSwitch active="planner" />
+
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-xs font-semibold uppercase text-wedding-navy/70 sm:text-sm">Planner portal</p>
@@ -271,16 +274,7 @@ export default function AdminLoginPage() {
                     </Button>
                   </form>
 
-                  <div className="mt-5 space-y-3 border-t border-white/30 pt-4 text-center">
-                    <p className="text-sm text-wedding-navy/70">
-                      Not a planner?{' '}
-                      <Link
-                        href="/couple/login"
-                        className="font-medium text-wedding-navy transition hover:text-wedding-rose"
-                      >
-                        Sign in to the Couple Portal →
-                      </Link>
-                    </p>
+                  <div className="mt-5 border-t border-white/30 pt-4 text-center">
                     <p className="mx-auto max-w-md text-xs leading-5 text-wedding-navy/55 sm:text-sm">
                       Your full dashboard is ready at a venue walkthrough or from your desk.
                     </p>

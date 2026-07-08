@@ -1,36 +1,78 @@
+import Link from 'next/link';
+
+import { PolicyCallout, PolicyPageShell, PolicySection } from '@/components/saas/PolicyPageShell';
+
 export default function GoogleDataDeletionPage() {
   return (
-    <main className="min-h-screen bg-white px-6 py-16 text-slate-900">
-      <div className="mx-auto max-w-4xl space-y-10">
-        <header className="space-y-3">
-          <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Data Deletion</p>
-          <h1 className="text-4xl font-semibold tracking-tight">Google Data Deletion</h1>
-          <p className="max-w-3xl text-base text-slate-600">
-            To stop using Google Calendar with The Special Wedding, disconnect the calendar
-            from the planner calendar settings. When the last connected calendar for that
-            Google account is removed, the app revokes Google access and deletes local
-            connection records used for calendar sync.
-          </p>
-        </header>
+    <PolicyPageShell
+      eyebrow="Data deletion"
+      title="Google Data Deletion"
+      description={
+        <p>
+          This page explains how Google Calendar data is disconnected and removed from The
+          Special Wedding when a planner or permitted team member stops using the Google
+          Calendar integration.
+        </p>
+      }
+    >
+      <PolicySection title="How to disconnect">
+        <p>
+          Sign in to the planner workspace, open calendar settings, and remove the connected
+          Google Calendar account or its selected calendar targets. When the last connected
+          calendar for that Google account is removed, the app revokes Google access and
+          deletes the local connection records used for calendar sync.
+        </p>
+        <p>
+          If you cannot access the workspace, contact{' '}
+          <a className="font-medium text-wedding-rose underline" href="mailto:support@thespecialwedding.io">
+            support@thespecialwedding.io
+          </a>{' '}
+          from the account email tied to the workspace.
+        </p>
+      </PolicySection>
 
-        <section className="space-y-4 rounded-3xl border border-slate-200 bg-slate-50 p-8 text-sm leading-7 text-slate-700">
+      <PolicySection title="What we remove">
+        <p>
+          We remove the local calendar connection record, selected calendar metadata, sync
+          policy for that connection, health state, and stored integration token associated
+          with the disconnected Google account.
+        </p>
+        <p>
+          After removal, future sync attempts fail closed until the planner reconnects a
+          valid writable calendar and chooses the desired sync target.
+        </p>
+      </PolicySection>
+
+      <PolicySection title="What stays">
+        <p>
+          Meetings, tasks, couple portal timeline records, guest communications, and planner
+          audit history remain inside The Special Wedding as workspace records. Google
+          Calendar is a projection of planner-authored scheduling records, not the source of
+          truth.
+        </p>
+        <PolicyCallout title="Internal records stay authoritative">
           <p>
-            Internal meetings and tasks remain inside The Special Wedding as canonical records
-            even after Google access is revoked. They are no longer projected to Google once
-            the connection is removed.
+            Removing Google access stops future Google Calendar projection. It does not delete
+            the planner workspace, wedding timeline, couple portal, guest list, vendor records,
+            contracts, invoices, or other platform records unless those are separately deleted
+            through their own product flows or support request.
           </p>
-          <p>
-            Calendar connections are removed from the workspace, and future sync attempts will
-            fail closed until a user reconnects a valid writable calendar.
-          </p>
-          <p>
-            If you need manual assistance, contact{' '}
-            <a className="underline" href="mailto:support@thespecialwedding.io">
-              support@thespecialwedding.io
-            </a>.
-          </p>
-        </section>
-      </div>
-    </main>
+        </PolicyCallout>
+      </PolicySection>
+
+      <PolicySection title="Related help">
+        <p>
+          For scope-by-scope Google Calendar details, read the{' '}
+          <Link className="font-medium text-wedding-rose underline" href="/google-calendar">
+            Google Calendar integration page
+          </Link>
+          . For broader platform data handling, read the{' '}
+          <Link className="font-medium text-wedding-rose underline" href="/privacy">
+            privacy policy
+          </Link>
+          .
+        </p>
+      </PolicySection>
+    </PolicyPageShell>
   );
 }
