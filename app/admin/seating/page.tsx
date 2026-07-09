@@ -1110,12 +1110,12 @@ export default function SeatingPage() {
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
         >
-          <div className="print:hidden flex min-h-[760px] flex-col overflow-hidden bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl shadow-sm border border-white/50 dark:border-slate-700/50 lg:h-[calc(100vh-340px)] lg:min-h-0 lg:flex-row">
+          <div className="print:hidden flex flex-col overflow-hidden bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl shadow-sm border border-white/50 dark:border-slate-700/50 h-[calc(100vh-210px)] lg:flex-row">
             {/* Guest Sidebar */}
             <Sidebar guests={guests} />
 
             {/* Canvas Area */}
-            <div className="flex min-h-[470px] flex-1 flex-col lg:min-h-0">
+            <div className="flex flex-1 flex-col overflow-hidden">
               {/* Floor Plan Controls */}
               <div className="relative z-30 m-3 shrink-0 rounded-lg border border-white/30 dark:border-slate-700/30 bg-white/85 dark:bg-slate-800/85 backdrop-blur-md shadow-sm">
                 <input
@@ -1493,7 +1493,7 @@ export default function SeatingPage() {
                 )}
               </div>
 
-              <div className="relative min-h-[360px] flex-1">
+              <div className="relative flex-1 overflow-hidden">
                 {/* Canvas Zoom Controls */}
                 <div className="absolute bottom-3 right-3 z-30 flex items-center gap-1 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md rounded-lg border border-white/30 dark:border-slate-700/30 p-1 sm:top-3 sm:bottom-auto">
                   <button

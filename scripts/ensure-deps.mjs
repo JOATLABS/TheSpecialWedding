@@ -22,8 +22,8 @@ const directPackages = Object.keys({
 }).sort();
 const requiredBins = ['next', 'eslint', 'tsx', 'tsc'];
 const supportedNodeMin = [20, 9, 0];
-const supportedNodeMaxExclusive = [25, 0, 0];
-const supportedNodeMajors = new Set([20, 24]);
+const supportedNodeMaxExclusive = [27, 0, 0];
+const supportedNodeMajors = new Set([20, 24, 26]);
 const supportedNpmMin = [10, 0, 0];
 const ignorableTreeProblemPatterns = [
   /^extraneous: @emnapi\/core@/,

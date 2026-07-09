@@ -3,10 +3,12 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { usePathname } from 'next/navigation';
+import Link from 'next/link';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import UpgradeModal from '@/components/ui/UpgradeModal';
 import {
   X,
   Send,
@@ -16,7 +18,8 @@ import {
   ChevronDown,
   Coins,
   Heart,
-  ChevronUp
+  ChevronUp,
+  Maximize2
 } from 'lucide-react';
 
 export function isInboxComposerSurface(pathname: string | null): boolean {
@@ -307,7 +310,7 @@ function getPageContext(pathname: string | null): PageContext | null {
 }
 
 export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddingName }: AIChatWidgetProps) {
-  const { token } = useAdmin();
+  const { token, userProfile } = useAdmin();
   const pathname = usePathname();
 
   const [isOpen, setIsOpen] = useState(false);
@@ -317,6 +320,8 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
   const [error, setError] = useState<string | null>(null);
   const [creditsRemaining, setCreditsRemaining] = useState<number | null>(null);
   const [creditsWarning, setCreditsWarning] = useState<string | null>(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [useCommandCenter, setUseCommandCenter] = useState(false);
 
   // Wedding context state
   const [weddings, setWeddings] = useState<Wedding[]>([]);
@@ -434,6 +439,9 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
 
     try {
       const baseUrl = getApiBaseUrl();
+      
+      // Determine if user has premium execution rights
+      const isPremium = userProfile?.subscription_status === 'active' || userProfile?.subscription_status === 'trial';
 
       // Build conversation history for context
       const conversationHistory = messages.map(msg => ({
@@ -443,27 +451,41 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
 
       // Get page context for enhanced AI responses
       const pageContext = getPageContext(pathname);
+      
+      const isCommandCenterMode = useCommandCenter && selectedWeddingId;
+      const endpoint = isCommandCenterMode
+        ? `${baseUrl}/admin/ai/weddings/${selectedWeddingId}/command-center`
+        : `${baseUrl}/admin/ai/chat`;
 
-      const response = await fetch(`${baseUrl}/admin/ai/chat`, {
+      const requestBody = isCommandCenterMode
+        ? {
+            message: userMessage.content,
+            wedding_id: selectedWeddingId,
+            execute_actions: isPremium
+          }
+        : {
+            message: userMessage.content,
+            wedding_id: selectedWeddingId || null,
+            conversation_history: conversationHistory,
+            page_context: pageContext ? {
+              page: pageContext.page,
+              hint: pageContext.systemHint
+            } : null
+          };
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          message: userMessage.content,
-          wedding_id: selectedWeddingId || null,
-          conversation_history: conversationHistory,
-          page_context: pageContext ? {
-            page: pageContext.page,
-            hint: pageContext.systemHint
-          } : null
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (response.status === 402) {
         const data = await response.json();
         setError(`Insufficient credits. You need 1 credit but have ${data.detail?.available || 0}.`);
+        setShowUpgradeModal(true);
         return;
       }
 
@@ -521,6 +543,17 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
         setCreditsWarning(data.warning);
       }
 
+      // Check if any simulated actions require upgrade
+      if (data.actions_executed) {
+        const needsUpgrade = data.actions_executed.some((action: any) => action.result?.upgrade_required);
+        if (needsUpgrade) {
+          setTimeout(() => {
+            setShowUpgradeModal(true);
+            toast.info('Upgrade to execute this action automatically!');
+          }, 1500);
+        }
+      }
+
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to get response';
       setError(formatAIChatError(errorMessage));
@@ -528,7 +561,7 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, token, messages, selectedWeddingId, pathname]);
+  }, [input, isLoading, token, userProfile, messages, selectedWeddingId, pathname, useCommandCenter]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -599,6 +632,14 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
               <span>{creditsRemaining} credits</span>
             </div>
           )}
+          <Link
+            href="/admin/ai-workspace"
+            className="rounded-full p-1 hover:bg-white/20 ml-1"
+            title="Open Full Workspace"
+            onClick={() => setIsOpen(false)}
+          >
+            <Maximize2 className="h-4 w-4" />
+          </Link>
           <button
             onClick={() => setIsOpen(false)}
             className="rounded-full p-1 hover:bg-white/20"
@@ -615,6 +656,25 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
           </button>
         </div>
       </div>
+      
+      {/* Command Center Toggle */}
+      {selectedWeddingId && (
+        <div className="flex items-center justify-between px-4 py-2 bg-slate-100 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wide">Command Center</span>
+            <span className="text-[10px] bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 px-2 py-0.5 rounded-full font-medium">BETA</span>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input 
+              type="checkbox" 
+              className="sr-only peer" 
+              checked={useCommandCenter}
+              onChange={() => setUseCommandCenter(!useCommandCenter)}
+            />
+            <div className="w-9 h-5 bg-gray-300 peer-focus:outline-none rounded-full peer dark:bg-slate-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+          </label>
+        </div>
+      )}
 
       {/* Wedding Selector */}
       <div className="border-b border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700/50">
@@ -692,6 +752,8 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
 
       {/* Messages */}
       <div className="scrollbar-visible-thin flex-1 space-y-4 overflow-y-auto bg-white p-4 dark:bg-slate-800">
+        <UpgradeModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />
+        
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 dark:text-gray-400">
             <Sparkles className="h-10 w-10 mb-3 text-slate-400 dark:text-slate-500" />

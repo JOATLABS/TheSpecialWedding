@@ -83,6 +83,8 @@ The public template library contains 9 free wedding planner templates at https:/
 - Free templates: https://thespecialwedding.io/resources/templates
 - FAQ: https://thespecialwedding.io/resources/faq
 - Public vendor directory: https://thespecialwedding.io/vendors
+- OpenAPI Schema for Agents: https://api.thespecialwedding.io/openapi.json
+- API Documentation: https://api.thespecialwedding.io/docs
 - Planner sign-in handoff: https://thespecialwedding.io/login
 - Couple portal sign-in: https://thespecialwedding.io/couple
 

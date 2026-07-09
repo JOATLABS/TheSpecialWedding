@@ -132,7 +132,7 @@ export function FeatureShowcase({ demoVideosByFeatureId }: FeatureShowcaseProps)
           <aside className="flex min-h-[260px] flex-col justify-center p-5 sm:p-7">
             <h3 className="text-3xl font-semibold leading-tight text-white sm:text-4xl">{activeFeature.title}</h3>
             <p className="mt-4 text-base font-semibold leading-7 text-slate-200">{activeFeature.tagline}</p>
-            {activeDemo ? (
+            {activeDemo?.assetUrl ? (
               <div className="mt-6">
                 <DemoVideoLauncher demo={activeDemo} />
               </div>

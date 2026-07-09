@@ -18,10 +18,12 @@ from pydantic import BaseModel, Field
 
 from app.core.database import mongo
 from app.core.settings import settings
+from app.core.cache import cache
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     check_wedding_access,
     require_admin_or_planner,
+    require_wedding_planner_only,
 )
 from app.services.ai_service import (
     MODEL_ECONOMY,
@@ -36,6 +38,7 @@ from app.services.ai_service import (
     InsufficientCreditsError,
     ai_service,
 )
+from google.genai import types
 from app.services.ai_cache_service import ai_cache_service
 from app.utils.rsvp_status import (
     RSVP_STATUS_CONFIRMED,
@@ -2420,6 +2423,267 @@ async def chat_with_ai(
     except Exception as e:
         logger.error(f"Error in AI chat: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to process chat message")
+
+
+# =========================================================================
+# COMMAND CENTER ORCHESTRATOR
+# =========================================================================
+
+class CommandCenterRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=5000)
+    wedding_id: str
+    execute_actions: bool = False  # False for Freemium preview (dry run), True for paid execution
+
+command_center_tools = [
+    types.Tool(
+        function_declarations=[
+            types.FunctionDeclaration(
+                name="get_wedding_budget",
+                description="Fetch the current budget categories, totals, and remaining budget.",
+            ),
+            types.FunctionDeclaration(
+                name="get_guest_list",
+                description="Fetch the guest list and RSVP status.",
+            ),
+            types.FunctionDeclaration(
+                name="add_task_to_checklist",
+                description="Add a new task to the wedding planning checklist.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "title": types.Schema(type=types.Type.STRING, description="The title of the task"),
+                        "due_date": types.Schema(type=types.Type.STRING, description="The due date of the task in YYYY-MM-DD format (optional)"),
+                    },
+                    required=["title"]
+                )
+            ),
+            types.FunctionDeclaration(
+                name="update_budget_item",
+                description="Update or add a budget item's cost (e.g. Catering, Venue).",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "category": types.Schema(type=types.Type.STRING, description="The budget category name (e.g. Catering, Venue, Photography)"),
+                        "amount": types.Schema(type=types.Type.NUMBER, description="The new estimated or actual cost"),
+                    },
+                    required=["category", "amount"]
+                )
+            ),
+            types.FunctionDeclaration(
+                name="add_guest",
+                description="Add a new guest to the guest list.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "name": types.Schema(type=types.Type.STRING, description="The guest's full name"),
+                        "email": types.Schema(type=types.Type.STRING, description="The guest's email address (optional)"),
+                        "group": types.Schema(type=types.Type.STRING, description="The guest's group (e.g. Family, Friends) (optional)"),
+                    },
+                    required=["name"]
+                )
+            ),
+            types.FunctionDeclaration(
+                name="draft_email",
+                description="Draft an email to a vendor or guest.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "recipient_type": types.Schema(type=types.Type.STRING, description="'guest' or 'vendor'"),
+                        "subject": types.Schema(type=types.Type.STRING, description="The email subject"),
+                        "body": types.Schema(type=types.Type.STRING, description="The email body content"),
+                    },
+                    required=["recipient_type", "subject", "body"]
+                )
+            ),
+            types.FunctionDeclaration(
+                name="get_hired_vendors",
+                description="Fetch the list of hired vendors for the wedding.",
+            )
+        ]
+    )
+]
+
+@router.post("/weddings/{wedding_id}/command-center")
+async def ai_command_center(
+    wedding_id: str,
+    request: CommandCenterRequest,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+):
+    """
+    Full AI Command Center endpoint.
+    Orchestrates the execution of platform tools on behalf of the user.
+    """
+    try:
+        user_id = str((current_user.user_data or {}).get("_id", ""))
+
+        # Verify planner has access to this wedding
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(
+                status_code=403, detail="You don't have access to this wedding"
+            )
+
+        wedding = await get_wedding_by_id(wedding_id)
+        if not wedding:
+            raise HTTPException(status_code=404, detail="Wedding not found")
+
+        # Build context
+        context = {
+            "user_message": request.message,
+            "wedding_id": wedding_id,
+            "couple_names": wedding.get("couple_names"),
+            "wedding_date": wedding.get("date"),
+            "execute_actions": request.execute_actions, # For Freemium logic
+        }
+
+        system_prompt = f"User's request: {request.message}\n\nYou are an autonomous Expert Wedding Planner Copilot. You have access to several tools to read and modify data. Think step-by-step. If asked to do something complex, break it down. For example, to follow up on a budget, first get the budget, then draft an email. If you decide to modify data (add task, update budget, draft email) just call the function. We will handle showing the user a preview if they are on a free tier."
+
+        # Step 1: Let the AI decide what tools to call
+        result = await ai_service.generate(
+            user_id=user_id,
+            tenant_id=wedding_id,
+            feature="command_center",
+            prompt=system_prompt,
+            context=context,
+            force_refresh=True,
+            tools=command_center_tools
+        )
+
+        response_content = result["response"]
+        credits_used = result["credits_used"]
+
+        # Step 2: Check if AI decided to call functions
+        executed_actions = []
+        function_calls = []
+        
+        if isinstance(response_content, dict) and "function_calls" in response_content:
+            function_calls = response_content["function_calls"]
+            
+            # Step 3: Execute local platform functions
+            for fc in function_calls:
+                func_name = fc["name"]
+                func_args = fc.get("args", {})
+                
+                action_result = None
+                
+                # Execute matching tool
+                if func_name == "get_wedding_budget":
+                    budget_data = await get_budget_data(wedding_id)
+                    action_result = {"budget_data": budget_data}
+                elif func_name == "get_guest_list":
+                    # Simple guest count and RSVP summary for now
+                    guests_cursor = mongo.db["guests"].find({"wedding_id": wedding_id})
+                    guests = await guests_cursor.to_list(length=100)
+                    action_result = {"guest_count": len(guests), "guests": [{"name": g.get("name"), "status": g.get("rsvp_status")} for g in guests]}
+                elif func_name == "get_hired_vendors":
+                    vendors_cursor = mongo.db["vendors"].find({"wedding_id": wedding_id, "status": "hired"})
+                    vendors = await vendors_cursor.to_list(length=100)
+                    action_result = {"vendor_count": len(vendors), "vendors": [{"name": v.get("name"), "category": v.get("category"), "email": v.get("email")} for v in vendors]}
+                elif func_name in ["add_task_to_checklist", "update_budget_item", "add_guest", "draft_email"]:
+                    if not request.execute_actions:
+                        # Freemium Preview: Tell the frontend what WOULD have happened
+                        preview_msg = f"Would {func_name.replace('_', ' ')} with args: {func_args}"
+                        action_result = {"preview_only": True, "message": preview_msg, "upgrade_required": True, "drafted_args": func_args}
+                    else:
+                        # Paid Tier: Execute
+                        if func_name == "add_task_to_checklist":
+                            from datetime import datetime, timezone
+                            new_task = {
+                                "wedding_id": wedding_id,
+                                "title": func_args.get("title"),
+                                "status": "pending",
+                                "created_at": datetime.now(timezone.utc)
+                            }
+                            if "due_date" in func_args:
+                                try:
+                                    new_task["due_date"] = datetime.strptime(func_args["due_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                                except ValueError:
+                                    pass
+                            insert_res = await mongo.db["tasks"].insert_one(new_task)
+                            action_result = {"status": "success", "task_id": str(insert_res.inserted_id), "task": new_task["title"]}
+                        
+                        elif func_name == "update_budget_item":
+                            # Simplistic update for demonstration
+                            await mongo.db["budget_items"].update_one(
+                                {"wedding_id": wedding_id, "category": func_args.get("category")},
+                                {"$set": {"amount": func_args.get("amount")}},
+                                upsert=True
+                            )
+                            action_result = {"status": "success", "message": f"Updated {func_args.get('category')} budget to ${func_args.get('amount')}"}
+                        
+                        elif func_name == "add_guest":
+                            new_guest = {
+                                "wedding_id": wedding_id,
+                                "name": func_args.get("name"),
+                                "email": func_args.get("email"),
+                                "group": func_args.get("group"),
+                                "rsvp_status": "pending"
+                            }
+                            insert_res = await mongo.db["guests"].insert_one(new_guest)
+                            action_result = {"status": "success", "guest_id": str(insert_res.inserted_id), "name": new_guest["name"]}
+                        
+                        elif func_name == "draft_email":
+                            new_draft = {
+                                "wedding_id": wedding_id,
+                                "recipient_type": func_args.get("recipient_type"),
+                                "subject": func_args.get("subject"),
+                                "body": func_args.get("body"),
+                                "status": "draft"
+                            }
+                            insert_res = await mongo.db["communications"].insert_one(new_draft)
+                            action_result = {"status": "success", "draft_id": str(insert_res.inserted_id), "message": "Email drafted successfully"}
+                else:
+                    action_result = {"error": f"Unknown function {func_name}"}
+                
+                executed_actions.append({
+                    "name": func_name,
+                    "args": func_args,
+                    "result": action_result
+                })
+            
+            # Step 4: Send results back to AI for final synthesis
+            # Note: A fully robust implementation would map function_responses into the conversational history.
+            # For simplicity, we just send a second generation request with the tool outputs.
+            synthesis_prompt = f"User's request: {request.message}\n\nYou executed the following tools and got these results:\n{executed_actions}\n\nPlease provide a final human-readable response to the user summarizing what you found or what you did."
+            
+            final_result = await ai_service.generate(
+                user_id=user_id,
+                tenant_id=wedding_id,
+                feature="command_center",
+                prompt=synthesis_prompt,
+                context=context,
+                force_refresh=True
+            )
+            
+            response_content = final_result["response"]
+            credits_used += final_result["credits_used"]
+
+        # Parse text from final response
+        if isinstance(response_content, dict):
+            response_text = response_content.get("text", str(response_content))
+        else:
+            response_text = str(response_content)
+
+        return {
+            "response": response_text,
+            "actions_executed": executed_actions,
+            "credits_used": credits_used,
+            "credits_remaining": result.get("credits_remaining"),
+        }
+
+    except (
+        InsufficientCreditsError,
+        AIGenerationError,
+        AIRateLimitError,
+        AIContentBlockedError,
+        AIServiceUnavailableError,
+        AIQuotaExceededError,
+        AITimeoutError,
+        AIInvalidResponseError,
+    ) as e:
+        handle_ai_error(e)
+    except Exception as e:
+        logger.error(f"Error in AI command center: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to process command center request")
 
 
 # =========================================================================

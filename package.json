@@ -4,7 +4,7 @@
   "license": "UNLICENSED",
   "description": "Wedding planning platform for professional wedding planners",
   "engines": {
-    "node": ">=20.9 <25",
+    "node": ">=20.9 <27",
     "npm": ">=10"
   },
   "scripts": {
@@ -42,6 +42,7 @@
     "pre-deploy": "npm run security && npm run build"
   },
   "dependencies": {
+    "@crazygl/hero-card-stack": "^0.1.1",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@headlessui/react": "^2.2.10",

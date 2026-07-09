@@ -45,7 +45,43 @@ const DEMO_VIDEO_RECORDED_AT = '2026-07-01';
 const DEMO_VIDEO_APP_BUILD_LABEL = 'Public-safe browser walkthrough';
 const DEMO_VIDEO_PUBLIC_ROOT = '/demo-videos';
 
+const DEMO_VIDEO_IDS_REQUIRING_PUBLIC_RETAKE = new Set([
+  'planner-command-center-walkthrough',
+  'morning-view-demo',
+  'wedding-timeline-demo',
+  'couple-portal-demo',
+  'microsite-auto-publishes-demo',
+  'wedding-configuration-demo',
+  'gallery-management-demo',
+  'guest-management-demo',
+  'seating-orchestrator-demo',
+  'guest-memories-demo',
+  'planner-communications-demo',
+  'contract-sign-pay-demo',
+  'payment-autopilot-demo',
+  'budget-quote-demo',
+  'vendor-directory-crm-demo',
+  'knowledge-base-demo',
+  'forms-canvas-demo',
+  'team-permissions-audit-demo',
+]);
+
 function attachPublishedDemoAssets(demo: DemoVideo): DemoVideo {
+  if (DEMO_VIDEO_IDS_REQUIRING_PUBLIC_RETAKE.has(demo.id)) {
+    return {
+      ...demo,
+      status: 'recording',
+      assetUrl: undefined,
+      thumbnailUrl: undefined,
+      captionUrl: undefined,
+      transcriptUrl: undefined,
+      socialAssetUrl: undefined,
+      socialThumbnailUrl: undefined,
+      recordedAt: undefined,
+      appBuildLabel: 'Public retake required',
+    };
+  }
+
   return {
     ...demo,
     status: 'published',
@@ -62,8 +98,8 @@ function attachPublishedDemoAssets(demo: DemoVideo): DemoVideo {
 
 const HERO_DEMO_VIDEO_DRAFT: DemoVideo = {
   id: 'planner-command-center-walkthrough',
-  title: '2-minute planner walkthrough',
-  audience: 'Professional planners evaluating whether the workspace is real before starting a trial.',
+  title: 'Planner command center walkthrough',
+  audience: 'Professional planners who want to see active weddings, guests, timelines, vendors, and next actions stay connected.',
   durationSeconds: 120,
   priority: 'hero',
   status: 'scripted',
