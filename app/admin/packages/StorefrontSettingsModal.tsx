@@ -184,7 +184,8 @@ export default function StorefrontSettingsModal({ isOpen, onClose }: { isOpen: b
   if (!isOpen) return null;
 
   const plannerId = userProfile?.id || '';
-  const storefrontUrl = settings.custom_domain ? `https://${settings.custom_domain}` : plannerId ? `/storefront/${plannerId}` : '#';
+  // The storefront slug is the internal platform preview URL
+  const storefrontUrl = plannerId ? `/storefront/${plannerId}` : '#';
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-start sm:justify-center p-4 bg-slate-900/60 backdrop-blur-sm sm:p-6 lg:p-8 overflow-y-auto">
