@@ -69,8 +69,12 @@ export default function DemoVideoModal({ demo, open, onClose }: DemoVideoModalPr
             </video>
           )
         ) : (
-          <div className="flex aspect-video items-center justify-center px-6 text-center">
-            <p className="text-sm font-semibold text-white">Video temporarily unavailable.</p>
+          <div className="flex aspect-video items-center justify-center bg-[radial-gradient(circle_at_30%_20%,rgba(212,165,165,0.22),transparent_36%),linear-gradient(135deg,#0f172a,#020617)] px-6 text-center">
+            <div className="max-w-xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-rose-200">Walkthrough being refreshed</p>
+              <p className="mt-4 text-2xl font-semibold text-white">{demo.title}</p>
+              <p className="mt-3 text-sm leading-6 text-slate-300">{demo.audience}</p>
+            </div>
           </div>
         )}
       </div>

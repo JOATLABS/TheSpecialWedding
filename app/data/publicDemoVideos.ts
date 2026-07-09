@@ -18,6 +18,6 @@ export type PublicDemoVideo = {
 
 export function getPublicDemoVideoStatusLabel(status: PublicDemoVideoStatus): string {
   if (status === 'published') return 'Watch demo';
-  if (status === 'recording') return 'Coming soon';
+  if (status === 'recording') return 'Walkthrough being refreshed';
   return 'Preview demo';
 }

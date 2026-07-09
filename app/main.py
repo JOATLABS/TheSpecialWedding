@@ -102,6 +102,7 @@ from app.api.vendor_import import router as vendor_import_router
 from app.api.vendor_management import router as vendor_management_router
 from app.api.vendor_public import router as vendor_public_router
 from app.api.vendor_signup import router as vendor_signup_router
+from app.api.storefront import router as storefront_router, public_router as storefront_public_router
 from app.api.web_push import router as web_push_router
 from app.api.wedding import router as wedding_router
 from app.core.cache import cache, close_cache, init_cache
@@ -867,6 +868,7 @@ app.include_router(
     user_management_router, tags=["Auth"]
 )  # Public registration endpoints
 app.include_router(otp_router, tags=["OTP"])  # Public OTP verification endpoints
+app.include_router(storefront_public_router, prefix="/api", tags=["storefront"])
 app.include_router(email_webhooks_router, tags=["Webhooks"])  # Resend email webhooks
 app.include_router(
     twilio_webhooks_router, tags=["Webhooks"]
@@ -995,6 +997,8 @@ admin_routers = [
 
 for router, tag in admin_routers:
     app.include_router(router, prefix="/admin", tags=[tag])
+
+app.include_router(storefront_router, prefix="/admin", tags=["Storefront"])
 
 # Admin wedding, guest, and plus-one endpoints (special handling to avoid conflicts)
 app.include_router(wedding_router, prefix="/admin", tags=["Wedding"])

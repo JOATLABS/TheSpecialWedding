@@ -38,6 +38,10 @@ export default function DemoVideoLauncher({
   const [open, setOpen] = useState(false);
   const computedLabel = label ?? getPublicDemoVideoStatusLabel(demo.status);
 
+  if (!demo.assetUrl) {
+    return null;
+  }
+
   return (
     <>
       <button

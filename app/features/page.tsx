@@ -124,6 +124,7 @@ export default function FeaturesPage() {
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((f, index) => {
             const demo = getDemoVideoByFeatureId(f.id);
+            const publicDemo = demo ? toPublicDemoVideo(demo) : undefined;
 
             return (
               <article
@@ -142,9 +143,9 @@ export default function FeaturesPage() {
                 </div>
                 <h3 className="text-lg font-semibold text-white">{f.title}</h3>
                 <p className="mt-3 text-sm font-medium leading-6 text-slate-300">{f.tagline}</p>
-                {demo ? (
+                {publicDemo?.assetUrl ? (
                   <div className="mt-5">
-                    <DemoVideoLauncher demo={toPublicDemoVideo(demo)} />
+                    <DemoVideoLauncher demo={publicDemo} />
                   </div>
                 ) : null}
               </article>

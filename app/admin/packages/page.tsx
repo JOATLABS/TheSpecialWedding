@@ -8,8 +8,10 @@ import { toast } from 'sonner';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import PageHeader from '../components/PageHeader';
+import StorefrontSettingsModal from './StorefrontSettingsModal';
 import {
   Plus,
+  Settings,
   Package,
   Search,
   Filter,
@@ -62,6 +64,7 @@ export default function PackagesPage() {
   const [packages, setPackages] = useState<PackageData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
+  const [isStorefrontModalOpen, setIsStorefrontModalOpen] = useState(false);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -212,15 +215,21 @@ export default function PackagesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Service Packages"
-        description="Create and manage your wedding service packages"
+        title="Marketing & Packages"
+        description="Manage your service packages and public storefront profile"
       >
-        <Link href="/admin/packages/new">
-          <Button className="flex items-center gap-2">
-            <Plus size={18} />
-            New Package
+        <div className="flex items-center gap-3">
+          <Button variant="outline" className="flex items-center gap-2" onClick={() => setIsStorefrontModalOpen(true)}>
+            <Settings size={18} />
+            Configure Storefront
           </Button>
-        </Link>
+          <Link href="/admin/packages/new">
+            <Button className="flex items-center gap-2">
+              <Plus size={18} />
+              New Package
+            </Button>
+          </Link>
+        </div>
       </PageHeader>
 
       {/* Filters */}
@@ -442,6 +451,11 @@ export default function PackagesPage() {
           onClick={() => setOpenMenuId(null)}
         />
       )}
+      
+      <StorefrontSettingsModal 
+        isOpen={isStorefrontModalOpen} 
+        onClose={() => setIsStorefrontModalOpen(false)} 
+      />
     </div>
   );
 }

@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { DeferredHomeEffects } from "./components/landing-page/DeferredHomeEffects.client";
 import { FeatureShowcase } from "./components/landing-page/FeatureShowcase.client";
@@ -9,6 +11,7 @@ import SaasNav from "./components/saas/SaasNav";
 import { FEATURE_DEMO_VIDEOS, HERO_DEMO_VIDEO, toPublicDemoVideo } from "./data/demoVideos";
 import { serializeJsonLd } from "./seo/jsonLd";
 import type { ThemeConfig } from "./types/wedding";
+import HeroCardStack from "./components/HeroCardStack";
 
 type Testimonial = {
   name: string;
@@ -193,71 +196,39 @@ export default function HomePage() {
       />
       <SaasNav />
 
-      <section className="relative isolate min-h-[92vh] overflow-hidden px-6 pt-28 sm:px-8 lg:px-12">
-        <DeferredHomeEffects />
-        <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/80 to-transparent" aria-hidden="true" />
-        <div className="relative z-10 mx-auto grid max-w-7xl gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
-          <div className="max-w-3xl">
-            <p className="mb-5 inline-flex rounded-full border border-rose-300/30 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-rose-100">
-              Wedding planning OS
-            </p>
-            <h1 className="text-5xl font-semibold leading-[0.95] tracking-normal text-white sm:text-6xl lg:text-7xl">
-              Plan every wedding from one calm command center.
-            </h1>
-            <p className="mt-7 max-w-2xl text-lg leading-8 text-slate-200 sm:text-xl">
-              Replace scattered spreadsheets, messages, documents, and timelines with a planner workspace that keeps couples, vendors, and teams in sync.
-            </p>
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-              <Link
-                href="#pricing"
-                className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-950 shadow-xl shadow-rose-950/20 transition hover:-translate-y-0.5 hover:bg-rose-50"
-              >
-                Start free
-              </Link>
-              <DemoVideoLauncher
-                demo={heroDemo}
-                label="Watch 2-minute walkthrough"
-                variant="hero"
-              />
-            </div>
-            <dl className="mt-12 grid max-w-2xl grid-cols-3 gap-4 border-t border-white/10 pt-6">
-              {metrics.map((metric) => (
-                <div key={metric.label}>
-                  <dt className="text-[11px] uppercase tracking-[0.24em] text-slate-400">{metric.label}</dt>
-                  <dd className="mt-2 text-2xl font-semibold text-white">{metric.value}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-
-          <div className="relative">
-            <div className="absolute -inset-6 rounded-[2rem] bg-gradient-to-br from-wedding-rose/25 via-sky-300/10 to-wedding-gold/20 blur-3xl" aria-hidden="true" />
-            <div className="relative overflow-hidden rounded-2xl border border-white/15 bg-white/[0.08] p-2 shadow-2xl shadow-black/40 backdrop-blur">
-              <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2" aria-hidden="true">
-                <span className="h-2.5 w-2.5 rounded-full bg-red-400/70" />
-                <span className="h-2.5 w-2.5 rounded-full bg-yellow-400/70" />
-                <span className="h-2.5 w-2.5 rounded-full bg-green-400/70" />
-              </div>
-              <div className="relative aspect-[16/10] rounded-b-xl bg-[#071020]">
-                <picture>
-                  <source srcSet={heroDashboardAvifSrcSet} sizes={heroDashboardSizes} type="image/avif" />
-                  <source srcSet={heroDashboardWebpSrcSet} sizes={heroDashboardSizes} type="image/webp" />
-                  <img
-                    src="/dashboard-hero-1200.webp"
-                    srcSet={heroDashboardWebpSrcSet}
-                    sizes={heroDashboardSizes}
-                    alt="The Special Wedding planner dashboard showing live wedding metrics, workflow insights, and planning tools"
-                    width={1200}
-                    height={666}
-                    loading="eager"
-                    decoding="async"
-                    fetchPriority="high"
-                    className="absolute inset-0 h-full w-full object-contain object-top"
-                  />
-                </picture>
-              </div>
-            </div>
-          </div>
+      <section className="relative isolate overflow-hidden bg-slate-950" style={{ minHeight: '92vh' }}>
+        {/* This hero was inspired and implemented based on the implementation at https://crazygl.com/hero/card-stack */}
+        {/* Original implementation by @ybouane https://x.com/ybouane */}
+        <div dangerouslySetInnerHTML={{ __html: '<!-- This hero was inspired and implemented based on the implementation at https://crazygl.com/hero/card-stack -->\n<!-- Original implementation by @ybouane https://x.com/ybouane -->' }} />
+        <div style={{ '--crazygl-height': '92vh' } as React.CSSProperties}>
+          <HeroCardStack
+            contentType="heading"
+            heading="Plan every wedding from one calm command center."
+            subheading="Replace scattered spreadsheets, messages, documents, and timelines with a planner workspace that keeps couples, vendors, and teams in sync."
+            screenshots={[
+              "/dashboard.webp",
+              "/wedding_config.webp",
+              "/couple_portal_dashboard.webp",
+              "/seating.webp",
+              "/budget_management_dark_mode.webp",
+              "/contract_canvas.webp",
+              "/planner_inbox.webp",
+              "/knowledgebase.webp"
+            ]}
+            groupOffsetX={0}
+            groupOffsetY={0}
+            stackOffsetX={0.06}
+            stackOffsetY={0.04}
+            stackOffsetZ={0.04}
+            cardSize={2.4}
+            screenBrightness={0.4}
+            bgTop="#161a24"
+            bgBottom="#06080d"
+            edgeGlowColor="#56e3ff"
+            contentAlign="start"
+            paddingX={64}
+            paddingY={48}
+          />
         </div>
       </section>
 

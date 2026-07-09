@@ -57,7 +57,7 @@ describe('demo video production requirements', () => {
   it('builds a transcript from the approved script', () => {
     const transcript = buildDemoVideoTranscript(DEMO_VIDEO_PLAYLIST[0]);
 
-    assert.match(transcript, /^# 2-minute planner walkthrough/);
+    assert.match(transcript, /^# Planner command center walkthrough/);
     assert.match(transcript, /## Script/);
     assert.match(transcript, /Open Morning View/);
   });

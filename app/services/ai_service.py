@@ -662,6 +662,16 @@ Guidelines:
 - Use the vendor's actual name and category in the message
 - End with a clear call to action (e.g., "Could you share your availability and pricing?")""",
     },
+    "command_center": {
+        "credits": 5,
+        "ttl_hours": 0,
+        "cacheable": False,
+        "description": "Full AI Command Center with platform execution capabilities",
+        "system_prompt": """You are an Expert Wedding Planner Copilot. You have the ability to read platform data and execute actions on behalf of the user using the tools provided to you.
+When a user asks a question, use your tools to fetch the relevant data, and then provide a comprehensive answer.
+When a user asks you to take an action (e.g., "update the budget", "create a task"), use your tools to execute the action.
+Always explain what you are doing. If you are executing an action, summarize what was changed.""",
+    },
 }
 
 # Model configuration. Pulled from settings so a Gemini model
@@ -989,6 +999,7 @@ class AIService:
         force_refresh: bool = False,
         cache_context: Optional[Dict[str, Any]] = None,
         subscription_plan: Optional[str] = None,
+        tools: Optional[list] = None,
     ) -> Dict[str, Any]:
         """
         Generate AI response with caching and credit tracking.
@@ -1119,7 +1130,7 @@ class AIService:
 
         # Make AI API call
         try:
-            response = await self._call_gemini(feature, prompt, context, model)
+            response = await self._call_gemini(feature, prompt, context, model, tools=tools)
             # Treat the raw model output as untrusted HTML — escape every
             # string leaf before it leaves the service boundary so a
             # prompt-injection-induced ``<script>`` in the response can
@@ -1272,7 +1283,7 @@ class AIService:
             raise AIGenerationError(f"AI generation failed: {str(e)}")
 
     async def _call_gemini(
-        self, feature: str, prompt: str, context: Dict[str, Any], model: str
+        self, feature: str, prompt: str, context: Dict[str, Any], model: str, tools: Optional[list] = None
     ) -> Any:
         """
         Make the actual Gemini API call using the new SDK with proper async.
@@ -1328,6 +1339,7 @@ class AIService:
             generation_config = types.GenerateContentConfig(
                 temperature=0.7,  # Balanced creativity for wedding planning
                 max_output_tokens=2048,  # Reasonable limit for responses
+                tools=tools,
                 safety_settings=[
                     types.SafetySetting(
                         category="HARM_CATEGORY_HARASSMENT",
@@ -1383,6 +1395,18 @@ class AIService:
                     raise AIContentBlockedError(reason="safety filters")
                 elif finish_reason == "RECITATION":
                     raise AIContentBlockedError(reason="recitation policy")
+
+            # Check for function calls first
+            if getattr(response, "function_calls", None):
+                function_calls = []
+                for fc in response.function_calls:
+                    # Convert args to a standard dict if it's a mapping
+                    args = dict(fc.args) if hasattr(fc, "args") and fc.args else {}
+                    function_calls.append({
+                        "name": fc.name,
+                        "args": args
+                    })
+                return {"function_calls": function_calls}
 
             # Extract text from response
             try:
