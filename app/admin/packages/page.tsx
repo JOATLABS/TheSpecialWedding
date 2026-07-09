@@ -9,6 +9,7 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import PageHeader from '../components/PageHeader';
 import StorefrontSettingsModal from './StorefrontSettingsModal';
+import UpgradeModal from '@/components/ui/UpgradeModal';
 import {
   Plus,
   Settings,
@@ -60,11 +61,27 @@ const statusConfig = {
 };
 
 export default function PackagesPage() {
-  const { token } = useAdmin();
+  const { token, userProfile } = useAdmin();
   const [packages, setPackages] = useState<PackageData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [isStorefrontModalOpen, setIsStorefrontModalOpen] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  const handleOpenStorefront = () => {
+    const planId = (userProfile as any)?.user_data?.plan_id || '';
+    
+    // Check if the user is on a premium plan (not free, basic, or starter)
+    // The Storefront and Custom Domain are gated top-tier features.
+    const isPremium = planId && !planId.includes('free') && !planId.includes('starter') && !planId.includes('basic');
+    
+    if (!isPremium) {
+      setShowUpgradeModal(true);
+      return;
+    }
+    
+    setIsStorefrontModalOpen(true);
+  };
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -219,7 +236,7 @@ export default function PackagesPage() {
         description="Manage your service packages and public storefront profile"
       >
         <div className="flex items-center gap-3">
-          <Button variant="outline" className="flex items-center gap-2" onClick={() => setIsStorefrontModalOpen(true)}>
+          <Button variant="outline" className="flex items-center gap-2" onClick={handleOpenStorefront}>
             <Settings size={18} />
             Configure Storefront
           </Button>
@@ -455,6 +472,11 @@ export default function PackagesPage() {
       <StorefrontSettingsModal 
         isOpen={isStorefrontModalOpen} 
         onClose={() => setIsStorefrontModalOpen(false)} 
+      />
+      
+      <UpgradeModal 
+        isOpen={showUpgradeModal} 
+        onClose={() => setShowUpgradeModal(false)} 
       />
     </div>
   );

@@ -6,11 +6,6 @@ The goal is not just to ship code that passes local checks. The goal is to prese
 
 ## Canonical Planning Sources
 
-For shared planner calendar and scheduling work, treat these documents as binding implementation inputs:
-
-- `/Users/emmanuelakinwale/Downloads/roadmap.md`
-- `/Users/emmanuelakinwale/Downloads/shared_planner_team_calendar_e_2_e_runbook.md`
-
 If code, tests, or UI behavior diverge from those documents:
 
 1. stop and identify the mismatch explicitly
