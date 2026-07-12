@@ -55,6 +55,19 @@ export interface StorefrontSettingsUpdate {
   is_published?: boolean;
 }
 
+export type StorefrontSettingsField = keyof StorefrontSettingsUpdate;
+
+export function buildStorefrontSettingsPatch(
+  candidate: StorefrontSettingsUpdate,
+  dirtyFields: ReadonlySet<StorefrontSettingsField>,
+): StorefrontSettingsUpdate {
+  return Object.fromEntries(
+    [...dirtyFields]
+      .filter((field) => Object.prototype.hasOwnProperty.call(candidate, field))
+      .map((field) => [field, candidate[field]]),
+  ) as StorefrontSettingsUpdate;
+}
+
 export type StorefrontPublicSettings = PublicStorefrontSettings;
 export type StorefrontPlanner = PublicStorefrontPlanner;
 export type StorefrontPackageService = PublicStorefrontPackageService;
@@ -178,6 +191,15 @@ export async function getStorefrontPreviewData(
   );
 }
 
+export async function getStorefrontPreviewSeed(
+  transport: StorefrontApiTransport,
+): Promise<StorefrontPreviewData> {
+  return requireResponse(
+    await transport<StorefrontPreviewData>('/admin/storefront/preview-data', 'GET'),
+    'preview data request',
+  );
+}
+
 export async function connectCustomDomain(
   domain: string,
   transport: StorefrontApiTransport,
@@ -255,6 +277,7 @@ export async function uploadStorefrontImage(
   slot: StorefrontImageSlot,
   transport: StorefrontApiTransport,
   fetchImpl: typeof fetch = fetch,
+  lifecycle: { isActive: () => boolean } = { isActive: () => true },
 ): Promise<StorefrontAsset> {
   validateStorefrontImage(file);
 
@@ -273,6 +296,9 @@ export async function uploadStorefrontImage(
   );
 
   try {
+    if (!lifecycle.isActive()) {
+      throw new Error('Storefront upload lifecycle closed before direct upload');
+    }
     const uploadResponse = await fetchImpl(reservation.upload_url, {
       method: 'PUT',
       headers: { 'Content-Type': file.type },
@@ -282,8 +308,11 @@ export async function uploadStorefrontImage(
       const detail = (await uploadResponse.text()).trim();
       throw new Error(detail || 'Storefront image upload failed');
     }
+    if (!lifecycle.isActive()) {
+      throw new Error('Storefront upload lifecycle closed before finalize');
+    }
 
-    return requireResponse(
+    const asset = requireResponse(
       await transport<StorefrontAsset>(
         '/admin/storefront/upload-complete',
         'POST',
@@ -291,6 +320,10 @@ export async function uploadStorefrontImage(
       ),
       'upload finalize',
     );
+    if (!lifecycle.isActive()) {
+      throw new Error('Storefront upload lifecycle closed after finalize');
+    }
+    return asset;
   } catch (error) {
     await bestEffortCleanup(reservation.asset_id, transport);
     throw error;

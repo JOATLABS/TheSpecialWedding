@@ -13,8 +13,6 @@ import UpgradeModal from '@/components/ui/UpgradeModal';
 import {
   getStorefrontAccess,
   type StorefrontAccess,
-  type StorefrontPackage,
-  type StorefrontPlanner,
 } from '@/services/storefrontApi';
 import {
   Plus,
@@ -67,7 +65,7 @@ const statusConfig = {
 };
 
 export default function PackagesPage() {
-  const { token, userProfile, apiRequest } = useAdmin();
+  const { token, apiRequest } = useAdmin();
   const [packages, setPackages] = useState<PackageData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
@@ -521,26 +519,6 @@ export default function PackagesPage() {
           storefront_enabled: false,
           custom_domain_enabled: false,
         }}
-        previewPlanner={{
-          company_name: null,
-          first_name: userProfile?.first_name ?? null,
-          profile_image_url: userProfile?.profile_image_url ?? null,
-        } satisfies StorefrontPlanner}
-        previewPackages={packages
-          .filter((pkg) => pkg.status === 'active' && !pkg.is_template)
-          .map((pkg) => ({
-            _id: pkg.id || pkg._id,
-            name: pkg.name,
-            description: pkg.description ?? null,
-            total_amount: pkg.total_amount,
-            currency: pkg.currency,
-            services: (pkg.services ?? [])
-              .filter((service) => service.included)
-              .map((service) => ({
-                name: service.name,
-                description: service.description ?? null,
-              })),
-          })) satisfies StorefrontPackage[]}
       />
       
       <UpgradeModal 

@@ -602,6 +602,46 @@ async def test_draft_preview_is_owner_only_and_public_read_needs_publication(
 
 
 @pytest.mark.asyncio
+async def test_owner_preview_seed_uses_canonical_unfiltered_data_without_persisting_settings(
+    setup_storefront,
+):
+    service, fake_mongo, _ = setup_storefront
+    fake_mongo.raw.packages.insert_one(
+        {
+            "_id": ObjectId(),
+            "planner_id": OWNER_ID,
+            "status": "active",
+            "is_template": False,
+            "name": "Canonical Full Planning",
+            "description": "Backend-owned preview data",
+            "total_amount": 9800,
+            "currency": "USD",
+            "services": [{"name": "Vendor sourcing", "description": None}],
+        }
+    )
+    fake_mongo.raw.planner_reviews.insert_one(
+        {
+            "_id": ObjectId(),
+            "planner_id": OWNER_ID,
+            "is_published": True,
+            "author_name": "A Couple",
+            "rating": 5,
+            "text": "Canonical review",
+            "source": "manual",
+            "date": "2026-07-01",
+        }
+    )
+
+    preview = await service.get_owner_preview_seed(_owner())
+
+    assert preview["planner"]["company_name"] == "Luxe & Light Events"
+    assert preview["packages"][0]["name"] == "Canonical Full Planning"
+    assert preview["reviews"][0]["text"] == "Canonical review"
+    assert preview["slug"] == "luxe-light-events"
+    assert fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID}) is None
+
+
+@pytest.mark.asyncio
 async def test_public_projection_filters_packages_reviews_and_private_owner_fields(
     setup_storefront,
 ):
