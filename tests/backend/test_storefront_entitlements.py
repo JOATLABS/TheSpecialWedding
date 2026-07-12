@@ -370,3 +370,27 @@ async def test_feature_dependency_keeps_capabilities_independent(monkeypatch):
 
     with pytest.raises(ValueError):
         require_storefront_feature("made_up_feature")
+
+
+@pytest.mark.asyncio
+async def test_feature_dependency_maps_resolution_failure_to_service_unavailable(
+    monkeypatch,
+):
+    planner = ExtendedAuthUser(
+        "planner@example.com",
+        "wedding_planner",
+        {"_id": OWNER_ID, "role": "wedding_planner"},
+    )
+    monkeypatch.setattr(
+        "app.dependencies.storefront_access.storefront_entitlement_service.resolve_for_owner",
+        AsyncMock(
+            side_effect=StorefrontEntitlementResolutionError("database unavailable")
+        ),
+    )
+
+    dependency = require_storefront_feature(STOREFRONT_FEATURE)
+    with pytest.raises(HTTPException) as exc_info:
+        await dependency(planner)
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "Storefront eligibility is temporarily unavailable"
