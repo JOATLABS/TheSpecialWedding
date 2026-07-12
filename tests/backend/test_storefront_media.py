@@ -1718,6 +1718,51 @@ async def test_lost_inflight_finalizer_persists_detached_candidate_cleanup_recei
 
 
 @pytest.mark.asyncio
+async def test_failed_candidate_discard_persists_detached_receipt_after_token_loss(
+    setup_media, monkeypatch
+):
+    service, mongo, storage, _ = setup_media
+    reserved = await _reserve(service, slot="hero", size_bytes=100)
+    staging_key = storage.presign_calls[-1]["key"]
+    storage.head_by_key[staging_key] = {
+        "ContentLength": 100,
+        "ContentType": "image/webp",
+        "ETag": '"source"',
+    }
+    original_upload = storage.upload_fileobj
+
+    def upload_then_lose_token(*args, **kwargs):
+        original_upload(*args, **kwargs)
+        mongo.raw.storefront_assets.update_one(
+            {"_id": ObjectId(reserved["asset_id"])},
+            {
+                "$set": {"state": "reserved"},
+                "$unset": {
+                    "finalization_token": "",
+                    "finalization_started_at": "",
+                },
+            },
+        )
+        raise RuntimeError("upload acknowledgement lost after token takeover")
+
+    monkeypatch.setattr(storage, "upload_fileobj", upload_then_lose_token)
+    storage.delete_error = RuntimeError("candidate delete unavailable")
+
+    with pytest.raises(HTTPException) as unavailable:
+        await service.finalize(_owner(), reserved["asset_id"])
+
+    assert unavailable.value.status_code == 503
+    candidate_key = storage.upload_calls[-1]["key"]
+    receipt = mongo.raw.storefront_asset_cleanup_receipts.find_one(
+        {"owner_id": OWNER_ID, "candidate_key": candidate_key}
+    )
+    assert receipt is not None
+    assert receipt["slot"] == "hero"
+    assert receipt["state"] == "cleanup_retry"
+    assert receipt["cleanup_reason"] == "finalization_upload_failed"
+
+
+@pytest.mark.asyncio
 async def test_failed_detached_cleanup_still_honors_global_sweep_limit(setup_media):
     service, mongo, storage, _ = setup_media
     ready = await _finalize_ready_asset(service, storage, slot="about")
@@ -1753,6 +1798,58 @@ async def test_failed_detached_cleanup_still_honors_global_sweep_limit(setup_med
 
     assert len(storage.delete_calls) == delete_count + 1
     assert mongo.raw.storefront_assets.find_one({"_id": ready_row["_id"]}) is not None
+
+
+@pytest.mark.asyncio
+async def test_global_sweep_alternates_queues_at_limit_one_under_persistent_failures(
+    setup_media, monkeypatch
+):
+    service, mongo, storage, _ = setup_media
+    ready = await _finalize_ready_asset(service, storage, slot="about")
+    ready_row = mongo.raw.storefront_assets.find_one(
+        {"_id": ObjectId(ready["asset_id"])}
+    )
+    now = datetime.now(timezone.utc)
+    mongo.raw.storefront_assets.update_one(
+        {"_id": ready_row["_id"]},
+        {"$set": {"cleanup_due_at": now - timedelta(seconds=1)}},
+    )
+    candidate_key = f"storefront/{OWNER_ID}/hero/persistent-detached.webp"
+    mongo.raw.storefront_asset_cleanup_receipts.insert_one(
+        {
+            "_id": ObjectId(),
+            "owner_id": OWNER_ID,
+            "slot": "hero",
+            "candidate_key": candidate_key,
+            "state": "cleanup_retry",
+            "cleanup_due_at": now - timedelta(seconds=1),
+            "updated_at": now,
+        }
+    )
+    storage.head_by_key[candidate_key] = {
+        "ContentLength": 10,
+        "ContentType": "image/webp",
+        "ETag": '"detached"',
+    }
+    monkeypatch.setattr(storefront_media_module, "STOREFRONT_CLEANUP_RETRY_SECONDS", 0)
+    storage.delete_error = RuntimeError("persistent storage failure")
+    delete_count = len(storage.delete_calls)
+
+    for _ in range(4):
+        assert await service.sweep_abandoned_assets(limit=1) == 0
+
+    queue_keys = {candidate_key, ready_row["key"]}
+    attempted_keys = [
+        call["key"]
+        for call in storage.delete_calls[delete_count:]
+        if call["key"] in queue_keys
+    ]
+    assert attempted_keys == [
+        candidate_key,
+        ready_row["key"],
+        candidate_key,
+        ready_row["key"],
+    ]
 
 
 @pytest.mark.asyncio

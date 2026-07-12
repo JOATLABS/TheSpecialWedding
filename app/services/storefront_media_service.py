@@ -87,6 +87,7 @@ class StorefrontMediaService:
         self._mongo = mongo_client or mongo
         self._storage = storage or MediaStorage()
         self._entitlements = entitlement_service or storefront_entitlement_service
+        self._detached_cleanup_first = True
 
     @staticmethod
     def _owner_data(owner: Any) -> dict:
@@ -1580,8 +1581,15 @@ class StorefrontMediaService:
                     },
                 )
                 if not getattr(receipt, "modified_count", 0):
+                    await self._record_detached_candidate_cleanup(
+                        owner_id=owner_id,
+                        slot=asset["slot"],
+                        candidate_key=candidate_key,
+                        reason=reason,
+                        error=cleanup_exc,
+                    )
                     logger.exception(
-                        "Lost finalizer could not remove its candidate %s",
+                        "Lost finalizer retained durable cleanup for candidate %s",
                         candidate_key,
                         exc_info=cleanup_exc,
                     )
@@ -2977,11 +2985,12 @@ class StorefrontMediaService:
 
     async def _sweep_due_cleanup_assets(
         self, *, owner_id: str | None, limit: int
-    ) -> int:
+    ) -> tuple[int, int]:
         assets = self._mongo.db["storefront_assets"]
         cursor = assets.find(self._due_cleanup_query(owner_id))
         processed = 0
-        for asset in await cursor.to_list(length=limit):
+        candidates = await cursor.to_list(length=limit)
+        for asset in candidates:
             try:
                 if await self._claim_due_cleanup_asset(asset):
                     processed += 1
@@ -2996,7 +3005,7 @@ class StorefrontMediaService:
                     asset.get("_id"),
                     asset.get("owner_id"),
                 )
-        return processed
+        return processed, len(candidates)
 
     async def _sweep_detached_candidate_receipts(
         self, *, limit: int
@@ -3147,17 +3156,38 @@ class StorefrontMediaService:
             or not 1 <= limit <= 500
         ):
             raise ValueError("Storefront maintenance limit must be between 1 and 500")
-        (
-            detached_processed,
-            detached_attempted,
-        ) = await self._sweep_detached_candidate_receipts(limit=limit)
-        remaining = limit - detached_attempted
-        if remaining <= 0:
-            return detached_processed
-        return detached_processed + await self._sweep_due_cleanup_assets(
-            owner_id=None,
-            limit=remaining,
-        )
+        detached_first = self._detached_cleanup_first
+        self._detached_cleanup_first = not detached_first
+        primary_limit = limit if limit == 1 else limit - 1
+
+        detached_processed = 0
+        detached_attempted = 0
+        asset_processed = 0
+        asset_attempted = 0
+        if detached_first:
+            (
+                detached_processed,
+                detached_attempted,
+            ) = await self._sweep_detached_candidate_receipts(limit=primary_limit)
+            remaining = limit - detached_attempted
+            if remaining:
+                asset_processed, asset_attempted = await self._sweep_due_cleanup_assets(
+                    owner_id=None,
+                    limit=remaining,
+                )
+        else:
+            asset_processed, asset_attempted = await self._sweep_due_cleanup_assets(
+                owner_id=None,
+                limit=primary_limit,
+            )
+            remaining = limit - asset_attempted
+            if remaining:
+                (
+                    detached_processed,
+                    detached_attempted,
+                ) = await self._sweep_detached_candidate_receipts(limit=remaining)
+
+        return detached_processed + asset_processed
 
     async def _recover_abandoned_cleanable_assets(self, owner: Any) -> None:
         """Use the same token-fenced sweep for the current owner."""
