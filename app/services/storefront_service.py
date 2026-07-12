@@ -13,7 +13,10 @@ from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
 
 from app.constants.roles import is_wedding_planner_role
-from app.constants.storefront import RESERVED_STOREFRONT_SLUGS
+from app.constants.storefront import (
+    PENDING_ASSET_GROUP_FIELD,
+    RESERVED_STOREFRONT_SLUGS,
+)
 from app.core.database import mongo
 from app.models.storefront import (
     PublicPackage,
@@ -197,6 +200,10 @@ class StorefrontService:
         # publication and slug locking atomic while allowing unrelated edits to
         # merge without re-sending an old slug snapshot.
         for attempt in range(3):
+            # A competing CAS may have installed a durable group after the
+            # initial recovery. Retire it before each new revision attempt so
+            # two claim tokens are never intentionally persisted together.
+            await self._media.recover_pending_settings_assets(owner)
             current = await collection.find_one({"planner_id": owner_id})
             now = datetime.now(timezone.utc)
 
@@ -256,6 +263,38 @@ class StorefrontService:
                     raise RuntimeError(
                         "Storefront media service returned an invalid claim receipt"
                     )
+                claimed_assets = asset_claim.get("claimed_assets")
+                manifest = asset_claim.get("manifest")
+                if not isinstance(claimed_assets, list):
+                    raise RuntimeError(
+                        "Storefront media service returned an invalid claim receipt"
+                    )
+                expected_members = {
+                    entry.get("slot"): entry.get("asset_id")
+                    for entry in claimed_assets
+                    if isinstance(entry, dict)
+                    and isinstance(entry.get("slot"), str)
+                    and isinstance(entry.get("asset_id"), str)
+                }
+                expected_manifest = {
+                    "claim_id": claim_id,
+                    "count": len(claimed_assets),
+                    "members": {
+                        slot: expected_members[slot]
+                        for slot in ("hero", "about")
+                        if slot in expected_members
+                    },
+                }
+                if manifest != expected_manifest or len(expected_members) != len(
+                    claimed_assets
+                ):
+                    raise RuntimeError(
+                        "Storefront media service returned an invalid claim manifest"
+                    )
+                if claimed_assets:
+                    attempt_changes[PENDING_ASSET_GROUP_FIELD] = manifest
+                else:
+                    pending_unsets[PENDING_ASSET_GROUP_FIELD] = ""
                 for field_name, asset_id in validated_assets.items():
                     slot = field_name.removesuffix("_asset_id")
                     pending_asset_field = f"pending_{slot}_asset_id"
@@ -273,6 +312,40 @@ class StorefrontService:
                         attempt_changes[pending_claim_field] = claim_id
 
             if current:
+                current_manifest = current.get(PENDING_ASSET_GROUP_FIELD)
+                if explicit_asset_changes and isinstance(current_manifest, dict):
+                    previous_claim_id = current_manifest.get("claim_id")
+                    previous_count = current_manifest.get("count")
+                    previous_members = current_manifest.get("members")
+                    if (
+                        isinstance(previous_claim_id, str)
+                        and isinstance(previous_count, int)
+                        and not isinstance(previous_count, bool)
+                        and isinstance(previous_members, dict)
+                        and previous_count == len(previous_members)
+                    ):
+                        for slot in ("hero", "about"):
+                            previous_asset_id = previous_members.get(slot)
+                            if not isinstance(previous_asset_id, str):
+                                continue
+                            displaced = displaced_pending_claims.setdefault(
+                                previous_claim_id, []
+                            )
+                            entry = {
+                                "asset_id": previous_asset_id,
+                                "slot": slot,
+                                "field_name": f"{slot}_asset_id",
+                            }
+                            if entry not in displaced:
+                                displaced.append(entry)
+                            pending_asset_field = f"pending_{slot}_asset_id"
+                            pending_claim_field = f"pending_{slot}_claim_id"
+                            if pending_asset_field not in attempt_changes:
+                                pending_unsets[pending_asset_field] = ""
+                            if pending_claim_field not in attempt_changes:
+                                pending_unsets[pending_claim_field] = ""
+                        if PENDING_ASSET_GROUP_FIELD not in attempt_changes:
+                            pending_unsets[PENDING_ASSET_GROUP_FIELD] = ""
                 for field_name in explicit_asset_changes:
                     slot = field_name.removesuffix("_asset_id")
                     pending_asset_field = f"pending_{slot}_asset_id"
@@ -287,15 +360,16 @@ class StorefrontService:
                         and (previous_asset_id, previous_claim_id)
                         != (next_asset_id, next_claim_id)
                     ):
-                        displaced_pending_claims.setdefault(
+                        displaced = displaced_pending_claims.setdefault(
                             previous_claim_id, []
-                        ).append(
-                            {
-                                "asset_id": previous_asset_id,
-                                "slot": slot,
-                                "field_name": field_name,
-                            }
                         )
+                        entry = {
+                            "asset_id": previous_asset_id,
+                            "slot": slot,
+                            "field_name": field_name,
+                        }
+                        if entry not in displaced:
+                            displaced.append(entry)
 
             update: dict[str, Any] = {
                 "planner_id": owner_id,
@@ -304,6 +378,9 @@ class StorefrontService:
             }
             if slug_was_explicit or not current or not current.get("slug"):
                 update["slug"] = slug
+            for field_name in tuple(pending_unsets):
+                if field_name in update:
+                    pending_unsets.pop(field_name, None)
 
             if current and not current.get("created_at"):
                 update["created_at"] = now
