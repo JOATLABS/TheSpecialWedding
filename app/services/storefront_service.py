@@ -263,17 +263,21 @@ class StorefrontService:
                     write_filter["revision"] = current.get("revision")
                 else:
                     write_filter["revision"] = {"$exists": False}
-                upsert = False
-            else:
-                write_filter = {"planner_id": owner_id}
-                upsert = True
 
             try:
-                result = await collection.update_one(
-                    write_filter,
-                    {"$set": update, "$inc": {"revision": 1}},
-                    upsert=upsert,
-                )
+                if current:
+                    result = await collection.update_one(
+                        write_filter,
+                        {"$set": update, "$inc": {"revision": 1}},
+                        upsert=False,
+                    )
+                    write_succeeded = bool(getattr(result, "modified_count", 0))
+                else:
+                    # Creation must be insert-only. An upsert filtered only by
+                    # planner_id could match and overwrite a row inserted by a
+                    # concurrent first save after this request's read.
+                    result = await collection.insert_one({**update, "revision": 1})
+                    write_succeeded = bool(getattr(result, "inserted_id", None))
             except DuplicateKeyError as exc:
                 if attempt < 2:
                     continue
@@ -282,10 +286,6 @@ class StorefrontService:
                     detail="This storefront slug is already in use",
                 ) from exc
 
-            write_succeeded = bool(
-                getattr(result, "modified_count", 0)
-                or getattr(result, "upserted_id", None)
-            )
             if not write_succeeded:
                 continue
 

@@ -107,6 +107,12 @@ class FakeEntitlements:
 @pytest.fixture
 def setup_storefront():
     fake_mongo = FakeMongo()
+    fake_mongo.raw.storefront_settings.create_index("planner_id", unique=True)
+    fake_mongo.raw.storefront_settings.create_index(
+        "slug",
+        unique=True,
+        partialFilterExpression={"slug": {"$type": "string"}},
+    )
     entitlements = FakeEntitlements()
     service = StorefrontService(fake_mongo, entitlements)
     fake_mongo.raw.users.insert_many(
@@ -536,7 +542,7 @@ async def test_unique_index_race_is_translated_to_slug_conflict(
     async def duplicate_write(*_args, **_kwargs):
         raise DuplicateKeyError("duplicate slug")
 
-    fake_mongo.db["storefront_settings"].update_one = duplicate_write
+    fake_mongo.db["storefront_settings"].insert_one = duplicate_write
     with pytest.raises(HTTPException) as conflict:
         await service.update_settings(
             _owner(), StorefrontSettingsUpdate(slug="race-winner")
@@ -546,20 +552,29 @@ async def test_unique_index_race_is_translated_to_slug_conflict(
 
 def _pause_first_write_for_task(collection, task_name: str):
     original_update = collection.update_one
+    original_insert = collection.insert_one
     paused = asyncio.Event()
     resume = asyncio.Event()
     did_pause = False
 
-    async def interleaved_update(*args, **kwargs):
+    async def maybe_pause():
         nonlocal did_pause
         current = asyncio.current_task()
         if current and current.get_name() == task_name and not did_pause:
             did_pause = True
             paused.set()
             await resume.wait()
+
+    async def interleaved_update(*args, **kwargs):
+        await maybe_pause()
         return await original_update(*args, **kwargs)
 
+    async def interleaved_insert(*args, **kwargs):
+        await maybe_pause()
+        return await original_insert(*args, **kwargs)
+
     collection.update_one = interleaved_update
+    collection.insert_one = interleaved_insert
     return paused, resume
 
 
@@ -620,3 +635,42 @@ async def test_unrelated_stale_edit_does_not_overwrite_concurrent_slug_choice(
     assert result["description"] == "Keep this edit"
     stored = fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
     assert stored["slug"] == "chosen-address"
+
+
+@pytest.mark.asyncio
+async def test_stale_first_save_cannot_overwrite_concurrent_first_publication(
+    setup_storefront,
+):
+    service, fake_mongo, _ = setup_storefront
+    owner = _owner()
+    collection = fake_mongo.db["storefront_settings"]
+    paused, resume = _pause_first_write_for_task(collection, "stale-first-save")
+
+    stale_first_save = asyncio.create_task(
+        service.update_settings(
+            owner,
+            StorefrontSettingsUpdate(
+                slug="stale-first-address", description="Must not overwrite"
+            ),
+        ),
+        name="stale-first-save",
+    )
+    await paused.wait()
+    published = await service.update_settings(
+        owner,
+        StorefrontSettingsUpdate(
+            slug="published-first-address",
+            title="Published",
+            is_published=True,
+        ),
+    )
+    resume.set()
+
+    with pytest.raises(HTTPException) as conflict:
+        await stale_first_save
+    assert conflict.value.status_code == 409
+    stored = fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert stored["slug"] == published["slug"] == "published-first-address"
+    assert stored["is_published"] is True
+    assert stored["published_at"] is not None
+    assert stored.get("description") != "Must not overwrite"
