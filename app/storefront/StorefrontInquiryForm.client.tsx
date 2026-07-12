@@ -66,7 +66,6 @@ export default function StorefrontInquiryForm({
     if (state !== 'error') {
       return;
     }
-    inquiryAttemptRef.current = null;
     setState('idle');
     setFeedback(null);
   };
