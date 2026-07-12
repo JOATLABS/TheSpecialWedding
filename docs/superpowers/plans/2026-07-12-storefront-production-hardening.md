@@ -128,29 +128,29 @@
 - Settings updates accept only `slug`, `title`, `description`, `contact_email`, `contact_phone`, `hero_asset_id`, `about_asset_id`, `theme_color`, `packages_enabled`, `reviews_enabled`, and `is_published`.
 - Public DTO package fields are `_id`, `name`, `description`, `total_amount`, `currency`, and `services[{name, description}]`.
 
-- [ ] **Step 1: Write service, route, and index tests**
+- [x] **Step 1: Write service, route, and index tests**
 
   Cover create/edit round-trip, explicit contact privacy, slug normalization/conflicts, slug immutability after first publication, planner ownership, forbidden roles, generic-domain-field rejection, draft authenticated preview, unauthenticated preview denial, published eligibility, retained settings during eligibility loss, active non-template package filtering, strict public field projection, route prefixes/methods, and unique indexes for `planner_id` and `slug`.
 
-- [ ] **Step 2: Run focused tests and capture RED**
+- [x] **Step 2: Run focused tests and capture RED**
 
   Run: `PYTHONPATH=. /Users/emmanuelakinwale/Developer/WeddingWebApp/.venv.nosync/bin/pytest tests/backend/test_storefront_service.py tests/backend/test_storefront_api_contract.py tests/backend/test_storefront_indexes.py -q --tb=short`
 
   Expected RED: service/models/indexes do not exist and current public fallback exposes any valid user.
 
-- [ ] **Step 3: Implement models and service source of truth**
+- [x] **Step 3: Implement models and service source of truth**
 
   Implement Pydantic request/response models with strict extra-field rejection, explicit contact validation, color/length validation, stable UTC timestamps, ownership-scoped upsert, duplicate-key translation to HTTP 409, stable-slug enforcement after first publication, and DTO projection. Do not accept domain lifecycle fields or arbitrary image URLs in settings.
 
-- [ ] **Step 4: Implement owner/public routes and indexes**
+- [x] **Step 4: Implement owner/public routes and indexes**
 
   Mount authenticated routes only under `/admin/storefront/*`; retain public reads only under `/api/storefront/*`. Public reads require stored `is_published=true` plus current eligibility. Owner preview requires the authenticated owner, matching slug, and storefront eligibility but ignores publication. Add startup indexes through `create_all_indexes()`.
 
-- [ ] **Step 5: Run focused tests and capture GREEN**
+- [x] **Step 5: Run focused tests and capture GREEN**
 
   Re-run the Step 2 command with zero failures.
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
   Commit subject: `feat: secure storefront settings and public data`
 
