@@ -305,6 +305,17 @@ async def _finalize_ready_asset(
     return reserved
 
 
+def _pending_asset_group(claim: dict) -> dict:
+    members = {entry["slot"]: entry["asset_id"] for entry in claim["claimed_assets"]}
+    return {
+        "pending_asset_group": {
+            "claim_id": claim["claim_id"],
+            "count": len(members),
+            "members": members,
+        }
+    }
+
+
 @pytest.mark.asyncio
 async def test_reserve_uses_server_generated_owner_slot_key_and_offloads_presign(
     setup_media,
@@ -537,18 +548,139 @@ async def test_recent_legacy_reservation_without_expiry_is_backfilled_and_finali
 async def test_reserve_blocks_slot_while_finalization_is_in_flight(
     setup_media, busy_state
 ):
-    service, mongo, _, _ = setup_media
+    service, mongo, storage, _ = setup_media
     reserved = await _reserve(service)
-    mongo.raw.storefront_assets.update_one(
-        {"_id": ObjectId(reserved["asset_id"])},
-        {"$set": {"state": busy_state}},
+    stored = mongo.raw.storefront_assets.find_one(
+        {"_id": ObjectId(reserved["asset_id"])}
     )
+    token = "fresh-finalization-token"
+    candidate_key = service._finalization_candidate_key(stored, token)
+    state_fields = {
+        "state": busy_state,
+        "updated_at": datetime.now(timezone.utc),
+    }
+    if busy_state == "finalizing":
+        state_fields.update(
+            {
+                "finalization_token": token,
+                "finalization_started_at": datetime.now(timezone.utc),
+            }
+        )
+    else:
+        state_fields.update(
+            {
+                "recovery_token": token,
+                "cleanup_candidate_key": candidate_key,
+            }
+        )
+    mongo.raw.storefront_assets.update_one(
+        {"_id": ObjectId(reserved["asset_id"])}, {"$set": state_fields}
+    )
+    storage.head_by_key[candidate_key] = {
+        "ContentLength": 10,
+        "ContentType": "image/webp",
+        "ETag": '"candidate"',
+    }
 
     with pytest.raises(HTTPException) as conflict:
         await _reserve(service)
 
     assert conflict.value.status_code == 409
     assert mongo.raw.storefront_assets.count_documents({}) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("busy_state", ["finalizing", "finalization_recovery"])
+async def test_reserve_reclaims_stale_finalization_before_issuing_new_slot_receipt(
+    setup_media, busy_state
+):
+    service, mongo, storage, _ = setup_media
+    abandoned = await _reserve(service)
+    abandoned_row = mongo.raw.storefront_assets.find_one(
+        {"_id": ObjectId(abandoned["asset_id"])}
+    )
+    staging_key = abandoned_row["staging_key"]
+    token = "abandoned-finalization-token"
+    candidate_key = service._finalization_candidate_key(abandoned_row, token)
+    stale_at = datetime.now(timezone.utc) - timedelta(
+        seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS + 1
+    )
+    state_fields = {"state": busy_state, "updated_at": stale_at}
+    if busy_state == "finalizing":
+        state_fields.update(
+            {
+                "finalization_token": token,
+                "finalization_started_at": stale_at,
+            }
+        )
+    else:
+        state_fields.update(
+            {
+                "recovery_token": token,
+                "cleanup_candidate_key": candidate_key,
+            }
+        )
+    mongo.raw.storefront_assets.update_one(
+        {"_id": abandoned_row["_id"]}, {"$set": state_fields}
+    )
+    storage.head_by_key[staging_key] = {
+        "ContentLength": 10,
+        "ContentType": "image/webp",
+        "ETag": '"staging"',
+    }
+    storage.head_by_key[candidate_key] = {
+        "ContentLength": 10,
+        "ContentType": "image/webp",
+        "ETag": '"candidate"',
+    }
+
+    replacement = await _reserve(service)
+
+    assert replacement["asset_id"] != abandoned["asset_id"]
+    assert mongo.raw.storefront_assets.find_one({"_id": abandoned_row["_id"]}) is None
+    deleted = {(call["target"], call["key"]) for call in storage.delete_calls}
+    assert (StorageTarget.STOREFRONT_STAGING, staging_key) in deleted
+    assert (StorageTarget.BLOG_ASSETS, candidate_key) in deleted
+
+
+@pytest.mark.asyncio
+async def test_reserve_retries_failed_stale_finalization_cleanup_before_slot_reuse(
+    setup_media,
+):
+    service, mongo, storage, _ = setup_media
+    abandoned = await _reserve(service)
+    row = mongo.raw.storefront_assets.find_one({"_id": ObjectId(abandoned["asset_id"])})
+    token = "abandoned-finalization-token"
+    candidate_key = service._finalization_candidate_key(row, token)
+    stale_at = datetime.now(timezone.utc) - timedelta(
+        seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS + 1
+    )
+    mongo.raw.storefront_assets.update_one(
+        {"_id": row["_id"]},
+        {
+            "$set": {
+                "state": "finalizing",
+                "finalization_token": token,
+                "finalization_started_at": stale_at,
+                "updated_at": stale_at,
+            }
+        },
+    )
+    storage.delete_error = RuntimeError("temporary delete failure")
+
+    with pytest.raises(HTTPException) as unavailable:
+        await _reserve(service)
+    assert unavailable.value.status_code == 503
+    stranded = mongo.raw.storefront_assets.find_one({"_id": row["_id"]})
+    assert stranded["state"] == "cleanup_retry"
+    assert stranded["cleanup_reason"] == "stale_finalization"
+
+    storage.delete_error = None
+    replacement = await _reserve(service)
+
+    assert replacement["asset_id"] != abandoned["asset_id"]
+    assert mongo.raw.storefront_assets.find_one({"_id": row["_id"]}) is None
+    assert any(call["key"] == candidate_key for call in storage.delete_calls)
 
 
 @pytest.mark.asyncio
@@ -1160,6 +1292,7 @@ async def test_settings_claim_blocks_cleanup_until_durable_attachment(setup_medi
             "hero_asset_id": None,
             "pending_hero_asset_id": hero["asset_id"],
             "pending_hero_claim_id": claim["claim_id"],
+            **_pending_asset_group(claim),
         }
     )
     await service.attach_settings_asset_claims(_owner(), claim)
@@ -1229,6 +1362,7 @@ async def test_recovery_promotes_first_save_only_after_exact_claim_is_attached(
             "hero_asset_id": None,
             "pending_hero_asset_id": hero["asset_id"],
             "pending_hero_claim_id": claim["claim_id"],
+            **_pending_asset_group(claim),
         }
     )
 
@@ -1260,6 +1394,7 @@ async def test_recovery_promotes_claim_attached_before_worker_crash(setup_media)
             "about_asset_id": "old-about",
             "pending_about_asset_id": about["asset_id"],
             "pending_about_claim_id": claim["claim_id"],
+            **_pending_asset_group(claim),
         }
     )
     await service.attach_settings_asset_claims(_owner(), claim)
@@ -1297,6 +1432,70 @@ async def test_recovery_rolls_back_invalid_pending_without_erasing_stable_asset(
 
 
 @pytest.mark.asyncio
+async def test_recovery_never_promotes_legacy_pending_pair_without_group_manifest(
+    setup_media,
+):
+    service, mongo, storage, _ = setup_media
+    hero = await _finalize_ready_asset(service, storage, slot="hero")
+    claim = await service.claim_settings_assets(
+        _owner(), hero_asset_id=hero["asset_id"]
+    )
+    mongo.raw.storefront_settings.insert_one(
+        {
+            "planner_id": OWNER_ID,
+            "revision": 3,
+            "hero_asset_id": "stable-hero",
+            "pending_hero_asset_id": hero["asset_id"],
+            "pending_hero_claim_id": claim["claim_id"],
+        }
+    )
+
+    await service.recover_pending_settings_assets(_owner())
+
+    saved = mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert saved["hero_asset_id"] == "stable-hero"
+    assert "pending_hero_asset_id" not in saved
+    assert "pending_hero_claim_id" not in saved
+    asset = mongo.raw.storefront_assets.find_one({"_id": ObjectId(hero["asset_id"])})
+    assert asset["state"] == "ready"
+
+
+@pytest.mark.asyncio
+async def test_recovery_uses_manifest_to_rollback_group_with_missing_pending_sibling(
+    setup_media,
+):
+    service, mongo, storage, _ = setup_media
+    hero = await _finalize_ready_asset(service, storage, slot="hero")
+    about = await _finalize_ready_asset(service, storage, slot="about")
+    claim = await service.claim_settings_assets(
+        _owner(),
+        hero_asset_id=hero["asset_id"],
+        about_asset_id=about["asset_id"],
+    )
+    mongo.raw.storefront_settings.insert_one(
+        {
+            "planner_id": OWNER_ID,
+            "revision": 6,
+            "hero_asset_id": "stable-hero",
+            "about_asset_id": "stable-about",
+            "pending_hero_asset_id": hero["asset_id"],
+            "pending_hero_claim_id": claim["claim_id"],
+            **_pending_asset_group(claim),
+        }
+    )
+
+    await service.recover_pending_settings_assets(_owner())
+
+    saved = mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert saved["hero_asset_id"] == "stable-hero"
+    assert saved["about_asset_id"] == "stable-about"
+    assert not any(key.startswith("pending_") for key in saved)
+    for asset_id in (hero["asset_id"], about["asset_id"]):
+        asset = mongo.raw.storefront_assets.find_one({"_id": ObjectId(asset_id)})
+        assert asset["state"] == "ready"
+
+
+@pytest.mark.asyncio
 async def test_explicit_clear_releases_attached_but_unpromoted_pending_claim(
     setup_media,
 ):
@@ -1312,6 +1511,7 @@ async def test_explicit_clear_releases_attached_but_unpromoted_pending_claim(
             "hero_asset_id": "stable-old-hero",
             "pending_hero_asset_id": hero["asset_id"],
             "pending_hero_claim_id": claim["claim_id"],
+            **_pending_asset_group(claim),
         }
     )
     await service.attach_settings_asset_claims(_owner(), claim)
@@ -1322,6 +1522,7 @@ async def test_explicit_clear_releases_attached_but_unpromoted_pending_claim(
             "$unset": {
                 "pending_hero_asset_id": "",
                 "pending_hero_claim_id": "",
+                "pending_asset_group": "",
             },
             "$inc": {"revision": 1},
         },
@@ -1362,6 +1563,7 @@ async def test_stale_claim_can_be_taken_over_and_old_worker_cannot_promote(
             "hero_asset_id": None,
             "pending_hero_asset_id": hero["asset_id"],
             "pending_hero_claim_id": new_claim["claim_id"],
+            **_pending_asset_group(new_claim),
         }
     )
     await service.attach_settings_asset_claims(_owner(), new_claim)
@@ -1398,6 +1600,7 @@ async def test_multi_slot_claim_promotes_both_stable_ids_in_one_settings_revisio
             "pending_hero_claim_id": claim["claim_id"],
             "pending_about_asset_id": about["asset_id"],
             "pending_about_claim_id": claim["claim_id"],
+            **_pending_asset_group(claim),
         }
     )
 
@@ -1480,6 +1683,7 @@ async def test_reconcile_never_promotes_only_referenced_subset_of_token_group(
             "pending_hero_claim_id": claim["claim_id"],
             "pending_about_asset_id": "new-about",
             "pending_about_claim_id": "successor-token",
+            **_pending_asset_group(claim),
         }
     )
 
@@ -1522,6 +1726,7 @@ async def test_recovery_rolls_back_entire_token_group_when_one_sibling_is_invali
             "pending_hero_claim_id": claim["claim_id"],
             "pending_about_asset_id": about["asset_id"],
             "pending_about_claim_id": claim["claim_id"],
+            **_pending_asset_group(claim),
         }
     )
     await service.attach_settings_asset_claims(_owner(), claim)
@@ -1601,6 +1806,31 @@ async def test_recovery_releases_unreferenced_attached_and_stale_attaching_orpha
 
 
 @pytest.mark.asyncio
+async def test_recovery_does_not_steal_fresh_claim_for_stably_referenced_asset(
+    setup_media,
+):
+    service, mongo, storage, _ = setup_media
+    hero = await _finalize_ready_asset(service, storage, slot="hero")
+    mongo.raw.storefront_settings.insert_one(
+        {
+            "planner_id": OWNER_ID,
+            "revision": 2,
+            "hero_asset_id": hero["asset_id"],
+        }
+    )
+    claim = await service.claim_settings_assets(
+        _owner(), hero_asset_id=hero["asset_id"]
+    )
+
+    await service.recover_pending_settings_assets(_owner())
+
+    row = mongo.raw.storefront_assets.find_one({"_id": ObjectId(hero["asset_id"])})
+    assert row["state"] == "attaching"
+    assert row["attach_claim_id"] == claim["claim_id"]
+    assert isinstance(row["attach_claimed_at"], datetime)
+
+
+@pytest.mark.asyncio
 async def test_stale_claim_with_durable_pending_token_stays_fenced_until_recovery(
     setup_media,
 ):
@@ -1631,6 +1861,7 @@ async def test_stale_claim_with_durable_pending_token_stays_fenced_until_recover
             "hero_asset_id": None,
             "pending_hero_asset_id": hero["asset_id"],
             "pending_hero_claim_id": first_claim["claim_id"],
+            **_pending_asset_group(first_claim),
         }
     )
 
@@ -1659,6 +1890,7 @@ async def test_stale_claim_with_durable_pending_token_stays_fenced_until_recover
             "$set": {
                 "pending_hero_asset_id": hero["asset_id"],
                 "pending_hero_claim_id": second_claim["claim_id"],
+                **_pending_asset_group(second_claim),
             },
             "$inc": {"revision": 1},
         },
