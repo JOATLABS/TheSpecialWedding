@@ -8,7 +8,13 @@ import type {
   StorefrontInquiryResult,
 } from './storefrontTypes';
 
-type SubmissionState = 'idle' | 'submitting' | 'success' | 'error';
+type SubmissionState =
+  | 'idle'
+  | 'submitting'
+  | 'success'
+  | 'success_with_edits'
+  | 'error';
+type InquiryPayloadWithoutKey = Omit<StorefrontInquiryPayload, 'idempotency_key'>;
 
 interface InquiryAttempt {
   idempotencyKey: string;
@@ -36,19 +42,56 @@ function createInquiryIdempotencyKey(): string {
   return Array.from(randomBytes, (value) => value.toString(16).padStart(2, '0')).join('');
 }
 
-async function readErrorMessage(response: Response): Promise<string | null> {
+function readFormPayload(form: HTMLFormElement): InquiryPayloadWithoutKey {
+  const valueOf = (fieldName: string) => {
+    const control = form.elements.namedItem(fieldName) as
+      | HTMLInputElement
+      | HTMLTextAreaElement
+      | null;
+    return control?.value.trim() ?? '';
+  };
+  const phone = valueOf('phone');
+  const weddingDate = valueOf('wedding_date');
+  return {
+    name: valueOf('name'),
+    email: valueOf('email'),
+    phone: phone || undefined,
+    wedding_date: weddingDate || undefined,
+    message: valueOf('message'),
+  };
+}
+
+async function readJsonBody(response: Response): Promise<unknown> {
   try {
-    const body = (await response.json()) as { detail?: unknown; message?: unknown };
-    if (typeof body.detail === 'string' && body.detail.trim()) {
-      return body.detail;
-    }
-    if (typeof body.message === 'string' && body.message.trim()) {
-      return body.message;
-    }
+    return await response.json();
   } catch {
-    // The status-specific fallback below remains safe for non-JSON failures.
+    return null;
+  }
+}
+
+function readErrorMessage(body: unknown): string | null {
+  if (!body || typeof body !== 'object') return null;
+  const errorBody = body as { detail?: unknown; message?: unknown };
+  if (typeof errorBody.detail === 'string' && errorBody.detail.trim()) {
+    return errorBody.detail;
+  }
+  if (typeof errorBody.message === 'string' && errorBody.message.trim()) {
+    return errorBody.message;
   }
   return null;
+}
+
+function rejectsOnlyUnknownIdempotencyKey(body: unknown): boolean {
+  if (!body || typeof body !== 'object') return false;
+  const detail = (body as { detail?: unknown }).detail;
+  if (!Array.isArray(detail) || detail.length !== 1) return false;
+  const issue = detail[0] as { type?: unknown; loc?: unknown };
+  return (
+    issue?.type === 'extra_forbidden' &&
+    Array.isArray(issue.loc) &&
+    issue.loc[0] === 'body' &&
+    issue.loc[issue.loc.length - 1] === 'idempotency_key'
+  );
 }
 
 export default function StorefrontInquiryForm({
@@ -77,18 +120,8 @@ export default function StorefrontInquiryForm({
     }
 
     const form = event.currentTarget;
-    const valueOf = (fieldName: string) => {
-      const control = form.elements.namedItem(fieldName) as
-        | HTMLInputElement
-        | HTMLTextAreaElement
-        | null;
-      return control?.value.trim() ?? '';
-    };
-    const name = valueOf('name');
-    const email = valueOf('email');
-    const message = valueOf('message');
-    const phone = valueOf('phone');
-    const weddingDate = valueOf('wedding_date');
+    const payloadWithoutKey = readFormPayload(form);
+    const { name, email, message } = payloadWithoutKey;
 
     if (!name || !email || !message) {
       setState('error');
@@ -99,13 +132,6 @@ export default function StorefrontInquiryForm({
     setState('submitting');
     setFeedback(null);
     try {
-      const payloadWithoutKey = {
-        name,
-        email,
-        phone: phone || undefined,
-        wedding_date: weddingDate || undefined,
-        message,
-      } satisfies Omit<StorefrontInquiryPayload, 'idempotency_key'>;
       const requestFingerprint = JSON.stringify(payloadWithoutKey);
       const previousAttempt = inquiryAttemptRef.current;
       const idempotencyKey =
@@ -113,20 +139,33 @@ export default function StorefrontInquiryForm({
           ? previousAttempt.idempotencyKey
           : createIdempotencyKey();
       inquiryAttemptRef.current = { idempotencyKey, requestFingerprint };
-      const response = await fetchImpl(
-        `${getApiBaseUrl()}/api/storefront/${encodeURIComponent(identifier)}/inquiries`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...payloadWithoutKey,
-            idempotency_key: idempotencyKey,
-          } satisfies StorefrontInquiryPayload),
-        },
+      const url = `${getApiBaseUrl()}/api/storefront/${encodeURIComponent(identifier)}/inquiries`;
+      const requestInit = (body: StorefrontInquiryPayload | InquiryPayloadWithoutKey) => ({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      let response = await fetchImpl(
+        url,
+        requestInit({
+          ...payloadWithoutKey,
+          idempotency_key: idempotencyKey,
+        } satisfies StorefrontInquiryPayload),
       );
+      let responseBody: unknown = null;
+      if (!response.ok && response.status === 422) {
+        responseBody = await readJsonBody(response);
+        if (rejectsOnlyUnknownIdempotencyKey(responseBody)) {
+          // Old backends reject the newly added field before endpoint code runs,
+          // so this exact validation response is safe to retry once without it.
+          response = await fetchImpl(url, requestInit(payloadWithoutKey));
+          responseBody = null;
+        }
+      }
 
       if (!response.ok) {
-        const serverMessage = await readErrorMessage(response);
+        responseBody = responseBody ?? (await readJsonBody(response));
+        const serverMessage = readErrorMessage(responseBody);
         const messageForUser =
           response.status === 429
             ? 'Too many inquiries were sent recently. Please wait a moment and try again.'
@@ -138,8 +177,14 @@ export default function StorefrontInquiryForm({
       if (!result.success || typeof result.message !== 'string') {
         throw new Error('Your inquiry could not be confirmed. Please try again.');
       }
-      setState('success');
-      setFeedback(result.message);
+      const valuesChangedDuringSubmit =
+        JSON.stringify(readFormPayload(form)) !== requestFingerprint;
+      setState(valuesChangedDuringSubmit ? 'success_with_edits' : 'success');
+      setFeedback(
+        valuesChangedDuringSubmit
+          ? 'Your previous inquiry was sent. Your latest edits were not sent.'
+          : result.message,
+      );
     } catch (error) {
       setState('error');
       setFeedback(
@@ -225,7 +270,11 @@ export default function StorefrontInquiryForm({
       {feedback ? (
         <p
           aria-live="polite"
-          className={state === 'success' ? 'text-emerald-300' : 'text-rose-300'}
+          className={
+            state === 'success' || state === 'success_with_edits'
+              ? 'text-emerald-300'
+              : 'text-rose-300'
+          }
           role={state === 'error' ? 'alert' : 'status'}
         >
           {feedback}
@@ -242,6 +291,8 @@ export default function StorefrontInquiryForm({
           ? 'Sending…'
           : state === 'error'
             ? 'Try again'
+            : state === 'success_with_edits'
+              ? 'Send updated inquiry'
             : state === 'success'
               ? 'Inquiry sent'
               : 'Send inquiry'}
