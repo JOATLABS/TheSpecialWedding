@@ -19,9 +19,10 @@ class RecordingCollection:
 class RecordingDatabase:
     def __init__(self, collection: RecordingCollection):
         self.collection = collection
+        self.requested: list[str] = []
 
     def __getitem__(self, name: str):
-        assert name == "storefront_settings"
+        self.requested.append(name)
         return self.collection
 
 
@@ -47,6 +48,32 @@ async def test_storefront_indexes_are_unique_named_and_slug_is_legacy_safe(
     assert slug_keys == [("slug", 1)]
     assert slug_options["unique"] is True
     assert slug_options["partialFilterExpression"] == {"slug": {"$type": "string"}}
+
+    domain_planner = by_name["idx_storefront_domains_planner_unique"]
+    domain_hostname = by_name["idx_storefront_domains_hostname_unique"]
+    assert domain_planner[0] == [("planner_id", 1)]
+    assert domain_planner[1]["unique"] is True
+    assert domain_hostname[0] == [("hostname", 1)]
+    assert domain_hostname[1]["unique"] is True
+
+    reserved_asset = by_name["idx_storefront_assets_reserved_slot_unique"]
+    assert reserved_asset[0] == [("owner_id", 1), ("slot", 1)]
+    assert reserved_asset[1]["unique"] is True
+    assert reserved_asset[1]["partialFilterExpression"] == {"state": "reserved"}
+
+    assert by_name["idx_storefront_assets_owner_state_created"][0] == [
+        ("owner_id", 1),
+        ("state", 1),
+        ("created_at", -1),
+    ]
+    assert by_name["idx_storefront_inquiries_owner_created"][0] == [
+        ("planner_id", 1),
+        ("created_at", -1),
+    ]
+    assert by_name["idx_storefront_inquiries_slug_created"][0] == [
+        ("storefront_slug", 1),
+        ("created_at", -1),
+    ]
 
 
 def test_create_all_indexes_invokes_storefront_index_setup():

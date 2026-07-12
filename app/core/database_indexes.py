@@ -2559,17 +2559,20 @@ async def create_guest_media_indexes():
 
 
 async def create_storefront_indexes():
-    """Enforce one settings row per planner and globally unique saved slugs."""
+    """Fail startup unless storefront ownership/lifecycle indexes exist."""
 
-    collection = mongo.db["storefront_settings"]
+    settings = mongo.db["storefront_settings"]
+    domains = mongo.db["storefront_domains"]
+    assets = mongo.db["storefront_assets"]
+    inquiries = mongo.db["storefront_inquiries"]
     try:
-        await collection.create_index(
+        await settings.create_index(
             [("planner_id", ASCENDING)],
             name="idx_storefront_settings_planner_unique",
             unique=True,
             background=True,
         )
-        await collection.create_index(
+        await settings.create_index(
             [("slug", ASCENDING)],
             name="idx_storefront_settings_slug_unique",
             unique=True,
@@ -2578,9 +2581,47 @@ async def create_storefront_indexes():
             # do not block startup while an explicit migration is prepared.
             partialFilterExpression={"slug": {"$type": "string"}},
         )
-        logger.info("Storefront settings indexes created/verified")
+        await domains.create_index(
+            [("planner_id", ASCENDING)],
+            name="idx_storefront_domains_planner_unique",
+            unique=True,
+            background=True,
+        )
+        await domains.create_index(
+            [("hostname", ASCENDING)],
+            name="idx_storefront_domains_hostname_unique",
+            unique=True,
+            background=True,
+        )
+        await assets.create_index(
+            [("owner_id", ASCENDING), ("slot", ASCENDING)],
+            name="idx_storefront_assets_reserved_slot_unique",
+            unique=True,
+            background=True,
+            partialFilterExpression={"state": "reserved"},
+        )
+        await assets.create_index(
+            [
+                ("owner_id", ASCENDING),
+                ("state", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_storefront_assets_owner_state_created",
+            background=True,
+        )
+        await inquiries.create_index(
+            [("planner_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_storefront_inquiries_owner_created",
+            background=True,
+        )
+        await inquiries.create_index(
+            [("storefront_slug", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_storefront_inquiries_slug_created",
+            background=True,
+        )
+        logger.info("Storefront lifecycle indexes created/verified")
     except Exception as exc:
-        logger.error("Error creating storefront settings indexes: %s", exc)
+        logger.error("Error creating storefront lifecycle indexes: %s", exc)
         raise
 
 

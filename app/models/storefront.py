@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -72,6 +72,87 @@ class StorefrontSettingsUpdateEnvelope(BaseModel):
     settings: StorefrontSettingsResponse
 
 
+class StorefrontDomainConnectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    domain: str = Field(min_length=1, max_length=253)
+
+
+class StorefrontOwnershipVerification(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: str | None = None
+    name: str | None = None
+    value: str | None = None
+
+
+class StorefrontOwnershipVerificationHttp(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    http_url: str | None = None
+    http_body: str | None = None
+
+
+class StorefrontSslValidationRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str | None = None
+    txt_name: str | None = None
+    txt_value: str | None = None
+    cname_name: str | None = None
+    cname_target: str | None = None
+
+
+class StorefrontDomainResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    hostname: str
+    status: str
+    provider_status: str
+    ssl_status: str
+    ownership_verification: StorefrontOwnershipVerification | None
+    ownership_verification_http: StorefrontOwnershipVerificationHttp | None
+    ssl_validation_records: list[StorefrontSslValidationRecord]
+    cname_target: str | None
+    deletion_status: str | None
+    last_error: str | None
+
+
+class StorefrontUploadCompleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    asset_id: str = Field(min_length=1, max_length=120)
+
+
+class StorefrontUploadReservationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    asset_id: str
+    upload_url: str
+    cdn_url: str
+    key: str
+    max_size_bytes: int = Field(gt=0)
+
+
+class StorefrontAssetResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    asset_id: str
+    slot: str
+    state: str
+    key: str
+    cdn_url: str
+    content_type: str
+    size_bytes: int = Field(gt=0)
+
+
+class StorefrontAssetDeleteResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    asset_id: str
+
+
 class PublicStorefrontSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -131,3 +212,23 @@ class PublicStorefrontResponse(BaseModel):
     planner: PublicPlanner
     packages: list[PublicPackage]
     reviews: list[PublicReview]
+
+
+class StorefrontInquiryRequest(BaseModel):
+    """Allowlisted public lead fields; owner identity is always server-derived."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=120)
+    email: EmailStr
+    phone: str | None = Field(default=None, max_length=40)
+    wedding_date: date | None = None
+    message: str = Field(min_length=1, max_length=4000)
+
+
+class StorefrontInquiryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    success: bool
+    inquiry_id: str
+    message: str

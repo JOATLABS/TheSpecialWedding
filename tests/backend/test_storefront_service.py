@@ -104,6 +104,54 @@ class FakeEntitlements:
         return self._result(str(planner_id))
 
 
+class FakeDomains:
+    def __init__(self):
+        self.owner_by_hostname: dict[str, str] = {}
+        self.lookups: list[str] = []
+
+    async def resolve_active_hostname(self, hostname: str) -> dict | None:
+        self.lookups.append(hostname)
+        owner_id = self.owner_by_hostname.get(hostname.lower())
+        if not owner_id:
+            return None
+        return {"planner_id": owner_id, "hostname": hostname.lower()}
+
+
+class FakeMedia:
+    def __init__(self, mongo: FakeMongo):
+        self.mongo = mongo
+        self.validations: list[dict] = []
+        self.attachments: list[tuple[str, str]] = []
+        self.releases: list[str] = []
+
+    async def validate_settings_assets(self, _owner, **asset_fields):
+        self.validations.append(dict(asset_fields))
+        if "foreign-asset" in asset_fields.values():
+            raise HTTPException(status_code=404, detail="Storefront asset not found")
+        return dict(asset_fields)
+
+    async def attach(self, _owner, asset_id: str, slot: str):
+        saved = self.mongo.raw.storefront_settings.find_one(
+            {f"{slot}_asset_id": asset_id}
+        )
+        assert saved is not None, "asset attachment must happen after settings persist"
+        self.attachments.append((asset_id, slot))
+        return {"asset_id": asset_id, "slot": slot, "state": "attached"}
+
+    async def release_if_unreferenced(self, _owner, asset_id: str):
+        settings = self.mongo.raw.storefront_settings.find_one(
+            {
+                "$or": [
+                    {"hero_asset_id": asset_id},
+                    {"about_asset_id": asset_id},
+                ]
+            }
+        )
+        assert settings is None, "old asset release must happen after settings change"
+        self.releases.append(asset_id)
+        return {"asset_id": asset_id, "state": "ready"}
+
+
 @pytest.fixture
 def setup_storefront():
     fake_mongo = FakeMongo()
@@ -114,7 +162,14 @@ def setup_storefront():
         partialFilterExpression={"slug": {"$type": "string"}},
     )
     entitlements = FakeEntitlements()
-    service = StorefrontService(fake_mongo, entitlements)
+    domains = FakeDomains()
+    media = FakeMedia(fake_mongo)
+    service = StorefrontService(
+        fake_mongo,
+        entitlements,
+        domain_service=domains,
+        media_service=media,
+    )
     fake_mongo.raw.users.insert_many(
         [
             {
@@ -212,6 +267,50 @@ async def test_create_and_edit_round_trip_preserves_explicit_state(setup_storefr
     assert "custom_domain" not in stored
     assert "hero_image_url" not in stored
     assert stored["planner_id"] == OWNER_ID
+
+
+@pytest.mark.asyncio
+async def test_settings_validates_only_explicit_asset_fields_before_save_then_attaches(
+    setup_storefront,
+):
+    service, fake_mongo, _ = setup_storefront
+    owner = _owner()
+
+    await service.update_settings(
+        owner,
+        StorefrontSettingsUpdate(slug="asset-events", description="No image edit"),
+    )
+    assert service._media.validations == []
+
+    saved = await service.update_settings(
+        owner,
+        StorefrontSettingsUpdate(hero_asset_id="hero-ready-1"),
+    )
+    assert saved["hero_asset_id"] == "hero-ready-1"
+    assert service._media.validations == [{"hero_asset_id": "hero-ready-1"}]
+    assert service._media.attachments == [("hero-ready-1", "hero")]
+
+    before = deepcopy(
+        fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    )
+    with pytest.raises(HTTPException) as foreign:
+        await service.update_settings(
+            owner,
+            StorefrontSettingsUpdate(about_asset_id="foreign-asset"),
+        )
+    assert foreign.value.status_code == 404
+    assert (
+        fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID}) == before
+    )
+
+    cleared = await service.update_settings(
+        owner,
+        StorefrontSettingsUpdate(hero_asset_id=None),
+    )
+    assert cleared["hero_asset_id"] is None
+    assert service._media.validations[-1] == {"hero_asset_id": None}
+    assert service._media.attachments == [("hero-ready-1", "hero")]
+    assert service._media.releases == ["hero-ready-1"]
 
 
 @pytest.mark.asyncio
@@ -464,6 +563,38 @@ async def test_eligibility_loss_retains_authored_publication_state(setup_storefr
     assert after == before
     assert after["is_published"] is True
     assert isinstance(after["published_at"], datetime)
+
+
+@pytest.mark.asyncio
+async def test_public_custom_hostname_requires_active_mapping_and_published_owner_settings(
+    setup_storefront,
+):
+    service, fake_mongo, _ = setup_storefront
+    owner = _owner()
+    await service.update_settings(
+        owner,
+        StorefrontSettingsUpdate(
+            slug="events-example",
+            title="Published host",
+            is_published=True,
+        ),
+    )
+
+    # A dotted identifier must never silently alias the hyphenated slug.
+    with pytest.raises(HTTPException) as inactive:
+        await service.get_public_storefront("events.example")
+    assert inactive.value.status_code == 404
+
+    service._domains.owner_by_hostname["events.example"] = OWNER_ID
+    result = await service.get_public_storefront("EVENTS.EXAMPLE")
+    assert result["slug"] == "events-example"
+
+    fake_mongo.raw.storefront_settings.update_one(
+        {"planner_id": OWNER_ID}, {"$set": {"is_published": False}}
+    )
+    with pytest.raises(HTTPException) as unpublished:
+        await service.get_public_storefront("events.example")
+    assert unpublished.value.status_code == 404
 
 
 @pytest.mark.asyncio
