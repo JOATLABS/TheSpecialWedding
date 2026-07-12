@@ -82,29 +82,29 @@
 - Produces `StorefrontEntitlementService.resolve_for_owner(user_data: dict) -> StorefrontEntitlements` and `resolve_for_planner_id(planner_id: str) -> StorefrontEntitlements` using the active subscription's current plan catalog features.
 - Produces `require_storefront_owner()` and `require_storefront_feature(feature_name)` dependencies.
 
-- [ ] **Step 1: Write entitlement and plan-contract tests**
+- [x] **Step 1: Write entitlement and plan-contract tests**
 
   Add tests proving Solo/Boutique false, Signature/Enterprise true, active-status enforcement, current-catalog feature authority even when a stale snapshot exists, missing-data fail-closed behavior, planner-owner role enforcement, and no writes to `users`, `user_subscriptions`, or `subscription_plans`. Parse both seed sources and assert exact feature parity.
 
-- [ ] **Step 2: Run the focused tests and capture RED**
+- [x] **Step 2: Run the focused tests and capture RED**
 
   Run: `PYTHONPATH=. /Users/emmanuelakinwale/Developer/WeddingWebApp/.venv.nosync/bin/pytest tests/backend/test_storefront_entitlements.py tests/backend/test_storefront_plan_contract.py -q --tb=short`
 
   Expected RED: imports/constants are missing and current fallback plan features disagree.
 
-- [ ] **Step 3: Add canonical constants and entitlement resolution**
+- [x] **Step 3: Add canonical constants and entitlement resolution**
 
   Implement the immutable result type and fail-closed resolver. Resolve the planner owner's active subscription using canonical active statuses, load boolean features from the current `subscription_plans` row, leave `plan_snapshot` untouched, and never write during resolution. Reject non-planner owner roles before a route can use the result.
 
-- [ ] **Step 4: Align both seed paths and public plan copy**
+- [x] **Step 4: Align both seed paths and public plan copy**
 
   Bump `SEED_VERSION` to `2026-07-12T00:00:00+00:00`. Add both flags as false for Solo/Boutique and true for Signature/Enterprise in the boot seed and manual fallback. Update server-rendered/public authority copy so it no longer labels custom domains unsupported.
 
-- [ ] **Step 5: Run focused backend and public-copy tests and capture GREEN**
+- [x] **Step 5: Run focused backend and public-copy tests and capture GREEN**
 
   Run the Step 2 command, then `PATH=/Users/emmanuelakinwale/.nvm/versions/node/v22.23.0/bin:$PATH npm test -- tests/unit/llmsTxt.test.ts`.
 
-- [ ] **Step 6: Commit Task 1**
+- [x] **Step 6: Commit Task 1**
 
   Commit subject: `feat: centralize storefront entitlements`
 
