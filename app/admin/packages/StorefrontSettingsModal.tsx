@@ -78,17 +78,24 @@ const ImageUploadZone = ({ label, hint, imageUrl, uploading, onUpload, onClear, 
 };
 
 export default function StorefrontSettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
-  const { apiRequest, userProfile } = useAdmin();
+  const { apiRequest } = useAdmin();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<any>({
+    slug: '',
+    slug_persisted: false,
     title: '',
     description: '',
+    contact_email: '',
+    contact_phone: '',
+    hero_asset_id: null,
+    about_asset_id: null,
     hero_image_url: '',
     about_image_url: '',
     theme_color: '#0f172a',
     packages_enabled: true,
     reviews_enabled: true,
+    is_published: false,
     custom_domain: '',
     cloudflare_hostname_status: 'none',
     ownership_verification: null
@@ -102,16 +109,23 @@ export default function StorefrontSettingsModal({ isOpen, onClose }: { isOpen: b
       const load = async () => {
         setLoading(true);
         try {
-          const res = await apiRequest('/api/storefront/settings', 'GET');
+          const res = await apiRequest('/admin/storefront/settings', 'GET');
           if (res.settings) {
             setSettings({
+              slug: res.settings.slug || '',
+              slug_persisted: res.settings.slug_persisted ?? true,
               title: res.settings.title || '',
               description: res.settings.description || '',
-              hero_image_url: res.settings.hero_image_url || '',
-              about_image_url: res.settings.about_image_url || '',
+              contact_email: res.settings.contact_email || '',
+              contact_phone: res.settings.contact_phone || '',
+              hero_asset_id: res.settings.hero_asset_id || null,
+              about_asset_id: res.settings.about_asset_id || null,
+              hero_image_url: '',
+              about_image_url: '',
               theme_color: res.settings.theme_color || '#0f172a',
               packages_enabled: res.settings.packages_enabled ?? true,
               reviews_enabled: res.settings.reviews_enabled ?? true,
+              is_published: res.settings.is_published ?? false,
               custom_domain: res.settings.custom_domain || '',
               cloudflare_hostname_status: res.settings.cloudflare_hostname_status || 'none',
               ownership_verification: res.settings.ownership_verification || null
@@ -130,7 +144,20 @@ export default function StorefrontSettingsModal({ isOpen, onClose }: { isOpen: b
   const handleSave = async () => {
     setSaving(true);
     try {
-      await apiRequest('/api/storefront/settings', 'POST', settings);
+      const savePayload = {
+        slug: settings.slug || undefined,
+        title: settings.title || null,
+        description: settings.description || null,
+        contact_email: settings.contact_email || null,
+        contact_phone: settings.contact_phone || null,
+        hero_asset_id: settings.hero_asset_id || null,
+        about_asset_id: settings.about_asset_id || null,
+        theme_color: settings.theme_color,
+        packages_enabled: settings.packages_enabled,
+        reviews_enabled: settings.reviews_enabled,
+        is_published: settings.is_published,
+      };
+      await apiRequest('/admin/storefront/settings', 'POST', savePayload);
       onClose();
     } catch (err) {
       console.error(err);
@@ -142,7 +169,7 @@ export default function StorefrontSettingsModal({ isOpen, onClose }: { isOpen: b
   const uploadFileToR2 = async (file: File) => {
     const filename = `${Date.now()}_${file.name}`;
     const contentType = file.type || 'application/octet-stream';
-    const presignedRes = await apiRequest(`/api/storefront/upload-url?filename=${encodeURIComponent(filename)}&content_type=${encodeURIComponent(contentType)}`);
+    const presignedRes = await apiRequest(`/admin/storefront/upload-url?filename=${encodeURIComponent(filename)}&content_type=${encodeURIComponent(contentType)}`);
     const uploadRes = await fetch(presignedRes.url, {
       method: 'PUT',
       body: file,
@@ -183,9 +210,10 @@ export default function StorefrontSettingsModal({ isOpen, onClose }: { isOpen: b
 
   if (!isOpen) return null;
 
-  const plannerId = userProfile?.id || '';
-  // The storefront slug is the internal platform preview URL
-  const storefrontUrl = plannerId ? `/storefront/${plannerId}` : '#';
+  // A derived legacy slug is not routable until the planner explicitly saves it.
+  const storefrontUrl = settings.slug && settings.slug_persisted
+    ? `/storefront/${settings.slug}?preview=1`
+    : '#';
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-start sm:justify-center p-4 bg-slate-900/60 backdrop-blur-sm sm:p-6 lg:p-8 overflow-y-auto">
