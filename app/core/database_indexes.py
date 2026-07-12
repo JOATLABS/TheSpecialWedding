@@ -2558,6 +2558,32 @@ async def create_guest_media_indexes():
         logger.error(f"Error creating guest media indexes: {e}")
 
 
+async def create_storefront_indexes():
+    """Enforce one settings row per planner and globally unique saved slugs."""
+
+    collection = mongo.db["storefront_settings"]
+    try:
+        await collection.create_index(
+            [("planner_id", ASCENDING)],
+            name="idx_storefront_settings_planner_unique",
+            unique=True,
+            background=True,
+        )
+        await collection.create_index(
+            [("slug", ASCENDING)],
+            name="idx_storefront_settings_slug_unique",
+            unique=True,
+            background=True,
+            # Legacy settings may predate slugs. They remain non-routable and
+            # do not block startup while an explicit migration is prepared.
+            partialFilterExpression={"slug": {"$type": "string"}},
+        )
+        logger.info("Storefront settings indexes created/verified")
+    except Exception as exc:
+        logger.error("Error creating storefront settings indexes: %s", exc)
+        raise
+
+
 async def create_all_indexes():
     """Create all database indexes (called on app startup)"""
     try:
@@ -2596,6 +2622,11 @@ async def create_all_indexes():
         logger.info("All database indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")
+
+    # Storefront uniqueness is an authorization and public-routing invariant,
+    # not a performance optimization. Fail application startup if Mongo cannot
+    # enforce it, even though legacy index setup above remains best-effort.
+    await create_storefront_indexes()
 
 
 # Index usage examples and query patterns
