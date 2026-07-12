@@ -225,4 +225,53 @@ describe('StorefrontInquiryForm', () => {
     assert.equal(calls[0]?.idempotency_key, 'inquiry-key-in-flight');
     assert.equal(calls[1]?.idempotency_key, 'inquiry-key-after-in-flight-edit');
   });
+
+  it('reuses the original key when failed values are edited and restored', async () => {
+    const keys = ['inquiry-key-original-payload', 'unexpected-replacement-key'];
+    const calls: Array<Record<string, unknown>> = [];
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      calls.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (calls.length === 1) {
+        return {
+          ok: false,
+          status: 503,
+          json: async () => ({ detail: 'Please retry.' }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          success: true,
+          inquiry_id: 'inquiry-original-payload',
+          message: 'Thanks — we will be in touch.',
+        }),
+      } as Response;
+    };
+    const view = render(
+      <StorefrontInquiryForm
+        identifier="studio.example"
+        fetchImpl={fetchImpl}
+        createIdempotencyKey={() => keys.shift() ?? 'unexpected-extra-key'}
+      />,
+    );
+
+    fireEvent.change(view.getByLabelText('Name'), { target: { value: 'Taylor' } });
+    fireEvent.change(view.getByLabelText('Email'), { target: { value: 'taylor@example.com' } });
+    fireEvent.change(view.getByLabelText('How can we help?'), { target: { value: 'Original message.' } });
+    fireEvent.click(view.getByRole('button', { name: 'Send inquiry' }));
+    await view.findByText('Please retry.');
+
+    fireEvent.input(view.getByLabelText('How can we help?'), {
+      target: { value: 'Temporary edit.' },
+    });
+    fireEvent.input(view.getByLabelText('How can we help?'), {
+      target: { value: 'Original message.' },
+    });
+    fireEvent.click(view.getByRole('button', { name: 'Send inquiry' }));
+    await view.findByText('Thanks — we will be in touch.');
+
+    assert.equal(calls[0]?.idempotency_key, 'inquiry-key-original-payload');
+    assert.equal(calls[1]?.idempotency_key, 'inquiry-key-original-payload');
+  });
 });
