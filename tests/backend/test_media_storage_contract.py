@@ -13,6 +13,9 @@ from app.services.media_storage import MediaStorage, StorageTarget
 from app.utils.upload_image import upload_image
 
 
+R2_ACCOUNT_ID = "0123456789abcdef0123456789abcdef"
+
+
 class FakeS3Client:
     def __init__(self, endpoint_url: str | None, *, list_error_code: str | None = None):
         self.meta = SimpleNamespace(endpoint_url=endpoint_url)
@@ -75,7 +78,7 @@ class FakeS3Client:
 
 def _install_fake_s3(monkeypatch, *, list_error_code: str | None = None):
     fake_client = FakeS3Client(
-        "https://example-account.r2.cloudflarestorage.com",
+        f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
         list_error_code=list_error_code,
     )
     MediaStorage._health_cache.clear()
@@ -87,7 +90,9 @@ def _install_fake_s3(monkeypatch, *, list_error_code: str | None = None):
 
 def _set_storage_settings(monkeypatch):
     monkeypatch.setattr(
-        settings, "s3_endpoint_url", "https://example-account.r2.cloudflarestorage.com"
+        settings,
+        "s3_endpoint_url",
+        f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
     )
     monkeypatch.setattr(settings, "s3_access_key_id", "test-access-key")
     monkeypatch.setattr(settings, "s3_secret_access_key", "test-secret-key")
@@ -397,7 +402,7 @@ async def test_storefront_staging_privacy_requires_private_domains_and_expiry(
 ):
     _install_fake_s3(monkeypatch)
     _set_storage_settings(monkeypatch)
-    monkeypatch.setattr(settings, "cloudflare_account_id", "account-id")
+    monkeypatch.setattr(settings, "cloudflare_account_id", R2_ACCOUNT_ID)
     monkeypatch.setattr(settings, "cloudflare_api_token", "api-token")
     storage = MediaStorage()
     responses = {
@@ -416,8 +421,12 @@ async def test_storefront_staging_privacy_requires_private_domains_and_expiry(
         },
     }
 
-    async def fake_fetch(bucket_name: str, suffix: str):
+    async def fake_fetch(
+        bucket_name: str, suffix: str, *, account_id: str, jurisdiction: str
+    ):
         assert bucket_name == "storefront-staging-bucket"
+        assert account_id == R2_ACCOUNT_ID
+        assert jurisdiction == "default"
         return responses[suffix]
 
     monkeypatch.setattr(storage, "_fetch_r2_bucket_control", fake_fetch)
@@ -454,7 +463,7 @@ async def test_storefront_staging_privacy_fails_closed_on_public_or_unbounded_bu
 ):
     _install_fake_s3(monkeypatch)
     _set_storage_settings(monkeypatch)
-    monkeypatch.setattr(settings, "cloudflare_account_id", "account-id")
+    monkeypatch.setattr(settings, "cloudflare_account_id", R2_ACCOUNT_ID)
     monkeypatch.setattr(settings, "cloudflare_api_token", "api-token")
     storage = MediaStorage()
     responses = {
@@ -474,7 +483,15 @@ async def test_storefront_staging_privacy_fails_closed_on_public_or_unbounded_bu
         **override,
     }
 
-    async def fake_fetch(_bucket_name: str, suffix: str):
+    async def fake_fetch(
+        _bucket_name: str,
+        suffix: str,
+        *,
+        account_id: str,
+        jurisdiction: str,
+    ):
+        assert account_id == R2_ACCOUNT_ID
+        assert jurisdiction == "default"
         return responses[suffix]
 
     monkeypatch.setattr(storage, "_fetch_r2_bucket_control", fake_fetch)
@@ -489,14 +506,177 @@ async def test_storefront_staging_privacy_fails_closed_when_status_is_unreadable
 ):
     _install_fake_s3(monkeypatch)
     _set_storage_settings(monkeypatch)
-    monkeypatch.setattr(settings, "cloudflare_account_id", "account-id")
+    monkeypatch.setattr(settings, "cloudflare_account_id", R2_ACCOUNT_ID)
     monkeypatch.setattr(settings, "cloudflare_api_token", "api-token")
     storage = MediaStorage()
 
-    async def unreadable(_bucket_name: str, _suffix: str):
+    async def unreadable(
+        _bucket_name: str,
+        _suffix: str,
+        *,
+        account_id: str,
+        jurisdiction: str,
+    ):
+        assert account_id == R2_ACCOUNT_ID
+        assert jurisdiction == "default"
         raise RuntimeError("Cloudflare unavailable")
 
     monkeypatch.setattr(storage, "_fetch_r2_bucket_control", unreadable)
 
     with pytest.raises(RuntimeError, match="could not be verified"):
         await storage.require_private_storefront_staging(force_refresh=True)
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "expected_jurisdiction"),
+    [
+        (f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com", "default"),
+        (f"https://{R2_ACCOUNT_ID}.eu.r2.cloudflarestorage.com", "eu"),
+        (f"https://{R2_ACCOUNT_ID}.fedramp.r2.cloudflarestorage.com", "fedramp"),
+    ],
+)
+def test_r2_endpoint_identity_accepts_only_official_account_scoped_hosts(
+    endpoint, expected_jurisdiction
+):
+    assert MediaStorage._parse_r2_endpoint_identity(endpoint) == (
+        R2_ACCOUNT_ID,
+        expected_jurisdiction,
+    )
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        f"http://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+        f"https://user@{R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+        f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com:443",
+        f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com/path",
+        f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com?query=1",
+        f"https://{R2_ACCOUNT_ID}.unknown.r2.cloudflarestorage.com",
+        "https://not-an-account.r2.cloudflarestorage.com",
+        "https://storage.example.com",
+        "not-a-url",
+    ],
+)
+def test_r2_endpoint_identity_rejects_noncanonical_or_ambiguous_endpoints(endpoint):
+    with pytest.raises(RuntimeError, match="official account-scoped R2 endpoint"):
+        MediaStorage._parse_r2_endpoint_identity(endpoint)
+
+
+@pytest.mark.asyncio
+async def test_storefront_privacy_rejects_control_account_mismatch_before_api_calls(
+    monkeypatch,
+):
+    _install_fake_s3(monkeypatch)
+    _set_storage_settings(monkeypatch)
+    monkeypatch.setattr(settings, "cloudflare_account_id", "f" * 32)
+    monkeypatch.setattr(settings, "cloudflare_api_token", "api-token")
+    storage = MediaStorage()
+    calls = []
+
+    async def should_not_fetch(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError("control API must not be called for an account mismatch")
+
+    monkeypatch.setattr(storage, "_fetch_r2_bucket_control", should_not_fetch)
+
+    with pytest.raises(RuntimeError, match="same Cloudflare account"):
+        await storage.require_private_storefront_staging(force_refresh=True)
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_storefront_privacy_passes_jurisdiction_and_partitions_cache(
+    monkeypatch,
+):
+    _install_fake_s3(monkeypatch)
+    _set_storage_settings(monkeypatch)
+    monkeypatch.setattr(settings, "cloudflare_account_id", R2_ACCOUNT_ID)
+    monkeypatch.setattr(settings, "cloudflare_api_token", "api-token")
+    monkeypatch.setattr(
+        settings,
+        "s3_endpoint_url",
+        f"https://{R2_ACCOUNT_ID}.eu.r2.cloudflarestorage.com",
+    )
+    MediaStorage._storefront_privacy_cache.clear()
+    storage = MediaStorage()
+    calls = []
+    responses = {
+        "domains/managed": {"enabled": False},
+        "domains/custom": {"domains": []},
+        "lifecycle": {
+            "rules": [
+                {
+                    "enabled": True,
+                    "conditions": {"prefix": "storefront/"},
+                    "deleteObjectsTransition": {
+                        "condition": {"type": "Age", "maxAge": 86_400}
+                    },
+                }
+            ]
+        },
+    }
+
+    async def fake_fetch(
+        bucket_name: str, suffix: str, *, account_id: str, jurisdiction: str
+    ):
+        calls.append((bucket_name, suffix, account_id, jurisdiction))
+        return responses[suffix]
+
+    monkeypatch.setattr(storage, "_fetch_r2_bucket_control", fake_fetch)
+
+    await storage.require_private_storefront_staging(force_refresh=True)
+
+    assert len(calls) == 3
+    assert {call[3] for call in calls} == {"eu"}
+    assert any(key[1] == "eu" for key in MediaStorage._storefront_privacy_cache)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("jurisdiction", "expected_header"),
+    [("default", None), ("eu", "eu"), ("fedramp", "fedramp")],
+)
+async def test_r2_control_request_binds_jurisdiction_header(
+    monkeypatch, jurisdiction, expected_header
+):
+    _install_fake_s3(monkeypatch)
+    _set_storage_settings(monkeypatch)
+    monkeypatch.setattr(settings, "cloudflare_api_token", "api-token")
+    storage = MediaStorage()
+    requests = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"success": True, "result": {"enabled": False}}
+
+    class FakeAsyncClient:
+        def __init__(self, *, timeout):
+            assert timeout == 10.0
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url, *, headers):
+            requests.append((url, headers))
+            return FakeResponse()
+
+    monkeypatch.setattr("app.services.media_storage.httpx.AsyncClient", FakeAsyncClient)
+
+    await storage._fetch_r2_bucket_control(
+        "storefront-staging-bucket",
+        "domains/managed",
+        account_id=R2_ACCOUNT_ID,
+        jurisdiction=jurisdiction,
+    )
+
+    assert len(requests) == 1
+    assert f"/accounts/{R2_ACCOUNT_ID}/" in requests[0][0]
+    assert requests[0][1]["Authorization"] == "Bearer api-token"
+    assert requests[0][1].get("cf-r2-jurisdiction") == expected_header

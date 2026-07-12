@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from enum import Enum
+import re
 import threading
 import time
 from typing import Any, Optional
@@ -75,7 +76,7 @@ class MediaStorage:
         tuple[str, str, str, str, str], tuple[float, StorageTargetHealth]
     ] = {}
     _health_cache_lock = threading.Lock()
-    _storefront_privacy_cache: dict[tuple[str, str, int], float] = {}
+    _storefront_privacy_cache: dict[tuple[str, str, str, int], float] = {}
 
     def __init__(self) -> None:
         self.endpoint_url = settings.s3_endpoint_url
@@ -374,6 +375,48 @@ class MediaStorage:
         response = self.client.get_object(**request)
         return response["Body"].read()
 
+    @staticmethod
+    def _parse_r2_endpoint_identity(endpoint_url: str | None) -> tuple[str, str]:
+        """Return the immutable Cloudflare account/jurisdiction endpoint identity."""
+
+        invalid = RuntimeError(
+            "S3_ENDPOINT_URL must be an official account-scoped R2 endpoint"
+        )
+        if not isinstance(endpoint_url, str) or not endpoint_url.strip():
+            raise invalid
+        try:
+            parsed = urlparse(endpoint_url.strip())
+            port = parsed.port
+        except ValueError as exc:
+            raise invalid from exc
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or port is not None
+            or parsed.path not in {"", "/"}
+            or parsed.params
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise invalid
+
+        labels = parsed.hostname.lower().rstrip(".").split(".")
+        suffix = ["r2", "cloudflarestorage", "com"]
+        if labels[-3:] != suffix:
+            raise invalid
+        prefix = labels[:-3]
+        if len(prefix) == 1:
+            account_id, jurisdiction = prefix[0], "default"
+        elif len(prefix) == 2 and prefix[1] in {"eu", "fedramp"}:
+            account_id, jurisdiction = prefix
+        else:
+            raise invalid
+        if re.fullmatch(r"[0-9a-f]{32}", account_id) is None:
+            raise invalid
+        return account_id, jurisdiction
+
     async def require_private_storefront_staging(
         self, *, force_refresh: bool = False
     ) -> None:
@@ -395,14 +438,25 @@ class MediaStorage:
                     "Storefront staging bucket must differ from every public media bucket"
                 )
 
-        account_id = (settings.cloudflare_account_id or "").strip()
+        endpoint_account_id, jurisdiction = self._parse_r2_endpoint_identity(
+            self.endpoint_url
+        )
+        account_id = (settings.cloudflare_account_id or "").strip().lower()
         api_token = (settings.cloudflare_api_token or "").strip()
         if not account_id or not api_token:
             raise RuntimeError(
                 "Cloudflare account credentials are required to verify storefront staging privacy"
             )
+        if re.fullmatch(r"[0-9a-f]{32}", account_id) is None:
+            raise RuntimeError(
+                "CLOUDFLARE_ACCOUNT_ID must be a 32-character hexadecimal account ID"
+            )
+        if account_id != endpoint_account_id:
+            raise RuntimeError(
+                "S3_ENDPOINT_URL and CLOUDFLARE_ACCOUNT_ID must identify the same Cloudflare account"
+            )
         max_age_days = settings.storefront_staging_lifecycle_max_age_days
-        cache_key = (account_id, bucket_name, max_age_days)
+        cache_key = (account_id, jurisdiction, bucket_name, max_age_days)
         if not force_refresh and self.healthcheck_ttl_seconds > 0:
             with self._health_cache_lock:
                 cached_at = self._storefront_privacy_cache.get(cache_key)
@@ -413,9 +467,24 @@ class MediaStorage:
 
         try:
             managed, custom, lifecycle = await asyncio.gather(
-                self._fetch_r2_bucket_control(bucket_name, "domains/managed"),
-                self._fetch_r2_bucket_control(bucket_name, "domains/custom"),
-                self._fetch_r2_bucket_control(bucket_name, "lifecycle"),
+                self._fetch_r2_bucket_control(
+                    bucket_name,
+                    "domains/managed",
+                    account_id=account_id,
+                    jurisdiction=jurisdiction,
+                ),
+                self._fetch_r2_bucket_control(
+                    bucket_name,
+                    "domains/custom",
+                    account_id=account_id,
+                    jurisdiction=jurisdiction,
+                ),
+                self._fetch_r2_bucket_control(
+                    bucket_name,
+                    "lifecycle",
+                    account_id=account_id,
+                    jurisdiction=jurisdiction,
+                ),
             )
         except Exception as exc:
             raise RuntimeError(
@@ -471,18 +540,23 @@ class MediaStorage:
             self._storefront_privacy_cache[cache_key] = time.monotonic()
 
     async def _fetch_r2_bucket_control(
-        self, bucket_name: str, suffix: str
+        self,
+        bucket_name: str,
+        suffix: str,
+        *,
+        account_id: str,
+        jurisdiction: str,
     ) -> dict[str, Any]:
-        account_id = (settings.cloudflare_account_id or "").strip()
         api_token = (settings.cloudflare_api_token or "").strip()
         url = (
             "https://api.cloudflare.com/client/v4/accounts/"
             f"{account_id}/r2/buckets/{bucket_name}/{suffix}"
         )
+        headers = {"Authorization": f"Bearer {api_token}"}
+        if jurisdiction != "default":
+            headers["cf-r2-jurisdiction"] = jurisdiction
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
-                url, headers={"Authorization": f"Bearer {api_token}"}
-            )
+            response = await client.get(url, headers=headers)
             response.raise_for_status()
             payload = response.json()
         if not isinstance(payload, dict) or payload.get("success") is not True:
