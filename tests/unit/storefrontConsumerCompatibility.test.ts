@@ -21,7 +21,8 @@ describe('storefront server and shipped consumer compatibility', () => {
   it('uses authenticated admin paths and an allowlisted settings payload', () => {
     assert.match(adminApiSource, /\/admin\/storefront\/settings/);
     assert.doesNotMatch(adminApiSource, /\/api\/storefront\/settings/);
-    assert.match(modalSource, /toSettingsPayload/);
+    assert.match(modalSource, /toSettingsCandidate/);
+    assert.match(modalSource, /buildStorefrontSettingsPatch/);
     assert.doesNotMatch(modalSource, /'POST', draft\)/);
     assert.match(modalSource, /saved\.slug/);
 

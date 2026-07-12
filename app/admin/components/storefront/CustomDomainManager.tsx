@@ -18,6 +18,7 @@ import {
   refreshCustomDomain,
   removeCustomDomain,
   type StorefrontDomain,
+  type StorefrontOwnershipVerificationHttp,
 } from '@/services/storefrontApi';
 
 function DomainValue({ label, value }: { label: string; value: string }) {
@@ -61,6 +62,26 @@ function statusTone(status: string) {
     return 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300';
   }
   return 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300';
+}
+
+export function StorefrontHttpVerification({
+  verification,
+}: {
+  verification: StorefrontOwnershipVerificationHttp | null;
+}) {
+  if (!verification) {
+    return null;
+  }
+  return (
+    <>
+      {verification.http_url ? (
+        <DomainValue label="HTTP verification URL" value={verification.http_url} />
+      ) : null}
+      {verification.http_body ? (
+        <DomainValue label="HTTP verification body" value={verification.http_body} />
+      ) : null}
+    </>
+  );
 }
 
 export function CustomDomainManager() {
@@ -244,6 +265,7 @@ export function CustomDomainManager() {
                   value={domain.ownership_verification.value}
                 />
               ) : null}
+              <StorefrontHttpVerification verification={domain.ownership_verification_http} />
               {domain.ssl_validation_records.flatMap((record, index) => {
                 const values: Array<{ label: string; value: string }> = [];
                 if (record.txt_name) {

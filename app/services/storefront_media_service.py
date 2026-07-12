@@ -41,6 +41,9 @@ STOREFRONT_RESERVATION_TTL_SECONDS = (
     STOREFRONT_UPLOAD_URL_TTL_SECONDS + STOREFRONT_RESERVATION_GRACE_SECONDS
 )
 STOREFRONT_ASSET_OPERATION_LEASE_SECONDS = 10 * 60
+STOREFRONT_READY_ASSET_CLEANUP_SECONDS = 24 * 60 * 60
+STOREFRONT_CLEANUP_RETRY_SECONDS = 5 * 60
+STOREFRONT_MAINTENANCE_BATCH_SIZE = 100
 MAX_STOREFRONT_IMAGE_DIMENSION = 4096
 MAX_STOREFRONT_IMAGE_PIXELS = 12_000_000
 
@@ -55,6 +58,9 @@ _CONTENT_TYPE_EXTENSIONS = {
 }
 _FINALIZED_STATES = frozenset({"ready", "attached"})
 _CLEANABLE_STATES = frozenset({"reserved", "ready", "cleanup_retry", "deleting"})
+_STALE_FINALIZATION_CLEANUP_REASONS = frozenset(
+    {"stale_finalization", "stale_finalization_recovery"}
+)
 
 
 class _UnsetAssetId:
@@ -202,12 +208,18 @@ class StorefrontMediaService:
                                     "reserved",
                                     "finalizing",
                                     "finalization_recovery",
+                                    "reaping",
                                 ]
                             }
                         },
                         {
                             "state": "cleanup_retry",
-                            "cleanup_reason": "stale_finalization",
+                            "cleanup_reason": {
+                                "$in": [
+                                    "stale_finalization",
+                                    "stale_finalization_recovery",
+                                ]
+                            },
                         },
                     ],
                 }
@@ -217,6 +229,16 @@ class StorefrontMediaService:
             if existing.get("state") == "cleanup_retry":
                 await self._retry_stale_finalization_cleanup(owner_id, existing)
                 continue
+            if existing.get("state") == "reaping":
+                if self._operation_lease_is_stale(
+                    existing.get("reaping_started_at") or existing.get("updated_at")
+                ):
+                    await self._resume_stale_reaping(owner_id, existing)
+                    continue
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Storefront finalization cleanup is already in progress",
+                )
             if existing.get("state") != "reserved":
                 lease_value = existing.get("finalization_started_at") or existing.get(
                     "updated_at"
@@ -433,19 +455,23 @@ class StorefrontMediaService:
     async def _reap_expired_reservation(self, owner_id: str, asset: dict) -> None:
         assets = self._mongo.db["storefront_assets"]
         reap_token = uuid4().hex
+        now = datetime.now(timezone.utc)
         claimed = await assets.update_one(
             {
                 "_id": asset["_id"],
                 "owner_id": owner_id,
                 "slot": asset["slot"],
                 "state": "reserved",
-                "reservation_expires_at": {"$lte": datetime.now(timezone.utc)},
+                "reservation_expires_at": {"$lte": now},
             },
             {
                 "$set": {
                     "state": "reaping",
                     "reap_token": reap_token,
-                    "updated_at": datetime.now(timezone.utc),
+                    "reaping_started_at": now,
+                    "reap_source_state": "reserved",
+                    "cleanup_reason": "expired_reservation",
+                    "updated_at": now,
                 }
             },
         )
@@ -454,45 +480,17 @@ class StorefrontMediaService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Storefront upload reservation changed; reload and retry",
             )
-        try:
-            await self._delete_storage_keys(
-                [asset["staging_key"]],
-                target=StorageTarget.STOREFRONT_STAGING,
-            )
-        except Exception as exc:
-            await assets.update_one(
-                {
-                    "_id": asset["_id"],
-                    "owner_id": owner_id,
-                    "state": "reaping",
-                    "reap_token": reap_token,
-                },
-                {
-                    "$set": {
-                        "state": "cleanup_retry",
-                        "cleanup_reason": "expired_reservation",
-                        "last_cleanup_error": exc.__class__.__name__,
-                        "last_cleanup_attempt_at": datetime.now(timezone.utc),
-                        "updated_at": datetime.now(timezone.utc),
-                    },
-                    "$inc": {"cleanup_attempts": 1},
-                    "$unset": {"reap_token": ""},
-                },
-            )
-            return
-        try:
-            await assets.delete_one(
-                {
-                    "_id": asset["_id"],
-                    "owner_id": owner_id,
-                    "state": "reaping",
-                    "reap_token": reap_token,
-                }
-            )
-        except Exception:
-            logger.exception(
-                "Failed to remove reaped storefront reservation %s", asset["_id"]
-            )
+        await self._finish_reaping(
+            owner_id,
+            {
+                **asset,
+                "state": "reaping",
+                "reap_token": reap_token,
+                "reaping_started_at": now,
+                "reap_source_state": "reserved",
+                "cleanup_reason": "expired_reservation",
+            },
+        )
 
     async def _reap_stale_finalization(self, owner_id: str, asset: dict) -> None:
         """Token-fence and remove a crashed finalizer before slot reuse."""
@@ -532,11 +530,19 @@ class StorefrontMediaService:
             claim_filter["recovery_token"] = asset.get("recovery_token")
             claim_filter["updated_at"] = asset.get("updated_at")
 
+        cleanup_reason = (
+            "stale_finalization_recovery"
+            if state == "finalization_recovery"
+            else "stale_finalization"
+        )
+        now = datetime.now(timezone.utc)
         set_fields: dict[str, Any] = {
             "state": "reaping",
             "reap_token": reap_token,
-            "cleanup_reason": "stale_finalization",
-            "updated_at": datetime.now(timezone.utc),
+            "reaping_started_at": now,
+            "reap_source_state": state,
+            "cleanup_reason": cleanup_reason,
+            "updated_at": now,
         }
         if isinstance(candidate_key, str) and candidate_key:
             set_fields["cleanup_candidate_key"] = candidate_key
@@ -563,54 +569,43 @@ class StorefrontMediaService:
             "state": "reaping",
             "reap_token": reap_token,
         }
-        try:
-            await self._delete_asset_objects(cleanup_asset)
-        except Exception as exc:
-            await self._record_cleanup_retry(
-                cleanup_asset,
-                reason="stale_finalization",
-                error=exc,
-                expected_states=["reaping"],
-            )
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Stale storefront finalization cleanup is pending",
-            ) from exc
-        deleted = await assets.delete_one(
-            {
-                "_id": asset["_id"],
-                "owner_id": owner_id,
-                "state": "reaping",
-                "reap_token": reap_token,
-            }
-        )
-        if not getattr(deleted, "deleted_count", 0):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Storefront finalization cleanup changed; reload and retry",
-            )
+        await self._finish_reaping(owner_id, cleanup_asset)
 
     async def _retry_stale_finalization_cleanup(
         self, owner_id: str, asset: dict
     ) -> None:
         """Retry a durable stale-finalizer cleanup receipt before slot reuse."""
 
+        cleanup_reason = asset.get("cleanup_reason")
+        if cleanup_reason not in _STALE_FINALIZATION_CLEANUP_REASONS:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Storefront finalization cleanup receipt is invalid",
+            )
+        if await self._is_referenced(owner_id, str(asset["_id"])):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A referenced storefront image cannot be reaped",
+            )
         assets = self._mongo.db["storefront_assets"]
         reap_token = uuid4().hex
+        now = datetime.now(timezone.utc)
         claimed = await assets.update_one(
             {
                 "_id": asset["_id"],
                 "owner_id": owner_id,
                 "slot": asset["slot"],
                 "state": "cleanup_retry",
-                "cleanup_reason": "stale_finalization",
+                "cleanup_reason": cleanup_reason,
                 "updated_at": asset.get("updated_at"),
             },
             {
                 "$set": {
                     "state": "reaping",
                     "reap_token": reap_token,
-                    "updated_at": datetime.now(timezone.utc),
+                    "reaping_started_at": now,
+                    "reap_source_state": "cleanup_retry",
+                    "updated_at": now,
                 }
             },
         )
@@ -619,32 +614,130 @@ class StorefrontMediaService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Storefront finalization cleanup changed; reload and retry",
             )
-        cleanup_asset = {**asset, "state": "reaping", "reap_token": reap_token}
-        try:
-            await self._delete_asset_objects(cleanup_asset)
-        except Exception as exc:
-            await self._record_cleanup_retry(
-                cleanup_asset,
-                reason="stale_finalization",
-                error=exc,
-                expected_states=["reaping"],
-            )
+        cleanup_asset = {
+            **asset,
+            "state": "reaping",
+            "reap_token": reap_token,
+            "reaping_started_at": now,
+            "reap_source_state": "cleanup_retry",
+        }
+        await self._finish_reaping(owner_id, cleanup_asset)
+
+    async def _resume_stale_reaping(self, owner_id: str, asset: dict) -> None:
+        """Take over an abandoned token-fenced reaping lease."""
+
+        assets = self._mongo.db["storefront_assets"]
+        previous_token = asset.get("reap_token")
+        previous_started_at = asset.get("reaping_started_at")
+        if not self._operation_lease_is_stale(previous_started_at):
             raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Stale storefront finalization cleanup is pending",
-            ) from exc
-        deleted = await assets.delete_one(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Storefront image cleanup is already in progress",
+            )
+        reap_token = uuid4().hex
+        now = datetime.now(timezone.utc)
+        claimed = await assets.update_one(
             {
                 "_id": asset["_id"],
                 "owner_id": owner_id,
+                "slot": asset["slot"],
                 "state": "reaping",
-                "reap_token": reap_token,
-            }
+                "reap_token": previous_token,
+                "reaping_started_at": previous_started_at,
+            },
+            {
+                "$set": {
+                    "reap_token": reap_token,
+                    "reaping_started_at": now,
+                    "updated_at": now,
+                }
+            },
         )
+        if not getattr(claimed, "modified_count", 0):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Storefront finalization cleanup lease changed; reload and retry",
+            )
+        cleanup_asset = {**asset, "reap_token": reap_token, "reaping_started_at": now}
+        await self._finish_reaping(owner_id, cleanup_asset)
+
+    async def _finish_reaping(self, owner_id: str, asset: dict) -> None:
+        """Delete storage first and remove only the exact token-owned receipt."""
+
+        assets = self._mongo.db["storefront_assets"]
+        reap_token = asset.get("reap_token")
+        if not isinstance(reap_token, str) or not reap_token:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Storefront cleanup lease is invalid",
+            )
+
+        if await self._is_referenced(owner_id, str(asset["_id"])):
+            source_state = asset.get("reap_source_state")
+            if source_state in {"ready", "cleanup_retry"}:
+                now = datetime.now(timezone.utc)
+                retention_seconds = (
+                    STOREFRONT_READY_ASSET_CLEANUP_SECONDS
+                    if source_state == "ready"
+                    else STOREFRONT_CLEANUP_RETRY_SECONDS
+                )
+                await assets.update_one(
+                    {
+                        "_id": asset["_id"],
+                        "owner_id": owner_id,
+                        "state": "reaping",
+                        "reap_token": reap_token,
+                    },
+                    {
+                        "$set": {
+                            "state": source_state,
+                            "cleanup_due_at": now
+                            + timedelta(seconds=retention_seconds),
+                            "updated_at": now,
+                        },
+                        "$unset": {
+                            "reap_token": "",
+                            "reaping_started_at": "",
+                            "reap_source_state": "",
+                        },
+                    },
+                )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A referenced storefront image cannot be reaped",
+            )
+        try:
+            await self._delete_asset_objects(asset)
+        except Exception as exc:
+            await self._record_cleanup_retry(
+                asset,
+                reason=asset.get("cleanup_reason") or "stale_finalization",
+                error=exc,
+                expected_states=["reaping"],
+                expected_reap_token=reap_token,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Storefront image cleanup is pending",
+            ) from exc
+        try:
+            deleted = await assets.delete_one(
+                {
+                    "_id": asset["_id"],
+                    "owner_id": owner_id,
+                    "state": "reaping",
+                    "reap_token": reap_token,
+                }
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Storefront cleanup receipt removal is temporarily unavailable",
+            ) from exc
         if not getattr(deleted, "deleted_count", 0):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Storefront finalization cleanup changed; reload and retry",
+                detail="Storefront cleanup changed; reload and retry",
             )
 
     async def _find_owned_asset(self, owner_id: str, asset_id: str) -> dict:
@@ -846,22 +939,35 @@ class StorefrontMediaService:
         reason: str,
         error: Exception,
         expected_states: list[str],
+        expected_reap_token: str | None = None,
     ) -> None:
+        now = datetime.now(timezone.utc)
+        claim_filter: dict[str, Any] = {
+            "_id": asset["_id"],
+            "owner_id": asset["owner_id"],
+            "state": {"$in": expected_states},
+        }
+        if expected_reap_token is not None:
+            claim_filter["reap_token"] = expected_reap_token
         await self._mongo.db["storefront_assets"].update_one(
-            {
-                "_id": asset["_id"],
-                "owner_id": asset["owner_id"],
-                "state": {"$in": expected_states},
-            },
+            claim_filter,
             {
                 "$set": {
                     "state": "cleanup_retry",
                     "cleanup_reason": reason,
                     "last_cleanup_error": error.__class__.__name__,
-                    "last_cleanup_attempt_at": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc),
+                    "last_cleanup_attempt_at": now,
+                    "cleanup_due_at": now
+                    + timedelta(seconds=STOREFRONT_CLEANUP_RETRY_SECONDS),
+                    "updated_at": now,
                 },
                 "$inc": {"cleanup_attempts": 1},
+                "$unset": {
+                    "reap_token": "",
+                    "reaping_started_at": "",
+                    "reap_source_state": "",
+                    "cleanup_token": "",
+                },
             },
         )
 
@@ -1036,6 +1142,8 @@ class StorefrontMediaService:
                             "cleanup_reason": "stale_finalization_recovery",
                             "last_cleanup_error": exc.__class__.__name__,
                             "last_cleanup_attempt_at": datetime.now(timezone.utc),
+                            "cleanup_due_at": datetime.now(timezone.utc)
+                            + timedelta(seconds=STOREFRONT_CLEANUP_RETRY_SECONDS),
                             "updated_at": datetime.now(timezone.utc),
                         },
                         "$inc": {"cleanup_attempts": 1},
@@ -1138,6 +1246,8 @@ class StorefrontMediaService:
                             "cleanup_reason": "stale_finalization",
                             "last_cleanup_error": exc.__class__.__name__,
                             "last_cleanup_attempt_at": datetime.now(timezone.utc),
+                            "cleanup_due_at": datetime.now(timezone.utc)
+                            + timedelta(seconds=STOREFRONT_CLEANUP_RETRY_SECONDS),
                             "updated_at": datetime.now(timezone.utc),
                         },
                         "$inc": {"cleanup_attempts": 1},
@@ -1291,6 +1401,8 @@ class StorefrontMediaService:
                             "cleanup_reason": reason,
                             "last_cleanup_error": cleanup_exc.__class__.__name__,
                             "last_cleanup_attempt_at": datetime.now(timezone.utc),
+                            "cleanup_due_at": datetime.now(timezone.utc)
+                            + timedelta(seconds=STOREFRONT_CLEANUP_RETRY_SECONDS),
                             "updated_at": datetime.now(timezone.utc),
                         },
                         "$inc": {"cleanup_attempts": 1},
@@ -1418,6 +1530,8 @@ class StorefrontMediaService:
             "etag": final_head.get("ETag"),
             "source_etag": head["ETag"],
             "finalized_at": now,
+            "cleanup_due_at": now
+            + timedelta(seconds=STOREFRONT_READY_ASSET_CLEANUP_SECONDS),
             "updated_at": now,
         }
         result = None
@@ -1583,7 +1697,8 @@ class StorefrontMediaService:
                     "$set": {
                         "state": "attached",
                         "updated_at": datetime.now(timezone.utc),
-                    }
+                    },
+                    "$unset": {"cleanup_due_at": ""},
                 },
             )
             raise HTTPException(
@@ -1686,6 +1801,7 @@ class StorefrontMediaService:
                     "$unset": {
                         "attach_claim_id": "",
                         "attach_claimed_at": "",
+                        "cleanup_due_at": "",
                     },
                 },
             )
@@ -1913,7 +2029,8 @@ class StorefrontMediaService:
                             "attach_claim_id": claim_id,
                             "attach_claimed_at": now,
                             "updated_at": now,
-                        }
+                        },
+                        "$unset": {"cleanup_due_at": ""},
                     },
                 )
                 if not getattr(result, "modified_count", 0):
@@ -2025,7 +2142,11 @@ class StorefrontMediaService:
             if stable_reference:
                 set_fields["attached_at"] = now
                 set_fields["attached_claim_id"] = claim_id
+                unset_fields["cleanup_due_at"] = ""
             else:
+                set_fields["cleanup_due_at"] = now + timedelta(
+                    seconds=STOREFRONT_READY_ASSET_CLEANUP_SECONDS
+                )
                 unset_fields["attached_at"] = ""
                 unset_fields["attached_claim_id"] = ""
             result = await assets.update_one(
@@ -2153,6 +2274,7 @@ class StorefrontMediaService:
                     "$unset": {
                         "attach_claim_id": "",
                         "attach_claimed_at": "",
+                        "cleanup_due_at": "",
                     },
                 },
             )
@@ -2381,7 +2503,11 @@ class StorefrontMediaService:
                 }
                 if stable_reference:
                     set_fields["attached_at"] = datetime.now(timezone.utc)
+                    unset_fields["cleanup_due_at"] = ""
                 else:
+                    set_fields["cleanup_due_at"] = datetime.now(
+                        timezone.utc
+                    ) + timedelta(seconds=STOREFRONT_READY_ASSET_CLEANUP_SECONDS)
                     unset_fields.update({"attached_at": "", "attached_claim_id": ""})
                 await assets.update_one(
                     {
@@ -2413,11 +2539,161 @@ class StorefrontMediaService:
                 {
                     "$set": {
                         "state": "ready",
+                        "cleanup_due_at": datetime.now(timezone.utc)
+                        + timedelta(seconds=STOREFRONT_READY_ASSET_CLEANUP_SECONDS),
                         "updated_at": datetime.now(timezone.utc),
                     },
                     "$unset": {"attached_at": "", "attached_claim_id": ""},
                 },
             )
+
+    @staticmethod
+    def _due_cleanup_query(owner_id: str | None = None) -> dict[str, Any]:
+        """Build the durable maintenance query without any destructive TTL."""
+
+        now = datetime.now(timezone.utc)
+        query: dict[str, Any] = {
+            "$or": [
+                {"state": "ready", "cleanup_due_at": {"$lte": now}},
+                {
+                    "state": "ready",
+                    "cleanup_due_at": {"$exists": False},
+                    "updated_at": {
+                        "$lte": now
+                        - timedelta(seconds=STOREFRONT_READY_ASSET_CLEANUP_SECONDS)
+                    },
+                },
+                {"state": "cleanup_retry", "cleanup_due_at": {"$lte": now}},
+                {
+                    "state": "cleanup_retry",
+                    "cleanup_due_at": {"$exists": False},
+                    "updated_at": {
+                        "$lte": now
+                        - timedelta(seconds=STOREFRONT_CLEANUP_RETRY_SECONDS)
+                    },
+                },
+                {
+                    "state": "reaping",
+                    "reaping_started_at": {
+                        "$lte": now
+                        - timedelta(seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS)
+                    },
+                },
+                {
+                    "state": "reaping",
+                    "reaping_started_at": {"$exists": False},
+                },
+            ]
+        }
+        if owner_id is not None:
+            query["owner_id"] = owner_id
+        return query
+
+    async def _claim_due_cleanup_asset(self, asset: dict) -> bool:
+        """Claim one due receipt and delete only while its exact token is owned."""
+
+        owner_id = asset.get("owner_id")
+        slot = asset.get("slot")
+        if not isinstance(owner_id, str) or slot not in STOREFRONT_ASSET_SLOTS:
+            logger.error("Invalid storefront cleanup receipt %s", asset.get("_id"))
+            return False
+        if asset.get("state") == "reaping":
+            await self._resume_stale_reaping(owner_id, asset)
+            return True
+        if asset.get("state") not in {"ready", "cleanup_retry"}:
+            return False
+        if await self._is_referenced(owner_id, str(asset["_id"])):
+            return False
+
+        source_state = asset["state"]
+        now = datetime.now(timezone.utc)
+        reap_token = uuid4().hex
+        claim_filter: dict[str, Any] = {
+            "_id": asset["_id"],
+            "owner_id": owner_id,
+            "slot": slot,
+            "state": source_state,
+            "updated_at": asset.get("updated_at"),
+        }
+        if "cleanup_due_at" in asset:
+            claim_filter["cleanup_due_at"] = asset.get("cleanup_due_at")
+        else:
+            claim_filter["cleanup_due_at"] = {"$exists": False}
+        cleanup_reason = asset.get("cleanup_reason") or "abandoned_ready_asset"
+        claimed = await self._mongo.db["storefront_assets"].update_one(
+            claim_filter,
+            {
+                "$set": {
+                    "state": "reaping",
+                    "reap_token": reap_token,
+                    "reaping_started_at": now,
+                    "reap_source_state": source_state,
+                    "cleanup_reason": cleanup_reason,
+                    "updated_at": now,
+                }
+            },
+        )
+        if not getattr(claimed, "modified_count", 0):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Storefront cleanup receipt changed concurrently",
+            )
+        await self._finish_reaping(
+            owner_id,
+            {
+                **asset,
+                "state": "reaping",
+                "reap_token": reap_token,
+                "reaping_started_at": now,
+                "reap_source_state": source_state,
+                "cleanup_reason": cleanup_reason,
+            },
+        )
+        return True
+
+    async def _sweep_due_cleanup_assets(
+        self, *, owner_id: str | None, limit: int
+    ) -> int:
+        assets = self._mongo.db["storefront_assets"]
+        cursor = assets.find(self._due_cleanup_query(owner_id))
+        processed = 0
+        for asset in await cursor.to_list(length=limit):
+            try:
+                if await self._claim_due_cleanup_asset(asset):
+                    processed += 1
+            except HTTPException as exc:
+                if exc.status_code not in {
+                    status.HTTP_409_CONFLICT,
+                    status.HTTP_503_SERVICE_UNAVAILABLE,
+                }:
+                    raise
+                logger.info(
+                    "Storefront asset %s cleanup remains pending for owner %s",
+                    asset.get("_id"),
+                    asset.get("owner_id"),
+                )
+        return processed
+
+    async def sweep_abandoned_assets(
+        self, *, limit: int = STOREFRONT_MAINTENANCE_BATCH_SIZE
+    ) -> int:
+        """Bound one leader-elected maintenance tick across every owner."""
+
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 500
+        ):
+            raise ValueError("Storefront maintenance limit must be between 1 and 500")
+        return await self._sweep_due_cleanup_assets(owner_id=None, limit=limit)
+
+    async def _recover_abandoned_cleanable_assets(self, owner: Any) -> None:
+        """Use the same token-fenced sweep for the current owner."""
+
+        await self._sweep_due_cleanup_assets(
+            owner_id=self._owner_id(owner),
+            limit=STOREFRONT_MAINTENANCE_BATCH_SIZE,
+        )
 
     async def recover_pending_settings_assets(self, owner: Any) -> None:
         """Complete or safely discard durable pending handoffs after a crash."""
@@ -2429,6 +2705,7 @@ class StorefrontMediaService:
             row = await settings.find_one({"planner_id": owner_id})
             if not row:
                 await self._recover_orphaned_owner_assets(owner_id, None)
+                await self._recover_abandoned_cleanable_assets(owner)
                 return
 
             manifest = row.get(PENDING_ASSET_GROUP_FIELD)
@@ -2560,6 +2837,7 @@ class StorefrontMediaService:
                 detail="Storefront asset recovery changed concurrently; retry the edit",
             )
         await self._recover_orphaned_owner_assets(owner_id, refreshed_row)
+        await self._recover_abandoned_cleanable_assets(owner)
 
     async def attach(self, owner: Any, asset_id: str, slot: str) -> dict:
         """Mark a validated asset attached after its settings write succeeds."""
@@ -2587,7 +2865,14 @@ class StorefrontMediaService:
                     "slot": slot,
                     "state": "ready",
                 },
-                {"$set": {"state": "attached", "attached_at": now, "updated_at": now}},
+                {
+                    "$set": {
+                        "state": "attached",
+                        "attached_at": now,
+                        "updated_at": now,
+                    },
+                    "$unset": {"cleanup_due_at": ""},
+                },
             )
             if not getattr(result, "modified_count", 0):
                 raise HTTPException(
@@ -2615,7 +2900,12 @@ class StorefrontMediaService:
                 "state": "attached",
             },
             {
-                "$set": {"state": "ready", "updated_at": now},
+                "$set": {
+                    "state": "ready",
+                    "cleanup_due_at": now
+                    + timedelta(seconds=STOREFRONT_READY_ASSET_CLEANUP_SECONDS),
+                    "updated_at": now,
+                },
                 "$unset": {"attached_at": "", "attached_claim_id": ""},
             },
         )

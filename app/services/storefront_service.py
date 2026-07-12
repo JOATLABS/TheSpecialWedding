@@ -591,6 +591,43 @@ class StorefrontService:
             self._raise_not_found()
         return await self._build_public_dto(settings)
 
+    async def get_owner_preview_seed(self, owner: Any) -> dict:
+        """Build canonical owner preview data without requiring a saved slug.
+
+        First-time configuration must preview the same owner profile, active
+        packages, and published reviews as the eventual public storefront.
+        The synthetic settings row is intentionally in-memory only.
+        """
+
+        owner_id = self._owner_id(owner)
+        await self._require_storefront(owner)
+        await self._media.recover_pending_settings_assets(owner)
+        stored = await self._mongo.db["storefront_settings"].find_one(
+            {"planner_id": owner_id}
+        )
+        if stored:
+            preview_settings = dict(stored)
+            if not preview_settings.get("slug"):
+                preview_settings["slug"] = await self._default_slug(
+                    owner_id, preview_settings.get("title")
+                )
+        else:
+            preview_settings = {
+                "planner_id": owner_id,
+                "slug": await self._default_slug(owner_id, None),
+                "title": None,
+                "description": None,
+                "contact_email": None,
+                "contact_phone": None,
+                "hero_asset_id": None,
+                "about_asset_id": None,
+                "theme_color": DEFAULT_THEME_COLOR,
+                "packages_enabled": True,
+                "reviews_enabled": True,
+                "is_published": False,
+            }
+        return await self._build_public_dto(preview_settings)
+
     async def get_public_storefront(self, identifier: str) -> dict:
         context = await self.resolve_public_context(identifier)
         return await self._build_public_dto(context["settings"])

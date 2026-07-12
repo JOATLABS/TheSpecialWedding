@@ -77,6 +77,19 @@ async def update_storefront_settings(
 
 
 @router.get(
+    "/storefront/preview-data",
+    response_model=PublicStorefrontResponse,
+)
+async def get_storefront_preview_data(
+    current_user: ExtendedAuthUser = Depends(require_storefront_owner),
+    _entitlements: StorefrontEntitlements = Depends(require_planner_storefront),
+):
+    """Return canonical owner content even before first settings persistence."""
+
+    return await storefront_service.get_owner_preview_seed(current_user)
+
+
+@router.get(
     "/storefront/preview/{slug}",
     response_model=PublicStorefrontResponse,
 )

@@ -2616,6 +2616,24 @@ async def create_storefront_indexes():
             partialFilterExpression={"state": "reserved"},
             background=True,
         )
+        await assets.create_index(
+            [
+                ("owner_id", ASCENDING),
+                ("state", ASCENDING),
+                ("cleanup_due_at", ASCENDING),
+            ],
+            name="idx_storefront_assets_owner_state_cleanup_due",
+            background=True,
+        )
+        await assets.create_index(
+            [
+                ("owner_id", ASCENDING),
+                ("state", ASCENDING),
+                ("reaping_started_at", ASCENDING),
+            ],
+            name="idx_storefront_assets_owner_state_reaping_lease",
+            background=True,
+        )
         await inquiries.create_index(
             [("planner_id", ASCENDING), ("created_at", DESCENDING)],
             name="idx_storefront_inquiries_owner_created",

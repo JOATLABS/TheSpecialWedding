@@ -49,6 +49,7 @@ def test_admin_and_public_route_families_are_explicit_and_non_overlapping():
     assert admin_routes == {
         "/storefront/access": {"GET"},
         "/storefront/settings": {"GET", "POST"},
+        "/storefront/preview-data": {"GET"},
         "/storefront/preview/{slug}": {"GET"},
         "/storefront/custom-domain": {"POST", "DELETE"},
         "/storefront/custom-domain/status": {"GET"},
@@ -94,6 +95,7 @@ def test_main_mounts_exact_full_route_prefixes():
     route_methods = _app_route_methods(app)
     assert route_methods["/admin/storefront/access"] == {"GET"}
     assert route_methods["/admin/storefront/settings"] == {"GET", "POST"}
+    assert route_methods["/admin/storefront/preview-data"] == {"GET"}
     assert route_methods["/admin/storefront/preview/{slug}"] == {"GET"}
     assert route_methods["/admin/storefront/custom-domain"] == {"POST", "DELETE"}
     assert route_methods["/admin/storefront/custom-domain/status"] == {"GET"}
@@ -205,6 +207,34 @@ async def test_authenticated_owner_can_preview_unpublished_dto(monkeypatch):
     assert response.status_code == 200
     assert response.json()["slug"] == "luxe-events"
     fake_service.get_owner_preview.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_authenticated_owner_can_load_canonical_preview_seed(monkeypatch):
+    fake_service = SimpleNamespace(
+        get_owner_preview_seed=AsyncMock(return_value=_public_dto("storefront-owner"))
+    )
+    monkeypatch.setattr(storefront_api, "storefront_service", fake_service)
+    app = _test_app()
+    owner = _owner()
+    app.dependency_overrides[get_current_user_extended] = lambda: owner
+    app.dependency_overrides[storefront_api.require_planner_storefront] = lambda: (
+        StorefrontEntitlements(
+            owner_id=owner.user_data["_id"],
+            plan_id="plan_signature",
+            storefront_enabled=True,
+            custom_domain_enabled=True,
+        )
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.get("/admin/storefront/preview-data")
+
+    assert response.status_code == 200
+    assert response.json()["planner"]["company_name"] == "Luxe Events"
+    fake_service.get_owner_preview_seed.assert_awaited_once()
 
 
 @pytest.mark.asyncio
