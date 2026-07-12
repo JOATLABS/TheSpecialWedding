@@ -315,6 +315,38 @@ async def test_public_inquiry_route_uses_server_request_metadata_and_forbids_own
 
 
 @pytest.mark.asyncio
+async def test_public_inquiry_route_accepts_legacy_payload_without_idempotency_key(
+    monkeypatch,
+):
+    fake_inquiries = SimpleNamespace(
+        capture=AsyncMock(
+            return_value={
+                "success": True,
+                "inquiry_id": "legacy-inquiry-1",
+                "message": "Thanks — your inquiry was sent to the wedding planner.",
+            }
+        )
+    )
+    monkeypatch.setattr(storefront_api, "storefront_inquiry_service", fake_inquiries)
+    app = _test_app()
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.post(
+            "/api/storefront/luxe-events/inquiries",
+            json={
+                "name": "Legacy Couple",
+                "email": "legacy@example.com",
+                "message": "Backend-first rolling deployment",
+            },
+        )
+
+    assert response.status_code == 201
+    assert fake_inquiries.capture.await_args.args[1].idempotency_key is None
+
+
+@pytest.mark.asyncio
 async def test_domain_routes_use_separate_capability_and_never_accept_team_member(
     monkeypatch,
 ):

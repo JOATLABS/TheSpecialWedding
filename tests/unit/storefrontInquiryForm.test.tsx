@@ -274,4 +274,156 @@ describe('StorefrontInquiryForm', () => {
     assert.equal(calls[0]?.idempotency_key, 'inquiry-key-original-payload');
     assert.equal(calls[1]?.idempotency_key, 'inquiry-key-original-payload');
   });
+
+  it('keeps in-flight edits unsent and enables a truthful updated submission', async () => {
+    const keys = ['inquiry-key-submitted-version', 'inquiry-key-edited-version'];
+    const calls: Array<Record<string, unknown>> = [];
+    let settleFirst: ((response: Response) => void) | undefined;
+    const firstResponse = new Promise<Response>((resolve) => {
+      settleFirst = resolve;
+    });
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      calls.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (calls.length === 1) return firstResponse;
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          success: true,
+          inquiry_id: 'inquiry-edited-version',
+          message: 'Thanks — we will be in touch.',
+        }),
+      } as Response;
+    };
+    const view = render(
+      <StorefrontInquiryForm
+        identifier="studio.example"
+        fetchImpl={fetchImpl}
+        createIdempotencyKey={() => keys.shift() ?? 'unexpected-extra-key'}
+      />,
+    );
+
+    fireEvent.change(view.getByLabelText('Name'), { target: { value: 'Taylor' } });
+    fireEvent.change(view.getByLabelText('Email'), { target: { value: 'taylor@example.com' } });
+    fireEvent.change(view.getByLabelText('How can we help?'), {
+      target: { value: 'Original submitted message.' },
+    });
+    fireEvent.click(view.getByRole('button', { name: 'Send inquiry' }));
+    await waitFor(() => assert.equal(calls.length, 1));
+
+    fireEvent.input(view.getByLabelText('How can we help?'), {
+      target: { value: 'Edited while sending.' },
+    });
+    settleFirst?.({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        success: true,
+        inquiry_id: 'inquiry-submitted-version',
+        message: 'Thanks — we will be in touch.',
+      }),
+    } as Response);
+
+    await view.findByText(/previous inquiry was sent.*latest edits were not sent/i);
+    assert.equal(
+      (view.getByLabelText('How can we help?') as HTMLTextAreaElement).value,
+      'Edited while sending.',
+    );
+    const updatedSubmit = view.getByRole('button', { name: 'Send updated inquiry' });
+    assert.equal((updatedSubmit as HTMLButtonElement).disabled, false);
+    fireEvent.click(updatedSubmit);
+    await view.findByText('Thanks — we will be in touch.');
+
+    assert.equal(calls[0]?.message, 'Original submitted message.');
+    assert.equal(calls[0]?.idempotency_key, 'inquiry-key-submitted-version');
+    assert.equal(calls[1]?.message, 'Edited while sending.');
+    assert.equal(calls[1]?.idempotency_key, 'inquiry-key-edited-version');
+  });
+
+  it('retries once without the key only for an old-backend extra-field rejection', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      calls.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (calls.length === 1) {
+        return {
+          ok: false,
+          status: 422,
+          json: async () => ({
+            detail: [
+              {
+                type: 'extra_forbidden',
+                loc: ['body', 'idempotency_key'],
+                msg: 'Extra inputs are not permitted',
+              },
+            ],
+          }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          success: true,
+          inquiry_id: 'legacy-backend-inquiry',
+          message: 'Your inquiry was sent.',
+        }),
+      } as Response;
+    };
+    const view = render(
+      <StorefrontInquiryForm
+        identifier="studio.example"
+        fetchImpl={fetchImpl}
+        createIdempotencyKey={() => 'inquiry-key-new-client-old-backend'}
+      />,
+    );
+
+    fireEvent.change(view.getByLabelText('Name'), { target: { value: 'Taylor' } });
+    fireEvent.change(view.getByLabelText('Email'), { target: { value: 'taylor@example.com' } });
+    fireEvent.change(view.getByLabelText('How can we help?'), { target: { value: 'Planning help.' } });
+    fireEvent.click(view.getByRole('button', { name: 'Send inquiry' }));
+    await view.findByText('Your inquiry was sent.');
+
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0]?.idempotency_key, 'inquiry-key-new-client-old-backend');
+    assert.equal('idempotency_key' in (calls[1] ?? {}), false);
+    assert.deepEqual(
+      { ...calls[0], idempotency_key: undefined },
+      { ...calls[1], idempotency_key: undefined },
+    );
+  });
+
+  it('does not remove the key or retry for unrelated validation failures', async () => {
+    let calls = 0;
+    const fetchImpl: typeof fetch = async () => {
+      calls += 1;
+      return {
+        ok: false,
+        status: 422,
+        json: async () => ({
+          detail: [
+            {
+              type: 'value_error',
+              loc: ['body', 'email'],
+              msg: 'Invalid email',
+            },
+          ],
+        }),
+      } as Response;
+    };
+    const view = render(
+      <StorefrontInquiryForm
+        identifier="studio.example"
+        fetchImpl={fetchImpl}
+        createIdempotencyKey={() => 'inquiry-key-unrelated-validation'}
+      />,
+    );
+
+    fireEvent.change(view.getByLabelText('Name'), { target: { value: 'Taylor' } });
+    fireEvent.change(view.getByLabelText('Email'), { target: { value: 'taylor@example.com' } });
+    fireEvent.change(view.getByLabelText('How can we help?'), { target: { value: 'Planning help.' } });
+    fireEvent.click(view.getByRole('button', { name: 'Send inquiry' }));
+    await view.findByText('Your inquiry could not be sent. Please try again.');
+
+    assert.equal(calls, 1);
+  });
 });

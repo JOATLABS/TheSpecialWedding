@@ -8,6 +8,7 @@ from html import escape
 import json
 import logging
 from typing import Any
+from uuid import uuid4
 
 from fastapi import HTTPException, status
 from pymongo.errors import DuplicateKeyError
@@ -79,6 +80,182 @@ class StorefrontInquiryService:
             message=str(inquiry.get("response_message") or STOREFRONT_INQUIRY_MESSAGE),
         ).model_dump()
 
+    async def _require_same_public_context(
+        self,
+        identifier: str,
+        *,
+        owner_id: str,
+        slug: str,
+    ) -> None:
+        current = await self._storefront.resolve_public_context(identifier)
+        if str(current.get("owner_id")) != owner_id or str(current.get("slug")) != slug:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Storefront not found",
+            )
+
+    @staticmethod
+    def _notification_is_pending(inquiry: dict) -> bool:
+        notification = inquiry.get("notification")
+        return (
+            isinstance(notification, dict) and notification.get("status") == "pending"
+        )
+
+    async def _reconcile_insert_receipt(
+        self,
+        inquiries: Any,
+        *,
+        idempotency_query: dict,
+        request_hash: str,
+    ) -> dict | None:
+        exact_query = {**idempotency_query, "request_hash": request_hash}
+        exact = await inquiries.find_one(exact_query)
+        if exact:
+            return exact
+        conflicting = await inquiries.find_one(idempotency_query)
+        if conflicting:
+            self._replay_or_conflict(conflicting, request_hash)
+            return conflicting
+        return None
+
+    async def _claim_notification(
+        self,
+        inquiries: Any,
+        *,
+        inquiry_id: Any,
+        owner_id: str,
+        request_hash: str,
+    ) -> str | None:
+        claim_token = uuid4().hex
+        now = datetime.now(timezone.utc)
+        claim_query = {
+            "_id": inquiry_id,
+            "planner_id": owner_id,
+            "request_hash": request_hash,
+            "notification.status": "pending",
+        }
+        claim_update = {
+            "$set": {
+                "notification.status": "sending",
+                "notification.claim_token": claim_token,
+                "notification.claimed_at": now,
+                "updated_at": now,
+            }
+        }
+        try:
+            claimed = await inquiries.update_one(claim_query, claim_update)
+        except Exception:
+            logger.exception(
+                "Storefront inquiry notification claim acknowledgement was lost",
+                extra={"inquiry_id": str(inquiry_id)},
+            )
+            try:
+                reconciled = await inquiries.find_one(
+                    {
+                        "_id": inquiry_id,
+                        "planner_id": owner_id,
+                        "request_hash": request_hash,
+                        "notification.status": "sending",
+                        "notification.claim_token": claim_token,
+                    }
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to reconcile storefront inquiry notification claim",
+                    extra={"inquiry_id": str(inquiry_id)},
+                )
+                return None
+            return claim_token if reconciled else None
+        if getattr(claimed, "modified_count", 0) != 1:
+            return None
+        return claim_token
+
+    async def _deliver_notification_if_claimed(
+        self,
+        inquiries: Any,
+        inquiry: dict,
+        *,
+        owner_id: str,
+        request_hash: str,
+        slug: str,
+        payload: StorefrontInquiryRequest,
+        planner: dict | None = None,
+    ) -> None:
+        inquiry_id = inquiry.get("_id")
+        if inquiry_id is None:
+            return
+        claim_token = await self._claim_notification(
+            inquiries,
+            inquiry_id=inquiry_id,
+            owner_id=owner_id,
+            request_hash=request_hash,
+        )
+        if not claim_token:
+            return
+
+        if planner is None:
+            try:
+                planner = await self._mongo.get_users_collection().find_one(
+                    {"_id": normalize_query_id(owner_id)},
+                    {"email": 1, "company_name": 1, "first_name": 1},
+                )
+            except Exception as exc:
+                logger.exception(
+                    "Failed to load planner for storefront inquiry notification",
+                    extra={"inquiry_id": str(inquiry_id)},
+                )
+                notification = {"status": "failed", "error": str(exc)[:500]}
+            else:
+                notification = (
+                    await self._notify_planner(
+                        planner=planner,
+                        slug=slug,
+                        payload=payload,
+                    )
+                    if planner
+                    else {"status": "failed", "error": "Planner is unavailable"}
+                )
+        else:
+            notification = await self._notify_planner(
+                planner=planner,
+                slug=slug,
+                payload=payload,
+            )
+
+        attempted_at = datetime.now(timezone.utc)
+        try:
+            outcome = await inquiries.update_one(
+                {
+                    "_id": inquiry_id,
+                    "planner_id": owner_id,
+                    "request_hash": request_hash,
+                    "notification.status": "sending",
+                    "notification.claim_token": claim_token,
+                },
+                {
+                    "$set": {
+                        "notification.status": notification["status"],
+                        "notification.error": notification.get("error"),
+                        "notification.provider_id": notification.get("provider_id"),
+                        "notification.attempted_at": attempted_at,
+                        "updated_at": attempted_at,
+                    },
+                    "$unset": {"notification.claim_token": ""},
+                },
+            )
+            if getattr(outcome, "matched_count", 0) != 1:
+                logger.error(
+                    "Storefront inquiry notification outcome lost its claim fence",
+                    extra={"inquiry_id": str(inquiry_id)},
+                )
+        except Exception:
+            # Lead durability is the primary contract. A failed bookkeeping
+            # update cannot erase or make the accepted inquiry appear rejected.
+            logger.exception(
+                "Failed to record storefront inquiry notification outcome",
+                extra={"inquiry_id": str(inquiry_id)},
+            )
+
     async def capture(
         self,
         identifier: str,
@@ -95,13 +272,29 @@ class StorefrontInquiryService:
         slug = str(context["slug"])
         inquiries = self._mongo.db["storefront_inquiries"]
         request_hash = self._request_hash(payload)
+        idempotency_key = payload.idempotency_key or f"legacy-{uuid4().hex}"
         idempotency_query = {
             "planner_id": owner_id,
-            "idempotency_key": payload.idempotency_key,
+            "idempotency_key": idempotency_key,
         }
         existing = await inquiries.find_one(idempotency_query)
         if existing:
-            return self._replay_or_conflict(existing, request_hash)
+            response = self._replay_or_conflict(existing, request_hash)
+            if self._notification_is_pending(existing):
+                await self._require_same_public_context(
+                    identifier,
+                    owner_id=owner_id,
+                    slug=slug,
+                )
+                await self._deliver_notification_if_claimed(
+                    inquiries,
+                    existing,
+                    owner_id=owner_id,
+                    request_hash=request_hash,
+                    slug=slug,
+                    payload=payload,
+                )
+            return response
 
         rate_subject = f"{client_ip or 'unknown'}:{slug}"
         is_allowed, _remaining, reset_time = await self._rate_limiter.is_allowed(
@@ -130,6 +323,15 @@ class StorefrontInquiryService:
                 detail="Storefront not found",
             )
 
+        # The rate-limit and planner reads above are await points where an owner
+        # can unpublish, lose entitlement, or revoke a custom hostname. Recheck
+        # the exact same public owner/slug immediately before any durable write.
+        await self._require_same_public_context(
+            identifier,
+            owner_id=owner_id,
+            slug=slug,
+        )
+
         now = datetime.now(timezone.utc)
         inquiry = {
             "planner_id": owner_id,
@@ -142,7 +344,7 @@ class StorefrontInquiryService:
                 payload.wedding_date.isoformat() if payload.wedding_date else None
             ),
             "message": payload.message,
-            "idempotency_key": payload.idempotency_key,
+            "idempotency_key": idempotency_key,
             "request_hash": request_hash,
             "response_message": STOREFRONT_INQUIRY_MESSAGE,
             "client_ip": client_ip or "unknown",
@@ -154,56 +356,51 @@ class StorefrontInquiryService:
         }
         try:
             result = await inquiries.insert_one(inquiry)
-        except DuplicateKeyError as exc:
-            concurrent_winner = await inquiries.find_one(idempotency_query)
-            if concurrent_winner:
-                return self._replay_or_conflict(concurrent_winner, request_hash)
-            logger.exception(
-                "Storefront inquiry collided with an unrelated unique constraint"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Inquiry could not be saved. Please try again.",
-            ) from exc
         except Exception as exc:
-            logger.exception("Failed to persist storefront inquiry")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Inquiry could not be saved. Please try again.",
-            ) from exc
+            try:
+                receipt = await self._reconcile_insert_receipt(
+                    inquiries,
+                    idempotency_query=idempotency_query,
+                    request_hash=request_hash,
+                )
+            except HTTPException:
+                raise
+            except Exception:
+                logger.exception(
+                    "Failed to reconcile storefront inquiry insert",
+                    extra={"idempotency_key": idempotency_key},
+                )
+                receipt = None
+            if not receipt:
+                if isinstance(exc, DuplicateKeyError):
+                    logger.exception(
+                        "Storefront inquiry collided with an unrelated unique constraint"
+                    )
+                else:
+                    logger.exception("Failed to persist storefront inquiry")
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Inquiry could not be saved. Please try again.",
+                ) from exc
+            if not isinstance(exc, DuplicateKeyError):
+                logger.warning(
+                    "Reconciled ambiguous storefront inquiry insert acknowledgement",
+                    extra={"inquiry_id": str(receipt.get("_id"))},
+                )
+        else:
+            receipt = {**inquiry, "_id": result.inserted_id}
 
-        inquiry_id = result.inserted_id
-        notification = await self._notify_planner(
-            planner=planner,
+        response = self._replay_or_conflict(receipt, request_hash)
+        await self._deliver_notification_if_claimed(
+            inquiries,
+            receipt,
+            owner_id=owner_id,
+            request_hash=request_hash,
             slug=slug,
             payload=payload,
+            planner=planner,
         )
-        try:
-            await inquiries.update_one(
-                {"_id": inquiry_id, "planner_id": owner_id},
-                {
-                    "$set": {
-                        "notification.status": notification["status"],
-                        "notification.error": notification.get("error"),
-                        "notification.provider_id": notification.get("provider_id"),
-                        "notification.attempted_at": datetime.now(timezone.utc),
-                        "updated_at": datetime.now(timezone.utc),
-                    }
-                },
-            )
-        except Exception:
-            # Lead durability is the primary contract. A failed bookkeeping
-            # update cannot erase or make the accepted inquiry appear rejected.
-            logger.exception(
-                "Failed to record storefront inquiry notification outcome",
-                extra={"inquiry_id": str(inquiry_id)},
-            )
-
-        return StorefrontInquiryResponse(
-            success=True,
-            inquiry_id=str(inquiry_id),
-            message=STOREFRONT_INQUIRY_MESSAGE,
-        ).model_dump()
+        return response
 
     async def _notify_planner(
         self,
