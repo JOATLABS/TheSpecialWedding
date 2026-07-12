@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from copy import deepcopy
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -553,6 +554,52 @@ async def test_delete_failure_refresh_preserves_intent_and_retry_can_finish(
     await service.disconnect(_owner())
 
     assert cloudflare.deleted == ["cf-hostname-1", "cf-hostname-1"]
+    assert mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID}) is None
+
+
+@pytest.mark.asyncio
+async def test_refresh_started_before_disconnect_cannot_resurrect_deleted_mapping(
+    domain_setup, monkeypatch
+):
+    service, mongo, _, cloudflare = domain_setup
+    await service.connect(_owner(), "events.example")
+    cloudflare.status_result["status"] = "active"
+    cloudflare.status_result["ssl"]["status"] = "active"
+
+    refresh_started = asyncio.Event()
+    allow_refresh_result = asyncio.Event()
+    delete_started = asyncio.Event()
+    allow_delete_result = asyncio.Event()
+
+    async def delayed_refresh(hostname_id: str) -> dict:
+        cloudflare.read.append(hostname_id)
+        result = deepcopy(cloudflare.status_result)
+        refresh_started.set()
+        await allow_refresh_result.wait()
+        return result
+
+    async def delayed_delete(hostname_id: str) -> dict:
+        cloudflare.deleted.append(hostname_id)
+        delete_started.set()
+        await allow_delete_result.wait()
+        return deepcopy(cloudflare.delete_result)
+
+    monkeypatch.setattr(cloudflare, "get_custom_hostname", delayed_refresh)
+    monkeypatch.setattr(cloudflare, "delete_custom_hostname", delayed_delete)
+
+    refresh_task = asyncio.create_task(service.refresh(_owner()))
+    await refresh_started.wait()
+    disconnect_task = asyncio.create_task(service.disconnect(_owner()))
+    await delete_started.wait()
+
+    allow_refresh_result.set()
+    refresh_result = await refresh_task
+    assert refresh_result["status"] == "deleting"
+    assert refresh_result["deletion_status"] == "provider_delete_pending"
+    assert await service.resolve_active_hostname("events.example") is None
+
+    allow_delete_result.set()
+    assert await disconnect_task is None
     assert mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID}) is None
 
 

@@ -32,6 +32,9 @@ os.environ.setdefault("S3_BUCKET_NAME", "test-bucket")
 os.environ.setdefault("S3_GUEST_MEDIA_BUCKET_NAME", "test-guest-media-bucket")
 os.environ.setdefault("S3_AD_BUCKET_NAME", "test-ad-bucket")
 os.environ.setdefault("S3_BLOG_BUCKET_NAME", "test-blog-bucket")
+os.environ.setdefault(
+    "S3_STOREFRONT_STAGING_BUCKET_NAME", "test-storefront-staging-bucket"
+)
 os.environ.setdefault("MEDIA_DOMAIN", "https://media.test.example.com")
 os.environ.setdefault("GUEST_MEDIA_DOMAIN", "https://guest-media.test.example.com")
 os.environ.setdefault("AD_MEDIA_DOMAIN", "https://ads.test.example.com")

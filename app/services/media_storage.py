@@ -20,6 +20,7 @@ class StorageTarget(str, Enum):
     GUEST_MEDIA = "guest_media"
     AD_ASSETS = "ad_assets"
     BLOG_ASSETS = "blog_assets"
+    STOREFRONT_STAGING = "storefront_staging"
     FORM_UPLOADS = "form_uploads"
 
 
@@ -212,6 +213,12 @@ class MediaStorage:
                 bucket_name=settings.blog_media_bucket_name,
                 public_domain=settings.normalized_blog_media_domain,
             )
+        if normalized == StorageTarget.STOREFRONT_STAGING:
+            return StorageTargetConfig(
+                target=normalized,
+                bucket_name=settings.storefront_staging_bucket_name,
+                public_domain=None,
+            )
         if normalized == StorageTarget.FORM_UPLOADS:
             return StorageTargetConfig(
                 target=normalized,
@@ -232,6 +239,8 @@ class MediaStorage:
 
     def build_public_url(self, target: StorageTarget | str, key: str) -> str:
         target_config = self.target(target)
+        if target_config.target == StorageTarget.STOREFRONT_STAGING:
+            raise RuntimeError("Storefront staging objects are private")
         if target_config.public_domain:
             return f"{target_config.public_domain}/{key}"
         return key
@@ -250,11 +259,20 @@ class MediaStorage:
         key: str,
         expires_in: int,
         content_type: Optional[str] = None,
+        content_length: Optional[int] = None,
     ) -> str:
         target_config = self.require_target(target)
         params: dict[str, Any] = {"Bucket": target_config.bucket_name, "Key": key}
         if content_type:
             params["ContentType"] = content_type
+        if content_length is not None:
+            if (
+                isinstance(content_length, bool)
+                or not isinstance(content_length, int)
+                or content_length <= 0
+            ):
+                raise ValueError("Content length must be a positive integer")
+            params["ContentLength"] = content_length
         return self.client.generate_presigned_url(
             ClientMethod="put_object",
             Params=params,

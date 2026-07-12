@@ -70,6 +70,7 @@ STORAGE_RECOMMENDED_ENV_VARS = {
     "S3_GUEST_MEDIA_BUCKET_NAME": "Dedicated guest memories R2 bucket",
     "S3_AD_BUCKET_NAME": "Dedicated ad-assets R2 bucket",
     "S3_BLOG_BUCKET_NAME": "Dedicated blog-assets R2 bucket",
+    "S3_STOREFRONT_STAGING_BUCKET_NAME": "Private storefront-upload staging R2 bucket",
 }
 
 
@@ -105,6 +106,11 @@ def _collect_storage_recommendations(storage: MediaStorage | None = None) -> Lis
         recommended.append(
             f"S3_BLOG_BUCKET_NAME: {STORAGE_RECOMMENDED_ENV_VARS['S3_BLOG_BUCKET_NAME']}"
         )
+    if not settings.storefront_staging_bucket_name:
+        recommended.append(
+            "S3_STOREFRONT_STAGING_BUCKET_NAME: "
+            f"{STORAGE_RECOMMENDED_ENV_VARS['S3_STOREFRONT_STAGING_BUCKET_NAME']}"
+        )
 
     if settings.ad_media_bucket_name and not settings.ad_media_domain:
         recommended.append("AD_MEDIA_DOMAIN: Public CDN/domain for ad asset URLs")
@@ -118,6 +124,7 @@ def _collect_storage_recommendations(storage: MediaStorage | None = None) -> Lis
             StorageTarget.GUEST_MEDIA: "S3_GUEST_MEDIA_BUCKET_NAME",
             StorageTarget.AD_ASSETS: "S3_AD_BUCKET_NAME",
             StorageTarget.BLOG_ASSETS: "S3_BLOG_BUCKET_NAME",
+            StorageTarget.STOREFRONT_STAGING: "S3_STOREFRONT_STAGING_BUCKET_NAME",
         }
         for target, env_name in target_env_map.items():
             health = storage.target_health(target)
@@ -140,6 +147,7 @@ async def _collect_browser_upload_recommendations(storage: MediaStorage) -> List
         StorageTarget.GUEST_MEDIA: "S3_GUEST_MEDIA_BUCKET_NAME",
         StorageTarget.AD_ASSETS: "S3_AD_BUCKET_NAME",
         StorageTarget.BLOG_ASSETS: "S3_BLOG_BUCKET_NAME",
+        StorageTarget.STOREFRONT_STAGING: "S3_STOREFRONT_STAGING_BUCKET_NAME",
     }
 
     for target, env_name in target_env_map.items():

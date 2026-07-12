@@ -306,6 +306,9 @@ class Settings(BaseSettings):
     s3_blog_bucket_name: Optional[str] = Field(
         default=None, alias="S3_BLOG_BUCKET_NAME"
     )
+    s3_storefront_staging_bucket_name: Optional[str] = Field(
+        default=None, alias="S3_STOREFRONT_STAGING_BUCKET_NAME"
+    )
     s3_form_uploads_bucket_name: Optional[str] = Field(
         default=None, alias="S3_FORM_UPLOADS_BUCKET_NAME"
     )
@@ -642,6 +645,11 @@ class Settings(BaseSettings):
     def blog_media_bucket_name(self) -> Optional[str]:
         """Dedicated blog asset bucket."""
         return self.s3_blog_bucket_name
+
+    @property
+    def storefront_staging_bucket_name(self) -> Optional[str]:
+        """Private staging bucket for browser-uploaded storefront assets."""
+        return self.s3_storefront_staging_bucket_name
 
     @property
     def form_uploads_bucket_name(self) -> Optional[str]:

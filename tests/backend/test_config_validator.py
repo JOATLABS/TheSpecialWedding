@@ -96,6 +96,9 @@ async def test_storage_recommendations_are_target_aware(monkeypatch):
     )
     monkeypatch.setattr(config_validator.settings, "s3_ad_bucket_name", None)
     monkeypatch.setattr(config_validator.settings, "s3_blog_bucket_name", "blog-bucket")
+    monkeypatch.setattr(
+        config_validator.settings, "s3_storefront_staging_bucket_name", None
+    )
     monkeypatch.setattr(config_validator.settings, "ad_media_domain", None)
     monkeypatch.setattr(config_validator.settings, "blog_media_domain", None)
 
@@ -146,6 +149,10 @@ async def test_storage_recommendations_are_target_aware(monkeypatch):
     )
     assert (
         "BLOG_MEDIA_DOMAIN: Public CDN/domain for blog asset URLs"
+        in result["missing_recommended"]
+    )
+    assert (
+        "S3_STOREFRONT_STAGING_BUCKET_NAME: Private storefront-upload staging R2 bucket"
         in result["missing_recommended"]
     )
     assert any(

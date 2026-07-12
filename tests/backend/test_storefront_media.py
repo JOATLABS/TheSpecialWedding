@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 import threading
+from types import SimpleNamespace
 
 import mongomock
 import pytest
@@ -14,6 +16,7 @@ from app.services.storefront_media_service import (
     STOREFRONT_ASSET_OPERATION_LEASE_SECONDS,
     StorefrontMediaService,
 )
+from app.services.media_storage import StorageTarget
 
 
 OWNER_ID = "507f1f77bcf86cd799439011"
@@ -86,9 +89,24 @@ class FakeStorage:
         self.delete_error: Exception | None = None
         self.copy_error: Exception | None = None
         self.copy_writes_before_error = False
+        self.unavailable_targets: set[StorageTarget] = set()
+        self.bucket_by_target = {
+            StorageTarget.STOREFRONT_STAGING: "private-storefront-staging",
+            StorageTarget.BLOG_ASSETS: "public-blog-assets",
+        }
+
+    def require_target(self, target):
+        if target in self.unavailable_targets:
+            raise RuntimeError(f"{target.value} unavailable")
+        return SimpleNamespace(bucket_name=self.bucket_by_target[target])
 
     def generate_presigned_put_url(
-        self, target, key: str, expires_in: int, content_type: str | None = None
+        self,
+        target,
+        key: str,
+        expires_in: int,
+        content_type: str | None = None,
+        content_length: int | None = None,
     ) -> str:
         self.presign_calls.append(
             {
@@ -96,6 +114,7 @@ class FakeStorage:
                 "key": key,
                 "expires_in": expires_in,
                 "content_type": content_type,
+                "content_length": content_length,
                 "thread_id": threading.get_ident(),
             }
         )
@@ -204,6 +223,8 @@ async def test_reserve_uses_server_generated_owner_slot_key_and_offloads_presign
     assert response["key"].endswith(".webp")
     assert response["max_size_bytes"] == 5 * 1024 * 1024
     assert storage.presign_calls[0]["thread_id"] != event_loop_thread
+    assert storage.presign_calls[0]["target"] == StorageTarget.STOREFRONT_STAGING
+    assert storage.presign_calls[0]["content_length"] == 1024
 
     stored = mongo.raw.storefront_assets.find_one(
         {"_id": ObjectId(response["asset_id"])}
@@ -214,7 +235,9 @@ async def test_reserve_uses_server_generated_owner_slot_key_and_offloads_presign
     assert stored["state"] == "reserved"
     assert stored["declared_content_type"] == "image/webp"
     assert stored["declared_size_bytes"] == 1024
-    assert stored["key"] == response["key"]
+    assert response["key"].startswith(stored["final_key_prefix"])
+    assert "key" not in stored
+    assert "cdn_url" not in stored
 
 
 @pytest.mark.asyncio
@@ -311,7 +334,8 @@ async def test_finalize_heads_exact_object_contract_and_marks_ready(setup_media)
     assert finalized["asset_id"] == reserved["asset_id"]
     assert finalized["slot"] == "about"
     assert finalized["state"] == "ready"
-    assert finalized["cdn_url"] == reserved["cdn_url"]
+    assert finalized["cdn_url"].endswith(finalized["key"])
+    assert finalized["cdn_url"] != reserved["cdn_url"]
     assert storage.head_calls[0]["thread_id"] != event_loop_thread
     stored = mongo.raw.storefront_assets.find_one(
         {"_id": ObjectId(reserved["asset_id"])}
@@ -333,7 +357,8 @@ async def test_reservation_presigns_staging_not_the_final_public_key(setup_media
 
     assert storage.presign_calls[0]["key"] == stored["staging_key"]
     assert storage.presign_calls[0]["key"] != reserved["key"]
-    assert stored["key"] == reserved["key"]
+    assert reserved["key"].startswith(stored["final_key_prefix"])
+    assert "key" not in stored
     assert reserved["cdn_url"].endswith(reserved["key"])
 
 
@@ -355,20 +380,22 @@ async def test_finalize_conditionally_copies_then_staging_put_cannot_mutate_fina
     finalized = await service.finalize(_owner(), reserved["asset_id"])
 
     assert finalized["state"] == "ready"
-    assert finalized["key"] == reserved["key"]
+    assert finalized["key"] == storage.copy_calls[0]["destination_key"]
     assert storage.copy_calls == [
         {
             "target": storage.copy_calls[0]["target"],
             "source_key": staging_key,
-            "destination_key": reserved["key"],
-            "source_target": None,
+            "destination_key": finalized["key"],
+            "source_target": StorageTarget.STOREFRONT_STAGING,
             "source_etag": '"validated-source"',
             "thread_id": storage.copy_calls[0]["thread_id"],
         }
     ]
     assert storage.copy_calls[0]["thread_id"] != event_loop_thread
+    assert storage.head_calls[0]["target"] == StorageTarget.STOREFRONT_STAGING
+    assert storage.head_calls[1]["target"] == StorageTarget.BLOG_ASSETS
     assert staging_key not in storage.head_by_key
-    assert storage.head_by_key[reserved["key"]] == original
+    assert storage.head_by_key[finalized["key"]] == original
 
     # The browser's original PUT remains cryptographically valid until expiry.
     # Reusing it can only recreate staging; the validated public object is fixed.
@@ -377,20 +404,60 @@ async def test_finalize_conditionally_copies_then_staging_put_cannot_mutate_fina
         "ContentType": "image/gif",
         "ETag": '"late-overwrite"',
     }
-    assert storage.head_by_key[reserved["key"]] == original
+    assert storage.head_by_key[finalized["key"]] == original
     stored = mongo.raw.storefront_assets.find_one(
         {"_id": ObjectId(reserved["asset_id"])}
     )
-    assert stored["key"] == reserved["key"]
+    assert stored["key"] == finalized["key"]
 
     deleted = await service.cleanup(_owner(), reserved["asset_id"])
     assert deleted == {"status": "deleted", "asset_id": reserved["asset_id"]}
     assert staging_key not in storage.head_by_key
-    assert reserved["key"] not in storage.head_by_key
+    assert finalized["key"] not in storage.head_by_key
     assert [call["key"] for call in storage.delete_calls[-2:]] == [
         staging_key,
-        reserved["key"],
+        finalized["key"],
     ]
+    assert [call["target"] for call in storage.delete_calls[-2:]] == [
+        StorageTarget.STOREFRONT_STAGING,
+        StorageTarget.BLOG_ASSETS,
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "unavailable_target",
+    [StorageTarget.STOREFRONT_STAGING, StorageTarget.BLOG_ASSETS],
+)
+async def test_reserve_fails_closed_unless_private_and_public_targets_are_ready(
+    setup_media, unavailable_target
+):
+    service, mongo, storage, _ = setup_media
+    storage.unavailable_targets.add(unavailable_target)
+
+    with pytest.raises(HTTPException) as unavailable:
+        await _reserve(service)
+
+    assert unavailable.value.status_code == 503
+    assert mongo.raw.storefront_assets.count_documents({}) == 0
+    assert storage.presign_calls == []
+
+
+@pytest.mark.asyncio
+async def test_reserve_rejects_reusing_the_public_bucket_for_private_staging(
+    setup_media,
+):
+    service, mongo, storage, _ = setup_media
+    storage.bucket_by_target[StorageTarget.STOREFRONT_STAGING] = (
+        storage.bucket_by_target[StorageTarget.BLOG_ASSETS]
+    )
+
+    with pytest.raises(HTTPException) as unavailable:
+        await _reserve(service)
+
+    assert unavailable.value.status_code == 503
+    assert mongo.raw.storefront_assets.count_documents({}) == 0
+    assert storage.presign_calls == []
 
 
 @pytest.mark.asyncio
@@ -425,7 +492,44 @@ async def test_conditional_copy_failure_removes_candidate_and_can_retry(setup_me
     finalized = await service.finalize(_owner(), reserved["asset_id"])
     assert finalized["state"] == "ready"
     assert staging_key not in storage.head_by_key
-    assert storage.head_by_key[reserved["key"]] == upload
+    assert storage.head_by_key[finalized["key"]] == upload
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_finalization_commit_preserves_the_canonical_winner(
+    setup_media,
+):
+    service, mongo, storage, _ = setup_media
+    reserved = await _reserve(service, size_bytes=100)
+    staging_key = storage.presign_calls[-1]["key"]
+    storage.head_by_key[staging_key] = {
+        "ContentLength": 100,
+        "ContentType": "image/webp",
+        "ETag": '"source-v1"',
+    }
+    assets = mongo.db["storefront_assets"]
+    original_update = assets.update_one
+    raised = False
+
+    async def commit_then_lose_response(query, update, *args, **kwargs):
+        nonlocal raised
+        result = await original_update(query, update, *args, **kwargs)
+        if not raised and update.get("$set", {}).get("state") == "ready":
+            raised = True
+            raise RuntimeError("Mongo response lost after commit")
+        return result
+
+    assets.update_one = commit_then_lose_response
+
+    finalized = await service.finalize(_owner(), reserved["asset_id"])
+
+    stored = mongo.raw.storefront_assets.find_one(
+        {"_id": ObjectId(reserved["asset_id"])}
+    )
+    assert finalized["key"] == stored["key"]
+    assert stored["state"] == "ready"
+    assert stored["key"] in storage.head_by_key
+    assert staging_key not in storage.head_by_key
 
 
 @pytest.mark.asyncio
@@ -451,10 +555,12 @@ async def test_invalid_finalize_deletes_object_and_reservation(setup_media, head
         await service.finalize(_owner(), reserved["asset_id"])
 
     assert invalid.value.status_code == 422
-    assert [call["key"] for call in storage.delete_calls] == [
-        storage.presign_calls[-1]["key"],
-        reserved["key"],
-    ]
+    deleted_keys = [call["key"] for call in storage.delete_calls]
+    assert deleted_keys[0] == storage.presign_calls[-1]["key"]
+    assert deleted_keys[1] != reserved["key"]
+    assert deleted_keys[1].startswith(
+        f"storefront/{OWNER_ID}/hero/{reserved['asset_id']}-"
+    )
     assert (
         mongo.raw.storefront_assets.find_one({"_id": ObjectId(reserved["asset_id"])})
         is None
@@ -623,7 +729,7 @@ async def test_failed_settings_cas_releases_claim_for_retry_or_cleanup(setup_med
 
 
 @pytest.mark.asyncio
-async def test_stale_attach_claim_recovers_after_crash_before_or_after_settings_write(
+async def test_stale_unreferenced_attach_claim_stays_fenced_until_worker_reconciles(
     setup_media,
 ):
     service, mongo, storage, _ = setup_media
@@ -647,18 +753,28 @@ async def test_stale_attach_claim_recovers_after_crash_before_or_after_settings_
         {"$set": {"attach_claimed_at": stale_at}},
     )
 
-    retry_claim = await service.claim_settings_assets(
-        _owner(), hero_asset_id=hero["asset_id"]
-    )
-    assert retry_claim["claim_id"] != first_claim["claim_id"]
+    with pytest.raises(HTTPException) as retry_blocked:
+        await service.claim_settings_assets(_owner(), hero_asset_id=hero["asset_id"])
+    assert retry_blocked.value.status_code == 409
     stored = mongo.raw.storefront_assets.find_one({"_id": ObjectId(hero["asset_id"])})
     assert stored["state"] == "attaching"
-    assert stored["attach_claim_id"] == retry_claim["claim_id"]
+    assert stored["attach_claim_id"] == first_claim["claim_id"]
+    with pytest.raises(HTTPException) as cleanup_blocked:
+        await service.cleanup(_owner(), hero["asset_id"])
+    assert cleanup_blocked.value.status_code == 409
 
-    # Simulate a crash after Mongo committed the settings reference but before
-    # the worker transitioned the receipt from attaching to attached.
+    # The paused original worker can still commit without cleanup winning.
     mongo.raw.storefront_settings.insert_one(
         {"planner_id": OWNER_ID, "hero_asset_id": hero["asset_id"]}
+    )
+    await service.attach_settings_asset_claims(_owner(), first_claim)
+    stored = mongo.raw.storefront_assets.find_one({"_id": ObjectId(hero["asset_id"])})
+    assert stored["state"] == "attached"
+
+    # A later crash after the settings reference exists is safely recoverable:
+    # canonical settings first restore attached, then a new claim fences edits.
+    second_claim = await service.claim_settings_assets(
+        _owner(), hero_asset_id=hero["asset_id"]
     )
     mongo.raw.storefront_assets.update_one(
         {"_id": ObjectId(hero["asset_id"])},
@@ -667,7 +783,9 @@ async def test_stale_attach_claim_recovers_after_crash_before_or_after_settings_
     reconciled = await service.claim_settings_assets(
         _owner(), hero_asset_id=hero["asset_id"]
     )
-    assert reconciled["claimed_assets"] == []
+    assert reconciled["claimed_assets"][0]["asset_id"] == hero["asset_id"]
+    assert reconciled["claim_id"] != second_claim["claim_id"]
+    await service.attach_settings_asset_claims(_owner(), reconciled)
     stored = mongo.raw.storefront_assets.find_one({"_id": ObjectId(hero["asset_id"])})
     assert stored["state"] == "attached"
 
@@ -685,7 +803,11 @@ async def test_stale_finalization_lease_discards_candidate_and_retries_safely(
         "ETag": '"about-source"',
     }
     storage.head_by_key[staging_key] = dict(upload)
-    storage.head_by_key[reserved["key"]] = {
+    reservation = mongo.raw.storefront_assets.find_one(
+        {"_id": ObjectId(reserved["asset_id"])}
+    )
+    stale_candidate = service._finalization_candidate_key(reservation, "crashed-worker")
+    storage.head_by_key[stale_candidate] = {
         **upload,
         "ETag": '"partial-final"',
     }
@@ -706,12 +828,148 @@ async def test_stale_finalization_lease_discards_candidate_and_retries_safely(
     finalized = await service.finalize(_owner(), reserved["asset_id"])
 
     assert finalized["state"] == "ready"
-    assert any(call["key"] == reserved["key"] for call in storage.delete_calls)
+    assert any(call["key"] == stale_candidate for call in storage.delete_calls)
     stored = mongo.raw.storefront_assets.find_one(
         {"_id": ObjectId(reserved["asset_id"])}
     )
     assert stored["state"] == "ready"
     assert "finalization_token" not in stored
+
+
+@pytest.mark.asyncio
+async def test_stale_finalization_recovery_lease_can_resume_after_second_crash(
+    setup_media,
+):
+    service, mongo, storage, _ = setup_media
+    reserved = await _reserve(service, slot="about", size_bytes=100)
+    staging_key = storage.presign_calls[-1]["key"]
+    upload = {
+        "ContentLength": 100,
+        "ContentType": "image/webp",
+        "ETag": '"about-source"',
+    }
+    storage.head_by_key[staging_key] = dict(upload)
+    reservation = mongo.raw.storefront_assets.find_one(
+        {"_id": ObjectId(reserved["asset_id"])}
+    )
+    abandoned_candidate = service._finalization_candidate_key(
+        reservation, "abandoned-worker"
+    )
+    storage.head_by_key[abandoned_candidate] = dict(upload)
+    stale_at = datetime.now(timezone.utc) - timedelta(
+        seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS + 1
+    )
+    mongo.raw.storefront_assets.update_one(
+        {"_id": ObjectId(reserved["asset_id"])},
+        {
+            "$set": {
+                "state": "finalization_recovery",
+                "recovery_token": "crashed-recovery",
+                "cleanup_candidate_key": abandoned_candidate,
+                "updated_at": stale_at,
+            }
+        },
+    )
+
+    finalized = await service.finalize(_owner(), reserved["asset_id"])
+
+    assert finalized["state"] == "ready"
+    assert abandoned_candidate not in storage.head_by_key
+    assert finalized["key"] in storage.head_by_key
+
+
+@pytest.mark.asyncio
+async def test_stale_finalizer_cannot_delete_newer_committed_candidate(setup_media):
+    service, mongo, storage, _ = setup_media
+    reserved = await _reserve(service, slot="about", size_bytes=100)
+    staging_key = storage.presign_calls[-1]["key"]
+    storage.head_by_key[staging_key] = {
+        "ContentLength": 100,
+        "ContentType": "image/webp",
+        "ETag": '"about-source"',
+    }
+    assets = mongo.db["storefront_assets"]
+    original_update = assets.update_one
+    first_commit_paused = asyncio.Event()
+    resume_first_commit = asyncio.Event()
+
+    async def pause_first_ready_commit(query, update, *args, **kwargs):
+        if (
+            asyncio.current_task().get_name() == "stale-finalizer"
+            and update.get("$set", {}).get("state") == "ready"
+        ):
+            first_commit_paused.set()
+            await resume_first_commit.wait()
+        return await original_update(query, update, *args, **kwargs)
+
+    assets.update_one = pause_first_ready_commit
+    stale_finalizer = asyncio.create_task(
+        service.finalize(_owner(), reserved["asset_id"]),
+        name="stale-finalizer",
+    )
+    await first_commit_paused.wait()
+    first_candidate = storage.copy_calls[-1]["destination_key"]
+    stale_at = datetime.now(timezone.utc) - timedelta(
+        seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS + 1
+    )
+    mongo.raw.storefront_assets.update_one(
+        {"_id": ObjectId(reserved["asset_id"])},
+        {"$set": {"finalization_started_at": stale_at}},
+    )
+
+    newer = await service.finalize(_owner(), reserved["asset_id"])
+    second_candidate = storage.copy_calls[-1]["destination_key"]
+    resume_first_commit.set()
+
+    with pytest.raises(HTTPException) as stale_lost:
+        await stale_finalizer
+    assert stale_lost.value.status_code == 409
+    assert first_candidate != second_candidate
+    assert newer["key"] == second_candidate
+    assert second_candidate in storage.head_by_key
+    stored = mongo.raw.storefront_assets.find_one(
+        {"_id": ObjectId(reserved["asset_id"])}
+    )
+    assert stored["state"] == "ready"
+    assert stored["key"] == second_candidate
+
+
+@pytest.mark.asyncio
+async def test_attached_asset_is_claimed_before_release_can_make_it_cleanable(
+    setup_media,
+):
+    service, mongo, storage, _ = setup_media
+    hero = await _reserve(service, slot="hero", size_bytes=100)
+    staging_key = storage.presign_calls[-1]["key"]
+    storage.head_by_key[staging_key] = {
+        "ContentLength": 100,
+        "ContentType": "image/webp",
+        "ETag": '"hero-source"',
+    }
+    await service.finalize(_owner(), hero["asset_id"])
+    mongo.raw.storefront_assets.update_one(
+        {"_id": ObjectId(hero["asset_id"])},
+        {"$set": {"state": "attached", "attached_at": datetime.now(timezone.utc)}},
+    )
+
+    claim = await service.claim_settings_assets(
+        _owner(), hero_asset_id=hero["asset_id"]
+    )
+    stored = mongo.raw.storefront_assets.find_one({"_id": ObjectId(hero["asset_id"])})
+    assert stored["state"] == "attaching"
+    assert claim["claimed_assets"][0]["asset_id"] == hero["asset_id"]
+
+    release_attempt = await service.release_if_unreferenced(_owner(), hero["asset_id"])
+    assert release_attempt["state"] == "attaching"
+
+    # A competing settings CAS won. Releasing this losing claim must consult
+    # canonical settings and restore attached, never make the reference cleanable.
+    mongo.raw.storefront_settings.insert_one(
+        {"planner_id": OWNER_ID, "hero_asset_id": hero["asset_id"]}
+    )
+    await service.release_settings_asset_claims(_owner(), claim)
+    stored = mongo.raw.storefront_assets.find_one({"_id": ObjectId(hero["asset_id"])})
+    assert stored["state"] == "attached"
 
 
 @pytest.mark.asyncio

@@ -153,6 +153,22 @@ class StorefrontMediaService:
         owner_id = await self._require_storefront(owner)
         normalized_slot = self._validate_slot(slot)
         self._validate_reservation_contract(content_type, size_bytes)
+        try:
+            staging_target = await asyncio.to_thread(
+                self._storage.require_target, StorageTarget.STOREFRONT_STAGING
+            )
+            public_target = await asyncio.to_thread(
+                self._storage.require_target, StorageTarget.BLOG_ASSETS
+            )
+            if staging_target.bucket_name == public_target.bucket_name:
+                raise RuntimeError(
+                    "Storefront staging and public assets require separate buckets"
+                )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Storefront image storage is temporarily unavailable",
+            ) from exc
         assets = self._mongo.db["storefront_assets"]
 
         existing = await assets.find_one(
@@ -180,16 +196,21 @@ class StorefrontMediaService:
             f"storefront/{owner_id}/_staging/{normalized_slot}/"
             f"{asset_id}-{staging_nonce}{extension}"
         )
-        key = f"storefront/{owner_id}/{normalized_slot}/{asset_id}{extension}"
-        cdn_url = self._storage.build_public_url(StorageTarget.BLOG_ASSETS, key)
+        final_key_prefix = f"storefront/{owner_id}/{normalized_slot}/{asset_id}"
+        # The reservation contract predates finalization fencing and requires
+        # string key/URL hints. They are never object keys persisted on the
+        # asset receipt; the actual token-scoped key is returned by finalize.
+        key_hint = f"{final_key_prefix}{extension}"
+        cdn_url_hint = self._storage.build_public_url(
+            StorageTarget.BLOG_ASSETS, key_hint
+        )
         now = datetime.now(timezone.utc)
         reservation = {
             "_id": asset_object_id,
             "owner_id": owner_id,
             "slot": normalized_slot,
             "staging_key": staging_key,
-            "key": key,
-            "cdn_url": cdn_url,
+            "final_key_prefix": final_key_prefix,
             "declared_content_type": content_type,
             "declared_size_bytes": size_bytes,
             "state": "reserved",
@@ -217,10 +238,11 @@ class StorefrontMediaService:
         try:
             upload_url = await asyncio.to_thread(
                 self._storage.generate_presigned_put_url,
-                StorageTarget.BLOG_ASSETS,
+                StorageTarget.STOREFRONT_STAGING,
                 key=staging_key,
                 expires_in=STOREFRONT_UPLOAD_URL_TTL_SECONDS,
                 content_type=content_type,
+                content_length=size_bytes,
             )
         except Exception as exc:
             logger.exception(
@@ -248,8 +270,8 @@ class StorefrontMediaService:
         return {
             "asset_id": asset_id,
             "upload_url": upload_url,
-            "cdn_url": cdn_url,
-            "key": key,
+            "cdn_url": cdn_url_hint,
+            "key": key_hint,
             "max_size_bytes": MAX_STOREFRONT_ASSET_SIZE_BYTES,
         }
 
@@ -294,6 +316,22 @@ class StorefrontMediaService:
         }
 
     @staticmethod
+    def _finalization_candidate_key(asset: dict, token: str) -> str:
+        prefix = asset.get("final_key_prefix")
+        if not isinstance(prefix, str) or not prefix:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Storefront upload must be reserved again before finalization",
+            )
+        extension = _CONTENT_TYPE_EXTENSIONS.get(asset.get("declared_content_type"))
+        if not extension:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Storefront upload has an invalid reservation contract",
+            )
+        return f"{prefix}-{token}{extension}"
+
+    @staticmethod
     def _head_contract_error(asset: dict, head: dict) -> str | None:
         actual_size = head.get("ContentLength")
         actual_type = head.get("ContentType")
@@ -320,23 +358,28 @@ class StorefrontMediaService:
 
     @staticmethod
     def _storage_keys(asset: dict) -> list[str]:
-        """Return every object key owned by an asset receipt, without duplicates."""
+        """Return public object keys owned by an asset receipt."""
 
         return list(
             dict.fromkeys(
                 key
-                for key in (asset.get("staging_key"), asset.get("key"))
+                for key in (
+                    asset.get("key"),
+                    asset.get("cleanup_candidate_key"),
+                )
                 if isinstance(key, str) and key
             )
         )
 
-    async def _delete_storage_keys(self, keys: list[str]) -> None:
+    async def _delete_storage_objects(
+        self, objects: list[tuple[StorageTarget, str]]
+    ) -> None:
         first_error: Exception | None = None
-        for key in dict.fromkeys(keys):
+        for target, key in dict.fromkeys(objects):
             try:
                 await asyncio.to_thread(
                     self._storage.delete_object,
-                    StorageTarget.BLOG_ASSETS,
+                    target,
                     key,
                 )
             except Exception as exc:
@@ -344,6 +387,24 @@ class StorefrontMediaService:
                 logger.exception("Failed to delete storefront object %s", key)
         if first_error:
             raise first_error
+
+    async def _delete_storage_keys(
+        self,
+        keys: list[str],
+        *,
+        target: StorageTarget = StorageTarget.BLOG_ASSETS,
+    ) -> None:
+        await self._delete_storage_objects([(target, key) for key in keys])
+
+    async def _delete_asset_objects(self, asset: dict) -> None:
+        objects: list[tuple[StorageTarget, str]] = []
+        staging_key = asset.get("staging_key")
+        if isinstance(staging_key, str) and staging_key:
+            objects.append((StorageTarget.STOREFRONT_STAGING, staging_key))
+        objects.extend(
+            (StorageTarget.BLOG_ASSETS, key) for key in self._storage_keys(asset)
+        )
+        await self._delete_storage_objects(objects)
 
     async def _record_cleanup_retry(
         self,
@@ -371,26 +432,77 @@ class StorefrontMediaService:
             },
         )
 
-    async def _discard_invalid_upload(self, asset: dict, reason: str) -> None:
+    async def _discard_invalid_upload(
+        self,
+        asset: dict,
+        reason: str,
+        *,
+        finalization_token: str,
+        candidate_key: str,
+    ) -> None:
         assets = self._mongo.db["storefront_assets"]
+        cleanup_token = uuid4().hex
+        fenced = await assets.update_one(
+            {
+                "_id": asset["_id"],
+                "owner_id": asset["owner_id"],
+                "state": "finalizing",
+                "finalization_token": finalization_token,
+            },
+            {
+                "$set": {
+                    "state": "deleting",
+                    "cleanup_token": cleanup_token,
+                    "cleanup_candidate_key": candidate_key,
+                    "cleanup_reason": "invalid_upload",
+                    "updated_at": datetime.now(timezone.utc),
+                },
+                "$unset": {
+                    "finalization_token": "",
+                    "finalization_started_at": "",
+                },
+            },
+        )
+        if not getattr(fenced, "modified_count", 0):
+            # This worker lost its lease. Its candidate is token-unique and safe
+            # to remove; staging and the canonical row now belong to a successor.
+            try:
+                await self._delete_storage_keys([candidate_key])
+            except Exception:
+                logger.exception(
+                    "Failed to remove abandoned storefront candidate %s",
+                    candidate_key,
+                )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Storefront finalization lease changed; reload and retry",
+            )
+
+        cleanup_asset = {
+            **asset,
+            "state": "deleting",
+            "cleanup_token": cleanup_token,
+            "cleanup_candidate_key": candidate_key,
+        }
         try:
-            await self._delete_storage_keys(self._storage_keys(asset))
+            await self._delete_asset_objects(cleanup_asset)
         except Exception as exc:
             logger.exception(
                 "Failed to delete invalid storefront upload %s", asset["_id"]
             )
             await self._record_cleanup_retry(
-                asset,
+                cleanup_asset,
                 reason="invalid_upload",
                 error=exc,
-                expected_states=["reserved", "finalizing"],
+                expected_states=["deleting"],
             )
         else:
             await assets.delete_one(
                 {
                     "_id": asset["_id"],
                     "owner_id": asset["owner_id"],
-                    "state": {"$in": ["reserved", "finalizing"]},
+                    "state": "deleting",
+                    "cleanup_token": cleanup_token,
                 }
             )
 
@@ -407,7 +519,10 @@ class StorefrontMediaService:
         if asset.get("state") in _FINALIZED_STATES:
             if asset.get("staging_cleanup_pending") and asset.get("staging_key"):
                 try:
-                    await self._delete_storage_keys([asset["staging_key"]])
+                    await self._delete_storage_keys(
+                        [asset["staging_key"]],
+                        target=StorageTarget.STOREFRONT_STAGING,
+                    )
                 except Exception as exc:
                     raise HTTPException(
                         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -428,16 +543,165 @@ class StorefrontMediaService:
                     },
                 )
             return self._serialize_asset(asset)
+        if asset.get(
+            "state"
+        ) == "finalization_recovery" and self._operation_lease_is_stale(
+            asset.get("updated_at")
+        ):
+            previous_recovery_token = asset.get("recovery_token")
+            cleanup_candidate_key = asset.get("cleanup_candidate_key")
+            if not isinstance(previous_recovery_token, str) or not isinstance(
+                cleanup_candidate_key, str
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Storefront finalization recovery is invalid; reserve again",
+                )
+            recovery_token = uuid4().hex
+            recovery_claim = await self._mongo.db["storefront_assets"].update_one(
+                {
+                    "_id": asset["_id"],
+                    "owner_id": owner_id,
+                    "state": "finalization_recovery",
+                    "recovery_token": previous_recovery_token,
+                    "updated_at": asset.get("updated_at"),
+                },
+                {
+                    "$set": {
+                        "recovery_token": recovery_token,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
+            if not getattr(recovery_claim, "modified_count", 0):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Storefront finalization recovery changed; reload and retry",
+                )
+            try:
+                await self._delete_storage_keys([cleanup_candidate_key])
+            except Exception as exc:
+                await self._mongo.db["storefront_assets"].update_one(
+                    {
+                        "_id": asset["_id"],
+                        "owner_id": owner_id,
+                        "state": "finalization_recovery",
+                        "recovery_token": recovery_token,
+                    },
+                    {
+                        "$set": {
+                            "state": "cleanup_retry",
+                            "cleanup_reason": "stale_finalization_recovery",
+                            "last_cleanup_error": exc.__class__.__name__,
+                            "last_cleanup_attempt_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(timezone.utc),
+                        },
+                        "$inc": {"cleanup_attempts": 1},
+                        "$unset": {"recovery_token": ""},
+                    },
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Storefront finalization recovery cleanup is pending",
+                ) from exc
+            recovered = await self._mongo.db["storefront_assets"].update_one(
+                {
+                    "_id": asset["_id"],
+                    "owner_id": owner_id,
+                    "state": "finalization_recovery",
+                    "recovery_token": recovery_token,
+                },
+                {
+                    "$set": {
+                        "state": "reserved",
+                        "updated_at": datetime.now(timezone.utc),
+                    },
+                    "$unset": {
+                        "recovery_token": "",
+                        "cleanup_candidate_key": "",
+                    },
+                },
+            )
+            if not getattr(recovered, "modified_count", 0):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Storefront finalization recovery changed; reload and retry",
+                )
+            asset = {
+                key: value
+                for key, value in asset.items()
+                if key not in {"recovery_token", "cleanup_candidate_key"}
+            }
+            asset.update(
+                {"state": "reserved", "updated_at": datetime.now(timezone.utc)}
+            )
         if asset.get("state") == "finalizing" and self._operation_lease_is_stale(
             asset.get("finalization_started_at") or asset.get("updated_at")
         ):
-            # A worker may have died after creating the candidate final key but
-            # before committing the ready receipt. The final key was never
-            # exposed by a finalized row, so discard it and retry from the
-            # still-private staging object.
+            stale_token = asset.get("finalization_token")
+            if not isinstance(stale_token, str) or not stale_token:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Storefront finalization lease is invalid; reserve again",
+                )
+            stale_candidate_key = self._finalization_candidate_key(asset, stale_token)
+            recovery_token = uuid4().hex
+            lease_field = (
+                "finalization_started_at"
+                if isinstance(asset.get("finalization_started_at"), datetime)
+                else "updated_at"
+            )
+            # Fence the stale worker before touching storage. A successor never
+            # deletes from a stale snapshot while the old token can still own
+            # the receipt.
+            recovery_claim = await self._mongo.db["storefront_assets"].update_one(
+                {
+                    "_id": asset["_id"],
+                    "owner_id": owner_id,
+                    "state": "finalizing",
+                    "finalization_token": stale_token,
+                    lease_field: asset.get(lease_field),
+                },
+                {
+                    "$set": {
+                        "state": "finalization_recovery",
+                        "recovery_token": recovery_token,
+                        "cleanup_candidate_key": stale_candidate_key,
+                        "updated_at": datetime.now(timezone.utc),
+                    },
+                    "$unset": {
+                        "finalization_token": "",
+                        "finalization_started_at": "",
+                    },
+                },
+            )
+            if not getattr(recovery_claim, "modified_count", 0):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Storefront finalization lease changed; reload and retry",
+                )
             try:
-                await self._delete_storage_keys([asset["key"]])
+                await self._delete_storage_keys([stale_candidate_key])
             except Exception as exc:
+                await self._mongo.db["storefront_assets"].update_one(
+                    {
+                        "_id": asset["_id"],
+                        "owner_id": owner_id,
+                        "state": "finalization_recovery",
+                        "recovery_token": recovery_token,
+                    },
+                    {
+                        "$set": {
+                            "state": "cleanup_retry",
+                            "cleanup_reason": "stale_finalization",
+                            "last_cleanup_error": exc.__class__.__name__,
+                            "last_cleanup_attempt_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(timezone.utc),
+                        },
+                        "$inc": {"cleanup_attempts": 1},
+                        "$unset": {"recovery_token": ""},
+                    },
+                )
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail="Stale storefront finalization cleanup is pending",
@@ -446,8 +710,8 @@ class StorefrontMediaService:
                 {
                     "_id": asset["_id"],
                     "owner_id": owner_id,
-                    "state": "finalizing",
-                    "finalization_token": asset.get("finalization_token"),
+                    "state": "finalization_recovery",
+                    "recovery_token": recovery_token,
                 },
                 {
                     "$set": {
@@ -455,8 +719,8 @@ class StorefrontMediaService:
                         "updated_at": datetime.now(timezone.utc),
                     },
                     "$unset": {
-                        "finalization_token": "",
-                        "finalization_started_at": "",
+                        "recovery_token": "",
+                        "cleanup_candidate_key": "",
                     },
                 },
             )
@@ -476,7 +740,7 @@ class StorefrontMediaService:
                 detail="Storefront asset is not awaiting finalization",
             )
 
-        if not asset.get("staging_key") or asset.get("staging_key") == asset.get("key"):
+        if not asset.get("staging_key") or not asset.get("final_key_prefix"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Storefront upload must be reserved again before finalization",
@@ -509,6 +773,10 @@ class StorefrontMediaService:
             "state": "finalizing",
             "finalization_token": finalization_token,
         }
+        candidate_key = self._finalization_candidate_key(asset, finalization_token)
+        candidate_cdn_url = self._storage.build_public_url(
+            StorageTarget.BLOG_ASSETS, candidate_key
+        )
 
         async def reset_for_retry() -> None:
             await self._mongo.db["storefront_assets"].update_one(
@@ -530,10 +798,78 @@ class StorefrontMediaService:
                 },
             )
 
+        async def renew_finalization_lease() -> None:
+            heartbeat_at = datetime.now(timezone.utc)
+            heartbeat = await self._mongo.db["storefront_assets"].update_one(
+                {
+                    "_id": asset["_id"],
+                    "owner_id": owner_id,
+                    "state": "finalizing",
+                    "finalization_token": finalization_token,
+                },
+                {
+                    "$set": {
+                        "finalization_started_at": heartbeat_at,
+                        "updated_at": heartbeat_at,
+                    }
+                },
+            )
+            if getattr(heartbeat, "matched_count", 0) or getattr(
+                heartbeat, "modified_count", 0
+            ):
+                return
+            try:
+                await self._delete_storage_keys([candidate_key])
+            except Exception:
+                logger.exception(
+                    "Lost finalizer could not remove its candidate %s",
+                    candidate_key,
+                )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Storefront finalization lease changed; reload and retry",
+            )
+
+        async def discard_candidate_for_retry(reason: str) -> None:
+            try:
+                await self._delete_storage_keys([candidate_key])
+            except Exception as cleanup_exc:
+                receipt = await self._mongo.db["storefront_assets"].update_one(
+                    {
+                        "_id": asset["_id"],
+                        "owner_id": owner_id,
+                        "state": "finalizing",
+                        "finalization_token": finalization_token,
+                    },
+                    {
+                        "$set": {
+                            "state": "cleanup_retry",
+                            "cleanup_candidate_key": candidate_key,
+                            "cleanup_reason": reason,
+                            "last_cleanup_error": cleanup_exc.__class__.__name__,
+                            "last_cleanup_attempt_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(timezone.utc),
+                        },
+                        "$inc": {"cleanup_attempts": 1},
+                        "$unset": {
+                            "finalization_token": "",
+                            "finalization_started_at": "",
+                        },
+                    },
+                )
+                if not getattr(receipt, "modified_count", 0):
+                    logger.exception(
+                        "Lost finalizer could not remove its candidate %s",
+                        candidate_key,
+                        exc_info=cleanup_exc,
+                    )
+            else:
+                await reset_for_retry()
+
         try:
             head = await asyncio.to_thread(
                 self._storage.head_object,
-                StorageTarget.BLOG_ASSETS,
+                StorageTarget.STOREFRONT_STAGING,
                 asset["staging_key"],
             )
         except Exception as exc:
@@ -546,55 +882,45 @@ class StorefrontMediaService:
 
         contract_error = self._head_contract_error(asset, head)
         if contract_error:
-            await self._discard_invalid_upload(asset, contract_error)
+            await self._discard_invalid_upload(
+                asset,
+                contract_error,
+                finalization_token=finalization_token,
+                candidate_key=candidate_key,
+            )
+
+        await renew_finalization_lease()
 
         try:
             await asyncio.to_thread(
                 self._storage.copy_object,
                 StorageTarget.BLOG_ASSETS,
                 source_key=asset["staging_key"],
-                destination_key=asset["key"],
+                destination_key=candidate_key,
+                source_target=StorageTarget.STOREFRONT_STAGING,
                 source_etag=head["ETag"],
             )
         except Exception as exc:
             logger.exception("Failed to finalize storefront upload %s", asset["_id"])
-            try:
-                await self._delete_storage_keys([asset["key"]])
-            except Exception as cleanup_exc:
-                await self._record_cleanup_retry(
-                    asset,
-                    reason="finalization_copy_failed",
-                    error=cleanup_exc,
-                    expected_states=["finalizing"],
-                )
-            else:
-                await reset_for_retry()
+            await discard_candidate_for_retry("finalization_copy_failed")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Storefront image finalization is temporarily unavailable",
             ) from exc
 
+        await renew_finalization_lease()
+
         try:
             final_head = await asyncio.to_thread(
                 self._storage.head_object,
                 StorageTarget.BLOG_ASSETS,
-                asset["key"],
+                candidate_key,
             )
         except Exception as exc:
             logger.exception(
                 "Failed to verify finalized storefront upload %s", asset["_id"]
             )
-            try:
-                await self._delete_storage_keys([asset["key"]])
-            except Exception as cleanup_exc:
-                await self._record_cleanup_retry(
-                    asset,
-                    reason="finalization_verification_failed",
-                    error=cleanup_exc,
-                    expected_states=["finalizing"],
-                )
-            else:
-                await reset_for_retry()
+            await discard_candidate_for_retry("finalization_verification_failed")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Storefront image finalization is temporarily unavailable",
@@ -602,11 +928,20 @@ class StorefrontMediaService:
 
         final_contract_error = self._head_contract_error(asset, final_head)
         if final_contract_error:
-            await self._discard_invalid_upload(asset, final_contract_error)
+            await self._discard_invalid_upload(
+                asset,
+                final_contract_error,
+                finalization_token=finalization_token,
+                candidate_key=candidate_key,
+            )
+
+        await renew_finalization_lease()
 
         now = datetime.now(timezone.utc)
         update = {
             "state": "ready",
+            "key": candidate_key,
+            "cdn_url": candidate_cdn_url,
             "actual_size_bytes": final_head["ContentLength"],
             "actual_content_type": final_head["ContentType"],
             "etag": final_head.get("ETag"),
@@ -614,49 +949,77 @@ class StorefrontMediaService:
             "finalized_at": now,
             "updated_at": now,
         }
-        result = await self._mongo.db["storefront_assets"].update_one(
-            {
-                "_id": asset["_id"],
-                "owner_id": owner_id,
-                "state": "finalizing",
-                "finalization_token": finalization_token,
-            },
-            {
-                "$set": update,
-                "$unset": {
-                    "finalization_token": "",
-                    "finalization_started_at": "",
-                    "cleanup_reason": "",
-                    "last_cleanup_error": "",
-                    "last_cleanup_attempt_at": "",
+        result = None
+        try:
+            result = await self._mongo.db["storefront_assets"].update_one(
+                {
+                    "_id": asset["_id"],
+                    "owner_id": owner_id,
+                    "state": "finalizing",
+                    "finalization_token": finalization_token,
                 },
-            },
-        )
-        if not getattr(result, "modified_count", 0):
+                {
+                    "$set": update,
+                    "$unset": {
+                        "finalization_token": "",
+                        "finalization_started_at": "",
+                        "cleanup_reason": "",
+                        "last_cleanup_error": "",
+                        "last_cleanup_attempt_at": "",
+                    },
+                },
+            )
+        except Exception as exc:
+            # A transport error can arrive after Mongo committed. Never delete
+            # the candidate until the canonical receipt proves it was not the
+            # published winner.
             try:
-                await self._delete_storage_keys([asset["key"]])
-            except Exception as exc:
-                await self._record_cleanup_retry(
-                    asset,
-                    reason="finalization_commit_failed",
-                    error=exc,
-                    expected_states=["finalizing"],
+                canonical = await self._mongo.db["storefront_assets"].find_one(
+                    {"_id": asset["_id"], "owner_id": owner_id}
                 )
+            except Exception:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Storefront image finalization status is temporarily unavailable",
+                ) from exc
+            if (
+                canonical
+                and canonical.get("state") in _FINALIZED_STATES
+                and canonical.get("key") == candidate_key
+            ):
+                finalized_asset = canonical
             else:
-                await reset_for_retry()
+                await discard_candidate_for_retry("finalization_commit_failed")
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Storefront image finalization is temporarily unavailable",
+                ) from exc
+        else:
+            finalized_asset = {**asset, **update}
+        if result is not None and not getattr(result, "modified_count", 0):
+            try:
+                await self._delete_storage_keys([candidate_key])
+            except Exception:
+                logger.exception(
+                    "Lost finalizer could not remove its candidate %s",
+                    candidate_key,
+                )
+            await reset_for_retry()
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Storefront asset changed concurrently; reload and retry",
             )
-        finalized_asset = {**asset, **update}
         try:
-            await self._delete_storage_keys([asset["staging_key"]])
+            await self._delete_storage_keys(
+                [asset["staging_key"]],
+                target=StorageTarget.STOREFRONT_STAGING,
+            )
         except Exception as exc:
             await self._mongo.db["storefront_assets"].update_one(
                 {
                     "_id": asset["_id"],
                     "owner_id": owner_id,
-                    "state": "ready",
+                    "state": {"$in": list(_FINALIZED_STATES)},
                 },
                 {
                     "$set": {
@@ -670,7 +1033,11 @@ class StorefrontMediaService:
                 detail="Storefront image staging cleanup is pending; retry later",
             ) from exc
         await self._mongo.db["storefront_assets"].update_one(
-            {"_id": asset["_id"], "owner_id": owner_id, "state": "ready"},
+            {
+                "_id": asset["_id"],
+                "owner_id": owner_id,
+                "state": {"$in": list(_FINALIZED_STATES)},
+            },
             {
                 "$set": {
                     "staging_deleted_at": datetime.now(timezone.utc),
@@ -752,7 +1119,7 @@ class StorefrontMediaService:
             )
 
         try:
-            await self._delete_storage_keys(self._storage_keys(asset))
+            await self._delete_asset_objects(asset)
         except Exception as exc:
             logger.exception("Failed to delete storefront asset %s", asset["_id"])
             await self._record_cleanup_retry(
@@ -792,7 +1159,15 @@ class StorefrontMediaService:
                 },
                 {"_id": 1},
             )
-            recovered_state = "attached" if referenced else "ready"
+            if not referenced:
+                # A paused worker may still commit its settings CAS. Returning
+                # this receipt to ready would let cleanup win before that write.
+                # Keep the old token fenced until its worker or an operator can
+                # reconcile it against a durable reference.
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Storefront asset attachment is still being reconciled",
+                )
             recovered = await self._mongo.db["storefront_assets"].update_one(
                 {
                     "_id": asset["_id"],
@@ -802,25 +1177,20 @@ class StorefrontMediaService:
                 },
                 {
                     "$set": {
-                        "state": recovered_state,
+                        "state": "attached",
                         "updated_at": datetime.now(timezone.utc),
-                        **(
-                            {"attached_at": datetime.now(timezone.utc)}
-                            if referenced
-                            else {}
-                        ),
+                        "attached_at": datetime.now(timezone.utc),
                     },
                     "$unset": {
                         "attach_claim_id": "",
                         "attach_claimed_at": "",
-                        **({} if referenced else {"attached_at": ""}),
                     },
                 },
             )
             if not getattr(recovered, "modified_count", 0):
                 asset = await self._find_owned_asset(owner_id, asset_id)
             else:
-                asset = {**asset, "state": recovered_state}
+                asset = {**asset, "state": "attached"}
         if asset.get("state") not in _FINALIZED_STATES:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -894,7 +1264,7 @@ class StorefrontMediaService:
         hero_asset_id: str | None | _UnsetAssetId = _UNSET_ASSET_ID,
         about_asset_id: str | None | _UnsetAssetId = _UNSET_ASSET_ID,
     ) -> dict:
-        """Atomically protect explicit ready assets before a settings CAS.
+        """Atomically protect explicit finalized assets before a settings CAS.
 
         Cleanup cannot claim an ``attaching`` asset. The returned opaque receipt
         must be attached after the settings write, or released/reconciled on
@@ -929,8 +1299,6 @@ class StorefrontMediaService:
                 )
                 normalized_asset_id = str(asset["_id"])
                 values[field_name] = normalized_asset_id
-                if asset.get("state") == "attached":
-                    continue
 
                 now = datetime.now(timezone.utc)
                 result = await assets.update_one(
@@ -938,7 +1306,7 @@ class StorefrontMediaService:
                         "_id": asset["_id"],
                         "owner_id": owner_id,
                         "slot": slot,
-                        "state": "ready",
+                        "state": {"$in": ["ready", "attached"]},
                     },
                     {
                         "$set": {
@@ -984,15 +1352,36 @@ class StorefrontMediaService:
         }
 
     async def release_settings_asset_claims(self, owner: Any, claim: dict) -> None:
-        """Release an uncommitted settings claim back to a cleanable ready state."""
+        """Reconcile a losing claim against the canonical settings reference."""
 
         owner_id = self._owner_id(owner)
         if claim.get("owner_id") != owner_id:
             raise RuntimeError("Storefront asset claim owner mismatch")
         claim_id, entries = self._claim_entries(claim)
         assets = self._mongo.db["storefront_assets"]
+        settings = self._mongo.db["storefront_settings"]
         for entry in entries:
             now = datetime.now(timezone.utc)
+            referenced = await settings.find_one(
+                {
+                    "planner_id": owner_id,
+                    entry["field_name"]: entry["asset_id"],
+                },
+                {"_id": 1},
+            )
+            target_state = "attached" if referenced else "ready"
+            set_fields: dict[str, Any] = {
+                "state": target_state,
+                "updated_at": now,
+            }
+            unset_fields = {
+                "attach_claim_id": "",
+                "attach_claimed_at": "",
+            }
+            if referenced:
+                set_fields["attached_at"] = now
+            else:
+                unset_fields["attached_at"] = ""
             result = await assets.update_one(
                 {
                     "_id": self._asset_query_id(entry["asset_id"]),
@@ -1002,11 +1391,8 @@ class StorefrontMediaService:
                     "attach_claim_id": claim_id,
                 },
                 {
-                    "$set": {"state": "ready", "updated_at": now},
-                    "$unset": {
-                        "attach_claim_id": "",
-                        "attach_claimed_at": "",
-                    },
+                    "$set": set_fields,
+                    "$unset": unset_fields,
                 },
             )
             if getattr(result, "modified_count", 0):
