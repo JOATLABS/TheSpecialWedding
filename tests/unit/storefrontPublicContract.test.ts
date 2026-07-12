@@ -36,7 +36,7 @@ const responseBody = {
 };
 
 describe('public storefront data contract', () => {
-  it('fetches the published route with bounded revalidation', async () => {
+  it('fetches the published route without caching revocable access state', async () => {
     const calls: Array<{ url: string; init?: RequestInit & { next?: { revalidate?: number } } }> = [];
     const fetchImpl: typeof fetch = async (input, init) => {
       calls.push({
@@ -53,8 +53,8 @@ describe('public storefront data contract', () => {
 
     assert.equal(result?.packages[0]?.total_amount, 5000);
     assert.equal(calls[0]?.url, 'http://backend:8000/api/storefront/jane%20events');
-    assert.equal(calls[0]?.init?.next?.revalidate, 60);
-    assert.equal(calls[0]?.init?.cache, undefined);
+    assert.equal(calls[0]?.init?.cache, 'no-store');
+    assert.equal(calls[0]?.init?.next, undefined);
     assert.equal(calls[0]?.init?.headers, undefined);
   });
 

@@ -9,10 +9,6 @@ interface StorefrontFetchOptions {
   fetchImpl?: typeof fetch;
 }
 
-interface NextFetchOptions extends RequestInit {
-  next?: { revalidate: number };
-}
-
 export async function getStorefrontData(
   identifier: string,
   {
@@ -32,12 +28,12 @@ export async function getStorefrontData(
   const url = preview
     ? `${normalizedBaseUrl}/admin/storefront/preview/${encodedIdentifier}`
     : `${normalizedBaseUrl}/api/storefront/${encodedIdentifier}`;
-  const init: NextFetchOptions = preview
+  const init: RequestInit = preview
     ? {
         cache: 'no-store',
         headers: { Authorization: `Bearer ${adminToken?.trim()}` },
       }
-    : { next: { revalidate: 60 } };
+    : { cache: 'no-store' };
 
   try {
     const response = await fetchImpl(url, init);
