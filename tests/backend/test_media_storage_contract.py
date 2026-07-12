@@ -17,6 +17,7 @@ class FakeS3Client:
     def __init__(self, endpoint_url: str | None, *, list_error_code: str | None = None):
         self.meta = SimpleNamespace(endpoint_url=endpoint_url)
         self.uploads: list[dict] = []
+        self.copies: list[dict] = []
         self.list_error_code = list_error_code
 
     def generate_presigned_url(self, ClientMethod, Params, ExpiresIn):
@@ -58,6 +59,7 @@ class FakeS3Client:
         return {"Body": SimpleNamespace(read=lambda: b"payload")}
 
     def copy_object(self, **kwargs):
+        self.copies.append(kwargs)
         return None
 
 
@@ -168,6 +170,31 @@ def test_gallery_ad_and_blog_services_use_target_buckets_and_public_urls(monkeyp
         "put_object:blog-bucket:knowledge-base/"
     )
     assert blog_upload["cdn_url"].startswith("https://blog.example.com/knowledge-base/")
+
+
+def test_media_storage_copy_can_condition_on_the_validated_source_etag(monkeypatch):
+    fake_client = _install_fake_s3(monkeypatch)
+    _set_storage_settings(monkeypatch)
+
+    storage = MediaStorage()
+    storage.copy_object(
+        StorageTarget.BLOG_ASSETS,
+        source_key="storefront/owner/_staging/upload.webp",
+        destination_key="storefront/owner/hero/asset.webp",
+        source_etag='"validated-etag"',
+    )
+
+    assert fake_client.copies == [
+        {
+            "Bucket": "blog-bucket",
+            "CopySource": {
+                "Bucket": "blog-bucket",
+                "Key": "storefront/owner/_staging/upload.webp",
+            },
+            "CopySourceIfMatch": '"validated-etag"',
+            "Key": "storefront/owner/hero/asset.webp",
+        }
+    ]
 
 
 def test_guest_media_storage_and_upload_image_use_centralized_targets(

@@ -14,6 +14,7 @@ import logging
 import re
 from typing import Any, Iterable
 from urllib.parse import urlparse
+from uuid import uuid4
 
 from fastapi import HTTPException, status
 from pymongo.errors import DuplicateKeyError
@@ -34,6 +35,19 @@ logger = logging.getLogger(__name__)
 
 _HOST_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _DEFAULT_PLATFORM_DOMAINS = frozenset({"thespecialwedding.io", "thespecialwedding.com"})
+_PROVIDER_DELETE_PENDING = "provider_delete_pending"
+_PROVIDER_DELETE_RETRY_PENDING = "retry_pending"
+_LOCAL_CLEANUP_PENDING = "local_cleanup_pending"
+_DELETION_STATUSES = frozenset(
+    {
+        _PROVIDER_DELETE_PENDING,
+        _PROVIDER_DELETE_RETRY_PENDING,
+        _LOCAL_CLEANUP_PENDING,
+    }
+)
+_NON_ROUTABLE_DOMAIN_STATUSES = frozenset(
+    {"deleting", "delete_failed", "provider_deleted"}
+)
 
 
 def _ascii_hostname(value: str) -> str:
@@ -268,6 +282,22 @@ class StorefrontDomainService:
         }
 
     @staticmethod
+    def _has_deletion_intent(record: dict) -> bool:
+        deletion_status = record.get("deletion_status")
+        return (
+            isinstance(deletion_status, str)
+            and deletion_status.strip().lower() in _DELETION_STATUSES
+        ) or StorefrontDomainService._status(record.get("status")) in (
+            _NON_ROUTABLE_DOMAIN_STATUSES
+        )
+
+    @staticmethod
+    def _provider_not_found(exc: CloudflareServiceError) -> bool:
+        """Return true only for an authoritative provider-level HTTP 404."""
+
+        return exc.kind == "provider" and exc.provider_status_code == 404
+
+    @staticmethod
     def _provider_http_error(exc: CloudflareServiceError) -> HTTPException:
         status_code = (
             status.HTTP_503_SERVICE_UNAVAILABLE
@@ -488,6 +518,11 @@ class StorefrontDomainService:
         record = await collection.find_one({"planner_id": owner_id})
         if not record:
             return None
+        # Disconnect intent is monotonic. A status poll must never ask the
+        # provider for an activation projection and thereby resurrect a
+        # hostname whose owner already requested removal.
+        if self._has_deletion_intent(record):
+            return self._serialize(record)
         provider_id = record.get("provider_hostname_id")
         if not isinstance(provider_id, str) or not provider_id:
             raise HTTPException(
@@ -570,27 +605,175 @@ class StorefrontDomainService:
         if not record:
             return None
 
+        if (
+            record.get("deletion_status") == _LOCAL_CLEANUP_PENDING
+            or self._status(record.get("status")) == "provider_deleted"
+        ):
+            await self._finish_local_cleanup(collection, record, owner_id)
+            return None
+
+        # Claim deletion intent locally before making an irreversible provider
+        # call. The compare-and-set prevents two requests that read the same
+        # state from both acting on the provider mapping.
+        deletion_attempt_id = uuid4().hex
+        claim_filter = {
+            "_id": record["_id"],
+            "planner_id": owner_id,
+            "provider_hostname_id": record.get("provider_hostname_id"),
+            "status": record.get("status"),
+            "deletion_status": record.get("deletion_status"),
+            "deletion_attempt_id": record.get("deletion_attempt_id"),
+        }
+        try:
+            claimed = await collection.update_one(
+                claim_filter,
+                {
+                    "$set": {
+                        "status": "deleting",
+                        "deletion_status": _PROVIDER_DELETE_PENDING,
+                        "deletion_attempt_id": deletion_attempt_id,
+                        "last_error": None,
+                        "updated_at": datetime.now(timezone.utc),
+                    },
+                    "$inc": {"delete_attempts": 1},
+                },
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Custom-domain deletion could not be reserved",
+            ) from exc
+        if not getattr(claimed, "matched_count", 0):
+            current = await collection.find_one(
+                {"_id": record["_id"], "planner_id": owner_id}
+            )
+            if not current:
+                return None
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Custom-domain mapping changed during deletion",
+            )
+
         provider_id = record.get("provider_hostname_id")
         if isinstance(provider_id, str) and provider_id:
             try:
                 await self._cloudflare.delete_custom_hostname(provider_id)
             except CloudflareServiceError as exc:
-                await collection.update_one(
-                    {"_id": record["_id"], "planner_id": owner_id},
-                    {
-                        "$set": {
-                            "status": "delete_failed",
-                            "deletion_status": "retry_pending",
-                            "last_error": exc.message,
-                            "updated_at": datetime.now(timezone.utc),
-                        },
-                        "$inc": {"delete_attempts": 1},
-                    },
-                )
-                raise self._provider_http_error(exc) from exc
+                if not self._provider_not_found(exc):
+                    try:
+                        await collection.update_one(
+                            {
+                                "_id": record["_id"],
+                                "planner_id": owner_id,
+                                "deletion_status": _PROVIDER_DELETE_PENDING,
+                                "deletion_attempt_id": deletion_attempt_id,
+                            },
+                            {
+                                "$set": {
+                                    "status": "delete_failed",
+                                    "deletion_status": (_PROVIDER_DELETE_RETRY_PENDING),
+                                    "last_error": exc.message,
+                                    "updated_at": datetime.now(timezone.utc),
+                                },
+                                "$unset": {"deletion_attempt_id": ""},
+                            },
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Failed to persist custom-domain delete retry for owner %s",
+                            owner_id,
+                        )
+                    raise self._provider_http_error(exc) from exc
 
-        await collection.delete_one({"_id": record["_id"], "planner_id": owner_id})
+        # Provider success is durable before local cleanup. If Mongo cleanup
+        # fails, retries can skip the already-completed external deletion.
+        provider_deleted_at = datetime.now(timezone.utc)
+        try:
+            persisted = await collection.update_one(
+                {
+                    "_id": record["_id"],
+                    "planner_id": owner_id,
+                    "deletion_status": _PROVIDER_DELETE_PENDING,
+                    "deletion_attempt_id": deletion_attempt_id,
+                },
+                {
+                    "$set": {
+                        "status": "provider_deleted",
+                        "provider_status": "deleted",
+                        "ssl_status": "inactive",
+                        "deletion_status": _LOCAL_CLEANUP_PENDING,
+                        "provider_deleted_at": provider_deleted_at,
+                        "last_error": None,
+                        "updated_at": provider_deleted_at,
+                    },
+                    "$unset": {"deletion_attempt_id": ""},
+                },
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Custom-domain provider deletion succeeded but local state "
+                    "could not be advanced"
+                ),
+            ) from exc
+        if not getattr(persisted, "matched_count", 0):
+            current = await collection.find_one(
+                {"_id": record["_id"], "planner_id": owner_id}
+            )
+            if not current:
+                return None
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Custom-domain mapping changed after provider deletion",
+            )
+
+        await self._finish_local_cleanup(
+            collection,
+            {
+                **record,
+                "status": "provider_deleted",
+                "deletion_status": _LOCAL_CLEANUP_PENDING,
+            },
+            owner_id,
+        )
         return None
+
+    async def _finish_local_cleanup(
+        self,
+        collection: Any,
+        record: dict,
+        owner_id: str,
+    ) -> None:
+        cleanup_filter = {
+            "_id": record["_id"],
+            "planner_id": owner_id,
+            "status": "provider_deleted",
+            "deletion_status": _LOCAL_CLEANUP_PENDING,
+        }
+        try:
+            deleted = await collection.delete_one(cleanup_filter)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Custom-domain provider mapping was deleted; local cleanup "
+                    "is pending"
+                ),
+            ) from exc
+        if getattr(deleted, "deleted_count", 0):
+            return
+        remaining = await collection.find_one(
+            {"_id": record["_id"], "planner_id": owner_id}
+        )
+        if not remaining:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Custom-domain provider mapping was deleted; local cleanup is pending"
+            ),
+        )
 
     async def resolve_active_hostname(self, raw_hostname: str) -> dict | None:
         try:
@@ -606,6 +789,7 @@ class StorefrontDomainService:
                 "status": "active",
                 "provider_status": "active",
                 "ssl_status": "active",
+                "deletion_status": None,
             }
         )
         if not record:

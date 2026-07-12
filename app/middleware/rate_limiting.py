@@ -11,6 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 from app.core.cache import CacheKeys, cache
+from app.utils.rate_limiter import get_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -47,18 +48,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.lock = asyncio.Lock()
 
     def _get_client_ip(self, request: Request) -> str:
-        """Extract client IP from request"""
-        # Check for forwarded headers first (for reverse proxy setups)
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
+        """Use the shared explicit proxy trust boundary."""
 
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip
-
-        # Fallback to direct client IP
-        return request.client.host if request.client else "unknown"
+        return get_client_ip(request)
 
     def _normalize_path(self, path: str) -> str:
         normalized = path.rstrip("/")

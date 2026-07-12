@@ -6,7 +6,7 @@ import json
 import ipaddress
 from enum import Enum
 from functools import lru_cache
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 from urllib.parse import urlparse
 
 from pydantic import Field, field_validator
@@ -235,6 +235,17 @@ class Settings(BaseSettings):
     allowed_hosts: Annotated[List[str], NoDecode] = Field(
         default=[], alias="ALLOWED_HOSTS"
     )
+    trusted_proxy_cidrs: Annotated[List[str], NoDecode] = Field(
+        default=[], alias="TRUSTED_PROXY_CIDRS"
+    )
+    trusted_proxy_client_ip_header: Optional[
+        Literal[
+            "CF-Connecting-IP",
+            "True-Client-IP",
+            "X-Real-IP",
+            "X-Forwarded-For",
+        ]
+    ] = Field(default=None, alias="TRUSTED_PROXY_CLIENT_IP_HEADER")
     # Database
     mongo_uri: str = Field(default="mongodb://localhost:27017", alias="MONGO_URI")
     mongo_db: str = Field(default="wedding", alias="MONGO_DB")
@@ -456,6 +467,7 @@ class Settings(BaseSettings):
         "cors_headers",
         "allowed_hosts",
         "storefront_platform_domains",
+        "trusted_proxy_cidrs",
         mode="before",
     )
     @classmethod
@@ -468,6 +480,22 @@ class Settings(BaseSettings):
     def parse_allowed_hosts(cls, v):
         """Parse explicit host allowlist from JSON or comma-separated values."""
         return _parse_env_list(v)
+
+    @field_validator("trusted_proxy_cidrs")
+    @classmethod
+    def validate_trusted_proxy_cidrs(cls, values: List[str]) -> List[str]:
+        """Canonicalize explicit proxy networks and reject ambiguous entries."""
+
+        normalized: list[str] = []
+        for value in values:
+            try:
+                network = ipaddress.ip_network(value, strict=False)
+            except ValueError as exc:
+                raise ValueError(f"Invalid trusted proxy CIDR: {value}") from exc
+            canonical = str(network)
+            if canonical not in normalized:
+                normalized.append(canonical)
+        return normalized
 
     @field_validator("environment", mode="before")
     @classmethod

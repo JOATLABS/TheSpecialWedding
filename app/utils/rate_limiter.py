@@ -13,6 +13,7 @@ from typing import Deque, Dict, Tuple
 from fastapi import HTTPException, Request
 
 from app.core.cache import CacheKeys, cache
+from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -140,37 +141,36 @@ public_slug_limiter = create_rate_limiter("public_slug", requests_per_minute=100
 def get_client_ip(request: Request) -> str:
     """Resolve a client IP without trusting attacker-supplied proxy headers.
 
-    Forwarding headers are accepted only when the direct peer is a private or
-    loopback address, which is the expected shape for our ingress/reverse-proxy
-    deployments. A public peer cannot choose a fresh rate-limit identity by
-    sending a forged ``X-Forwarded-For`` value.
+    Forwarding headers are accepted only from an explicitly configured proxy
+    network and only through the one header that ingress guarantees it
+    overwrites. Private address space alone is never a trust signal.
     """
 
     direct_ip = request.client.host if request.client else "unknown"
+    configured_header = settings.trusted_proxy_client_ip_header
+    if not configured_header or not settings.trusted_proxy_cidrs:
+        return direct_ip
+
     try:
         direct_address = ipaddress.ip_address(direct_ip)
-        trusted_proxy = direct_address.is_private or direct_address.is_loopback
+        trusted_networks = [
+            ipaddress.ip_network(cidr, strict=False)
+            for cidr in settings.trusted_proxy_cidrs
+        ]
     except ValueError:
-        trusted_proxy = False
+        return direct_ip
+    if not any(direct_address in network for network in trusted_networks):
+        return direct_ip
 
-    if trusted_proxy:
-        for header in (
-            "CF-Connecting-IP",
-            "True-Client-IP",
-            "X-Real-IP",
-            "X-Forwarded-For",
-        ):
-            value = request.headers.get(header)
-            if not value:
-                continue
-            candidate = value.split(",")[0].strip()
-            try:
-                ipaddress.ip_address(candidate)
-            except ValueError:
-                continue
-            return candidate
-
-    return direct_ip
+    value = request.headers.get(configured_header)
+    if not value or "," in value:
+        return direct_ip
+    candidate = value.strip()
+    try:
+        ipaddress.ip_address(candidate)
+    except ValueError:
+        return direct_ip
+    return candidate
 
 
 async def check_rate_limit(

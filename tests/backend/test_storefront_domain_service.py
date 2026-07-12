@@ -524,6 +524,149 @@ async def test_delete_failure_preserves_mapping_with_retry_state(domain_setup):
 
 
 @pytest.mark.asyncio
+async def test_delete_failure_refresh_preserves_intent_and_retry_can_finish(
+    domain_setup,
+):
+    service, mongo, _, cloudflare = domain_setup
+    await service.connect(_owner(), "events.example")
+    cloudflare.status_result["status"] = "active"
+    cloudflare.status_result["ssl"]["status"] = "active"
+    await service.refresh(_owner())
+    cloudflare.delete_error = CloudflareServiceError(
+        operation="delete_custom_hostname",
+        kind="transport",
+        message="Cloudflare request failed",
+    )
+
+    with pytest.raises(HTTPException) as failure:
+        await service.disconnect(_owner())
+
+    assert failure.value.status_code == 502
+    reads_before_refresh = list(cloudflare.read)
+    refreshed = await service.refresh(_owner())
+    assert refreshed["status"] == "delete_failed"
+    assert refreshed["deletion_status"] == "retry_pending"
+    assert cloudflare.read == reads_before_refresh
+    assert await service.resolve_active_hostname("events.example") is None
+
+    cloudflare.delete_error = None
+    await service.disconnect(_owner())
+
+    assert cloudflare.deleted == ["cf-hostname-1", "cf-hostname-1"]
+    assert mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID}) is None
+
+
+@pytest.mark.asyncio
+async def test_disconnect_claim_failure_never_calls_provider(domain_setup, monkeypatch):
+    service, mongo, _, cloudflare = domain_setup
+    await service.connect(_owner(), "events.example")
+    collection = mongo.db["storefront_domains"]
+    original_update = collection.update_one
+
+    async def miss_deletion_claim(query, update, *args, **kwargs):
+        if update.get("$set", {}).get("deletion_status") == "provider_delete_pending":
+            return SimpleNamespace(matched_count=0)
+        return await original_update(query, update, *args, **kwargs)
+
+    monkeypatch.setattr(collection, "update_one", miss_deletion_claim)
+
+    with pytest.raises(HTTPException) as failure:
+        await service.disconnect(_owner())
+
+    assert failure.value.status_code == 409
+    assert cloudflare.deleted == []
+    assert mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID}) is not None
+
+
+@pytest.mark.asyncio
+async def test_provider_delete_success_local_exception_is_durable_and_retryable(
+    domain_setup, monkeypatch
+):
+    service, mongo, _, cloudflare = domain_setup
+    await service.connect(_owner(), "events.example")
+    collection = mongo.db["storefront_domains"]
+    original_delete = collection.delete_one
+
+    async def fail_local_cleanup(query, *args, **kwargs):
+        if query.get("deletion_status") == "local_cleanup_pending":
+            raise RuntimeError("local cleanup unavailable")
+        return await original_delete(query, *args, **kwargs)
+
+    monkeypatch.setattr(collection, "delete_one", fail_local_cleanup)
+
+    with pytest.raises(HTTPException) as failure:
+        await service.disconnect(_owner())
+
+    assert failure.value.status_code == 503
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["status"] == "provider_deleted"
+    assert stored["deletion_status"] == "local_cleanup_pending"
+    assert await service.resolve_active_hostname("events.example") is None
+
+    monkeypatch.setattr(collection, "delete_one", original_delete)
+    await service.disconnect(_owner())
+
+    assert cloudflare.deleted == ["cf-hostname-1"]
+    assert mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID}) is None
+
+
+@pytest.mark.asyncio
+async def test_provider_delete_success_local_miss_is_durable_and_retryable(
+    domain_setup, monkeypatch
+):
+    service, mongo, _, cloudflare = domain_setup
+    await service.connect(_owner(), "events.example")
+    collection = mongo.db["storefront_domains"]
+    original_delete = collection.delete_one
+
+    async def miss_local_cleanup(query, *args, **kwargs):
+        if query.get("deletion_status") == "local_cleanup_pending":
+            return SimpleNamespace(deleted_count=0)
+        return await original_delete(query, *args, **kwargs)
+
+    monkeypatch.setattr(collection, "delete_one", miss_local_cleanup)
+
+    with pytest.raises(HTTPException) as failure:
+        await service.disconnect(_owner())
+
+    assert failure.value.status_code == 503
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["status"] == "provider_deleted"
+    assert stored["deletion_status"] == "local_cleanup_pending"
+
+    monkeypatch.setattr(collection, "delete_one", original_delete)
+    await service.disconnect(_owner())
+
+    assert cloudflare.deleted == ["cf-hostname-1"]
+    assert mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID}) is None
+
+
+@pytest.mark.asyncio
+async def test_provider_not_found_is_idempotent_on_delete_retry(domain_setup):
+    service, mongo, _, cloudflare = domain_setup
+    await service.connect(_owner(), "events.example")
+    cloudflare.delete_error = CloudflareServiceError(
+        operation="delete_custom_hostname",
+        kind="transport",
+        message="Cloudflare request failed",
+    )
+    with pytest.raises(HTTPException):
+        await service.disconnect(_owner())
+
+    cloudflare.delete_error = CloudflareServiceError(
+        operation="delete_custom_hostname",
+        kind="provider",
+        message="Cloudflare could not find the hostname",
+        provider_status_code=404,
+        errors=({"code": 1000, "message": "not found"},),
+    )
+    await service.disconnect(_owner())
+
+    assert cloudflare.deleted == ["cf-hostname-1", "cf-hostname-1"]
+    assert mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID}) is None
+
+
+@pytest.mark.asyncio
 async def test_successful_delete_removes_only_owner_mapping(domain_setup):
     service, mongo, _, cloudflare = domain_setup
     await service.connect(_owner(), "events.example")

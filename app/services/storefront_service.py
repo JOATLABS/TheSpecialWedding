@@ -162,12 +162,6 @@ class StorefrontService:
             for field in ("hero_asset_id", "about_asset_id")
             if field in requested_changes
         }
-        if explicit_asset_changes:
-            validated_assets = await self._media.validate_settings_assets(
-                owner, **explicit_asset_changes
-            )
-            requested_changes.update(validated_assets)
-            explicit_asset_changes = validated_assets
         requested_slug = requested_changes.pop("slug", None)
         slug_was_explicit = requested_slug is not None
         normalized_requested_slug: str | None = None
@@ -236,10 +230,23 @@ class StorefrontService:
                     detail="This storefront slug is already in use",
                 )
 
+            asset_claim: dict | None = None
+            attempt_changes = dict(requested_changes)
+            if explicit_asset_changes:
+                asset_claim = await self._media.claim_settings_assets(
+                    owner, **explicit_asset_changes
+                )
+                validated_assets = asset_claim.get("values")
+                if not isinstance(validated_assets, dict):
+                    raise RuntimeError(
+                        "Storefront media service returned an invalid claim receipt"
+                    )
+                attempt_changes.update(validated_assets)
+
             update: dict[str, Any] = {
                 "planner_id": owner_id,
                 "updated_at": now,
-                **requested_changes,
+                **attempt_changes,
             }
             if slug_was_explicit or not current or not current.get("slug"):
                 update["slug"] = slug
@@ -251,26 +258,24 @@ class StorefrontService:
                     {
                         "slug": slug,
                         "created_at": now,
-                        "title": requested_changes.get("title"),
-                        "description": requested_changes.get("description"),
-                        "contact_email": requested_changes.get("contact_email"),
-                        "contact_phone": requested_changes.get("contact_phone"),
-                        "hero_asset_id": requested_changes.get("hero_asset_id"),
-                        "about_asset_id": requested_changes.get("about_asset_id"),
-                        "theme_color": requested_changes.get("theme_color")
+                        "title": attempt_changes.get("title"),
+                        "description": attempt_changes.get("description"),
+                        "contact_email": attempt_changes.get("contact_email"),
+                        "contact_phone": attempt_changes.get("contact_phone"),
+                        "hero_asset_id": attempt_changes.get("hero_asset_id"),
+                        "about_asset_id": attempt_changes.get("about_asset_id"),
+                        "theme_color": attempt_changes.get("theme_color")
                         or DEFAULT_THEME_COLOR,
-                        "packages_enabled": requested_changes.get(
+                        "packages_enabled": attempt_changes.get(
                             "packages_enabled", True
                         ),
-                        "reviews_enabled": requested_changes.get(
-                            "reviews_enabled", True
-                        ),
-                        "is_published": requested_changes.get("is_published", False),
+                        "reviews_enabled": attempt_changes.get("reviews_enabled", True),
+                        "is_published": attempt_changes.get("is_published", False),
                         "published_at": None,
                     }
                 )
 
-            requested_publication = requested_changes.get("is_published")
+            requested_publication = attempt_changes.get("is_published")
             if requested_publication is True and not (
                 current and current.get("published_at")
             ):
@@ -307,46 +312,63 @@ class StorefrontService:
                     result = await collection.insert_one({**update, "revision": 1})
                     write_succeeded = bool(getattr(result, "inserted_id", None))
             except DuplicateKeyError as exc:
+                if asset_claim:
+                    await self._media.release_settings_asset_claims(owner, asset_claim)
                 if attempt < 2:
                     continue
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="This storefront slug is already in use",
                 ) from exc
+            except Exception:
+                if asset_claim:
+                    # A driver/network exception may be raised after Mongo has
+                    # applied the write. Reconcile against the canonical row;
+                    # blindly releasing here could re-open the cleanup race.
+                    await self._media.reconcile_settings_asset_claims(
+                        owner, asset_claim
+                    )
+                raise
 
             if not write_succeeded:
+                if asset_claim:
+                    await self._media.release_settings_asset_claims(owner, asset_claim)
                 continue
 
-            saved = await collection.find_one({"planner_id": owner_id})
+            try:
+                saved = await collection.find_one({"planner_id": owner_id})
+            except Exception:
+                if asset_claim:
+                    await self._media.reconcile_settings_asset_claims(
+                        owner, asset_claim
+                    )
+                raise
             if not saved:
+                if asset_claim:
+                    await self._media.reconcile_settings_asset_claims(
+                        owner, asset_claim
+                    )
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail="Storefront settings could not be read after saving",
                 )
             replaced_asset_ids = [
                 current.get(field_name)
-                for field_name in explicit_asset_changes
+                for field_name in attempt_changes
+                if field_name in explicit_asset_changes
                 if current
                 and current.get(field_name)
                 and current.get(field_name) != saved.get(field_name)
             ]
-            for field_name, asset_id in explicit_asset_changes.items():
-                if not asset_id:
-                    continue
+            if asset_claim:
                 try:
-                    await self._media.attach(
-                        owner,
-                        asset_id,
-                        "hero" if field_name == "hero_asset_id" else "about",
-                    )
+                    await self._media.attach_settings_asset_claims(owner, asset_claim)
                 except Exception:
-                    # The settings reference is already owner-validated and the
-                    # public projector accepts both ready and attached assets.
-                    # Attachment is lifecycle bookkeeping; never tell the user
-                    # their settings failed after they were durably saved.
-                    logger.exception(
-                        "Failed to mark saved storefront asset %s attached",
-                        asset_id,
+                    # Keep the object protected in ``attaching`` and make one
+                    # reference-aware repair attempt. Never report success while
+                    # leaving a deletable object behind a durable settings ID.
+                    await self._media.reconcile_settings_asset_claims(
+                        owner, asset_claim
                     )
             for replaced_asset_id in replaced_asset_ids:
                 try:
@@ -486,7 +508,9 @@ class StorefrontService:
             {
                 "_id": normalize_query_id(asset_id),
                 "owner_id": owner_id,
-                "state": {"$in": ["ready", "attached"]},
+                # ``attaching`` is a validated final object protected from
+                # cleanup while post-write lifecycle bookkeeping reconciles.
+                "state": {"$in": ["ready", "attaching", "attached"]},
             },
             {"cdn_url": 1},
         )
