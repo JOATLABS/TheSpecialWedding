@@ -2616,6 +2616,27 @@ async def create_storefront_indexes():
             partialFilterExpression={"state": "reserved"},
             background=True,
         )
+        # The leader-elected sweep scans every owner. These are query indexes,
+        # never TTL indexes: storage deletion must precede receipt deletion.
+        await assets.create_index(
+            [
+                ("state", ASCENDING),
+                ("cleanup_due_at", ASCENDING),
+                ("owner_id", ASCENDING),
+            ],
+            name="idx_storefront_assets_state_cleanup_due_owner",
+            background=True,
+        )
+        await assets.create_index(
+            [
+                ("state", ASCENDING),
+                ("reaping_started_at", ASCENDING),
+                ("owner_id", ASCENDING),
+            ],
+            name="idx_storefront_assets_state_reaping_lease_owner",
+            background=True,
+        )
+        # Owner-triggered recovery uses the inverse prefix for targeted scans.
         await assets.create_index(
             [
                 ("owner_id", ASCENDING),

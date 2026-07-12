@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
+from pathlib import Path
 import threading
 from types import SimpleNamespace
 
@@ -1537,7 +1538,106 @@ async def test_recovery_never_deletes_due_ready_asset_with_exact_owner_reference
     retained = mongo.raw.storefront_assets.find_one({"_id": row["_id"]})
     assert retained is not None
     assert retained["state"] == "ready"
+    retained_due_at = retained["cleanup_due_at"]
+    if retained_due_at.tzinfo is None:
+        retained_due_at = retained_due_at.replace(tzinfo=timezone.utc)
+    assert retained_due_at > datetime.now(timezone.utc)
     assert len(storage.delete_calls) == delete_count
+
+
+@pytest.mark.asyncio
+async def test_global_sweep_is_bounded_and_reclaims_owners_that_never_return(
+    setup_media,
+):
+    service, mongo, storage, _ = setup_media
+    hero = await _finalize_ready_asset(service, storage, slot="hero")
+    about = await _finalize_ready_asset(service, storage, slot="about")
+    due_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    mongo.raw.storefront_assets.update_many(
+        {"_id": {"$in": [ObjectId(hero["asset_id"]), ObjectId(about["asset_id"])]}},
+        {"$set": {"cleanup_due_at": due_at}},
+    )
+
+    first_tick = await service.sweep_abandoned_assets(limit=1)
+
+    assert first_tick == 1
+    assert mongo.raw.storefront_assets.count_documents({}) == 1
+
+    second_tick = await service.sweep_abandoned_assets(limit=1)
+
+    assert second_tick == 1
+    assert mongo.raw.storefront_assets.count_documents({}) == 0
+
+
+@pytest.mark.asyncio
+async def test_referenced_due_receipt_cannot_starve_later_orphan_in_bounded_sweep(
+    setup_media,
+):
+    service, mongo, storage, _ = setup_media
+    referenced = await _finalize_ready_asset(service, storage, slot="hero")
+    orphan = await _finalize_ready_asset(service, storage, slot="about")
+    due_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    mongo.raw.storefront_assets.update_many({}, {"$set": {"cleanup_due_at": due_at}})
+    mongo.raw.storefront_settings.insert_one(
+        {"planner_id": OWNER_ID, "hero_asset_id": referenced["asset_id"]}
+    )
+
+    assert await service.sweep_abandoned_assets(limit=1) == 0
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+
+    assert (
+        mongo.raw.storefront_assets.find_one({"_id": ObjectId(referenced["asset_id"])})
+        is not None
+    )
+    assert (
+        mongo.raw.storefront_assets.find_one({"_id": ObjectId(orphan["asset_id"])})
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_stale_reaping_takeover_fails_closed_when_asset_became_referenced(
+    setup_media,
+):
+    service, mongo, storage, _ = setup_media
+    hero = await _finalize_ready_asset(service, storage, slot="hero")
+    row = mongo.raw.storefront_assets.find_one({"_id": ObjectId(hero["asset_id"])})
+    stale_at = datetime.now(timezone.utc) - timedelta(
+        seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS + 1
+    )
+    mongo.raw.storefront_assets.update_one(
+        {"_id": row["_id"]},
+        {
+            "$set": {
+                "state": "reaping",
+                "reap_token": "crashed-reaper",
+                "reaping_started_at": stale_at,
+                "reap_source_state": "ready",
+                "cleanup_reason": "abandoned_ready_asset",
+                "updated_at": stale_at,
+            }
+        },
+    )
+    mongo.raw.storefront_settings.insert_one(
+        {"planner_id": OWNER_ID, "hero_asset_id": hero["asset_id"]}
+    )
+    delete_count = len(storage.delete_calls)
+
+    assert await service.sweep_abandoned_assets(limit=1) == 0
+
+    retained = mongo.raw.storefront_assets.find_one({"_id": row["_id"]})
+    assert retained["state"] == "ready"
+    assert "reap_token" not in retained
+    assert len(storage.delete_calls) == delete_count
+
+
+def test_global_storefront_sweep_is_wired_to_the_leader_elected_scheduler():
+    source = (Path(__file__).parents[2] / "app" / "main.py").read_text()
+
+    assert "async def _storefront_media_maintenance_scheduler" in source
+    assert "storefront_media_service.sweep_abandoned_assets()" in source
+    assert "storefront_media_task = asyncio.create_task(" in source
+    assert "storefront_media_task," in source
 
 
 @pytest.mark.asyncio

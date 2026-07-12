@@ -102,7 +102,10 @@ from app.api.vendor_import import router as vendor_import_router
 from app.api.vendor_management import router as vendor_management_router
 from app.api.vendor_public import router as vendor_public_router
 from app.api.vendor_signup import router as vendor_signup_router
-from app.api.storefront import router as storefront_router, public_router as storefront_public_router
+from app.api.storefront import (
+    router as storefront_router,
+    public_router as storefront_public_router,
+)
 from app.api.web_push import router as web_push_router
 from app.api.wedding import router as wedding_router
 from app.core.cache import cache, close_cache, init_cache
@@ -461,6 +464,28 @@ async def _guest_media_maintenance_scheduler():
             await asyncio.sleep(30)
 
 
+async def _storefront_media_maintenance_scheduler():
+    """Bound cleanup of abandoned storefront assets on the leader replica."""
+
+    from app.services.storefront_media_service import storefront_media_service
+
+    while True:
+        try:
+            processed = await storefront_media_service.sweep_abandoned_assets()
+            if processed:
+                logger.info(
+                    "Storefront media scheduler cleaned %s abandoned asset(s)",
+                    processed,
+                )
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            logger.info("Storefront media scheduler shutting down")
+            raise
+        except Exception as e:
+            logger.error(f"Storefront media scheduler error: {e}", exc_info=True)
+            await asyncio.sleep(60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management"""
@@ -470,6 +495,7 @@ async def lifespan(app: FastAPI):
     rollup_task: asyncio.Task | None = None
     billing_task: asyncio.Task | None = None
     guest_media_task: asyncio.Task | None = None
+    storefront_media_task: asyncio.Task | None = None
     form_reminder_task: asyncio.Task | None = None
     scheduler_heartbeat_task: asyncio.Task | None = None
     scheduler_holder_id: str | None = None
@@ -572,11 +598,20 @@ async def lifespan(app: FastAPI):
             rollup_task = asyncio.create_task(_nightly_rollup_scheduler())
             billing_task = asyncio.create_task(_monthly_billing_scheduler())
             guest_media_task = asyncio.create_task(_guest_media_maintenance_scheduler())
+            storefront_media_task = asyncio.create_task(
+                _storefront_media_maintenance_scheduler()
+            )
             form_reminder_task = asyncio.create_task(_form_reminder_scheduler())
             scheduler_heartbeat_task = asyncio.create_task(
                 _scheduler_leadership_heartbeat(
                     scheduler_holder_id,
-                    [rollup_task, billing_task, guest_media_task, form_reminder_task],
+                    [
+                        rollup_task,
+                        billing_task,
+                        guest_media_task,
+                        storefront_media_task,
+                        form_reminder_task,
+                    ],
                 )
             )
             logger.info(
@@ -595,6 +630,7 @@ async def lifespan(app: FastAPI):
             rollup_task,
             billing_task,
             guest_media_task,
+            storefront_media_task,
             form_reminder_task,
         ]:
             if task and not task.done():
@@ -604,6 +640,7 @@ async def lifespan(app: FastAPI):
             rollup_task,
             billing_task,
             guest_media_task,
+            storefront_media_task,
             form_reminder_task,
         ]:
             if not task:
