@@ -9,6 +9,8 @@ import pytest
 from pydantic import ValidationError
 from starlette.requests import Request
 
+import app.utils.rate_limiter as rate_limiter_module
+from app.core.settings import Settings
 from app.models.storefront import StorefrontInquiryRequest
 from app.services.storefront_inquiry_service import StorefrontInquiryService
 from app.utils.rate_limiter import get_client_ip
@@ -194,18 +196,70 @@ def _request(peer: str, headers: list[tuple[bytes, bytes]]) -> Request:
     )
 
 
-def test_client_ip_ignores_spoofed_forwarding_headers_from_public_peer():
+def test_client_ip_ignores_forwarding_headers_without_explicit_proxy_trust(
+    monkeypatch,
+):
+    monkeypatch.setattr(rate_limiter_module.settings, "trusted_proxy_cidrs", [])
+    monkeypatch.setattr(
+        rate_limiter_module.settings, "trusted_proxy_client_ip_header", None
+    )
     direct = _request(
         "8.8.8.8",
         [(b"x-forwarded-for", b"1.1.1.1"), (b"cf-connecting-ip", b"9.9.9.9")],
     )
-    proxied = _request(
+    unconfigured_private_peer = _request(
         "10.0.0.10",
         [(b"cf-connecting-ip", b"1.1.1.1"), (b"x-forwarded-for", b"9.9.9.9")],
     )
 
     assert get_client_ip(direct) == "8.8.8.8"
-    assert get_client_ip(proxied) == "1.1.1.1"
+    assert get_client_ip(unconfigured_private_peer) == "10.0.0.10"
+
+
+def test_client_ip_trusts_only_configured_cidr_and_single_rewritten_header(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        rate_limiter_module.settings, "trusted_proxy_cidrs", ["10.20.0.0/16"]
+    )
+    monkeypatch.setattr(
+        rate_limiter_module.settings,
+        "trusted_proxy_client_ip_header",
+        "CF-Connecting-IP",
+    )
+    trusted = _request(
+        "10.20.1.9",
+        [(b"cf-connecting-ip", b"1.1.1.1"), (b"x-forwarded-for", b"9.9.9.9")],
+    )
+    unlisted_private = _request(
+        "10.21.1.9",
+        [(b"cf-connecting-ip", b"1.1.1.1")],
+    )
+    conflicting = _request(
+        "10.20.1.9",
+        [(b"cf-connecting-ip", b"1.1.1.1, 9.9.9.9")],
+    )
+
+    assert get_client_ip(trusted) == "1.1.1.1"
+    assert get_client_ip(unlisted_private) == "10.21.1.9"
+    assert get_client_ip(conflicting) == "10.20.1.9"
+
+
+def test_proxy_trust_configuration_is_typed_and_rejects_invalid_networks():
+    configured = Settings(
+        SECRET_KEY="s" * 32,
+        CORS_ORIGINS=["http://localhost:3000"],
+        TRUSTED_PROXY_CIDRS=["10.20.1.9/16"],
+        TRUSTED_PROXY_CLIENT_IP_HEADER="CF-Connecting-IP",
+    )
+    assert configured.trusted_proxy_cidrs == ["10.20.0.0/16"]
+
+    with pytest.raises(ValidationError):
+        Settings(
+            SECRET_KEY="s" * 32,
+            CORS_ORIGINS=["http://localhost:3000"],
+            TRUSTED_PROXY_CIDRS=["private-network"],
+        )
 
 
 @pytest.mark.asyncio

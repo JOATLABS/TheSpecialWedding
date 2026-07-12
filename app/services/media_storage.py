@@ -324,13 +324,20 @@ class MediaStorage:
         source_key: str,
         destination_key: str,
         source_target: Optional[StorageTarget | str] = None,
+        *,
+        source_etag: Optional[str] = None,
     ) -> None:
         destination = self.require_target(target)
         source = self.require_target(source_target or target)
+        request: dict[str, Any] = {
+            "Bucket": destination.bucket_name,
+            "CopySource": {"Bucket": source.bucket_name, "Key": source_key},
+            "Key": destination_key,
+        }
+        if source_etag:
+            request["CopySourceIfMatch"] = source_etag
         self.client.copy_object(
-            Bucket=destination.bucket_name,
-            CopySource={"Bucket": source.bucket_name, "Key": source_key},
-            Key=destination_key,
+            **request,
         )
 
     def get_object_bytes(self, target: StorageTarget | str, key: str) -> bytes:

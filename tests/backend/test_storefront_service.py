@@ -123,12 +123,50 @@ class FakeMedia:
         self.validations: list[dict] = []
         self.attachments: list[tuple[str, str]] = []
         self.releases: list[str] = []
+        self.claim_releases: list[str] = []
+        self.claim_reconciliations: list[str] = []
+        self._claim_number = 0
 
     async def validate_settings_assets(self, _owner, **asset_fields):
         self.validations.append(dict(asset_fields))
         if "foreign-asset" in asset_fields.values():
             raise HTTPException(status_code=404, detail="Storefront asset not found")
         return dict(asset_fields)
+
+    async def claim_settings_assets(self, _owner, **asset_fields):
+        values = await self.validate_settings_assets(_owner, **asset_fields)
+        self._claim_number += 1
+        claim_id = f"claim-{self._claim_number}"
+        claimed_assets = [
+            {
+                "asset_id": asset_id,
+                "slot": "hero" if field_name == "hero_asset_id" else "about",
+                "field_name": field_name,
+            }
+            for field_name, asset_id in values.items()
+            if asset_id
+        ]
+        return {
+            "owner_id": OWNER_ID,
+            "claim_id": claim_id,
+            "values": values,
+            "claimed_assets": claimed_assets,
+        }
+
+    async def release_settings_asset_claims(self, _owner, claim):
+        self.claim_releases.append(claim["claim_id"])
+
+    async def attach_settings_asset_claims(self, _owner, claim):
+        for entry in claim["claimed_assets"]:
+            saved = self.mongo.raw.storefront_settings.find_one(
+                {entry["field_name"]: entry["asset_id"]}
+            )
+            assert saved is not None, "asset claim must attach after settings persist"
+            self.attachments.append((entry["asset_id"], entry["slot"]))
+
+    async def reconcile_settings_asset_claims(self, owner, claim):
+        self.claim_reconciliations.append(claim["claim_id"])
+        await self.attach_settings_asset_claims(owner, claim)
 
     async def attach(self, _owner, asset_id: str, slot: str):
         saved = self.mongo.raw.storefront_settings.find_one(
@@ -766,6 +804,78 @@ async def test_unrelated_stale_edit_does_not_overwrite_concurrent_slug_choice(
     assert result["description"] == "Keep this edit"
     stored = fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
     assert stored["slug"] == "chosen-address"
+
+
+@pytest.mark.asyncio
+async def test_asset_claim_is_released_before_a_settings_cas_retry(
+    setup_storefront,
+):
+    service, fake_mongo, _ = setup_storefront
+    owner = _owner()
+    await service.update_settings(
+        owner, StorefrontSettingsUpdate(slug="claim-retry", title="Draft")
+    )
+    collection = fake_mongo.db["storefront_settings"]
+    paused, resume = _pause_first_write_for_task(collection, "stale-asset-save")
+
+    stale_asset_save = asyncio.create_task(
+        service.update_settings(
+            owner, StorefrontSettingsUpdate(hero_asset_id="hero-ready-claim")
+        ),
+        name="stale-asset-save",
+    )
+    await paused.wait()
+    await service.update_settings(
+        owner, StorefrontSettingsUpdate(description="Concurrent edit")
+    )
+    resume.set()
+    saved = await stale_asset_save
+
+    assert saved["hero_asset_id"] == "hero-ready-claim"
+    assert service._media.claim_releases == ["claim-1"]
+    assert service._media.attachments == [("hero-ready-claim", "hero")]
+    assert service._media.validations == [
+        {"hero_asset_id": "hero-ready-claim"},
+        {"hero_asset_id": "hero-ready-claim"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_settings_write_reconciles_claim_against_durable_reference(
+    setup_storefront,
+):
+    service, fake_mongo, _ = setup_storefront
+    owner = _owner()
+    await service.update_settings(
+        owner, StorefrontSettingsUpdate(slug="claim-reconcile", title="Draft")
+    )
+    collection = fake_mongo.db["storefront_settings"]
+    original_update = collection.update_one
+    raised = False
+
+    async def applied_then_transport_failed(*args, **kwargs):
+        nonlocal raised
+        result = await original_update(*args, **kwargs)
+        if not raised and asyncio.current_task().get_name() == "ambiguous-asset-save":
+            raised = True
+            raise RuntimeError("response lost after durable Mongo write")
+        return result
+
+    collection.update_one = applied_then_transport_failed
+    ambiguous_save = asyncio.create_task(
+        service.update_settings(
+            owner, StorefrontSettingsUpdate(hero_asset_id="hero-ambiguous")
+        ),
+        name="ambiguous-asset-save",
+    )
+
+    with pytest.raises(RuntimeError, match="response lost"):
+        await ambiguous_save
+
+    stored = fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert stored["hero_asset_id"] == "hero-ambiguous"
+    assert service._media.claim_reconciliations == ["claim-1"]
+    assert service._media.attachments == [("hero-ambiguous", "hero")]
 
 
 @pytest.mark.asyncio
