@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 from dataclasses import dataclass
+import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import mongomock
@@ -187,6 +189,19 @@ def test_hostname_normalization_is_idna_lowercase_and_hostname_only():
         )
         == "xn--bcher-kva.example"
     )
+
+
+def test_hostname_normalization_matches_shared_uts46_routing_fixtures():
+    fixture_path = (
+        Path(__file__).parents[1] / "fixtures" / "storefront_idna_hostnames.json"
+    )
+    fixtures = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    for fixture in fixtures:
+        assert (
+            normalize_custom_hostname(fixture["input"], platform_domains=())
+            == fixture["ascii"]
+        ), fixture["input"]
 
 
 def test_custom_hostname_configuration_is_explicit_and_centrally_typed():

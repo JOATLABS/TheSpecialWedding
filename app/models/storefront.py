@@ -224,6 +224,11 @@ class StorefrontInquiryRequest(BaseModel):
     phone: str | None = Field(default=None, max_length=40)
     wedding_date: date | None = None
     message: str = Field(min_length=1, max_length=4000)
+    idempotency_key: str = Field(
+        min_length=16,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
 
 
 class StorefrontInquiryResponse(BaseModel):

@@ -116,7 +116,10 @@ class ResendEmailService:
                 params["attachments"] = attachments
 
             # Send email
-            email_response = resend.Emails.send(cast(Any, params))
+            email_response = await asyncio.to_thread(
+                resend.Emails.send,
+                cast(Any, params),
+            )
 
             # Generate thread_id for linking inbound replies
             thread_id = f"wedding-{wedding_slug}" if wedding_slug else None
