@@ -16,6 +16,9 @@ type SubmissionState =
   | 'error';
 type InquiryPayloadWithoutKey = Omit<StorefrontInquiryPayload, 'idempotency_key'>;
 
+const UNSENT_EDITS_FEEDBACK =
+  'Your previous inquiry was sent. Your latest edits were not sent.';
+
 interface InquiryAttempt {
   idempotencyKey: string;
   requestFingerprint: string;
@@ -104,13 +107,25 @@ export default function StorefrontInquiryForm({
   const [state, setState] = useState<SubmissionState>('idle');
   const [feedback, setFeedback] = useState<string | null>(null);
   const inquiryAttemptRef = useRef<InquiryAttempt | null>(null);
+  const lastSuccessFeedbackRef = useRef<string | null>(null);
 
-  const handleFormChange = () => {
-    if (state !== 'error') {
+  const handleFormChange = (event: FormEvent<HTMLFormElement>) => {
+    if (state === 'success' || state === 'success_with_edits') {
+      const sentFingerprint = inquiryAttemptRef.current?.requestFingerprint;
+      const currentFingerprint = JSON.stringify(readFormPayload(event.currentTarget));
+      const hasUnsentEdits = currentFingerprint !== sentFingerprint;
+      setState(hasUnsentEdits ? 'success_with_edits' : 'success');
+      setFeedback(
+        hasUnsentEdits
+          ? UNSENT_EDITS_FEEDBACK
+          : lastSuccessFeedbackRef.current,
+      );
       return;
     }
-    setState('idle');
-    setFeedback(null);
+    if (state === 'error') {
+      setState('idle');
+      setFeedback(null);
+    }
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -177,12 +192,13 @@ export default function StorefrontInquiryForm({
       if (!result.success || typeof result.message !== 'string') {
         throw new Error('Your inquiry could not be confirmed. Please try again.');
       }
+      lastSuccessFeedbackRef.current = result.message;
       const valuesChangedDuringSubmit =
         JSON.stringify(readFormPayload(form)) !== requestFingerprint;
       setState(valuesChangedDuringSubmit ? 'success_with_edits' : 'success');
       setFeedback(
         valuesChangedDuringSubmit
-          ? 'Your previous inquiry was sent. Your latest edits were not sent.'
+          ? UNSENT_EDITS_FEEDBACK
           : result.message,
       );
     } catch (error) {

@@ -118,4 +118,12 @@ describe('public storefront data contract', () => {
     assert.doesNotMatch(source, /pkg\.price/);
     assert.doesNotMatch(source, /pkg\.features/);
   });
+
+  it('keeps the custom-host route identifier for inquiry revocation checks', () => {
+    const source = readFileSync('app/storefront/[domain]/page.tsx', 'utf8');
+
+    assert.match(source, /data=\{data\}/);
+    assert.match(source, /identifier=\{identifier\}/);
+    assert.doesNotMatch(source, /identifier=\{data\.slug\}/);
+  });
 });

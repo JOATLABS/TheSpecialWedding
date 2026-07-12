@@ -340,6 +340,70 @@ describe('StorefrontInquiryForm', () => {
     assert.equal(calls[1]?.idempotency_key, 'inquiry-key-edited-version');
   });
 
+  it('turns edits made after success into a truthful resubmittable inquiry', async () => {
+    const keys = ['inquiry-key-first-success', 'inquiry-key-post-success-edit'];
+    const calls: Array<Record<string, unknown>> = [];
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      calls.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          success: true,
+          inquiry_id: `inquiry-${calls.length}`,
+          message: 'Thanks — we will be in touch.',
+        }),
+      } as Response;
+    };
+    const view = render(
+      <StorefrontInquiryForm
+        identifier="studio.example"
+        fetchImpl={fetchImpl}
+        createIdempotencyKey={() => keys.shift() ?? 'unexpected-extra-key'}
+      />,
+    );
+
+    fireEvent.change(view.getByLabelText('Name'), { target: { value: 'Taylor' } });
+    fireEvent.change(view.getByLabelText('Email'), { target: { value: 'taylor@example.com' } });
+    fireEvent.change(view.getByLabelText('How can we help?'), {
+      target: { value: 'Original submitted message.' },
+    });
+    fireEvent.click(view.getByRole('button', { name: 'Send inquiry' }));
+
+    await view.findByText('Thanks — we will be in touch.');
+    const completedSubmit = view.getByRole('button', { name: 'Inquiry sent' });
+    assert.equal((completedSubmit as HTMLButtonElement).disabled, true);
+
+    fireEvent.input(view.getByLabelText('How can we help?'), {
+      target: { value: 'A new request after the first inquiry.' },
+    });
+
+    await view.findByText(/previous inquiry was sent.*latest edits were not sent/i);
+    const updatedSubmit = view.getByRole('button', { name: 'Send updated inquiry' });
+    assert.equal((updatedSubmit as HTMLButtonElement).disabled, false);
+
+    fireEvent.input(view.getByLabelText('How can we help?'), {
+      target: { value: 'Original submitted message.' },
+    });
+    await view.findByText('Thanks — we will be in touch.');
+    assert.equal(
+      (view.getByRole('button', { name: 'Inquiry sent' }) as HTMLButtonElement)
+        .disabled,
+      true,
+    );
+
+    fireEvent.input(view.getByLabelText('How can we help?'), {
+      target: { value: 'A new request after the first inquiry.' },
+    });
+    fireEvent.click(view.getByRole('button', { name: 'Send updated inquiry' }));
+    await waitFor(() => assert.equal(calls.length, 2));
+
+    assert.equal(calls[0]?.message, 'Original submitted message.');
+    assert.equal(calls[0]?.idempotency_key, 'inquiry-key-first-success');
+    assert.equal(calls[1]?.message, 'A new request after the first inquiry.');
+    assert.equal(calls[1]?.idempotency_key, 'inquiry-key-post-success-edit');
+  });
+
   it('retries once without the key only for an old-backend extra-field rejection', async () => {
     const calls: Array<Record<string, unknown>> = [];
     const fetchImpl: typeof fetch = async (_input, init) => {
