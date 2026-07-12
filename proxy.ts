@@ -21,10 +21,17 @@ export function proxy(request: NextRequest) {
   // ---------- Active custom storefront host ----------
   // This is routing only. The public storefront API remains authoritative and
   // returns 404 unless this exact hostname is active, published, and entitled.
-  const forwardedHost = request.headers.get('x-forwarded-host');
+  // Host is the request authority boundary. A client-controlled forwarded host
+  // must never override it and select another tenant's storefront.
   const storefrontHost = resolveStorefrontRewriteHost(
-    forwardedHost ?? request.headers.get('host'),
+    request.headers.get('host'),
     pathname,
+    {
+      platformDomains: process.env.STOREFRONT_PLATFORM_DOMAINS,
+      frontendUrl: process.env.FRONTEND_URL,
+      apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL,
+      cnameTarget: process.env.STOREFRONT_CNAME_TARGET,
+    },
   );
   if (storefrontHost) {
     const rewriteUrl = request.nextUrl.clone();

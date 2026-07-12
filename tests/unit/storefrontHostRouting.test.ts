@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { NextRequest } from 'next/server';
 
 import { resolveStorefrontRewriteHost } from '../../app/utils/storefrontHost';
+import { proxy } from '../../proxy';
 
 test('normalizes a custom hostname only for the root storefront request', () => {
   assert.equal(resolveStorefrontRewriteHost('  Studio.Example.COM.  ', '/'), 'studio.example.com');
@@ -27,6 +29,37 @@ test('never rewrites platform, API, staging, or local development hosts', () => 
   ]) {
     assert.equal(resolveStorefrontRewriteHost(host, '/'), null, host);
   }
+});
+
+test('uses backend-compatible runtime platform hosts and configured app origins', () => {
+  const config = {
+    platformDomains: '["platform.example.net", "api.example.net"]',
+    frontendUrl: 'https://staging.frontend.example.org/admin',
+    apiBaseUrl: 'https://api.staging.example.org/v1',
+    cnameTarget: 'storefronts.example.org',
+  };
+
+  for (const host of [
+    'platform.example.net',
+    'www.platform.example.net',
+    'api.example.net',
+    'staging.frontend.example.org',
+    'api.staging.example.org',
+    'storefronts.example.org',
+  ]) {
+    assert.equal(resolveStorefrontRewriteHost(host, '/', config), null, host);
+  }
+
+  assert.equal(
+    resolveStorefrontRewriteHost('studio.example.com', '/', config),
+    'studio.example.com',
+  );
+  assert.equal(
+    resolveStorefrontRewriteHost('platform.example.net', '/', {
+      platformDomains: 'platform.example.net, api.example.net',
+    }),
+    null,
+  );
 });
 
 test('fails closed for missing, ambiguous, IP, and malformed host headers', () => {
@@ -54,7 +87,33 @@ test('the Next proxy rewrites only the resolved custom host to its storefront id
   const source = readFileSync('proxy.ts', 'utf8');
 
   assert.match(source, /resolveStorefrontRewriteHost/);
-  assert.match(source, /x-forwarded-host/);
+  assert.doesNotMatch(source, /x-forwarded-host/);
+  assert.match(source, /request\.headers\.get\(['"]host['"]\)/);
+  assert.match(source, /STOREFRONT_PLATFORM_DOMAINS/);
+  assert.match(source, /FRONTEND_URL/);
   assert.match(source, /encodeURIComponent\(storefrontHost\)/);
   assert.match(source, /NextResponse\.rewrite/);
+});
+
+test('the Next proxy ignores spoofed or mismatched forwarded hosts', () => {
+  const platformRequest = new NextRequest('https://thespecialwedding.io/', {
+    headers: {
+      host: 'thespecialwedding.io',
+      'x-forwarded-host': 'studio.example.com',
+    },
+  });
+  const platformResponse = proxy(platformRequest);
+  assert.equal(platformResponse.headers.get('x-middleware-rewrite'), null);
+
+  const customRequest = new NextRequest('https://studio.example.com/', {
+    headers: {
+      host: 'studio.example.com',
+      'x-forwarded-host': 'attacker.example.net',
+    },
+  });
+  const customResponse = proxy(customRequest);
+  assert.match(
+    customResponse.headers.get('x-middleware-rewrite') ?? '',
+    /\/storefront\/studio\.example\.com$/,
+  );
 });
