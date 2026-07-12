@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { isNonWeddingSlug } from '@/utils/slug-constants';
+import { resolveStorefrontRewriteHost } from '@/utils/storefrontHost';
 
 export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
@@ -15,6 +16,20 @@ export function proxy(request: NextRequest) {
     if (!token) {
       return NextResponse.redirect(new URL('/admin/login', request.url));
     }
+  }
+
+  // ---------- Active custom storefront host ----------
+  // This is routing only. The public storefront API remains authoritative and
+  // returns 404 unless this exact hostname is active, published, and entitled.
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const storefrontHost = resolveStorefrontRewriteHost(
+    forwardedHost ?? request.headers.get('host'),
+    pathname,
+  );
+  if (storefrontHost) {
+    const rewriteUrl = request.nextUrl.clone();
+    rewriteUrl.pathname = `/storefront/${encodeURIComponent(storefrontHost)}`;
+    return NextResponse.rewrite(rewriteUrl);
   }
 
   // ---------- Slug route guard ----------
