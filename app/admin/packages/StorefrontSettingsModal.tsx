@@ -609,6 +609,12 @@ export function StorefrontSettingsDialog({
     if (loadState !== 'ready') {
       return;
     }
+    if (savedSettings?.slug_editable !== false && !draftRef.current.slug.trim()) {
+      setView('edit');
+      setError('A storefront URL is required before saving.');
+      setMessage(null);
+      return;
+    }
     const generation = generationRef.current;
     const previewWindow = openPreview ? window.open('about:blank', '_blank') : null;
     if (previewWindow) {

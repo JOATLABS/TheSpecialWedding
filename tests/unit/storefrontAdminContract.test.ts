@@ -239,6 +239,52 @@ describe('storefront admin workflow contract', () => {
     );
   });
 
+  it('blocks both save actions when an editable storefront slug is blank', async () => {
+    const user = userEvent.setup({ document: window.document });
+    const settings = storefrontSettingsFixture();
+    const preview = storefrontPreviewFixture();
+    let postCount = 0;
+    const transport = mock.fn(
+      async <T>(path: string, method = 'GET'): Promise<T | undefined> => {
+        if (path.endsWith('/settings') && method === 'POST') {
+          postCount += 1;
+          return { status: 'success', settings } as T;
+        }
+        if (path.endsWith('/settings')) return { settings } as T;
+        if (path.endsWith('/preview-data')) return preview as T;
+        throw new Error(`Unexpected request ${path}`);
+      },
+    );
+    const openWindow = mock.method(window, 'open', () => null);
+    const view = render(
+      React.createElement(StorefrontSettingsDialog, {
+        isOpen: true,
+        onClose: () => undefined,
+        access: {
+          plan_id: 'signature',
+          storefront_enabled: true,
+          custom_domain_enabled: false,
+        },
+        transport,
+      }),
+    );
+
+    const slug = await waitFor(() => view.getByLabelText(/storefront url/i));
+    await user.clear(slug);
+    await user.type(slug, '   ');
+    await user.click(view.getByRole('switch', { name: /publish storefront/i }));
+    assert.equal((slug as HTMLInputElement).value, '   ');
+    await user.click(view.getByRole('button', { name: /^save settings$/i }));
+
+    await waitFor(() => view.getByRole('alert'));
+    assert.match(view.getByRole('alert').textContent ?? '', /storefront url.*required/i);
+    assert.equal(postCount, 0);
+
+    await user.click(view.getByRole('button', { name: /save & preview/i }));
+    assert.equal(postCount, 0);
+    assert.equal(openWindow.mock.callCount(), 0);
+  });
+
   it('sends only dirty fields and refreshes concurrent canonical publication and assets', async () => {
     const user = userEvent.setup({ document: window.document });
     let canonical = storefrontSettingsFixture();
