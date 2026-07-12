@@ -50,8 +50,16 @@ def test_admin_and_public_route_families_are_explicit_and_non_overlapping():
         "/storefront/access": {"GET"},
         "/storefront/settings": {"GET", "POST"},
         "/storefront/preview/{slug}": {"GET"},
+        "/storefront/custom-domain": {"POST", "DELETE"},
+        "/storefront/custom-domain/status": {"GET"},
+        "/storefront/upload-url": {"GET"},
+        "/storefront/upload-complete": {"POST"},
+        "/storefront/upload": {"DELETE"},
     }
-    assert public_routes == {"/storefront/{identifier}": {"GET"}}
+    assert public_routes == {
+        "/storefront/{identifier}": {"GET"},
+        "/storefront/{identifier}/inquiries": {"POST"},
+    }
 
 
 def test_settings_contract_rejects_domain_provider_and_image_url_smuggling():
@@ -87,7 +95,13 @@ def test_main_mounts_exact_full_route_prefixes():
     assert route_methods["/admin/storefront/access"] == {"GET"}
     assert route_methods["/admin/storefront/settings"] == {"GET", "POST"}
     assert route_methods["/admin/storefront/preview/{slug}"] == {"GET"}
+    assert route_methods["/admin/storefront/custom-domain"] == {"POST", "DELETE"}
+    assert route_methods["/admin/storefront/custom-domain/status"] == {"GET"}
+    assert route_methods["/admin/storefront/upload-url"] == {"GET"}
+    assert route_methods["/admin/storefront/upload-complete"] == {"POST"}
+    assert route_methods["/admin/storefront/upload"] == {"DELETE"}
     assert route_methods["/api/storefront/{identifier}"] == {"GET"}
+    assert route_methods["/api/storefront/{identifier}/inquiries"] == {"POST"}
     assert "/api/storefront/preview/{slug}" not in route_methods
 
 
@@ -213,3 +227,175 @@ async def test_public_denials_remain_404_through_response_boundary(
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Storefront not found"}
+
+
+@pytest.mark.asyncio
+async def test_public_inquiry_route_uses_server_request_metadata_and_forbids_owner_fields(
+    monkeypatch,
+):
+    fake_inquiries = SimpleNamespace(
+        capture=AsyncMock(
+            return_value={
+                "success": True,
+                "inquiry_id": "inquiry-1",
+                "message": "Thanks — your inquiry was sent to the wedding planner.",
+            }
+        )
+    )
+    monkeypatch.setattr(storefront_api, "storefront_inquiry_service", fake_inquiries)
+    app = _test_app()
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, client=("8.8.8.8", 443)),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            "/api/storefront/luxe-events/inquiries",
+            headers={"user-agent": "Contract Browser/1.0"},
+            json={
+                "name": "Ayo Couple",
+                "email": "ayo@example.com",
+                "message": "We would love to learn more.",
+            },
+        )
+        smuggled = await client.post(
+            "/api/storefront/luxe-events/inquiries",
+            json={
+                "name": "Ayo Couple",
+                "email": "ayo@example.com",
+                "message": "Hello",
+                "planner_id": "attacker-controlled",
+            },
+        )
+
+    assert response.status_code == 201
+    assert response.json()["inquiry_id"] == "inquiry-1"
+    call = fake_inquiries.capture.await_args
+    assert call.args[0] == "luxe-events"
+    assert call.args[1].email == "ayo@example.com"
+    assert call.kwargs == {
+        "client_ip": "8.8.8.8",
+        "user_agent": "Contract Browser/1.0",
+    }
+    assert smuggled.status_code == 422
+    fake_inquiries.capture.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_domain_routes_use_separate_capability_and_never_accept_team_member(
+    monkeypatch,
+):
+    fake_domains = SimpleNamespace(
+        connect=AsyncMock(
+            return_value={
+                "hostname": "events.example.com",
+                "status": "pending",
+                "provider_status": "pending",
+                "ssl_status": "pending_validation",
+                "ownership_verification": None,
+                "ownership_verification_http": None,
+                "ssl_validation_records": [],
+                "cname_target": "storefronts.example.com",
+                "deletion_status": None,
+                "last_error": None,
+            }
+        )
+    )
+    monkeypatch.setattr(storefront_api, "storefront_domain_service", fake_domains)
+
+    denied_app = _test_app()
+    denied_app.dependency_overrides[get_current_user_extended] = lambda: _owner(
+        "team_member"
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=denied_app), base_url="http://testserver"
+    ) as client:
+        denied = await client.post(
+            "/admin/storefront/custom-domain",
+            json={"domain": "events.example.com"},
+        )
+    assert denied.status_code == 403
+    fake_domains.connect.assert_not_awaited()
+
+    owner = _owner()
+    allowed_app = _test_app()
+    allowed_app.dependency_overrides[get_current_user_extended] = lambda: owner
+    allowed_app.dependency_overrides[storefront_api.require_custom_domain] = lambda: (
+        StorefrontEntitlements(
+            owner_id=owner.user_data["_id"],
+            plan_id="plan_signature",
+            storefront_enabled=True,
+            custom_domain_enabled=True,
+        )
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=allowed_app), base_url="http://testserver"
+    ) as client:
+        allowed = await client.post(
+            "/admin/storefront/custom-domain",
+            json={"domain": "events.example.com"},
+        )
+    assert allowed.status_code == 201
+    fake_domains.connect.assert_awaited_once_with(owner, "events.example.com")
+
+
+@pytest.mark.asyncio
+async def test_upload_route_requires_exact_file_contract_before_service_call(
+    monkeypatch,
+):
+    fake_media = SimpleNamespace(
+        reserve=AsyncMock(
+            return_value={
+                "asset_id": "asset-1",
+                "upload_url": "https://upload.example.com/asset-1",
+                "cdn_url": "https://cdn.example.com/asset-1.webp",
+                "key": "storefront/owner/hero/asset-1.webp",
+                "max_size_bytes": 5 * 1024 * 1024,
+            }
+        )
+    )
+    monkeypatch.setattr(storefront_api, "storefront_media_service", fake_media)
+    app = _test_app()
+    owner = _owner()
+    app.dependency_overrides[get_current_user_extended] = lambda: owner
+    app.dependency_overrides[storefront_api.require_planner_storefront] = lambda: (
+        StorefrontEntitlements(
+            owner_id=owner.user_data["_id"],
+            plan_id="plan_signature",
+            storefront_enabled=True,
+            custom_domain_enabled=True,
+        )
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        invalid = await client.get(
+            "/admin/storefront/upload-url",
+            params={
+                "filename": "hero.webp",
+                "slot": "hero",
+                "content_type": "image/webp",
+            },
+        )
+        valid = await client.get(
+            "/admin/storefront/upload-url",
+            params={
+                "filename": "../../client-name.webp",
+                "slot": "hero",
+                "content_type": "image/webp",
+                "size_bytes": 1024,
+                "folder": "attacker-controlled",
+            },
+        )
+
+    assert invalid.status_code == 422
+    assert valid.status_code == 200
+    fake_media.reserve.assert_awaited_once_with(
+        owner,
+        slot="hero",
+        content_type="image/webp",
+        size_bytes=1024,
+    )
+    assert "client-name" not in valid.json()["key"]
+    assert "attacker-controlled" not in valid.json()["key"]

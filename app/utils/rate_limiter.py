@@ -4,6 +4,7 @@ Uses Redis when available so limits hold across replicas, with an
 in-memory fallback for local/dev environments without Redis.
 """
 
+import ipaddress
 import logging
 import time
 from collections import deque
@@ -137,15 +138,39 @@ public_slug_limiter = create_rate_limiter("public_slug", requests_per_minute=100
 
 
 def get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """Resolve a client IP without trusting attacker-supplied proxy headers.
 
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip
+    Forwarding headers are accepted only when the direct peer is a private or
+    loopback address, which is the expected shape for our ingress/reverse-proxy
+    deployments. A public peer cannot choose a fresh rate-limit identity by
+    sending a forged ``X-Forwarded-For`` value.
+    """
 
-    return request.client.host if request.client else "unknown"
+    direct_ip = request.client.host if request.client else "unknown"
+    try:
+        direct_address = ipaddress.ip_address(direct_ip)
+        trusted_proxy = direct_address.is_private or direct_address.is_loopback
+    except ValueError:
+        trusted_proxy = False
+
+    if trusted_proxy:
+        for header in (
+            "CF-Connecting-IP",
+            "True-Client-IP",
+            "X-Real-IP",
+            "X-Forwarded-For",
+        ):
+            value = request.headers.get(header)
+            if not value:
+                continue
+            candidate = value.split(",")[0].strip()
+            try:
+                ipaddress.ip_address(candidate)
+            except ValueError:
+                continue
+            return candidate
+
+    return direct_ip
 
 
 async def check_rate_limit(

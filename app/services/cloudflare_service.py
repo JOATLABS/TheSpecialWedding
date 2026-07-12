@@ -1,108 +1,242 @@
-import os
+"""Strict Cloudflare for SaaS custom-hostname client.
+
+The client never fabricates provider success. Both the API token and zone ID
+must be explicitly configured, and every provider/transport/response failure is
+reported through a structured exception that callers can persist for retry.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+from urllib.parse import quote
+
 import httpx
-import logging
-from typing import Dict, Any, Optional
 
-logger = logging.getLogger(__name__)
+from app.core.settings import settings
 
-CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN")
-# Zone ID for thespecialwedding.com
-CLOUDFLARE_ZONE_ID = os.getenv("CLOUDFLARE_ZONE_ID", "04b53289140198a33dd22da4108b7db8")
-CLOUDFLARE_API_BASE = f"https://api.cloudflare.com/client/v4/zones/{CLOUDFLARE_ZONE_ID}"
 
-class CloudflareServiceError(Exception):
-    pass
+class CloudflareServiceError(RuntimeError):
+    """A safe, structured Cloudflare operation failure."""
+
+    def __init__(
+        self,
+        message: str = "Cloudflare operation failed",
+        *,
+        operation: str = "unknown",
+        kind: str = "provider",
+        provider_status_code: int | None = None,
+        errors: tuple[dict[str, Any], ...] | list[dict[str, Any]] = (),
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.operation = operation
+        self.kind = kind
+        self.provider_status_code = provider_status_code
+        self.errors = tuple(dict(error) for error in errors)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "provider": "cloudflare",
+            "operation": self.operation,
+            "kind": self.kind,
+            "provider_status_code": self.provider_status_code,
+            "errors": [dict(error) for error in self.errors],
+        }
+
 
 class CloudflareService:
-    @staticmethod
-    def get_headers() -> Dict[str, str]:
-        if not CLOUDFLARE_API_TOKEN:
-            raise CloudflareServiceError("CLOUDFLARE_API_TOKEN is not set.")
-        return {
-            "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}",
-            "Content-Type": "application/json"
-        }
+    """Small async client for Cloudflare custom-hostname lifecycle calls."""
+
+    API_ROOT = "https://api.cloudflare.com/client/v4"
+
+    def __init__(
+        self,
+        *,
+        api_token: str | None = None,
+        zone_id: str | None = None,
+        http_client: Any | None = None,
+        timeout_seconds: float = 10.0,
+    ) -> None:
+        self._api_token = (
+            settings.cloudflare_api_token if api_token is None else api_token
+        )
+        self._zone_id = settings.cloudflare_zone_id if zone_id is None else zone_id
+        self._http_client = http_client
+        self._timeout_seconds = timeout_seconds
+
+    def _require_configuration(self, operation: str) -> tuple[str, str]:
+        token = (self._api_token or "").strip()
+        zone_id = (self._zone_id or "").strip()
+        if not token or not zone_id:
+            raise CloudflareServiceError(
+                "Cloudflare custom-hostname credentials are not configured",
+                operation=operation,
+                kind="configuration",
+                errors=(
+                    {
+                        "code": "cloudflare_not_configured",
+                        "message": "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID are required",
+                    },
+                ),
+            )
+        if any(character.isspace() for character in zone_id) or "/" in zone_id:
+            raise CloudflareServiceError(
+                "Cloudflare zone configuration is invalid",
+                operation=operation,
+                kind="configuration",
+                errors=(
+                    {
+                        "code": "invalid_cloudflare_zone",
+                        "message": "CLOUDFLARE_ZONE_ID must be a zone identifier",
+                    },
+                ),
+            )
+        return token, zone_id
 
     @staticmethod
-    async def add_custom_hostname(hostname: str) -> Dict[str, Any]:
-        """
-        Creates a Custom Hostname (Cloudflare for SaaS) for the given domain.
-        Returns the custom_hostname details, including ownership verification records.
-        """
-        if not CLOUDFLARE_API_TOKEN:
-            logger.warning("Cloudflare API token not configured. Returning mock custom hostname data.")
-            return {
-                "id": "mock_id_" + hostname,
+    def _provider_errors(payload: object) -> tuple[dict[str, Any], ...]:
+        if not isinstance(payload, dict) or not isinstance(payload.get("errors"), list):
+            return (
+                {
+                    "code": "invalid_provider_response",
+                    "message": "Cloudflare returned an invalid response",
+                },
+            )
+
+        normalized: list[dict[str, Any]] = []
+        for error in payload["errors"]:
+            if isinstance(error, dict):
+                normalized.append(
+                    {
+                        "code": error.get("code", "cloudflare_error"),
+                        "message": str(
+                            error.get("message") or "Cloudflare request failed"
+                        ),
+                    }
+                )
+        return tuple(normalized) or (
+            {"code": "cloudflare_error", "message": "Cloudflare request failed"},
+        )
+
+    async def _request(
+        self,
+        method: str,
+        operation: str,
+        path: str,
+        *,
+        json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        token, zone_id = self._require_configuration(operation)
+        url = f"{self.API_ROOT}/zones/{zone_id}/custom_hostnames{path}"
+        request_kwargs: dict[str, Any] = {
+            "headers": {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            "timeout": self._timeout_seconds,
+        }
+        if json is not None:
+            request_kwargs["json"] = json
+
+        try:
+            if self._http_client is not None:
+                response = await self._http_client.request(
+                    method, url, **request_kwargs
+                )
+            else:
+                async with httpx.AsyncClient() as client:
+                    response = await client.request(method, url, **request_kwargs)
+        except httpx.RequestError as exc:
+            raise CloudflareServiceError(
+                "Cloudflare request failed",
+                operation=operation,
+                kind="transport",
+                errors=(
+                    {
+                        "code": "cloudflare_transport_error",
+                        "message": "Cloudflare could not be reached",
+                    },
+                ),
+            ) from exc
+
+        try:
+            payload = response.json()
+        except (TypeError, ValueError) as exc:
+            raise CloudflareServiceError(
+                "Cloudflare returned an unreadable response",
+                operation=operation,
+                kind="response",
+                provider_status_code=response.status_code,
+                errors=(
+                    {
+                        "code": "invalid_provider_response",
+                        "message": "Cloudflare returned non-JSON content",
+                    },
+                ),
+            ) from exc
+
+        if (
+            not response.is_success
+            or not isinstance(payload, dict)
+            or payload.get("success") is not True
+        ):
+            raise CloudflareServiceError(
+                "Cloudflare rejected the custom-hostname operation",
+                operation=operation,
+                kind="provider",
+                provider_status_code=response.status_code,
+                errors=self._provider_errors(payload),
+            )
+
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            raise CloudflareServiceError(
+                "Cloudflare returned an invalid custom-hostname result",
+                operation=operation,
+                kind="response",
+                provider_status_code=response.status_code,
+                errors=(
+                    {
+                        "code": "invalid_provider_result",
+                        "message": "Cloudflare response did not contain an object result",
+                    },
+                ),
+            )
+        return result
+
+    async def create_custom_hostname(self, hostname: str) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            "create_custom_hostname",
+            "",
+            json={
                 "hostname": hostname,
-                "status": "pending",
-                "ownership_verification": {
-                    "type": "txt",
-                    "name": f"_cf-custom-hostname.{hostname}",
-                    "value": "mock_verification_token"
-                }
-            }
+                "ssl": {
+                    "method": "txt",
+                    "type": "dv",
+                    "settings": {"min_tls_version": "1.2"},
+                },
+            },
+        )
 
-        url = f"{CLOUDFLARE_API_BASE}/custom_hostnames"
-        payload = {
-            "hostname": hostname,
-            "ssl": {
-                "method": "http",
-                "type": "dv",
-                "settings": {
-                    "min_tls_version": "1.2"
-                }
-            }
-        }
+    async def get_custom_hostname(self, hostname_id: str) -> dict[str, Any]:
+        return await self._request(
+            "GET",
+            "get_custom_hostname",
+            f"/{quote(hostname_id, safe='')}",
+        )
 
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(url, headers=CloudflareService.get_headers(), json=payload, timeout=10.0)
-                data = response.json()
-                if not response.is_success or not data.get("success"):
-                    errors = data.get("errors", [{"message": "Unknown error"}])
-                    raise CloudflareServiceError(f"Cloudflare API Error: {errors[0]['message']}")
-                
-                return data.get("result", {})
-            except httpx.RequestError as e:
-                raise CloudflareServiceError(f"HTTP Request failed: {str(e)}")
+    async def delete_custom_hostname(self, hostname_id: str) -> dict[str, Any]:
+        return await self._request(
+            "DELETE",
+            "delete_custom_hostname",
+            f"/{quote(hostname_id, safe='')}",
+        )
 
-    @staticmethod
-    async def get_custom_hostname_status(hostname_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Fetches the current status of a custom hostname.
-        """
-        if not CLOUDFLARE_API_TOKEN or hostname_id.startswith("mock_id_"):
-            return {
-                "id": hostname_id,
-                "status": "pending"
-            }
+    # Transitional aliases keep older internal callsites source-compatible
+    # while preserving the strict failure contract above.
+    async def add_custom_hostname(self, hostname: str) -> dict[str, Any]:
+        return await self.create_custom_hostname(hostname)
 
-        url = f"{CLOUDFLARE_API_BASE}/custom_hostnames/{hostname_id}"
-        
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.get(url, headers=CloudflareService.get_headers(), timeout=10.0)
-                data = response.json()
-                if not response.is_success or not data.get("success"):
-                    return None
-                
-                return data.get("result", {})
-            except httpx.RequestError as e:
-                raise CloudflareServiceError(f"HTTP Request failed: {str(e)}")
-
-    @staticmethod
-    async def delete_custom_hostname(hostname_id: str) -> bool:
-        """
-        Deletes a Custom Hostname configuration from Cloudflare.
-        """
-        if not CLOUDFLARE_API_TOKEN or hostname_id.startswith("mock_id_"):
-            return True
-
-        url = f"{CLOUDFLARE_API_BASE}/custom_hostnames/{hostname_id}"
-        
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.delete(url, headers=CloudflareService.get_headers(), timeout=10.0)
-                return response.is_success
-            except httpx.RequestError as e:
-                raise CloudflareServiceError(f"HTTP Request failed: {str(e)}")
+    async def get_custom_hostname_status(self, hostname_id: str) -> dict[str, Any]:
+        return await self.get_custom_hostname(hostname_id)

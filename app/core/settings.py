@@ -321,6 +321,17 @@ class Settings(BaseSettings):
     cloudflare_api_token: Optional[str] = Field(
         default=None, alias="CLOUDFLARE_API_TOKEN"
     )
+    cloudflare_zone_id: Optional[str] = Field(default=None, alias="CLOUDFLARE_ZONE_ID")
+    storefront_cname_target: Optional[str] = Field(
+        default=None, alias="STOREFRONT_CNAME_TARGET"
+    )
+    storefront_platform_domains: Annotated[List[str], NoDecode] = Field(
+        default_factory=lambda: [
+            "thespecialwedding.io",
+            "thespecialwedding.com",
+        ],
+        alias="STOREFRONT_PLATFORM_DOMAINS",
+    )
     # Security Features
     # CSRF disabled - JWT Bearer auth is already CSRF-immune (browsers don't auto-attach
     # Authorization headers cross-origin), and guest endpoints use token-based auth
@@ -440,7 +451,12 @@ class Settings(BaseSettings):
     }
 
     @field_validator(
-        "cors_origins", "cors_methods", "cors_headers", "allowed_hosts", mode="before"
+        "cors_origins",
+        "cors_methods",
+        "cors_headers",
+        "allowed_hosts",
+        "storefront_platform_domains",
+        mode="before",
     )
     @classmethod
     def parse_string_lists(cls, v):

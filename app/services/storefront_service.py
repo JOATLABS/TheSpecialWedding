@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 import re
 from typing import Any
 import unicodedata
@@ -33,6 +34,7 @@ from app.utils.planner_ownership import normalize_planner_id, normalize_query_id
 
 
 DEFAULT_THEME_COLOR = "#0f172a"
+logger = logging.getLogger(__name__)
 
 
 def normalize_storefront_slug(value: str) -> str:
@@ -61,9 +63,24 @@ class StorefrontService:
         self,
         mongo_client: Any | None = None,
         entitlement_service: StorefrontEntitlementService | None = None,
+        *,
+        domain_service: Any | None = None,
+        media_service: Any | None = None,
     ):
         self._mongo = mongo_client or mongo
         self._entitlements = entitlement_service or storefront_entitlement_service
+        if domain_service is None:
+            from app.services.storefront_domain_service import (
+                storefront_domain_service,
+            )
+
+            domain_service = storefront_domain_service
+        self._domains = domain_service
+        if media_service is None:
+            from app.services.storefront_media_service import storefront_media_service
+
+            media_service = storefront_media_service
+        self._media = media_service
 
     @staticmethod
     def _owner_data(owner: Any) -> dict:
@@ -140,6 +157,17 @@ class StorefrontService:
         await self._require_storefront(owner)
         collection = self._mongo.db["storefront_settings"]
         requested_changes = payload.model_dump(exclude_unset=True)
+        explicit_asset_changes = {
+            field: requested_changes[field]
+            for field in ("hero_asset_id", "about_asset_id")
+            if field in requested_changes
+        }
+        if explicit_asset_changes:
+            validated_assets = await self._media.validate_settings_assets(
+                owner, **explicit_asset_changes
+            )
+            requested_changes.update(validated_assets)
+            explicit_asset_changes = validated_assets
         requested_slug = requested_changes.pop("slug", None)
         slug_was_explicit = requested_slug is not None
         normalized_requested_slug: str | None = None
@@ -148,7 +176,7 @@ class StorefrontService:
                 normalized_requested_slug = normalize_storefront_slug(requested_slug)
             except ValueError as exc:
                 raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail=str(exc),
                 ) from exc
 
@@ -295,6 +323,42 @@ class StorefrontService:
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail="Storefront settings could not be read after saving",
                 )
+            replaced_asset_ids = [
+                current.get(field_name)
+                for field_name in explicit_asset_changes
+                if current
+                and current.get(field_name)
+                and current.get(field_name) != saved.get(field_name)
+            ]
+            for field_name, asset_id in explicit_asset_changes.items():
+                if not asset_id:
+                    continue
+                try:
+                    await self._media.attach(
+                        owner,
+                        asset_id,
+                        "hero" if field_name == "hero_asset_id" else "about",
+                    )
+                except Exception:
+                    # The settings reference is already owner-validated and the
+                    # public projector accepts both ready and attached assets.
+                    # Attachment is lifecycle bookkeeping; never tell the user
+                    # their settings failed after they were durably saved.
+                    logger.exception(
+                        "Failed to mark saved storefront asset %s attached",
+                        asset_id,
+                    )
+            for replaced_asset_id in replaced_asset_ids:
+                try:
+                    await self._media.release_if_unreferenced(owner, replaced_asset_id)
+                except Exception:
+                    # The old image is no longer publicly referenced. Keep a
+                    # repairable lifecycle receipt rather than failing an
+                    # already-durable settings edit.
+                    logger.exception(
+                        "Failed to release replaced storefront asset %s",
+                        replaced_asset_id,
+                    )
             return self._serialize_settings(saved)
 
         raise HTTPException(
@@ -331,10 +395,31 @@ class StorefrontService:
         return await self._build_public_dto(settings)
 
     async def get_public_storefront(self, identifier: str) -> dict:
-        slug = self._normalize_lookup_slug(identifier)
-        settings = await self._mongo.db["storefront_settings"].find_one(
-            {"slug": slug, "is_published": True}
-        )
+        context = await self.resolve_public_context(identifier)
+        return await self._build_public_dto(context["settings"])
+
+    async def resolve_public_context(self, identifier: str) -> dict:
+        """Resolve the canonical published owner context used by every public action."""
+
+        if isinstance(identifier, str) and "." in identifier:
+            mapping = await self._domains.resolve_active_hostname(identifier)
+            if not mapping:
+                self._raise_not_found()
+            mapped_owner_id = normalize_planner_id(mapping.get("planner_id"))
+            if not mapped_owner_id:
+                self._raise_not_found()
+            settings = await self._mongo.db["storefront_settings"].find_one(
+                {
+                    "planner_id": mapped_owner_id,
+                    "slug": {"$type": "string"},
+                    "is_published": True,
+                }
+            )
+        else:
+            slug = self._normalize_lookup_slug(identifier)
+            settings = await self._mongo.db["storefront_settings"].find_one(
+                {"slug": slug, "is_published": True}
+            )
         if not settings:
             self._raise_not_found()
 
@@ -350,7 +435,7 @@ class StorefrontService:
             ) from exc
         if not entitlements.storefront_enabled:
             self._raise_not_found()
-        return await self._build_public_dto(settings)
+        return {"owner_id": owner_id, "slug": settings["slug"], "settings": settings}
 
     @staticmethod
     def _normalize_lookup_slug(value: str) -> str:
