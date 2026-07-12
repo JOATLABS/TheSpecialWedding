@@ -278,20 +278,30 @@ class StorefrontService:
                 }
                 expected_manifest = {
                     "claim_id": claim_id,
-                    "count": len(claimed_assets),
+                    "count": len(validated_assets),
                     "members": {
-                        slot: expected_members[slot]
+                        slot: validated_assets[f"{slot}_asset_id"]
                         for slot in ("hero", "about")
-                        if slot in expected_members
+                        if f"{slot}_asset_id" in validated_assets
                     },
                 }
-                if manifest != expected_manifest or len(expected_members) != len(
-                    claimed_assets
+                non_null_values = {
+                    field_name: asset_id
+                    for field_name, asset_id in validated_assets.items()
+                    if isinstance(asset_id, str)
+                }
+                expected_entry_values = {
+                    entry["field_name"]: entry["asset_id"] for entry in claimed_assets
+                }
+                if (
+                    manifest != expected_manifest
+                    or len(expected_members) != len(claimed_assets)
+                    or non_null_values != expected_entry_values
                 ):
                     raise RuntimeError(
                         "Storefront media service returned an invalid claim manifest"
                     )
-                if claimed_assets:
+                if validated_assets:
                     attempt_changes[PENDING_ASSET_GROUP_FIELD] = manifest
                 else:
                     pending_unsets[PENDING_ASSET_GROUP_FIELD] = ""
@@ -299,17 +309,10 @@ class StorefrontService:
                     slot = field_name.removesuffix("_asset_id")
                     pending_asset_field = f"pending_{slot}_asset_id"
                     pending_claim_field = f"pending_{slot}_claim_id"
-                    if asset_id is None:
-                        # Explicit clear is immediately authoritative, but it
-                        # also fences a paused promoter by removing its token.
-                        attempt_changes[field_name] = None
-                        pending_unsets[pending_asset_field] = ""
-                        pending_unsets[pending_claim_field] = ""
-                    else:
-                        # New bytes are never made public by the settings CAS.
-                        # Only the post-attach promotion may replace stable.
-                        attempt_changes[pending_asset_field] = asset_id
-                        attempt_changes[pending_claim_field] = claim_id
+                    # Clears and replacements share one pending token. Stable
+                    # fields change only when the full intent is promoted.
+                    attempt_changes[pending_asset_field] = asset_id
+                    attempt_changes[pending_claim_field] = claim_id
 
             if current:
                 current_manifest = current.get(PENDING_ASSET_GROUP_FIELD)
@@ -325,19 +328,22 @@ class StorefrontService:
                         and previous_count == len(previous_members)
                     ):
                         for slot in ("hero", "about"):
-                            previous_asset_id = previous_members.get(slot)
-                            if not isinstance(previous_asset_id, str):
+                            if slot not in previous_members:
                                 continue
-                            displaced = displaced_pending_claims.setdefault(
-                                previous_claim_id, []
-                            )
-                            entry = {
-                                "asset_id": previous_asset_id,
-                                "slot": slot,
-                                "field_name": f"{slot}_asset_id",
-                            }
-                            if entry not in displaced:
-                                displaced.append(entry)
+                            previous_asset_id = previous_members.get(slot)
+                            if isinstance(previous_asset_id, str):
+                                displaced = displaced_pending_claims.setdefault(
+                                    previous_claim_id, []
+                                )
+                                entry = {
+                                    "asset_id": previous_asset_id,
+                                    "slot": slot,
+                                    "field_name": f"{slot}_asset_id",
+                                }
+                                if entry not in displaced:
+                                    displaced.append(entry)
+                            elif previous_asset_id is not None:
+                                continue
                             pending_asset_field = f"pending_{slot}_asset_id"
                             pending_claim_field = f"pending_{slot}_claim_id"
                             if pending_asset_field not in attempt_changes:

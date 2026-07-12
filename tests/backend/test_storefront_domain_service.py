@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -84,6 +85,7 @@ class FakeEntitlements:
 class FakeCloudflare:
     def __init__(self):
         self.created: list[str] = []
+        self.listed: list[str] = []
         self.read: list[str] = []
         self.deleted: list[str] = []
         self.create_result = {
@@ -115,6 +117,8 @@ class FakeCloudflare:
         self.create_error: CloudflareServiceError | None = None
         self.status_error: CloudflareServiceError | None = None
         self.delete_error: CloudflareServiceError | None = None
+        self.list_error: CloudflareServiceError | None = None
+        self.list_result: list[dict] = []
 
     async def create_custom_hostname(self, hostname: str) -> dict:
         self.created.append(hostname)
@@ -130,6 +134,12 @@ class FakeCloudflare:
         if self.status_error:
             raise self.status_error
         return deepcopy(self.status_result)
+
+    async def list_custom_hostnames(self, hostname: str) -> list[dict]:
+        self.listed.append(hostname)
+        if self.list_error:
+            raise self.list_error
+        return deepcopy(self.list_result)
 
     async def delete_custom_hostname(self, hostname_id: str) -> dict:
         self.deleted.append(hostname_id)
@@ -327,6 +337,39 @@ async def test_cloudflare_surfaces_structured_provider_errors_for_all_verbs():
 
 
 @pytest.mark.asyncio
+async def test_cloudflare_lists_custom_hostnames_by_exact_hostname_filter():
+    response = FakeResponse(
+        200,
+        {
+            "success": True,
+            "result": [{"id": "cf-1", "hostname": "events.example"}],
+        },
+    )
+    client = FakeHttpClient(response)
+    service = CloudflareService(
+        api_token="secret", zone_id="zone-123", http_client=client
+    )
+
+    result = await service.list_custom_hostnames("events.example")
+
+    assert result == [{"id": "cf-1", "hostname": "events.example"}]
+    assert client.requests == [
+        (
+            "GET",
+            "https://api.cloudflare.com/client/v4/zones/zone-123/custom_hostnames",
+            {
+                "headers": {
+                    "Authorization": "Bearer secret",
+                    "Content-Type": "application/json",
+                },
+                "timeout": 10.0,
+                "params": {"hostname": "events.example"},
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_connect_reserves_owner_and_hostname_then_returns_pending_dns_dto(
     domain_setup,
 ):
@@ -391,6 +434,288 @@ async def test_provider_create_failure_releases_local_reservation(domain_setup):
 
     assert failure.value.status_code == 502
     assert mongo.raw.storefront_domains.count_documents({}) == 0
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_create_retains_receipt_and_refresh_reconciles_exact_mapping(
+    domain_setup, monkeypatch
+):
+    service, mongo, _, cloudflare = domain_setup
+
+    async def commit_then_lose_response(hostname: str):
+        provider = deepcopy(cloudflare.create_result)
+        provider["hostname"] = hostname
+        cloudflare.created.append(hostname)
+        cloudflare.list_result = [provider]
+        raise CloudflareServiceError(
+            operation="create_custom_hostname",
+            kind="transport",
+            message="response lost after provider commit",
+        )
+
+    monkeypatch.setattr(cloudflare, "create_custom_hostname", commit_then_lose_response)
+    with pytest.raises(HTTPException) as ambiguous:
+        await service.connect(_owner(), "events.example")
+    assert ambiguous.value.status_code == 502
+    receipt = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert receipt["status"] == "provisioning_unknown"
+    assert receipt["provider_hostname_id"] is None
+
+    refreshed = await service.refresh(_owner())
+
+    assert refreshed["status"] == "pending"
+    assert cloudflare.listed == ["events.example"]
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["provider_hostname_id"] == "cf-hostname-1"
+    assert cloudflare.created == ["events.example"]
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_create_disconnect_reconciles_then_deletes_without_duplicate(
+    domain_setup, monkeypatch
+):
+    service, mongo, _, cloudflare = domain_setup
+
+    async def commit_then_lose_response(hostname: str):
+        provider = deepcopy(cloudflare.create_result)
+        provider["hostname"] = hostname
+        cloudflare.created.append(hostname)
+        cloudflare.list_result = [provider]
+        raise CloudflareServiceError(
+            operation="create_custom_hostname",
+            kind="response",
+            provider_status_code=200,
+            message="unreadable provider response",
+        )
+
+    monkeypatch.setattr(cloudflare, "create_custom_hostname", commit_then_lose_response)
+    with pytest.raises(HTTPException):
+        await service.connect(_owner(), "events.example")
+
+    await service.disconnect(_owner())
+
+    assert cloudflare.created == ["events.example"]
+    assert cloudflare.deleted == ["cf-hostname-1"]
+    assert mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID}) is None
+
+
+@pytest.mark.asyncio
+async def test_unknown_create_with_zero_lookup_can_retry_without_duplicate_reservation(
+    domain_setup,
+):
+    service, mongo, _, cloudflare = domain_setup
+    cloudflare.create_error = CloudflareServiceError(
+        operation="create_custom_hostname",
+        kind="transport",
+        message="request outcome unknown",
+    )
+    with pytest.raises(HTTPException):
+        await service.connect(_owner(), "events.example")
+    assert mongo.raw.storefront_domains.count_documents({}) == 1
+
+    cloudflare.create_error = None
+    pending = await service.refresh(_owner())
+    assert pending["status"] == "provisioning_unknown"
+    mongo.raw.storefront_domains.update_one(
+        {"planner_id": OWNER_ID},
+        {
+            "$set": {
+                "provisioning_unknown_at": datetime.now(timezone.utc)
+                - timedelta(seconds=61)
+            }
+        },
+    )
+    connected = await service.connect(_owner(), "events.example")
+
+    assert connected["status"] == "pending"
+    assert mongo.raw.storefront_domains.count_documents({}) == 1
+    assert cloudflare.created == ["events.example", "events.example"]
+
+
+@pytest.mark.asyncio
+async def test_unknown_create_zero_lookup_disconnect_preserves_receipt(domain_setup):
+    service, mongo, _, cloudflare = domain_setup
+    cloudflare.create_error = CloudflareServiceError(
+        operation="create_custom_hostname",
+        kind="transport",
+        message="request outcome unknown",
+    )
+    with pytest.raises(HTTPException):
+        await service.connect(_owner(), "events.example")
+
+    with pytest.raises(HTTPException) as pending:
+        await service.disconnect(_owner())
+
+    assert pending.value.status_code == 409
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["status"] == "provisioning_unknown"
+    assert stored["provisioning_absent_observations"] == 1
+    assert cloudflare.deleted == []
+
+
+@pytest.mark.asyncio
+async def test_back_to_back_zero_lookups_do_not_bypass_reconciliation_grace(
+    domain_setup,
+):
+    service, mongo, _, cloudflare = domain_setup
+    cloudflare.create_error = CloudflareServiceError(
+        operation="create_custom_hostname",
+        kind="transport",
+        message="request outcome unknown",
+    )
+    with pytest.raises(HTTPException):
+        await service.connect(_owner(), "events.example")
+
+    first = await service.refresh(_owner())
+    second = await service.refresh(_owner())
+
+    assert first["status"] == "provisioning_unknown"
+    assert second["status"] == "provisioning_unknown"
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["provisioning_absent_observations"] == 2
+
+
+@pytest.mark.asyncio
+async def test_refresh_recovers_stale_provisioning_attempt_before_lookup(
+    domain_setup,
+):
+    service, mongo, _, cloudflare = domain_setup
+    cloudflare.create_error = CloudflareServiceError(
+        operation="create_custom_hostname",
+        kind="transport",
+        message="request outcome unknown",
+    )
+    with pytest.raises(HTTPException):
+        await service.connect(_owner(), "events.example")
+    stale_at = datetime.now(timezone.utc) - timedelta(minutes=11)
+    mongo.raw.storefront_domains.update_one(
+        {"planner_id": OWNER_ID},
+        {
+            "$set": {
+                "status": "provisioning",
+                "provider_status": "pending",
+                "provisioning_attempt_id": "crashed-attempt",
+                "provisioning_started_at": stale_at,
+                "updated_at": stale_at,
+            },
+            "$unset": {"provisioning_unknown_at": ""},
+        },
+    )
+    provider = deepcopy(cloudflare.create_result)
+    provider["hostname"] = "events.example"
+    cloudflare.list_result = [provider]
+
+    refreshed = await service.refresh(_owner())
+
+    assert refreshed["status"] == "pending"
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["provider_hostname_id"] == "cf-hostname-1"
+
+
+@pytest.mark.asyncio
+async def test_disconnect_recovers_stale_provisioning_then_deletes_provider_mapping(
+    domain_setup,
+):
+    service, mongo, _, cloudflare = domain_setup
+    cloudflare.create_error = CloudflareServiceError(
+        operation="create_custom_hostname",
+        kind="transport",
+        message="request outcome unknown",
+    )
+    with pytest.raises(HTTPException):
+        await service.connect(_owner(), "events.example")
+    stale_at = datetime.now(timezone.utc) - timedelta(minutes=11)
+    mongo.raw.storefront_domains.update_one(
+        {"planner_id": OWNER_ID},
+        {
+            "$set": {
+                "status": "provisioning",
+                "provider_status": "pending",
+                "provisioning_attempt_id": "crashed-attempt",
+                "provisioning_started_at": stale_at,
+                "updated_at": stale_at,
+            },
+            "$unset": {"provisioning_unknown_at": ""},
+        },
+    )
+    provider = deepcopy(cloudflare.create_result)
+    provider["hostname"] = "events.example"
+    cloudflare.list_result = [provider]
+
+    await service.disconnect(_owner())
+
+    assert cloudflare.deleted == ["cf-hostname-1"]
+    assert mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID}) is None
+
+
+@pytest.mark.asyncio
+async def test_provider_5xx_create_failure_retains_unknown_receipt(domain_setup):
+    service, mongo, _, cloudflare = domain_setup
+    cloudflare.create_error = CloudflareServiceError(
+        operation="create_custom_hostname",
+        kind="provider",
+        provider_status_code=503,
+        message="provider unavailable after accepting request",
+    )
+
+    with pytest.raises(HTTPException) as ambiguous:
+        await service.connect(_owner(), "events.example")
+
+    assert ambiguous.value.status_code == 502
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["status"] == "provisioning_unknown"
+    assert stored["provider_hostname_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_unknown_create_mismatched_provider_lookup_fails_closed(domain_setup):
+    service, mongo, _, cloudflare = domain_setup
+    cloudflare.create_error = CloudflareServiceError(
+        operation="create_custom_hostname",
+        kind="transport",
+        message="request outcome unknown",
+    )
+    with pytest.raises(HTTPException):
+        await service.connect(_owner(), "events.example")
+    cloudflare.list_result = [
+        {
+            **cloudflare.create_result,
+            "id": "foreign-provider-id",
+            "hostname": "other.example",
+        }
+    ]
+
+    with pytest.raises(HTTPException) as mismatched:
+        await service.refresh(_owner())
+
+    assert mismatched.value.status_code == 502
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["status"] == "provisioning_unknown"
+    assert stored["provider_hostname_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_unknown_create_multiple_provider_matches_fail_closed(domain_setup):
+    service, mongo, _, cloudflare = domain_setup
+    cloudflare.create_error = CloudflareServiceError(
+        operation="create_custom_hostname",
+        kind="transport",
+        message="request outcome unknown",
+    )
+    with pytest.raises(HTTPException):
+        await service.connect(_owner(), "events.example")
+    cloudflare.list_result = [
+        {**cloudflare.create_result, "id": "cf-1", "hostname": "events.example"},
+        {**cloudflare.create_result, "id": "cf-2", "hostname": "events.example"},
+    ]
+
+    with pytest.raises(HTTPException) as ambiguous:
+        await service.refresh(_owner())
+
+    assert ambiguous.value.status_code == 502
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["status"] == "provisioning_unknown"
+    assert stored["provider_hostname_id"] is None
 
 
 @pytest.mark.asyncio
