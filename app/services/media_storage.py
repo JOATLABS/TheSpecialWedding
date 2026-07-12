@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from enum import Enum
 import threading
@@ -74,6 +75,7 @@ class MediaStorage:
         tuple[str, str, str, str, str], tuple[float, StorageTargetHealth]
     ] = {}
     _health_cache_lock = threading.Lock()
+    _storefront_privacy_cache: dict[tuple[str, str, int], float] = {}
 
     def __init__(self) -> None:
         self.endpoint_url = settings.s3_endpoint_url
@@ -358,10 +360,137 @@ class MediaStorage:
             **request,
         )
 
-    def get_object_bytes(self, target: StorageTarget | str, key: str) -> bytes:
+    def get_object_bytes(
+        self,
+        target: StorageTarget | str,
+        key: str,
+        *,
+        source_etag: Optional[str] = None,
+    ) -> bytes:
         target_config = self.require_target(target)
-        response = self.client.get_object(Bucket=target_config.bucket_name, Key=key)
+        request: dict[str, Any] = {"Bucket": target_config.bucket_name, "Key": key}
+        if source_etag:
+            request["IfMatch"] = source_etag
+        response = self.client.get_object(**request)
         return response["Body"].read()
+
+    async def require_private_storefront_staging(
+        self, *, force_refresh: bool = False
+    ) -> None:
+        """Fail closed unless the staging bucket is private and self-expiring."""
+
+        staging = self.require_target(StorageTarget.STOREFRONT_STAGING)
+        bucket_name = staging.bucket_name or ""
+        public_targets = (
+            StorageTarget.PRIMARY,
+            StorageTarget.GUEST_MEDIA,
+            StorageTarget.AD_ASSETS,
+            StorageTarget.BLOG_ASSETS,
+            StorageTarget.FORM_UPLOADS,
+        )
+        for target in public_targets:
+            public_config = self.target(target)
+            if public_config.bucket_name and public_config.bucket_name == bucket_name:
+                raise RuntimeError(
+                    "Storefront staging bucket must differ from every public media bucket"
+                )
+
+        account_id = (settings.cloudflare_account_id or "").strip()
+        api_token = (settings.cloudflare_api_token or "").strip()
+        if not account_id or not api_token:
+            raise RuntimeError(
+                "Cloudflare account credentials are required to verify storefront staging privacy"
+            )
+        max_age_days = settings.storefront_staging_lifecycle_max_age_days
+        cache_key = (account_id, bucket_name, max_age_days)
+        if not force_refresh and self.healthcheck_ttl_seconds > 0:
+            with self._health_cache_lock:
+                cached_at = self._storefront_privacy_cache.get(cache_key)
+            if cached_at and time.monotonic() - cached_at < min(
+                self.healthcheck_ttl_seconds, 60
+            ):
+                return
+
+        try:
+            managed, custom, lifecycle = await asyncio.gather(
+                self._fetch_r2_bucket_control(bucket_name, "domains/managed"),
+                self._fetch_r2_bucket_control(bucket_name, "domains/custom"),
+                self._fetch_r2_bucket_control(bucket_name, "lifecycle"),
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "Storefront staging privacy and lifecycle could not be verified"
+            ) from exc
+
+        if managed.get("enabled") is not False:
+            raise RuntimeError(
+                "Storefront staging managed public access (r2.dev) must be verifiably disabled"
+            )
+        domains = custom.get("domains")
+        if not isinstance(domains, list):
+            raise RuntimeError("Storefront staging custom domain status is invalid")
+        if any(
+            not isinstance(domain, dict) or domain.get("enabled") is not False
+            for domain in domains
+        ):
+            raise RuntimeError(
+                "Storefront staging custom domain access must be verifiably disabled"
+            )
+
+        rules = lifecycle.get("rules") or []
+        required_prefix = "storefront/"
+        lifecycle_ready = False
+        max_age_seconds = max_age_days * 24 * 60 * 60
+        if isinstance(rules, list):
+            for rule in rules:
+                if not isinstance(rule, dict) or rule.get("enabled") is not True:
+                    continue
+                conditions = rule.get("conditions") or {}
+                prefix = conditions.get("prefix", "")
+                transition = rule.get("deleteObjectsTransition") or {}
+                condition = transition.get("condition") or {}
+                max_age = condition.get("maxAge")
+                if (
+                    isinstance(prefix, str)
+                    and required_prefix.startswith(prefix)
+                    and str(condition.get("type") or "").lower() == "age"
+                    and isinstance(max_age, int)
+                    and not isinstance(max_age, bool)
+                    and 0 < max_age <= max_age_seconds
+                ):
+                    lifecycle_ready = True
+                    break
+        if not lifecycle_ready:
+            raise RuntimeError(
+                "Storefront staging requires an enabled expiry lifecycle rule for prefix "
+                f"'{required_prefix}' with maxAge <= {max_age_seconds} seconds "
+                f"({max_age_days} day(s))"
+            )
+
+        with self._health_cache_lock:
+            self._storefront_privacy_cache[cache_key] = time.monotonic()
+
+    async def _fetch_r2_bucket_control(
+        self, bucket_name: str, suffix: str
+    ) -> dict[str, Any]:
+        account_id = (settings.cloudflare_account_id or "").strip()
+        api_token = (settings.cloudflare_api_token or "").strip()
+        url = (
+            "https://api.cloudflare.com/client/v4/accounts/"
+            f"{account_id}/r2/buckets/{bucket_name}/{suffix}"
+        )
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                url, headers={"Authorization": f"Bearer {api_token}"}
+            )
+            response.raise_for_status()
+            payload = response.json()
+        if not isinstance(payload, dict) or payload.get("success") is not True:
+            raise RuntimeError("Cloudflare returned an invalid R2 control response")
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            raise RuntimeError("Cloudflare returned an invalid R2 control result")
+        return result
 
     async def browser_upload_health(
         self, target: StorageTarget | str, origins: list[str] | tuple[str, ...]

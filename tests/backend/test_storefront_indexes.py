@@ -66,6 +66,10 @@ async def test_storefront_indexes_are_unique_named_and_slug_is_legacy_safe(
         ("state", 1),
         ("created_at", -1),
     ]
+    reservation_ttl = by_name["idx_storefront_assets_reservation_ttl"]
+    assert reservation_ttl[0] == [("reservation_expires_at", 1)]
+    assert reservation_ttl[1]["expireAfterSeconds"] == 0
+    assert reservation_ttl[1]["partialFilterExpression"] == {"state": "reserved"}
     assert by_name["idx_storefront_inquiries_owner_created"][0] == [
         ("planner_id", 1),
         ("created_at", -1),

@@ -125,6 +125,8 @@ class FakeMedia:
         self.releases: list[str] = []
         self.claim_releases: list[str] = []
         self.claim_reconciliations: list[str] = []
+        self.pre_promotion_settings: list[dict] = []
+        self.recovery_calls = 0
         self._claim_number = 0
 
     async def validate_settings_assets(self, _owner, **asset_fields):
@@ -159,14 +161,55 @@ class FakeMedia:
     async def attach_settings_asset_claims(self, _owner, claim):
         for entry in claim["claimed_assets"]:
             saved = self.mongo.raw.storefront_settings.find_one(
-                {entry["field_name"]: entry["asset_id"]}
+                {
+                    f"pending_{entry['slot']}_asset_id": entry["asset_id"],
+                    f"pending_{entry['slot']}_claim_id": claim["claim_id"],
+                }
             )
-            assert saved is not None, "asset claim must attach after settings persist"
+            assert saved is not None, "asset claim must attach from exact pending token"
+            assert saved.get(entry["field_name"]) != entry["asset_id"]
             self.attachments.append((entry["asset_id"], entry["slot"]))
+
+    async def promote_settings_asset_claims(self, _owner, claim):
+        if not claim["claimed_assets"]:
+            return
+        query = {"planner_id": OWNER_ID}
+        set_fields = {}
+        unset_fields = {}
+        for entry in claim["claimed_assets"]:
+            pending_asset = f"pending_{entry['slot']}_asset_id"
+            pending_claim = f"pending_{entry['slot']}_claim_id"
+            query[pending_asset] = entry["asset_id"]
+            query[pending_claim] = claim["claim_id"]
+            set_fields[entry["field_name"]] = entry["asset_id"]
+            unset_fields[pending_asset] = ""
+            unset_fields[pending_claim] = ""
+        before = self.mongo.raw.storefront_settings.find_one(query)
+        assert before is not None, "promotion must retain the exact pending token"
+        self.pre_promotion_settings.append(deepcopy(before))
+        result = self.mongo.raw.storefront_settings.update_one(
+            query,
+            {"$set": set_fields, "$unset": unset_fields, "$inc": {"revision": 1}},
+        )
+        assert result.modified_count == 1
 
     async def reconcile_settings_asset_claims(self, owner, claim):
         self.claim_reconciliations.append(claim["claim_id"])
-        await self.attach_settings_asset_claims(owner, claim)
+        row = self.mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+        exact_entries = [
+            entry
+            for entry in claim["claimed_assets"]
+            if row
+            and row.get(f"pending_{entry['slot']}_asset_id") == entry["asset_id"]
+            and row.get(f"pending_{entry['slot']}_claim_id") == claim["claim_id"]
+        ]
+        if exact_entries:
+            exact_claim = {**claim, "claimed_assets": exact_entries}
+            await self.attach_settings_asset_claims(owner, exact_claim)
+            await self.promote_settings_asset_claims(owner, exact_claim)
+
+    async def recover_pending_settings_assets(self, _owner):
+        self.recovery_calls += 1
 
     async def attach(self, _owner, asset_id: str, slot: str):
         saved = self.mongo.raw.storefront_settings.find_one(
@@ -327,6 +370,20 @@ async def test_settings_validates_only_explicit_asset_fields_before_save_then_at
     assert saved["hero_asset_id"] == "hero-ready-1"
     assert service._media.validations == [{"hero_asset_id": "hero-ready-1"}]
     assert service._media.attachments == [("hero-ready-1", "hero")]
+    first_handoff = service._media.pre_promotion_settings[0]
+    assert first_handoff.get("hero_asset_id") is None
+    assert first_handoff["pending_hero_asset_id"] == "hero-ready-1"
+    assert first_handoff["pending_hero_claim_id"] == "claim-1"
+
+    replaced = await service.update_settings(
+        owner,
+        StorefrontSettingsUpdate(hero_asset_id="hero-ready-2"),
+    )
+    assert replaced["hero_asset_id"] == "hero-ready-2"
+    replacement_handoff = service._media.pre_promotion_settings[1]
+    assert replacement_handoff["hero_asset_id"] == "hero-ready-1"
+    assert replacement_handoff["pending_hero_asset_id"] == "hero-ready-2"
+    assert service._media.releases == ["hero-ready-1"]
 
     before = deepcopy(
         fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
@@ -341,14 +398,55 @@ async def test_settings_validates_only_explicit_asset_fields_before_save_then_at
         fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID}) == before
     )
 
+    fake_mongo.raw.storefront_settings.update_one(
+        {"planner_id": OWNER_ID},
+        {
+            "$set": {
+                "pending_hero_asset_id": "paused-asset",
+                "pending_hero_claim_id": "paused-claim",
+            }
+        },
+    )
     cleared = await service.update_settings(
         owner,
         StorefrontSettingsUpdate(hero_asset_id=None),
     )
     assert cleared["hero_asset_id"] is None
     assert service._media.validations[-1] == {"hero_asset_id": None}
-    assert service._media.attachments == [("hero-ready-1", "hero")]
-    assert service._media.releases == ["hero-ready-1"]
+    assert service._media.attachments == [
+        ("hero-ready-1", "hero"),
+        ("hero-ready-2", "hero"),
+    ]
+    assert service._media.releases == ["hero-ready-1", "hero-ready-2"]
+    assert service._media.claim_releases == ["paused-claim"]
+    stored = fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert "pending_hero_asset_id" not in stored
+    assert "pending_hero_claim_id" not in stored
+
+
+@pytest.mark.asyncio
+async def test_multi_slot_settings_handoff_promotes_together(setup_storefront):
+    service, fake_mongo, _ = setup_storefront
+    saved = await service.update_settings(
+        _owner(),
+        StorefrontSettingsUpdate(
+            slug="two-images",
+            hero_asset_id="hero-ready",
+            about_asset_id="about-ready",
+        ),
+    )
+
+    assert saved["hero_asset_id"] == "hero-ready"
+    assert saved["about_asset_id"] == "about-ready"
+    pending_snapshot = service._media.pre_promotion_settings[-1]
+    assert pending_snapshot.get("hero_asset_id") is None
+    assert pending_snapshot.get("about_asset_id") is None
+    assert (
+        pending_snapshot["pending_hero_claim_id"]
+        == pending_snapshot["pending_about_claim_id"]
+    )
+    stored = fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert not any(key.startswith("pending_") for key in stored)
 
 
 @pytest.mark.asyncio

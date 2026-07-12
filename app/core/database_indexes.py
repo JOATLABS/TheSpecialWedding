@@ -2609,6 +2609,13 @@ async def create_storefront_indexes():
             name="idx_storefront_assets_owner_state_created",
             background=True,
         )
+        await assets.create_index(
+            [("reservation_expires_at", ASCENDING)],
+            name="idx_storefront_assets_reservation_ttl",
+            expireAfterSeconds=0,
+            partialFilterExpression={"state": "reserved"},
+            background=True,
+        )
         await inquiries.create_index(
             [("planner_id", ASCENDING), ("created_at", DESCENDING)],
             name="idx_storefront_inquiries_owner_created",
