@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { chromium, type BrowserContextOptions, type Page } from 'playwright';
+import { chromium, type BrowserContextOptions, type Page, type Video } from 'playwright';
 
 import {
   getDemoVideoById,
@@ -15,19 +15,11 @@ import {
   parseKeyValuePairs,
   resolveFromRepo,
 } from './cli';
+import { executeDemoCaptureScenario, getDemoCaptureScenario } from './capture-scenarios';
+import { assertPublicSafeStorageState } from './public-safe-storage';
+import { createCaptureReadinessMonitor, installCaptureStability } from './wait-for-capture-ready';
 
 const SIDE_EFFECT_SURFACES = new Set<DemoVideoCaptureSurface>(['guest-token', 'payment-link', 'vendor-token']);
-
-function resolveRoute(route: string, routeParams: Record<string, string>): string {
-  return route.replace(/\[([^\]]+)\]/g, (_, key: string) => {
-    const value = routeParams[key] ?? process.env[`DEMO_ROUTE_PARAM_${key.toUpperCase()}`];
-    if (!value) {
-      throw new Error(`Route "${route}" needs --route-param ${key}=... or DEMO_ROUTE_PARAM_${key.toUpperCase()}.`);
-    }
-
-    return value;
-  });
-}
 
 function assertCaptureIsAllowed(options: {
   surfaces: readonly DemoVideoCaptureSurface[];
@@ -52,84 +44,38 @@ function assertCaptureIsAllowed(options: {
 }
 
 async function installVisibleCursor(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    const install = () => {
-      if (document.getElementById('demo-recording-cursor')) return;
-
-      const cursor = document.createElement('div');
-      cursor.id = 'demo-recording-cursor';
-      cursor.style.position = 'fixed';
-      cursor.style.left = '0';
-      cursor.style.top = '0';
-      cursor.style.width = '18px';
-      cursor.style.height = '18px';
-      cursor.style.marginLeft = '-9px';
-      cursor.style.marginTop = '-9px';
-      cursor.style.border = '2px solid white';
-      cursor.style.borderRadius = '999px';
-      cursor.style.background = 'rgba(212, 165, 165, 0.72)';
-      cursor.style.boxShadow = '0 0 0 5px rgba(15, 23, 42, 0.28)';
-      cursor.style.pointerEvents = 'none';
-      cursor.style.zIndex = '2147483647';
-      cursor.style.transform = 'translate3d(48px, 48px, 0)';
-      cursor.style.transition = 'transform 90ms ease-out';
-      document.body.appendChild(cursor);
-
-      window.addEventListener(
-        'mousemove',
-        (event) => {
-          cursor.style.transform = `translate3d(${event.clientX}px, ${event.clientY}px, 0)`;
-        },
-        { passive: true },
-      );
-    };
-
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', install, { once: true });
-    } else {
-      install();
-    }
+  await page.addInitScript({
+    content: `(() => {
+      const installRecordingCursor = () => {
+        if (document.getElementById('demo-recording-cursor')) return;
+        const cursor = document.createElement('div');
+        cursor.id = 'demo-recording-cursor';
+        cursor.style.position = 'fixed';
+        cursor.style.left = '0';
+        cursor.style.top = '0';
+        cursor.style.width = '18px';
+        cursor.style.height = '18px';
+        cursor.style.marginLeft = '-9px';
+        cursor.style.marginTop = '-9px';
+        cursor.style.border = '2px solid white';
+        cursor.style.borderRadius = '999px';
+        cursor.style.background = 'rgba(212, 165, 165, 0.72)';
+        cursor.style.boxShadow = '0 0 0 5px rgba(15, 23, 42, 0.28)';
+        cursor.style.pointerEvents = 'none';
+        cursor.style.zIndex = '2147483647';
+        cursor.style.transform = 'translate3d(48px, 48px, 0)';
+        document.body.appendChild(cursor);
+        window.addEventListener('mousemove', (event) => {
+          cursor.style.transform = 'translate3d(' + event.clientX + 'px, ' + event.clientY + 'px, 0)';
+        }, { passive: true });
+      };
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', installRecordingCursor, { once: true });
+      } else {
+        installRecordingCursor();
+      }
+    })();`,
   });
-}
-
-async function moveLikeHuman(page: Page, durationSeconds: number): Promise<void> {
-  const viewport = page.viewportSize() ?? { width: 1440, height: 900 };
-  const waypoints = [
-    { x: viewport.width * 0.18, y: viewport.height * 0.24 },
-    { x: viewport.width * 0.62, y: viewport.height * 0.28 },
-    { x: viewport.width * 0.72, y: viewport.height * 0.68 },
-    { x: viewport.width * 0.34, y: viewport.height * 0.72 },
-  ];
-  const segmentDelay = Math.max(450, Math.floor((durationSeconds * 1000) / (waypoints.length * 2)));
-
-  await page.mouse.move(48, 48, { steps: 12 });
-  await page.waitForTimeout(600);
-
-  for (let index = 0; index < waypoints.length; index += 1) {
-    const waypoint = waypoints[index];
-    await page.mouse.move(waypoint.x, waypoint.y, { steps: 28 });
-    await page.waitForTimeout(segmentDelay);
-
-    if (index < waypoints.length - 1) {
-      await page.mouse.wheel(0, Math.round(viewport.height * 0.32));
-      await page.waitForTimeout(segmentDelay);
-    }
-  }
-}
-
-async function waitForDemoPage(page: Page, url: string): Promise<void> {
-  const navigationTimeoutMs = Number.parseInt(process.env.DEMO_RECORD_NAVIGATION_TIMEOUT_MS ?? '60000', 10);
-  try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: navigationTimeoutMs });
-  } catch (error) {
-    if (!(error instanceof Error) || !error.message.includes('Timeout') || page.url() !== url) {
-      throw error;
-    }
-    console.warn(`Navigation reached ${url} but did not report DOMContentLoaded before ${navigationTimeoutMs}ms; continuing with visible-body checks.`);
-  }
-  await page.locator('body').waitFor({ state: 'visible', timeout: 15_000 });
-  await page.waitForLoadState('load', { timeout: 15_000 }).catch(() => undefined);
-  await page.waitForTimeout(1_200);
 }
 
 async function main(): Promise<void> {
@@ -145,13 +91,14 @@ async function main(): Promise<void> {
   const smoke = args.flags.has('smoke');
   const baseUrl = args.values.get('base-url') ?? 'http://127.0.0.1:3100';
   const routeParams = parseKeyValuePairs(args.repeatedValues.get('route-param') ?? []);
-  const routes = args.flags.has('route-plan') && !args.values.has('route')
-    ? demo.routePlan.map((item) => resolveRoute(item, routeParams))
-    : [args.values.get('route') ?? resolveRoute(demo.routePlan[0], routeParams)];
   const maxSeconds = getNumberValue(args, 'max-seconds', smoke ? 10 : demo.durationSeconds);
   const width = getNumberValue(args, 'width', 1440);
   const height = getNumberValue(args, 'height', 900);
   const storageState = args.values.get('storage-state');
+
+  if (storageState && !args.flags.has('allow-personal-state')) {
+    assertPublicSafeStorageState(path.resolve(storageState));
+  }
 
   assertCaptureIsAllowed({
     surfaces: requirement.captureSurfaces,
@@ -178,22 +125,32 @@ async function main(): Promise<void> {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext(contextOptions);
   const page = await context.newPage();
-  await installVisibleCursor(page);
+  const monitor = createCaptureReadinessMonitor(page);
+  let video: Video | null = null;
 
-  const routeLabel = routes.join(' -> ');
-  console.log(`Recording ${demoId} from ${routeLabel}${smoke ? ' (smoke capture)' : ''}`);
+  try {
+    await installCaptureStability(page);
+    await installVisibleCursor(page);
 
-  const secondsPerRoute = Math.max(6, Math.floor(maxSeconds / routes.length));
-  for (const route of routes) {
-    const url = new URL(route, baseUrl).toString();
-    await waitForDemoPage(page, url);
-    await moveLikeHuman(page, secondsPerRoute);
+    const scenario = getDemoCaptureScenario(demoId);
+    console.log(
+      `Recording ${demoId} with explicit ${scenario.session} actions${smoke ? ' (smoke capture)' : ''}`,
+    );
+    page.setDefaultTimeout(Math.max(30_000, maxSeconds * 1_000));
+    await executeDemoCaptureScenario(page, demoId, {
+      baseUrl,
+      routeParams,
+      routeOverride: args.values.get('route'),
+      monitor,
+      readinessTimeoutMs: Math.max(30_000, maxSeconds * 1_000),
+    });
+    video = page.video();
+  } finally {
+    monitor.dispose();
+    await page.close().catch(() => undefined);
+    await context.close().catch(() => undefined);
+    await browser.close().catch(() => undefined);
   }
-
-  const video = page.video();
-  await page.close();
-  await context.close();
-  await browser.close();
 
   const temporaryPath = await video?.path();
   if (!temporaryPath) {

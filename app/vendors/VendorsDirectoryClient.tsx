@@ -301,16 +301,15 @@ export default function VendorsDirectoryClient({ initialDirectory }: { initialDi
       </section>
 
       <section className="border-t border-slate-800 py-16 text-center">
-        <h2 className="text-2xl font-semibold text-white mb-3">Are you a wedding vendor?</h2>
+        <h2 className="text-2xl font-semibold text-white mb-3">Are you a wedding planner?</h2>
         <p className="text-slate-400 mb-6 max-w-lg mx-auto">
-          Join our directory and advertise your services to wedding planners
-          across the platform. Sign up in minutes.
+          Use this directory to discover vendors for the weddings you manage, then keep their details, contracts, and payments organized in your planner workspace.
         </p>
         <Link
-          href="/portal/ads/signup"
+          href="/#pricing"
           className="inline-block rounded-full bg-wedding-rose px-6 py-3 text-base font-semibold text-slate-900 shadow-lg shadow-wedding-rose/30 transition hover:bg-wedding-blush"
         >
-          List Your Business
+          View planner plans
         </Link>
       </section>
     </main>

@@ -456,7 +456,7 @@ export default function WeddingPlannerDashboard() {
  <div className="space-y-6">
  <PageHeader
  title={`Welcome back, ${userProfile?.user_data?.company_name || userProfile?.email}!`}
- description="Here's what's happening with your weddings today."
+ description="Your planner workspace for managing weddings, couples, guests, vendors, and your team."
  />
 
  <div className={`grid grid-cols-1 ${showAdRail ? 'lg:grid-cols-4' : ''} gap-6`}>
@@ -558,8 +558,33 @@ export default function WeddingPlannerDashboard() {
  <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
  </svg>
+ {userProfile?.is_team_member ? (
+ <>
  <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No weddings assigned</h3>
  <p className="text-gray-500 dark:text-gray-400">Contact your administrator to get weddings assigned to you.</p>
+ </>
+ ) : (
+ <>
+ <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">Add your first wedding</h3>
+ <p className="mx-auto max-w-lg text-gray-500 dark:text-gray-400">
+ Start with the couple, date, and venue. Your planner dashboard will guide the remaining setup from there.
+ </p>
+ <div className="mt-5 flex flex-col items-center justify-center gap-3 sm:flex-row">
+ <button
+ onClick={() => router.push('/admin/weddings')}
+ className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
+ >
+ Add your first wedding
+ </button>
+ <button
+ onClick={() => router.push('/admin/support?tab=knowledge_base')}
+ className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-slate-700"
+ >
+ View getting-started guides
+ </button>
+ </div>
+ </>
+ )}
  </div>
  ) : (
  weddings.map((wedding) => (

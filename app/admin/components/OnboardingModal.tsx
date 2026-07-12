@@ -30,14 +30,14 @@ interface OnboardingStep {
 const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: 'welcome',
-    title: 'Start With The Wedding Setup Prompt',
-    description: 'Your dashboard now points you to the next guest-facing setup step for each wedding, then drops you into the exact configuration tab that needs attention.',
+    title: 'This Is Your Planner Workspace',
+    description: 'You are in the operating system for the person or team managing each wedding. Start by adding a wedding, then the dashboard will guide the work from setup through the wedding day.',
     icon: <Sparkles className="w-12 h-12 text-purple-500" />,
     features: [
-      'See which wedding still needs schedule, RSVP, access, or theme work',
-      'Use one action to continue setup from the dashboard',
-      'Keep optional tabs visible without blocking launch readiness',
-      'Preview the couple site once the essentials are ready',
+      'Create one workspace for each wedding you manage',
+      'Keep couples, guests, vendors, timelines, and payments together',
+      'Use the setup guide to move from first details to a shareable couple site',
+      'Return to the dashboard for the next operational step',
     ]
   },
   {

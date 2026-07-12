@@ -1,17 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { DeferredHomeEffects } from "./components/landing-page/DeferredHomeEffects.client";
 import { FeatureShowcase } from "./components/landing-page/FeatureShowcase.client";
+import { PhaseOneHeroProof } from "./components/landing-page/PhaseOneHeroProof";
 import { PricingSignupSection } from "./components/landing-page/PricingSignupSection.client";
-import DemoVideoLauncher from "./components/saas/DemoVideoLauncher";
 import HomepageTemplatesBand from "./components/saas/HomepageTemplatesBand";
 import MarketingFooter from "./components/saas/MarketingFooter";
 import SaasNav from "./components/saas/SaasNav";
-import { FEATURE_DEMO_VIDEOS, HERO_DEMO_VIDEO, toPublicDemoVideo } from "./data/demoVideos";
+import { FEATURE_DEMO_VIDEOS, toPublicDemoVideo } from "./data/demoVideos";
 import { serializeJsonLd } from "./seo/jsonLd";
 import type { ThemeConfig } from "./types/wedding";
-import HeroCardStack from "./components/HeroCardStack";
 
 type Testimonial = {
   name: string;
@@ -162,16 +160,6 @@ const faqPageJsonLd = {
   })),
 };
 
-const metrics = [
-  { label: "Hours reclaimed", value: "18/wk" },
-  { label: "Follow-up lift", value: "42%" },
-  { label: "Guest workflows", value: "11" },
-];
-
-const heroDashboardSizes = "(min-width: 1280px) 604px, (min-width: 1024px) 46vw, calc(100vw - 48px)";
-const heroDashboardAvifSrcSet = "/dashboard-hero-768.avif 768w, /dashboard-hero-1200.avif 1200w";
-const heroDashboardWebpSrcSet = "/dashboard-hero-768.webp 768w, /dashboard-hero-1200.webp 1200w";
-
 function SectionBridge({ label }: { label: string }) {
   return (
     <div className="pointer-events-none flex items-center justify-center py-8 sm:py-10" aria-hidden="true">
@@ -183,7 +171,6 @@ function SectionBridge({ label }: { label: string }) {
 }
 
 export default function HomePage() {
-  const heroDemo = toPublicDemoVideo(HERO_DEMO_VIDEO);
   const featureDemosByFeatureId = Object.fromEntries(
     FEATURE_DEMO_VIDEOS.map((demo) => [demo.featureId, toPublicDemoVideo(demo)]),
   );
@@ -196,39 +183,35 @@ export default function HomePage() {
       />
       <SaasNav />
 
-      <section className="relative isolate overflow-hidden bg-slate-950" style={{ minHeight: '92vh' }}>
-        {/* This hero was inspired and implemented based on the implementation at https://crazygl.com/hero/card-stack */}
-        {/* Original implementation by @ybouane https://x.com/ybouane */}
-        <div dangerouslySetInnerHTML={{ __html: '<!-- This hero was inspired and implemented based on the implementation at https://crazygl.com/hero/card-stack -->\n<!-- Original implementation by @ybouane https://x.com/ybouane -->' }} />
-        <div style={{ '--crazygl-height': '92vh' } as React.CSSProperties}>
-          <HeroCardStack
-            contentType="heading"
-            heading="Plan every wedding from one calm command center."
-            subheading="Replace scattered spreadsheets, messages, documents, and timelines with a planner workspace that keeps couples, vendors, and teams in sync."
-            screenshots={[
-              "/dashboard.webp",
-              "/wedding_config.webp",
-              "/couple_portal_dashboard.webp",
-              "/seating.webp",
-              "/budget_management_dark_mode.webp",
-              "/contract_canvas.webp",
-              "/planner_inbox.webp",
-              "/knowledgebase.webp"
-            ]}
-            groupOffsetX={0}
-            groupOffsetY={0}
-            stackOffsetX={0.06}
-            stackOffsetY={0.04}
-            stackOffsetZ={0.04}
-            cardSize={2.4}
-            screenBrightness={0.4}
-            bgTop="#161a24"
-            bgBottom="#06080d"
-            edgeGlowColor="#56e3ff"
-            contentAlign="start"
-            paddingX={64}
-            paddingY={48}
-          />
+      <section className="relative isolate overflow-hidden bg-slate-950 px-5 pb-20 pt-32 sm:px-8 sm:pb-24 sm:pt-36 lg:px-12 lg:pb-28">
+        <div
+          className="absolute inset-0 -z-10 bg-[radial-gradient(900px_620px_at_12%_10%,rgba(212,165,165,0.2),transparent_68%),radial-gradient(900px_620px_at_90%_18%,rgba(232,196,106,0.12),transparent_68%)]"
+          aria-hidden="true"
+        />
+        <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[minmax(0,0.78fr)_minmax(520px,1.22fr)] lg:gap-14">
+          <div className="max-w-xl">
+            <h1 className="text-5xl font-semibold leading-[0.98] tracking-[-0.035em] text-white sm:text-6xl lg:text-7xl">
+              The connected operating system built specifically for wedding planners.
+            </h1>
+            <p className="mt-7 text-lg leading-8 text-slate-300 sm:text-xl">
+              Replace scattered spreadsheets, messages, documents, and timelines with one planner-owned workspace that keeps couples, guests, vendors, and teams aligned.
+            </p>
+            <div className="mt-9 flex flex-col gap-4 sm:flex-row sm:items-center">
+              <Link
+                href="/#pricing"
+                className="inline-flex min-h-12 items-center justify-center rounded-full bg-wedding-rose px-7 py-3 text-base font-semibold text-slate-950 shadow-lg shadow-wedding-rose/20 transition hover:bg-wedding-blush focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-wedding-rose"
+              >
+                Start one wedding free
+              </Link>
+              <Link
+                href="/#showcase"
+                className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/20 px-7 py-3 text-base font-semibold text-white transition hover:border-white/40 hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
+              >
+                See the connected workspace
+              </Link>
+            </div>
+          </div>
+          <PhaseOneHeroProof />
         </div>
       </section>
 
@@ -240,10 +223,13 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl">
           <div className="mb-6 max-w-4xl sm:mb-10">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.28em] text-wedding-rose">Planner workflow</p>
+              <p className="text-sm font-semibold uppercase tracking-[0.28em] text-wedding-rose">Planner outcomes</p>
               <h2 className="mt-3 text-3xl font-semibold tracking-normal text-white sm:mt-4 sm:text-5xl">
-                See the actual workspace before you sign up.
+                See how one connected record changes the work.
               </h2>
+              <p className="mt-5 max-w-3xl text-base leading-7 text-slate-300 sm:text-lg">
+                Phase 1 is not a feature-count story. These are the four operating outcomes a systems-minded planner should be able to verify before signing up.
+              </p>
             </div>
           </div>
           <FeatureShowcase demoVideosByFeatureId={featureDemosByFeatureId} />

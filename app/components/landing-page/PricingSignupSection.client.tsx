@@ -131,10 +131,13 @@ export function PricingSignupSection({ pricing, theme }: Props) {
     <section ref={sectionRef} id="pricing" className="scroll-mt-28 bg-slate-950 px-5 py-10 sm:px-8 sm:py-16 lg:px-12">
       <div className="mx-auto max-w-7xl">
         <div className="mx-auto mb-7 max-w-3xl text-center sm:mb-10">
-          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-rose-200">Plans</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-rose-200">Planner workspace plans</p>
           <h2 className="mt-3 text-3xl font-semibold tracking-normal text-white sm:mt-4 sm:text-5xl">
             Start small, then scale the studio.
           </h2>
+          <p className="mx-auto mt-4 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
+            Every plan opens the wedding planner workspace used to manage client weddings, couples, guests, vendors, and teams.
+          </p>
         </div>
         <div className="grid items-stretch gap-3 sm:gap-5 md:grid-cols-2 lg:auto-rows-fr lg:grid-cols-4">
           {displayPricing.map((tier) => (
