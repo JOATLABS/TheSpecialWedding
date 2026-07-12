@@ -37,7 +37,7 @@ export default async function StorefrontPage({
       inquiryForm={
         preview ? undefined : (
           <StorefrontInquiryForm
-            identifier={data.slug}
+            identifier={identifier}
             themeColor={data.storefront.theme_color}
           />
         )
