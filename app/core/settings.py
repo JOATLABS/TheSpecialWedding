@@ -315,6 +315,12 @@ class Settings(BaseSettings):
         le=7,
         alias="STOREFRONT_STAGING_LIFECYCLE_MAX_AGE_DAYS",
     )
+    storefront_image_decode_concurrency: int = Field(
+        default=1,
+        ge=1,
+        le=2,
+        alias="STOREFRONT_IMAGE_DECODE_CONCURRENCY",
+    )
     s3_form_uploads_bucket_name: Optional[str] = Field(
         default=None, alias="S3_FORM_UPLOADS_BUCKET_NAME"
     )
