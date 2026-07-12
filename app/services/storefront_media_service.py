@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 import logging
 from typing import Any
 from uuid import uuid4
+import warnings
 
 from bson import ObjectId
 from fastapi import HTTPException, status
+from PIL import Image, UnidentifiedImageError
 from pymongo.errors import DuplicateKeyError
 
 from app.constants.roles import is_wedding_planner_role
@@ -31,7 +34,10 @@ ALLOWED_STOREFRONT_ASSET_CONTENT_TYPES = frozenset(
 STOREFRONT_ASSET_SLOTS = frozenset({"hero", "about"})
 MAX_STOREFRONT_ASSET_SIZE_BYTES = 5 * 1024 * 1024
 STOREFRONT_UPLOAD_URL_TTL_SECONDS = 300
+STOREFRONT_RESERVATION_TTL_SECONDS = STOREFRONT_UPLOAD_URL_TTL_SECONDS
 STOREFRONT_ASSET_OPERATION_LEASE_SECONDS = 10 * 60
+MAX_STOREFRONT_IMAGE_DIMENSION = 12_000
+MAX_STOREFRONT_IMAGE_PIXELS = 40_000_000
 
 _CONTENT_TYPE_EXTENSIONS = {
     "image/jpeg": ".jpg",
@@ -154,6 +160,10 @@ class StorefrontMediaService:
         normalized_slot = self._validate_slot(slot)
         self._validate_reservation_contract(content_type, size_bytes)
         try:
+            # A distinct bucket name is necessary but not sufficient: the
+            # control plane must also prove that no public hostname exposes
+            # staging bytes and that abandoned uploads expire promptly.
+            await self._storage.require_private_storefront_staging()
             staging_target = await asyncio.to_thread(
                 self._storage.require_target, StorageTarget.STOREFRONT_STAGING
             )
@@ -176,14 +186,18 @@ class StorefrontMediaService:
                 "owner_id": owner_id,
                 "slot": normalized_slot,
                 "state": "reserved",
-            },
-            {"_id": 1},
+            }
         )
         if existing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="An upload is already pending for this storefront image slot",
-            )
+            expires_at = existing.get("reservation_expires_at")
+            if not isinstance(expires_at, datetime) or not self._datetime_is_expired(
+                expires_at
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="An upload is already pending for this storefront image slot",
+                )
+            await self._reap_expired_reservation(owner_id, existing)
 
         asset_object_id = ObjectId()
         asset_id = str(asset_object_id)
@@ -205,6 +219,9 @@ class StorefrontMediaService:
             StorageTarget.BLOG_ASSETS, key_hint
         )
         now = datetime.now(timezone.utc)
+        reservation_expires_at = now + timedelta(
+            seconds=STOREFRONT_RESERVATION_TTL_SECONDS
+        )
         reservation = {
             "_id": asset_object_id,
             "owner_id": owner_id,
@@ -215,25 +232,48 @@ class StorefrontMediaService:
             "declared_size_bytes": size_bytes,
             "state": "reserved",
             "cleanup_attempts": 0,
+            "reservation_expires_at": reservation_expires_at,
             "created_at": now,
             "updated_at": now,
         }
 
+        insert_error: Exception | None = None
         try:
             await assets.insert_one(reservation)
-        except DuplicateKeyError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="An upload is already pending for this storefront image slot",
-            ) from exc
         except Exception as exc:
-            logger.exception(
-                "Failed to reserve storefront asset for owner %s", owner_id
+            insert_error = exc
+            committed = await assets.find_one(
+                {
+                    "_id": asset_object_id,
+                    "owner_id": owner_id,
+                    "slot": normalized_slot,
+                    "state": "reserved",
+                    "staging_key": staging_key,
+                    "final_key_prefix": final_key_prefix,
+                    "declared_content_type": content_type,
+                    "declared_size_bytes": size_bytes,
+                }
             )
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Storefront image reservation is temporarily unavailable",
-            ) from exc
+            if not committed:
+                if isinstance(exc, DuplicateKeyError):
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            "An upload is already pending for this storefront image slot"
+                        ),
+                    ) from exc
+                logger.exception(
+                    "Failed to reserve storefront asset for owner %s", owner_id
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Storefront image reservation is temporarily unavailable",
+                ) from exc
+        if insert_error:
+            logger.warning(
+                "Reconciled committed storefront reservation %s after lost acknowledgement",
+                asset_id,
+            )
 
         try:
             upload_url = await asyncio.to_thread(
@@ -288,6 +328,76 @@ class StorefrontMediaService:
         return value <= datetime.now(timezone.utc) - timedelta(
             seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS
         )
+
+    @staticmethod
+    def _datetime_is_expired(value: datetime) -> bool:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value <= datetime.now(timezone.utc)
+
+    async def _reap_expired_reservation(self, owner_id: str, asset: dict) -> None:
+        assets = self._mongo.db["storefront_assets"]
+        reap_token = uuid4().hex
+        claimed = await assets.update_one(
+            {
+                "_id": asset["_id"],
+                "owner_id": owner_id,
+                "slot": asset["slot"],
+                "state": "reserved",
+                "reservation_expires_at": {"$lte": datetime.now(timezone.utc)},
+            },
+            {
+                "$set": {
+                    "state": "reaping",
+                    "reap_token": reap_token,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
+        )
+        if not getattr(claimed, "modified_count", 0):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Storefront upload reservation changed; reload and retry",
+            )
+        try:
+            await self._delete_storage_keys(
+                [asset["staging_key"]],
+                target=StorageTarget.STOREFRONT_STAGING,
+            )
+        except Exception as exc:
+            await assets.update_one(
+                {
+                    "_id": asset["_id"],
+                    "owner_id": owner_id,
+                    "state": "reaping",
+                    "reap_token": reap_token,
+                },
+                {
+                    "$set": {
+                        "state": "cleanup_retry",
+                        "cleanup_reason": "expired_reservation",
+                        "last_cleanup_error": exc.__class__.__name__,
+                        "last_cleanup_attempt_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc),
+                    },
+                    "$inc": {"cleanup_attempts": 1},
+                    "$unset": {"reap_token": ""},
+                },
+            )
+            return
+        try:
+            await assets.delete_one(
+                {
+                    "_id": asset["_id"],
+                    "owner_id": owner_id,
+                    "state": "reaping",
+                    "reap_token": reap_token,
+                }
+            )
+        except Exception:
+            logger.exception(
+                "Failed to remove reaped storefront reservation %s", asset["_id"]
+            )
 
     async def _find_owned_asset(self, owner_id: str, asset_id: str) -> dict:
         asset = await self._mongo.db["storefront_assets"].find_one(
@@ -355,6 +465,81 @@ class StorefrontMediaService:
         if not isinstance(etag, str) or not etag.strip():
             return "Uploaded image is missing a verifiable object version"
         return None
+
+    def _read_and_sanitize_staging_image(
+        self, asset: dict, expected_head: dict
+    ) -> tuple[bytes, str]:
+        """Decode private bytes and return a metadata-free deterministic image."""
+
+        payload = self._storage.get_object_bytes(
+            StorageTarget.STOREFRONT_STAGING,
+            asset["staging_key"],
+            source_etag=expected_head.get("ETag"),
+        )
+        expected_size = expected_head.get("ContentLength")
+        if len(payload) != expected_size or len(payload) != asset.get(
+            "declared_size_bytes"
+        ):
+            raise ValueError("Uploaded image byte length changed during validation")
+
+        declared_type = asset.get("declared_content_type")
+        mime_by_format = {
+            "JPEG": "image/jpeg",
+            "PNG": "image/png",
+            "WEBP": "image/webp",
+        }
+        format_by_mime = {
+            mime: image_format for image_format, mime in mime_by_format.items()
+        }
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", Image.DecompressionBombWarning)
+                with Image.open(BytesIO(payload)) as image:
+                    detected_type = mime_by_format.get(str(image.format).upper())
+                    if detected_type != declared_type:
+                        raise ValueError(
+                            "Uploaded image bytes do not match the declared content type"
+                        )
+                    width, height = image.size
+                    if (
+                        width <= 0
+                        or height <= 0
+                        or width > MAX_STOREFRONT_IMAGE_DIMENSION
+                        or height > MAX_STOREFRONT_IMAGE_DIMENSION
+                        or width * height > MAX_STOREFRONT_IMAGE_PIXELS
+                    ):
+                        raise ValueError("Uploaded image dimensions are not supported")
+                    if int(getattr(image, "n_frames", 1)) != 1:
+                        raise ValueError("Animated storefront images are not supported")
+                    image.load()
+                    if declared_type == "image/jpeg":
+                        sanitized = image.convert("RGB")
+                    elif image.mode in {"RGBA", "LA"} or "transparency" in image.info:
+                        sanitized = image.convert("RGBA")
+                    else:
+                        sanitized = image.convert("RGB")
+        except ValueError:
+            raise
+        except (UnidentifiedImageError, Image.DecompressionBombError, OSError) as exc:
+            raise ValueError("Uploaded image bytes are invalid or unsafe") from exc
+
+        output = BytesIO()
+        image_format = format_by_mime.get(declared_type)
+        if image_format == "JPEG":
+            sanitized.save(output, format=image_format, quality=90, optimize=True)
+        elif image_format == "PNG":
+            sanitized.save(output, format=image_format, optimize=True)
+        elif image_format == "WEBP":
+            sanitized.save(output, format=image_format, quality=90, method=6)
+        else:
+            raise ValueError("Uploaded image content type is unsupported")
+        sanitized_bytes = output.getvalue()
+        if (
+            not sanitized_bytes
+            or len(sanitized_bytes) > MAX_STOREFRONT_ASSET_SIZE_BYTES
+        ):
+            raise ValueError("Sanitized storefront image exceeds the size limit")
+        return sanitized_bytes, declared_type
 
     @staticmethod
     def _storage_keys(asset: dict) -> list[str]:
@@ -543,6 +728,17 @@ class StorefrontMediaService:
                     },
                 )
             return self._serialize_asset(asset)
+        if asset.get("state") == "reserved":
+            reservation_expires_at = asset.get("reservation_expires_at")
+            if not isinstance(
+                reservation_expires_at, datetime
+            ) or self._datetime_is_expired(reservation_expires_at):
+                if isinstance(reservation_expires_at, datetime):
+                    await self._reap_expired_reservation(owner_id, asset)
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Storefront upload reservation expired; reserve a new upload",
+                )
         if asset.get(
             "state"
         ) == "finalization_recovery" and self._operation_lease_is_stale(
@@ -753,6 +949,7 @@ class StorefrontMediaService:
                 "_id": asset["_id"],
                 "owner_id": owner_id,
                 "state": "reserved",
+                "reservation_expires_at": {"$gt": finalization_started_at},
             },
             {
                 "$set": {
@@ -889,20 +1086,40 @@ class StorefrontMediaService:
                 candidate_key=candidate_key,
             )
 
+        try:
+            sanitized_bytes, sanitized_content_type = await asyncio.to_thread(
+                self._read_and_sanitize_staging_image, asset, head
+            )
+        except ValueError as exc:
+            await self._discard_invalid_upload(
+                asset,
+                str(exc),
+                finalization_token=finalization_token,
+                candidate_key=candidate_key,
+            )
+        except Exception as exc:
+            logger.exception(
+                "Failed to read fenced storefront staging bytes %s", asset["_id"]
+            )
+            await reset_for_retry()
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Storefront image finalization is temporarily unavailable",
+            ) from exc
+
         await renew_finalization_lease()
 
         try:
             await asyncio.to_thread(
-                self._storage.copy_object,
+                self._storage.upload_fileobj,
+                BytesIO(sanitized_bytes),
                 StorageTarget.BLOG_ASSETS,
-                source_key=asset["staging_key"],
-                destination_key=candidate_key,
-                source_target=StorageTarget.STOREFRONT_STAGING,
-                source_etag=head["ETag"],
+                candidate_key,
+                extra_args={"ContentType": sanitized_content_type},
             )
         except Exception as exc:
-            logger.exception("Failed to finalize storefront upload %s", asset["_id"])
-            await discard_candidate_for_retry("finalization_copy_failed")
+            logger.exception("Failed to sanitize storefront upload %s", asset["_id"])
+            await discard_candidate_for_retry("finalization_upload_failed")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Storefront image finalization is temporarily unavailable",
@@ -926,7 +1143,14 @@ class StorefrontMediaService:
                 detail="Storefront image finalization is temporarily unavailable",
             ) from exc
 
-        final_contract_error = self._head_contract_error(asset, final_head)
+        final_contract_error = self._head_contract_error(
+            {
+                **asset,
+                "declared_size_bytes": len(sanitized_bytes),
+                "declared_content_type": sanitized_content_type,
+            },
+            final_head,
+        )
         if final_contract_error:
             await self._discard_invalid_upload(
                 asset,
@@ -1054,6 +1278,8 @@ class StorefrontMediaService:
                 "$or": [
                     {"hero_asset_id": asset_id},
                     {"about_asset_id": asset_id},
+                    {"pending_hero_asset_id": asset_id},
+                    {"pending_about_asset_id": asset_id},
                 ],
             },
             {"_id": 1},
@@ -1139,7 +1365,12 @@ class StorefrontMediaService:
         return {"status": "deleted", "asset_id": normalized_asset_id}
 
     async def _validate_owned_asset_for_slot(
-        self, owner_id: str, asset_id: str, slot: str
+        self,
+        owner_id: str,
+        asset_id: str,
+        slot: str,
+        *,
+        allow_stale_claim_takeover: bool = False,
     ) -> dict:
         normalized_slot = self._validate_slot(slot)
         asset = await self._find_owned_asset(owner_id, asset_id)
@@ -1152,18 +1383,42 @@ class StorefrontMediaService:
             asset.get("attach_claimed_at")
         ):
             field_name = f"{normalized_slot}_asset_id"
+            pending_asset_field = f"pending_{normalized_slot}_asset_id"
+            pending_claim_field = f"pending_{normalized_slot}_claim_id"
             referenced = await self._mongo.db["storefront_settings"].find_one(
                 {
                     "planner_id": owner_id,
-                    field_name: str(asset["_id"]),
+                    "$or": [
+                        {field_name: str(asset["_id"])},
+                        {
+                            pending_asset_field: str(asset["_id"]),
+                            pending_claim_field: asset.get("attach_claim_id"),
+                        },
+                    ],
                 },
-                {"_id": 1},
+                {
+                    "_id": 1,
+                    field_name: 1,
+                    pending_asset_field: 1,
+                    pending_claim_field: 1,
+                },
             )
-            if not referenced:
-                # A paused worker may still commit its settings CAS. Returning
-                # this receipt to ready would let cleanup win before that write.
-                # Keep the old token fenced until its worker or an operator can
-                # reconcile it against a durable reference.
+            pending_exact = bool(
+                referenced
+                and referenced.get(pending_asset_field) == str(asset["_id"])
+                and referenced.get(pending_claim_field) == asset.get("attach_claim_id")
+            )
+            if pending_exact:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Storefront asset attachment is still being reconciled",
+                )
+            if allow_stale_claim_takeover:
+                # No durable pending token belongs to the paused worker. A new
+                # claim may fence the asset; the old worker's settings CAS is
+                # revision-guarded and its token can never promote afterward.
+                return asset
+            if not referenced or referenced.get(field_name) != str(asset["_id"]):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Storefront asset attachment is still being reconciled",
@@ -1295,19 +1550,32 @@ class StorefrontMediaService:
                     )
 
                 asset = await self._validate_owned_asset_for_slot(
-                    owner_id, asset_id, slot
+                    owner_id,
+                    asset_id,
+                    slot,
+                    allow_stale_claim_takeover=True,
                 )
                 normalized_asset_id = str(asset["_id"])
                 values[field_name] = normalized_asset_id
 
                 now = datetime.now(timezone.utc)
+                claim_filter: dict[str, Any] = {
+                    "_id": asset["_id"],
+                    "owner_id": owner_id,
+                    "slot": slot,
+                }
+                if asset.get("state") == "attaching":
+                    claim_filter.update(
+                        {
+                            "state": "attaching",
+                            "attach_claim_id": asset.get("attach_claim_id"),
+                            "attach_claimed_at": asset.get("attach_claimed_at"),
+                        }
+                    )
+                else:
+                    claim_filter["state"] = {"$in": ["ready", "attached"]}
                 result = await assets.update_one(
-                    {
-                        "_id": asset["_id"],
-                        "owner_id": owner_id,
-                        "slot": slot,
-                        "state": {"$in": ["ready", "attached"]},
-                    },
+                    claim_filter,
                     {
                         "$set": {
                             "state": "attaching",
@@ -1352,7 +1620,7 @@ class StorefrontMediaService:
         }
 
     async def release_settings_asset_claims(self, owner: Any, claim: dict) -> None:
-        """Reconcile a losing claim against the canonical settings reference."""
+        """Release a losing token without disturbing a durable pending handoff."""
 
         owner_id = self._owner_id(owner)
         if claim.get("owner_id") != owner_id:
@@ -1361,15 +1629,31 @@ class StorefrontMediaService:
         assets = self._mongo.db["storefront_assets"]
         settings = self._mongo.db["storefront_settings"]
         for entry in entries:
+            pending_asset_field = f"pending_{entry['slot']}_asset_id"
+            pending_claim_field = f"pending_{entry['slot']}_claim_id"
             now = datetime.now(timezone.utc)
-            referenced = await settings.find_one(
+            row = await settings.find_one(
+                {"planner_id": owner_id},
                 {
-                    "planner_id": owner_id,
-                    entry["field_name"]: entry["asset_id"],
+                    "_id": 1,
+                    entry["field_name"]: 1,
+                    pending_asset_field: 1,
+                    pending_claim_field: 1,
                 },
-                {"_id": 1},
             )
-            target_state = "attached" if referenced else "ready"
+            if (
+                row
+                and row.get(pending_asset_field) == entry["asset_id"]
+                and row.get(pending_claim_field) == claim_id
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A durable storefront asset handoff cannot be released",
+                )
+            stable_reference = bool(
+                row and row.get(entry["field_name"]) == entry["asset_id"]
+            )
+            target_state = "attached" if stable_reference else "ready"
             set_fields: dict[str, Any] = {
                 "state": target_state,
                 "updated_at": now,
@@ -1378,17 +1662,27 @@ class StorefrontMediaService:
                 "attach_claim_id": "",
                 "attach_claimed_at": "",
             }
-            if referenced:
+            if stable_reference:
                 set_fields["attached_at"] = now
+                set_fields["attached_claim_id"] = claim_id
             else:
                 unset_fields["attached_at"] = ""
+                unset_fields["attached_claim_id"] = ""
             result = await assets.update_one(
                 {
                     "_id": self._asset_query_id(entry["asset_id"]),
                     "owner_id": owner_id,
                     "slot": entry["slot"],
-                    "state": "attaching",
-                    "attach_claim_id": claim_id,
+                    "$or": [
+                        {
+                            "state": "attaching",
+                            "attach_claim_id": claim_id,
+                        },
+                        {
+                            "state": "attached",
+                            "attached_claim_id": claim_id,
+                        },
+                    ],
                 },
                 {
                     "$set": set_fields,
@@ -1412,7 +1706,7 @@ class StorefrontMediaService:
             )
 
     async def attach_settings_asset_claims(self, owner: Any, claim: dict) -> None:
-        """Commit claimed assets only after their settings references are durable."""
+        """Attach assets only for their exact durable pending ID/token pairs."""
 
         owner_id = self._owner_id(owner)
         if claim.get("owner_id") != owner_id:
@@ -1421,10 +1715,13 @@ class StorefrontMediaService:
         assets = self._mongo.db["storefront_assets"]
         settings = self._mongo.db["storefront_settings"]
         for entry in entries:
+            pending_asset_field = f"pending_{entry['slot']}_asset_id"
+            pending_claim_field = f"pending_{entry['slot']}_claim_id"
             referenced = await settings.find_one(
                 {
                     "planner_id": owner_id,
-                    entry["field_name"]: entry["asset_id"],
+                    pending_asset_field: entry["asset_id"],
+                    pending_claim_field: claim_id,
                 },
                 {"_id": 1},
             )
@@ -1445,6 +1742,7 @@ class StorefrontMediaService:
                 {
                     "$set": {
                         "state": "attached",
+                        "attached_claim_id": claim_id,
                         "attached_at": now,
                         "updated_at": now,
                     },
@@ -1461,14 +1759,86 @@ class StorefrontMediaService:
                     "_id": self._asset_query_id(entry["asset_id"]),
                     "owner_id": owner_id,
                 },
-                {"state": 1},
+                {"state": 1, "attached_claim_id": 1},
             )
-            if current and current.get("state") == "attached":
+            if (
+                current
+                and current.get("state") == "attached"
+                and current.get("attached_claim_id") == claim_id
+            ):
                 continue
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Storefront asset claim could not be attached safely",
             )
+
+    async def promote_settings_asset_claims(self, owner: Any, claim: dict) -> None:
+        """Atomically replace stable settings IDs after every claim is attached."""
+
+        owner_id = self._owner_id(owner)
+        if claim.get("owner_id") != owner_id:
+            raise RuntimeError("Storefront asset claim owner mismatch")
+        claim_id, entries = self._claim_entries(claim)
+        if not entries:
+            return
+        assets = self._mongo.db["storefront_assets"]
+        settings = self._mongo.db["storefront_settings"]
+
+        for entry in entries:
+            attached = await assets.find_one(
+                {
+                    "_id": self._asset_query_id(entry["asset_id"]),
+                    "owner_id": owner_id,
+                    "slot": entry["slot"],
+                    "state": "attached",
+                    "attached_claim_id": claim_id,
+                },
+                {"_id": 1},
+            )
+            if not attached:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Storefront asset claim is not attached for promotion",
+                )
+
+        promote_filter: dict[str, Any] = {"planner_id": owner_id}
+        stable_updates: dict[str, str] = {}
+        pending_unsets: dict[str, str] = {}
+        for entry in entries:
+            pending_asset_field = f"pending_{entry['slot']}_asset_id"
+            pending_claim_field = f"pending_{entry['slot']}_claim_id"
+            promote_filter[pending_asset_field] = entry["asset_id"]
+            promote_filter[pending_claim_field] = claim_id
+            stable_updates[entry["field_name"]] = entry["asset_id"]
+            pending_unsets[pending_asset_field] = ""
+            pending_unsets[pending_claim_field] = ""
+
+        promoted = await settings.update_one(
+            promote_filter,
+            {
+                "$set": {
+                    **stable_updates,
+                    "updated_at": datetime.now(timezone.utc),
+                },
+                "$unset": pending_unsets,
+                "$inc": {"revision": 1},
+            },
+        )
+        if getattr(promoted, "modified_count", 0):
+            return
+
+        current = await settings.find_one({"planner_id": owner_id})
+        if current and all(
+            current.get(entry["field_name"]) == entry["asset_id"]
+            and current.get(f"pending_{entry['slot']}_asset_id") is None
+            and current.get(f"pending_{entry['slot']}_claim_id") is None
+            for entry in entries
+        ):
+            return
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Storefront asset promotion lost its pending settings fence",
+        )
 
     async def reconcile_settings_asset_claims(self, owner: Any, claim: dict) -> None:
         """Resolve an ambiguous settings write without exposing cleanup races."""
@@ -1476,7 +1846,7 @@ class StorefrontMediaService:
         owner_id = self._owner_id(owner)
         if claim.get("owner_id") != owner_id:
             raise RuntimeError("Storefront asset claim owner mismatch")
-        _claim_id, entries = self._claim_entries(claim)
+        claim_id, entries = self._claim_entries(claim)
         settings = self._mongo.db["storefront_settings"]
         referenced: list[dict[str, str]] = []
         unreferenced: list[dict[str, str]] = []
@@ -1484,20 +1854,108 @@ class StorefrontMediaService:
             row = await settings.find_one(
                 {
                     "planner_id": owner_id,
-                    entry["field_name"]: entry["asset_id"],
+                    f"pending_{entry['slot']}_asset_id": entry["asset_id"],
+                    f"pending_{entry['slot']}_claim_id": claim_id,
                 },
                 {"_id": 1},
             )
             (referenced if row else unreferenced).append(entry)
 
         if referenced:
-            await self.attach_settings_asset_claims(
-                owner, {**claim, "claimed_assets": referenced}
-            )
+            referenced_claim = {**claim, "claimed_assets": referenced}
+            await self.attach_settings_asset_claims(owner, referenced_claim)
+            await self.promote_settings_asset_claims(owner, referenced_claim)
         if unreferenced:
             await self.release_settings_asset_claims(
                 owner, {**claim, "claimed_assets": unreferenced}
             )
+
+    async def recover_pending_settings_assets(self, owner: Any) -> None:
+        """Complete or safely discard durable pending handoffs after a crash."""
+
+        owner_id = self._owner_id(owner)
+        settings = self._mongo.db["storefront_settings"]
+        assets = self._mongo.db["storefront_assets"]
+        row = await settings.find_one({"planner_id": owner_id})
+        if not row:
+            return
+
+        claims_by_token: dict[str, list[dict[str, str]]] = {}
+        invalid_pending: list[tuple[str, Any, Any]] = []
+        for slot in ("hero", "about"):
+            pending_asset_field = f"pending_{slot}_asset_id"
+            pending_claim_field = f"pending_{slot}_claim_id"
+            pending_asset_id = row.get(pending_asset_field)
+            pending_claim_id = row.get(pending_claim_field)
+            if pending_asset_id is None and pending_claim_id is None:
+                continue
+            if not isinstance(pending_asset_id, str) or not isinstance(
+                pending_claim_id, str
+            ):
+                invalid_pending.append((slot, pending_asset_id, pending_claim_id))
+                continue
+            asset = await assets.find_one(
+                {
+                    "_id": self._asset_query_id(pending_asset_id),
+                    "owner_id": owner_id,
+                    "slot": slot,
+                    "$or": [
+                        {
+                            "state": "attaching",
+                            "attach_claim_id": pending_claim_id,
+                        },
+                        {
+                            "state": "attached",
+                            "attached_claim_id": pending_claim_id,
+                        },
+                    ],
+                },
+                {"_id": 1},
+            )
+            if not asset:
+                invalid_pending.append((slot, pending_asset_id, pending_claim_id))
+                continue
+            claims_by_token.setdefault(pending_claim_id, []).append(
+                {
+                    "asset_id": pending_asset_id,
+                    "slot": slot,
+                    "field_name": f"{slot}_asset_id",
+                }
+            )
+
+        for claim_id, entries in claims_by_token.items():
+            claim = {
+                "owner_id": owner_id,
+                "claim_id": claim_id,
+                "claimed_assets": entries,
+            }
+            await self.attach_settings_asset_claims(owner, claim)
+            await self.promote_settings_asset_claims(owner, claim)
+
+        for slot, pending_asset_id, pending_claim_id in invalid_pending:
+            pending_asset_field = f"pending_{slot}_asset_id"
+            pending_claim_field = f"pending_{slot}_claim_id"
+            cleared = await settings.update_one(
+                {
+                    "planner_id": owner_id,
+                    pending_asset_field: pending_asset_id,
+                    pending_claim_field: pending_claim_id,
+                },
+                {
+                    "$unset": {
+                        pending_asset_field: "",
+                        pending_claim_field: "",
+                    },
+                    "$set": {"updated_at": datetime.now(timezone.utc)},
+                    "$inc": {"revision": 1},
+                },
+            )
+            if not getattr(cleared, "modified_count", 0):
+                logger.info(
+                    "Skipped stale pending storefront %s recovery for owner %s",
+                    slot,
+                    owner_id,
+                )
 
     async def attach(self, owner: Any, asset_id: str, slot: str) -> dict:
         """Mark a validated asset attached after its settings write succeeds."""

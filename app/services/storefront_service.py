@@ -139,6 +139,7 @@ class StorefrontService:
     async def get_settings(self, owner: Any) -> dict | None:
         owner_id = self._owner_id(owner)
         await self._require_storefront(owner)
+        await self._media.recover_pending_settings_assets(owner)
         settings = await self._mongo.db["storefront_settings"].find_one(
             {"planner_id": owner_id}
         )
@@ -156,12 +157,19 @@ class StorefrontService:
         owner_id = self._owner_id(owner)
         await self._require_storefront(owner)
         collection = self._mongo.db["storefront_settings"]
+        # Finish or roll back any durable handoff left by a crashed request
+        # before accepting another edit. Public serializers never project the
+        # pending fields, so the previous stable image remains visible until
+        # this recovery promotes an exactly fenced claim.
+        await self._media.recover_pending_settings_assets(owner)
         requested_changes = payload.model_dump(exclude_unset=True)
         explicit_asset_changes = {
             field: requested_changes[field]
             for field in ("hero_asset_id", "about_asset_id")
             if field in requested_changes
         }
+        for field_name in explicit_asset_changes:
+            requested_changes.pop(field_name, None)
         requested_slug = requested_changes.pop("slug", None)
         slug_was_explicit = requested_slug is not None
         normalized_requested_slug: str | None = None
@@ -232,6 +240,8 @@ class StorefrontService:
 
             asset_claim: dict | None = None
             attempt_changes = dict(requested_changes)
+            pending_unsets: dict[str, str] = {}
+            displaced_pending_claims: dict[str, list[dict[str, str]]] = {}
             if explicit_asset_changes:
                 asset_claim = await self._media.claim_settings_assets(
                     owner, **explicit_asset_changes
@@ -241,7 +251,51 @@ class StorefrontService:
                     raise RuntimeError(
                         "Storefront media service returned an invalid claim receipt"
                     )
-                attempt_changes.update(validated_assets)
+                claim_id = asset_claim.get("claim_id")
+                if not isinstance(claim_id, str):
+                    raise RuntimeError(
+                        "Storefront media service returned an invalid claim receipt"
+                    )
+                for field_name, asset_id in validated_assets.items():
+                    slot = field_name.removesuffix("_asset_id")
+                    pending_asset_field = f"pending_{slot}_asset_id"
+                    pending_claim_field = f"pending_{slot}_claim_id"
+                    if asset_id is None:
+                        # Explicit clear is immediately authoritative, but it
+                        # also fences a paused promoter by removing its token.
+                        attempt_changes[field_name] = None
+                        pending_unsets[pending_asset_field] = ""
+                        pending_unsets[pending_claim_field] = ""
+                    else:
+                        # New bytes are never made public by the settings CAS.
+                        # Only the post-attach promotion may replace stable.
+                        attempt_changes[pending_asset_field] = asset_id
+                        attempt_changes[pending_claim_field] = claim_id
+
+            if current:
+                for field_name in explicit_asset_changes:
+                    slot = field_name.removesuffix("_asset_id")
+                    pending_asset_field = f"pending_{slot}_asset_id"
+                    pending_claim_field = f"pending_{slot}_claim_id"
+                    previous_asset_id = current.get(pending_asset_field)
+                    previous_claim_id = current.get(pending_claim_field)
+                    next_asset_id = attempt_changes.get(pending_asset_field)
+                    next_claim_id = attempt_changes.get(pending_claim_field)
+                    if (
+                        isinstance(previous_asset_id, str)
+                        and isinstance(previous_claim_id, str)
+                        and (previous_asset_id, previous_claim_id)
+                        != (next_asset_id, next_claim_id)
+                    ):
+                        displaced_pending_claims.setdefault(
+                            previous_claim_id, []
+                        ).append(
+                            {
+                                "asset_id": previous_asset_id,
+                                "slot": slot,
+                                "field_name": field_name,
+                            }
+                        )
 
             update: dict[str, Any] = {
                 "planner_id": owner_id,
@@ -299,9 +353,15 @@ class StorefrontService:
 
             try:
                 if current:
+                    write_operation: dict[str, Any] = {
+                        "$set": update,
+                        "$inc": {"revision": 1},
+                    }
+                    if pending_unsets:
+                        write_operation["$unset"] = pending_unsets
                     result = await collection.update_one(
                         write_filter,
-                        {"$set": update, "$inc": {"revision": 1}},
+                        write_operation,
                         upsert=False,
                     )
                     write_succeeded = bool(getattr(result, "modified_count", 0))
@@ -335,6 +395,29 @@ class StorefrontService:
                     await self._media.release_settings_asset_claims(owner, asset_claim)
                 continue
 
+            for (
+                displaced_claim_id,
+                displaced_entries,
+            ) in displaced_pending_claims.items():
+                try:
+                    await self._media.release_settings_asset_claims(
+                        owner,
+                        {
+                            "owner_id": owner_id,
+                            "claim_id": displaced_claim_id,
+                            "claimed_assets": displaced_entries,
+                            "values": {},
+                        },
+                    )
+                except Exception:
+                    # The settings token is already fenced out. Keep the save
+                    # authoritative and retain the lifecycle receipt for a
+                    # later cleanup/recovery pass.
+                    logger.exception(
+                        "Failed to release displaced storefront pending claim %s",
+                        displaced_claim_id,
+                    )
+
             try:
                 saved = await collection.find_one({"planner_id": owner_id})
             except Exception:
@@ -352,24 +435,39 @@ class StorefrontService:
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail="Storefront settings could not be read after saving",
                 )
-            replaced_asset_ids = [
-                current.get(field_name)
-                for field_name in attempt_changes
-                if field_name in explicit_asset_changes
-                if current
-                and current.get(field_name)
-                and current.get(field_name) != saved.get(field_name)
-            ]
             if asset_claim:
                 try:
                     await self._media.attach_settings_asset_claims(owner, asset_claim)
+                    await self._media.promote_settings_asset_claims(owner, asset_claim)
                 except Exception:
-                    # Keep the object protected in ``attaching`` and make one
-                    # reference-aware repair attempt. Never report success while
-                    # leaving a deletable object behind a durable settings ID.
+                    # Reconcile the exact pending token. It may complete a
+                    # committed write or release a losing claim, but can never
+                    # promote over a newer settings revision/token.
                     await self._media.reconcile_settings_asset_claims(
                         owner, asset_claim
                     )
+            saved = await collection.find_one({"planner_id": owner_id})
+            if not saved:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Storefront settings could not be read after saving",
+                )
+            expected_assets = asset_claim.get("values", {}) if asset_claim else {}
+            if any(
+                saved.get(field_name) != asset_id
+                for field_name, asset_id in expected_assets.items()
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Storefront image update is pending recovery; retry later",
+                )
+            replaced_asset_ids = [
+                current.get(field_name)
+                for field_name, asset_id in expected_assets.items()
+                if current
+                and current.get(field_name)
+                and current.get(field_name) != asset_id
+            ]
             for replaced_asset_id in replaced_asset_ids:
                 try:
                     await self._media.release_if_unreferenced(owner, replaced_asset_id)

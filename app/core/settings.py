@@ -309,6 +309,12 @@ class Settings(BaseSettings):
     s3_storefront_staging_bucket_name: Optional[str] = Field(
         default=None, alias="S3_STOREFRONT_STAGING_BUCKET_NAME"
     )
+    storefront_staging_lifecycle_max_age_days: int = Field(
+        default=1,
+        ge=1,
+        le=7,
+        alias="STOREFRONT_STAGING_LIFECYCLE_MAX_AGE_DAYS",
+    )
     s3_form_uploads_bucket_name: Optional[str] = Field(
         default=None, alias="S3_FORM_UPLOADS_BUCKET_NAME"
     )
