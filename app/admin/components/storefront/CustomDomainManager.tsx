@@ -32,7 +32,7 @@ export function CustomDomainManager({ initialDomain, initialStatus, verification
     setLoading(true);
     setError('');
     try {
-      const res = await apiRequest('/api/storefront/custom-domain', 'POST', { domain });
+      const res = await apiRequest('/admin/storefront/custom-domain', 'POST', { domain });
       if (res.status === 'success') {
         setStatus(res.data.cloudflare_hostname_status || 'pending');
         setRecords(res.data.ownership_verification);
@@ -50,7 +50,7 @@ export function CustomDomainManager({ initialDomain, initialStatus, verification
   const checkStatus = async () => {
     setChecking(true);
     try {
-      const res = await apiRequest('/api/storefront/custom-domain/status', 'GET');
+      const res = await apiRequest('/admin/storefront/custom-domain/status', 'GET');
       if (res.status === 'success' && res.data) {
         setStatus(res.data.status);
       }
@@ -64,7 +64,7 @@ export function CustomDomainManager({ initialDomain, initialStatus, verification
   const handleRemove = async () => {
     setLoading(true);
     try {
-      await apiRequest('/api/storefront/custom-domain', 'DELETE');
+      await apiRequest('/admin/storefront/custom-domain', 'DELETE');
       setDomain('');
       setStatus('none');
       setRecords(null);

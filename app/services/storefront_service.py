@@ -130,6 +130,7 @@ class StorefrontService:
         if not settings.get("slug"):
             settings = dict(settings)
             settings["slug"] = await self._default_slug(owner_id, settings.get("title"))
+            settings["_slug_persisted"] = False
         return self._serialize_settings(settings)
 
     async def update_settings(
@@ -138,50 +139,18 @@ class StorefrontService:
         owner_id = self._owner_id(owner)
         await self._require_storefront(owner)
         collection = self._mongo.db["storefront_settings"]
-        current = await collection.find_one({"planner_id": owner_id})
-        now = datetime.now(timezone.utc)
-        changes = payload.model_dump(exclude_unset=True)
-
-        requested_slug = changes.pop("slug", None)
-        if requested_slug is not None:
+        requested_changes = payload.model_dump(exclude_unset=True)
+        requested_slug = requested_changes.pop("slug", None)
+        slug_was_explicit = requested_slug is not None
+        normalized_requested_slug: str | None = None
+        if slug_was_explicit:
             try:
-                slug = normalize_storefront_slug(requested_slug)
+                normalized_requested_slug = normalize_storefront_slug(requested_slug)
             except ValueError as exc:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail=str(exc),
                 ) from exc
-        elif current and current.get("slug"):
-            slug = current["slug"]
-        else:
-            slug = await self._default_slug(owner_id, changes.get("title"))
-
-        was_ever_published = bool(
-            current
-            and (current.get("published_at") or current.get("is_published") is True)
-        )
-        if (
-            current
-            and was_ever_published
-            and current.get("slug")
-            and slug != current["slug"]
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    "The storefront slug cannot change after first publication; "
-                    "a redirect lifecycle is required to preserve existing links"
-                ),
-            )
-
-        duplicate = await collection.find_one(
-            {"slug": slug, "planner_id": {"$ne": owner_id}}, {"_id": 1}
-        )
-        if duplicate:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="This storefront slug is already in use",
-            )
 
         # Nullable authored fields intentionally clear when explicitly sent as
         # null. Optional booleans/theme/slug use null to mean "leave unchanged".
@@ -191,60 +160,147 @@ class StorefrontService:
             "is_published",
             "theme_color",
         ):
-            if changes.get(optional_control) is None:
-                changes.pop(optional_control, None)
+            if requested_changes.get(optional_control) is None:
+                requested_changes.pop(optional_control, None)
 
-        update: dict[str, Any] = {
-            "planner_id": owner_id,
-            "slug": slug,
-            "updated_at": now,
-            **changes,
-        }
-        if current and not current.get("created_at"):
-            update["created_at"] = now
-        if not current:
-            update.update(
-                {
-                    "created_at": now,
-                    "title": changes.get("title"),
-                    "description": changes.get("description"),
-                    "contact_email": changes.get("contact_email"),
-                    "contact_phone": changes.get("contact_phone"),
-                    "hero_asset_id": changes.get("hero_asset_id"),
-                    "about_asset_id": changes.get("about_asset_id"),
-                    "theme_color": changes.get("theme_color") or DEFAULT_THEME_COLOR,
-                    "packages_enabled": changes.get("packages_enabled", True),
-                    "reviews_enabled": changes.get("reviews_enabled", True),
-                    "is_published": changes.get("is_published", False),
-                    "published_at": None,
+        # Retry a stale compare-and-set against the latest row. This keeps
+        # publication and slug locking atomic while allowing unrelated edits to
+        # merge without re-sending an old slug snapshot.
+        for attempt in range(3):
+            current = await collection.find_one({"planner_id": owner_id})
+            now = datetime.now(timezone.utc)
+
+            if normalized_requested_slug is not None:
+                slug = normalized_requested_slug
+            elif current and current.get("slug"):
+                slug = current["slug"]
+            else:
+                slug = await self._default_slug(
+                    owner_id,
+                    requested_changes.get("title") or (current or {}).get("title"),
+                )
+
+            was_ever_published = bool(
+                current
+                and (current.get("published_at") or current.get("is_published") is True)
+            )
+            if (
+                current
+                and was_ever_published
+                and current.get("slug")
+                and slug_was_explicit
+                and slug != current["slug"]
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "The storefront slug cannot change after first publication; "
+                        "a redirect lifecycle is required to preserve existing links"
+                    ),
+                )
+
+            duplicate = await collection.find_one(
+                {"slug": slug, "planner_id": {"$ne": owner_id}}, {"_id": 1}
+            )
+            if duplicate:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This storefront slug is already in use",
+                )
+
+            update: dict[str, Any] = {
+                "planner_id": owner_id,
+                "updated_at": now,
+                **requested_changes,
+            }
+            if slug_was_explicit or not current or not current.get("slug"):
+                update["slug"] = slug
+
+            if current and not current.get("created_at"):
+                update["created_at"] = now
+            if not current:
+                update.update(
+                    {
+                        "slug": slug,
+                        "created_at": now,
+                        "title": requested_changes.get("title"),
+                        "description": requested_changes.get("description"),
+                        "contact_email": requested_changes.get("contact_email"),
+                        "contact_phone": requested_changes.get("contact_phone"),
+                        "hero_asset_id": requested_changes.get("hero_asset_id"),
+                        "about_asset_id": requested_changes.get("about_asset_id"),
+                        "theme_color": requested_changes.get("theme_color")
+                        or DEFAULT_THEME_COLOR,
+                        "packages_enabled": requested_changes.get(
+                            "packages_enabled", True
+                        ),
+                        "reviews_enabled": requested_changes.get(
+                            "reviews_enabled", True
+                        ),
+                        "is_published": requested_changes.get("is_published", False),
+                        "published_at": None,
+                    }
+                )
+
+            requested_publication = requested_changes.get("is_published")
+            if requested_publication is True and not (
+                current and current.get("published_at")
+            ):
+                update["published_at"] = now
+            elif (
+                current
+                and current.get("is_published") is True
+                and not current.get("published_at")
+            ):
+                update["published_at"] = current.get("updated_at") or now
+
+            if current:
+                write_filter: dict[str, Any] = {
+                    "_id": current["_id"],
+                    "planner_id": owner_id,
                 }
-            )
+                if "revision" in current:
+                    write_filter["revision"] = current.get("revision")
+                else:
+                    write_filter["revision"] = {"$exists": False}
+                upsert = False
+            else:
+                write_filter = {"planner_id": owner_id}
+                upsert = True
 
-        requested_publication = changes.get("is_published")
-        if requested_publication is True and not (
-            current and current.get("published_at")
-        ):
-            update["published_at"] = now
-        elif current and current.get("published_at"):
-            update["published_at"] = current["published_at"]
+            try:
+                result = await collection.update_one(
+                    write_filter,
+                    {"$set": update, "$inc": {"revision": 1}},
+                    upsert=upsert,
+                )
+            except DuplicateKeyError as exc:
+                if attempt < 2:
+                    continue
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This storefront slug is already in use",
+                ) from exc
 
-        try:
-            await collection.update_one(
-                {"planner_id": owner_id}, {"$set": update}, upsert=True
+            write_succeeded = bool(
+                getattr(result, "modified_count", 0)
+                or getattr(result, "upserted_id", None)
             )
-        except DuplicateKeyError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="This storefront slug is already in use",
-            ) from exc
+            if not write_succeeded:
+                continue
 
-        saved = await collection.find_one({"planner_id": owner_id})
-        if not saved:  # Defensive: an acknowledged write must round-trip.
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Storefront settings could not be read after saving",
-            )
-        return self._serialize_settings(saved)
+            saved = await collection.find_one({"planner_id": owner_id})
+            if not saved:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Storefront settings could not be read after saving",
+                )
+            return self._serialize_settings(saved)
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Storefront settings changed concurrently; reload and retry",
+        )
 
     async def _default_slug(self, owner_id: str, title: str | None) -> str:
         owner = await self._mongo.get_users_collection().find_one(
@@ -330,9 +386,11 @@ class StorefrontService:
             published_at=settings.get("published_at"),
             created_at=settings.get("created_at"),
             updated_at=settings.get("updated_at"),
+            revision=settings.get("revision", 0),
             slug_editable=not bool(
                 settings.get("published_at") or settings.get("is_published") is True
             ),
+            slug_persisted=settings.get("_slug_persisted", True),
         )
         return model.model_dump()
 
@@ -382,7 +440,7 @@ class StorefrontService:
                 {
                     "planner_id": owner_id,
                     "status": "active",
-                    "is_template": {"$ne": True},
+                    "is_template": False,
                 },
                 {
                     "_id": 1,

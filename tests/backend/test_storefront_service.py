@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from copy import deepcopy
 from datetime import datetime
 
@@ -188,6 +189,7 @@ async def test_create_and_edit_round_trip_preserves_explicit_state(setup_storefr
     assert created["is_published"] is False
     assert created["published_at"] is None
     assert created["slug_editable"] is True
+    assert created["slug_persisted"] is True
 
     edited = await service.update_settings(
         owner,
@@ -350,6 +352,29 @@ async def test_public_projection_filters_packages_reviews_and_private_owner_fiel
                 "name": "Another tenant",
                 "total_amount": 1,
             },
+            {
+                "_id": ObjectId(),
+                "planner_id": OWNER_ID,
+                "status": "active",
+                "name": "Missing template marker",
+                "total_amount": 1,
+            },
+            {
+                "_id": ObjectId(),
+                "planner_id": OWNER_ID,
+                "status": "active",
+                "is_template": None,
+                "name": "Null template marker",
+                "total_amount": 1,
+            },
+            {
+                "_id": ObjectId(),
+                "planner_id": OWNER_ID,
+                "status": "active",
+                "is_template": "false",
+                "name": "Malformed template marker",
+                "total_amount": 1,
+            },
         ]
     )
     fake_mongo.raw.planner_reviews.insert_many(
@@ -483,6 +508,7 @@ async def test_legacy_settings_are_readable_then_gain_a_persisted_slug_on_edit(
 
     legacy = await service.get_settings(_owner())
     assert legacy["slug"] == "luxe-light-events"
+    assert legacy["slug_persisted"] is False
     assert legacy["created_at"] is None
     assert (
         fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID}).get(
@@ -495,6 +521,7 @@ async def test_legacy_settings_are_readable_then_gain_a_persisted_slug_on_edit(
         _owner(), StorefrontSettingsUpdate(description="Migrated on explicit save")
     )
     assert edited["slug"] == "luxe-light-events"
+    assert edited["slug_persisted"] is True
     assert edited["created_at"] is not None
     stored = fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
     assert stored["slug"] == "luxe-light-events"
@@ -515,3 +542,81 @@ async def test_unique_index_race_is_translated_to_slug_conflict(
             _owner(), StorefrontSettingsUpdate(slug="race-winner")
         )
     assert conflict.value.status_code == 409
+
+
+def _pause_first_write_for_task(collection, task_name: str):
+    original_update = collection.update_one
+    paused = asyncio.Event()
+    resume = asyncio.Event()
+    did_pause = False
+
+    async def interleaved_update(*args, **kwargs):
+        nonlocal did_pause
+        current = asyncio.current_task()
+        if current and current.get_name() == task_name and not did_pause:
+            did_pause = True
+            paused.set()
+            await resume.wait()
+        return await original_update(*args, **kwargs)
+
+    collection.update_one = interleaved_update
+    return paused, resume
+
+
+@pytest.mark.asyncio
+async def test_stale_slug_change_cannot_land_after_concurrent_publication(
+    setup_storefront,
+):
+    service, fake_mongo, _ = setup_storefront
+    owner = _owner()
+    await service.update_settings(
+        owner, StorefrontSettingsUpdate(slug="draft-address", title="Draft")
+    )
+    collection = fake_mongo.db["storefront_settings"]
+    paused, resume = _pause_first_write_for_task(collection, "stale-slug-change")
+
+    stale_change = asyncio.create_task(
+        service.update_settings(owner, StorefrontSettingsUpdate(slug="must-not-land")),
+        name="stale-slug-change",
+    )
+    await paused.wait()
+    await service.update_settings(owner, StorefrontSettingsUpdate(is_published=True))
+    resume.set()
+
+    with pytest.raises(HTTPException) as conflict:
+        await stale_change
+    assert conflict.value.status_code == 409
+    stored = fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert stored["slug"] == "draft-address"
+    assert stored["is_published"] is True
+
+
+@pytest.mark.asyncio
+async def test_unrelated_stale_edit_does_not_overwrite_concurrent_slug_choice(
+    setup_storefront,
+):
+    service, fake_mongo, _ = setup_storefront
+    owner = _owner()
+    await service.update_settings(
+        owner, StorefrontSettingsUpdate(slug="first-address", title="Draft")
+    )
+    collection = fake_mongo.db["storefront_settings"]
+    paused, resume = _pause_first_write_for_task(collection, "stale-description")
+
+    stale_description = asyncio.create_task(
+        service.update_settings(
+            owner, StorefrontSettingsUpdate(description="Keep this edit")
+        ),
+        name="stale-description",
+    )
+    await paused.wait()
+    await service.update_settings(
+        owner, StorefrontSettingsUpdate(slug="chosen-address")
+    )
+    resume.set()
+    result = await stale_description
+
+    assert result["slug"] == "chosen-address"
+    assert result["description"] == "Keep this edit"
+    stored = fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert stored["slug"] == "chosen-address"

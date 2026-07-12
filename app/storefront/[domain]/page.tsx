@@ -1,8 +1,7 @@
 import React from 'react';
 import { notFound } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
-import { Star, CheckCircle, Package, ArrowRight, ExternalLink } from 'lucide-react';
-import Image from 'next/image';
+import { Star, CheckCircle, ArrowRight, ExternalLink } from 'lucide-react';
 
 interface StorefrontSettings {
   title: string | null;
@@ -12,24 +11,28 @@ interface StorefrontSettings {
   theme_color: string | null;
   packages_enabled: boolean;
   reviews_enabled: boolean;
-  custom_domain: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
 }
 
 interface Planner {
   company_name: string | null;
   first_name: string | null;
-  last_name: string | null;
   profile_image_url: string | null;
-  email: string | null;
-  support_phone: string | null;
+}
+
+interface PackageService {
+  name: string;
+  description: string | null;
 }
 
 interface PackageItem {
   _id: string;
   name: string;
-  description: string;
-  price: number;
-  features: string[];
+  description: string | null;
+  total_amount: number;
+  currency: string;
+  services: PackageService[];
 }
 
 interface ReviewItem {
@@ -42,10 +45,19 @@ interface ReviewItem {
 }
 
 interface StorefrontData {
+  slug: string;
   storefront: StorefrontSettings;
   planner: Planner;
   packages: PackageItem[];
   reviews: ReviewItem[];
+}
+
+function formatPackageAmount(amount: number, currency: string): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: (currency || 'USD').toUpperCase(),
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
 async function getStorefrontData(domain: string): Promise<StorefrontData | null> {
@@ -202,16 +214,21 @@ export default async function StorefrontPage({ params }: { params: Promise<{ dom
                 >
                   <h3 className="text-2xl font-bold text-slate-900 mb-2">{pkg.name}</h3>
                   <div className="text-4xl font-extrabold text-slate-900 mb-6">
-                    ${pkg.price.toLocaleString()}
+                    {formatPackageAmount(pkg.total_amount, pkg.currency)}
                   </div>
                   <p className="text-slate-600 mb-8 min-h-[60px]">
                     {pkg.description}
                   </p>
                   <ul className="space-y-4 mb-8">
-                    {pkg.features?.map((feature, fIdx) => (
-                      <li key={fIdx} className="flex items-start gap-3">
+                    {pkg.services.map((service, serviceIndex) => (
+                      <li key={`${service.name}-${serviceIndex}`} className="flex items-start gap-3">
                         <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: themeColor }} />
-                        <span className="text-slate-700">{feature}</span>
+                        <span className="text-slate-700">
+                          <span className="font-medium">{service.name}</span>
+                          {service.description && (
+                            <span className="block text-sm text-slate-500">{service.description}</span>
+                          )}
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -288,14 +305,14 @@ export default async function StorefrontPage({ params }: { params: Promise<{ dom
               Reach out to check our availability and schedule your complimentary consultation.
             </p>
             <div className="space-y-4 text-slate-300">
-              {planner.email && (
+              {storefront.contact_email && (
                 <p className="flex items-center gap-3">
-                  <span className="font-medium text-white">Email:</span> {planner.email}
+                  <span className="font-medium text-white">Email:</span> {storefront.contact_email}
                 </p>
               )}
-              {planner.support_phone && (
+              {storefront.contact_phone && (
                 <p className="flex items-center gap-3">
-                  <span className="font-medium text-white">Phone:</span> {planner.support_phone}
+                  <span className="font-medium text-white">Phone:</span> {storefront.contact_phone}
                 </p>
               )}
             </div>

@@ -54,7 +54,9 @@ class StorefrontSettingsResponse(BaseModel):
     published_at: datetime | None
     created_at: datetime | None
     updated_at: datetime | None
+    revision: int = Field(ge=0)
     slug_editable: bool
+    slug_persisted: bool
 
 
 class StorefrontSettingsEnvelope(BaseModel):

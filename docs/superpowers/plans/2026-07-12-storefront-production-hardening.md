@@ -321,6 +321,8 @@
 
 ## Final Verification And Hostile Review
 
+**Storefront branch deployment gate: BLOCKED** until Task 3 restores the secure media/domain endpoints and Tasks 4-5 complete the typed admin, preview, inquiry, and public rendering contracts. Intermediate task commits are not independently deployable.
+
 - [ ] Generate a whole-branch review package from `fbef0023` to `HEAD` and dispatch the final senior reviewer.
 - [ ] Fix and re-review every Critical or Important finding.
 - [ ] Run `PATH=/Users/emmanuelakinwale/.nvm/versions/node/v22.23.0/bin:$PATH npm run lint`.
