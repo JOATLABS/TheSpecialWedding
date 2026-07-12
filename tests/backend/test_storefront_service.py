@@ -129,6 +129,7 @@ class FakeMedia:
         self.pre_promotion_settings: list[dict] = []
         self.recovery_calls = 0
         self._claim_number = 0
+        self.fail_asset_attach = False
 
     async def validate_settings_assets(self, _owner, **asset_fields):
         self.validations.append(dict(asset_fields))
@@ -151,8 +152,11 @@ class FakeMedia:
         ]
         manifest = {
             "claim_id": claim_id,
-            "count": len(claimed_assets),
-            "members": {entry["slot"]: entry["asset_id"] for entry in claimed_assets},
+            "count": len(values),
+            "members": {
+                field_name.removesuffix("_asset_id"): asset_id
+                for field_name, asset_id in values.items()
+            },
         }
         return {
             "owner_id": OWNER_ID,
@@ -172,6 +176,20 @@ class FakeMedia:
         )
 
     async def attach_settings_asset_claims(self, _owner, claim):
+        if self.fail_asset_attach:
+            raise RuntimeError("forced asset attach failure")
+        row = self.mongo.raw.storefront_settings.find_one(
+            {
+                "planner_id": OWNER_ID,
+                "pending_asset_group": claim["manifest"],
+            }
+        )
+        assert row is not None, "asset intent must retain the exact pending token"
+        for field_name, asset_id in claim["values"].items():
+            slot = field_name.removesuffix("_asset_id")
+            assert f"pending_{slot}_asset_id" in row
+            assert row[f"pending_{slot}_asset_id"] == asset_id
+            assert row[f"pending_{slot}_claim_id"] == claim["claim_id"]
         for entry in claim["claimed_assets"]:
             saved = self.mongo.raw.storefront_settings.find_one(
                 {
@@ -185,20 +203,19 @@ class FakeMedia:
             self.attachments.append((entry["asset_id"], entry["slot"]))
 
     async def promote_settings_asset_claims(self, _owner, claim):
-        if not claim["claimed_assets"]:
-            return
         query = {
             "planner_id": OWNER_ID,
             "pending_asset_group": claim["manifest"],
         }
         set_fields = {}
         unset_fields = {}
-        for entry in claim["claimed_assets"]:
-            pending_asset = f"pending_{entry['slot']}_asset_id"
-            pending_claim = f"pending_{entry['slot']}_claim_id"
-            query[pending_asset] = entry["asset_id"]
+        for field_name, asset_id in claim["values"].items():
+            slot = field_name.removesuffix("_asset_id")
+            pending_asset = f"pending_{slot}_asset_id"
+            pending_claim = f"pending_{slot}_claim_id"
+            query[pending_asset] = asset_id
             query[pending_claim] = claim["claim_id"]
-            set_fields[entry["field_name"]] = entry["asset_id"]
+            set_fields[field_name] = asset_id
             unset_fields[pending_asset] = ""
             unset_fields[pending_claim] = ""
         unset_fields["pending_asset_group"] = ""
@@ -216,13 +233,33 @@ class FakeMedia:
         row = self.mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
         exact_group = row and row.get("pending_asset_group") == claim["manifest"]
         exact_entries = exact_group and all(
-            row.get(f"pending_{entry['slot']}_asset_id") == entry["asset_id"]
-            and row.get(f"pending_{entry['slot']}_claim_id") == claim["claim_id"]
-            for entry in claim["claimed_assets"]
+            f"pending_{field_name.removesuffix('_asset_id')}_asset_id" in row
+            and row.get(f"pending_{field_name.removesuffix('_asset_id')}_asset_id")
+            == asset_id
+            and row.get(f"pending_{field_name.removesuffix('_asset_id')}_claim_id")
+            == claim["claim_id"]
+            for field_name, asset_id in claim["values"].items()
         )
         if exact_entries:
-            await self.attach_settings_asset_claims(owner, claim)
-            await self.promote_settings_asset_claims(owner, claim)
+            try:
+                await self.attach_settings_asset_claims(owner, claim)
+                await self.promote_settings_asset_claims(owner, claim)
+                return
+            except Exception:
+                pass
+        unset_fields = {"pending_asset_group": ""}
+        for field_name in claim["values"]:
+            slot = field_name.removesuffix("_asset_id")
+            unset_fields[f"pending_{slot}_asset_id"] = ""
+            unset_fields[f"pending_{slot}_claim_id"] = ""
+        self.mongo.raw.storefront_settings.update_one(
+            {
+                "planner_id": OWNER_ID,
+                "pending_asset_group": claim["manifest"],
+            },
+            {"$unset": unset_fields, "$inc": {"revision": 1}},
+        )
+        await self.release_settings_asset_claims(owner, claim)
 
     async def recover_pending_settings_assets(self, _owner):
         self.recovery_calls += 1
@@ -478,6 +515,38 @@ async def test_multi_slot_settings_handoff_promotes_together(setup_storefront):
         "members": {"hero": "hero-ready", "about": "about-ready"},
     }
     stored = fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert not any(key.startswith("pending_") for key in stored)
+
+
+@pytest.mark.asyncio
+async def test_mixed_clear_and_attach_roll_back_as_one_atomic_intent(setup_storefront):
+    service, fake_mongo, _ = setup_storefront
+    owner = _owner()
+    seeded = await service.update_settings(
+        owner,
+        StorefrontSettingsUpdate(
+            slug="mixed-asset-intent",
+            hero_asset_id="hero-existing",
+            about_asset_id="about-existing",
+        ),
+    )
+    assert seeded["hero_asset_id"] == "hero-existing"
+    assert seeded["about_asset_id"] == "about-existing"
+    service._media.fail_asset_attach = True
+
+    with pytest.raises(HTTPException) as failed:
+        await service.update_settings(
+            owner,
+            StorefrontSettingsUpdate(
+                hero_asset_id=None,
+                about_asset_id="about-replacement",
+            ),
+        )
+
+    assert failed.value.status_code == 503
+    stored = fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert stored["hero_asset_id"] == "hero-existing"
+    assert stored["about_asset_id"] == "about-existing"
     assert not any(key.startswith("pending_") for key in stored)
 
 

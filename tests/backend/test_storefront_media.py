@@ -12,6 +12,7 @@ import pytest
 from bson import ObjectId
 from fastapi import HTTPException
 from PIL import Image
+from pymongo.errors import DuplicateKeyError
 
 import app.services.storefront_media_service as storefront_media_module
 from app.services.storefront_entitlement_service import StorefrontEntitlements
@@ -309,14 +310,7 @@ async def _finalize_ready_asset(
 
 
 def _pending_asset_group(claim: dict) -> dict:
-    members = {entry["slot"]: entry["asset_id"] for entry in claim["claimed_assets"]}
-    return {
-        "pending_asset_group": {
-            "claim_id": claim["claim_id"],
-            "count": len(members),
-            "members": members,
-        }
-    }
+    return {"pending_asset_group": claim["manifest"]}
 
 
 @pytest.mark.asyncio
@@ -1570,6 +1564,327 @@ async def test_global_sweep_is_bounded_and_reclaims_owners_that_never_return(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("stale_state", ["finalizing", "finalization_recovery"])
+async def test_global_sweep_reclaims_crashed_finalization_receipts(
+    setup_media, stale_state
+):
+    service, mongo, storage, _ = setup_media
+    abandoned = await _reserve(service, slot="hero")
+    row = mongo.raw.storefront_assets.find_one({"_id": ObjectId(abandoned["asset_id"])})
+    token = f"crashed-{stale_state}"
+    candidate_key = service._finalization_candidate_key(row, token)
+    stale_at = datetime.now(timezone.utc) - timedelta(
+        seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS + 1
+    )
+    state_fields = {
+        "state": stale_state,
+        "updated_at": stale_at,
+    }
+    if stale_state == "finalizing":
+        state_fields.update(
+            {
+                "finalization_token": token,
+                "finalization_started_at": stale_at,
+            }
+        )
+    else:
+        state_fields.update(
+            {
+                "recovery_token": token,
+                "cleanup_candidate_key": candidate_key,
+            }
+        )
+    mongo.raw.storefront_assets.update_one({"_id": row["_id"]}, {"$set": state_fields})
+    storage.head_by_key[row["staging_key"]] = {
+        "ContentLength": 10,
+        "ContentType": "image/webp",
+        "ETag": '"staging"',
+    }
+    storage.head_by_key[candidate_key] = {
+        "ContentLength": 10,
+        "ContentType": "image/webp",
+        "ETag": '"candidate"',
+    }
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+
+    assert mongo.raw.storefront_assets.find_one({"_id": row["_id"]}) is None
+    assert row["staging_key"] not in storage.head_by_key
+    assert candidate_key not in storage.head_by_key
+
+
+@pytest.mark.asyncio
+async def test_global_sweep_reclaims_crashed_deleting_receipt(setup_media):
+    service, mongo, storage, _ = setup_media
+    abandoned = await _finalize_ready_asset(service, storage, slot="about")
+    row = mongo.raw.storefront_assets.find_one({"_id": ObjectId(abandoned["asset_id"])})
+    stale_at = datetime.now(timezone.utc) - timedelta(
+        seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS + 1
+    )
+    mongo.raw.storefront_assets.update_one(
+        {"_id": row["_id"]},
+        {
+            "$set": {
+                "state": "deleting",
+                "cleanup_token": "crashed-delete",
+                "cleanup_source_state": "ready",
+                "deleting_started_at": stale_at,
+                "updated_at": stale_at,
+            }
+        },
+    )
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+
+    assert mongo.raw.storefront_assets.find_one({"_id": row["_id"]}) is None
+    assert row["key"] not in storage.head_by_key
+
+
+@pytest.mark.asyncio
+async def test_lost_inflight_finalizer_persists_detached_candidate_cleanup_receipt(
+    setup_media, monkeypatch
+):
+    service, mongo, storage, _ = setup_media
+    abandoned = await _reserve(service, slot="hero", size_bytes=100)
+    staging_key = storage.presign_calls[-1]["key"]
+    storage.head_by_key[staging_key] = {
+        "ContentLength": 100,
+        "ContentType": "image/webp",
+        "ETag": '"source"',
+    }
+    upload_entered = threading.Event()
+    release_upload = threading.Event()
+    original_upload = storage.upload_fileobj
+
+    def paused_upload(*args, **kwargs):
+        upload_entered.set()
+        assert release_upload.wait(timeout=2)
+        return original_upload(*args, **kwargs)
+
+    monkeypatch.setattr(storage, "upload_fileobj", paused_upload)
+    stale_finalizer = asyncio.create_task(
+        service.finalize(_owner(), abandoned["asset_id"]),
+        name="detached-candidate-finalizer",
+    )
+    assert await asyncio.to_thread(upload_entered.wait, 2)
+    active = mongo.raw.storefront_assets.find_one(
+        {"_id": ObjectId(abandoned["asset_id"])}
+    )
+    candidate_key = service._finalization_candidate_key(
+        active, active["finalization_token"]
+    )
+    mongo.raw.storefront_assets.update_one(
+        {"_id": active["_id"]},
+        {
+            "$set": {
+                "finalization_started_at": datetime.now(timezone.utc)
+                - timedelta(seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS + 1)
+            }
+        },
+    )
+
+    replacement = await _reserve(service, slot="hero")
+    assert replacement["asset_id"] != abandoned["asset_id"]
+    original_delete = storage.delete_object
+
+    def fail_only_late_candidate_delete(target, key):
+        if key == candidate_key and key in storage.head_by_key:
+            raise RuntimeError("candidate delete transport failure")
+        return original_delete(target, key)
+
+    monkeypatch.setattr(storage, "delete_object", fail_only_late_candidate_delete)
+    release_upload.set()
+    with pytest.raises(HTTPException) as lost:
+        await stale_finalizer
+    assert lost.value.status_code == 409
+    assert candidate_key in storage.head_by_key
+    receipt = mongo.raw.storefront_asset_cleanup_receipts.find_one(
+        {"candidate_key": candidate_key, "owner_id": OWNER_ID}
+    )
+    assert receipt is not None
+    assert receipt["state"] == "cleanup_retry"
+
+    monkeypatch.setattr(storage, "delete_object", original_delete)
+    mongo.raw.storefront_asset_cleanup_receipts.update_one(
+        {"_id": receipt["_id"]},
+        {"$set": {"cleanup_due_at": datetime.now(timezone.utc) - timedelta(seconds=1)}},
+    )
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+    assert candidate_key not in storage.head_by_key
+    assert (
+        mongo.raw.storefront_asset_cleanup_receipts.find_one({"_id": receipt["_id"]})
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_failed_detached_cleanup_still_honors_global_sweep_limit(setup_media):
+    service, mongo, storage, _ = setup_media
+    ready = await _finalize_ready_asset(service, storage, slot="about")
+    ready_row = mongo.raw.storefront_assets.find_one(
+        {"_id": ObjectId(ready["asset_id"])}
+    )
+    mongo.raw.storefront_assets.update_one(
+        {"_id": ready_row["_id"]},
+        {"$set": {"cleanup_due_at": datetime.now(timezone.utc) - timedelta(seconds=1)}},
+    )
+    candidate_key = f"storefront/{OWNER_ID}/hero/detached-candidate.webp"
+    now = datetime.now(timezone.utc)
+    mongo.raw.storefront_asset_cleanup_receipts.insert_one(
+        {
+            "_id": ObjectId(),
+            "owner_id": OWNER_ID,
+            "slot": "hero",
+            "candidate_key": candidate_key,
+            "state": "cleanup_retry",
+            "cleanup_due_at": now - timedelta(seconds=1),
+            "updated_at": now,
+        }
+    )
+    storage.head_by_key[candidate_key] = {
+        "ContentLength": 10,
+        "ContentType": "image/webp",
+        "ETag": '"detached"',
+    }
+    storage.delete_error = RuntimeError("storage unavailable")
+    delete_count = len(storage.delete_calls)
+
+    assert await service.sweep_abandoned_assets(limit=1) == 0
+
+    assert len(storage.delete_calls) == delete_count + 1
+    assert mongo.raw.storefront_assets.find_one({"_id": ready_row["_id"]}) is not None
+
+
+@pytest.mark.asyncio
+async def test_invalid_detached_receipt_is_quarantined_without_starving_valid_work(
+    setup_media,
+):
+    service, mongo, storage, _ = setup_media
+    now = datetime.now(timezone.utc)
+    invalid_id = ObjectId()
+    mongo.raw.storefront_asset_cleanup_receipts.insert_one(
+        {
+            "_id": invalid_id,
+            "owner_id": OWNER_ID,
+            "slot": "invalid-slot",
+            "candidate_key": "not-owner-scoped.webp",
+            "state": "cleanup_retry",
+            "cleanup_due_at": now - timedelta(seconds=1),
+            "updated_at": now,
+        }
+    )
+    valid_key = f"storefront/{OWNER_ID}/hero/valid-detached.webp"
+    valid_id = ObjectId()
+    mongo.raw.storefront_asset_cleanup_receipts.insert_one(
+        {
+            "_id": valid_id,
+            "owner_id": OWNER_ID,
+            "slot": "hero",
+            "candidate_key": valid_key,
+            "state": "cleanup_retry",
+            "cleanup_due_at": now - timedelta(seconds=1),
+            "updated_at": now,
+        }
+    )
+    storage.head_by_key[valid_key] = {
+        "ContentLength": 10,
+        "ContentType": "image/webp",
+        "ETag": '"valid"',
+    }
+
+    assert await service.sweep_abandoned_assets(limit=1) == 0
+    assert (
+        mongo.raw.storefront_asset_cleanup_receipts.find_one({"_id": invalid_id})[
+            "state"
+        ]
+        == "invalid"
+    )
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+    assert (
+        mongo.raw.storefront_asset_cleanup_receipts.find_one({"_id": valid_id}) is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_invalid_asset_receipt_is_quarantined_without_starving_valid_work(
+    setup_media,
+):
+    service, mongo, storage, _ = setup_media
+    now = datetime.now(timezone.utc)
+    invalid_id = ObjectId()
+    mongo.raw.storefront_assets.insert_one(
+        {
+            "_id": invalid_id,
+            "owner_id": OWNER_ID,
+            "slot": "invalid-slot",
+            "state": "cleanup_retry",
+            "cleanup_due_at": now - timedelta(seconds=1),
+            "updated_at": now,
+        }
+    )
+    valid = await _finalize_ready_asset(service, storage, slot="hero")
+    mongo.raw.storefront_assets.update_one(
+        {"_id": ObjectId(valid["asset_id"])},
+        {"$set": {"cleanup_due_at": now - timedelta(seconds=1)}},
+    )
+
+    assert await service.sweep_abandoned_assets(limit=1) == 0
+    assert mongo.raw.storefront_assets.find_one({"_id": invalid_id})["state"] == (
+        "invalid_cleanup_receipt"
+    )
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+    assert (
+        mongo.raw.storefront_assets.find_one({"_id": ObjectId(valid["asset_id"])})
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_detached_cleanup_receipt_reconciles_concurrent_unique_insert(
+    setup_media,
+):
+    service, mongo, _, _ = setup_media
+    receipts = mongo.db["storefront_asset_cleanup_receipts"]
+    original_update = receipts.update_one
+    candidate_key = f"storefront/{OWNER_ID}/hero/concurrent-candidate.webp"
+    raced = False
+
+    async def duplicate_once(query, update, *args, **kwargs):
+        nonlocal raced
+        if kwargs.get("upsert") and not raced:
+            raced = True
+            mongo.raw.storefront_asset_cleanup_receipts.insert_one(
+                {
+                    "_id": ObjectId(),
+                    "owner_id": OWNER_ID,
+                    "slot": "hero",
+                    "candidate_key": candidate_key,
+                    "state": "cleanup_retry",
+                    "cleanup_attempts": 0,
+                    "created_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            )
+            raise DuplicateKeyError("concurrent receipt")
+        return await original_update(query, update, *args, **kwargs)
+
+    receipts.update_one = duplicate_once
+    await service._record_detached_candidate_cleanup(
+        owner_id=OWNER_ID,
+        slot="hero",
+        candidate_key=candidate_key,
+        reason="lost_finalizer_candidate",
+        error=RuntimeError("delete failed"),
+    )
+
+    stored = mongo.raw.storefront_asset_cleanup_receipts.find_one(
+        {"owner_id": OWNER_ID, "candidate_key": candidate_key}
+    )
+    assert stored["cleanup_attempts"] == 1
+    assert stored["cleanup_reason"] == "lost_finalizer_candidate"
+
+
+@pytest.mark.asyncio
 async def test_referenced_due_receipt_cannot_starve_later_orphan_in_bounded_sweep(
     setup_media,
 ):
@@ -1672,6 +1987,67 @@ async def test_recovery_promotes_first_save_only_after_exact_claim_is_attached(
     assert saved["revision"] == 2
     assert asset["state"] == "attached"
     assert asset["attached_claim_id"] == claim["claim_id"]
+
+
+@pytest.mark.asyncio
+async def test_recovery_promotes_mixed_clear_and_attach_as_one_intent(setup_media):
+    service, mongo, storage, _ = setup_media
+    about = await _finalize_ready_asset(service, storage, slot="about")
+    claim = await service.claim_settings_assets(
+        _owner(), hero_asset_id=None, about_asset_id=about["asset_id"]
+    )
+    mongo.raw.storefront_settings.insert_one(
+        {
+            "planner_id": OWNER_ID,
+            "revision": 1,
+            "hero_asset_id": "hero-existing",
+            "about_asset_id": "about-existing",
+            "pending_hero_asset_id": None,
+            "pending_hero_claim_id": claim["claim_id"],
+            "pending_about_asset_id": about["asset_id"],
+            "pending_about_claim_id": claim["claim_id"],
+            **_pending_asset_group(claim),
+        }
+    )
+
+    await service.recover_pending_settings_assets(_owner())
+
+    stored = mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert stored["hero_asset_id"] is None
+    assert stored["about_asset_id"] == about["asset_id"]
+    assert not any(field.startswith("pending_") for field in stored)
+
+
+@pytest.mark.asyncio
+async def test_recovery_rolls_back_mixed_clear_when_attach_member_is_missing(
+    setup_media,
+):
+    service, mongo, storage, _ = setup_media
+    about = await _finalize_ready_asset(service, storage, slot="about")
+    claim = await service.claim_settings_assets(
+        _owner(), hero_asset_id=None, about_asset_id=about["asset_id"]
+    )
+    mongo.raw.storefront_settings.insert_one(
+        {
+            "planner_id": OWNER_ID,
+            "revision": 1,
+            "hero_asset_id": "hero-existing",
+            "about_asset_id": "about-existing",
+            "pending_hero_asset_id": None,
+            "pending_hero_claim_id": claim["claim_id"],
+            "pending_about_asset_id": about["asset_id"],
+            "pending_about_claim_id": claim["claim_id"],
+            **_pending_asset_group(claim),
+        }
+    )
+    mongo.raw.storefront_assets.delete_one({"_id": ObjectId(about["asset_id"])})
+
+    await service.recover_pending_settings_assets(_owner())
+
+    stored = mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert stored["hero_asset_id"] == "hero-existing"
+    assert stored["about_asset_id"] == "about-existing"
+    assert not any(field.startswith("pending_") for field in stored)
 
 
 @pytest.mark.asyncio

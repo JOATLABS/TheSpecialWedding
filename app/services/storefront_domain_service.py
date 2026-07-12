@@ -8,7 +8,7 @@ deletes or rewrites a mapping merely because its entitlement is later lost.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import ipaddress
 import logging
 import re
@@ -39,6 +39,11 @@ _DEFAULT_PLATFORM_DOMAINS = frozenset({"thespecialwedding.io", "thespecialweddin
 _PROVIDER_DELETE_PENDING = "provider_delete_pending"
 _PROVIDER_DELETE_RETRY_PENDING = "retry_pending"
 _LOCAL_CLEANUP_PENDING = "local_cleanup_pending"
+_PROVISIONING = "provisioning"
+_PROVISIONING_UNKNOWN = "provisioning_unknown"
+_PROVISIONING_ABSENCE_CONFIRMATIONS = 2
+_PROVISIONING_RECONCILIATION_GRACE_SECONDS = 60
+_PROVISIONING_LEASE_SECONDS = 10 * 60
 _NON_ROUTABLE_DOMAIN_STATUSES = frozenset(
     {"deleting", "delete_failed", "provider_deleted"}
 )
@@ -365,6 +370,295 @@ class StorefrontDomainService:
             },
         )
 
+    @staticmethod
+    def _create_failure_is_definitive(exc: CloudflareServiceError) -> bool:
+        if exc.kind == "configuration":
+            return True
+        provider_status = exc.provider_status_code
+        return bool(
+            exc.kind == "provider"
+            and isinstance(provider_status, int)
+            and 400 <= provider_status < 500
+            and provider_status not in {408, 409, 425, 429}
+        )
+
+    @staticmethod
+    def _timestamp_is_older_than(value: object, seconds: int) -> bool:
+        if not isinstance(value, datetime):
+            return False
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value <= datetime.now(timezone.utc) - timedelta(seconds=seconds)
+
+    async def _recover_stale_provisioning(
+        self,
+        collection: Any,
+        record: dict,
+        owner_id: str,
+    ) -> dict:
+        if self._status(record.get("status")) != _PROVISIONING:
+            return record
+        started_at = record.get("provisioning_started_at") or record.get("updated_at")
+        if not self._timestamp_is_older_than(started_at, _PROVISIONING_LEASE_SECONDS):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Custom-domain provisioning is still in progress",
+            )
+        now = datetime.now(timezone.utc)
+        recovered = await collection.update_one(
+            {
+                "_id": record["_id"],
+                "planner_id": owner_id,
+                "hostname": record.get("hostname"),
+                "provider_hostname_id": None,
+                "status": _PROVISIONING,
+                "provisioning_attempt_id": record.get("provisioning_attempt_id"),
+                "updated_at": record.get("updated_at"),
+            },
+            {
+                "$set": {
+                    "status": _PROVISIONING_UNKNOWN,
+                    "provider_status": "unknown",
+                    "last_error": "Interrupted provisioning requires reconciliation",
+                    "provisioning_unknown_at": now,
+                    "updated_at": now,
+                },
+                "$unset": {
+                    "provisioning_attempt_id": "",
+                    "provisioning_started_at": "",
+                },
+            },
+        )
+        if not getattr(recovered, "matched_count", 0):
+            current = await collection.find_one(
+                {"_id": record["_id"], "planner_id": owner_id}
+            )
+            if current and self._status(current.get("status")) in {
+                _PROVISIONING_UNKNOWN,
+                "pending",
+            }:
+                return current
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Custom-domain provisioning changed during recovery",
+            )
+        saved = await collection.find_one(
+            {"_id": record["_id"], "planner_id": owner_id}
+        )
+        if not saved:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Custom-domain provisioning recovery could not be read",
+            )
+        return saved
+
+    async def _mark_provisioning_unknown(
+        self,
+        collection: Any,
+        *,
+        record_id: Any,
+        owner_id: str,
+        attempt_id: str,
+        error: CloudflareServiceError,
+    ) -> None:
+        now = datetime.now(timezone.utc)
+        result = await collection.update_one(
+            {
+                "_id": record_id,
+                "planner_id": owner_id,
+                "provider_hostname_id": None,
+                "status": _PROVISIONING,
+                "provisioning_attempt_id": attempt_id,
+            },
+            {
+                "$set": {
+                    "status": _PROVISIONING_UNKNOWN,
+                    "provider_status": "unknown",
+                    "last_error": error.message,
+                    "provisioning_unknown_at": now,
+                    "updated_at": now,
+                },
+                "$unset": {
+                    "provisioning_attempt_id": "",
+                    "provisioning_started_at": "",
+                },
+            },
+        )
+        if getattr(result, "matched_count", 0):
+            return
+        current = await collection.find_one({"_id": record_id, "planner_id": owner_id})
+        if current and (
+            current.get("provider_hostname_id")
+            or self._status(current.get("status")) == _PROVISIONING_UNKNOWN
+        ):
+            return
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Custom-domain provisioning changed while recording its outcome",
+        )
+
+    async def _reconcile_unknown_provisioning(
+        self,
+        collection: Any,
+        record: dict,
+        owner_id: str,
+    ) -> dict:
+        hostname = record.get("hostname")
+        if not isinstance(hostname, str):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Custom-domain provisioning receipt is invalid",
+            )
+        try:
+            provider_rows = await self._cloudflare.list_custom_hostnames(hostname)
+        except CloudflareServiceError as exc:
+            await collection.update_one(
+                {
+                    "_id": record["_id"],
+                    "planner_id": owner_id,
+                    "hostname": hostname,
+                    "provider_hostname_id": None,
+                    "status": _PROVISIONING_UNKNOWN,
+                    "updated_at": record.get("updated_at"),
+                },
+                {
+                    "$set": {
+                        "last_error": exc.message,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
+            raise self._provider_http_error(exc) from exc
+
+        exact_rows: list[dict] = []
+        invalid_result = False
+        for provider_row in provider_rows:
+            try:
+                provider_hostname = normalize_custom_hostname(
+                    provider_row.get("hostname"),
+                    platform_domains=self._platform_domains,
+                )
+            except (TypeError, ValueError):
+                provider_hostname = None
+            provider_id = provider_row.get("id")
+            if (
+                provider_hostname != hostname
+                or not isinstance(provider_id, str)
+                or not provider_id.strip()
+            ):
+                invalid_result = True
+                continue
+            exact_rows.append(provider_row)
+
+        if invalid_result or len(exact_rows) > 1:
+            await collection.update_one(
+                {
+                    "_id": record["_id"],
+                    "planner_id": owner_id,
+                    "provider_hostname_id": None,
+                    "status": _PROVISIONING_UNKNOWN,
+                },
+                {
+                    "$set": {
+                        "last_error": (
+                            "Cloudflare returned ambiguous hostname reconciliation"
+                        ),
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Cloudflare returned ambiguous custom-hostname matches",
+            )
+
+        now = datetime.now(timezone.utc)
+        if not exact_rows:
+            previous_absences = record.get("provisioning_absent_observations", 0)
+            if isinstance(previous_absences, bool) or not isinstance(
+                previous_absences, int
+            ):
+                previous_absences = 0
+            absence_count = previous_absences + 1
+            absence_confirmed = (
+                absence_count >= _PROVISIONING_ABSENCE_CONFIRMATIONS
+                and self._timestamp_is_older_than(
+                    record.get("provisioning_unknown_at"),
+                    _PROVISIONING_RECONCILIATION_GRACE_SECONDS,
+                )
+            )
+            result = await collection.update_one(
+                {
+                    "_id": record["_id"],
+                    "planner_id": owner_id,
+                    "hostname": hostname,
+                    "provider_hostname_id": None,
+                    "status": _PROVISIONING_UNKNOWN,
+                    "updated_at": record.get("updated_at"),
+                },
+                {
+                    "$set": {
+                        "status": (
+                            "pending" if absence_confirmed else _PROVISIONING_UNKNOWN
+                        ),
+                        "provider_status": (
+                            "pending" if absence_confirmed else "unknown"
+                        ),
+                        "provisioning_absent_observations": absence_count,
+                        "last_error": (
+                            None
+                            if absence_confirmed
+                            else "Cloudflare mapping absence is awaiting confirmation"
+                        ),
+                        "provisioning_reconciled_at": (
+                            now if absence_confirmed else None
+                        ),
+                        "updated_at": now,
+                    }
+                },
+            )
+        else:
+            provider_row = exact_rows[0]
+            result = await collection.update_one(
+                {
+                    "_id": record["_id"],
+                    "planner_id": owner_id,
+                    "hostname": hostname,
+                    "provider_hostname_id": None,
+                    "status": _PROVISIONING_UNKNOWN,
+                    "updated_at": record.get("updated_at"),
+                },
+                {
+                    "$set": {
+                        "provider_hostname_id": provider_row["id"],
+                        **self._provider_projection(provider_row),
+                        "last_error": None,
+                        "provisioning_reconciled_at": now,
+                        "updated_at": now,
+                    },
+                    "$unset": {"provisioning_absent_observations": ""},
+                },
+            )
+        if not getattr(result, "matched_count", 0):
+            current = await collection.find_one(
+                {"_id": record["_id"], "planner_id": owner_id}
+            )
+            if current and current.get("provider_hostname_id"):
+                return current
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Custom-domain provisioning changed during reconciliation",
+            )
+        saved = await collection.find_one(
+            {"_id": record["_id"], "planner_id": owner_id}
+        )
+        if not saved:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Custom-domain reconciliation could not be read",
+            )
+        return saved
+
     async def get_for_owner(self, owner: Any) -> dict | None:
         owner_id = self._owner_id(owner)
         await self._require_custom_domain(owner)
@@ -392,12 +686,13 @@ class StorefrontDomainService:
 
         collection = self._mongo.db["storefront_domains"]
         now = datetime.now(timezone.utc)
+        provisioning_attempt_id = uuid4().hex
         reservation = {
             "planner_id": owner_id,
             "hostname": hostname,
             "provider": "cloudflare",
             "provider_hostname_id": None,
-            "status": "pending",
+            "status": _PROVISIONING,
             "provider_status": "pending",
             "ssl_status": "pending",
             "ownership_verification": None,
@@ -407,33 +702,105 @@ class StorefrontDomainService:
             "deletion_status": None,
             "delete_attempts": 0,
             "last_error": None,
+            "provisioning_attempt_id": provisioning_attempt_id,
+            "provisioning_started_at": now,
             "created_at": now,
             "updated_at": now,
         }
         try:
             inserted = await collection.insert_one(reservation)
         except DuplicateKeyError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="This planner or hostname already has a custom-domain mapping",
-            ) from exc
-        reservation_id = inserted.inserted_id
+            existing = await collection.find_one(
+                {
+                    "$or": [
+                        {"planner_id": owner_id},
+                        {"hostname": hostname},
+                    ]
+                }
+            )
+            if (
+                not existing
+                or existing.get("planner_id") != owner_id
+                or existing.get("hostname") != hostname
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "This planner or hostname already has a custom-domain mapping"
+                    ),
+                ) from exc
+            if existing.get("provider_hostname_id"):
+                return self._serialize(existing)
+            if self._status(existing.get("status")) == _PROVISIONING:
+                existing = await self._recover_stale_provisioning(
+                    collection, existing, owner_id
+                )
+            if self._status(existing.get("status")) == _PROVISIONING_UNKNOWN:
+                existing = await self._reconcile_unknown_provisioning(
+                    collection, existing, owner_id
+                )
+                if existing.get("provider_hostname_id"):
+                    return self._serialize(existing)
+            if self._status(existing.get("status")) != "pending":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Custom-domain provisioning is still being reconciled",
+                ) from exc
+            provisioning_attempt_id = uuid4().hex
+            claimed = await collection.update_one(
+                {
+                    "_id": existing["_id"],
+                    "planner_id": owner_id,
+                    "hostname": hostname,
+                    "provider_hostname_id": None,
+                    "status": "pending",
+                    "updated_at": existing.get("updated_at"),
+                },
+                {
+                    "$set": {
+                        "status": _PROVISIONING,
+                        "provisioning_attempt_id": provisioning_attempt_id,
+                        "provisioning_started_at": datetime.now(timezone.utc),
+                        "last_error": None,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
+            if not getattr(claimed, "matched_count", 0):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Custom-domain provisioning changed during reconnect",
+                ) from exc
+            reservation_id = existing["_id"]
+        else:
+            reservation_id = inserted.inserted_id
 
         try:
             provider_result = await self._cloudflare.create_custom_hostname(hostname)
         except CloudflareServiceError as exc:
-            try:
-                await collection.delete_one(
-                    {
-                        "_id": reservation_id,
-                        "planner_id": owner_id,
-                        "provider_hostname_id": None,
-                    }
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to release custom-domain reservation for owner %s",
-                    owner_id,
+            if self._create_failure_is_definitive(exc):
+                try:
+                    await collection.delete_one(
+                        {
+                            "_id": reservation_id,
+                            "planner_id": owner_id,
+                            "provider_hostname_id": None,
+                            "status": _PROVISIONING,
+                            "provisioning_attempt_id": provisioning_attempt_id,
+                        }
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to release custom-domain reservation for owner %s",
+                        owner_id,
+                    )
+            else:
+                await self._mark_provisioning_unknown(
+                    collection,
+                    record_id=reservation_id,
+                    owner_id=owner_id,
+                    attempt_id=provisioning_attempt_id,
+                    error=exc,
                 )
             raise self._provider_http_error(exc) from exc
 
@@ -445,16 +812,29 @@ class StorefrontDomainService:
             )
         except (TypeError, ValueError):
             normalized_provider_hostname = None
-        if (
-            not isinstance(provider_id, str)
-            or not provider_id.strip()
-            or normalized_provider_hostname != hostname
-        ):
+        if not isinstance(provider_id, str) or not provider_id.strip():
+            invalid_response = CloudflareServiceError(
+                "Cloudflare returned an unreadable hostname mapping",
+                operation="create_custom_hostname",
+                kind="response",
+            )
+            await self._mark_provisioning_unknown(
+                collection,
+                record_id=reservation_id,
+                owner_id=owner_id,
+                attempt_id=provisioning_attempt_id,
+                error=invalid_response,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Cloudflare returned an invalid custom-hostname result",
+            )
+        if normalized_provider_hostname != hostname:
             await self._compensate_failed_create(
                 collection,
                 reservation_id=reservation_id,
                 owner_id=owner_id,
-                provider_id=provider_id if isinstance(provider_id, str) else None,
+                provider_id=provider_id,
                 failure_message="Cloudflare returned an invalid hostname mapping",
             )
             raise HTTPException(
@@ -470,13 +850,21 @@ class StorefrontDomainService:
                     "planner_id": owner_id,
                     "hostname": hostname,
                     "provider_hostname_id": None,
+                    "status": _PROVISIONING,
+                    "provisioning_attempt_id": provisioning_attempt_id,
                 },
                 {
                     "$set": {
                         "provider_hostname_id": provider_id,
                         **projection,
                         "updated_at": datetime.now(timezone.utc),
-                    }
+                    },
+                    "$unset": {
+                        "provisioning_attempt_id": "",
+                        "provisioning_started_at": "",
+                        "provisioning_absent_observations": "",
+                        "provisioning_unknown_at": "",
+                    },
                 },
             )
         except Exception as exc:
@@ -577,6 +965,15 @@ class StorefrontDomainService:
             return self._serialize(record)
         provider_id = record.get("provider_hostname_id")
         if not isinstance(provider_id, str) or not provider_id:
+            if self._status(record.get("status")) == _PROVISIONING:
+                record = await self._recover_stale_provisioning(
+                    collection, record, owner_id
+                )
+            if self._status(record.get("status")) == _PROVISIONING_UNKNOWN:
+                reconciled = await self._reconcile_unknown_provisioning(
+                    collection, record, owner_id
+                )
+                return self._serialize(reconciled)
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Custom-domain provisioning is still in progress",
@@ -658,6 +1055,46 @@ class StorefrontDomainService:
         record = await collection.find_one({"planner_id": owner_id})
         if not record:
             return None
+
+        if (
+            not record.get("provider_hostname_id")
+            and self._status(record.get("status")) == _PROVISIONING
+        ):
+            record = await self._recover_stale_provisioning(
+                collection, record, owner_id
+            )
+        if (
+            not record.get("provider_hostname_id")
+            and self._status(record.get("status")) == _PROVISIONING_UNKNOWN
+        ):
+            record = await self._reconcile_unknown_provisioning(
+                collection, record, owner_id
+            )
+            if not record.get("provider_hostname_id"):
+                if self._status(record.get("status")) == _PROVISIONING_UNKNOWN:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            "Custom-domain provisioning outcome is still being "
+                            "reconciled"
+                        ),
+                    )
+                deleted = await collection.delete_one(
+                    {
+                        "_id": record["_id"],
+                        "planner_id": owner_id,
+                        "hostname": record.get("hostname"),
+                        "provider_hostname_id": None,
+                        "status": "pending",
+                        "updated_at": record.get("updated_at"),
+                    }
+                )
+                if getattr(deleted, "deleted_count", 0):
+                    return None
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Custom-domain provisioning changed during disconnect",
+                )
 
         if (
             record.get("deletion_status") == _LOCAL_CLEANUP_PENDING

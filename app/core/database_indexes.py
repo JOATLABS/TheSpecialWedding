@@ -2564,6 +2564,7 @@ async def create_storefront_indexes():
     settings = mongo.db["storefront_settings"]
     domains = mongo.db["storefront_domains"]
     assets = mongo.db["storefront_assets"]
+    asset_cleanup_receipts = mongo.db["storefront_asset_cleanup_receipts"]
     inquiries = mongo.db["storefront_inquiries"]
     try:
         await settings.create_index(
@@ -2653,6 +2654,25 @@ async def create_storefront_indexes():
                 ("reaping_started_at", ASCENDING),
             ],
             name="idx_storefront_assets_owner_state_reaping_lease",
+            background=True,
+        )
+        await asset_cleanup_receipts.create_index(
+            [("owner_id", ASCENDING), ("candidate_key", ASCENDING)],
+            name="idx_storefront_asset_cleanup_candidate_unique",
+            unique=True,
+            background=True,
+        )
+        await asset_cleanup_receipts.create_index(
+            [
+                ("state", ASCENDING),
+                ("cleanup_due_at", ASCENDING),
+            ],
+            name="idx_storefront_asset_cleanup_state_due",
+            background=True,
+        )
+        await asset_cleanup_receipts.create_index(
+            [("state", ASCENDING), ("reaping_started_at", ASCENDING)],
+            name="idx_storefront_asset_cleanup_state_reaping",
             background=True,
         )
         await inquiries.create_index(

@@ -661,6 +661,64 @@ class StorefrontMediaService:
         cleanup_asset = {**asset, "reap_token": reap_token, "reaping_started_at": now}
         await self._finish_reaping(owner_id, cleanup_asset)
 
+    async def _reap_stale_deleting(self, owner_id: str, asset: dict) -> None:
+        """Fence a crashed delete worker before resuming object cleanup."""
+
+        lease_value = asset.get("deleting_started_at") or asset.get("updated_at")
+        if not self._operation_lease_is_stale(lease_value):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Storefront image cleanup is already in progress",
+            )
+        cleanup_token = asset.get("cleanup_token")
+        lease_field = (
+            "deleting_started_at" if "deleting_started_at" in asset else "updated_at"
+        )
+        now = datetime.now(timezone.utc)
+        reap_token = uuid4().hex
+        source_state = asset.get("cleanup_source_state") or "deleting"
+        claimed = await self._mongo.db["storefront_assets"].update_one(
+            {
+                "_id": asset["_id"],
+                "owner_id": owner_id,
+                "slot": asset["slot"],
+                "state": "deleting",
+                "cleanup_token": cleanup_token,
+                lease_field: asset.get(lease_field),
+            },
+            {
+                "$set": {
+                    "state": "reaping",
+                    "reap_token": reap_token,
+                    "reaping_started_at": now,
+                    "reap_source_state": source_state,
+                    "cleanup_reason": asset.get("cleanup_reason") or "stale_deleting",
+                    "updated_at": now,
+                },
+                "$unset": {
+                    "cleanup_token": "",
+                    "deleting_started_at": "",
+                    "cleanup_source_state": "",
+                },
+            },
+        )
+        if not getattr(claimed, "modified_count", 0):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Storefront delete lease changed; reload and retry",
+            )
+        await self._finish_reaping(
+            owner_id,
+            {
+                **asset,
+                "state": "reaping",
+                "reap_token": reap_token,
+                "reaping_started_at": now,
+                "reap_source_state": source_state,
+                "cleanup_reason": asset.get("cleanup_reason") or "stale_deleting",
+            },
+        )
+
     async def _finish_reaping(self, owner_id: str, asset: dict) -> None:
         """Delete storage first and remove only the exact token-owned receipt."""
 
@@ -957,6 +1015,7 @@ class StorefrontMediaService:
         error: Exception,
         expected_states: list[str],
         expected_reap_token: str | None = None,
+        expected_cleanup_token: str | None = None,
     ) -> None:
         now = datetime.now(timezone.utc)
         claim_filter: dict[str, Any] = {
@@ -966,6 +1025,8 @@ class StorefrontMediaService:
         }
         if expected_reap_token is not None:
             claim_filter["reap_token"] = expected_reap_token
+        if expected_cleanup_token is not None:
+            claim_filter["cleanup_token"] = expected_cleanup_token
         await self._mongo.db["storefront_assets"].update_one(
             claim_filter,
             {
@@ -984,9 +1045,94 @@ class StorefrontMediaService:
                     "reaping_started_at": "",
                     "reap_source_state": "",
                     "cleanup_token": "",
+                    "deleting_started_at": "",
+                    "cleanup_source_state": "",
                 },
             },
         )
+
+    async def _record_detached_candidate_cleanup(
+        self,
+        *,
+        owner_id: str,
+        slot: str,
+        candidate_key: str,
+        reason: str,
+        error: Exception,
+    ) -> None:
+        """Persist cleanup for a token-unique candidate after its asset row is lost."""
+
+        if slot not in STOREFRONT_ASSET_SLOTS or not candidate_key.startswith(
+            f"storefront/{owner_id}/{slot}/"
+        ):
+            raise RuntimeError("Detached storefront candidate ownership is invalid")
+        canonical = await self._mongo.db["storefront_assets"].find_one(
+            {
+                "owner_id": owner_id,
+                "key": candidate_key,
+                "state": {"$in": list(_FINALIZED_STATES)},
+            },
+            {"_id": 1},
+        )
+        if canonical:
+            return
+        now = datetime.now(timezone.utc)
+        receipts = self._mongo.db["storefront_asset_cleanup_receipts"]
+        receipt_filter = {"owner_id": owner_id, "candidate_key": candidate_key}
+        receipt_update = {
+            "$set": {
+                "slot": slot,
+                "state": "cleanup_retry",
+                "cleanup_reason": reason,
+                "last_cleanup_error": error.__class__.__name__,
+                "last_cleanup_attempt_at": now,
+                "cleanup_due_at": now
+                + timedelta(seconds=STOREFRONT_CLEANUP_RETRY_SECONDS),
+                "updated_at": now,
+            },
+            "$setOnInsert": {
+                "_id": ObjectId(),
+                "owner_id": owner_id,
+                "candidate_key": candidate_key,
+                "cleanup_attempts": 0,
+                "created_at": now,
+            },
+            "$inc": {"cleanup_attempts": 1},
+        }
+        try:
+            await receipts.update_one(receipt_filter, receipt_update, upsert=True)
+        except DuplicateKeyError:
+            # Another lost worker won the idempotent insert. Update that exact
+            # owner/key receipt rather than dropping cleanup durability.
+            reconciled = await receipts.update_one(receipt_filter, receipt_update)
+            if not (
+                getattr(reconciled, "matched_count", 0)
+                or getattr(reconciled, "modified_count", 0)
+            ):
+                raise
+
+    async def _discard_lost_candidate(
+        self,
+        *,
+        owner_id: str,
+        slot: str,
+        candidate_key: str,
+        reason: str,
+    ) -> None:
+        try:
+            await self._delete_storage_keys([candidate_key])
+        except Exception as cleanup_error:
+            await self._record_detached_candidate_cleanup(
+                owner_id=owner_id,
+                slot=slot,
+                candidate_key=candidate_key,
+                reason=reason,
+                error=cleanup_error,
+            )
+            logger.exception(
+                "Lost finalizer retained durable cleanup for candidate %s",
+                candidate_key,
+            )
 
     async def _discard_invalid_upload(
         self,
@@ -998,6 +1144,7 @@ class StorefrontMediaService:
     ) -> None:
         assets = self._mongo.db["storefront_assets"]
         cleanup_token = uuid4().hex
+        deleting_started_at = datetime.now(timezone.utc)
         fenced = await assets.update_one(
             {
                 "_id": asset["_id"],
@@ -1009,9 +1156,11 @@ class StorefrontMediaService:
                 "$set": {
                     "state": "deleting",
                     "cleanup_token": cleanup_token,
+                    "deleting_started_at": deleting_started_at,
+                    "cleanup_source_state": "finalizing",
                     "cleanup_candidate_key": candidate_key,
                     "cleanup_reason": "invalid_upload",
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": deleting_started_at,
                 },
                 "$unset": {
                     "finalization_token": "",
@@ -1022,13 +1171,12 @@ class StorefrontMediaService:
         if not getattr(fenced, "modified_count", 0):
             # This worker lost its lease. Its candidate is token-unique and safe
             # to remove; staging and the canonical row now belong to a successor.
-            try:
-                await self._delete_storage_keys([candidate_key])
-            except Exception:
-                logger.exception(
-                    "Failed to remove abandoned storefront candidate %s",
-                    candidate_key,
-                )
+            await self._discard_lost_candidate(
+                owner_id=asset["owner_id"],
+                slot=asset["slot"],
+                candidate_key=candidate_key,
+                reason="lost_invalid_upload_candidate",
+            )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Storefront finalization lease changed; reload and retry",
@@ -1038,6 +1186,8 @@ class StorefrontMediaService:
             **asset,
             "state": "deleting",
             "cleanup_token": cleanup_token,
+            "deleting_started_at": deleting_started_at,
+            "cleanup_source_state": "finalizing",
             "cleanup_candidate_key": candidate_key,
         }
         try:
@@ -1051,6 +1201,7 @@ class StorefrontMediaService:
                 reason="invalid_upload",
                 error=exc,
                 expected_states=["deleting"],
+                expected_cleanup_token=cleanup_token,
             )
         else:
             await assets.delete_one(
@@ -1388,13 +1539,12 @@ class StorefrontMediaService:
                 heartbeat, "modified_count", 0
             ):
                 return
-            try:
-                await self._delete_storage_keys([candidate_key])
-            except Exception:
-                logger.exception(
-                    "Lost finalizer could not remove its candidate %s",
-                    candidate_key,
-                )
+            await self._discard_lost_candidate(
+                owner_id=owner_id,
+                slot=asset["slot"],
+                candidate_key=candidate_key,
+                reason="lost_finalizer_candidate",
+            )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Storefront finalization lease changed; reload and retry",
@@ -1599,13 +1749,12 @@ class StorefrontMediaService:
         else:
             finalized_asset = {**asset, **update}
         if result is not None and not getattr(result, "modified_count", 0):
-            try:
-                await self._delete_storage_keys([candidate_key])
-            except Exception:
-                logger.exception(
-                    "Lost finalizer could not remove its candidate %s",
-                    candidate_key,
-                )
+            await self._discard_lost_candidate(
+                owner_id=owner_id,
+                slot=asset["slot"],
+                candidate_key=candidate_key,
+                reason="lost_finalizer_candidate",
+            )
             await reset_for_retry()
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -1684,7 +1833,12 @@ class StorefrontMediaService:
             )
 
         assets = self._mongo.db["storefront_assets"]
+        if asset.get("state") == "deleting":
+            await self._reap_stale_deleting(owner_id, asset)
+            return {"status": "deleted", "asset_id": normalized_asset_id}
         if asset.get("state") != "deleting":
+            cleanup_token = uuid4().hex
+            deleting_started_at = datetime.now(timezone.utc)
             claim = await assets.update_one(
                 {
                     "_id": asset["_id"],
@@ -1694,7 +1848,10 @@ class StorefrontMediaService:
                 {
                     "$set": {
                         "state": "deleting",
-                        "updated_at": datetime.now(timezone.utc),
+                        "cleanup_token": cleanup_token,
+                        "deleting_started_at": deleting_started_at,
+                        "cleanup_source_state": asset["state"],
+                        "updated_at": deleting_started_at,
                     }
                 },
             )
@@ -1703,19 +1860,35 @@ class StorefrontMediaService:
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Storefront asset changed concurrently; reload and retry",
                 )
-            asset = {**asset, "state": "deleting"}
+            asset = {
+                **asset,
+                "state": "deleting",
+                "cleanup_token": cleanup_token,
+                "deleting_started_at": deleting_started_at,
+                "cleanup_source_state": asset["state"],
+            }
 
         # Recheck after the delete claim. Attachment helpers require a ready
         # state, so this closes the attach/delete race for service-owned flows.
         if await self._is_referenced(owner_id, normalized_asset_id):
             await assets.update_one(
-                {"_id": asset["_id"], "owner_id": owner_id, "state": "deleting"},
+                {
+                    "_id": asset["_id"],
+                    "owner_id": owner_id,
+                    "state": "deleting",
+                    "cleanup_token": asset.get("cleanup_token"),
+                },
                 {
                     "$set": {
                         "state": "attached",
                         "updated_at": datetime.now(timezone.utc),
                     },
-                    "$unset": {"cleanup_due_at": ""},
+                    "$unset": {
+                        "cleanup_due_at": "",
+                        "cleanup_token": "",
+                        "deleting_started_at": "",
+                        "cleanup_source_state": "",
+                    },
                 },
             )
             raise HTTPException(
@@ -1732,6 +1905,7 @@ class StorefrontMediaService:
                 reason="owner_requested",
                 error=exc,
                 expected_states=["deleting"],
+                expected_cleanup_token=asset.get("cleanup_token"),
             )
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1739,7 +1913,12 @@ class StorefrontMediaService:
             ) from exc
 
         await assets.delete_one(
-            {"_id": asset["_id"], "owner_id": owner_id, "state": "deleting"}
+            {
+                "_id": asset["_id"],
+                "owner_id": owner_id,
+                "state": "deleting",
+                "cleanup_token": asset.get("cleanup_token"),
+            }
         )
         return {"status": "deleted", "asset_id": normalized_asset_id}
 
@@ -1903,16 +2082,47 @@ class StorefrontMediaService:
 
     @staticmethod
     def _build_claim_manifest(
-        claim_id: str, entries: list[dict[str, str]]
+        claim_id: str, values: dict[str, str | None]
     ) -> dict[str, Any]:
-        by_slot = {entry["slot"]: entry["asset_id"] for entry in entries}
-        members = {slot: by_slot[slot] for slot in ("hero", "about") if slot in by_slot}
+        members = {
+            slot: values[f"{slot}_asset_id"]
+            for slot in ("hero", "about")
+            if f"{slot}_asset_id" in values
+        }
         return {"claim_id": claim_id, "count": len(members), "members": members}
+
+    @classmethod
+    def _claim_values(
+        cls, claim: dict, entries: list[dict[str, str]]
+    ) -> dict[str, str | None]:
+        values = claim.get("values") if isinstance(claim, dict) else None
+        if not isinstance(values, dict) or not values:
+            raise RuntimeError("Invalid storefront asset claim intent")
+        allowed_fields = {f"{slot}_asset_id" for slot in STOREFRONT_ASSET_SLOTS}
+        if set(values) - allowed_fields or any(
+            value is not None and not isinstance(value, str)
+            for value in values.values()
+        ):
+            raise RuntimeError("Invalid storefront asset claim intent")
+        entry_values = {entry["field_name"]: entry["asset_id"] for entry in entries}
+        if any(
+            values.get(field_name) != asset_id
+            for field_name, asset_id in entry_values.items()
+        ):
+            raise RuntimeError("Invalid storefront asset claim intent")
+        if {
+            field_name: value
+            for field_name, value in values.items()
+            if isinstance(value, str)
+        } != entry_values:
+            raise RuntimeError("Invalid storefront asset claim intent")
+        return values
 
     @classmethod
     def _claim_manifest(cls, claim: dict) -> dict[str, Any]:
         claim_id, entries = cls._claim_entries(claim)
-        expected = cls._build_claim_manifest(claim_id, entries)
+        values = cls._claim_values(claim, entries)
+        expected = cls._build_claim_manifest(claim_id, values)
         if claim.get("manifest") != expected:
             raise RuntimeError("Invalid storefront asset claim manifest")
         return expected
@@ -1920,7 +2130,7 @@ class StorefrontMediaService:
     @classmethod
     def _entries_from_manifest(
         cls, manifest: Any
-    ) -> tuple[str, list[dict[str, str]]] | None:
+    ) -> tuple[str, list[dict[str, str]], dict[str, str | None]] | None:
         if not isinstance(manifest, dict) or set(manifest) != {
             "claim_id",
             "count",
@@ -1942,37 +2152,46 @@ class StorefrontMediaService:
         ):
             return None
         entries: list[dict[str, str]] = []
+        values: dict[str, str | None] = {}
         for slot in ("hero", "about"):
             if slot not in members:
                 continue
             asset_id = members[slot]
-            if not isinstance(asset_id, str) or not asset_id:
+            if asset_id is not None and (not isinstance(asset_id, str) or not asset_id):
                 return None
+            field_name = f"{slot}_asset_id"
+            values[field_name] = asset_id
+            if asset_id is None:
+                continue
             entries.append(
                 {
                     "asset_id": asset_id,
                     "slot": slot,
-                    "field_name": f"{slot}_asset_id",
+                    "field_name": field_name,
                 }
             )
-        if cls._build_claim_manifest(claim_id, entries) != manifest:
+        if cls._build_claim_manifest(claim_id, values) != manifest:
             return None
-        return claim_id, entries
+        return claim_id, entries, values
 
     @staticmethod
     def _row_has_exact_manifest_pairs(
-        row: dict | None, claim_id: str, entries: list[dict[str, str]]
+        row: dict | None, claim_id: str, values: dict[str, str | None]
     ) -> bool:
         if not row:
             return False
-        expected = {entry["slot"]: entry["asset_id"] for entry in entries}
         for slot in ("hero", "about"):
-            asset_id = row.get(f"pending_{slot}_asset_id")
-            token = row.get(f"pending_{slot}_claim_id")
-            if slot in expected:
-                if asset_id != expected[slot] or token != claim_id:
+            field_name = f"{slot}_asset_id"
+            asset_field = f"pending_{slot}_asset_id"
+            claim_field = f"pending_{slot}_claim_id"
+            if field_name in values:
+                if (
+                    asset_field not in row
+                    or row.get(asset_field) != values[field_name]
+                    or row.get(claim_field) != claim_id
+                ):
                     return False
-            elif asset_id is not None or token is not None:
+            elif asset_field in row or claim_field in row:
                 return False
         return True
 
@@ -2104,7 +2323,7 @@ class StorefrontMediaService:
                 detail="Storefront asset claim changed concurrently; reload and retry",
             )
 
-        manifest = self._build_claim_manifest(claim_id, claimed_assets)
+        manifest = self._build_claim_manifest(claim_id, values)
         return {
             "owner_id": owner_id,
             "claim_id": claim_id,
@@ -2217,6 +2436,7 @@ class StorefrontMediaService:
         if claim.get("owner_id") != owner_id:
             raise RuntimeError("Storefront asset claim owner mismatch")
         claim_id, entries = self._claim_entries(claim)
+        values = self._claim_values(claim, entries)
         manifest = self._claim_manifest(claim)
         assets = self._mongo.db["storefront_assets"]
         settings = self._mongo.db["storefront_settings"]
@@ -2224,14 +2444,14 @@ class StorefrontMediaService:
             "planner_id": owner_id,
             PENDING_ASSET_GROUP_FIELD: manifest,
         }
-        for entry in entries:
-            durable_filter[f"pending_{entry['slot']}_asset_id"] = entry["asset_id"]
-            durable_filter[f"pending_{entry['slot']}_claim_id"] = claim_id
-        claimed_slots = {entry["slot"] for entry in entries}
-        for slot in STOREFRONT_ASSET_SLOTS - claimed_slots:
+        intent_slots = {field_name.removesuffix("_asset_id") for field_name in values}
+        for slot in intent_slots:
+            durable_filter[f"pending_{slot}_asset_id"] = values[f"{slot}_asset_id"]
+            durable_filter[f"pending_{slot}_claim_id"] = claim_id
+        for slot in STOREFRONT_ASSET_SLOTS - intent_slots:
             durable_filter[f"pending_{slot}_asset_id"] = {"$exists": False}
             durable_filter[f"pending_{slot}_claim_id"] = {"$exists": False}
-        if entries and not await settings.find_one(durable_filter, {"_id": 1}):
+        if not await settings.find_one(durable_filter, {"_id": 1}):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Storefront asset claim has no complete durable settings reference",
@@ -2339,9 +2559,8 @@ class StorefrontMediaService:
         if claim.get("owner_id") != owner_id:
             raise RuntimeError("Storefront asset claim owner mismatch")
         claim_id, entries = self._claim_entries(claim)
+        values = self._claim_values(claim, entries)
         manifest = self._claim_manifest(claim)
-        if not entries:
-            return
         assets = self._mongo.db["storefront_assets"]
         settings = self._mongo.db["storefront_settings"]
 
@@ -2366,19 +2585,20 @@ class StorefrontMediaService:
             "planner_id": owner_id,
             PENDING_ASSET_GROUP_FIELD: manifest,
         }
-        stable_updates: dict[str, str] = {}
+        stable_updates: dict[str, str | None] = {}
         pending_unsets: dict[str, str] = {}
-        for entry in entries:
-            pending_asset_field = f"pending_{entry['slot']}_asset_id"
-            pending_claim_field = f"pending_{entry['slot']}_claim_id"
-            promote_filter[pending_asset_field] = entry["asset_id"]
+        intent_slots = {field_name.removesuffix("_asset_id") for field_name in values}
+        for slot in intent_slots:
+            field_name = f"{slot}_asset_id"
+            pending_asset_field = f"pending_{slot}_asset_id"
+            pending_claim_field = f"pending_{slot}_claim_id"
+            promote_filter[pending_asset_field] = values[field_name]
             promote_filter[pending_claim_field] = claim_id
-            stable_updates[entry["field_name"]] = entry["asset_id"]
+            stable_updates[field_name] = values[field_name]
             pending_unsets[pending_asset_field] = ""
             pending_unsets[pending_claim_field] = ""
         pending_unsets[PENDING_ASSET_GROUP_FIELD] = ""
-        claimed_slots = {entry["slot"] for entry in entries}
-        for slot in STOREFRONT_ASSET_SLOTS - claimed_slots:
+        for slot in STOREFRONT_ASSET_SLOTS - intent_slots:
             promote_filter[f"pending_{slot}_asset_id"] = {"$exists": False}
             promote_filter[f"pending_{slot}_claim_id"] = {"$exists": False}
 
@@ -2407,13 +2627,14 @@ class StorefrontMediaService:
         if claim.get("owner_id") != owner_id:
             raise RuntimeError("Storefront asset claim owner mismatch")
         claim_id, entries = self._claim_entries(claim)
+        values = self._claim_values(claim, entries)
         manifest = self._claim_manifest(claim)
         settings = self._mongo.db["storefront_settings"]
         row = await settings.find_one({"planner_id": owner_id})
         complete_pending_group = (
             bool(row)
             and row.get(PENDING_ASSET_GROUP_FIELD) == manifest
-            and self._row_has_exact_manifest_pairs(row, claim_id, entries)
+            and self._row_has_exact_manifest_pairs(row, claim_id, values)
         )
         if complete_pending_group:
             try:
@@ -2600,6 +2821,43 @@ class StorefrontMediaService:
                     "state": "reaping",
                     "reaping_started_at": {"$exists": False},
                 },
+                {
+                    "state": "finalizing",
+                    "finalization_started_at": {
+                        "$lte": now
+                        - timedelta(seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS)
+                    },
+                },
+                {
+                    "state": "finalizing",
+                    "finalization_started_at": {"$exists": False},
+                    "updated_at": {
+                        "$lte": now
+                        - timedelta(seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS)
+                    },
+                },
+                {
+                    "state": "finalization_recovery",
+                    "updated_at": {
+                        "$lte": now
+                        - timedelta(seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS)
+                    },
+                },
+                {
+                    "state": "deleting",
+                    "deleting_started_at": {
+                        "$lte": now
+                        - timedelta(seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS)
+                    },
+                },
+                {
+                    "state": "deleting",
+                    "deleting_started_at": {"$exists": False},
+                    "updated_at": {
+                        "$lte": now
+                        - timedelta(seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS)
+                    },
+                },
             ]
         }
         if owner_id is not None:
@@ -2613,9 +2871,32 @@ class StorefrontMediaService:
         slot = asset.get("slot")
         if not isinstance(owner_id, str) or slot not in STOREFRONT_ASSET_SLOTS:
             logger.error("Invalid storefront cleanup receipt %s", asset.get("_id"))
+            invalid_filter: dict[str, Any] = {
+                "_id": asset.get("_id"),
+                "state": asset.get("state"),
+                "updated_at": asset.get("updated_at"),
+            }
+            if "reap_token" in asset:
+                invalid_filter["reap_token"] = asset.get("reap_token")
+            await self._mongo.db["storefront_assets"].update_one(
+                invalid_filter,
+                {
+                    "$set": {
+                        "state": "invalid_cleanup_receipt",
+                        "cleanup_validation_error": "invalid_owner_or_slot",
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
             return False
         if asset.get("state") == "reaping":
             await self._resume_stale_reaping(owner_id, asset)
+            return True
+        if asset.get("state") in {"finalizing", "finalization_recovery"}:
+            await self._reap_stale_finalization(owner_id, asset)
+            return True
+        if asset.get("state") == "deleting":
+            await self._reap_stale_deleting(owner_id, asset)
             return True
         if asset.get("state") not in {"ready", "cleanup_retry"}:
             return False
@@ -2717,6 +2998,144 @@ class StorefrontMediaService:
                 )
         return processed
 
+    async def _sweep_detached_candidate_receipts(
+        self, *, limit: int
+    ) -> tuple[int, int]:
+        receipts = self._mongo.db["storefront_asset_cleanup_receipts"]
+        now = datetime.now(timezone.utc)
+        cursor = receipts.find(
+            {
+                "$or": [
+                    {"state": "cleanup_retry", "cleanup_due_at": {"$lte": now}},
+                    {
+                        "state": "reaping",
+                        "reaping_started_at": {
+                            "$lte": now
+                            - timedelta(
+                                seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS
+                            )
+                        },
+                    },
+                    {
+                        "state": "reaping",
+                        "reaping_started_at": {"$exists": False},
+                    },
+                ]
+            }
+        )
+        processed = 0
+        candidates = await cursor.to_list(length=limit)
+        for receipt in candidates:
+            owner_id = receipt.get("owner_id")
+            slot = receipt.get("slot")
+            candidate_key = receipt.get("candidate_key")
+            if (
+                not isinstance(owner_id, str)
+                or slot not in STOREFRONT_ASSET_SLOTS
+                or not isinstance(candidate_key, str)
+                or not candidate_key.startswith(f"storefront/{owner_id}/{slot}/")
+            ):
+                logger.error(
+                    "Invalid detached storefront cleanup receipt %s",
+                    receipt.get("_id"),
+                )
+                invalid_filter: dict[str, Any] = {
+                    "_id": receipt.get("_id"),
+                    "state": receipt.get("state"),
+                    "updated_at": receipt.get("updated_at"),
+                }
+                if "reap_token" in receipt:
+                    invalid_filter["reap_token"] = receipt.get("reap_token")
+                await receipts.update_one(
+                    invalid_filter,
+                    {
+                        "$set": {
+                            "state": "invalid",
+                            "cleanup_validation_error": "invalid_owner_slot_or_key",
+                            "updated_at": datetime.now(timezone.utc),
+                        }
+                    },
+                )
+                continue
+
+            previous_state = receipt.get("state")
+            previous_token = receipt.get("reap_token")
+            reap_token = uuid4().hex
+            claim_filter: dict[str, Any] = {
+                "_id": receipt["_id"],
+                "owner_id": owner_id,
+                "candidate_key": candidate_key,
+                "state": previous_state,
+            }
+            if previous_state == "reaping":
+                claim_filter["reap_token"] = previous_token
+                claim_filter["reaping_started_at"] = receipt.get("reaping_started_at")
+            else:
+                claim_filter["updated_at"] = receipt.get("updated_at")
+                claim_filter["cleanup_due_at"] = receipt.get("cleanup_due_at")
+            claimed = await receipts.update_one(
+                claim_filter,
+                {
+                    "$set": {
+                        "state": "reaping",
+                        "reap_token": reap_token,
+                        "reaping_started_at": now,
+                        "updated_at": now,
+                    }
+                },
+            )
+            if not getattr(claimed, "modified_count", 0):
+                continue
+
+            canonical = await self._mongo.db["storefront_assets"].find_one(
+                {
+                    "owner_id": owner_id,
+                    "key": candidate_key,
+                    "state": {"$in": list(_FINALIZED_STATES)},
+                },
+                {"_id": 1},
+            )
+            if not canonical:
+                try:
+                    await self._delete_storage_keys([candidate_key])
+                except Exception as exc:
+                    retry_at = datetime.now(timezone.utc)
+                    await receipts.update_one(
+                        {
+                            "_id": receipt["_id"],
+                            "owner_id": owner_id,
+                            "state": "reaping",
+                            "reap_token": reap_token,
+                        },
+                        {
+                            "$set": {
+                                "state": "cleanup_retry",
+                                "last_cleanup_error": exc.__class__.__name__,
+                                "last_cleanup_attempt_at": retry_at,
+                                "cleanup_due_at": retry_at
+                                + timedelta(seconds=STOREFRONT_CLEANUP_RETRY_SECONDS),
+                                "updated_at": retry_at,
+                            },
+                            "$inc": {"cleanup_attempts": 1},
+                            "$unset": {
+                                "reap_token": "",
+                                "reaping_started_at": "",
+                            },
+                        },
+                    )
+                    continue
+            deleted = await receipts.delete_one(
+                {
+                    "_id": receipt["_id"],
+                    "owner_id": owner_id,
+                    "state": "reaping",
+                    "reap_token": reap_token,
+                }
+            )
+            if getattr(deleted, "deleted_count", 0):
+                processed += 1
+        return processed, len(candidates)
+
     async def sweep_abandoned_assets(
         self, *, limit: int = STOREFRONT_MAINTENANCE_BATCH_SIZE
     ) -> int:
@@ -2728,7 +3147,17 @@ class StorefrontMediaService:
             or not 1 <= limit <= 500
         ):
             raise ValueError("Storefront maintenance limit must be between 1 and 500")
-        return await self._sweep_due_cleanup_assets(owner_id=None, limit=limit)
+        (
+            detached_processed,
+            detached_attempted,
+        ) = await self._sweep_detached_candidate_receipts(limit=limit)
+        remaining = limit - detached_attempted
+        if remaining <= 0:
+            return detached_processed
+        return detached_processed + await self._sweep_due_cleanup_assets(
+            owner_id=None,
+            limit=remaining,
+        )
 
     async def _recover_abandoned_cleanable_assets(self, owner: Any) -> None:
         """Use the same token-fenced sweep for the current owner."""
@@ -2754,15 +3183,16 @@ class StorefrontMediaService:
             manifest = row.get(PENDING_ASSET_GROUP_FIELD)
             parsed_manifest = self._entries_from_manifest(manifest)
             if parsed_manifest:
-                claim_id, entries = parsed_manifest
+                claim_id, entries, values = parsed_manifest
                 claim = {
                     "owner_id": owner_id,
                     "claim_id": claim_id,
+                    "values": values,
                     "claimed_assets": entries,
                     "manifest": manifest,
                 }
                 group_is_valid = self._row_has_exact_manifest_pairs(
-                    row, claim_id, entries
+                    row, claim_id, values
                 )
                 if group_is_valid:
                     for entry in entries:

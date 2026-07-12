@@ -98,6 +98,22 @@ async def test_storefront_indexes_are_unique_named_and_slug_is_legacy_safe(
         ("owner_id", 1),
     ]
     assert "expireAfterSeconds" not in global_reaping_lease[1]
+    detached_candidate = by_name["idx_storefront_asset_cleanup_candidate_unique"]
+    assert detached_candidate[0] == [("owner_id", 1), ("candidate_key", 1)]
+    assert detached_candidate[1]["unique"] is True
+    assert "expireAfterSeconds" not in detached_candidate[1]
+    detached_due = by_name["idx_storefront_asset_cleanup_state_due"]
+    assert detached_due[0] == [
+        ("state", 1),
+        ("cleanup_due_at", 1),
+    ]
+    detached_reaping = by_name["idx_storefront_asset_cleanup_state_reaping"]
+    assert detached_reaping[0] == [
+        ("state", 1),
+        ("reaping_started_at", 1),
+    ]
+    assert "expireAfterSeconds" not in detached_due[1]
+    assert "expireAfterSeconds" not in detached_reaping[1]
     assert by_name["idx_storefront_inquiries_owner_created"][0] == [
         ("planner_id", 1),
         ("created_at", -1),

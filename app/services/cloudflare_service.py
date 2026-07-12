@@ -7,7 +7,7 @@ reported through a structured exception that callers can persist for retry.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote
 
 import httpx
@@ -125,7 +125,9 @@ class CloudflareService:
         path: str,
         *,
         json: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+        params: dict[str, str] | None = None,
+        expect_list: bool = False,
+    ) -> dict[str, Any] | list[dict[str, Any]]:
         token, zone_id = self._require_configuration(operation)
         url = f"{self.API_ROOT}/zones/{zone_id}/custom_hostnames{path}"
         request_kwargs: dict[str, Any] = {
@@ -137,6 +139,8 @@ class CloudflareService:
         }
         if json is not None:
             request_kwargs["json"] = json
+        if params is not None:
+            request_kwargs["params"] = params
 
         try:
             if self._http_client is not None:
@@ -189,6 +193,23 @@ class CloudflareService:
             )
 
         result = payload.get("result")
+        if expect_list:
+            if not isinstance(result, list) or any(
+                not isinstance(item, dict) for item in result
+            ):
+                raise CloudflareServiceError(
+                    "Cloudflare returned an invalid custom-hostname list",
+                    operation=operation,
+                    kind="response",
+                    provider_status_code=response.status_code,
+                    errors=(
+                        {
+                            "code": "invalid_provider_result",
+                            "message": "Cloudflare response did not contain a list result",
+                        },
+                    ),
+                )
+            return cast(list[dict[str, Any]], result)
         if not isinstance(result, dict):
             raise CloudflareServiceError(
                 "Cloudflare returned an invalid custom-hostname result",
@@ -205,32 +226,55 @@ class CloudflareService:
         return result
 
     async def create_custom_hostname(self, hostname: str) -> dict[str, Any]:
-        return await self._request(
-            "POST",
-            "create_custom_hostname",
-            "",
-            json={
-                "hostname": hostname,
-                "ssl": {
-                    "method": "txt",
-                    "type": "dv",
-                    "settings": {"min_tls_version": "1.2"},
+        return cast(
+            dict[str, Any],
+            await self._request(
+                "POST",
+                "create_custom_hostname",
+                "",
+                json={
+                    "hostname": hostname,
+                    "ssl": {
+                        "method": "txt",
+                        "type": "dv",
+                        "settings": {"min_tls_version": "1.2"},
+                    },
                 },
-            },
+            ),
         )
 
     async def get_custom_hostname(self, hostname_id: str) -> dict[str, Any]:
-        return await self._request(
-            "GET",
-            "get_custom_hostname",
-            f"/{quote(hostname_id, safe='')}",
+        return cast(
+            dict[str, Any],
+            await self._request(
+                "GET",
+                "get_custom_hostname",
+                f"/{quote(hostname_id, safe='')}",
+            ),
         )
 
     async def delete_custom_hostname(self, hostname_id: str) -> dict[str, Any]:
-        return await self._request(
-            "DELETE",
-            "delete_custom_hostname",
-            f"/{quote(hostname_id, safe='')}",
+        return cast(
+            dict[str, Any],
+            await self._request(
+                "DELETE",
+                "delete_custom_hostname",
+                f"/{quote(hostname_id, safe='')}",
+            ),
+        )
+
+    async def list_custom_hostnames(self, hostname: str) -> list[dict[str, Any]]:
+        """List provider mappings filtered by an exact normalized hostname."""
+
+        return cast(
+            list[dict[str, Any]],
+            await self._request(
+                "GET",
+                "list_custom_hostnames",
+                "",
+                params={"hostname": hostname},
+                expect_list=True,
+            ),
         )
 
     # Transitional aliases keep older internal callsites source-compatible
