@@ -276,7 +276,7 @@ export default function AdminLoginPage() {
 
                   <div className="mt-5 border-t border-white/30 pt-4 text-center">
                     <p className="mx-auto max-w-md text-xs leading-5 text-wedding-navy/55 sm:text-sm">
-                      Your full dashboard is ready at a venue walkthrough or from your desk.
+                      Manage your planning business from your desk, on-site, or wherever the wedding takes you.
                     </p>
                   </div>
                 </div>

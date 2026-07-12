@@ -429,7 +429,7 @@ export function PlannerAuthSection({
 
         <div className="space-y-1.5">
           <label htmlFor="signup-company" className="text-sm font-medium text-slate-800">
-            Studio or company name
+            Planning business or team name
           </label>
           <input
             id="signup-company"
@@ -440,7 +440,11 @@ export function PlannerAuthSection({
               errors.companyName ? 'border-red-300' : 'border-slate-200'
             }`}
           />
-          {errors.companyName && <p className="text-xs text-red-600">{errors.companyName.message}</p>}
+          {errors.companyName ? (
+            <p className="text-xs text-red-600">{errors.companyName.message}</p>
+          ) : (
+            <p className="text-xs text-slate-500">This creates the workspace used by the person or team managing weddings.</p>
+          )}
         </div>
 
         <div className="space-y-1.5">
@@ -696,10 +700,10 @@ export function PlannerAuthSection({
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-[0.32em] text-slate-500">Planner access</p>
           <h2 className="text-2xl font-semibold text-slate-900 sm:text-[1.65rem]">
-            {resolvedMode === 'signup' ? 'Launch your workspace' : 'Welcome back, planner'}
+            {resolvedMode === 'signup' ? 'Launch your planner workspace' : 'Welcome back, planner'}
           </h2>
           <p className="text-sm text-slate-600">
-            Keep budgets, forms, vendors, and couples in sync with glassmorphic controls optimised for modern workflows.
+            Manage client weddings, couples, guests, vendors, and your team from one operating system built for planners.
           </p>
         </div>
 

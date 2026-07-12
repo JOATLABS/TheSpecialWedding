@@ -507,8 +507,10 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
               {/* Step 1 fields — hidden (not unmounted) on step 2 so react-hook-form retains values */}
               <div className={step === 1 ? '' : 'hidden'}>
                   <div>
-                    <h2 className="text-xl font-bold text-white mb-1">Create your account</h2>
-                    <p className="text-sm text-slate-400">Enter your email and create a password</p>
+                    <h2 className="text-xl font-bold text-white mb-1">Create your planner workspace</h2>
+                    <p className="text-sm text-slate-400">
+                      For the person or team responsible for managing weddings from start to finish.
+                    </p>
                   </div>
 
                   <div className="mt-4">
@@ -578,8 +580,8 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
                       </svg>
                     </button>
                     <div>
-                      <h2 className="text-xl font-bold text-white">Your details</h2>
-                      <p className="text-sm text-slate-400">Almost there! Just a few more details.</p>
+                      <h2 className="text-xl font-bold text-white">Your planning business</h2>
+                      <p className="text-sm text-slate-400">Tell us who will be managing weddings in this workspace.</p>
                     </div>
                   </div>
 
@@ -607,7 +609,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1">Company name</label>
+                    <label className="block text-sm font-medium text-slate-300 mb-1">Planning business or team name</label>
                     <input
                       autoComplete="one-time-code"
                       {...register('companyName', { required: 'Required' })}
@@ -636,7 +638,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
                       className="mt-0.5 rounded border-slate-600 bg-slate-700 text-indigo-600 focus:ring-indigo-500"
                     />
                     <span className="text-xs text-slate-400">
-                      I agree to the <a href="#" className="text-indigo-400 hover:underline">Terms</a> and <a href="#" className="text-indigo-400 hover:underline">Privacy Policy</a>
+                      I agree to the <a href="/terms" className="text-indigo-400 hover:underline">Terms</a> and <a href="/privacy" className="text-indigo-400 hover:underline">Privacy Policy</a>
                     </span>
                   </label>
                   {errors.acceptTerms && <p className="text-xs text-red-400">{errors.acceptTerms.message as string}</p>}
@@ -646,7 +648,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
                     disabled={isSubmitting || loading}
                     className="w-full py-3 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold transition-all disabled:opacity-50"
                   >
-                    {isSubmitting ? 'Creating account...' : 'Continue to payment →'}
+                    {isSubmitting ? 'Creating planner workspace...' : 'Continue with planner plan →'}
                   </button>
 
                   <p className="text-center text-xs text-slate-500">

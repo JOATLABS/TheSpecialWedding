@@ -11,7 +11,7 @@ const NAV_LINKS = [
   { href: '/', label: 'Home' },
   { href: '/features', label: 'Features' },
   { href: '/resources/blog', label: 'Resources' },
-  { href: '/vendors', label: 'Vendors' },
+  { href: '/vendors', label: 'Find vendors' },
 ];
 
 export default function SaasNav() {
@@ -90,7 +90,7 @@ export default function SaasNav() {
               href="/#pricing"
               className="hidden md:inline-flex items-center rounded-full bg-wedding-rose px-4 py-2 text-sm font-semibold text-slate-900 shadow-md shadow-wedding-rose/30 transition hover:bg-wedding-blush"
             >
-              Start free
+              Create planner workspace
             </Link>
 
             {/* Mobile hamburger */}
@@ -142,7 +142,7 @@ export default function SaasNav() {
                 href="/#pricing"
                 className="flex items-center justify-center rounded-full bg-wedding-rose px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-md shadow-wedding-rose/30 transition hover:bg-wedding-blush"
               >
-                Start free
+                Create planner workspace
               </Link>
             </div>
           </div>

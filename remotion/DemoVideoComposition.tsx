@@ -1,11 +1,5 @@
 import { Video } from '@remotion/media';
-import {
-  AbsoluteFill,
-  interpolate,
-  staticFile,
-  useCurrentFrame,
-  useVideoConfig,
-} from 'remotion';
+import { AbsoluteFill, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 
 import type { DemoVideoRemotionProps } from './types';
 
@@ -18,177 +12,117 @@ function getActiveCaption(props: DemoVideoRemotionProps, frame: number, fps: num
   return activeCaption?.text ?? '';
 }
 
-function formatLabel(format: DemoVideoRemotionProps['format']): string {
-  return format === 'web-16x9' ? 'Website walkthrough' : 'Social cutdown';
-}
-
 export function DemoVideoComposition(props: DemoVideoRemotionProps) {
   const frame = useCurrentFrame();
-  const { fps, width, height } = useVideoConfig();
+  const { fps } = useVideoConfig();
   const activeCaption = getActiveCaption(props, frame, fps);
-  const introOpacity = interpolate(frame, [0, fps * 0.5], [0, 1], {
-    extrapolateRight: 'clamp',
-  });
   const isVertical = props.format === 'social-9x16';
-  const safePadding = isVertical ? 54 : 64;
-  const headerHeight = isVertical ? 250 : 150;
-  const footerHeight = isVertical ? 310 : 185;
-  const verticalMediaHeight = 820;
+  const captionSafeArea = isVertical ? 118 : 74;
 
   return (
-    <AbsoluteFill style={{ backgroundColor: '#020617', color: 'white', fontFamily: 'Inter, Arial, sans-serif' }}>
-      <AbsoluteFill
-        style={{
-          padding: safePadding,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: isVertical ? 34 : 26,
-        }}
-      >
-        <header
-          style={{
-            minHeight: headerHeight,
-            opacity: introOpacity,
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'flex-end',
-            gap: 14,
-          }}
-        >
-          <div
-            style={{
-              color: '#d4a5a5',
-              fontSize: isVertical ? 24 : 19,
-              fontWeight: 800,
-              letterSpacing: 5,
-              textTransform: 'uppercase',
-            }}
-          >
-            {formatLabel(props.format)}
-          </div>
-          <div
-            style={{
-              fontSize: isVertical ? 62 : 54,
-              fontWeight: 850,
-              lineHeight: 1,
-              maxWidth: isVertical ? 900 : 1300,
-            }}
-          >
-            {props.title}
-          </div>
-          <div
-            style={{
-              color: '#cbd5e1',
-              fontSize: isVertical ? 26 : 24,
-              lineHeight: 1.35,
-              maxWidth: isVertical ? 860 : 1240,
-            }}
-          >
-            {props.audience}
-          </div>
-        </header>
-
-        <main
-          style={{
-            position: 'relative',
-            flex: isVertical ? '0 0 auto' : 1,
-            height: isVertical ? verticalMediaHeight : undefined,
-            minHeight: 0,
-            borderRadius: isVertical ? 34 : 30,
-            overflow: 'hidden',
-            border: '2px solid rgba(255,255,255,0.12)',
-            backgroundColor: '#071020',
-            boxShadow: '0 34px 100px rgba(0,0,0,0.44)',
-          }}
-        >
-          {props.rawVideoPath ? (
+    <AbsoluteFill
+      style={{
+        backgroundColor: '#020617',
+        color: 'white',
+        fontFamily: 'Inter, Arial, sans-serif',
+        overflow: 'hidden',
+      }}
+    >
+      {props.rawVideoPath ? (
+        <>
+          {isVertical ? (
             <Video
               src={staticFile(props.rawVideoPath)}
               muted
-              objectFit="contain"
+              style={{
+                position: 'absolute',
+                inset: -48,
+                width: 'calc(100% + 96px)',
+                height: 'calc(100% + 96px)',
+                objectFit: 'cover',
+                filter: 'blur(30px) brightness(0.28) saturate(0.8)',
+                transform: 'scale(1.08)',
+              }}
+            />
+          ) : null}
+
+          <AbsoluteFill
+            style={
+              isVertical
+                ? {
+                    inset: '174px 34px 250px',
+                    width: 'auto',
+                    height: 'auto',
+                    overflow: 'hidden',
+                    borderRadius: 30,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    boxShadow: '0 30px 90px rgba(0,0,0,0.5)',
+                    backgroundColor: '#071020',
+                  }
+                : undefined
+            }
+          >
+            <Video
+              src={staticFile(props.rawVideoPath)}
+              muted
               style={{
                 width: '100%',
                 height: '100%',
+                objectFit: isVertical ? 'contain' : 'cover',
                 backgroundColor: '#071020',
               }}
             />
-          ) : (
-            <AbsoluteFill
-              style={{
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#cbd5e1',
-                fontSize: 32,
-              }}
-            >
-              Browser recording required
-            </AbsoluteFill>
-          )}
-        </main>
+          </AbsoluteFill>
+        </>
+      ) : null}
 
-        <footer
+      <div
+        style={{
+          position: 'absolute',
+          left: isVertical ? 54 : 42,
+          top: isVertical ? 70 : 34,
+          color: 'rgba(255,255,255,0.88)',
+          fontFamily: "Georgia, 'Times New Roman', serif",
+          fontSize: isVertical ? 30 : 22,
+          fontWeight: 700,
+          letterSpacing: 0.8,
+          textShadow: '0 2px 16px rgba(0,0,0,0.7)',
+        }}
+      >
+        The Special Wedding
+      </div>
+
+      {activeCaption ? (
+        <div
           style={{
-            minHeight: footerHeight,
+            position: 'absolute',
+            left: captionSafeArea,
+            right: captionSafeArea,
+            bottom: isVertical ? 86 : 42,
             display: 'flex',
-            alignItems: 'center',
             justifyContent: 'center',
+            pointerEvents: 'none',
           }}
         >
-          <div
+          <span
             style={{
-              width: '100%',
-              minHeight: isVertical ? 210 : 112,
-              borderRadius: isVertical ? 30 : 24,
-              background: 'rgba(15, 23, 42, 0.86)',
+              maxWidth: isVertical ? 850 : 1320,
+              borderRadius: isVertical ? 24 : 18,
+              backgroundColor: 'rgba(2, 6, 23, 0.82)',
               border: '1px solid rgba(255,255,255,0.12)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: isVertical ? '36px 42px' : '26px 44px',
+              boxShadow: '0 16px 54px rgba(0,0,0,0.4)',
+              padding: isVertical ? '22px 28px' : '14px 22px',
+              color: '#f8fafc',
+              fontSize: isVertical ? 38 : 28,
+              fontWeight: 650,
+              lineHeight: 1.24,
               textAlign: 'center',
             }}
           >
-            <span
-              style={{
-                color: '#f8fafc',
-                fontSize: isVertical ? 34 : 32,
-                lineHeight: 1.25,
-                fontWeight: 750,
-              }}
-            >
-              {activeCaption || 'The Special Wedding turns planner work into one calm command center.'}
-            </span>
-          </div>
-        </footer>
-      </AbsoluteFill>
-
-      <div
-        style={{
-          position: 'absolute',
-          right: safePadding,
-          bottom: safePadding * 0.42,
-          color: '#94a3b8',
-          fontSize: isVertical ? 22 : 18,
-          letterSpacing: 3,
-          textTransform: 'uppercase',
-        }}
-      >
-        TheSpecialWedding.io
-      </div>
-
-      <div
-        style={{
-          position: 'absolute',
-          left: safePadding,
-          bottom: safePadding * 0.42,
-          color: '#64748b',
-          fontSize: isVertical ? 18 : 15,
-          letterSpacing: 2,
-          textTransform: 'uppercase',
-        }}
-      >
-        {width}x{height}
-      </div>
+            {activeCaption}
+          </span>
+        </div>
+      ) : null}
     </AbsoluteFill>
   );
 }
