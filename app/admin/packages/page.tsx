@@ -11,6 +11,12 @@ import PageHeader from '../components/PageHeader';
 import StorefrontSettingsModal from './StorefrontSettingsModal';
 import UpgradeModal from '@/components/ui/UpgradeModal';
 import {
+  getStorefrontAccess,
+  type StorefrontAccess,
+  type StorefrontPackage,
+  type StorefrontPlanner,
+} from '@/services/storefrontApi';
+import {
   Plus,
   Settings,
   Package,
@@ -61,27 +67,60 @@ const statusConfig = {
 };
 
 export default function PackagesPage() {
-  const { token, userProfile } = useAdmin();
+  const { token, userProfile, apiRequest } = useAdmin();
   const [packages, setPackages] = useState<PackageData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [isStorefrontModalOpen, setIsStorefrontModalOpen] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [storefrontAccess, setStorefrontAccess] = useState<StorefrontAccess | null>(null);
+  const [storefrontAccessLoading, setStorefrontAccessLoading] = useState(true);
 
   const handleOpenStorefront = () => {
-    const planId = (userProfile as any)?.user_data?.plan_id || '';
-    
-    // Check if the user is on a premium plan (not free, basic, or starter)
-    // The Storefront and Custom Domain are gated top-tier features.
-    const isPremium = planId && !planId.includes('free') && !planId.includes('starter') && !planId.includes('basic');
-    
-    if (!isPremium) {
+    if (!storefrontAccess) {
+      toast.error('Storefront access could not be verified. Please try again.');
+      return;
+    }
+    if (!storefrontAccess.storefront_enabled) {
       setShowUpgradeModal(true);
       return;
     }
-    
     setIsStorefrontModalOpen(true);
   };
+
+  useEffect(() => {
+    if (!token) {
+      setStorefrontAccess(null);
+      setStorefrontAccessLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setStorefrontAccessLoading(true);
+    getStorefrontAccess(apiRequest)
+      .then((access) => {
+        if (!cancelled) {
+          setStorefrontAccess(access);
+        }
+      })
+      .catch((caught) => {
+        if (!cancelled) {
+          setStorefrontAccess(null);
+          toast.error(
+            caught instanceof Error
+              ? caught.message
+              : 'Storefront access could not be verified',
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setStorefrontAccessLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiRequest, token]);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -236,9 +275,14 @@ export default function PackagesPage() {
         description="Manage your service packages and public storefront profile"
       >
         <div className="flex items-center gap-3">
-          <Button variant="outline" className="flex items-center gap-2" onClick={handleOpenStorefront}>
+          <Button
+            variant="outline"
+            className="flex items-center gap-2"
+            onClick={handleOpenStorefront}
+            disabled={storefrontAccessLoading}
+          >
             <Settings size={18} />
-            Configure Storefront
+            {storefrontAccessLoading ? 'Checking Storefront…' : 'Configure Storefront'}
           </Button>
           <Link href="/admin/packages/new">
             <Button className="flex items-center gap-2">
@@ -471,12 +515,47 @@ export default function PackagesPage() {
       
       <StorefrontSettingsModal 
         isOpen={isStorefrontModalOpen} 
-        onClose={() => setIsStorefrontModalOpen(false)} 
+        onClose={() => setIsStorefrontModalOpen(false)}
+        access={storefrontAccess ?? {
+          plan_id: null,
+          storefront_enabled: false,
+          custom_domain_enabled: false,
+        }}
+        previewPlanner={{
+          company_name: null,
+          first_name: userProfile?.first_name ?? null,
+          profile_image_url: userProfile?.profile_image_url ?? null,
+        } satisfies StorefrontPlanner}
+        previewPackages={packages
+          .filter((pkg) => pkg.status === 'active' && !pkg.is_template)
+          .map((pkg) => ({
+            _id: pkg.id || pkg._id,
+            name: pkg.name,
+            description: pkg.description ?? null,
+            total_amount: pkg.total_amount,
+            currency: pkg.currency,
+            services: (pkg.services ?? [])
+              .filter((service) => service.included)
+              .map((service) => ({
+                name: service.name,
+                description: service.description ?? null,
+              })),
+          })) satisfies StorefrontPackage[]}
       />
       
       <UpgradeModal 
         isOpen={showUpgradeModal} 
-        onClose={() => setShowUpgradeModal(false)} 
+        onClose={() => setShowUpgradeModal(false)}
+        title="Unlock Your Planner Storefront"
+        description="Showcase your active packages on a polished platform page. Custom domains remain a separate capability on eligible plans."
+        features={[
+          'Planner Storefront on a shareable platform URL',
+          'Live design previews before publication',
+          'Package, review, and inquiry presentation',
+          'Optional custom domain on eligible tiers',
+        ]}
+        ctaLabel="Compare Storefront Plans"
+        ctaHref="/admin/planner/billing"
       />
     </div>
   );
