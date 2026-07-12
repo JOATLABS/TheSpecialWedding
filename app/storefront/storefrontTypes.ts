@@ -53,6 +53,7 @@ export interface StorefrontInquiryPayload {
   phone?: string;
   wedding_date?: string;
   message: string;
+  idempotency_key: string;
 }
 
 export interface StorefrontInquiryResult {
@@ -60,4 +61,3 @@ export interface StorefrontInquiryResult {
   inquiry_id: string;
   message: string;
 }
-

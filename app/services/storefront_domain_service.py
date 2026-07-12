@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 from fastapi import HTTPException, status
+import idna
 from pymongo.errors import DuplicateKeyError
 
 from app.constants.roles import is_wedding_planner_role
@@ -44,17 +45,24 @@ _NON_ROUTABLE_DOMAIN_STATUSES = frozenset(
 
 
 def _ascii_hostname(value: str) -> str:
-    labels: list[str] = []
-    for label in value.split("."):
-        if not label:
-            raise ValueError("Custom domain contains an empty hostname label")
-        try:
-            ascii_label = label.encode("idna").decode("ascii").lower()
-        except UnicodeError as exc:
-            raise ValueError("Custom domain contains an invalid IDNA label") from exc
+    try:
+        ascii_hostname = (
+            idna.encode(
+                value,
+                uts46=True,
+                std3_rules=True,
+                transitional=False,
+            )
+            .decode("ascii")
+            .lower()
+        )
+    except idna.IDNAError as exc:
+        raise ValueError("Custom domain contains an invalid IDNA label") from exc
+
+    labels = ascii_hostname.split(".")
+    for ascii_label in labels:
         if len(ascii_label) > 63 or not _HOST_LABEL.fullmatch(ascii_label):
             raise ValueError("Custom domain contains an invalid hostname label")
-        labels.append(ascii_label)
     return ".".join(labels)
 
 

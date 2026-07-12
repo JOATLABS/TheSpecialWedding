@@ -106,6 +106,13 @@ async def test_storefront_indexes_are_unique_named_and_slug_is_legacy_safe(
         ("storefront_slug", 1),
         ("created_at", -1),
     ]
+    inquiry_idempotency = by_name["idx_storefront_inquiries_owner_idempotency_unique"]
+    assert inquiry_idempotency[0] == [("planner_id", 1), ("idempotency_key", 1)]
+    assert inquiry_idempotency[1]["unique"] is True
+    assert inquiry_idempotency[1]["partialFilterExpression"] == {
+        "planner_id": {"$type": "string"},
+        "idempotency_key": {"$type": "string"},
+    }
 
 
 def test_create_all_indexes_invokes_storefront_index_setup():

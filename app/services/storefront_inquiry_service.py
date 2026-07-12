@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 from html import escape
+import json
 import logging
 from typing import Any
 
 from fastapi import HTTPException, status
+from pymongo.errors import DuplicateKeyError
 
 from app.core.database import mongo
 from app.models.storefront import StorefrontInquiryRequest, StorefrontInquiryResponse
@@ -44,6 +47,38 @@ class StorefrontInquiryService:
         )
         self._email = email_service or ResendEmailService()
 
+    @staticmethod
+    def _request_hash(payload: StorefrontInquiryRequest) -> str:
+        canonical_payload = payload.model_dump(
+            mode="json",
+            exclude={"idempotency_key"},
+        )
+        serialized = json.dumps(
+            canonical_payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _replay_or_conflict(inquiry: dict, request_hash: str) -> dict:
+        if inquiry.get("request_hash") != request_hash:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This inquiry key was already used with different details",
+            )
+        inquiry_id = inquiry.get("_id")
+        if inquiry_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Inquiry confirmation is temporarily unavailable",
+            )
+        return StorefrontInquiryResponse(
+            success=True,
+            inquiry_id=str(inquiry_id),
+            message=str(inquiry.get("response_message") or STOREFRONT_INQUIRY_MESSAGE),
+        ).model_dump()
+
     async def capture(
         self,
         identifier: str,
@@ -58,6 +93,15 @@ class StorefrontInquiryService:
         context = await self._storefront.resolve_public_context(identifier)
         owner_id = str(context["owner_id"])
         slug = str(context["slug"])
+        inquiries = self._mongo.db["storefront_inquiries"]
+        request_hash = self._request_hash(payload)
+        idempotency_query = {
+            "planner_id": owner_id,
+            "idempotency_key": payload.idempotency_key,
+        }
+        existing = await inquiries.find_one(idempotency_query)
+        if existing:
+            return self._replay_or_conflict(existing, request_hash)
 
         rate_subject = f"{client_ip or 'unknown'}:{slug}"
         is_allowed, _remaining, reset_time = await self._rate_limiter.is_allowed(
@@ -98,6 +142,9 @@ class StorefrontInquiryService:
                 payload.wedding_date.isoformat() if payload.wedding_date else None
             ),
             "message": payload.message,
+            "idempotency_key": payload.idempotency_key,
+            "request_hash": request_hash,
+            "response_message": STOREFRONT_INQUIRY_MESSAGE,
             "client_ip": client_ip or "unknown",
             "user_agent": (user_agent or "")[:500] or None,
             "status": "new",
@@ -106,7 +153,18 @@ class StorefrontInquiryService:
             "updated_at": now,
         }
         try:
-            result = await self._mongo.db["storefront_inquiries"].insert_one(inquiry)
+            result = await inquiries.insert_one(inquiry)
+        except DuplicateKeyError as exc:
+            concurrent_winner = await inquiries.find_one(idempotency_query)
+            if concurrent_winner:
+                return self._replay_or_conflict(concurrent_winner, request_hash)
+            logger.exception(
+                "Storefront inquiry collided with an unrelated unique constraint"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Inquiry could not be saved. Please try again.",
+            ) from exc
         except Exception as exc:
             logger.exception("Failed to persist storefront inquiry")
             raise HTTPException(
@@ -121,7 +179,7 @@ class StorefrontInquiryService:
             payload=payload,
         )
         try:
-            await self._mongo.db["storefront_inquiries"].update_one(
+            await inquiries.update_one(
                 {"_id": inquiry_id, "planner_id": owner_id},
                 {
                     "$set": {

@@ -2665,6 +2665,16 @@ async def create_storefront_indexes():
             name="idx_storefront_inquiries_slug_created",
             background=True,
         )
+        await inquiries.create_index(
+            [("planner_id", ASCENDING), ("idempotency_key", ASCENDING)],
+            name="idx_storefront_inquiries_owner_idempotency_unique",
+            unique=True,
+            background=True,
+            partialFilterExpression={
+                "planner_id": {"$type": "string"},
+                "idempotency_key": {"$type": "string"},
+            },
+        )
         logger.info("Storefront lifecycle indexes created/verified")
     except Exception as exc:
         logger.error("Error creating storefront lifecycle indexes: %s", exc)

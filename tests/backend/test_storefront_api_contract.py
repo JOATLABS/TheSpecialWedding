@@ -286,6 +286,7 @@ async def test_public_inquiry_route_uses_server_request_metadata_and_forbids_own
                 "name": "Ayo Couple",
                 "email": "ayo@example.com",
                 "message": "We would love to learn more.",
+                "idempotency_key": "inquiry-key-contract-00000001",
             },
         )
         smuggled = await client.post(
@@ -294,6 +295,7 @@ async def test_public_inquiry_route_uses_server_request_metadata_and_forbids_own
                 "name": "Ayo Couple",
                 "email": "ayo@example.com",
                 "message": "Hello",
+                "idempotency_key": "inquiry-key-contract-00000002",
                 "planner_id": "attacker-controlled",
             },
         )
@@ -303,6 +305,7 @@ async def test_public_inquiry_route_uses_server_request_metadata_and_forbids_own
     call = fake_inquiries.capture.await_args
     assert call.args[0] == "luxe-events"
     assert call.args[1].email == "ayo@example.com"
+    assert call.args[1].idempotency_key == "inquiry-key-contract-00000001"
     assert call.kwargs == {
         "client_ip": "8.8.8.8",
         "user_agent": "Contract Browser/1.0",

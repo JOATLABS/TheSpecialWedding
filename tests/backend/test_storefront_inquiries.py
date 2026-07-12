@@ -7,6 +7,7 @@ from bson import ObjectId
 from fastapi import HTTPException
 import pytest
 from pydantic import ValidationError
+from pymongo.errors import DuplicateKeyError
 from starlette.requests import Request
 
 import app.utils.rate_limiter as rate_limiter_module
@@ -45,6 +46,20 @@ class FakeCollection:
                 document.update(update.get("$set", {}))
                 return SimpleNamespace(modified_count=1)
         return SimpleNamespace(modified_count=0)
+
+
+class DuplicateRaceCollection(FakeCollection):
+    def __init__(self, *, winning_hash: str | None = None) -> None:
+        super().__init__()
+        self.winning_hash = winning_hash
+
+    async def insert_one(self, document: dict) -> SimpleNamespace:
+        winner = dict(document)
+        winner["_id"] = ObjectId("65f000000000000000000088")
+        if self.winning_hash is not None:
+            winner["request_hash"] = self.winning_hash
+        self.documents.append(winner)
+        raise DuplicateKeyError("concurrent idempotency winner")
 
 
 class FakeDatabase:
@@ -131,6 +146,7 @@ def inquiry_payload(**overrides) -> StorefrontInquiryRequest:
         "phone": "+1 555 555 0199",
         "wedding_date": date(2027, 6, 12),
         "message": "Please help with <b>planning</b> & logistics.",
+        "idempotency_key": "inquiry-key-0000000000000001",
     }
     values.update(overrides)
     return StorefrontInquiryRequest.model_validate(values)
@@ -167,14 +183,36 @@ def test_inquiry_request_forbids_owner_metadata_and_validates_contact_fields():
                 "name": "Ayo",
                 "email": "ayo@example.com",
                 "message": "Hello",
+                "idempotency_key": "inquiry-key-0000000000000001",
                 "planner_id": "attacker-controlled",
             }
         )
 
     for invalid in (
-        {"name": "", "email": "ayo@example.com", "message": "Hello"},
-        {"name": "Ayo", "email": "not-email", "message": "Hello"},
-        {"name": "Ayo", "email": "ayo@example.com", "message": ""},
+        {
+            "name": "",
+            "email": "ayo@example.com",
+            "message": "Hello",
+            "idempotency_key": "inquiry-key-0000000000000001",
+        },
+        {
+            "name": "Ayo",
+            "email": "not-email",
+            "message": "Hello",
+            "idempotency_key": "inquiry-key-0000000000000001",
+        },
+        {
+            "name": "Ayo",
+            "email": "ayo@example.com",
+            "message": "",
+            "idempotency_key": "inquiry-key-0000000000000001",
+        },
+        {
+            "name": "Ayo",
+            "email": "ayo@example.com",
+            "message": "Hello",
+            "idempotency_key": "short",
+        },
     ):
         with pytest.raises(ValidationError):
             StorefrontInquiryRequest.model_validate(invalid)
@@ -285,6 +323,8 @@ async def test_inquiry_persists_owner_scoped_allowlist_before_escaped_notificati
     assert stored["email"] == "ayo@example.com"
     assert stored["wedding_date"] == "2027-06-12"
     assert stored["notification"]["status"] == "pending"
+    assert stored["idempotency_key"] == "inquiry-key-0000000000000001"
+    assert len(stored["request_hash"]) == 64
     assert "settings" not in stored
     assert "planner_email" not in stored
 
@@ -367,4 +407,90 @@ async def test_rate_limit_is_keyed_by_canonical_storefront_and_ip_before_insert(
     assert exc_info.value.status_code == 429
     assert limiter.keys == ["203.0.113.10:luxe-light"]
     assert mongo.db["storefront_inquiries"].inserted == []
+    assert email.calls == []
+
+
+@pytest.mark.asyncio
+async def test_unchanged_idempotent_retry_replays_success_without_duplicate_side_effects():
+    service, mongo, _storefront, limiter, email = make_service()
+    payload = inquiry_payload()
+
+    first = await service.capture(
+        "luxe-light",
+        payload,
+        client_ip="203.0.113.10",
+        user_agent=None,
+    )
+    replay = await service.capture(
+        "luxe-light",
+        payload,
+        client_ip="203.0.113.10",
+        user_agent=None,
+    )
+
+    assert replay == first
+    assert len(mongo.db["storefront_inquiries"].inserted) == 1
+    assert len(email.calls) == 1
+    assert limiter.keys == ["203.0.113.10:luxe-light"]
+
+
+@pytest.mark.asyncio
+async def test_changed_payload_with_same_idempotency_key_is_rejected():
+    service, mongo, _storefront, _limiter, email = make_service()
+    await service.capture(
+        "luxe-light",
+        inquiry_payload(),
+        client_ip="203.0.113.10",
+        user_agent=None,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.capture(
+            "luxe-light",
+            inquiry_payload(message="A changed inquiry"),
+            client_ip="203.0.113.10",
+            user_agent=None,
+        )
+
+    assert exc_info.value.status_code == 409
+    assert len(mongo.db["storefront_inquiries"].inserted) == 1
+    assert len(email.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_duplicate_key_race_replays_concurrent_winner_without_notification():
+    service, mongo, _storefront, _limiter, email = make_service()
+    collection = DuplicateRaceCollection()
+    mongo.db.collections["storefront_inquiries"] = collection
+    email.inquiries = collection
+
+    result = await service.capture(
+        "luxe-light",
+        inquiry_payload(),
+        client_ip="203.0.113.10",
+        user_agent=None,
+    )
+
+    assert result["inquiry_id"] == "65f000000000000000000088"
+    assert len(collection.documents) == 1
+    assert email.calls == []
+
+
+@pytest.mark.asyncio
+async def test_duplicate_key_race_with_changed_payload_returns_conflict():
+    service, mongo, _storefront, _limiter, email = make_service()
+    collection = DuplicateRaceCollection(winning_hash="different-request-hash")
+    mongo.db.collections["storefront_inquiries"] = collection
+    email.inquiries = collection
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.capture(
+            "luxe-light",
+            inquiry_payload(),
+            client_ip="203.0.113.10",
+            user_agent=None,
+        )
+
+    assert exc_info.value.status_code == 409
+    assert len(collection.documents) == 1
     assert email.calls == []

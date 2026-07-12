@@ -6,11 +6,26 @@ import { NextRequest } from 'next/server';
 import { resolveStorefrontRewriteHost } from '../../app/utils/storefrontHost';
 import { proxy } from '../../proxy';
 
+interface IdnaHostnameFixture {
+  input: string;
+  ascii: string;
+}
+
+const idnaHostnameFixtures = JSON.parse(
+  readFileSync('tests/fixtures/storefront_idna_hostnames.json', 'utf8'),
+) as IdnaHostnameFixture[];
+
 test('normalizes a custom hostname only for the root storefront request', () => {
   assert.equal(resolveStorefrontRewriteHost('  Studio.Example.COM.  ', '/'), 'studio.example.com');
   assert.equal(resolveStorefrontRewriteHost('studio.example.com:443', '/'), 'studio.example.com');
   assert.equal(resolveStorefrontRewriteHost('münchen.example', '/'), 'xn--mnchen-3ya.example');
   assert.equal(resolveStorefrontRewriteHost('studio.example.com', '/packages'), null);
+});
+
+test('normalizes the shared UTS-46 hostname fixtures used by the backend', () => {
+  for (const fixture of idnaHostnameFixtures) {
+    assert.equal(resolveStorefrontRewriteHost(fixture.input, '/'), fixture.ascii, fixture.input);
+  }
 });
 
 test('never rewrites platform, API, staging, or local development hosts', () => {

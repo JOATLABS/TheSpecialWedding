@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useId, useState } from 'react';
+import { FormEvent, useId, useRef, useState } from 'react';
 
 import { getApiBaseUrl } from '@/utils/env';
 import type {
@@ -10,10 +10,30 @@ import type {
 
 type SubmissionState = 'idle' | 'submitting' | 'success' | 'error';
 
+interface InquiryAttempt {
+  idempotencyKey: string;
+  requestFingerprint: string;
+}
+
 interface StorefrontInquiryFormProps {
   identifier: string;
   themeColor?: string;
   fetchImpl?: typeof fetch;
+  createIdempotencyKey?: () => string;
+}
+
+function createInquiryIdempotencyKey(): string {
+  const cryptoApi = globalThis.crypto;
+  if (!cryptoApi) {
+    throw new Error('Your inquiry could not be prepared securely. Refresh and try again.');
+  }
+  if (typeof cryptoApi.randomUUID === 'function') {
+    return cryptoApi.randomUUID();
+  }
+
+  const randomBytes = new Uint8Array(16);
+  cryptoApi.getRandomValues(randomBytes);
+  return Array.from(randomBytes, (value) => value.toString(16).padStart(2, '0')).join('');
 }
 
 async function readErrorMessage(response: Response): Promise<string | null> {
@@ -35,10 +55,21 @@ export default function StorefrontInquiryForm({
   identifier,
   themeColor = '#0f172a',
   fetchImpl = fetch,
+  createIdempotencyKey = createInquiryIdempotencyKey,
 }: StorefrontInquiryFormProps) {
   const fieldPrefix = useId();
   const [state, setState] = useState<SubmissionState>('idle');
   const [feedback, setFeedback] = useState<string | null>(null);
+  const inquiryAttemptRef = useRef<InquiryAttempt | null>(null);
+
+  const handleFormChange = () => {
+    if (state !== 'error') {
+      return;
+    }
+    inquiryAttemptRef.current = null;
+    setState('idle');
+    setFeedback(null);
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -69,17 +100,28 @@ export default function StorefrontInquiryForm({
     setState('submitting');
     setFeedback(null);
     try {
+      const payloadWithoutKey = {
+        name,
+        email,
+        phone: phone || undefined,
+        wedding_date: weddingDate || undefined,
+        message,
+      } satisfies Omit<StorefrontInquiryPayload, 'idempotency_key'>;
+      const requestFingerprint = JSON.stringify(payloadWithoutKey);
+      const previousAttempt = inquiryAttemptRef.current;
+      const idempotencyKey =
+        previousAttempt?.requestFingerprint === requestFingerprint
+          ? previousAttempt.idempotencyKey
+          : createIdempotencyKey();
+      inquiryAttemptRef.current = { idempotencyKey, requestFingerprint };
       const response = await fetchImpl(
         `${getApiBaseUrl()}/api/storefront/${encodeURIComponent(identifier)}/inquiries`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            name,
-            email,
-            phone: phone || undefined,
-            wedding_date: weddingDate || undefined,
-            message,
+            ...payloadWithoutKey,
+            idempotency_key: idempotencyKey,
           } satisfies StorefrontInquiryPayload),
         },
       );
@@ -112,7 +154,13 @@ export default function StorefrontInquiryForm({
   const id = (name: string) => `${fieldPrefix}-${name}`;
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit} noValidate>
+    <form
+      className="space-y-5"
+      onChange={handleFormChange}
+      onInput={handleFormChange}
+      onSubmit={handleSubmit}
+      noValidate
+    >
       <div>
         <label className="mb-2 block text-sm font-medium" htmlFor={id('name')}>
           Name
