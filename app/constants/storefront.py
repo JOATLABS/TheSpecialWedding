@@ -9,3 +9,22 @@ SUPPORTED_STOREFRONT_FEATURES = frozenset(
         CUSTOM_DOMAIN_FEATURE,
     }
 )
+
+RESERVED_STOREFRONT_SLUGS = frozenset(
+    {
+        "admin",
+        "api",
+        "assets",
+        "billing",
+        "custom-domain",
+        "help",
+        "login",
+        "preview",
+        "settings",
+        "storefront",
+        "support",
+        "system",
+        "the-special-wedding",
+        "www",
+    }
+)
