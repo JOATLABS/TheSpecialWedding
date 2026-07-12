@@ -18,9 +18,17 @@ class FakeS3Client:
         self.meta = SimpleNamespace(endpoint_url=endpoint_url)
         self.uploads: list[dict] = []
         self.copies: list[dict] = []
+        self.presigns: list[dict] = []
         self.list_error_code = list_error_code
 
     def generate_presigned_url(self, ClientMethod, Params, ExpiresIn):
+        self.presigns.append(
+            {
+                "client_method": ClientMethod,
+                "params": Params,
+                "expires_in": ExpiresIn,
+            }
+        )
         return (
             f"{ClientMethod}:{Params['Bucket']}:{Params['Key']}:"
             f"{Params.get('ContentType', '')}:{ExpiresIn}"
@@ -86,6 +94,12 @@ def _set_storage_settings(monkeypatch):
     monkeypatch.setattr(settings, "s3_guest_media_bucket_name", "guest-bucket")
     monkeypatch.setattr(settings, "s3_ad_bucket_name", "ad-bucket")
     monkeypatch.setattr(settings, "s3_blog_bucket_name", "blog-bucket")
+    monkeypatch.setattr(
+        settings,
+        "s3_storefront_staging_bucket_name",
+        "storefront-staging-bucket",
+        raising=False,
+    )
     monkeypatch.setattr(settings, "media_domain", "gallery.example.com")
     monkeypatch.setattr(settings, "guest_media_domain", "guest.example.com")
     monkeypatch.setattr(settings, "ad_media_domain", "ads.example.com")
@@ -118,8 +132,19 @@ def test_media_storage_resolves_targets_without_cross_target_fallbacks(monkeypat
         storage.target(StorageTarget.BLOG_ASSETS).public_domain
         == "https://blog.example.com"
     )
+    storefront_staging = storage.target(StorageTarget.STOREFRONT_STAGING)
+    assert storefront_staging.bucket_name == "storefront-staging-bucket"
+    assert storefront_staging.public_domain is None
+    with pytest.raises(RuntimeError, match="staging objects are private"):
+        storage.build_public_url(
+            StorageTarget.STOREFRONT_STAGING,
+            "storefront/owner/_staging/upload.webp",
+        )
     assert storage.allowed_public_hosts(
-        StorageTarget.PRIMARY, StorageTarget.AD_ASSETS, StorageTarget.BLOG_ASSETS
+        StorageTarget.PRIMARY,
+        StorageTarget.AD_ASSETS,
+        StorageTarget.BLOG_ASSETS,
+        StorageTarget.STOREFRONT_STAGING,
     ) == ["gallery.example.com", "ads.example.com", "blog.example.com"]
 
     guest_health = storage.target_health(StorageTarget.GUEST_MEDIA)
@@ -181,6 +206,7 @@ def test_media_storage_copy_can_condition_on_the_validated_source_etag(monkeypat
         StorageTarget.BLOG_ASSETS,
         source_key="storefront/owner/_staging/upload.webp",
         destination_key="storefront/owner/hero/asset.webp",
+        source_target=StorageTarget.STOREFRONT_STAGING,
         source_etag='"validated-etag"',
     )
 
@@ -188,13 +214,34 @@ def test_media_storage_copy_can_condition_on_the_validated_source_etag(monkeypat
         {
             "Bucket": "blog-bucket",
             "CopySource": {
-                "Bucket": "blog-bucket",
+                "Bucket": "storefront-staging-bucket",
                 "Key": "storefront/owner/_staging/upload.webp",
             },
             "CopySourceIfMatch": '"validated-etag"',
             "Key": "storefront/owner/hero/asset.webp",
         }
     ]
+
+
+def test_media_storage_presigned_put_can_bind_declared_content_length(monkeypatch):
+    fake_client = _install_fake_s3(monkeypatch)
+    _set_storage_settings(monkeypatch)
+
+    storage = MediaStorage()
+    storage.generate_presigned_put_url(
+        StorageTarget.STOREFRONT_STAGING,
+        key="storefront/owner/_staging/upload.webp",
+        expires_in=300,
+        content_type="image/webp",
+        content_length=4096,
+    )
+
+    assert fake_client.presigns[-1]["params"] == {
+        "Bucket": "storefront-staging-bucket",
+        "Key": "storefront/owner/_staging/upload.webp",
+        "ContentType": "image/webp",
+        "ContentLength": 4096,
+    }
 
 
 def test_guest_media_storage_and_upload_image_use_centralized_targets(

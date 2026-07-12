@@ -38,13 +38,6 @@ _DEFAULT_PLATFORM_DOMAINS = frozenset({"thespecialwedding.io", "thespecialweddin
 _PROVIDER_DELETE_PENDING = "provider_delete_pending"
 _PROVIDER_DELETE_RETRY_PENDING = "retry_pending"
 _LOCAL_CLEANUP_PENDING = "local_cleanup_pending"
-_DELETION_STATUSES = frozenset(
-    {
-        _PROVIDER_DELETE_PENDING,
-        _PROVIDER_DELETE_RETRY_PENDING,
-        _LOCAL_CLEANUP_PENDING,
-    }
-)
 _NON_ROUTABLE_DOMAIN_STATUSES = frozenset(
     {"deleting", "delete_failed", "provider_deleted"}
 )
@@ -285,10 +278,61 @@ class StorefrontDomainService:
     def _has_deletion_intent(record: dict) -> bool:
         deletion_status = record.get("deletion_status")
         return (
-            isinstance(deletion_status, str)
-            and deletion_status.strip().lower() in _DELETION_STATUSES
+            isinstance(deletion_status, str) and bool(deletion_status.strip())
         ) or StorefrontDomainService._status(record.get("status")) in (
             _NON_ROUTABLE_DOMAIN_STATUSES
+        )
+
+    @staticmethod
+    def _refresh_write_filter(record: dict, owner_id: str) -> dict:
+        """Fence a provider observation to the exact lifecycle row it read.
+
+        A provider GET is an unbounded network await. Disconnect may claim the
+        row while that request is in flight, so every later refresh write must
+        compare the lifecycle identity it observed before the await.
+        """
+
+        return {
+            "_id": record["_id"],
+            "planner_id": owner_id,
+            "provider_hostname_id": record.get("provider_hostname_id"),
+            "status": record.get("status"),
+            "provider_status": record.get("provider_status"),
+            "ssl_status": record.get("ssl_status"),
+            "deletion_status": record.get("deletion_status"),
+            "deletion_attempt_id": record.get("deletion_attempt_id"),
+            "updated_at": record.get("updated_at"),
+        }
+
+    async def _write_refresh_observation(
+        self,
+        collection: Any,
+        record: dict,
+        owner_id: str,
+        update: dict,
+    ) -> tuple[bool, dict | None]:
+        """Persist a refresh result or return a newer deletion projection.
+
+        A lost compare-and-set is only safely absorbable when the row vanished
+        or moved into deletion. Other concurrent edits remain an explicit 409.
+        """
+
+        result = await collection.update_one(
+            self._refresh_write_filter(record, owner_id), update
+        )
+        if getattr(result, "matched_count", 0):
+            return True, None
+
+        current = await collection.find_one(
+            {"_id": record["_id"], "planner_id": owner_id}
+        )
+        if not current:
+            return False, None
+        if self._has_deletion_intent(current):
+            return False, self._serialize(current)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Custom-domain mapping changed during refresh",
         )
 
     @staticmethod
@@ -533,8 +577,10 @@ class StorefrontDomainService:
         try:
             provider_result = await self._cloudflare.get_custom_hostname(provider_id)
         except CloudflareServiceError as exc:
-            await collection.update_one(
-                {"_id": record["_id"], "planner_id": owner_id},
+            applied, superseding_result = await self._write_refresh_observation(
+                collection,
+                record,
+                owner_id,
                 {
                     "$set": {
                         "last_error": exc.message,
@@ -542,6 +588,8 @@ class StorefrontDomainService:
                     }
                 },
             )
+            if not applied:
+                return superseding_result
             raise self._provider_http_error(exc) from exc
 
         provider_result_id = provider_result.get("id")
@@ -555,8 +603,10 @@ class StorefrontDomainService:
         if provider_result_id != provider_id or provider_result_hostname != record.get(
             "hostname"
         ):
-            await collection.update_one(
-                {"_id": record["_id"], "planner_id": owner_id},
+            applied, superseding_result = await self._write_refresh_observation(
+                collection,
+                record,
+                owner_id,
                 {
                     "$set": {
                         "last_error": (
@@ -566,32 +616,28 @@ class StorefrontDomainService:
                     }
                 },
             )
+            if not applied:
+                return superseding_result
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Cloudflare returned a mismatched custom-hostname result",
             )
 
         projection = self._provider_projection(provider_result)
-        updated = await collection.update_one(
-            {
-                "_id": record["_id"],
-                "planner_id": owner_id,
-                "provider_hostname_id": provider_id,
-            },
+        applied, superseding_result = await self._write_refresh_observation(
+            collection,
+            record,
+            owner_id,
             {
                 "$set": {
                     **projection,
                     "last_error": None,
-                    "deletion_status": None,
                     "updated_at": datetime.now(timezone.utc),
                 }
             },
         )
-        if not getattr(updated, "matched_count", 0):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Custom-domain mapping changed during refresh",
-            )
+        if not applied:
+            return superseding_result
         saved = await collection.find_one(
             {"_id": record["_id"], "planner_id": owner_id}
         )
