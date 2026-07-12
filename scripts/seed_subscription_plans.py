@@ -44,7 +44,7 @@ from app.utils.mongo_dates import to_utc_datetime  # noqa: E402
 # timestamps to plan["admin_overrides"][<field>] every time an admin edits.
 # Together: bump SEED_VERSION → admin edits older than the bump are
 # superseded; admin edits newer than the bump survive future deploys.
-SEED_VERSION = "2026-05-18T00:00:00+00:00"
+SEED_VERSION = "2026-07-12T00:00:00+00:00"
 
 if os.getenv("SEED_SUBSCRIPTION_PLANS_IMPORT_CHECK_ONLY") == "1":
     print("[OK] seed subscription import contract satisfied")
@@ -616,8 +616,9 @@ def _guard_seed_billing_model_transition(
 #   - Enterprise ($399/mo): UNLIMITED weddings, UNLIMITED guests, 20 seats — support-assisted launch
 #
 # Differentiation is by implemented limits and support paths (team seats, AI credits,
-# guest memories storage, support-assisted onboarding/launch), NOT unsupported
-# white-label/API/custom-domain promises.
+# guest memories storage, planner storefronts, optional custom domains, and
+# support-assisted onboarding/launch). Do not advertise capabilities whose
+# production contracts are not implemented.
 # Trial = uniform 30 days across all paid plans. Solo is permanently free.
 # All plans are FLAT (is_metered=False). The metering hardening shipped 2026-05-04
 # is available infrastructure — flip is_metered=True + add meter_event_name on any
@@ -661,6 +662,7 @@ plans = [
             "payment_processing": False,
             "vendor_collaboration": False,
             "advanced_analytics": False,
+            "planner_storefront": False,
             "custom_domain": False,
             "priority_support": False,
             "white_label": False,
@@ -717,6 +719,7 @@ plans = [
             "payment_processing": True,
             "vendor_collaboration": False,
             "advanced_analytics": False,
+            "planner_storefront": False,
             "custom_domain": False,
             "priority_support": False,
             "white_label": False,
@@ -775,6 +778,7 @@ plans = [
             "payment_processing": True,
             "vendor_collaboration": True,
             "advanced_analytics": True,
+            "planner_storefront": True,
             "custom_domain": True,
             "priority_support": True,
             "white_label": False,
@@ -788,6 +792,7 @@ plans = [
             "Team collaboration (5 staff seats)",
             "Vendor-collaboration workspaces",
             "Cross-wedding analytics & revenue tracking",
+            "Planner storefront on a shareable platform URL",
             "Custom domain (app.yourbrand.com)",
             "1,500 AI credits/month",
             "100GB storage",
@@ -833,6 +838,7 @@ plans = [
             "calendar_sync": True,
             "payment_processing": True,
             "vendor_collaboration": True,
+            "planner_storefront": True,
             "custom_domain": True,
             "priority_support": True,
             "white_label": True,
@@ -843,6 +849,8 @@ plans = [
             "Unlimited weddings",
             "Unlimited guests",
             "Everything in Signature",
+            "Planner storefront on a shareable platform URL",
+            "Optional custom domain",
             "White-label (your brand, no Special Wedding mentions)",
             "API access + webhooks",
             "20 staff seats",

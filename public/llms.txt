@@ -34,8 +34,8 @@ The public pricing model uses four plans:
 
 - **Solo**: Free plan for trying The Special Wedding with one active wedding. Includes guest list and RSVP tools, a branded wedding website, a basic timeline builder, and 1GB guest memories storage.
 - **Boutique**: $49/month for independent planners. Includes unlimited weddings, unlimited guests, vendor management, seating orchestration, automated reminders, Google and Outlook calendar sync, 300 AI credits per month, 25GB guest memories storage, and email support.
-- **Signature**: $149/month for planning agencies. Includes everything in Boutique plus 5 staff seats, vendor-collaboration workspaces, cross-wedding analytics and revenue tracking, 1,500 AI credits per month, 100GB guest memories storage, priority support, and support-assisted onboarding by request.
-- **Enterprise**: $399/month for larger planning teams. Includes everything in Signature plus 20 staff seats, 5,000 AI credits per month, 500GB guest memories storage, and support-assisted launch planning.
+- **Signature**: $149/month for planning agencies. Includes everything in Boutique plus 5 staff seats, vendor-collaboration workspaces, cross-wedding analytics and revenue tracking, a planner storefront on a shareable platform URL, an optional custom domain, 1,500 AI credits per month, 100GB guest memories storage, priority support, and support-assisted onboarding by request.
+- **Enterprise**: $399/month for larger planning teams. Includes everything in Signature, including the planner storefront and optional custom domain, plus 20 staff seats, 5,000 AI credits per month, 500GB guest memories storage, and support-assisted launch planning.
 
 Paid plans include a 30-day free trial with no credit card required at signup.
 
