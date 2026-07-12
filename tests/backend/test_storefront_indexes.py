@@ -70,20 +70,34 @@ async def test_storefront_indexes_are_unique_named_and_slug_is_legacy_safe(
     assert reservation_ttl[0] == [("reservation_expires_at", 1)]
     assert reservation_ttl[1]["expireAfterSeconds"] == 0
     assert reservation_ttl[1]["partialFilterExpression"] == {"state": "reserved"}
-    cleanup_due = by_name["idx_storefront_assets_owner_state_cleanup_due"]
-    assert cleanup_due[0] == [
+    owner_cleanup_due = by_name["idx_storefront_assets_owner_state_cleanup_due"]
+    assert owner_cleanup_due[0] == [
         ("owner_id", 1),
         ("state", 1),
         ("cleanup_due_at", 1),
     ]
-    assert "expireAfterSeconds" not in cleanup_due[1]
-    reaping_lease = by_name["idx_storefront_assets_owner_state_reaping_lease"]
-    assert reaping_lease[0] == [
+    assert "expireAfterSeconds" not in owner_cleanup_due[1]
+    owner_reaping_lease = by_name["idx_storefront_assets_owner_state_reaping_lease"]
+    assert owner_reaping_lease[0] == [
         ("owner_id", 1),
         ("state", 1),
         ("reaping_started_at", 1),
     ]
-    assert "expireAfterSeconds" not in reaping_lease[1]
+    assert "expireAfterSeconds" not in owner_reaping_lease[1]
+    global_cleanup_due = by_name["idx_storefront_assets_state_cleanup_due_owner"]
+    assert global_cleanup_due[0] == [
+        ("state", 1),
+        ("cleanup_due_at", 1),
+        ("owner_id", 1),
+    ]
+    assert "expireAfterSeconds" not in global_cleanup_due[1]
+    global_reaping_lease = by_name["idx_storefront_assets_state_reaping_lease_owner"]
+    assert global_reaping_lease[0] == [
+        ("state", 1),
+        ("reaping_started_at", 1),
+        ("owner_id", 1),
+    ]
+    assert "expireAfterSeconds" not in global_reaping_lease[1]
     assert by_name["idx_storefront_inquiries_owner_created"][0] == [
         ("planner_id", 1),
         ("created_at", -1),

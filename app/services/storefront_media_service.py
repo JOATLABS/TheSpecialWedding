@@ -674,8 +674,8 @@ class StorefrontMediaService:
 
         if await self._is_referenced(owner_id, str(asset["_id"])):
             source_state = asset.get("reap_source_state")
+            now = datetime.now(timezone.utc)
             if source_state in {"ready", "cleanup_retry"}:
-                now = datetime.now(timezone.utc)
                 retention_seconds = (
                     STOREFRONT_READY_ASSET_CLEANUP_SECONDS
                     if source_state == "ready"
@@ -700,6 +700,23 @@ class StorefrontMediaService:
                             "reaping_started_at": "",
                             "reap_source_state": "",
                         },
+                    },
+                )
+            else:
+                # An invalid reference to a non-finalized lifecycle must fail
+                # closed, but renew the lease so it cannot starve every sweep.
+                await assets.update_one(
+                    {
+                        "_id": asset["_id"],
+                        "owner_id": owner_id,
+                        "state": "reaping",
+                        "reap_token": reap_token,
+                    },
+                    {
+                        "$set": {
+                            "reaping_started_at": now,
+                            "updated_at": now,
+                        }
                     },
                 )
             raise HTTPException(
@@ -2603,6 +2620,32 @@ class StorefrontMediaService:
         if asset.get("state") not in {"ready", "cleanup_retry"}:
             return False
         if await self._is_referenced(owner_id, str(asset["_id"])):
+            source_state = asset["state"]
+            retention_seconds = (
+                STOREFRONT_READY_ASSET_CLEANUP_SECONDS
+                if source_state == "ready"
+                else STOREFRONT_CLEANUP_RETRY_SECONDS
+            )
+            now = datetime.now(timezone.utc)
+            due_filter: dict[str, Any] = {
+                "_id": asset["_id"],
+                "owner_id": owner_id,
+                "state": source_state,
+                "updated_at": asset.get("updated_at"),
+            }
+            if "cleanup_due_at" in asset:
+                due_filter["cleanup_due_at"] = asset.get("cleanup_due_at")
+            else:
+                due_filter["cleanup_due_at"] = {"$exists": False}
+            await self._mongo.db["storefront_assets"].update_one(
+                due_filter,
+                {
+                    "$set": {
+                        "cleanup_due_at": now + timedelta(seconds=retention_seconds),
+                        "updated_at": now,
+                    }
+                },
+            )
             return False
 
         source_state = asset["state"]
