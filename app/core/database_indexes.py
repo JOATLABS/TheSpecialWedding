@@ -2749,6 +2749,15 @@ async def create_storefront_indexes():
             name="idx_storefront_inquiries_notification_lease_due",
             background=True,
         )
+        await inquiries.create_index(
+            [
+                ("notification.operator_alert.status", ASCENDING),
+                ("notification.operator_alert.next_attempt_at", ASCENDING),
+                ("created_at", ASCENDING),
+            ],
+            name="idx_storefront_inquiries_operator_alert_due",
+            background=True,
+        )
         logger.info("Storefront lifecycle indexes created/verified")
     except Exception as exc:
         logger.error("Error creating storefront lifecycle indexes: %s", exc)

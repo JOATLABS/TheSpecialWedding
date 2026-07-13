@@ -10,10 +10,15 @@ import logging
 from typing import Any
 from uuid import uuid4
 
+from bson import ObjectId
 from fastapi import HTTPException, status
 from pymongo.errors import DuplicateKeyError
 
 from app.core.database import mongo
+from app.models.planner_notification import (
+    PlannerNotificationTypes,
+    create_notification_document,
+)
 from app.models.storefront import StorefrontInquiryRequest, StorefrontInquiryResponse
 from app.services.email_service_resend import ResendEmailService
 from app.services.storefront_service import (
@@ -29,10 +34,15 @@ logger = logging.getLogger(__name__)
 STOREFRONT_INQUIRY_RATE_LIMIT = 5
 STOREFRONT_INQUIRY_MESSAGE = "Thanks — your inquiry was sent to the wedding planner."
 STOREFRONT_NOTIFICATION_LEASE = timedelta(minutes=5)
-STOREFRONT_NOTIFICATION_RETRY_DELAY = timedelta(minutes=1)
+STOREFRONT_NOTIFICATION_RETRY_BASE = timedelta(minutes=1)
+STOREFRONT_NOTIFICATION_RETRY_MAX = timedelta(hours=1)
+STOREFRONT_NOTIFICATION_MAX_DELIVERY_ATTEMPTS = 5
 # Resend retains idempotency keys for 24 hours. Keep a one-hour safety margin
 # so an ambiguous request is never retried after the provider may forget it.
 STOREFRONT_NOTIFICATION_SAFE_RETRY_WINDOW = timedelta(hours=23)
+_TERMINAL_NOTIFICATION_STATUSES = frozenset(
+    {"failed", "delivery_unknown", "quarantined"}
+)
 
 
 class StorefrontInquiryService:
@@ -156,6 +166,8 @@ class StorefrontInquiryService:
             "retry_pending",
         }:
             return False
+        if notification.get("delivery_outcome") == "not_sent":
+            return False
         provider_key = notification.get("provider_idempotency_key")
         retry_until = notification.get("retry_until")
         return (
@@ -164,6 +176,254 @@ class StorefrontInquiryService:
             or not isinstance(retry_until, datetime)
             or retry_until <= now
         )
+
+    @staticmethod
+    def _retry_delay(attempt_count: Any) -> timedelta:
+        attempts = attempt_count if isinstance(attempt_count, int) else 1
+        attempts = max(1, attempts)
+        seconds = STOREFRONT_NOTIFICATION_RETRY_BASE.total_seconds() * (
+            2 ** min(attempts - 1, 10)
+        )
+        return timedelta(
+            seconds=min(seconds, STOREFRONT_NOTIFICATION_RETRY_MAX.total_seconds())
+        )
+
+    @staticmethod
+    def _operator_alert_id(inquiry_id: Any) -> ObjectId:
+        digest = hashlib.sha256(
+            f"storefront-inquiry-alert/{inquiry_id}".encode("utf-8")
+        ).hexdigest()
+        return ObjectId(digest[:24])
+
+    async def _record_operator_alert_retry(
+        self,
+        inquiries: Any,
+        inquiry: dict,
+        error: str,
+    ) -> bool:
+        notification = inquiry.get("notification")
+        alert = (
+            notification.get("operator_alert")
+            if isinstance(notification, dict)
+            else None
+        )
+        attempts = (
+            alert.get("attempt_count", 0)
+            if isinstance(alert, dict)
+            and isinstance(alert.get("attempt_count", 0), int)
+            else 0
+        )
+        next_attempt = attempts + 1
+        now = datetime.now(timezone.utc)
+        try:
+            result = await inquiries.update_one(
+                {
+                    "_id": inquiry.get("_id"),
+                    "planner_id": inquiry.get("planner_id"),
+                    "notification.status": {
+                        "$in": list(_TERMINAL_NOTIFICATION_STATUSES)
+                    },
+                },
+                {
+                    "$set": {
+                        "notification.operator_alert.status": "retry_pending",
+                        "notification.operator_alert.error": error[:500],
+                        "notification.operator_alert.attempt_count": next_attempt,
+                        "notification.operator_alert.next_attempt_at": (
+                            now + self._retry_delay(next_attempt)
+                        ),
+                        "updated_at": now,
+                    }
+                },
+            )
+        except Exception:
+            # The terminal inquiry still carries a durable pending alert marker.
+            # Preserve the accepted-lead contract and let a later sweep retry it.
+            logger.exception(
+                "Failed to schedule storefront inquiry operator alert retry",
+                extra={"inquiry_id": str(inquiry.get("_id"))},
+            )
+            return False
+        return bool(getattr(result, "matched_count", 0))
+
+    async def _ensure_operator_alert(
+        self,
+        inquiries: Any,
+        inquiry: dict,
+        *,
+        planner: dict | None = None,
+    ) -> bool:
+        inquiry_id = inquiry.get("_id")
+        owner_id = inquiry.get("planner_id")
+        notification = inquiry.get("notification")
+        if (
+            inquiry_id is None
+            or not isinstance(owner_id, str)
+            or not owner_id
+            or not isinstance(notification, dict)
+            or notification.get("status") not in _TERMINAL_NOTIFICATION_STATUSES
+        ):
+            return False
+        alert = notification.get("operator_alert")
+        if isinstance(alert, dict) and alert.get("status") == "visible":
+            return False
+
+        if planner is None:
+            try:
+                planner = await self._mongo.get_users_collection().find_one(
+                    {"_id": normalize_query_id(owner_id)},
+                    {"email": 1},
+                )
+            except Exception as exc:
+                logger.exception(
+                    "Failed to resolve storefront inquiry alert recipient",
+                    extra={"inquiry_id": str(inquiry_id)},
+                )
+                return await self._record_operator_alert_retry(
+                    inquiries, inquiry, str(exc)
+                )
+        planner_email = planner.get("email") if isinstance(planner, dict) else None
+        if not isinstance(planner_email, str) or not planner_email.strip():
+            return await self._record_operator_alert_retry(
+                inquiries,
+                inquiry,
+                "Planner alert recipient is unavailable",
+            )
+
+        alert_id = self._operator_alert_id(inquiry_id)
+        alerts = self._mongo.db["planner_notifications"]
+        try:
+            existing = await alerts.find_one({"_id": alert_id})
+        except Exception as exc:
+            logger.exception(
+                "Failed to read storefront inquiry operator alert",
+                extra={"inquiry_id": str(inquiry_id)},
+            )
+            return await self._record_operator_alert_retry(inquiries, inquiry, str(exc))
+        if not existing:
+            delivery_status = str(notification.get("status") or "unknown")
+            lead_email = str(inquiry.get("email") or "not provided")
+            lead_name = str(inquiry.get("name") or "A storefront lead")
+            document = create_notification_document(
+                planner_id=planner_email.strip().lower(),
+                notification_type=PlannerNotificationTypes.DELIVERY_FAILURE,
+                title="Storefront inquiry needs attention",
+                message=(
+                    f"{lead_name} ({lead_email}) submitted a storefront inquiry, "
+                    f"but its email notification ended as {delivery_status}. "
+                    "Open this alert and follow up with the lead directly."
+                ),
+                metadata={
+                    "source": "storefront_inquiry",
+                    "inquiry_id": str(inquiry_id),
+                    "delivery_status": delivery_status,
+                    "lead_name": lead_name,
+                    "lead_email": lead_email,
+                    "lead_phone": inquiry.get("phone"),
+                    "wedding_date": inquiry.get("wedding_date"),
+                    "storefront_slug": inquiry.get("storefront_slug"),
+                    "delivery_error": notification.get("error"),
+                },
+                priority="high",
+                action_url="/admin/planner",
+            )
+            document["_id"] = alert_id
+            try:
+                await alerts.insert_one(document)
+            except DuplicateKeyError:
+                existing = await alerts.find_one({"_id": alert_id})
+            except Exception as exc:
+                try:
+                    existing = await alerts.find_one({"_id": alert_id})
+                except Exception:
+                    existing = None
+                if not existing:
+                    logger.exception(
+                        "Failed to persist storefront inquiry operator alert",
+                        extra={"inquiry_id": str(inquiry_id)},
+                    )
+                    return await self._record_operator_alert_retry(
+                        inquiries, inquiry, str(exc)
+                    )
+
+        now = datetime.now(timezone.utc)
+        try:
+            visible = await inquiries.update_one(
+                {
+                    "_id": inquiry_id,
+                    "planner_id": owner_id,
+                    "notification.status": {
+                        "$in": list(_TERMINAL_NOTIFICATION_STATUSES)
+                    },
+                },
+                {
+                    "$set": {
+                        "notification.operator_alert.status": "visible",
+                        "notification.operator_alert.notification_id": str(alert_id),
+                        "notification.operator_alert.visible_at": now,
+                        "updated_at": now,
+                    },
+                    "$unset": {
+                        "notification.operator_alert.error": "",
+                        "notification.operator_alert.next_attempt_at": "",
+                    },
+                },
+            )
+        except Exception as exc:
+            logger.exception(
+                "Failed to mark storefront inquiry operator alert visible",
+                extra={"inquiry_id": str(inquiry_id)},
+            )
+            return await self._record_operator_alert_retry(
+                inquiries,
+                inquiry,
+                str(exc),
+            )
+        return bool(getattr(visible, "matched_count", 0))
+
+    async def _quarantine_invalid_inquiry(
+        self,
+        inquiries: Any,
+        inquiry: dict,
+        *,
+        reason: str,
+        operator_routable: bool,
+    ) -> bool:
+        inquiry_id = inquiry.get("_id")
+        if inquiry_id is None:
+            return False
+        now = datetime.now(timezone.utc)
+        result = await inquiries.update_one(
+            {
+                "_id": inquiry_id,
+                "planner_id": inquiry.get("planner_id"),
+                **self._notification_snapshot_query(inquiry),
+            },
+            {
+                "$set": {
+                    "notification.status": "quarantined",
+                    "notification.delivery_outcome": "not_sent",
+                    "notification.error": reason[:500],
+                    "notification.attempted_at": now,
+                    "notification.operator_alert.status": (
+                        "pending" if operator_routable else "unroutable"
+                    ),
+                    "updated_at": now,
+                },
+                "$unset": {
+                    "notification.claim_token": "",
+                    "notification.lease_expires_at": "",
+                    "notification.next_attempt_at": "",
+                },
+            },
+        )
+        if not getattr(result, "matched_count", 0):
+            return False
+        if operator_routable:
+            saved = await inquiries.find_one({"_id": inquiry_id})
+            if saved:
+                await self._ensure_operator_alert(inquiries, saved)
+        return True
 
     async def _reconcile_insert_receipt(
         self,
@@ -282,6 +542,7 @@ class StorefrontInquiryService:
                         "inside the safe idempotency window"
                     ),
                     "notification.attempted_at": now,
+                    "notification.operator_alert.status": "pending",
                     "updated_at": now,
                 },
                 "$unset": {
@@ -309,12 +570,17 @@ class StorefrontInquiryService:
             return False
         now = datetime.now(timezone.utc)
         if self._ambiguous_retry_is_unsafe(inquiry, now):
-            return await self._mark_delivery_unknown(
+            marked = await self._mark_delivery_unknown(
                 inquiries,
                 inquiry,
                 owner_id=owner_id,
                 request_hash=request_hash,
             )
+            if marked:
+                terminal = await inquiries.find_one({"_id": inquiry_id})
+                if terminal:
+                    await self._ensure_operator_alert(inquiries, terminal)
+            return marked
         claim = await self._claim_notification(
             inquiries,
             inquiry=inquiry,
@@ -336,7 +602,11 @@ class StorefrontInquiryService:
                     "Failed to load planner for storefront inquiry notification",
                     extra={"inquiry_id": str(inquiry_id)},
                 )
-                notification = {"status": "failed", "error": str(exc)[:500]}
+                notification = {
+                    "status": "retry_pending",
+                    "delivery_outcome": "not_sent",
+                    "error": str(exc)[:500],
+                }
             else:
                 notification = (
                     await self._notify_planner(
@@ -346,7 +616,11 @@ class StorefrontInquiryService:
                         provider_idempotency_key=provider_idempotency_key,
                     )
                     if planner
-                    else {"status": "failed", "error": "Planner is unavailable"}
+                    else {
+                        "status": "retry_pending",
+                        "delivery_outcome": "not_sent",
+                        "error": "Planner is unavailable",
+                    }
                 )
         else:
             notification = await self._notify_planner(
@@ -358,15 +632,32 @@ class StorefrontInquiryService:
 
         attempted_at = datetime.now(timezone.utc)
         notification_status = str(notification["status"])
-        outcome_set = {
-            "notification.status": notification_status,
-            "notification.delivery_outcome": (
+        stored_notification = inquiry.get("notification")
+        previous_attempts = (
+            stored_notification.get("attempt_count", 0)
+            if isinstance(stored_notification, dict)
+            and isinstance(stored_notification.get("attempt_count", 0), int)
+            else 0
+        )
+        attempt_count = previous_attempts + 1
+        delivery_outcome = notification.get("delivery_outcome")
+        if delivery_outcome not in {"confirmed", "unknown", "not_sent"}:
+            delivery_outcome = (
                 "confirmed"
                 if notification_status == "sent"
                 else "unknown"
                 if notification_status == "retry_pending"
                 else "not_sent"
-            ),
+            )
+        if (
+            notification_status == "retry_pending"
+            and delivery_outcome == "not_sent"
+            and attempt_count >= STOREFRONT_NOTIFICATION_MAX_DELIVERY_ATTEMPTS
+        ):
+            notification_status = "failed"
+        outcome_set = {
+            "notification.status": notification_status,
+            "notification.delivery_outcome": delivery_outcome,
             "notification.error": notification.get("error"),
             "notification.provider_id": notification.get("provider_id"),
             "notification.attempted_at": attempted_at,
@@ -378,10 +669,13 @@ class StorefrontInquiryService:
         }
         if notification_status == "retry_pending":
             outcome_set["notification.next_attempt_at"] = (
-                attempted_at + STOREFRONT_NOTIFICATION_RETRY_DELAY
+                attempted_at + self._retry_delay(attempt_count)
             )
         else:
             outcome_unset["notification.next_attempt_at"] = ""
+        if notification_status in _TERMINAL_NOTIFICATION_STATUSES:
+            outcome_set["notification.operator_alert.status"] = "pending"
+        outcome_recorded = False
         try:
             outcome = await inquiries.update_one(
                 {
@@ -401,6 +695,8 @@ class StorefrontInquiryService:
                     "Storefront inquiry notification outcome lost its claim fence",
                     extra={"inquiry_id": str(inquiry_id)},
                 )
+            else:
+                outcome_recorded = True
         except Exception:
             # Lead durability is the primary contract. A failed bookkeeping
             # update cannot erase or make the accepted inquiry appear rejected.
@@ -408,6 +704,14 @@ class StorefrontInquiryService:
                 "Failed to record storefront inquiry notification outcome",
                 extra={"inquiry_id": str(inquiry_id)},
             )
+        if outcome_recorded and notification_status in _TERMINAL_NOTIFICATION_STATUSES:
+            terminal = await inquiries.find_one({"_id": inquiry_id})
+            if terminal:
+                await self._ensure_operator_alert(
+                    inquiries,
+                    terminal,
+                    planner=planner,
+                )
         return True
 
     async def process_pending_notifications(self, *, limit: int = 10) -> int:
@@ -436,6 +740,31 @@ class StorefrontInquiryService:
                             "notification.status": "sending",
                             "notification.lease_expires_at": {"$exists": False},
                         },
+                        {
+                            "notification.status": {
+                                "$in": list(_TERMINAL_NOTIFICATION_STATUSES)
+                            },
+                            "$or": [
+                                {"notification.operator_alert": {"$exists": False}},
+                                {"notification.operator_alert.status": "pending"},
+                                {
+                                    "notification.operator_alert.status": (
+                                        "retry_pending"
+                                    ),
+                                    "notification.operator_alert.next_attempt_at": {
+                                        "$lte": now
+                                    },
+                                },
+                                {
+                                    "notification.operator_alert.status": (
+                                        "retry_pending"
+                                    ),
+                                    "notification.operator_alert.next_attempt_at": {
+                                        "$exists": False
+                                    },
+                                },
+                            ],
+                        },
                     ]
                 }
             )
@@ -444,9 +773,26 @@ class StorefrontInquiryService:
         )
         processed = 0
         async for inquiry in cursor:
+            notification = inquiry.get("notification")
+            notification_status = (
+                notification.get("status") if isinstance(notification, dict) else None
+            )
             owner_id = inquiry.get("planner_id")
             request_hash = inquiry.get("request_hash")
             slug = inquiry.get("storefront_slug")
+            if notification_status in _TERMINAL_NOTIFICATION_STATUSES:
+                if not isinstance(owner_id, str) or not owner_id:
+                    if await self._quarantine_invalid_inquiry(
+                        inquiries,
+                        inquiry,
+                        reason="Inquiry has invalid planner ownership metadata",
+                        operator_routable=False,
+                    ):
+                        processed += 1
+                    continue
+                if await self._ensure_operator_alert(inquiries, inquiry):
+                    processed += 1
+                continue
             if not all(
                 isinstance(value, str) and value
                 for value in (owner_id, request_hash, slug)
@@ -455,6 +801,13 @@ class StorefrontInquiryService:
                     "Storefront inquiry notification has invalid ownership metadata",
                     extra={"inquiry_id": str(inquiry.get("_id"))},
                 )
+                if await self._quarantine_invalid_inquiry(
+                    inquiries,
+                    inquiry,
+                    reason="Inquiry has invalid delivery ownership metadata",
+                    operator_routable=isinstance(owner_id, str) and bool(owner_id),
+                ):
+                    processed += 1
                 continue
             try:
                 payload = StorefrontInquiryRequest.model_validate(
@@ -472,6 +825,13 @@ class StorefrontInquiryService:
                     "Storefront inquiry notification payload is invalid",
                     extra={"inquiry_id": str(inquiry.get("_id"))},
                 )
+                if await self._quarantine_invalid_inquiry(
+                    inquiries,
+                    inquiry,
+                    reason="Inquiry payload cannot be delivered safely",
+                    operator_routable=True,
+                ):
+                    processed += 1
                 continue
             if await self._deliver_notification_if_claimed(
                 inquiries,
@@ -640,7 +1000,11 @@ class StorefrontInquiryService:
     ) -> dict[str, str | None]:
         recipient = planner.get("email")
         if not recipient:
-            return {"status": "failed", "error": "Planner email is unavailable"}
+            return {
+                "status": "retry_pending",
+                "delivery_outcome": "not_sent",
+                "error": "Planner email is unavailable",
+            }
 
         planner_name = (
             planner.get("company_name") or planner.get("first_name") or "Planner"
@@ -668,17 +1032,22 @@ class StorefrontInquiryService:
             )
         except Exception as exc:
             logger.exception("Storefront inquiry notification raised")
-            return {"status": "retry_pending", "error": str(exc)[:500]}
+            return {
+                "status": "retry_pending",
+                "delivery_outcome": "unknown",
+                "error": str(exc)[:500],
+            }
 
         if not result.get("success"):
+            delivery_unknown = bool(result.get("delivery_unknown"))
             return {
-                "status": (
-                    "retry_pending" if result.get("delivery_unknown") else "failed"
-                ),
+                "status": "retry_pending",
+                "delivery_outcome": "unknown" if delivery_unknown else "not_sent",
                 "error": str(result.get("error") or "Email delivery failed")[:500],
             }
         return {
             "status": "sent",
+            "delivery_outcome": "confirmed",
             "provider_id": str(result.get("id") or "") or None,
         }
 
