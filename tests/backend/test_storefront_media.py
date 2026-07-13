@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import mongomock
 import pytest
-from bson import ObjectId
+from bson import BSON, ObjectId
 from fastapi import HTTPException
 from PIL import Image
 from pymongo.errors import DuplicateKeyError
@@ -51,6 +51,15 @@ class AsyncCollection:
 
     def find(self, *args, **kwargs):
         return AsyncCursor(self._collection.find(*args, **kwargs))
+
+
+class BsonEncodingAsyncCollection(AsyncCollection):
+    """Exercise the same BSON integer boundary enforced by the real driver."""
+
+    async def update_one(self, query, update, *args, **kwargs):
+        BSON.encode(query)
+        BSON.encode(update)
+        return await super().update_one(query, update, *args, **kwargs)
 
 
 class AsyncCursor:
@@ -1881,7 +1890,10 @@ async def test_global_settings_recovery_counts_one_owner_against_limit_one(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("malformed_attempts", [None, "not-a-number"])
+@pytest.mark.parametrize(
+    "malformed_attempts",
+    [None, "not-a-number", -1, 1.5, 9_223_372_036_854_775_807],
+)
 async def test_malformed_recovery_attempt_count_does_not_starve_later_media_manifest(
     setup_media,
     malformed_attempts,
@@ -1889,6 +1901,9 @@ async def test_malformed_recovery_attempt_count_does_not_starve_later_media_mani
     service, mongo, storage, _entitlements = setup_media
     now = datetime.now(timezone.utc)
     clear_claim = await service.claim_settings_assets(_owner(), hero_asset_id=None)
+    mongo.db._collections["storefront_settings"] = BsonEncodingAsyncCollection(
+        mongo.raw.storefront_settings
+    )
 
     reserved = await _reserve(
         service,
