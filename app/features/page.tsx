@@ -1,7 +1,7 @@
-import Image from 'next/image';
 import Link from 'next/link';
 
 import { PhaseOneProductStories } from '@/components/landing-page/PhaseOneProductStories';
+import { ProductProofWindow } from '@/components/landing-page/ProductProofWindow';
 import DemoVideoLauncher from '@/components/saas/DemoVideoLauncher';
 import SaasNav from '@/components/saas/SaasNav';
 import BreadcrumbSchema from '@/components/seo/BreadcrumbSchema';
@@ -89,16 +89,14 @@ export default function FeaturesPage() {
                 key={feature.id}
                 className="group overflow-hidden rounded-2xl border border-white/10 bg-white/[0.035] transition hover:border-wedding-rose/35"
               >
-                <div className="relative aspect-[16/10] overflow-hidden border-b border-white/10 bg-[#071020]">
-                  <Image
-                    src={feature.image}
-                    alt={`${feature.title} product screen from the fictional Marigold and Co. showcase workspace`}
-                    fill
-                    sizes="(min-width: 1024px) 31vw, (min-width: 640px) 48vw, 100vw"
-                    className="object-cover object-top transition duration-500 group-hover:scale-[1.012]"
-                    priority={index === 0}
-                  />
-                </div>
+                <ProductProofWindow
+                  asset={feature.image}
+                  alt={`${feature.title} full product window from the fictional Marigold and Co. planner workspace`}
+                  label={feature.title}
+                  sizes="(min-width: 1024px) 31vw, (min-width: 640px) 48vw, 100vw"
+                  priority={index === 0}
+                  variant="card"
+                />
                 <div className="p-6">
                   <div className="flex items-center gap-3">
                     <span className="text-xl" aria-hidden="true">{feature.icon}</span>
