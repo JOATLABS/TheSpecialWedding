@@ -10,6 +10,11 @@ export interface StorefrontPlatformHostConfig {
   cnameTarget?: string | null;
 }
 
+export type StorefrontHostResolution =
+  | { kind: 'invalid' }
+  | { kind: 'platform'; hostname: string }
+  | { kind: 'custom'; hostname: string };
+
 function isPlatformHostname(
   hostname: string,
   platformDomains: ReadonlySet<string>,
@@ -31,10 +36,11 @@ function isIpAddress(hostname: string): boolean {
   );
 }
 
-function normalizeHostHeader(hostHeader: string): string | null {
+function normalizeHostAuthority(hostHeader: string): string | null {
   const candidate = hostHeader.trim().toLowerCase();
   if (
     !candidate ||
+    candidate.endsWith(':') ||
     candidate.includes(',') ||
     /[\s/@\\%?#]/.test(candidate) ||
     candidate.includes('://')
@@ -50,15 +56,21 @@ function normalizeHostHeader(hostHeader: string): string | null {
   }
 
   const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
+  if (!hostname || hostname.length > 253) {
+    return null;
+  }
+
+  return hostname;
+}
+
+function isCustomStorefrontHostname(hostname: string): boolean {
   if (
-    !hostname ||
-    hostname.length > 253 ||
     hostname === 'localhost' ||
     hostname.endsWith('.localhost') ||
     isIpAddress(hostname) ||
     !hostname.includes('.')
   ) {
-    return null;
+    return false;
   }
 
   const labels = hostname.split('.');
@@ -72,10 +84,10 @@ function normalizeHostHeader(hostHeader: string): string | null {
         label.endsWith('-'),
     )
   ) {
-    return null;
+    return false;
   }
 
-  return hostname;
+  return true;
 }
 
 function parseConfiguredDomains(value: string | null | undefined): string[] {
@@ -120,13 +132,13 @@ function normalizeConfiguredHostname(value: string): string | null {
       ) {
         return null;
       }
-      return normalizeHostHeader(parsed.host);
+      return normalizeHostAuthority(parsed.host);
     } catch {
       return null;
     }
   }
 
-  return normalizeHostHeader(candidate);
+  return normalizeHostAuthority(candidate);
 }
 
 function resolvePlatformDomains(
@@ -167,27 +179,34 @@ export function resolveStorefrontRewriteHost(
     return null;
   }
 
-  return resolveCustomStorefrontHost(hostHeader, platformConfig);
+  const authority = resolveCustomStorefrontHost(hostHeader, platformConfig);
+  return authority.kind === 'custom' ? authority.hostname : null;
 }
 
 /**
- * Resolve a non-platform request authority independently from its path.
- * Custom storefront hosts are tenant boundaries: only their root request may
- * rewrite to the hostname-backed storefront renderer; every other app route
- * must fail closed instead of exposing a slug selected by the URL path.
+ * Classify the actual request authority independently from its path.
+ * Only an explicit platform result may enter unrestricted first-party routes;
+ * custom storefront hosts remain tenant boundaries and invalid authority must
+ * fail closed rather than inheriting platform access from a nullable result.
  */
 export function resolveCustomStorefrontHost(
   hostHeader: string | null,
   platformConfig: StorefrontPlatformHostConfig = {},
-): string | null {
+): StorefrontHostResolution {
   if (hostHeader === null) {
-    return null;
+    return { kind: 'invalid' };
   }
 
-  const hostname = normalizeHostHeader(hostHeader);
-  if (!hostname || isPlatformHostname(hostname, resolvePlatformDomains(platformConfig))) {
-    return null;
+  const hostname = normalizeHostAuthority(hostHeader);
+  if (!hostname) {
+    return { kind: 'invalid' };
+  }
+  if (isPlatformHostname(hostname, resolvePlatformDomains(platformConfig))) {
+    return { kind: 'platform', hostname };
+  }
+  if (!isCustomStorefrontHostname(hostname)) {
+    return { kind: 'invalid' };
   }
 
-  return hostname;
+  return { kind: 'custom', hostname };
 }

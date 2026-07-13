@@ -1,10 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { isNonWeddingSlug } from '@/utils/slug-constants';
-import {
-  resolveCustomStorefrontHost,
-  resolveStorefrontRewriteHost,
-} from '@/utils/storefrontHost';
+import { resolveCustomStorefrontHost } from '@/utils/storefrontHost';
 
 export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
@@ -32,22 +29,16 @@ export function proxy(request: NextRequest) {
     apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL,
     cnameTarget: process.env.STOREFRONT_CNAME_TARGET,
   };
-  const storefrontHost = resolveStorefrontRewriteHost(
+  const storefrontAuthority = resolveCustomStorefrontHost(
     request.headers.get('host'),
-    pathname,
     storefrontHostConfig,
   );
-  if (storefrontHost) {
+  if (storefrontAuthority.kind === 'custom' && pathname === '/') {
     const rewriteUrl = request.nextUrl.clone();
-    rewriteUrl.pathname = `/storefront/${encodeURIComponent(storefrontHost)}`;
+    rewriteUrl.pathname = `/storefront/${encodeURIComponent(storefrontAuthority.hostname)}`;
     return NextResponse.rewrite(rewriteUrl);
   }
-  if (
-    resolveCustomStorefrontHost(
-      request.headers.get('host'),
-      storefrontHostConfig,
-    )
-  ) {
+  if (storefrontAuthority.kind !== 'platform') {
     return new NextResponse('Not Found', { status: 404 });
   }
 

@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { NextRequest } from 'next/server';
 
-import { resolveStorefrontRewriteHost } from '../../app/utils/storefrontHost';
+import {
+  resolveCustomStorefrontHost,
+  resolveStorefrontRewriteHost,
+} from '../../app/utils/storefrontHost';
 import { proxy } from '../../proxy';
 
 interface IdnaHostnameFixture {
@@ -20,6 +23,42 @@ test('normalizes a custom hostname only for the root storefront request', () => 
   assert.equal(resolveStorefrontRewriteHost('studio.example.com:443', '/'), 'studio.example.com');
   assert.equal(resolveStorefrontRewriteHost('münchen.example', '/'), 'xn--mnchen-3ya.example');
   assert.equal(resolveStorefrontRewriteHost('studio.example.com', '/packages'), null);
+});
+
+test('classifies request authority without conflating platform and invalid hosts', () => {
+  assert.deepEqual(resolveCustomStorefrontHost('thespecialwedding.io:443'), {
+    kind: 'platform',
+    hostname: 'thespecialwedding.io',
+  });
+  assert.deepEqual(resolveCustomStorefrontHost('münchen.example:443'), {
+    kind: 'custom',
+    hostname: 'xn--mnchen-3ya.example',
+  });
+
+  for (const host of [
+    null,
+    '',
+    'thespecialwedding.io, studio.example.com',
+    'thespecialwedding.io:invalid',
+    'thespecialwedding.io:70000',
+    'studio.example.com:',
+    'localhost',
+    '127.0.0.1:3000',
+  ]) {
+    assert.deepEqual(resolveCustomStorefrontHost(host), { kind: 'invalid' }, String(host));
+  }
+});
+
+test('classifies explicitly configured local authorities as trusted platform hosts', () => {
+  assert.deepEqual(
+    resolveCustomStorefrontHost('localhost:3000', {
+      frontendUrl: 'http://localhost:3000',
+    }),
+    {
+      kind: 'platform',
+      hostname: 'localhost',
+    },
+  );
 });
 
 test('normalizes the shared UTS-46 hostname fixtures used by the backend', () => {
@@ -101,12 +140,13 @@ test('fails closed for missing, ambiguous, IP, and malformed host headers', () =
 test('the Next proxy rewrites only the resolved custom host to its storefront identifier', () => {
   const source = readFileSync('proxy.ts', 'utf8');
 
-  assert.match(source, /resolveStorefrontRewriteHost/);
+  assert.match(source, /resolveCustomStorefrontHost/);
+  assert.match(source, /storefrontAuthority\.kind === ['"]custom['"]/);
   assert.doesNotMatch(source, /x-forwarded-host/);
   assert.match(source, /request\.headers\.get\(['"]host['"]\)/);
   assert.match(source, /STOREFRONT_PLATFORM_DOMAINS/);
   assert.match(source, /FRONTEND_URL/);
-  assert.match(source, /encodeURIComponent\(storefrontHost\)/);
+  assert.match(source, /encodeURIComponent\(storefrontAuthority\.hostname\)/);
   assert.match(source, /NextResponse\.rewrite/);
 });
 
