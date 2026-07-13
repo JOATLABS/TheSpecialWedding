@@ -51,6 +51,40 @@ async def test_send_email_offloads_synchronous_resend_network_io(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_send_email_passes_provider_idempotency_options(monkeypatch):
+    service = ResendEmailService.__new__(ResendEmailService)
+    service.configured = True
+    service.email_log_collection = RecordingEmailLog()
+    provider_calls: list[tuple[dict, dict]] = []
+
+    def provider_send(params: dict, options: dict) -> dict:
+        provider_calls.append((params, options))
+        return {"id": "resend-idempotent-1"}
+
+    monkeypatch.setattr(resend_service_module.resend.Emails, "send", provider_send)
+
+    result = await service.send_email(
+        to_email="planner@example.com",
+        subject="New storefront inquiry",
+        html_content="<p>Hello</p>",
+        idempotency_key="storefront-inquiry/65f000000000000000000099",
+    )
+
+    assert result == {"success": True, "id": "resend-idempotent-1"}
+    assert provider_calls == [
+        (
+            {
+                "from": "noreply@thespecialwedding.io",
+                "to": ["planner@example.com"],
+                "subject": "New storefront inquiry",
+                "html": "<p>Hello</p>",
+            },
+            {"idempotency_key": ("storefront-inquiry/65f000000000000000000099")},
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_send_email_keeps_event_loop_responsive_while_provider_waits(monkeypatch):
     service = ResendEmailService.__new__(ResendEmailService)
     service.configured = True

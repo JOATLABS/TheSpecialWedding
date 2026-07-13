@@ -2050,6 +2050,7 @@ def test_global_storefront_sweep_is_wired_to_the_leader_elected_scheduler():
     assert "storefront_media_service.sweep_abandoned_assets()" in source
     assert "storefront_media_task = asyncio.create_task(" in source
     assert "storefront_media_task," in source
+    assert "storefront_inquiry_service.process_pending_notifications()" in source
 
 
 @pytest.mark.asyncio

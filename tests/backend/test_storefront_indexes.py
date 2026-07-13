@@ -129,6 +129,16 @@ async def test_storefront_indexes_are_unique_named_and_slug_is_legacy_safe(
         "planner_id": {"$type": "string"},
         "idempotency_key": {"$type": "string"},
     }
+    assert by_name["idx_storefront_inquiries_notification_retry_due"][0] == [
+        ("notification.status", 1),
+        ("notification.next_attempt_at", 1),
+        ("created_at", 1),
+    ]
+    assert by_name["idx_storefront_inquiries_notification_lease_due"][0] == [
+        ("notification.status", 1),
+        ("notification.lease_expires_at", 1),
+        ("created_at", 1),
+    ]
 
 
 def test_create_all_indexes_invokes_storefront_index_setup():

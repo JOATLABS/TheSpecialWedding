@@ -163,7 +163,24 @@ export function resolveStorefrontRewriteHost(
   pathname: string,
   platformConfig: StorefrontPlatformHostConfig = {},
 ): string | null {
-  if (pathname !== '/' || hostHeader === null) {
+  if (pathname !== '/') {
+    return null;
+  }
+
+  return resolveCustomStorefrontHost(hostHeader, platformConfig);
+}
+
+/**
+ * Resolve a non-platform request authority independently from its path.
+ * Custom storefront hosts are tenant boundaries: only their root request may
+ * rewrite to the hostname-backed storefront renderer; every other app route
+ * must fail closed instead of exposing a slug selected by the URL path.
+ */
+export function resolveCustomStorefrontHost(
+  hostHeader: string | null,
+  platformConfig: StorefrontPlatformHostConfig = {},
+): string | null {
+  if (hostHeader === null) {
     return null;
   }
 

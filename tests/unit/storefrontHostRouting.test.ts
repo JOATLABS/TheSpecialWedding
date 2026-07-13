@@ -132,3 +132,27 @@ test('the Next proxy ignores spoofed or mismatched forwarded hosts', () => {
     /\/storefront\/studio\.example\.com$/,
   );
 });
+
+test('a custom storefront host cannot render another tenant slug path', () => {
+  const customRequest = new NextRequest(
+    'https://studio.example.com/storefront/another-planner',
+    {
+      headers: { host: 'studio.example.com' },
+    },
+  );
+  const customResponse = proxy(customRequest);
+
+  assert.equal(customResponse.status, 404);
+  assert.equal(customResponse.headers.get('x-middleware-rewrite'), null);
+
+  const platformRequest = new NextRequest(
+    'https://thespecialwedding.io/storefront/another-planner',
+    {
+      headers: { host: 'thespecialwedding.io' },
+    },
+  );
+  const platformResponse = proxy(platformRequest);
+
+  assert.notEqual(platformResponse.status, 404);
+  assert.equal(platformResponse.headers.get('x-middleware-rewrite'), null);
+});

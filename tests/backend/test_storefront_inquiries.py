@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from bson import ObjectId
@@ -34,9 +34,17 @@ def _get_path(document: dict, path: str):
 
 def _matches(document: dict, query: dict) -> bool:
     for key, expected in query.items():
+        if key == "$or":
+            if not any(_matches(document, candidate) for candidate in expected):
+                return False
+            continue
         actual = _get_path(document, key)
-        if isinstance(expected, dict) and "$exists" in expected:
-            if (actual is not _MISSING) is not bool(expected["$exists"]):
+        if isinstance(expected, dict):
+            if "$exists" in expected and (
+                (actual is not _MISSING) is not bool(expected["$exists"])
+            ):
+                return False
+            if "$lte" in expected and (actual is _MISSING or actual > expected["$lte"]):
                 return False
         elif actual is _MISSING or actual != expected:
             return False
@@ -78,6 +86,15 @@ class FakeCollection:
                 return deepcopy(document)
         return None
 
+    def find(self, query: dict) -> "FakeCursor":
+        return FakeCursor(
+            [
+                deepcopy(document)
+                for document in self.documents
+                if _matches(document, query)
+            ]
+        )
+
     async def insert_one(self, document: dict) -> SimpleNamespace:
         stored = deepcopy(document)
         stored.setdefault(
@@ -100,8 +117,34 @@ class FakeCollection:
                     _set_path(document, path, value)
                 for path in update.get("$unset", {}):
                     _unset_path(document, path)
+                for path, increment in update.get("$inc", {}).items():
+                    current = _get_path(document, path)
+                    _set_path(
+                        document,
+                        path,
+                        (0 if current is _MISSING else current) + increment,
+                    )
                 return SimpleNamespace(matched_count=1, modified_count=1)
         return SimpleNamespace(matched_count=0, modified_count=0)
+
+
+class FakeCursor:
+    def __init__(self, documents: list[dict]) -> None:
+        self.documents = documents
+
+    def sort(self, *_args, **_kwargs) -> "FakeCursor":
+        return self
+
+    def limit(self, limit: int) -> "FakeCursor":
+        self.documents = self.documents[:limit]
+        return self
+
+    def __aiter__(self):
+        async def iterate():
+            for document in self.documents:
+                yield document
+
+        return iterate()
 
 
 class DuplicateRaceCollection(FakeCollection):
@@ -298,6 +341,13 @@ def pending_inquiry_document(
         "idempotency_key": payload.idempotency_key,
         "request_hash": request_hash or service._request_hash(payload),
         "response_message": "Thanks — your inquiry was sent to the wedding planner.",
+        "name": payload.name,
+        "email": str(payload.email),
+        "phone": payload.phone,
+        "wedding_date": (
+            payload.wedding_date.isoformat() if payload.wedding_date else None
+        ),
+        "message": payload.message,
         "notification": {"status": "pending"},
     }
 
@@ -470,6 +520,7 @@ async def test_inquiry_persists_owner_scoped_allowlist_before_escaped_notificati
     sent = email.calls[0]
     assert sent["to_email"] == "private-planner@example.test"
     assert sent["subject"] == "New storefront inquiry"
+    assert sent["idempotency_key"] == ("storefront-inquiry/65f000000000000000000099")
     assert "<script>" not in sent["html_content"]
     assert "&lt;script&gt;" in sent["html_content"]
     assert "<b>planning</b>" not in sent["html_content"]
@@ -485,19 +536,83 @@ async def test_inquiry_persists_owner_scoped_allowlist_before_escaped_notificati
     assert claim_update["$set"]["notification.status"] == "sending"
     assert outcome_query["notification.status"] == "sending"
     assert outcome_query["notification.claim_token"] == claim_token
-    assert outcome_update["$unset"] == {"notification.claim_token": ""}
+    assert outcome_update["$unset"] == {
+        "notification.claim_token": "",
+        "notification.lease_expires_at": "",
+        "notification.next_attempt_at": "",
+    }
+
+
+@pytest.mark.asyncio
+async def test_stale_sending_notification_is_retried_with_same_provider_key():
+    service, mongo, _storefront, _limiter, email = make_service()
+    payload = inquiry_payload()
+
+    await service.capture(
+        "luxe-light",
+        payload,
+        client_ip="203.0.113.10",
+        user_agent=None,
+    )
+    inquiry = mongo.db["storefront_inquiries"].documents[0]
+    provider_key = email.calls[0]["idempotency_key"]
+
+    # Model a crash after the provider accepted the message but before the
+    # token-fenced outcome write was durably acknowledged.
+    inquiry["notification"].update(
+        {
+            "status": "sending",
+            "claim_token": "abandoned-worker",
+            "lease_expires_at": datetime.now(timezone.utc) - timedelta(seconds=1),
+            "provider_idempotency_key": provider_key,
+            "retry_until": datetime.now(timezone.utc) + timedelta(hours=23),
+        }
+    )
+
+    processed = await service.process_pending_notifications(limit=5)
+
+    assert processed == 1
+    assert inquiry["notification"]["status"] == "sent"
+    assert [call["idempotency_key"] for call in email.calls] == [
+        provider_key,
+        provider_key,
+    ]
+    assert email.claim_tokens_at_send[0] != email.claim_tokens_at_send[1]
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_notification_past_provider_window_is_quarantined():
+    service, mongo, _storefront, _limiter, email = make_service()
+    payload = inquiry_payload()
+    stale = pending_inquiry_document(service, payload)
+    stale["notification"] = {
+        "status": "sending",
+        "claim_token": "expired-worker",
+        "lease_expires_at": datetime.now(timezone.utc) - timedelta(hours=25),
+        "provider_idempotency_key": "storefront-inquiry/legacy",
+        "retry_until": datetime.now(timezone.utc) - timedelta(hours=1),
+    }
+    mongo.db.collections["storefront_inquiries"] = FakeCollection([stale])
+
+    processed = await service.process_pending_notifications(limit=5)
+
+    assert processed == 1
+    notification = mongo.db["storefront_inquiries"].documents[0]["notification"]
+    assert notification["status"] == "delivery_unknown"
+    assert "claim_token" not in notification
+    assert email.calls == []
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "notification_result,notification_error",
+    "notification_result,notification_error,expected_status",
     [
-        ({"success": False, "error": "not configured"}, None),
-        (None, RuntimeError("provider unavailable")),
+        ({"success": False, "error": "not configured"}, None, "failed"),
+        (None, RuntimeError("provider unavailable"), "retry_pending"),
     ],
 )
 async def test_notification_failure_never_loses_persisted_inquiry(
-    notification_result, notification_error
+    notification_result, notification_error, expected_status
 ):
     service, mongo, _storefront, _limiter, _email = make_service(
         email_result=notification_result,
@@ -515,7 +630,7 @@ async def test_notification_failure_never_loses_persisted_inquiry(
     assert len(mongo.db["storefront_inquiries"].inserted) == 1
     assert (
         mongo.db["storefront_inquiries"].updated[-1][1]["$set"]["notification.status"]
-        == "failed"
+        == expected_status
     )
 
 

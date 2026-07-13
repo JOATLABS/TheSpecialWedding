@@ -436,17 +436,26 @@ async def _guest_media_maintenance_scheduler():
 
 
 async def _storefront_media_maintenance_scheduler():
-    """Bound cleanup of abandoned storefront assets on the leader replica."""
+    """Recover durable storefront media and inquiry work on the leader."""
 
+    from app.services.storefront_inquiry_service import storefront_inquiry_service
     from app.services.storefront_media_service import storefront_media_service
 
     while True:
         try:
             processed = await storefront_media_service.sweep_abandoned_assets()
+            processed_inquiries = (
+                await storefront_inquiry_service.process_pending_notifications()
+            )
             if processed:
                 logger.info(
                     "Storefront media scheduler cleaned %s abandoned asset(s)",
                     processed,
+                )
+            if processed_inquiries:
+                logger.info(
+                    "Storefront scheduler recovered %s inquiry notification(s)",
+                    processed_inquiries,
                 )
             await asyncio.sleep(60)
         except asyncio.CancelledError:

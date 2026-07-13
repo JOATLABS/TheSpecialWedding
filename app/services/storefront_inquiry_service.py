@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 from html import escape
 import json
@@ -28,6 +28,11 @@ logger = logging.getLogger(__name__)
 
 STOREFRONT_INQUIRY_RATE_LIMIT = 5
 STOREFRONT_INQUIRY_MESSAGE = "Thanks — your inquiry was sent to the wedding planner."
+STOREFRONT_NOTIFICATION_LEASE = timedelta(minutes=5)
+STOREFRONT_NOTIFICATION_RETRY_DELAY = timedelta(minutes=1)
+# Resend retains idempotency keys for 24 hours. Keep a one-hour safety margin
+# so an ambiguous request is never retried after the provider may forget it.
+STOREFRONT_NOTIFICATION_SAFE_RETRY_WINDOW = timedelta(hours=23)
 
 
 class StorefrontInquiryService:
@@ -95,10 +100,69 @@ class StorefrontInquiryService:
             )
 
     @staticmethod
-    def _notification_is_pending(inquiry: dict) -> bool:
+    def _notification_is_recoverable(
+        inquiry: dict,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
         notification = inquiry.get("notification")
+        if not isinstance(notification, dict):
+            return False
+        current_time = now or datetime.now(timezone.utc)
+        notification_status = notification.get("status")
+        if notification_status == "pending":
+            return True
+        if notification_status == "retry_pending":
+            next_attempt_at = notification.get("next_attempt_at")
+            return not isinstance(next_attempt_at, datetime) or (
+                next_attempt_at <= current_time
+            )
+        if notification_status == "sending":
+            lease_expires_at = notification.get("lease_expires_at")
+            return not isinstance(lease_expires_at, datetime) or (
+                lease_expires_at <= current_time
+            )
+        return False
+
+    @staticmethod
+    def _notification_snapshot_query(inquiry: dict) -> dict:
+        notification = inquiry.get("notification")
+        if not isinstance(notification, dict):
+            return {"notification.status": {"$exists": False}}
+        notification_status = notification.get("status")
+        query: dict[str, Any] = {"notification.status": notification_status}
+        if notification_status == "sending":
+            for field in ("claim_token", "lease_expires_at"):
+                value = notification.get(field)
+                query[f"notification.{field}"] = (
+                    value if value is not None else {"$exists": False}
+                )
+        elif notification_status == "retry_pending":
+            next_attempt_at = notification.get("next_attempt_at")
+            query["notification.next_attempt_at"] = (
+                next_attempt_at if next_attempt_at is not None else {"$exists": False}
+            )
+        return query
+
+    @staticmethod
+    def _provider_idempotency_key(inquiry_id: Any) -> str:
+        return f"storefront-inquiry/{inquiry_id}"
+
+    @staticmethod
+    def _ambiguous_retry_is_unsafe(inquiry: dict, now: datetime) -> bool:
+        notification = inquiry.get("notification")
+        if not isinstance(notification, dict) or notification.get("status") not in {
+            "sending",
+            "retry_pending",
+        }:
+            return False
+        provider_key = notification.get("provider_idempotency_key")
+        retry_until = notification.get("retry_until")
         return (
-            isinstance(notification, dict) and notification.get("status") == "pending"
+            not isinstance(provider_key, str)
+            or not provider_key
+            or not isinstance(retry_until, datetime)
+            or retry_until <= now
         )
 
     async def _reconcile_insert_receipt(
@@ -122,25 +186,45 @@ class StorefrontInquiryService:
         self,
         inquiries: Any,
         *,
-        inquiry_id: Any,
+        inquiry: dict,
         owner_id: str,
         request_hash: str,
-    ) -> str | None:
+    ) -> tuple[str, str] | None:
+        inquiry_id = inquiry.get("_id")
+        if inquiry_id is None:
+            return None
         claim_token = uuid4().hex
         now = datetime.now(timezone.utc)
+        notification = inquiry.get("notification")
+        if not isinstance(notification, dict):
+            return None
+        provider_idempotency_key = notification.get("provider_idempotency_key")
+        if (
+            not isinstance(provider_idempotency_key, str)
+            or not provider_idempotency_key
+        ):
+            provider_idempotency_key = self._provider_idempotency_key(inquiry_id)
+        retry_until = notification.get("retry_until")
+        if not isinstance(retry_until, datetime):
+            retry_until = now + STOREFRONT_NOTIFICATION_SAFE_RETRY_WINDOW
         claim_query = {
             "_id": inquiry_id,
             "planner_id": owner_id,
             "request_hash": request_hash,
-            "notification.status": "pending",
+            **self._notification_snapshot_query(inquiry),
         }
         claim_update = {
             "$set": {
                 "notification.status": "sending",
+                "notification.delivery_outcome": "unknown",
                 "notification.claim_token": claim_token,
                 "notification.claimed_at": now,
+                "notification.lease_expires_at": (now + STOREFRONT_NOTIFICATION_LEASE),
+                "notification.provider_idempotency_key": (provider_idempotency_key),
+                "notification.retry_until": retry_until,
                 "updated_at": now,
-            }
+            },
+            "$inc": {"notification.attempt_count": 1},
         }
         try:
             claimed = await inquiries.update_one(claim_query, claim_update)
@@ -165,10 +249,49 @@ class StorefrontInquiryService:
                     extra={"inquiry_id": str(inquiry_id)},
                 )
                 return None
-            return claim_token if reconciled else None
+            return (claim_token, provider_idempotency_key) if reconciled else None
         if getattr(claimed, "modified_count", 0) != 1:
             return None
-        return claim_token
+        return claim_token, provider_idempotency_key
+
+    async def _mark_delivery_unknown(
+        self,
+        inquiries: Any,
+        inquiry: dict,
+        *,
+        owner_id: str,
+        request_hash: str,
+    ) -> bool:
+        inquiry_id = inquiry.get("_id")
+        if inquiry_id is None:
+            return False
+        now = datetime.now(timezone.utc)
+        outcome = await inquiries.update_one(
+            {
+                "_id": inquiry_id,
+                "planner_id": owner_id,
+                "request_hash": request_hash,
+                **self._notification_snapshot_query(inquiry),
+            },
+            {
+                "$set": {
+                    "notification.status": "delivery_unknown",
+                    "notification.delivery_outcome": "unknown",
+                    "notification.error": (
+                        "Provider acknowledgement could not be reconciled "
+                        "inside the safe idempotency window"
+                    ),
+                    "notification.attempted_at": now,
+                    "updated_at": now,
+                },
+                "$unset": {
+                    "notification.claim_token": "",
+                    "notification.lease_expires_at": "",
+                    "notification.next_attempt_at": "",
+                },
+            },
+        )
+        return getattr(outcome, "matched_count", 0) == 1
 
     async def _deliver_notification_if_claimed(
         self,
@@ -180,18 +303,27 @@ class StorefrontInquiryService:
         slug: str,
         payload: StorefrontInquiryRequest,
         planner: dict | None = None,
-    ) -> None:
+    ) -> bool:
         inquiry_id = inquiry.get("_id")
         if inquiry_id is None:
-            return
-        claim_token = await self._claim_notification(
+            return False
+        now = datetime.now(timezone.utc)
+        if self._ambiguous_retry_is_unsafe(inquiry, now):
+            return await self._mark_delivery_unknown(
+                inquiries,
+                inquiry,
+                owner_id=owner_id,
+                request_hash=request_hash,
+            )
+        claim = await self._claim_notification(
             inquiries,
-            inquiry_id=inquiry_id,
+            inquiry=inquiry,
             owner_id=owner_id,
             request_hash=request_hash,
         )
-        if not claim_token:
-            return
+        if not claim:
+            return False
+        claim_token, provider_idempotency_key = claim
 
         if planner is None:
             try:
@@ -211,6 +343,7 @@ class StorefrontInquiryService:
                         planner=planner,
                         slug=slug,
                         payload=payload,
+                        provider_idempotency_key=provider_idempotency_key,
                     )
                     if planner
                     else {"status": "failed", "error": "Planner is unavailable"}
@@ -220,9 +353,35 @@ class StorefrontInquiryService:
                 planner=planner,
                 slug=slug,
                 payload=payload,
+                provider_idempotency_key=provider_idempotency_key,
             )
 
         attempted_at = datetime.now(timezone.utc)
+        notification_status = str(notification["status"])
+        outcome_set = {
+            "notification.status": notification_status,
+            "notification.delivery_outcome": (
+                "confirmed"
+                if notification_status == "sent"
+                else "unknown"
+                if notification_status == "retry_pending"
+                else "not_sent"
+            ),
+            "notification.error": notification.get("error"),
+            "notification.provider_id": notification.get("provider_id"),
+            "notification.attempted_at": attempted_at,
+            "updated_at": attempted_at,
+        }
+        outcome_unset = {
+            "notification.claim_token": "",
+            "notification.lease_expires_at": "",
+        }
+        if notification_status == "retry_pending":
+            outcome_set["notification.next_attempt_at"] = (
+                attempted_at + STOREFRONT_NOTIFICATION_RETRY_DELAY
+            )
+        else:
+            outcome_unset["notification.next_attempt_at"] = ""
         try:
             outcome = await inquiries.update_one(
                 {
@@ -233,14 +392,8 @@ class StorefrontInquiryService:
                     "notification.claim_token": claim_token,
                 },
                 {
-                    "$set": {
-                        "notification.status": notification["status"],
-                        "notification.error": notification.get("error"),
-                        "notification.provider_id": notification.get("provider_id"),
-                        "notification.attempted_at": attempted_at,
-                        "updated_at": attempted_at,
-                    },
-                    "$unset": {"notification.claim_token": ""},
+                    "$set": outcome_set,
+                    "$unset": outcome_unset,
                 },
             )
             if getattr(outcome, "matched_count", 0) != 1:
@@ -255,6 +408,81 @@ class StorefrontInquiryService:
                 "Failed to record storefront inquiry notification outcome",
                 extra={"inquiry_id": str(inquiry_id)},
             )
+        return True
+
+    async def process_pending_notifications(self, *, limit: int = 10) -> int:
+        """Recover pending or abandoned inquiry notifications without double-send."""
+        bounded_limit = max(1, min(int(limit), 50))
+        now = datetime.now(timezone.utc)
+        inquiries = self._mongo.db["storefront_inquiries"]
+        cursor = (
+            inquiries.find(
+                {
+                    "$or": [
+                        {"notification.status": "pending"},
+                        {
+                            "notification.status": "retry_pending",
+                            "notification.next_attempt_at": {"$lte": now},
+                        },
+                        {
+                            "notification.status": "retry_pending",
+                            "notification.next_attempt_at": {"$exists": False},
+                        },
+                        {
+                            "notification.status": "sending",
+                            "notification.lease_expires_at": {"$lte": now},
+                        },
+                        {
+                            "notification.status": "sending",
+                            "notification.lease_expires_at": {"$exists": False},
+                        },
+                    ]
+                }
+            )
+            .sort([("created_at", 1), ("_id", 1)])
+            .limit(bounded_limit)
+        )
+        processed = 0
+        async for inquiry in cursor:
+            owner_id = inquiry.get("planner_id")
+            request_hash = inquiry.get("request_hash")
+            slug = inquiry.get("storefront_slug")
+            if not all(
+                isinstance(value, str) and value
+                for value in (owner_id, request_hash, slug)
+            ):
+                logger.error(
+                    "Storefront inquiry notification has invalid ownership metadata",
+                    extra={"inquiry_id": str(inquiry.get("_id"))},
+                )
+                continue
+            try:
+                payload = StorefrontInquiryRequest.model_validate(
+                    {
+                        "name": inquiry.get("name"),
+                        "email": inquiry.get("email"),
+                        "phone": inquiry.get("phone"),
+                        "wedding_date": inquiry.get("wedding_date"),
+                        "message": inquiry.get("message"),
+                        "idempotency_key": inquiry.get("idempotency_key"),
+                    }
+                )
+            except Exception:
+                logger.exception(
+                    "Storefront inquiry notification payload is invalid",
+                    extra={"inquiry_id": str(inquiry.get("_id"))},
+                )
+                continue
+            if await self._deliver_notification_if_claimed(
+                inquiries,
+                inquiry,
+                owner_id=owner_id,
+                request_hash=request_hash,
+                slug=slug,
+                payload=payload,
+            ):
+                processed += 1
+        return processed
 
     async def capture(
         self,
@@ -280,7 +508,7 @@ class StorefrontInquiryService:
         existing = await inquiries.find_one(idempotency_query)
         if existing:
             response = self._replay_or_conflict(existing, request_hash)
-            if self._notification_is_pending(existing):
+            if self._notification_is_recoverable(existing):
                 await self._require_same_public_context(
                     identifier,
                     owner_id=owner_id,
@@ -408,6 +636,7 @@ class StorefrontInquiryService:
         planner: dict,
         slug: str,
         payload: StorefrontInquiryRequest,
+        provider_idempotency_key: str,
     ) -> dict[str, str | None]:
         recipient = planner.get("email")
         if not recipient:
@@ -435,14 +664,17 @@ class StorefrontInquiryService:
                 html_content=html_content,
                 from_name="The Special Wedding",
                 email_type="storefront_inquiry",
+                idempotency_key=provider_idempotency_key,
             )
         except Exception as exc:
             logger.exception("Storefront inquiry notification raised")
-            return {"status": "failed", "error": str(exc)[:500]}
+            return {"status": "retry_pending", "error": str(exc)[:500]}
 
         if not result.get("success"):
             return {
-                "status": "failed",
+                "status": (
+                    "retry_pending" if result.get("delivery_unknown") else "failed"
+                ),
                 "error": str(result.get("error") or "Email delivery failed")[:500],
             }
         return {
