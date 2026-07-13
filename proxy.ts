@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { isNonWeddingSlug } from '@/utils/slug-constants';
-import { resolveStorefrontRewriteHost } from '@/utils/storefrontHost';
+import {
+  resolveCustomStorefrontHost,
+  resolveStorefrontRewriteHost,
+} from '@/utils/storefrontHost';
 
 export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
@@ -23,20 +26,29 @@ export function proxy(request: NextRequest) {
   // returns 404 unless this exact hostname is active, published, and entitled.
   // Host is the request authority boundary. A client-controlled forwarded host
   // must never override it and select another tenant's storefront.
+  const storefrontHostConfig = {
+    platformDomains: process.env.STOREFRONT_PLATFORM_DOMAINS,
+    frontendUrl: process.env.FRONTEND_URL,
+    apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL,
+    cnameTarget: process.env.STOREFRONT_CNAME_TARGET,
+  };
   const storefrontHost = resolveStorefrontRewriteHost(
     request.headers.get('host'),
     pathname,
-    {
-      platformDomains: process.env.STOREFRONT_PLATFORM_DOMAINS,
-      frontendUrl: process.env.FRONTEND_URL,
-      apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL,
-      cnameTarget: process.env.STOREFRONT_CNAME_TARGET,
-    },
+    storefrontHostConfig,
   );
   if (storefrontHost) {
     const rewriteUrl = request.nextUrl.clone();
     rewriteUrl.pathname = `/storefront/${encodeURIComponent(storefrontHost)}`;
     return NextResponse.rewrite(rewriteUrl);
+  }
+  if (
+    resolveCustomStorefrontHost(
+      request.headers.get('host'),
+      storefrontHostConfig,
+    )
+  ) {
+    return new NextResponse('Not Found', { status: 404 });
   }
 
   // ---------- Slug route guard ----------

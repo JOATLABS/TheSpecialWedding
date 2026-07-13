@@ -2695,6 +2695,24 @@ async def create_storefront_indexes():
                 "idempotency_key": {"$type": "string"},
             },
         )
+        await inquiries.create_index(
+            [
+                ("notification.status", ASCENDING),
+                ("notification.next_attempt_at", ASCENDING),
+                ("created_at", ASCENDING),
+            ],
+            name="idx_storefront_inquiries_notification_retry_due",
+            background=True,
+        )
+        await inquiries.create_index(
+            [
+                ("notification.status", ASCENDING),
+                ("notification.lease_expires_at", ASCENDING),
+                ("created_at", ASCENDING),
+            ],
+            name="idx_storefront_inquiries_notification_lease_due",
+            background=True,
+        )
         logger.info("Storefront lifecycle indexes created/verified")
     except Exception as exc:
         logger.error("Error creating storefront lifecycle indexes: %s", exc)

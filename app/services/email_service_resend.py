@@ -69,6 +69,7 @@ class ResendEmailService:
         email_type: Optional[str] = None,
         wedding_slug: Optional[str] = None,
         guest_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Send a single email using Resend"""
         if not self.configured:
@@ -116,9 +117,18 @@ class ResendEmailService:
                 params["attachments"] = attachments
 
             # Send email
+            send_args: tuple[Any, ...] = (cast(Any, params),)
+            if idempotency_key:
+                send_args = (
+                    cast(Any, params),
+                    cast(
+                        Any,
+                        {"idempotency_key": idempotency_key},
+                    ),
+                )
             email_response = await asyncio.to_thread(
                 resend.Emails.send,
-                cast(Any, params),
+                *send_args,
             )
 
             # Generate thread_id for linking inbound replies
@@ -136,6 +146,7 @@ class ResendEmailService:
                 "thread_id": thread_id,
                 "reply_to": reply_to,
                 "email_type": email_type,
+                "idempotency_key": idempotency_key,
                 "sent_at": datetime.now(timezone.utc),
                 "status": "success",
                 "resend_id": email_response.get("id"),
@@ -159,6 +170,7 @@ class ResendEmailService:
                 "from_name": from_name,
                 "wedding_id": wedding_id,
                 "email_type": email_type,
+                "idempotency_key": idempotency_key,
                 "sent_at": datetime.now(timezone.utc),
                 "status": "failed",
                 "error": str(e),
@@ -166,7 +178,14 @@ class ResendEmailService:
             }
             await self.email_log_collection.insert_one(log_entry)
 
-            return {"success": False, "error": str(e)}
+            return {
+                "success": False,
+                "error": str(e),
+                # A network/provider exception can happen after Resend accepted
+                # the request. Callers with a stable provider key may safely
+                # retry inside Resend's idempotency window.
+                "delivery_unknown": bool(idempotency_key),
+            }
 
     async def send_rsvp_invitations(
         self,
