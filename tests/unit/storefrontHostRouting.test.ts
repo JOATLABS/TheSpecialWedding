@@ -173,6 +173,81 @@ test('the Next proxy ignores spoofed or mismatched forwarded hosts', () => {
   );
 });
 
+test('admin auth redirects run only after platform Host authority is verified', () => {
+  const unauthenticatedPlatform = proxy(
+    new NextRequest('https://thespecialwedding.io/admin/packages', {
+      headers: { host: 'thespecialwedding.io' },
+    }),
+  );
+  assert.equal(unauthenticatedPlatform.status, 307);
+  assert.equal(
+    unauthenticatedPlatform.headers.get('location'),
+    'https://thespecialwedding.io/admin/login',
+  );
+
+  const authenticatedPlatform = proxy(
+    new NextRequest('https://thespecialwedding.io/admin/packages', {
+      headers: {
+        host: 'thespecialwedding.io',
+        cookie: 'admin_token=verified-platform-session',
+      },
+    }),
+  );
+  assert.notEqual(authenticatedPlatform.status, 404);
+  assert.equal(authenticatedPlatform.headers.get('location'), null);
+
+  const platformLogin = proxy(
+    new NextRequest('https://thespecialwedding.io/admin/login', {
+      headers: { host: 'thespecialwedding.io' },
+    }),
+  );
+  assert.notEqual(platformLogin.status, 404);
+  assert.equal(platformLogin.headers.get('location'), null);
+
+  for (const authenticated of [false, true]) {
+    const customHeaders: Record<string, string> = { host: 'studio.example.com' };
+    if (authenticated) {
+      customHeaders.cookie = 'admin_token=must-not-authorize-custom-host';
+    }
+    const customResponse = proxy(
+      new NextRequest('https://studio.example.com/admin/packages', {
+        headers: customHeaders,
+      }),
+    );
+    assert.equal(customResponse.status, 404, `custom authenticated=${authenticated}`);
+    assert.equal(customResponse.headers.get('location'), null);
+
+    const customLogin = proxy(
+      new NextRequest('https://studio.example.com/admin/login', {
+        headers: customHeaders,
+      }),
+    );
+    assert.equal(customLogin.status, 404, `custom login authenticated=${authenticated}`);
+    assert.equal(customLogin.headers.get('location'), null);
+
+    for (const invalidHost of [null, 'thespecialwedding.io, studio.example.com', 'bad host']) {
+      const invalidHeaders: Record<string, string> = {};
+      if (invalidHost !== null) {
+        invalidHeaders.host = invalidHost;
+      }
+      if (authenticated) {
+        invalidHeaders.cookie = 'admin_token=must-not-authorize-invalid-host';
+      }
+      const invalidResponse = proxy(
+        new NextRequest('https://thespecialwedding.io/admin/packages', {
+          headers: invalidHeaders,
+        }),
+      );
+      assert.equal(
+        invalidResponse.status,
+        404,
+        `${String(invalidHost)} authenticated=${authenticated}`,
+      );
+      assert.equal(invalidResponse.headers.get('location'), null);
+    }
+  }
+});
+
 test('a custom storefront host cannot render another tenant slug path', () => {
   const customRequest = new NextRequest(
     'https://studio.example.com/storefront/another-planner',

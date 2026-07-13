@@ -6,23 +6,13 @@ import { resolveCustomStorefrontHost } from '@/utils/storefrontHost';
 export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
-  // ---------- Admin auth guard ----------
-  if (
-    pathname.startsWith('/admin') &&
-    !pathname.startsWith('/admin/login') &&
-    !pathname.startsWith('/admin/team/accept')
-  ) {
-    const token = request.cookies.get('admin_token')?.value;
-    if (!token) {
-      return NextResponse.redirect(new URL('/admin/login', request.url));
-    }
-  }
-
-  // ---------- Active custom storefront host ----------
+  // ---------- Request authority / active custom storefront host ----------
   // This is routing only. The public storefront API remains authoritative and
   // returns 404 unless this exact hostname is active, published, and entitled.
   // Host is the request authority boundary. A client-controlled forwarded host
-  // must never override it and select another tenant's storefront.
+  // must never override it and select another tenant's storefront. Authority is
+  // resolved before auth redirects so custom or malformed hosts cannot expose
+  // first-party platform routes or login locations.
   const storefrontHostConfig = {
     platformDomains: process.env.STOREFRONT_PLATFORM_DOMAINS,
     frontendUrl: process.env.FRONTEND_URL,
@@ -40,6 +30,18 @@ export function proxy(request: NextRequest) {
   }
   if (storefrontAuthority.kind !== 'platform') {
     return new NextResponse('Not Found', { status: 404 });
+  }
+
+  // ---------- Admin auth guard (verified platform authority only) ----------
+  if (
+    pathname.startsWith('/admin') &&
+    !pathname.startsWith('/admin/login') &&
+    !pathname.startsWith('/admin/team/accept')
+  ) {
+    const token = request.cookies.get('admin_token')?.value;
+    if (!token) {
+      return NextResponse.redirect(new URL('/admin/login', request.url));
+    }
   }
 
   // ---------- Slug route guard ----------
