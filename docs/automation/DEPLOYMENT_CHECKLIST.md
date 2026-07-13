@@ -98,6 +98,18 @@ Use this checklist to ensure you don't miss any steps during deployment.
 - [ ] `S3_BLOG_BUCKET_NAME` - Dedicated blog/knowledge-base bucket when blog image uploads are enabled
 - [ ] `BLOG_MEDIA_DOMAIN` - Public CDN URL for blog assets
 
+### Planner Storefront Infrastructure
+
+- [ ] Complete [`docs/guides/STOREFRONT_INFRASTRUCTURE_SETUP.md`](../guides/STOREFRONT_INFRASTRUCTURE_SETUP.md)
+- [ ] `S3_STOREFRONT_STAGING_BUCKET_NAME` points to a dedicated private bucket
+- [ ] Staging-bucket `r2.dev` access is disabled and no enabled custom domain is attached
+- [ ] An enabled deletion lifecycle covers `storefront/` within `STOREFRONT_STAGING_LIFECYCLE_MAX_AGE_DAYS`
+- [ ] Staging-bucket CORS allows browser `PUT` with `Content-Type` from the exact frontend origin
+- [ ] `CLOUDFLARE_ACCOUNT_ID` matches the account in `S3_ENDPOINT_URL`
+- [ ] `CLOUDFLARE_API_TOKEN` can read R2 bucket controls and manage custom-hostname certificates in `CLOUDFLARE_ZONE_ID`
+- [ ] `STOREFRONT_CNAME_TARGET` is the active Cloudflare-for-SaaS CNAME target
+- [ ] `STOREFRONT_PLATFORM_DOMAINS` is identical on frontend and backend
+
 ### Payment Secrets (Stripe)
 - [ ] `STRIPE_SECRET_KEY` - Stripe secret key
 - [ ] `STRIPE_WEBHOOK_SECRET` - Webhook signing secret

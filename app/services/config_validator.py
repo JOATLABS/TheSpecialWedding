@@ -7,6 +7,7 @@ of any missing configuration through:
 2. Web Push notification (if admin has subscribed)
 """
 
+import asyncio
 import logging
 import os
 from datetime import datetime, timezone
@@ -58,7 +59,7 @@ RECOMMENDED_ENV_VARS = {
     "STRIPE_SECRET_KEY": "Payment processing API key",
     "STRIPE_WEBHOOK_SECRET": "Stripe webhook signature verification",
     "TWILIO_ACCOUNT_SID": "SMS service credentials",
-    "CLOUDFLARE_ACCOUNT_ID": "Cloudflare account identifier for Stream ingest",
+    "CLOUDFLARE_ACCOUNT_ID": "Cloudflare account identifier for Stream and R2 controls",
     "CLOUDFLARE_STREAM_API_TOKEN": "Cloudflare API token with Stream permissions",
 }
 
@@ -73,8 +74,33 @@ STORAGE_RECOMMENDED_ENV_VARS = {
     "S3_STOREFRONT_STAGING_BUCKET_NAME": "Private storefront-upload staging R2 bucket",
 }
 
+STORAGE_TARGET_ENV_MAP = {
+    StorageTarget.PRIMARY: "S3_BUCKET_NAME",
+    StorageTarget.GUEST_MEDIA: "S3_GUEST_MEDIA_BUCKET_NAME",
+    StorageTarget.AD_ASSETS: "S3_AD_BUCKET_NAME",
+    StorageTarget.BLOG_ASSETS: "S3_BLOG_BUCKET_NAME",
+    StorageTarget.STOREFRONT_STAGING: "S3_STOREFRONT_STAGING_BUCKET_NAME",
+}
 
-def _collect_storage_recommendations(storage: MediaStorage | None = None) -> List[str]:
+
+def _collect_storage_target_health_recommendations(
+    storage: MediaStorage,
+) -> List[str]:
+    recommendations: List[str] = []
+    for target, env_name in STORAGE_TARGET_ENV_MAP.items():
+        health = storage.target_health(target)
+        if health.bucket_name and health.status == "unavailable":
+            recommendations.append(
+                f"{env_name}: {health.issue} Verify the bucket name and signer permissions."
+            )
+    return recommendations
+
+
+def _collect_storage_recommendations(
+    storage: MediaStorage | None = None,
+    *,
+    include_target_health: bool = True,
+) -> List[str]:
     recommended: List[str] = []
 
     if not settings.s3_endpoint_url:
@@ -117,21 +143,9 @@ def _collect_storage_recommendations(storage: MediaStorage | None = None) -> Lis
     if settings.blog_media_bucket_name and not settings.blog_media_domain:
         recommended.append("BLOG_MEDIA_DOMAIN: Public CDN/domain for blog asset URLs")
 
-    if settings.s3_credentials_configured:
+    if include_target_health and settings.s3_credentials_configured:
         storage = storage or MediaStorage()
-        target_env_map = {
-            StorageTarget.PRIMARY: "S3_BUCKET_NAME",
-            StorageTarget.GUEST_MEDIA: "S3_GUEST_MEDIA_BUCKET_NAME",
-            StorageTarget.AD_ASSETS: "S3_AD_BUCKET_NAME",
-            StorageTarget.BLOG_ASSETS: "S3_BLOG_BUCKET_NAME",
-            StorageTarget.STOREFRONT_STAGING: "S3_STOREFRONT_STAGING_BUCKET_NAME",
-        }
-        for target, env_name in target_env_map.items():
-            health = storage.target_health(target)
-            if health.bucket_name and health.status == "unavailable":
-                recommended.append(
-                    f"{env_name}: {health.issue} Verify the bucket name and signer permissions."
-                )
+        recommended.extend(_collect_storage_target_health_recommendations(storage))
 
     return recommended
 
@@ -142,26 +156,154 @@ async def _collect_browser_upload_recommendations(storage: MediaStorage) -> List
     if not browser_origins:
         return recommendations
 
-    target_env_map = {
-        StorageTarget.PRIMARY: "S3_BUCKET_NAME",
-        StorageTarget.GUEST_MEDIA: "S3_GUEST_MEDIA_BUCKET_NAME",
-        StorageTarget.AD_ASSETS: "S3_AD_BUCKET_NAME",
-        StorageTarget.BLOG_ASSETS: "S3_BLOG_BUCKET_NAME",
-        StorageTarget.STOREFRONT_STAGING: "S3_STOREFRONT_STAGING_BUCKET_NAME",
-    }
-
-    for target, env_name in target_env_map.items():
-        target_health = storage.target_health(target)
+    for target, env_name in STORAGE_TARGET_ENV_MAP.items():
+        target_health = await asyncio.to_thread(storage.target_health, target)
         if not getattr(target_health, "is_ready", target_health.status == "ready"):
             continue
 
         upload_health = await storage.browser_upload_health(
             target, settings.browser_upload_origins
         )
-        if upload_health.status in {"misconfigured", "error"} and upload_health.issue:
+        if (
+            upload_health.status
+            in {
+                "misconfigured",
+                "error",
+                "unverifiable",
+            }
+            and upload_health.issue
+        ):
             recommendations.append(f"{env_name}: {upload_health.issue}")
 
     return recommendations
+
+
+def _collect_storefront_configuration_recommendations() -> List[str]:
+    """Validate optional storefront capabilities from canonical loaded settings."""
+
+    recommendations: List[str] = []
+    upload_configured = bool(settings.storefront_staging_bucket_name)
+    custom_domain_configured = bool(
+        settings.cloudflare_zone_id or settings.storefront_cname_target
+    )
+
+    if upload_configured and not settings.cloudflare_api_token:
+        recommendations.append(
+            "CLOUDFLARE_API_TOKEN: Storefront image uploads are configured but the "
+            "scoped Cloudflare R2-control token is missing."
+        )
+
+    if custom_domain_configured:
+        if not settings.cloudflare_api_token:
+            recommendations.append(
+                "CLOUDFLARE_API_TOKEN: Custom domains are configured but the scoped "
+                "Cloudflare API token is missing."
+            )
+        if not settings.cloudflare_zone_id:
+            recommendations.append(
+                "CLOUDFLARE_ZONE_ID: Custom domains are configured but the "
+                "Cloudflare for SaaS zone identifier is missing."
+            )
+        if not settings.storefront_cname_target:
+            recommendations.append(
+                "STOREFRONT_CNAME_TARGET: Custom domains are configured but the "
+                "customer CNAME target is missing."
+            )
+
+    cname_target = settings.storefront_cname_target
+    if cname_target:
+        try:
+            # Function-local import avoids the domain service/settings import cycle.
+            from app.services.storefront_domain_service import (
+                normalize_custom_hostname,
+            )
+
+            normalize_custom_hostname(cname_target, platform_domains=())
+        except (TypeError, ValueError):
+            recommendations.append(
+                "STOREFRONT_CNAME_TARGET: Custom domains are unavailable because "
+                "the configured CNAME target is not a bare valid hostname."
+            )
+
+    return list(dict.fromkeys(recommendations))
+
+
+async def _collect_storefront_infrastructure_recommendations(
+    storage: MediaStorage | None,
+    *,
+    timeout_seconds: float = 3.0,
+) -> List[str]:
+    """Preflight optional storefront infrastructure without mutating provider state."""
+
+    recommendations: List[str] = []
+    if not (
+        storage
+        and settings.storefront_staging_bucket_name
+        and settings.cloudflare_account_id
+        and settings.cloudflare_api_token
+    ):
+        return recommendations
+
+    try:
+        await asyncio.wait_for(
+            storage.require_private_storefront_staging(force_refresh=True),
+            timeout=timeout_seconds,
+        )
+    except TimeoutError:
+        recommendations.append(
+            "S3_STOREFRONT_STAGING_BUCKET_NAME: Storefront private-bucket preflight "
+            "timed out; uploads remain fail-closed until Cloudflare can be verified."
+        )
+    except Exception as exc:
+        detail = str(exc).strip() or exc.__class__.__name__
+        configured_secrets = {
+            settings.cloudflare_api_token,
+            settings.s3_access_key_id,
+            settings.s3_secret_access_key,
+        }
+        for secret in sorted(
+            (value for value in configured_secrets if value),
+            key=len,
+            reverse=True,
+        ):
+            detail = detail.replace(secret, "[redacted]")
+        recommendations.append(
+            "S3_STOREFRONT_STAGING_BUCKET_NAME: Storefront image uploads are "
+            "unavailable because the private staging controls failed validation "
+            f"({detail})."
+        )
+
+    return recommendations
+
+
+async def _collect_external_storage_recommendations(
+    storage: MediaStorage,
+    *,
+    timeout_seconds: float = 3.0,
+) -> List[str]:
+    """Bound all optional Cloudflare/R2 startup reads to one short deadline."""
+
+    try:
+        target_health, browser, storefront = await asyncio.wait_for(
+            asyncio.gather(
+                asyncio.to_thread(
+                    _collect_storage_target_health_recommendations,
+                    storage,
+                ),
+                _collect_browser_upload_recommendations(storage),
+                _collect_storefront_infrastructure_recommendations(
+                    storage,
+                    timeout_seconds=timeout_seconds * 2,
+                ),
+            ),
+            timeout=timeout_seconds,
+        )
+    except TimeoutError:
+        return [
+            "STOREFRONT_INFRASTRUCTURE: Read-only Cloudflare/R2 startup preflight "
+            "timed out; optional upload capabilities remain fail-closed."
+        ]
+    return list(dict.fromkeys([*target_health, *browser, *storefront]))
 
 
 async def validate_environment_and_notify() -> Dict[str, List[str]]:
@@ -186,12 +328,16 @@ async def validate_environment_and_notify() -> Dict[str, List[str]]:
     for var_name, description in RECOMMENDED_ENV_VARS.items():
         if not os.getenv(var_name):
             missing_recommended.append(f"{var_name}: {description}")
+    missing_recommended.extend(_collect_storefront_configuration_recommendations())
     storage = MediaStorage() if settings.s3_credentials_configured else None
-    missing_recommended.extend(_collect_storage_recommendations(storage))
+    missing_recommended.extend(
+        _collect_storage_recommendations(storage, include_target_health=False)
+    )
     if storage is not None:
         missing_recommended.extend(
-            await _collect_browser_upload_recommendations(storage)
+            await _collect_external_storage_recommendations(storage)
         )
+    missing_recommended = list(dict.fromkeys(missing_recommended))
     for item in missing_recommended:
         logger.warning(f"RECOMMENDED: {item}")
 

@@ -422,7 +422,9 @@ class MediaStorage:
     ) -> None:
         """Fail closed unless the staging bucket is private and self-expiring."""
 
-        staging = self.require_target(StorageTarget.STOREFRONT_STAGING)
+        staging = await asyncio.to_thread(
+            self.require_target, StorageTarget.STOREFRONT_STAGING
+        )
         bucket_name = staging.bucket_name or ""
         public_targets = (
             StorageTarget.PRIMARY,
@@ -570,7 +572,9 @@ class MediaStorage:
         self, target: StorageTarget | str, origins: list[str] | tuple[str, ...]
     ) -> StorageBrowserUploadHealth:
         target_config = self.target(target)
-        target_health = self.target_health(target_config.target)
+        target_health = await asyncio.to_thread(
+            self.target_health, target_config.target
+        )
         normalized_origins = tuple(
             dict.fromkeys(origin.strip() for origin in origins if origin)
         )
@@ -671,12 +675,22 @@ class MediaStorage:
         return False
 
     async def _fetch_bucket_cors_rules(self, bucket_name: str) -> list[dict[str, Any]]:
+        endpoint_account_id, jurisdiction = self._parse_r2_endpoint_identity(
+            self.endpoint_url
+        )
+        account_id = (settings.cloudflare_account_id or "").strip().lower()
+        if account_id != endpoint_account_id:
+            raise RuntimeError(
+                "S3_ENDPOINT_URL and CLOUDFLARE_ACCOUNT_ID must identify the same Cloudflare account"
+            )
         response_schema = dict[str, Any]
         url = (
             "https://api.cloudflare.com/client/v4/accounts/"
-            f"{settings.cloudflare_account_id}/r2/buckets/{bucket_name}/cors"
+            f"{account_id}/r2/buckets/{bucket_name}/cors"
         )
         headers = {"Authorization": f"Bearer {settings.cloudflare_api_token}"}
+        if jurisdiction != "default":
+            headers["cf-r2-jurisdiction"] = jurisdiction
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(url, headers=headers)
             response.raise_for_status()

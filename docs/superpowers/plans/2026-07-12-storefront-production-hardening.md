@@ -321,7 +321,7 @@
 
 ## Final Verification And Hostile Review
 
-**Storefront branch code gate: READY.** The implementation, adversarial review, focused/full suites, production build, isolated runtime checks, and real browser journey are complete. Production activation still requires the documented Cloudflare for SaaS and private R2 configuration; those deployment controls are external prerequisites, not subscription or publication mutations performed by this branch.
+**Storefront branch code gate: READY.** The implementation, adversarial review, focused/full suites, production build, isolated runtime checks, and real browser journey are complete. Production activation still requires the Cloudflare for SaaS and private R2 controls in [`docs/guides/STOREFRONT_INFRASTRUCTURE_SETUP.md`](../../guides/STOREFRONT_INFRASTRUCTURE_SETUP.md); those deployment controls are external prerequisites, not subscription or publication mutations performed by this branch.
 
 - [x] Generate a whole-branch review package from `fbef0023` to `HEAD` and dispatch the final senior reviewers.
 - [x] Fix and independently re-review every Critical or Important finding; final cross-reviews approved with none remaining.
@@ -330,7 +330,9 @@
 - [x] Run the full Node 22 frontend suite: 320 passed, 0 failed.
 - [x] Run the production frontend build with explicit internal/public/frontend URL configuration.
 - [x] Run Ruff check and format over all 36 Python files changed from `fbef0023`; all passed. Repo-wide Ruff was also run and only exposed unrelated pre-existing drift in `app/api/ai.py` and `app/services/ai_service.py`.
-- [x] Run the focused storefront/bootstrap backend gate and the full backend gate: 2,077 passed, 1 skipped, 0 failed.
+- [x] Run the focused storefront/bootstrap backend gate and the final full backend gate: 2,095 passed, 1 skipped, 0 failed.
 - [x] Use disposable Mongo/Redis and isolated ports to visibly verify Signature settings, live draft preview, internal-slug preview, publication, package/review rendering, inquiry success, truthful post-success edits, and Solo upgrade gating. After the final adversarial-only follow-ups, recheck the final runtime: public slug 200, custom-host admin 404, and platform admin redirect intact. External R2/Cloudflare mutations were deliberately not attempted.
 - [x] Re-run `git diff --check fbef0023..HEAD` and inspect a clean `git status --short` after restoring generated Next/TypeScript files.
+- [x] Add the exact storefront environment matrix, Cloudflare/R2 operator runbook, Coolify/checklist links, canonical optional-capability warnings, one bounded read-only storage-preflight deadline with blocking S3 probes off the event loop, jurisdiction-aware CORS checks, and a fail-closed public media-domain gate; focused configuration-validator gate: 14 passed.
+- [x] Re-run the combined configuration, storage, domain, storefront-media, and application-boot gate: 234 passed; two independent hostile re-reviews approved with no remaining Critical or Important findings.
 - [x] Mark the goal complete only after the acceptance matrix and adversarial checklist are satisfied.

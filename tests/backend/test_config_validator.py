@@ -1,9 +1,325 @@
+import asyncio
 import importlib
+import time
 from types import SimpleNamespace
 
 import pytest
 
 from app.services import config_validator
+
+
+def test_slug_only_storefront_does_not_warn_for_optional_custom_domains(monkeypatch):
+    monkeypatch.setattr(config_validator.settings, "cloudflare_api_token", None)
+    monkeypatch.setattr(config_validator.settings, "cloudflare_zone_id", None)
+    monkeypatch.setattr(config_validator.settings, "storefront_cname_target", None)
+    monkeypatch.setattr(
+        config_validator.settings, "s3_storefront_staging_bucket_name", None
+    )
+
+    assert config_validator._collect_storefront_configuration_recommendations() == []
+
+
+def test_partial_custom_domain_configuration_reports_missing_settings(monkeypatch):
+    monkeypatch.setattr(config_validator.settings, "cloudflare_api_token", None)
+    monkeypatch.setattr(config_validator.settings, "cloudflare_zone_id", "zone-id")
+    monkeypatch.setattr(config_validator.settings, "storefront_cname_target", None)
+    monkeypatch.setattr(
+        config_validator.settings, "s3_storefront_staging_bucket_name", None
+    )
+
+    recommendations = (
+        config_validator._collect_storefront_configuration_recommendations()
+    )
+
+    assert recommendations == [
+        "CLOUDFLARE_API_TOKEN: Custom domains are configured but the scoped "
+        "Cloudflare API token is missing.",
+        "STOREFRONT_CNAME_TARGET: Custom domains are configured but the customer "
+        "CNAME target is missing.",
+    ]
+
+
+def test_storefront_configuration_uses_settings_loaded_values_not_os_environ(
+    monkeypatch,
+):
+    monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_ZONE_ID", raising=False)
+    monkeypatch.delenv("STOREFRONT_CNAME_TARGET", raising=False)
+    monkeypatch.setattr(config_validator.settings, "cloudflare_api_token", "token")
+    monkeypatch.setattr(config_validator.settings, "cloudflare_zone_id", "zone-id")
+    monkeypatch.setattr(
+        config_validator.settings,
+        "storefront_cname_target",
+        "storefronts.example.com",
+    )
+    monkeypatch.setattr(
+        config_validator.settings, "s3_storefront_staging_bucket_name", None
+    )
+
+    assert config_validator._collect_storefront_configuration_recommendations() == []
+
+
+@pytest.mark.asyncio
+async def test_storefront_privacy_is_preflighted_before_the_first_upload(monkeypatch):
+    monkeypatch.setattr(
+        config_validator.settings,
+        "s3_storefront_staging_bucket_name",
+        "storefront-staging",
+    )
+    monkeypatch.setattr(
+        config_validator.settings,
+        "cloudflare_account_id",
+        "0123456789abcdef0123456789abcdef",
+    )
+    monkeypatch.setattr(config_validator.settings, "cloudflare_api_token", "secret")
+
+    calls = []
+
+    class FakeMediaStorage:
+        async def require_private_storefront_staging(self, *, force_refresh=False):
+            calls.append(force_refresh)
+            raise RuntimeError(
+                "Storefront staging requires an enabled expiry lifecycle rule"
+            )
+
+    recommendations = (
+        await config_validator._collect_storefront_infrastructure_recommendations(
+            FakeMediaStorage()
+        )
+    )
+
+    assert calls == [True]
+    assert recommendations == [
+        "S3_STOREFRONT_STAGING_BUCKET_NAME: Storefront image uploads are unavailable "
+        "because the private staging controls failed validation "
+        "(Storefront staging requires an enabled expiry lifecycle rule)."
+    ]
+
+
+@pytest.mark.asyncio
+async def test_storefront_privacy_warning_redacts_configured_secrets(monkeypatch):
+    secret = "super-secret-cloudflare-token"
+    monkeypatch.setattr(
+        config_validator.settings,
+        "s3_storefront_staging_bucket_name",
+        "storefront-staging",
+    )
+    monkeypatch.setattr(
+        config_validator.settings,
+        "cloudflare_account_id",
+        "0123456789abcdef0123456789abcdef",
+    )
+    monkeypatch.setattr(config_validator.settings, "cloudflare_api_token", secret)
+    monkeypatch.setattr(config_validator.settings, "s3_access_key_id", "access-key")
+    monkeypatch.setattr(
+        config_validator.settings, "s3_secret_access_key", "s3-secret-key"
+    )
+
+    class FakeMediaStorage:
+        async def require_private_storefront_staging(self, *, force_refresh=False):
+            raise RuntimeError(
+                f"provider denied {secret}, access-key, and s3-secret-key"
+            )
+
+    recommendations = (
+        await config_validator._collect_storefront_infrastructure_recommendations(
+            FakeMediaStorage()
+        )
+    )
+    warning = recommendations[0]
+
+    assert secret not in warning
+    assert "access-key" not in warning
+    assert "s3-secret-key" not in warning
+    assert warning.count("[redacted]") == 3
+
+
+def test_invalid_storefront_cname_is_reported_without_a_provider_call(monkeypatch):
+    monkeypatch.setattr(
+        config_validator.settings,
+        "storefront_cname_target",
+        "https://storefronts.example.com/path",
+    )
+    monkeypatch.setattr(config_validator.settings, "cloudflare_api_token", "token")
+    monkeypatch.setattr(config_validator.settings, "cloudflare_zone_id", "zone-id")
+    monkeypatch.setattr(
+        config_validator.settings, "s3_storefront_staging_bucket_name", None
+    )
+
+    recommendations = (
+        config_validator._collect_storefront_configuration_recommendations()
+    )
+
+    assert recommendations == [
+        "STOREFRONT_CNAME_TARGET: Custom domains are unavailable because the "
+        "configured CNAME target is not a bare valid hostname."
+    ]
+
+
+@pytest.mark.asyncio
+async def test_storefront_privacy_preflight_has_a_short_aggregate_timeout(monkeypatch):
+    monkeypatch.setattr(
+        config_validator.settings,
+        "s3_storefront_staging_bucket_name",
+        "storefront-staging",
+    )
+    monkeypatch.setattr(
+        config_validator.settings,
+        "cloudflare_account_id",
+        "0123456789abcdef0123456789abcdef",
+    )
+    monkeypatch.setattr(config_validator.settings, "cloudflare_api_token", "token")
+
+    class HangingMediaStorage:
+        async def require_private_storefront_staging(self, *, force_refresh=False):
+            await asyncio.Event().wait()
+
+    recommendations = (
+        await config_validator._collect_storefront_infrastructure_recommendations(
+            HangingMediaStorage(), timeout_seconds=0.001
+        )
+    )
+
+    assert recommendations == [
+        "S3_STOREFRONT_STAGING_BUCKET_NAME: Storefront private-bucket preflight "
+        "timed out; uploads remain fail-closed until Cloudflare can be verified."
+    ]
+
+
+@pytest.mark.asyncio
+async def test_external_storage_preflight_has_one_total_startup_timeout(monkeypatch):
+    monkeypatch.setattr(
+        config_validator.settings, "frontend_url", "https://app.example.com"
+    )
+    monkeypatch.setattr(
+        config_validator.settings, "api_base_url", "https://api.example.com"
+    )
+    monkeypatch.setattr(config_validator.settings, "cors_origins", [])
+    monkeypatch.setattr(
+        config_validator.settings,
+        "s3_storefront_staging_bucket_name",
+        "storefront-staging",
+    )
+    monkeypatch.setattr(
+        config_validator.settings,
+        "cloudflare_account_id",
+        "0123456789abcdef0123456789abcdef",
+    )
+    monkeypatch.setattr(config_validator.settings, "cloudflare_api_token", "token")
+
+    class HangingMediaStorage:
+        def target_health(self, target):
+            return SimpleNamespace(
+                bucket_name="configured-bucket",
+                status="ready",
+                issue=None,
+                is_ready=True,
+            )
+
+        async def browser_upload_health(self, target, origins):
+            await asyncio.Event().wait()
+
+        async def require_private_storefront_staging(self, *, force_refresh=False):
+            await asyncio.Event().wait()
+
+    recommendations = await config_validator._collect_external_storage_recommendations(
+        HangingMediaStorage(), timeout_seconds=0.001
+    )
+
+    assert recommendations == [
+        "STOREFRONT_INFRASTRUCTURE: Read-only Cloudflare/R2 startup preflight "
+        "timed out; optional upload capabilities remain fail-closed."
+    ]
+
+
+def test_local_storage_recommendations_can_skip_network_health_probes(monkeypatch):
+    monkeypatch.setattr(config_validator.settings, "s3_endpoint_url", "configured")
+    monkeypatch.setattr(config_validator.settings, "s3_access_key_id", "configured")
+    monkeypatch.setattr(config_validator.settings, "s3_secret_access_key", "configured")
+
+    class NetworkMustNotRun:
+        def target_health(self, target):
+            raise AssertionError("target health belongs inside the timed preflight")
+
+    config_validator._collect_storage_recommendations(
+        NetworkMustNotRun(), include_target_health=False
+    )
+
+
+@pytest.mark.asyncio
+async def test_external_storage_deadline_is_not_blocked_by_sync_s3_health(monkeypatch):
+    monkeypatch.setattr(
+        config_validator.settings, "frontend_url", "https://app.example.com"
+    )
+    monkeypatch.setattr(
+        config_validator.settings, "api_base_url", "https://api.example.com"
+    )
+    monkeypatch.setattr(config_validator.settings, "cors_origins", [])
+    monkeypatch.setattr(
+        config_validator.settings, "s3_storefront_staging_bucket_name", None
+    )
+
+    class BlockingMediaStorage:
+        def target_health(self, target):
+            time.sleep(0.1)
+            return SimpleNamespace(
+                bucket_name="configured-bucket",
+                status="ready",
+                issue=None,
+                is_ready=True,
+            )
+
+    started_at = time.monotonic()
+    recommendations = await config_validator._collect_external_storage_recommendations(
+        BlockingMediaStorage(), timeout_seconds=0.005
+    )
+    elapsed = time.monotonic() - started_at
+
+    assert elapsed < 0.05
+    assert recommendations == [
+        "STOREFRONT_INFRASTRUCTURE: Read-only Cloudflare/R2 startup preflight "
+        "timed out; optional upload capabilities remain fail-closed."
+    ]
+
+
+@pytest.mark.asyncio
+async def test_browser_upload_unverifiable_issue_is_not_silently_dropped(monkeypatch):
+    monkeypatch.setattr(
+        config_validator.settings, "frontend_url", "https://app.example.com"
+    )
+    monkeypatch.setattr(
+        config_validator.settings, "api_base_url", "https://api.example.com"
+    )
+    monkeypatch.setattr(config_validator.settings, "cors_origins", [])
+
+    class FakeMediaStorage:
+        def target_health(self, target):
+            return SimpleNamespace(
+                bucket_name="configured-bucket",
+                status="ready",
+                issue=None,
+                is_ready=True,
+            )
+
+        async def browser_upload_health(self, target, origins):
+            if target == config_validator.StorageTarget.STOREFRONT_STAGING:
+                return SimpleNamespace(
+                    status="unverifiable",
+                    issue=(
+                        "Cloudflare API credentials are not configured, so bucket "
+                        "CORS could not be verified."
+                    ),
+                )
+            return SimpleNamespace(status="ready", issue=None)
+
+    recommendations = await config_validator._collect_browser_upload_recommendations(
+        FakeMediaStorage()
+    )
+
+    assert recommendations == [
+        "S3_STOREFRONT_STAGING_BUCKET_NAME: Cloudflare API credentials are not "
+        "configured, so bucket CORS could not be verified."
+    ]
 
 
 @pytest.mark.asyncio
