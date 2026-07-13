@@ -15,6 +15,7 @@ from app.api.packages import (
     UpdatePackageRequest,
 )
 from app.dependencies.auth_extended import ExtendedAuthUser
+from app.services import contract_email_service as contract_email_module
 from app.services.package_service import PackageService
 
 
@@ -118,6 +119,30 @@ def _team_member() -> ExtendedAuthUser:
     return user
 
 
+def _planner() -> ExtendedAuthUser:
+    return ExtendedAuthUser(
+        email="owner@example.test",
+        role="wedding_planner",
+        user_data={
+            "_id": ObjectId(OWNER_ID),
+            "role": "wedding_planner",
+            "stripe_connect_id": "acct_owner",
+            "stripe_connect_charges_enabled": True,
+            "stripe_connect_details_submitted": True,
+        },
+    )
+
+
+def _package_service(raw_db) -> PackageService:
+    service = PackageService.__new__(PackageService)
+    service.packages = AsyncCollection(raw_db["packages"])
+    service.contracts = AsyncCollection(raw_db["contracts"])
+    service.users = AsyncCollection(raw_db["users"])
+    service.weddings = AsyncCollection(raw_db["weddings"])
+    service.scheduled_payments = AsyncCollection(raw_db["scheduled_payments"])
+    return service
+
+
 @pytest.mark.asyncio
 async def test_team_member_package_entry_points_use_canonical_owner_id(monkeypatch):
     service = PackageServiceSpy()
@@ -181,6 +206,101 @@ async def test_team_member_send_uses_owner_scope_and_owner_payment_readiness(
 
 
 @pytest.mark.asyncio
+async def test_planner_cannot_send_package_against_foreign_wedding(monkeypatch):
+    service = PackageServiceSpy()
+    wedding_access = AsyncMock(return_value=False)
+    monkeypatch.setattr(packages_api, "package_service", service)
+    monkeypatch.setattr(
+        packages_api,
+        "check_wedding_access",
+        wedding_access,
+        raising=False,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await packages_api.send_package_to_couple(
+            "package-1",
+            SendPackageRequest(
+                couple=CoupleInfoRequest(
+                    partner1_name="Ada", email="couple@example.test"
+                ),
+                wedding_id="foreign-wedding",
+            ),
+            _planner(),
+        )
+
+    assert exc_info.value.status_code == 403
+    wedding_access.assert_awaited_once()
+    service.send_to_couple.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_team_member_cannot_send_package_for_unassigned_wedding(monkeypatch):
+    service = PackageServiceSpy()
+    owner_mongo = OwnerMongo(
+        {
+            "_id": ObjectId(OWNER_ID),
+            "role": "wedding_planner",
+            "stripe_connect_id": "acct_owner",
+            "stripe_connect_charges_enabled": True,
+            "stripe_connect_details_submitted": True,
+        }
+    )
+    monkeypatch.setattr(packages_api, "package_service", service)
+    monkeypatch.setattr(packages_api, "mongo", owner_mongo, raising=False)
+    user = _team_member()
+    user.team_wedding_access = "assigned"
+    user.team_assigned_wedding_ids = ["assigned-wedding"]
+
+    with pytest.raises(HTTPException) as exc_info:
+        await packages_api.send_package_to_couple(
+            "package-1",
+            SendPackageRequest(
+                couple=CoupleInfoRequest(
+                    partner1_name="Ada", email="couple@example.test"
+                ),
+                wedding_id="unassigned-wedding",
+            ),
+            user,
+        )
+
+    assert exc_info.value.status_code == 403
+    service.send_to_couple.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_team_member_can_send_package_for_assigned_owner_wedding(monkeypatch):
+    service = PackageServiceSpy()
+    owner = {
+        "_id": ObjectId(OWNER_ID),
+        "role": "wedding_planner",
+        "stripe_connect_id": "acct_owner",
+        "stripe_connect_charges_enabled": True,
+        "stripe_connect_details_submitted": True,
+    }
+    owner_mongo = OwnerMongo(owner)
+    monkeypatch.setattr(packages_api, "package_service", service)
+    monkeypatch.setattr(packages_api, "mongo", owner_mongo, raising=False)
+    user = _team_member()
+    user.team_wedding_access = "assigned"
+    user.team_assigned_wedding_ids = ["assigned-wedding"]
+
+    await packages_api.send_package_to_couple(
+        "package-1",
+        SendPackageRequest(
+            couple=CoupleInfoRequest(partner1_name="Ada", email="couple@example.test"),
+            wedding_id="assigned-wedding",
+        ),
+        user,
+    )
+
+    assert service.send_to_couple.await_args.kwargs["planner_id"] == OWNER_ID
+    assert service.send_to_couple.await_args.kwargs["wedding_id"] == (
+        "assigned-wedding"
+    )
+
+
+@pytest.mark.asyncio
 async def test_package_routes_fail_closed_without_a_planner_owner(monkeypatch):
     service = PackageServiceSpy()
     monkeypatch.setattr(packages_api, "package_service", service)
@@ -198,12 +318,7 @@ async def test_package_routes_fail_closed_without_a_planner_owner(monkeypatch):
 @pytest.mark.asyncio
 async def test_package_service_rejects_foreign_package_across_all_entry_points():
     raw_db = mongomock.MongoClient()["package_owner_scope"]
-    service = PackageService.__new__(PackageService)
-    service.packages = AsyncCollection(raw_db["packages"])
-    service.contracts = AsyncCollection(raw_db["contracts"])
-    service.users = AsyncCollection(raw_db["users"])
-    service.weddings = AsyncCollection(raw_db["weddings"])
-    service.scheduled_payments = AsyncCollection(raw_db["scheduled_payments"])
+    service = _package_service(raw_db)
 
     foreign_id = ObjectId()
     raw_db.packages.insert_one(
@@ -242,3 +357,116 @@ async def test_package_service_rejects_foreign_package_across_all_entry_points()
     untouched = raw_db.packages.find_one({"_id": foreign_id})
     assert untouched.get("description") is None
     assert raw_db.contracts.count_documents({}) == 0
+
+
+@pytest.mark.asyncio
+async def test_duplicate_package_executes_without_reusing_persisted_owner_argument():
+    raw_db = mongomock.MongoClient()["package_duplicate_positive"]
+    service = _package_service(raw_db)
+    source_id = raw_db.packages.insert_one(
+        {
+            "planner_id": OWNER_ID,
+            "name": "Signature",
+            "status": "active",
+            "is_template": False,
+            "services": [],
+            "total_amount": 2500,
+            "currency": "usd",
+            "contracts_count": 3,
+        }
+    ).inserted_id
+
+    duplicate = await service.duplicate_package(
+        str(source_id), OWNER_ID, new_name="Signature Copy"
+    )
+
+    assert duplicate["planner_id"] == OWNER_ID
+    assert duplicate["name"] == "Signature Copy"
+    assert duplicate["contracts_count"] == 0
+    assert raw_db.packages.count_documents({"planner_id": OWNER_ID}) == 2
+
+
+@pytest.mark.asyncio
+async def test_package_service_rejects_foreign_wedding_before_contract_insert(
+    monkeypatch,
+):
+    raw_db = mongomock.MongoClient()["package_wedding_owner_scope"]
+    service = _package_service(raw_db)
+    package_id = raw_db.packages.insert_one(
+        {
+            "planner_id": OWNER_ID,
+            "name": "Signature",
+            "status": "active",
+            "is_template": False,
+            "services": [],
+            "total_amount": 2500,
+            "currency": "usd",
+            "contracts_count": 0,
+        }
+    ).inserted_id
+    raw_db.users.insert_one({"_id": ObjectId(OWNER_ID), "email": "owner@example.test"})
+    raw_db.weddings.insert_one(
+        {
+            "_id": "foreign-wedding",
+            "assigned_planner_id": OTHER_OWNER_ID,
+            "venue": "Foreign private venue",
+        }
+    )
+    monkeypatch.setattr(
+        contract_email_module.contract_email_service,
+        "send_package_contract_email",
+        AsyncMock(return_value=True),
+    )
+
+    with pytest.raises(ValueError, match="Wedding not found or access denied"):
+        await service.send_to_couple(
+            str(package_id),
+            OWNER_ID,
+            {"partner1_name": "Ada", "email": "couple@example.test"},
+            wedding_id="foreign-wedding",
+        )
+
+    assert raw_db.contracts.count_documents({}) == 0
+
+
+@pytest.mark.asyncio
+async def test_package_service_copies_only_owner_wedding_context(monkeypatch):
+    raw_db = mongomock.MongoClient()["package_wedding_owner_positive"]
+    service = _package_service(raw_db)
+    package_id = raw_db.packages.insert_one(
+        {
+            "planner_id": OWNER_ID,
+            "name": "Signature",
+            "status": "active",
+            "is_template": False,
+            "services": [],
+            "total_amount": 2500,
+            "currency": "usd",
+            "contracts_count": 0,
+        }
+    ).inserted_id
+    raw_db.users.insert_one({"_id": ObjectId(OWNER_ID), "email": "owner@example.test"})
+    raw_db.weddings.insert_one(
+        {
+            "_id": "owner-wedding",
+            "assigned_planner_id": OWNER_ID,
+            "venue": "Owner venue",
+            "date": "2027-10-12",
+        }
+    )
+    monkeypatch.setattr(
+        contract_email_module.contract_email_service,
+        "send_package_contract_email",
+        AsyncMock(return_value=True),
+    )
+
+    contract = await service.send_to_couple(
+        str(package_id),
+        OWNER_ID,
+        {"partner1_name": "Ada", "email": "couple@example.test"},
+        wedding_id="owner-wedding",
+    )
+
+    assert contract["wedding_id"] == "owner-wedding"
+    assert contract["venue"] == "Owner venue"
+    assert contract["wedding_date"] == "2027-10-12T00:00:00"

@@ -93,6 +93,95 @@ test('runtime proxy forwards method path query headers cookies and body to the b
   );
 });
 
+test('custom storefront hosts reject arbitrary, cross-host, and non-POST proxy requests', async () => {
+  process.env.BACKEND_SERVICE_URL = 'http://backend-prod:8000';
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return new Response('must not be reached');
+  }) as typeof fetch;
+
+  const arbitrary = await POST(
+    new Request('https://studio.example.com/api/proxy/admin/token/login', {
+      method: 'POST',
+      headers: { host: 'studio.example.com' },
+      body: '{}',
+    }),
+    proxyContext(['admin', 'token', 'login']),
+  );
+  const crossHost = await POST(
+    new Request(
+      'https://studio.example.com/api/proxy/api/storefront/other.example.com/inquiries',
+      {
+        method: 'POST',
+        headers: { host: 'studio.example.com' },
+        body: '{}',
+      },
+    ),
+    proxyContext(['api', 'storefront', 'other.example.com', 'inquiries']),
+  );
+  const wrongMethod = await GET(
+    new Request(
+      'https://studio.example.com/api/proxy/api/storefront/studio.example.com/inquiries',
+      { headers: { host: 'studio.example.com' } },
+    ),
+    proxyContext(['api', 'storefront', 'studio.example.com', 'inquiries']),
+  );
+  const queryVariant = await POST(
+    new Request(
+      'https://studio.example.com/api/proxy/api/storefront/studio.example.com/inquiries?preview=1',
+      {
+        method: 'POST',
+        headers: { host: 'studio.example.com' },
+        body: '{}',
+      },
+    ),
+    proxyContext(['api', 'storefront', 'studio.example.com', 'inquiries']),
+  );
+
+  assert.equal(arbitrary.status, 404);
+  assert.equal(crossHost.status, 404);
+  assert.equal(wrongMethod.status, 404);
+  assert.equal(queryVariant.status, 404);
+  assert.equal(calls, 0);
+});
+
+test('custom storefront host forwards only its exact inquiry POST contract', async () => {
+  process.env.BACKEND_SERVICE_URL = 'http://backend-prod:8000';
+  let captured: CapturedFetch | null = null;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    captured = { input, init };
+    return new Response(
+      JSON.stringify({ success: true, inquiry_id: 'inquiry-1' }),
+      { status: 201, headers: { 'content-type': 'application/json' } },
+    );
+  }) as typeof fetch;
+
+  const response = await POST(
+    new Request(
+      'https://studio.example.com/api/proxy/api/storefront/studio.example.com/inquiries',
+      {
+        method: 'POST',
+        headers: {
+          host: 'studio.example.com',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ name: 'Ada', email: 'ada@example.test', message: 'Hello' }),
+      },
+    ),
+    proxyContext(['api', 'storefront', 'studio.example.com', 'inquiries']),
+  );
+
+  assert.equal(response.status, 201);
+  const seen = captured as CapturedFetch | null;
+  assert.ok(seen);
+  assert.equal(
+    String(seen.input),
+    'http://backend-prod:8000/api/storefront/studio.example.com/inquiries',
+  );
+  assert.equal(new Headers(seen.init?.headers).get('x-forwarded-host'), 'studio.example.com');
+});
+
 test('runtime proxy supports the bare /api/proxy path', async () => {
   process.env.BACKEND_SERVICE_URL = 'http://backend-prod:8000';
   let captured: CapturedFetch | null = null;

@@ -15,6 +15,7 @@ from app.constants.roles import ROLE_WEDDING_PLANNER
 from app.core.database import mongo
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
+    check_wedding_access,
     enforce_team_permission,
     get_owner_identity,
     require_team_or_planner,
@@ -334,6 +335,14 @@ async def send_package_to_couple(
     enforce_team_permission(current_user, "manage_contracts")
     planner_id = _require_package_owner_id(current_user)
     try:
+        if send_data.wedding_id and not await check_wedding_access(
+            current_user, send_data.wedding_id
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail="Wedding not found or access denied",
+            )
+
         # Gate: planner must have Stripe Connect onboarded with charges
         # enabled before sending a package. Without this, the deposit
         # auto-charge at sign time runs without `transfer_data.destination`

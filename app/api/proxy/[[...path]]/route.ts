@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { getProxyBackendBaseUrl } from '@/utils/env';
+import { resolveCustomStorefrontHost } from '@/utils/storefrontHost';
 
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
@@ -109,8 +110,48 @@ function addForwardBody(request: Request, init: ProxyFetchInit): void {
   init.duplex = 'half';
 }
 
+function isAllowedCustomStorefrontRequest(
+  request: Request,
+  pathSegments: string[],
+): boolean {
+  const requestUrl = new URL(request.url);
+  const storefrontHost = resolveCustomStorefrontHost(
+    request.headers.get('host'),
+    {
+      platformDomains: process.env.STOREFRONT_PLATFORM_DOMAINS,
+      frontendUrl: process.env.FRONTEND_URL,
+      apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL,
+      cnameTarget: process.env.STOREFRONT_CNAME_TARGET,
+    },
+  );
+  if (!storefrontHost) {
+    return true;
+  }
+
+  let requestedIdentifier: string;
+  try {
+    requestedIdentifier = decodeURIComponent(pathSegments[2] ?? '');
+  } catch {
+    return false;
+  }
+  return (
+    request.method === 'POST' &&
+    requestUrl.search === '' &&
+    pathSegments.length === 4 &&
+    pathSegments[0] === 'api' &&
+    pathSegments[1] === 'storefront' &&
+    requestedIdentifier === storefrontHost &&
+    pathSegments[3] === 'inquiries'
+  );
+}
+
 async function proxyRequest(request: Request, context: ProxyContext): Promise<Response> {
   const requestUrl = new URL(request.url);
+  const params = await context.params;
+  const pathSegments = params.path ?? [];
+  if (!isAllowedCustomStorefrontRequest(request, pathSegments)) {
+    return jsonError('Not Found', 404);
+  }
   let apiBase: string;
 
   try {
@@ -120,8 +161,7 @@ async function proxyRequest(request: Request, context: ProxyContext): Promise<Re
     return jsonError(message, 503);
   }
 
-  const params = await context.params;
-  const targetUrl = buildTargetUrl(apiBase, requestUrl, params.path ?? []);
+  const targetUrl = buildTargetUrl(apiBase, requestUrl, pathSegments);
 
   try {
     const init: ProxyFetchInit = {
