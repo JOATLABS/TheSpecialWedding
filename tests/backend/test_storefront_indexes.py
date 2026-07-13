@@ -48,6 +48,18 @@ async def test_storefront_indexes_are_unique_named_and_slug_is_legacy_safe(
     assert slug_keys == [("slug", 1)]
     assert slug_options["unique"] is True
     assert slug_options["partialFilterExpression"] == {"slug": {"$type": "string"}}
+    pending_recovery = by_name["idx_storefront_settings_pending_recovery_due_owner"]
+    assert pending_recovery[0] == [
+        ("pending_asset_recovery_status", 1),
+        ("pending_asset_recovery_due_at", 1),
+        ("pending_asset_recovery_lease_expires_at", 1),
+        ("updated_at", 1),
+        ("planner_id", 1),
+    ]
+    assert pending_recovery[1]["partialFilterExpression"] == {
+        "pending_asset_group": {"$exists": True}
+    }
+    assert "expireAfterSeconds" not in pending_recovery[1]
 
     domain_planner = by_name["idx_storefront_domains_planner_unique"]
     domain_hostname = by_name["idx_storefront_domains_hostname_unique"]

@@ -16,7 +16,16 @@ from PIL import Image, UnidentifiedImageError
 from pymongo.errors import DuplicateKeyError
 
 from app.constants.roles import is_wedding_planner_role
-from app.constants.storefront import PENDING_ASSET_GROUP_FIELD
+from app.constants.storefront import (
+    PENDING_ASSET_GROUP_FIELD,
+    PENDING_ASSET_RECOVERY_ATTEMPTS_FIELD,
+    PENDING_ASSET_RECOVERY_DUE_FIELD,
+    PENDING_ASSET_RECOVERY_ERROR_FIELD,
+    PENDING_ASSET_RECOVERY_FIELDS,
+    PENDING_ASSET_RECOVERY_LEASE_FIELD,
+    PENDING_ASSET_RECOVERY_STATUS_FIELD,
+    PENDING_ASSET_RECOVERY_TOKEN_FIELD,
+)
 from app.core.database import mongo
 from app.core.settings import settings
 from app.services.media_storage import MediaStorage, StorageTarget
@@ -2203,6 +2212,20 @@ class StorefrontMediaService:
                 return False
         return True
 
+    @staticmethod
+    def _settings_recovery_fence(claim: dict) -> dict[str, str]:
+        """Fence background recovery writes without affecting request claims."""
+
+        if "settings_recovery_token" not in claim:
+            return {}
+        token = claim.get("settings_recovery_token")
+        if not isinstance(token, str) or not token:
+            raise RuntimeError("Invalid storefront settings recovery token")
+        return {
+            PENDING_ASSET_RECOVERY_STATUS_FIELD: "recovering",
+            PENDING_ASSET_RECOVERY_TOKEN_FIELD: token,
+        }
+
     async def claim_settings_assets(
         self,
         owner: Any,
@@ -2451,6 +2474,7 @@ class StorefrontMediaService:
         durable_filter: dict[str, Any] = {
             "planner_id": owner_id,
             PENDING_ASSET_GROUP_FIELD: manifest,
+            **self._settings_recovery_fence(claim),
         }
         intent_slots = {field_name.removesuffix("_asset_id") for field_name in values}
         for slot in intent_slots:
@@ -2492,6 +2516,7 @@ class StorefrontMediaService:
                     "planner_id": owner_id,
                     pending_asset_field: entry["asset_id"],
                     pending_claim_field: claim_id,
+                    **self._settings_recovery_fence(claim),
                 },
                 {"_id": 1},
             )
@@ -2592,6 +2617,7 @@ class StorefrontMediaService:
         promote_filter: dict[str, Any] = {
             "planner_id": owner_id,
             PENDING_ASSET_GROUP_FIELD: manifest,
+            **self._settings_recovery_fence(claim),
         }
         stable_updates: dict[str, str | None] = {}
         pending_unsets: dict[str, str] = {}
@@ -2606,6 +2632,7 @@ class StorefrontMediaService:
             pending_unsets[pending_asset_field] = ""
             pending_unsets[pending_claim_field] = ""
         pending_unsets[PENDING_ASSET_GROUP_FIELD] = ""
+        pending_unsets.update(dict.fromkeys(PENDING_ASSET_RECOVERY_FIELDS, ""))
         for slot in STOREFRONT_ASSET_SLOTS - intent_slots:
             promote_filter[f"pending_{slot}_asset_id"] = {"$exists": False}
             promote_filter[f"pending_{slot}_claim_id"] = {"$exists": False}
@@ -2649,7 +2676,9 @@ class StorefrontMediaService:
                 await self.attach_settings_asset_claims(owner, claim)
                 await self.promote_settings_asset_claims(owner, claim)
                 return
-            except Exception:
+            except HTTPException as exc:
+                if exc.status_code != status.HTTP_409_CONFLICT:
+                    raise
                 logger.info(
                     "Rolling back invalid storefront asset token group %s for owner %s",
                     claim_id,
@@ -2658,15 +2687,30 @@ class StorefrontMediaService:
 
         await self._rollback_settings_asset_group(owner, claim)
 
-    async def _clear_pending_token_group(self, owner_id: str, claim_id: str) -> None:
+    async def _clear_pending_token_group(
+        self,
+        owner_id: str,
+        claim_id: str,
+        *,
+        recovery_token: str | None = None,
+    ) -> None:
         """Atomically clear every current pending slot carrying one token."""
 
         settings = self._mongo.db["storefront_settings"]
         for _attempt in range(3):
-            row = await settings.find_one({"planner_id": owner_id})
+            recovery_fence: dict[str, str] = {}
+            if recovery_token is not None:
+                recovery_fence = {
+                    PENDING_ASSET_RECOVERY_STATUS_FIELD: "recovering",
+                    PENDING_ASSET_RECOVERY_TOKEN_FIELD: recovery_token,
+                }
+            row = await settings.find_one({"planner_id": owner_id, **recovery_fence})
             if not row:
                 return
-            clear_filter: dict[str, Any] = {"planner_id": owner_id}
+            clear_filter: dict[str, Any] = {
+                "planner_id": owner_id,
+                **recovery_fence,
+            }
             pending_unsets: dict[str, str] = {}
             for slot in ("hero", "about"):
                 asset_field = f"pending_{slot}_asset_id"
@@ -2682,6 +2726,7 @@ class StorefrontMediaService:
             if parsed_manifest and parsed_manifest[0] == claim_id:
                 clear_filter[PENDING_ASSET_GROUP_FIELD] = manifest
                 pending_unsets[PENDING_ASSET_GROUP_FIELD] = ""
+                pending_unsets.update(dict.fromkeys(PENDING_ASSET_RECOVERY_FIELDS, ""))
             if not pending_unsets:
                 return
             cleared = await settings.update_one(
@@ -2704,7 +2749,16 @@ class StorefrontMediaService:
         if claim.get("owner_id") != owner_id:
             raise RuntimeError("Storefront asset claim owner mismatch")
         claim_id, _entries = self._claim_entries(claim)
-        await self._clear_pending_token_group(owner_id, claim_id)
+        recovery_token = claim.get("settings_recovery_token")
+        if recovery_token is not None and (
+            not isinstance(recovery_token, str) or not recovery_token
+        ):
+            raise RuntimeError("Invalid storefront settings recovery token")
+        await self._clear_pending_token_group(
+            owner_id,
+            claim_id,
+            recovery_token=recovery_token,
+        )
         await self.release_settings_asset_claims(owner, claim)
 
     async def _recover_orphaned_owner_assets(
@@ -3146,6 +3200,255 @@ class StorefrontMediaService:
         return processed, len(candidates)
 
     @staticmethod
+    def _due_pending_settings_query() -> dict[str, Any]:
+        """Find durable pending manifests whose recovery lease is available."""
+
+        now = datetime.now(timezone.utc)
+        return {
+            PENDING_ASSET_GROUP_FIELD: {"$exists": True},
+            "$or": [
+                {PENDING_ASSET_RECOVERY_STATUS_FIELD: {"$exists": False}},
+                {
+                    PENDING_ASSET_RECOVERY_STATUS_FIELD: "retry_pending",
+                    "$or": [
+                        {PENDING_ASSET_RECOVERY_DUE_FIELD: {"$lte": now}},
+                        {PENDING_ASSET_RECOVERY_DUE_FIELD: {"$exists": False}},
+                    ],
+                },
+                {
+                    PENDING_ASSET_RECOVERY_STATUS_FIELD: "recovering",
+                    "$or": [
+                        {PENDING_ASSET_RECOVERY_LEASE_FIELD: {"$lte": now}},
+                        {PENDING_ASSET_RECOVERY_LEASE_FIELD: {"$exists": False}},
+                    ],
+                },
+            ],
+        }
+
+    @staticmethod
+    def _pending_manifest_snapshot(candidate: dict) -> dict[str, Any]:
+        """Match an explicit manifest value without Mongo's null/missing alias."""
+
+        return {
+            PENDING_ASSET_GROUP_FIELD: candidate.get(PENDING_ASSET_GROUP_FIELD),
+            "$and": [{PENDING_ASSET_GROUP_FIELD: {"$exists": True}}],
+        }
+
+    async def _claim_pending_settings_recovery(
+        self, candidate: dict
+    ) -> tuple[dict, str] | None:
+        """Lease one exact pending manifest so concurrent leaders cannot mutate it."""
+
+        planner_id = candidate.get("planner_id")
+        recovery_token = uuid4().hex
+        now = datetime.now(timezone.utc)
+        claim_filter: dict[str, Any] = {
+            "_id": candidate.get("_id"),
+            **self._pending_manifest_snapshot(candidate),
+            "$or": self._due_pending_settings_query()["$or"],
+        }
+        claim_filter["planner_id"] = (
+            planner_id if "planner_id" in candidate else {"$exists": False}
+        )
+        claimed = await self._mongo.db["storefront_settings"].update_one(
+            claim_filter,
+            {
+                "$set": {
+                    PENDING_ASSET_RECOVERY_STATUS_FIELD: "recovering",
+                    PENDING_ASSET_RECOVERY_TOKEN_FIELD: recovery_token,
+                    PENDING_ASSET_RECOVERY_LEASE_FIELD: now
+                    + timedelta(seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS),
+                    "updated_at": now,
+                },
+                "$unset": {
+                    PENDING_ASSET_RECOVERY_DUE_FIELD: "",
+                    PENDING_ASSET_RECOVERY_ERROR_FIELD: "",
+                },
+                "$inc": {PENDING_ASSET_RECOVERY_ATTEMPTS_FIELD: 1},
+            },
+        )
+        if not getattr(claimed, "modified_count", 0):
+            return None
+        return candidate, recovery_token
+
+    async def _quarantine_pending_settings_recovery(
+        self,
+        candidate: dict,
+        recovery_token: str,
+        *,
+        reason: str,
+    ) -> bool:
+        """Remove malformed settings intent from the hot queue without deleting it."""
+
+        now = datetime.now(timezone.utc)
+        result = await self._mongo.db["storefront_settings"].update_one(
+            {
+                "_id": candidate.get("_id"),
+                "planner_id": candidate.get("planner_id"),
+                **self._pending_manifest_snapshot(candidate),
+                PENDING_ASSET_RECOVERY_STATUS_FIELD: "recovering",
+                PENDING_ASSET_RECOVERY_TOKEN_FIELD: recovery_token,
+            },
+            {
+                "$set": {
+                    PENDING_ASSET_RECOVERY_STATUS_FIELD: "quarantined",
+                    PENDING_ASSET_RECOVERY_ERROR_FIELD: reason,
+                    "updated_at": now,
+                },
+                "$unset": {
+                    PENDING_ASSET_RECOVERY_TOKEN_FIELD: "",
+                    PENDING_ASSET_RECOVERY_LEASE_FIELD: "",
+                    PENDING_ASSET_RECOVERY_DUE_FIELD: "",
+                },
+            },
+        )
+        return bool(getattr(result, "modified_count", 0))
+
+    async def _defer_pending_settings_recovery(
+        self,
+        candidate: dict,
+        recovery_token: str,
+        exc: Exception,
+    ) -> bool:
+        """Defer a transient failure behind its exact lease token."""
+
+        now = datetime.now(timezone.utc)
+        result = await self._mongo.db["storefront_settings"].update_one(
+            {
+                "_id": candidate.get("_id"),
+                "planner_id": candidate.get("planner_id"),
+                **self._pending_manifest_snapshot(candidate),
+                PENDING_ASSET_RECOVERY_STATUS_FIELD: "recovering",
+                PENDING_ASSET_RECOVERY_TOKEN_FIELD: recovery_token,
+            },
+            {
+                "$set": {
+                    PENDING_ASSET_RECOVERY_STATUS_FIELD: "retry_pending",
+                    PENDING_ASSET_RECOVERY_ERROR_FIELD: exc.__class__.__name__,
+                    PENDING_ASSET_RECOVERY_DUE_FIELD: now
+                    + timedelta(seconds=STOREFRONT_CLEANUP_RETRY_SECONDS),
+                    "updated_at": now,
+                },
+                "$unset": {
+                    PENDING_ASSET_RECOVERY_TOKEN_FIELD: "",
+                    PENDING_ASSET_RECOVERY_LEASE_FIELD: "",
+                },
+            },
+        )
+        return bool(getattr(result, "modified_count", 0))
+
+    async def _recover_pending_settings_candidate(
+        self, candidate: dict, recovery_token: str
+    ) -> bool:
+        """Resolve one leased settings manifest without an entitlement lookup."""
+
+        planner_id = candidate.get("planner_id")
+        if not isinstance(planner_id, str) or not planner_id:
+            return await self._quarantine_pending_settings_recovery(
+                candidate,
+                recovery_token,
+                reason="invalid_planner_owner",
+            )
+        settings = self._mongo.db["storefront_settings"]
+        assets = self._mongo.db["storefront_assets"]
+        row = await settings.find_one(
+            {
+                "_id": candidate.get("_id"),
+                "planner_id": planner_id,
+                **self._pending_manifest_snapshot(candidate),
+                PENDING_ASSET_RECOVERY_STATUS_FIELD: "recovering",
+                PENDING_ASSET_RECOVERY_TOKEN_FIELD: recovery_token,
+            }
+        )
+        if not row:
+            return False
+
+        manifest = row.get(PENDING_ASSET_GROUP_FIELD)
+        parsed_manifest = self._entries_from_manifest(manifest)
+        if not parsed_manifest:
+            return await self._quarantine_pending_settings_recovery(
+                candidate,
+                recovery_token,
+                reason="invalid_pending_manifest",
+            )
+        claim_id, entries, values = parsed_manifest
+        if not self._row_has_exact_manifest_pairs(row, claim_id, values):
+            return await self._quarantine_pending_settings_recovery(
+                candidate,
+                recovery_token,
+                reason="invalid_pending_pairs",
+            )
+
+        claim = {
+            "owner_id": planner_id,
+            "claim_id": claim_id,
+            "values": values,
+            "claimed_assets": entries,
+            "manifest": manifest,
+            "settings_recovery_token": recovery_token,
+        }
+        for entry in entries:
+            asset = await assets.find_one(
+                {
+                    "_id": self._asset_query_id(entry["asset_id"]),
+                    "owner_id": planner_id,
+                    "slot": entry["slot"],
+                    "$or": [
+                        {"state": "attaching", "attach_claim_id": claim_id},
+                        {"state": "attached", "attached_claim_id": claim_id},
+                    ],
+                },
+                {"_id": 1},
+            )
+            if asset:
+                continue
+            await self._rollback_settings_asset_group(
+                self._maintenance_owner(planner_id), claim
+            )
+            return True
+
+        owner = self._maintenance_owner(planner_id)
+        await self.attach_settings_asset_claims(owner, claim)
+        await self.promote_settings_asset_claims(owner, claim)
+        return True
+
+    async def _sweep_pending_settings_manifests(self, *, limit: int) -> tuple[int, int]:
+        settings = self._mongo.db["storefront_settings"]
+        candidates = await (
+            settings.find(self._due_pending_settings_query())
+            .sort(
+                [
+                    (PENDING_ASSET_RECOVERY_DUE_FIELD, 1),
+                    (PENDING_ASSET_RECOVERY_LEASE_FIELD, 1),
+                    ("updated_at", 1),
+                    ("planner_id", 1),
+                ]
+            )
+            .to_list(length=limit)
+        )
+        processed = 0
+        for candidate in candidates:
+            claimed = await self._claim_pending_settings_recovery(candidate)
+            if not claimed:
+                continue
+            claimed_candidate, recovery_token = claimed
+            try:
+                if await self._recover_pending_settings_candidate(
+                    claimed_candidate, recovery_token
+                ):
+                    processed += 1
+            except Exception as exc:
+                await self._defer_pending_settings_recovery(
+                    claimed_candidate, recovery_token, exc
+                )
+                logger.warning(
+                    "Deferred storefront pending manifest recovery for owner %s: %s",
+                    claimed_candidate.get("planner_id"),
+                    exc.__class__.__name__,
+                )
+        return processed, len(candidates)
+
+    @staticmethod
     def _due_settings_claim_query() -> dict[str, Any]:
         """Return stale claim receipts eligible for global reconciliation."""
 
@@ -3155,18 +3458,26 @@ class StorefrontMediaService:
             "$or": [
                 {
                     "state": "attaching",
-                    "attach_claim_id": {"$type": "string"},
-                    "$or": [
-                        {"attach_claimed_at": {"$lte": stale_before}},
+                    "$and": [
                         {
-                            "attach_claimed_at": {"$exists": False},
-                            "updated_at": {"$lte": stale_before},
+                            "$or": [
+                                {"attach_claimed_at": {"$lte": stale_before}},
+                                {
+                                    "attach_claimed_at": {"$exists": False},
+                                    "updated_at": {"$lte": stale_before},
+                                },
+                            ]
+                        },
+                        {
+                            "$or": [
+                                {"claim_reconcile_due_at": {"$lte": now}},
+                                {"claim_reconcile_due_at": {"$exists": False}},
+                            ]
                         },
                     ],
                 },
                 {
                     "state": "attached",
-                    "attached_claim_id": {"$type": "string"},
                     "$or": [
                         {"claim_reconcile_due_at": {"$lte": now}},
                         {
@@ -3188,6 +3499,57 @@ class StorefrontMediaService:
 
         return {"_id": owner_id, "role": "wedding_planner"}
 
+    @staticmethod
+    def _settings_claim_snapshot_filter(asset: dict) -> dict[str, Any]:
+        """Build an exact receipt fence, including absent malformed fields."""
+
+        snapshot: dict[str, Any] = {"_id": asset.get("_id")}
+        for field in (
+            "owner_id",
+            "slot",
+            "state",
+            "attach_claim_id",
+            "attach_claimed_at",
+            "attached_claim_id",
+            "updated_at",
+            "claim_reconcile_due_at",
+        ):
+            snapshot[field] = asset[field] if field in asset else {"$exists": False}
+        return snapshot
+
+    async def _quarantine_settings_claim_candidate(self, asset: dict) -> bool:
+        now = datetime.now(timezone.utc)
+        result = await self._mongo.db["storefront_assets"].update_one(
+            self._settings_claim_snapshot_filter(asset),
+            {
+                "$set": {
+                    "state": "claim_quarantined",
+                    "claim_reconcile_error": "invalid_claim_receipt",
+                    "claim_quarantined_at": now,
+                    "updated_at": now,
+                },
+                "$unset": {"claim_reconcile_due_at": ""},
+            },
+        )
+        return bool(getattr(result, "modified_count", 0))
+
+    async def _defer_settings_claim_candidate(
+        self, asset: dict, exc: Exception
+    ) -> bool:
+        now = datetime.now(timezone.utc)
+        result = await self._mongo.db["storefront_assets"].update_one(
+            self._settings_claim_snapshot_filter(asset),
+            {
+                "$set": {
+                    "claim_reconcile_due_at": now
+                    + timedelta(seconds=STOREFRONT_CLEANUP_RETRY_SECONDS),
+                    "claim_reconcile_error": exc.__class__.__name__,
+                    "updated_at": now,
+                }
+            },
+        )
+        return bool(getattr(result, "modified_count", 0))
+
     async def _reconcile_settings_claim_candidate(self, asset: dict) -> bool:
         """Reconcile one stale claim against canonical settings with exact fences."""
 
@@ -3199,11 +3561,11 @@ class StorefrontMediaService:
             or slot not in STOREFRONT_ASSET_SLOTS
             or state not in {"attaching", "attached"}
         ):
-            return False
+            return await self._quarantine_settings_claim_candidate(asset)
         token_field = "attach_claim_id" if state == "attaching" else "attached_claim_id"
         claim_id = asset.get(token_field)
         if not isinstance(claim_id, str) or not claim_id:
-            return False
+            return await self._quarantine_settings_claim_candidate(asset)
 
         settings = self._mongo.db["storefront_settings"]
         assets = self._mongo.db["storefront_assets"]
@@ -3345,24 +3707,30 @@ class StorefrontMediaService:
 
     async def _sweep_settings_claims(self, *, limit: int) -> tuple[int, int]:
         assets = self._mongo.db["storefront_assets"]
-        candidates = await assets.find(self._due_settings_claim_query()).to_list(
-            length=limit
+        candidates = await (
+            assets.find(self._due_settings_claim_query())
+            .sort(
+                [
+                    ("claim_reconcile_due_at", 1),
+                    ("updated_at", 1),
+                    ("owner_id", 1),
+                    ("_id", 1),
+                ]
+            )
+            .to_list(length=limit)
         )
         processed = 0
         for asset in candidates:
             try:
                 if await self._reconcile_settings_claim_candidate(asset):
                     processed += 1
-            except HTTPException as exc:
-                if exc.status_code not in {
-                    status.HTTP_409_CONFLICT,
-                    status.HTTP_503_SERVICE_UNAVAILABLE,
-                }:
-                    raise
-                logger.info(
-                    "Storefront asset %s settings claim remains pending for owner %s",
+            except Exception as exc:
+                await self._defer_settings_claim_candidate(asset, exc)
+                logger.warning(
+                    "Deferred storefront asset %s settings claim for owner %s: %s",
                     asset.get("_id"),
                     asset.get("owner_id"),
+                    exc.__class__.__name__,
                 )
         return processed, len(candidates)
 
@@ -3388,6 +3756,7 @@ class StorefrontMediaService:
             self._sweep_detached_candidate_receipts,
             sweep_cleanup_assets,
             self._sweep_settings_claims,
+            self._sweep_pending_settings_manifests,
         )
         start = self._maintenance_queue_cursor % len(queues)
         queue_order = [*range(start, len(queues)), *range(0, start)]
@@ -3473,15 +3842,9 @@ class StorefrontMediaService:
                             group_is_valid = False
                             break
                 if group_is_valid:
-                    try:
-                        await self.attach_settings_asset_claims(owner, claim)
-                        await self.promote_settings_asset_claims(owner, claim)
-                        continue
-                    except Exception:
-                        logger.info(
-                            "Rolling back interrupted storefront token group %s",
-                            claim_id,
-                        )
+                    await self.attach_settings_asset_claims(owner, claim)
+                    await self.promote_settings_asset_claims(owner, claim)
+                    continue
                 await self._rollback_settings_asset_group(owner, claim)
                 continue
 
