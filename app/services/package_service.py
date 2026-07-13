@@ -18,6 +18,10 @@ from app.core.settings import settings
 from app.models.autopilot import Contract, CoupleInfo, WeddingPackage
 from app.utils.mongo_dates import to_mongo_datetime
 from app.utils.payment_schedule import build_effective_payment_schedule
+from app.utils.planner_ownership import (
+    normalize_wedding_query_id,
+    wedding_belongs_to_owner,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -296,7 +300,14 @@ class PackageService:
             new_package_data = {
                 k: v
                 for k, v in package.items()
-                if k not in ["_id", "created_at", "updated_at", "contracts_count"]
+                if k
+                not in [
+                    "_id",
+                    "planner_id",
+                    "created_at",
+                    "updated_at",
+                    "contracts_count",
+                ]
             }
             new_package_data["name"] = new_name or f"{package['name']} (Copy)"
             new_package_data["is_template"] = as_template
@@ -352,9 +363,23 @@ class PackageService:
                 else:
                     parsed_wedding_date = wedding_date
 
+            planner = None
+            try:
+                planner = await self.users.find_one({"_id": ObjectId(planner_id)})
+            except Exception:
+                planner = await self.users.find_one({"email": planner_id})
+
             wedding = None
             if wedding_id:
-                wedding = await self.weddings.find_one({"_id": wedding_id})
+                wedding = await self.weddings.find_one(
+                    {"_id": normalize_wedding_query_id(wedding_id)}
+                )
+                if not wedding_belongs_to_owner(
+                    wedding,
+                    planner_id=planner_id,
+                    planner_email=planner.get("email") if planner else None,
+                ):
+                    raise ValueError("Wedding not found or access denied")
                 if wedding and not parsed_wedding_date and wedding.get("date"):
                     wedding_date_value = wedding.get("date")
                     if isinstance(wedding_date_value, str):
@@ -363,12 +388,6 @@ class PackageService:
                         )
                     else:
                         parsed_wedding_date = wedding_date_value
-
-            planner = None
-            try:
-                planner = await self.users.find_one({"_id": ObjectId(planner_id)})
-            except Exception:
-                planner = await self.users.find_one({"email": planner_id})
 
             planner_snapshot = self._build_planner_snapshot(planner)
             venue = None
