@@ -55,6 +55,7 @@ STOREFRONT_CLEANUP_RETRY_SECONDS = 5 * 60
 STOREFRONT_MAINTENANCE_BATCH_SIZE = 100
 MAX_STOREFRONT_IMAGE_DIMENSION = 4096
 MAX_STOREFRONT_IMAGE_PIXELS = 12_000_000
+_BSON_INT64_MAX = (1 << 63) - 1
 
 _STOREFRONT_IMAGE_DECODE_SEMAPHORE = asyncio.Semaphore(
     settings.storefront_image_decode_concurrency
@@ -3262,7 +3263,7 @@ class StorefrontMediaService:
             attempts
             if isinstance(attempts, int)
             and not isinstance(attempts, bool)
-            and attempts >= 0
+            and 0 <= attempts < _BSON_INT64_MAX
             else 0
         )
         claimed = await self._mongo.db["storefront_settings"].update_one(
