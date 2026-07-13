@@ -227,6 +227,81 @@ class StorefrontInquiryService:
             and metadata == cls._operator_alert_metadata(inquiry)
         )
 
+    @staticmethod
+    def _operator_alert_transition_filter(inquiry: dict) -> dict[str, Any]:
+        notification = inquiry.get("notification")
+        if not isinstance(notification, dict):
+            raise RuntimeError("Storefront inquiry notification snapshot is invalid")
+        return {
+            "_id": inquiry.get("_id"),
+            "planner_id": inquiry.get("planner_id"),
+            "notification": notification,
+            "$and": [{"notification": {"$exists": True}}],
+        }
+
+    async def _persist_operator_alert_recipient(
+        self,
+        inquiries: Any,
+        inquiry: dict,
+        planner_email: str,
+    ) -> str | None:
+        notification = inquiry.get("notification")
+        if not isinstance(notification, dict):
+            return None
+        alert = notification.get("operator_alert")
+        intended_email = self._normalize_operator_alert_email(
+            alert.get("planner_email") if isinstance(alert, dict) else None
+        )
+        if intended_email:
+            return intended_email
+
+        now = datetime.now(timezone.utc)
+        stored = await inquiries.update_one(
+            self._operator_alert_transition_filter(inquiry),
+            {
+                "$set": {
+                    "notification.operator_alert.status": (
+                        alert.get("status")
+                        if isinstance(alert, dict) and alert.get("status")
+                        else "pending"
+                    ),
+                    "notification.operator_alert.planner_email": planner_email,
+                    "updated_at": now,
+                }
+            },
+        )
+        if getattr(stored, "matched_count", 0) == 1:
+            updated_alert = dict(alert) if isinstance(alert, dict) else {}
+            updated_alert.setdefault("status", "pending")
+            updated_alert["planner_email"] = planner_email
+            notification["operator_alert"] = updated_alert
+            inquiry["updated_at"] = now
+            return planner_email
+
+        current = await inquiries.find_one(
+            {
+                "_id": inquiry.get("_id"),
+                "planner_id": inquiry.get("planner_id"),
+                "notification.status": {"$in": list(_TERMINAL_NOTIFICATION_STATUSES)},
+            }
+        )
+        current_notification = current.get("notification") if current else None
+        current_alert = (
+            current_notification.get("operator_alert")
+            if isinstance(current_notification, dict)
+            else None
+        )
+        intended_email = self._normalize_operator_alert_email(
+            current_alert.get("planner_email")
+            if isinstance(current_alert, dict)
+            else None
+        )
+        if current and intended_email:
+            inquiry.clear()
+            inquiry.update(current)
+            return intended_email
+        return None
+
     async def _record_operator_alert_retry(
         self,
         inquiries: Any,
@@ -262,13 +337,7 @@ class StorefrontInquiryService:
             retry_fields["notification.operator_alert.planner_email"] = planner_email
         try:
             result = await inquiries.update_one(
-                {
-                    "_id": inquiry.get("_id"),
-                    "planner_id": inquiry.get("planner_id"),
-                    "notification.status": {
-                        "$in": list(_TERMINAL_NOTIFICATION_STATUSES)
-                    },
-                },
+                self._operator_alert_transition_filter(inquiry),
                 {
                     "$set": retry_fields,
                 },
@@ -328,6 +397,17 @@ class StorefrontInquiryService:
                 inquiry,
                 "Planner alert recipient is unavailable",
             )
+        intended_email = await self._persist_operator_alert_recipient(
+            inquiries,
+            inquiry,
+            planner_email,
+        )
+        if not intended_email:
+            return False
+        notification = inquiry.get("notification")
+        if not isinstance(notification, dict):
+            return False
+        alert = notification.get("operator_alert")
 
         alert_id = self._operator_alert_id(inquiry_id)
         alerts = self._mongo.db["planner_notifications"]
@@ -342,7 +422,6 @@ class StorefrontInquiryService:
                 inquiries,
                 inquiry,
                 str(exc),
-                planner_email=planner_email,
             )
         if not existing:
             alert_metadata = self._operator_alert_metadata(inquiry)
@@ -382,7 +461,6 @@ class StorefrontInquiryService:
                         inquiries,
                         inquiry,
                         str(insert_error),
-                        planner_email=planner_email,
                     )
 
         if not self._operator_alert_matches_inquiry(existing, inquiry):
@@ -395,9 +473,7 @@ class StorefrontInquiryService:
         existing_email = self._normalize_operator_alert_email(
             existing.get("planner_id")
         )
-        previous_email = self._normalize_operator_alert_email(
-            alert.get("planner_email") if isinstance(alert, dict) else None
-        )
+        previous_email = intended_email
         if existing_email != planner_email:
             if not previous_email or existing_email != previous_email:
                 return await self._record_operator_alert_retry(
@@ -451,13 +527,7 @@ class StorefrontInquiryService:
         now = datetime.now(timezone.utc)
         try:
             visible = await inquiries.update_one(
-                {
-                    "_id": inquiry_id,
-                    "planner_id": owner_id,
-                    "notification.status": {
-                        "$in": list(_TERMINAL_NOTIFICATION_STATUSES)
-                    },
-                },
+                self._operator_alert_transition_filter(inquiry),
                 {
                     "$set": {
                         "notification.operator_alert.status": "visible",
