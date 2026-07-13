@@ -246,6 +246,22 @@ class FailOperatorAlertMarkerCollection(FakeCollection):
         return await super().update_one(query, update)
 
 
+class FailOnceOperatorAlertMarkerCollection(FakeCollection):
+    def __init__(self) -> None:
+        super().__init__()
+        self.marker_failures_remaining = 1
+
+    async def update_one(self, query: dict, update: dict) -> SimpleNamespace:
+        if (
+            self.marker_failures_remaining
+            and update.get("$set", {}).get("notification.operator_alert.status")
+            == "visible"
+        ):
+            self.marker_failures_remaining -= 1
+            raise RuntimeError("operator alert marker write failed")
+        return await super().update_one(query, update)
+
+
 class FailOperatorAlertBookkeepingCollection(FailOperatorAlertMarkerCollection):
     async def update_one(self, query: dict, update: dict) -> SimpleNamespace:
         if (
@@ -861,6 +877,112 @@ async def test_operator_alert_marker_failure_does_not_reject_durable_inquiry(
     assert notification["operator_alert"]["next_attempt_at"] > datetime.now(
         timezone.utc
     )
+
+
+@pytest.mark.asyncio
+async def test_operator_alert_reconciliation_reroutes_supported_planner_email_change(
+    monkeypatch,
+):
+    inquiries = FailOnceOperatorAlertMarkerCollection()
+    service, mongo, _storefront, _limiter, _email = make_service(
+        inquiry_collection=inquiries,
+        email_result={"success": False, "error": "email is not configured"},
+    )
+    monkeypatch.setattr(
+        storefront_inquiry_service_module,
+        "STOREFRONT_NOTIFICATION_MAX_DELIVERY_ATTEMPTS",
+        1,
+    )
+
+    result = await service.capture(
+        "luxe-light",
+        inquiry_payload(),
+        client_ip="203.0.113.10",
+        user_agent=None,
+    )
+
+    assert result["success"] is True
+    alert = mongo.db["planner_notifications"].documents[0]
+    assert alert["planner_id"] == "private-planner@example.test"
+    notification = inquiries.documents[0]["notification"]
+    assert notification["operator_alert"]["status"] == "retry_pending"
+    assert notification["operator_alert"]["planner_email"] == (
+        "private-planner@example.test"
+    )
+
+    mongo.db["users"].documents[0]["email"] = "current-planner@example.test"
+    notification["operator_alert"]["next_attempt_at"] = datetime.now(
+        timezone.utc
+    ) - timedelta(seconds=1)
+
+    assert await service.process_pending_notifications(limit=1) == 1
+
+    assert len(mongo.db["planner_notifications"].documents) == 1
+    reconciled = mongo.db["planner_notifications"].documents[0]
+    assert reconciled["planner_id"] == "current-planner@example.test"
+    assert reconciled["metadata"]["source"] == "storefront_inquiry"
+    assert reconciled["metadata"]["inquiry_id"] == str(inquiries.documents[0]["_id"])
+    assert notification["operator_alert"]["status"] == "visible"
+    assert notification["operator_alert"]["planner_email"] == (
+        "current-planner@example.test"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mismatch", ["planner_id", "metadata"])
+async def test_operator_alert_reconciliation_rejects_forged_deterministic_row(
+    mismatch,
+):
+    service, mongo, _storefront, _limiter, email = make_service()
+    payload = inquiry_payload()
+    terminal = pending_inquiry_document(service, payload)
+    terminal["created_at"] = datetime.now(timezone.utc)
+    terminal["notification"] = {
+        "status": "delivery_unknown",
+        "delivery_outcome": "unknown",
+        "error": "provider acknowledgement was lost",
+        "operator_alert": {
+            "status": "pending",
+            "planner_email": "private-planner@example.test",
+        },
+    }
+    inquiries = FakeCollection([terminal])
+    mongo.db.collections["storefront_inquiries"] = inquiries
+    email.inquiries = inquiries
+    forged = {
+        "_id": service._operator_alert_id(terminal["_id"]),
+        "planner_id": (
+            "attacker@example.test"
+            if mismatch == "planner_id"
+            else "private-planner@example.test"
+        ),
+        "type": "delivery_failure",
+        "metadata": {
+            "source": "storefront_inquiry",
+            "inquiry_id": str(terminal["_id"]),
+            "delivery_status": "delivery_unknown",
+            "lead_name": payload.name,
+            "lead_email": (
+                "forged-lead@example.test"
+                if mismatch == "metadata"
+                else str(payload.email)
+            ),
+            "lead_phone": payload.phone,
+            "wedding_date": payload.wedding_date.isoformat(),
+            "storefront_slug": "luxe-light",
+            "delivery_error": "provider acknowledgement was lost",
+        },
+    }
+    forged_snapshot = deepcopy(forged)
+    mongo.db.collections["planner_notifications"] = FakeCollection([forged])
+
+    assert await service.process_pending_notifications(limit=1) == 1
+
+    stored = mongo.db["planner_notifications"].documents[0]
+    assert stored == forged_snapshot
+    operator_alert = inquiries.documents[0]["notification"]["operator_alert"]
+    assert operator_alert["status"] == "retry_pending"
+    assert "does not match" in operator_alert["error"]
 
 
 @pytest.mark.asyncio

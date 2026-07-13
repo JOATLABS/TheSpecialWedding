@@ -205,3 +205,48 @@ async def test_storefront_inquiry_recovery_continues_when_media_recovery_fails(
 
     assert media_calls == 1
     assert inquiry_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_storefront_inquiry_recovery_runs_while_media_recovery_is_hung(
+    monkeypatch,
+):
+    media_started = asyncio.Event()
+    media_cancelled = asyncio.Event()
+    inquiry_ran = asyncio.Event()
+    never_finishes = asyncio.Event()
+
+    class HangingMedia:
+        async def sweep_abandoned_assets(self):
+            media_started.set()
+            try:
+                await never_finishes.wait()
+            finally:
+                media_cancelled.set()
+
+    class RecoveringInquiries:
+        async def process_pending_notifications(self):
+            inquiry_ran.set()
+            return 1
+
+    monkeypatch.setattr(
+        media_module, "storefront_media_service", HangingMedia(), raising=False
+    )
+    monkeypatch.setattr(
+        inquiry_module,
+        "storefront_inquiry_service",
+        RecoveringInquiries(),
+        raising=False,
+    )
+
+    scheduler = asyncio.create_task(main._storefront_media_maintenance_scheduler())
+    try:
+        await asyncio.wait_for(media_started.wait(), timeout=0.5)
+        await asyncio.wait_for(inquiry_ran.wait(), timeout=0.5)
+    finally:
+        scheduler.cancel()
+        await asyncio.gather(scheduler, return_exceptions=True)
+
+    assert scheduler.done()
+    assert scheduler.cancelled()
+    assert media_cancelled.is_set()
