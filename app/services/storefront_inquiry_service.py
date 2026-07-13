@@ -381,6 +381,43 @@ class StorefrontInquiryService:
             )
         return bool(getattr(visible, "matched_count", 0))
 
+    async def _ensure_operator_alert_safely(
+        self,
+        inquiries: Any,
+        *,
+        inquiry: dict | None = None,
+        inquiry_id: Any = None,
+        planner: dict | None = None,
+    ) -> bool:
+        try:
+            terminal = inquiry
+            if terminal is None and inquiry_id is not None:
+                terminal = await inquiries.find_one({"_id": inquiry_id})
+            if not terminal:
+                return False
+            return await self._ensure_operator_alert(
+                inquiries,
+                terminal,
+                planner=planner,
+            )
+        except Exception:
+            # The terminal inquiry already carries a durable pending marker.
+            # Alert reconciliation is best effort on this request and is
+            # retried by the background sweep.
+            logger.exception(
+                "Failed to reconcile storefront inquiry operator alert",
+                extra={
+                    "inquiry_id": str(
+                        inquiry_id
+                        if inquiry_id is not None
+                        else inquiry.get("_id")
+                        if inquiry
+                        else None
+                    )
+                },
+            )
+            return False
+
     async def _quarantine_invalid_inquiry(
         self,
         inquiries: Any,
@@ -420,9 +457,10 @@ class StorefrontInquiryService:
         if not getattr(result, "matched_count", 0):
             return False
         if operator_routable:
-            saved = await inquiries.find_one({"_id": inquiry_id})
-            if saved:
-                await self._ensure_operator_alert(inquiries, saved)
+            await self._ensure_operator_alert_safely(
+                inquiries,
+                inquiry_id=inquiry_id,
+            )
         return True
 
     async def _reconcile_insert_receipt(
@@ -577,9 +615,10 @@ class StorefrontInquiryService:
                 request_hash=request_hash,
             )
             if marked:
-                terminal = await inquiries.find_one({"_id": inquiry_id})
-                if terminal:
-                    await self._ensure_operator_alert(inquiries, terminal)
+                await self._ensure_operator_alert_safely(
+                    inquiries,
+                    inquiry_id=inquiry_id,
+                )
             return marked
         claim = await self._claim_notification(
             inquiries,
@@ -705,13 +744,11 @@ class StorefrontInquiryService:
                 extra={"inquiry_id": str(inquiry_id)},
             )
         if outcome_recorded and notification_status in _TERMINAL_NOTIFICATION_STATUSES:
-            terminal = await inquiries.find_one({"_id": inquiry_id})
-            if terminal:
-                await self._ensure_operator_alert(
-                    inquiries,
-                    terminal,
-                    planner=planner,
-                )
+            await self._ensure_operator_alert_safely(
+                inquiries,
+                inquiry_id=inquiry_id,
+                planner=planner,
+            )
         return True
 
     async def process_pending_notifications(self, *, limit: int = 10) -> int:
@@ -790,7 +827,10 @@ class StorefrontInquiryService:
                     ):
                         processed += 1
                     continue
-                if await self._ensure_operator_alert(inquiries, inquiry):
+                if await self._ensure_operator_alert_safely(
+                    inquiries,
+                    inquiry=inquiry,
+                ):
                     processed += 1
                 continue
             if not all(
