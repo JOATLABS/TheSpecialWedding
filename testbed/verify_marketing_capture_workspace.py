@@ -7,10 +7,8 @@ import argparse
 import os
 import subprocess
 import sys
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import requests
 from pymongo.database import Database
@@ -30,20 +28,19 @@ SETUP_SMOKE_ACCOUNTS = ROOT / "scripts" / "setup_smoke_accounts.py"
 RICH_WORKSPACE_SEEDER = (
     ROOT / "scripts" / "demo-videos" / "seed-demo-video-workspace.py"
 )
-CAPTURE_TIMEZONE = ZoneInfo("America/Chicago")
-DEFAULT_ANCHOR_AT = "2026-09-15T10:00:00"
-PLANNER_EMAIL = "amina+marketing-capture@showcase.thespecialwedding.io"
+DEFAULT_ANCHOR_AT = "2026-07-12T10:00:00"
+PLANNER_EMAIL = "amina@studio.thespecialwedding.io"
 PLANNER_PASSWORD = "CapturePlanner2026!"  # pragma: allowlist secret
 PLANNER_USER_ID = "user_marketing_capture_amina_cole"
-TEAM_EMAIL = "maya+marketing-capture@showcase.thespecialwedding.io"
+TEAM_EMAIL = "maya@studio.thespecialwedding.io"
 TEAM_PASSWORD = "CaptureTeam2026!"  # pragma: allowlist secret
-COUPLE_EMAIL = "sofia.daniel+marketing-capture@showcase.thespecialwedding.io"
+COUPLE_EMAIL = "sofia.daniel@couples.thespecialwedding.io"
 COUPLE_PASSWORD = "CaptureCouple2026!"  # pragma: allowlist secret
 COUPLE_ID = "couple_marketing_capture_sofia_daniel"
 PRIMARY_WEDDING_ID = "wedding_marketing_capture_sofia_daniel"
-PRIMARY_SLUG = "sofia-daniel-showcase"
+PRIMARY_SLUG = "sofia-and-daniel"
 SECONDARY_WEDDING_ID = "wedding_marketing_capture_avery_morgan"
-SECONDARY_SLUG = "avery-morgan-showcase"
+SECONDARY_SLUG = "avery-and-morgan"
 
 
 def _run_python(
@@ -170,7 +167,7 @@ def verify_seeded_workspace(
         and wedding.get("our_story")
         and len(wedding.get("wedding_party") or []) >= 2
         and str(wedding.get("public_site_url") or "").startswith(
-            "https://showcase.thespecialwedding.io"
+            "https://www.thespecialwedding.io"
         ),
         "Public microsite fixture is not capture-ready",
     )
@@ -244,7 +241,7 @@ MARKETING_CAPTURE_E2E_CHECKPOINTS = (
     (
         "Public microsite",
         f"/{PRIMARY_SLUG}",
-        "The public showcase uses approved fictional media on showcase.thespecialwedding.io.",
+        "The public showcase uses approved fictional media on www.thespecialwedding.io.",
     ),
 )
 
@@ -259,10 +256,7 @@ def _non_interactive() -> bool:
 
 
 def _seed_environment(anchor_at: str) -> dict[str, str]:
-    anchor = datetime.fromisoformat(anchor_at.replace("Z", "+00:00"))
-    if anchor.tzinfo is None:
-        anchor = anchor.replace(tzinfo=CAPTURE_TIMEZONE)
-    primary_date = (anchor + timedelta(days=132)).date().isoformat()
+    primary_date = "2027-01-25"
 
     env = dict(os.environ)
     env.update(
@@ -282,6 +276,8 @@ def _seed_environment(anchor_at: str) -> dict[str, str]:
             "SMOKE_PUBLIC_WEDDING_SLUG": PRIMARY_SLUG,
             "SMOKE_WEDDING_COUPLE_NAMES": "Sofia & Daniel",
             "SMOKE_WEDDING_DATE": primary_date,
+            "DEMO_VIDEO_PRIMARY_DATE": primary_date,
+            "DEMO_VIDEO_SECONDARY_DATE": "2027-07-06",
             "SMOKE_COUPLE_EMAIL": COUPLE_EMAIL,
             "SMOKE_COUPLE_PASSWORD": COUPLE_PASSWORD,
             "SMOKE_COUPLE_PARTNER1_NAME": "Sofia",

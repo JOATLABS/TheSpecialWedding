@@ -2,7 +2,7 @@
 """Idempotent cleanup for the isolated marketing-capture workspace.
 
 The reset is deliberately independent of root-admin HTTP authentication. It
-uses the dedicated seed namespace and exact plus-tag identities, so a stale or
+uses the dedicated seed namespace and exact fictional identities, so a stale or
 misconfigured root account cannot broaden what this cleanup is allowed to
 delete.
 """
@@ -24,9 +24,14 @@ from pymongo.database import Database
 ROOT = Path(__file__).resolve().parent.parent
 SEED_SOURCE = "system:marketing_capture_seed"
 SEED_SCOPE = "phase1_showcase_workspace_v1"
-PLANNER_EMAIL = "amina+marketing-capture@showcase.thespecialwedding.io"
-TEAM_EMAIL = "maya+marketing-capture@showcase.thespecialwedding.io"
-COUPLE_EMAIL = "sofia.daniel+marketing-capture@showcase.thespecialwedding.io"
+PLANNER_EMAIL = "amina@studio.thespecialwedding.io"
+TEAM_EMAIL = "maya@studio.thespecialwedding.io"
+COUPLE_EMAIL = "sofia.daniel@couples.thespecialwedding.io"
+LEGACY_EMAILS = (
+    "amina+marketing-capture@showcase.thespecialwedding.io",
+    "maya+marketing-capture@showcase.thespecialwedding.io",
+    "sofia.daniel+marketing-capture@showcase.thespecialwedding.io",
+)
 PRIMARY_WEDDING_ID = "wedding_marketing_capture_sofia_daniel"
 SECONDARY_WEDDING_ID = "wedding_marketing_capture_avery_morgan"
 COUPLE_ID = "couple_marketing_capture_sofia_daniel"
@@ -129,7 +134,7 @@ def assert_no_seeded_survivors(database: Database) -> None:
     identity_checks = {
         "users": {
             "$or": [
-                {"email": {"$in": [PLANNER_EMAIL, TEAM_EMAIL]}},
+                {"email": {"$in": [PLANNER_EMAIL, TEAM_EMAIL, *LEGACY_EMAILS]}},
                 {"_id": TEAM_USER_ID},
             ],
             "seed_source": {"$in": sorted(ALLOWED_IDENTITY_SOURCES)},
@@ -140,11 +145,17 @@ def assert_no_seeded_survivors(database: Database) -> None:
             "seed_source": {"$in": sorted(ALLOWED_IDENTITY_SOURCES)},
         },
         "couple_users": {
-            "$or": [{"_id": COUPLE_ID}, {"email": COUPLE_EMAIL}],
+            "$or": [
+                {"_id": COUPLE_ID},
+                {"email": {"$in": [COUPLE_EMAIL, *LEGACY_EMAILS]}},
+            ],
             "seed_source": {"$in": sorted(ALLOWED_IDENTITY_SOURCES)},
         },
         "team_members": {
-            "$or": [{"_id": TEAM_MEMBER_ID}, {"email": TEAM_EMAIL}],
+            "$or": [
+                {"_id": TEAM_MEMBER_ID},
+                {"email": {"$in": [TEAM_EMAIL, *LEGACY_EMAILS]}},
+            ],
             "seed_source": {"$in": sorted(ALLOWED_IDENTITY_SOURCES)},
         },
         "user_subscriptions": {"_id": SUBSCRIPTION_ID},
@@ -184,7 +195,10 @@ def cleanup_marketing_capture_workspace_state(
             database["couple_users"]
             .delete_many(
                 {
-                    "$or": [{"_id": COUPLE_ID}, {"email": COUPLE_EMAIL}],
+                    "$or": [
+                        {"_id": COUPLE_ID},
+                        {"email": {"$in": [COUPLE_EMAIL, *LEGACY_EMAILS]}},
+                    ],
                     "seed_source": {"$in": sorted(ALLOWED_IDENTITY_SOURCES)},
                 }
             )
@@ -205,7 +219,10 @@ def cleanup_marketing_capture_workspace_state(
             database["team_members"]
             .delete_many(
                 {
-                    "$or": [{"_id": TEAM_MEMBER_ID}, {"email": TEAM_EMAIL}],
+                    "$or": [
+                        {"_id": TEAM_MEMBER_ID},
+                        {"email": {"$in": [TEAM_EMAIL, *LEGACY_EMAILS]}},
+                    ],
                     "seed_source": {"$in": sorted(ALLOWED_IDENTITY_SOURCES)},
                 }
             )
@@ -221,7 +238,7 @@ def cleanup_marketing_capture_workspace_state(
             .delete_many(
                 {
                     "$or": [
-                        {"email": {"$in": [PLANNER_EMAIL, TEAM_EMAIL]}},
+                        {"email": {"$in": [PLANNER_EMAIL, TEAM_EMAIL, *LEGACY_EMAILS]}},
                         {"_id": TEAM_USER_ID},
                     ],
                     "seed_source": {"$in": sorted(ALLOWED_IDENTITY_SOURCES)},

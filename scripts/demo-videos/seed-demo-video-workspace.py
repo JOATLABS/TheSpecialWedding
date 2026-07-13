@@ -34,25 +34,27 @@ MARKETING_CAPTURE_SEED_SCOPE = "phase1_showcase_workspace_v1"
 MARKETING_CAPTURE_TIMEZONE_NAME = "America/Chicago"
 MARKETING_CAPTURE_TIMEZONE = ZoneInfo(MARKETING_CAPTURE_TIMEZONE_NAME)
 MARKETING_CAPTURE_PLANNER_EMAIL = (
-    "amina+marketing-capture@showcase.thespecialwedding.io"
+    "amina@studio.thespecialwedding.io"
 )
-MARKETING_CAPTURE_TEAM_EMAIL = "maya+marketing-capture@showcase.thespecialwedding.io"
+MARKETING_CAPTURE_TEAM_EMAIL = "maya@studio.thespecialwedding.io"
 MARKETING_CAPTURE_TEAM_PASSWORD = "CaptureTeam2026!"
 MARKETING_CAPTURE_COMPANY = "Marigold & Co. Weddings"
 MARKETING_CAPTURE_PLANNER_FIRST_NAME = "Amina"
 MARKETING_CAPTURE_PLANNER_LAST_NAME = "Cole"
-MARKETING_CAPTURE_PUBLIC_ORIGIN = "https://showcase.thespecialwedding.io"
-DEFAULT_CAPTURE_ANCHOR_LOCAL = "2026-09-15T10:00:00"
+MARKETING_CAPTURE_PUBLIC_ORIGIN = "https://www.thespecialwedding.io"
+DEFAULT_CAPTURE_ANCHOR_LOCAL = "2026-07-12T10:00:00"
 DEFAULT_PRIMARY_WEDDING_ID = "wedding_marketing_capture_sofia_daniel"
-DEFAULT_PRIMARY_SLUG = "sofia-daniel-showcase"
+DEFAULT_PRIMARY_SLUG = "sofia-and-daniel"
+DEFAULT_PRIMARY_DATE = "2027-01-25"
 DEFAULT_PRIMARY_COUPLE_NAMES = "Sofia & Daniel"
 DEFAULT_PRIMARY_PARTNER1_NAME = "Sofia"
 DEFAULT_PRIMARY_PARTNER2_NAME = "Daniel"
 DEMO_COUPLE_ID = "couple_marketing_capture_sofia_daniel"
-DEMO_COUPLE_EMAIL = "sofia.daniel+marketing-capture@showcase.thespecialwedding.io"
+DEMO_COUPLE_EMAIL = "sofia.daniel@couples.thespecialwedding.io"
 DEMO_COUPLE_PASSWORD = "CaptureCouple2026!"
 DEFAULT_SECONDARY_WEDDING_ID = "wedding_marketing_capture_avery_morgan"
-DEFAULT_SECONDARY_SLUG = "avery-morgan-showcase"
+DEFAULT_SECONDARY_SLUG = "avery-and-morgan"
+DEFAULT_SECONDARY_DATE = "2027-07-06"
 DEFAULT_SECONDARY_COUPLE_NAMES = "Avery & Morgan"
 NON_PRODUCTION_ENVIRONMENTS = {"development", "dev", "local", "test", "testing", "ci"}
 DEMO_SUBSCRIPTION_ID = "marketing_capture_signature_subscription"
@@ -89,7 +91,7 @@ DEMO_VENDOR_DIRECTORY_FIXTURES = [
         "contracted_amount": 6800.0,
         "paid_amount": 1700.0,
         "contract_title": "Photography Services Agreement",
-        "contract_number": "MCW-SHOWCASE-001",
+        "contract_number": "MCW-2027-001",
         "contract_status": "sent",
         "deposit_amount": 1700,
         "city": "Chicago",
@@ -120,7 +122,7 @@ DEMO_VENDOR_DIRECTORY_FIXTURES = [
         "contracted_amount": 9200.0,
         "paid_amount": 3000.0,
         "contract_title": "Floral & Decor Production Agreement",
-        "contract_number": "MCW-SHOWCASE-002",
+        "contract_number": "MCW-2027-002",
         "contract_status": "signed",
         "deposit_amount": 3000,
         "city": "Chicago",
@@ -151,7 +153,7 @@ DEMO_VENDOR_DIRECTORY_FIXTURES = [
         "contracted_amount": 1500.0,
         "paid_amount": 500.0,
         "contract_title": "Master of Ceremonies Agreement",
-        "contract_number": "MCW-SHOWCASE-003",
+        "contract_number": "MCW-2027-003",
         "contract_status": "viewed",
         "deposit_amount": 500,
         "city": "Oklahoma City",
@@ -178,7 +180,7 @@ DEMO_VENDOR_DIRECTORY_FIXTURES = [
         "contracted_amount": 42000.0,
         "paid_amount": 12000.0,
         "contract_title": "Venue Rental & Bar Service Agreement",
-        "contract_number": "MCW-SHOWCASE-004",
+        "contract_number": "MCW-2027-004",
         "contract_status": "draft",
         "deposit_amount": 12000,
         "city": "Oklahoma City",
@@ -255,7 +257,7 @@ MARKETING_CAPTURE_GALLERY_ASSETS = [
         "url": f"{MARKETING_CAPTURE_PUBLIC_ORIGIN}/demo-gallery/elegant-couple-stairs.jpg",
         "alt": "Sofia and Daniel on the garden terrace",
         "approved_for_marketing": True,
-        "credit": "Approved fictional showcase artwork",
+        "credit": "Marigold & Co. Weddings",
     },
     {
         "_id": ObjectId("67c800000000000000000002"),
@@ -263,7 +265,7 @@ MARKETING_CAPTURE_GALLERY_ASSETS = [
         "url": f"{MARKETING_CAPTURE_PUBLIC_ORIGIN}/demo-gallery/elegant-ceremony-aisle.jpg",
         "alt": "Garden ceremony aisle at the Glasshouse",
         "approved_for_marketing": True,
-        "credit": "Approved fictional showcase artwork",
+        "credit": "Marigold & Co. Weddings",
     },
     {
         "_id": ObjectId("67c800000000000000000003"),
@@ -271,7 +273,7 @@ MARKETING_CAPTURE_GALLERY_ASSETS = [
         "url": f"{MARKETING_CAPTURE_PUBLIC_ORIGIN}/demo-gallery/elegant-reception-table.jpg",
         "alt": "Candlelit reception table design",
         "approved_for_marketing": True,
-        "credit": "Approved fictional showcase artwork",
+        "credit": "Marigold & Co. Weddings",
     },
 ]
 _VENUE_PLAN_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000"><rect width="1600" height="1000" fill="#f7f4ef"/><rect x="80" y="80" width="1440" height="840" rx="24" fill="#fffdf9" stroke="#9a8f80" stroke-width="8"/><path d="M620 80h360v130H620z" fill="#e8dfd2"/><text x="800" y="155" text-anchor="middle" font-family="Arial" font-size="34" fill="#4a4038">Ceremony stage</text><path d="M660 430h280v190H660z" fill="#ead3cf"/><text x="800" y="530" text-anchor="middle" font-family="Arial" font-size="30" fill="#6f3f3a">Dance floor</text><path d="M80 760h120v160H80z" fill="#d9e6de"/><text x="140" y="845" text-anchor="middle" font-family="Arial" font-size="22" fill="#315a46">Entry</text></svg>"""
@@ -292,7 +294,7 @@ def _configure_anchor(anchor_at: str) -> datetime:
         parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError as exc:
         raise RuntimeError(
-            "--anchor-at must be an ISO-8601 datetime, for example 2026-09-15T10:00:00"
+            "--anchor-at must be an ISO-8601 datetime, for example 2026-07-12T10:00:00"
         ) from exc
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=MARKETING_CAPTURE_TIMEZONE)
@@ -467,7 +469,7 @@ def _guest_doc(
     invited_days_ago: int,
     plus_ones: int = 0,
     table_id: str | None = None,
-    email_domain: str = "guest.showcase.thespecialwedding.io",
+    email_domain: str = "guests.thespecialwedding.io",
 ) -> dict[str, Any]:
     guest_id = ObjectId(
         hashlib.sha256(f"{wedding_id}:{index}".encode("utf-8")).hexdigest()[:24]
@@ -734,11 +736,11 @@ async def _upsert_wedding(
         "registries": [
             {
                 "name": "Honeymoon Fund",
-                "url": "https://registry.showcase.thespecialwedding.io/honeymoon",
+                "url": "https://registry.thespecialwedding.io/honeymoon",
             },
             {
                 "name": "Home Essentials",
-                "url": "https://registry.showcase.thespecialwedding.io/home",
+                "url": "https://registry.thespecialwedding.io/home",
             },
         ],
         "faqs": [
@@ -1143,7 +1145,7 @@ async def _seed_communications_fixture(
             {
                 "_id": ObjectId("67cb00000000000000000001"),
                 "wedding_id": primary_id,
-                "to": "family.hosts@showcase.thespecialwedding.io",
+                "to": "family.hosts@guests.thespecialwedding.io",
                 "subject": f"{couple_names} - Final Weekend Details",
                 "message": "Final schedule, venue notes, and FAQ link shared with family hosts.",
                 "html_content": "<p>Final schedule, venue notes, and FAQ link shared with family hosts.</p>",
@@ -1175,12 +1177,12 @@ async def _seed_communications_fixture(
         {
             "_id": ObjectId("67cc00000000000000000001"),
             "resend_email_id": "email_marketing_capture_guest_question",
-            "from_address": "amara.bennett@guest.showcase.thespecialwedding.io",
+            "from_address": "amara.bennett@guests.thespecialwedding.io",
             "from_name": "Amara Bennett",
             "to_address": (
-                f"reply+{wedding_slug}--{guest_id}@showcase.thespecialwedding.io"
+                f"reply+{wedding_slug}--{guest_id}@messages.thespecialwedding.io"
                 if guest_id
-                else f"reply+{wedding_slug}@showcase.thespecialwedding.io"
+                else f"reply+{wedding_slug}@messages.thespecialwedding.io"
             ),
             "subject": "Shuttle pickup time for the wedding weekend",
             "attachments_metadata": [],
@@ -1263,7 +1265,7 @@ async def _seed_communications_fixture(
             },
             {
                 "_id": ObjectId("67cd00000000000000000002"),
-                "ticket_number": "TKT-SHOWCASE-1042",
+                "ticket_number": "TKT-2026-1042",
                 "subject": "Review custom RSVP wording",
                 "description": (
                     "Please confirm the guest-facing arrival wording before the "
@@ -1411,7 +1413,7 @@ async def _seed_people_and_activity(
             message="Amara Bennett accepted the invitation (+1 guest)",
             activity_type="rsvp_received",
             hours_ago=2,
-            actor_email="amara.bennett@guest.showcase.thespecialwedding.io",
+            actor_email="amara.bennett@guests.thespecialwedding.io",
         ),
         _activity_doc(
             key="reminder_batch",
@@ -3171,7 +3173,7 @@ async def _seed_client_contract_portal_fixture(
                 "due_date": now - timedelta(days=7),
                 "status": "succeeded",
                 "paid_at": now - timedelta(days=7),
-                "receipt_url": "https://payments.showcase.thespecialwedding.io/receipts/demo-retainer",
+                "receipt_url": "https://payments.thespecialwedding.io/receipts/planning-retainer",
                 "created_at": now - timedelta(days=11),
                 "updated_at": now - timedelta(days=7),
                 "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
@@ -3577,10 +3579,10 @@ def main() -> None:
     global _CAPTURE_ANCHOR_UTC
     _CAPTURE_ANCHOR_UTC = _configure_anchor(args.anchor_at)
     args.primary_date = args.primary_date or _demo_env(
-        "PRIMARY_DATE", _date_from_now(132)
+        "PRIMARY_DATE", DEFAULT_PRIMARY_DATE
     )
     args.secondary_date = args.secondary_date or _demo_env(
-        "SECONDARY_DATE", _date_from_now(294)
+        "SECONDARY_DATE", DEFAULT_SECONDARY_DATE
     )
     asyncio.run(seed_demo_workspace(args))
 
