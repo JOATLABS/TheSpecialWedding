@@ -52,6 +52,7 @@ async def test_send_email_offloads_synchronous_resend_network_io(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_send_email_passes_provider_idempotency_options(monkeypatch):
+    monkeypatch.setenv("RESEND_FROM_EMAIL", "noreply@thespecialwedding.io")
     service = ResendEmailService.__new__(ResendEmailService)
     service.configured = True
     service.email_log_collection = RecordingEmailLog()
