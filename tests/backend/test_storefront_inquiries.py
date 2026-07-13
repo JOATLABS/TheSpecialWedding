@@ -45,6 +45,9 @@ def _matches(document: dict, query: dict) -> bool:
             continue
         actual = _get_path(document, key)
         if isinstance(expected, dict):
+            has_operator = any(part.startswith("$") for part in expected)
+            if not has_operator and (actual is _MISSING or actual != expected):
+                return False
             if "$exists" in expected and (
                 (actual is not _MISSING) is not bool(expected["$exists"])
             ):
@@ -225,8 +228,8 @@ class FailOnceUsersCollection(FakeCollection):
 
 
 class FailOnceFindCollection(FakeCollection):
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, documents: list[dict] | None = None) -> None:
+        super().__init__(documents)
         self.failures_remaining = 1
 
     async def find_one(self, query: dict, *_args, **_kwargs) -> dict | None:
@@ -234,6 +237,19 @@ class FailOnceFindCollection(FakeCollection):
             self.failures_remaining -= 1
             raise RuntimeError("transient operator alert lookup failure")
         return await super().find_one(query)
+
+
+class CancelOnceAfterInsertCollection(FakeCollection):
+    def __init__(self) -> None:
+        super().__init__()
+        self.cancellations_remaining = 1
+
+    async def insert_one(self, document: dict) -> SimpleNamespace:
+        result = await super().insert_one(document)
+        if self.cancellations_remaining:
+            self.cancellations_remaining -= 1
+            raise asyncio.CancelledError
+        return result
 
 
 class FailOperatorAlertMarkerCollection(FakeCollection):
@@ -922,6 +938,66 @@ async def test_operator_alert_reconciliation_reroutes_supported_planner_email_ch
     assert reconciled["planner_id"] == "current-planner@example.test"
     assert reconciled["metadata"]["source"] == "storefront_inquiry"
     assert reconciled["metadata"]["inquiry_id"] == str(inquiries.documents[0]["_id"])
+    assert notification["operator_alert"]["status"] == "visible"
+    assert notification["operator_alert"]["planner_email"] == (
+        "current-planner@example.test"
+    )
+
+
+@pytest.mark.asyncio
+async def test_alert_insert_cancellation_preserves_recipient_for_email_change(
+    monkeypatch,
+):
+    service, mongo, _storefront, _limiter, _email = make_service(
+        email_result={"success": False, "error": "email is not configured"},
+    )
+    alerts = CancelOnceAfterInsertCollection()
+    mongo.db.collections["planner_notifications"] = alerts
+    monkeypatch.setattr(
+        storefront_inquiry_service_module,
+        "STOREFRONT_NOTIFICATION_MAX_DELIVERY_ATTEMPTS",
+        1,
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await service.capture(
+            "luxe-light",
+            inquiry_payload(),
+            client_ip="203.0.113.10",
+            user_agent=None,
+        )
+
+    inquiries = mongo.db["storefront_inquiries"]
+    assert len(inquiries.documents) == 1
+    notification = inquiries.documents[0]["notification"]
+    assert notification["status"] == "failed"
+    assert notification["operator_alert"]["status"] == "pending"
+    assert notification["operator_alert"]["planner_email"] == (
+        "private-planner@example.test"
+    )
+    assert len(alerts.documents) == 1
+    assert alerts.documents[0]["planner_id"] == "private-planner@example.test"
+
+    mongo.db["users"].documents[0]["email"] = "current-planner@example.test"
+    recovering_alerts = FailOnceFindCollection(alerts.documents)
+    mongo.db.collections["planner_notifications"] = recovering_alerts
+
+    assert await service.process_pending_notifications(limit=1) == 1
+
+    assert notification["operator_alert"]["status"] == "retry_pending"
+    assert notification["operator_alert"]["planner_email"] == (
+        "private-planner@example.test"
+    )
+    notification["operator_alert"]["next_attempt_at"] = datetime.now(
+        timezone.utc
+    ) - timedelta(seconds=1)
+
+    assert await service.process_pending_notifications(limit=1) == 1
+
+    assert len(recovering_alerts.documents) == 1
+    assert recovering_alerts.documents[0]["planner_id"] == (
+        "current-planner@example.test"
+    )
     assert notification["operator_alert"]["status"] == "visible"
     assert notification["operator_alert"]["planner_email"] == (
         "current-planner@example.test"
