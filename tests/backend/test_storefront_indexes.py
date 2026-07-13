@@ -98,6 +98,20 @@ async def test_storefront_indexes_are_unique_named_and_slug_is_legacy_safe(
         ("owner_id", 1),
     ]
     assert "expireAfterSeconds" not in global_reaping_lease[1]
+    global_attach_lease = by_name["idx_storefront_assets_state_attach_lease_owner"]
+    assert global_attach_lease[0] == [
+        ("state", 1),
+        ("attach_claimed_at", 1),
+        ("owner_id", 1),
+    ]
+    assert "expireAfterSeconds" not in global_attach_lease[1]
+    global_claim_due = by_name["idx_storefront_assets_state_claim_due_owner"]
+    assert global_claim_due[0] == [
+        ("state", 1),
+        ("claim_reconcile_due_at", 1),
+        ("owner_id", 1),
+    ]
+    assert "expireAfterSeconds" not in global_claim_due[1]
     detached_candidate = by_name["idx_storefront_asset_cleanup_candidate_unique"]
     assert detached_candidate[0] == [("owner_id", 1), ("candidate_key", 1)]
     assert detached_candidate[1]["unique"] is True

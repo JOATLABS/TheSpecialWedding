@@ -308,6 +308,7 @@ class StorefrontDomainService:
         return {
             "_id": record["_id"],
             "planner_id": owner_id,
+            "hostname": record.get("hostname"),
             "provider_hostname_id": record.get("provider_hostname_id"),
             "status": record.get("status"),
             "provider_status": record.get("provider_status"),
@@ -864,6 +865,7 @@ class StorefrontDomainService:
                         "provisioning_started_at": "",
                         "provisioning_absent_observations": "",
                         "provisioning_unknown_at": "",
+                        "provider_missing_at": "",
                     },
                 },
             )
@@ -982,6 +984,43 @@ class StorefrontDomainService:
         try:
             provider_result = await self._cloudflare.get_custom_hostname(provider_id)
         except CloudflareServiceError as exc:
+            if self._provider_not_found(exc):
+                now = datetime.now(timezone.utc)
+                applied, superseding_result = await self._write_refresh_observation(
+                    collection,
+                    record,
+                    owner_id,
+                    {
+                        "$set": {
+                            "status": "pending",
+                            "provider_status": "not_found",
+                            "ssl_status": "pending",
+                            "ownership_verification": None,
+                            "ownership_verification_http": None,
+                            "ssl_validation_records": [],
+                            "provider_missing_at": now,
+                            "last_error": exc.message,
+                            "updated_at": now,
+                        },
+                        "$unset": {
+                            "provider_hostname_id": "",
+                            "provisioning_absent_observations": "",
+                            "provisioning_reconciled_at": "",
+                            "provisioning_unknown_at": "",
+                        },
+                    },
+                )
+                if not applied:
+                    return superseding_result
+                missing = await collection.find_one(
+                    {
+                        "_id": record["_id"],
+                        "planner_id": owner_id,
+                        "hostname": record.get("hostname"),
+                        "provider_hostname_id": {"$exists": False},
+                    }
+                )
+                return self._serialize(missing) if missing else None
             applied, superseding_result = await self._write_refresh_observation(
                 collection,
                 record,

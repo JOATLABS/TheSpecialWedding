@@ -87,7 +87,7 @@ class StorefrontMediaService:
         self._mongo = mongo_client or mongo
         self._storage = storage or MediaStorage()
         self._entitlements = entitlement_service or storefront_entitlement_service
-        self._detached_cleanup_first = True
+        self._maintenance_queue_cursor = 0
 
     @staticmethod
     def _owner_data(owner: Any) -> dict:
@@ -3145,6 +3145,227 @@ class StorefrontMediaService:
                 processed += 1
         return processed, len(candidates)
 
+    @staticmethod
+    def _due_settings_claim_query() -> dict[str, Any]:
+        """Return stale claim receipts eligible for global reconciliation."""
+
+        now = datetime.now(timezone.utc)
+        stale_before = now - timedelta(seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS)
+        return {
+            "$or": [
+                {
+                    "state": "attaching",
+                    "attach_claim_id": {"$type": "string"},
+                    "$or": [
+                        {"attach_claimed_at": {"$lte": stale_before}},
+                        {
+                            "attach_claimed_at": {"$exists": False},
+                            "updated_at": {"$lte": stale_before},
+                        },
+                    ],
+                },
+                {
+                    "state": "attached",
+                    "attached_claim_id": {"$type": "string"},
+                    "$or": [
+                        {"claim_reconcile_due_at": {"$lte": now}},
+                        {
+                            "claim_reconcile_due_at": {"$exists": False},
+                            "updated_at": {"$lte": stale_before},
+                        },
+                        {
+                            "claim_reconcile_due_at": {"$exists": False},
+                            "updated_at": {"$exists": False},
+                        },
+                    ],
+                },
+            ]
+        }
+
+    @staticmethod
+    def _maintenance_owner(owner_id: str) -> dict[str, str]:
+        """Build an internal owner identity without consulting entitlements."""
+
+        return {"_id": owner_id, "role": "wedding_planner"}
+
+    async def _reconcile_settings_claim_candidate(self, asset: dict) -> bool:
+        """Reconcile one stale claim against canonical settings with exact fences."""
+
+        owner_id = asset.get("owner_id")
+        slot = asset.get("slot")
+        state = asset.get("state")
+        if (
+            not isinstance(owner_id, str)
+            or slot not in STOREFRONT_ASSET_SLOTS
+            or state not in {"attaching", "attached"}
+        ):
+            return False
+        token_field = "attach_claim_id" if state == "attaching" else "attached_claim_id"
+        claim_id = asset.get(token_field)
+        if not isinstance(claim_id, str) or not claim_id:
+            return False
+
+        settings = self._mongo.db["storefront_settings"]
+        assets = self._mongo.db["storefront_assets"]
+        settings_row = await settings.find_one({"planner_id": owner_id})
+        settings_row = settings_row or {}
+        owner = self._maintenance_owner(owner_id)
+        asset_id = str(asset["_id"])
+
+        parsed_manifest = self._entries_from_manifest(
+            settings_row.get(PENDING_ASSET_GROUP_FIELD)
+        )
+        if parsed_manifest and parsed_manifest[0] == claim_id:
+            manifest_claim_id, entries, values = parsed_manifest
+            if any(
+                entry["asset_id"] == asset_id and entry["slot"] == slot
+                for entry in entries
+            ):
+                await self.reconcile_settings_asset_claims(
+                    owner,
+                    {
+                        "owner_id": owner_id,
+                        "claim_id": manifest_claim_id,
+                        "claimed_assets": entries,
+                        "values": values,
+                        "manifest": settings_row[PENDING_ASSET_GROUP_FIELD],
+                    },
+                )
+                return True
+
+        pending_entries: list[dict[str, str]] = []
+        for pending_slot in ("hero", "about"):
+            if settings_row.get(f"pending_{pending_slot}_claim_id") != claim_id:
+                continue
+            pending_asset_id = settings_row.get(f"pending_{pending_slot}_asset_id")
+            if isinstance(pending_asset_id, str):
+                pending_entries.append(
+                    {
+                        "asset_id": pending_asset_id,
+                        "slot": pending_slot,
+                        "field_name": f"{pending_slot}_asset_id",
+                    }
+                )
+        if pending_entries:
+            await self._rollback_settings_asset_group(
+                owner,
+                {
+                    "owner_id": owner_id,
+                    "claim_id": claim_id,
+                    "claimed_assets": pending_entries,
+                },
+            )
+            return True
+
+        stable_reference = settings_row.get(f"{slot}_asset_id") == asset_id
+        now = datetime.now(timezone.utc)
+        if state == "attaching":
+            target_state = "attached" if stable_reference else "ready"
+            set_fields: dict[str, Any] = {
+                "state": target_state,
+                "updated_at": now,
+            }
+            unset_fields = {
+                "attach_claim_id": "",
+                "attach_claimed_at": "",
+            }
+            if stable_reference:
+                set_fields.update(
+                    {
+                        "attached_claim_id": claim_id,
+                        "attached_at": now,
+                        "claim_reconcile_due_at": now
+                        + timedelta(seconds=STOREFRONT_READY_ASSET_CLEANUP_SECONDS),
+                    }
+                )
+                unset_fields["cleanup_due_at"] = ""
+            else:
+                set_fields["cleanup_due_at"] = now + timedelta(
+                    seconds=STOREFRONT_READY_ASSET_CLEANUP_SECONDS
+                )
+                unset_fields.update(
+                    {
+                        "attached_claim_id": "",
+                        "attached_at": "",
+                        "claim_reconcile_due_at": "",
+                    }
+                )
+            result = await assets.update_one(
+                {
+                    "_id": asset["_id"],
+                    "owner_id": owner_id,
+                    "slot": slot,
+                    "state": "attaching",
+                    "attach_claim_id": claim_id,
+                    "attach_claimed_at": asset.get("attach_claimed_at"),
+                },
+                {"$set": set_fields, "$unset": unset_fields},
+            )
+            return bool(getattr(result, "modified_count", 0))
+
+        exact_filter = {
+            "_id": asset["_id"],
+            "owner_id": owner_id,
+            "slot": slot,
+            "state": "attached",
+            "attached_claim_id": claim_id,
+            "updated_at": asset.get("updated_at"),
+        }
+        if stable_reference:
+            await assets.update_one(
+                exact_filter,
+                {
+                    "$set": {
+                        "claim_reconciled_at": now,
+                        "claim_reconcile_due_at": now
+                        + timedelta(seconds=STOREFRONT_READY_ASSET_CLEANUP_SECONDS),
+                    }
+                },
+            )
+            return False
+
+        released = await assets.update_one(
+            exact_filter,
+            {
+                "$set": {
+                    "state": "ready",
+                    "cleanup_due_at": now
+                    + timedelta(seconds=STOREFRONT_READY_ASSET_CLEANUP_SECONDS),
+                    "updated_at": now,
+                },
+                "$unset": {
+                    "attached_claim_id": "",
+                    "attached_at": "",
+                    "claim_reconcile_due_at": "",
+                    "claim_reconciled_at": "",
+                },
+            },
+        )
+        return bool(getattr(released, "modified_count", 0))
+
+    async def _sweep_settings_claims(self, *, limit: int) -> tuple[int, int]:
+        assets = self._mongo.db["storefront_assets"]
+        candidates = await assets.find(self._due_settings_claim_query()).to_list(
+            length=limit
+        )
+        processed = 0
+        for asset in candidates:
+            try:
+                if await self._reconcile_settings_claim_candidate(asset):
+                    processed += 1
+            except HTTPException as exc:
+                if exc.status_code not in {
+                    status.HTTP_409_CONFLICT,
+                    status.HTTP_503_SERVICE_UNAVAILABLE,
+                }:
+                    raise
+                logger.info(
+                    "Storefront asset %s settings claim remains pending for owner %s",
+                    asset.get("_id"),
+                    asset.get("owner_id"),
+                )
+        return processed, len(candidates)
+
     async def sweep_abandoned_assets(
         self, *, limit: int = STOREFRONT_MAINTENANCE_BATCH_SIZE
     ) -> int:
@@ -3156,38 +3377,42 @@ class StorefrontMediaService:
             or not 1 <= limit <= 500
         ):
             raise ValueError("Storefront maintenance limit must be between 1 and 500")
-        detached_first = self._detached_cleanup_first
-        self._detached_cleanup_first = not detached_first
-        primary_limit = limit if limit == 1 else limit - 1
 
-        detached_processed = 0
-        detached_attempted = 0
-        asset_processed = 0
-        asset_attempted = 0
-        if detached_first:
-            (
-                detached_processed,
-                detached_attempted,
-            ) = await self._sweep_detached_candidate_receipts(limit=primary_limit)
-            remaining = limit - detached_attempted
-            if remaining:
-                asset_processed, asset_attempted = await self._sweep_due_cleanup_assets(
-                    owner_id=None,
-                    limit=remaining,
-                )
-        else:
-            asset_processed, asset_attempted = await self._sweep_due_cleanup_assets(
+        async def sweep_cleanup_assets(*, limit: int) -> tuple[int, int]:
+            return await self._sweep_due_cleanup_assets(
                 owner_id=None,
-                limit=primary_limit,
+                limit=limit,
             )
-            remaining = limit - asset_attempted
-            if remaining:
-                (
-                    detached_processed,
-                    detached_attempted,
-                ) = await self._sweep_detached_candidate_receipts(limit=remaining)
 
-        return detached_processed + asset_processed
+        queues = (
+            self._sweep_detached_candidate_receipts,
+            sweep_cleanup_assets,
+            self._sweep_settings_claims,
+        )
+        start = self._maintenance_queue_cursor % len(queues)
+        queue_order = [*range(start, len(queues)), *range(0, start)]
+        remaining = limit
+        processed = 0
+        last_attempted_queue: int | None = None
+
+        for position, queue_index in enumerate(queue_order):
+            if remaining <= 0:
+                break
+            queues_after = len(queue_order) - position - 1
+            queue_limit = (
+                remaining if remaining == 1 else max(1, remaining - queues_after)
+            )
+            queue_processed, queue_attempted = await queues[queue_index](
+                limit=queue_limit
+            )
+            processed += queue_processed
+            remaining -= queue_attempted
+            if queue_attempted:
+                last_attempted_queue = queue_index
+
+        next_queue = start if last_attempted_queue is None else last_attempted_queue
+        self._maintenance_queue_cursor = (next_queue + 1) % len(queues)
+        return processed
 
     async def _recover_abandoned_cleanable_assets(self, owner: Any) -> None:
         """Use the same token-fenced sweep for the current owner."""

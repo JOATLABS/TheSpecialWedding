@@ -806,6 +806,90 @@ async def test_refresh_requires_both_hostname_and_ssl_active(
 
 
 @pytest.mark.asyncio
+async def test_refresh_provider_not_found_revokes_route_and_reprovisions_fresh_id(
+    domain_setup,
+):
+    service, mongo, _, cloudflare = domain_setup
+    await service.connect(_owner(), "events.example")
+    cloudflare.status_result["status"] = "active"
+    cloudflare.status_result["ssl"]["status"] = "active"
+    await service.refresh(_owner())
+    assert await service.resolve_active_hostname("events.example") is not None
+
+    cloudflare.status_error = CloudflareServiceError(
+        operation="get_custom_hostname",
+        kind="provider",
+        message="Cloudflare could not find the hostname",
+        provider_status_code=404,
+        errors=({"code": 1000, "message": "not found"},),
+    )
+
+    missing = await service.refresh(_owner())
+
+    assert missing["status"] == "pending"
+    assert missing["provider_status"] == "not_found"
+    assert missing["ssl_status"] == "pending"
+    assert await service.resolve_active_hostname("events.example") is None
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert "provider_hostname_id" not in stored
+
+    cloudflare.status_error = None
+    cloudflare.create_result["id"] = "cf-hostname-2"
+    reconnected = await service.connect(_owner(), "events.example")
+
+    assert reconnected["status"] == "pending"
+    assert cloudflare.created == ["events.example", "events.example"]
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["provider_hostname_id"] == "cf-hostname-2"
+    assert stored["provider_hostname_id"] != "cf-hostname-1"
+    cloudflare.status_result["id"] = "cf-hostname-2"
+    await service.refresh(_owner())
+    assert cloudflare.read[-1] == "cf-hostname-2"
+
+
+@pytest.mark.asyncio
+async def test_refresh_provider_not_found_is_fenced_from_rebound_hostname(
+    domain_setup, monkeypatch
+):
+    service, mongo, _, cloudflare = domain_setup
+    await service.connect(_owner(), "events.example")
+    cloudflare.status_result["status"] = "active"
+    cloudflare.status_result["ssl"]["status"] = "active"
+    await service.refresh(_owner())
+
+    refresh_started = asyncio.Event()
+    release_refresh = asyncio.Event()
+
+    async def delayed_missing(_hostname_id: str) -> dict:
+        refresh_started.set()
+        await release_refresh.wait()
+        raise CloudflareServiceError(
+            operation="get_custom_hostname",
+            kind="provider",
+            message="Cloudflare could not find the hostname",
+            provider_status_code=404,
+        )
+
+    monkeypatch.setattr(cloudflare, "get_custom_hostname", delayed_missing)
+    refresh_task = asyncio.create_task(service.refresh(_owner()))
+    await refresh_started.wait()
+    mongo.raw.storefront_domains.update_one(
+        {"planner_id": OWNER_ID},
+        {"$set": {"hostname": "successor.example"}},
+    )
+    release_refresh.set()
+
+    with pytest.raises(HTTPException) as conflict:
+        await refresh_task
+
+    assert conflict.value.status_code == 409
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["hostname"] == "successor.example"
+    assert stored["provider_hostname_id"] == "cf-hostname-1"
+    assert stored["status"] == "active"
+
+
+@pytest.mark.asyncio
 async def test_refresh_rejects_provider_identity_drift_without_activating_mapping(
     domain_setup,
 ):
