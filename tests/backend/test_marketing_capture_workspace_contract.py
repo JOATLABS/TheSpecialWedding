@@ -54,7 +54,9 @@ def test_marketing_seed_is_isolated_and_does_not_rebrand_an_arbitrary_planner():
     assert "system:marketing_capture_seed" in source
     assert "Marigold & Co. Weddings" in source
     assert "Amina" in source and "Cole" in source
-    assert "showcase.thespecialwedding.io" in source
+    assert "www.thespecialwedding.io" in source
+    assert "marketing-capture@" not in source
+    assert "MCW-SHOWCASE" not in source
     assert "--anchor-at" in source
 
     forbidden_visible_fixture_copy = (

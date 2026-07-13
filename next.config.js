@@ -33,6 +33,15 @@ const nextConfig = {
   images: {
     formats: ['image/avif', 'image/webp'],
     qualities: [75, 90],
+    localPatterns: [
+      {
+        pathname: '/**',
+        search: '',
+      },
+      {
+        pathname: '/marketing/product-proof/**',
+      },
+    ],
     remotePatterns,
   },
   transpilePackages: ['@hello-pangea/dnd'],
