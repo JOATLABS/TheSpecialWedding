@@ -1,9 +1,12 @@
-import os
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from app.constants.marketing_capture_media import (
+    allow_local_demo_gallery_fallback,
+    gallery_fallback_items_for_wedding,
+)
 from app.dependencies.guest_access import get_guest_access_session
 from app.services.gallery_media_service import GalleryUploadService
 from app.services.wedding_service import WeddingService
@@ -11,26 +14,6 @@ from app.services.wedding_service import WeddingService
 router = APIRouter()
 gallery_service = GalleryUploadService()
 wedding_service = WeddingService()
-DEMO_VIDEO_SEED_SOURCE = "system:demo_video_seed"
-NON_PRODUCTION_ENVIRONMENTS = {"development", "dev", "local", "test", "testing", "ci"}
-DEMO_GALLERY_ITEMS = [
-    {
-        "key": "demo-gallery/maya-jordan-microsite",
-        "url": "/wedding_microsite.webp",
-    },
-    {
-        "key": "demo-gallery/maya-jordan-gallery",
-        "url": "/gallery_management.webp",
-    },
-    {
-        "key": "demo-gallery/maya-jordan-memories",
-        "url": "/guest_memories.webp",
-    },
-    {
-        "key": "demo-gallery/maya-jordan-couple-portal",
-        "url": "/couple_portal_dashboard.webp",
-    },
-]
 
 
 class VerifiedGalleryRequest(BaseModel):
@@ -64,33 +47,33 @@ async def _list_gallery_page_for_wedding(
     wedding = await wedding_service.get_wedding_by_slug(wedding_slug)
     planner_scope = gallery_service.get_planner_scope_from_wedding(wedding)
     try:
-        return gallery_service.list_wedding_files_page(
+        page = gallery_service.list_wedding_files_page(
             folder="gallery",
             wedding_slug=wedding_slug,
             planner_scope=planner_scope,
             limit=limit,
             cursor=cursor,
         )
+        if (
+            cursor is None
+            and not page.get("items")
+            and allow_local_demo_gallery_fallback(wedding)
+        ):
+            return {
+                "items": gallery_fallback_items_for_wedding(wedding)[:limit],
+                "next_cursor": None,
+                "has_more": False,
+            }
+        return page
     except HTTPException as exc:
-        if exc.status_code == 503 and _allow_demo_gallery_fallback(wedding):
-            items = DEMO_GALLERY_ITEMS[:limit]
+        if exc.status_code == 503 and allow_local_demo_gallery_fallback(wedding):
+            items = gallery_fallback_items_for_wedding(wedding)[:limit]
             return {
                 "items": items,
                 "next_cursor": None,
                 "has_more": False,
             }
         raise
-
-
-def _allow_demo_gallery_fallback(wedding: Optional[dict]) -> bool:
-    environment = (
-        os.getenv("ENVIRONMENT", os.getenv("NODE_ENV", "development")).strip().lower()
-    )
-    return (
-        environment in NON_PRODUCTION_ENVIRONMENTS
-        and isinstance(wedding, dict)
-        and wedding.get("seed_source") == DEMO_VIDEO_SEED_SOURCE
-    )
 
 
 # Public Guest-Facing Endpoint - DEPRECATED for security

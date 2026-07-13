@@ -24,19 +24,32 @@ export function PhaseOneProductStories({
         return (
           <article
             key={story.id}
-            className="grid items-center gap-8 lg:grid-cols-[minmax(0,1.12fr)_minmax(320px,0.88fr)] lg:gap-14"
+            className="grid min-w-0 grid-cols-[minmax(0,1fr)] items-center gap-8 lg:grid-cols-[minmax(0,1.12fr)_minmax(320px,0.88fr)] lg:gap-14"
           >
-            <div className={mediaFirst ? 'lg:order-2' : undefined}>
+            <div className={`min-w-0 ${mediaFirst ? 'lg:order-2' : ''}`}>
               <ProductProofWindow
                 asset={story.image}
                 alt={story.imageAlt}
                 label={`${story.pillar} · Full workspace`}
                 sizes="(min-width: 1024px) 55vw, 100vw"
+                priority={index === 0}
                 variant="story"
               />
+              <div className="mt-4 grid min-w-0 gap-4 sm:grid-cols-2" aria-label={`${story.pillar} connected product proof`}>
+                {story.supportingImages.map((supportingImage) => (
+                  <ProductProofWindow
+                    key={supportingImage.label}
+                    asset={supportingImage.image}
+                    alt={supportingImage.imageAlt}
+                    label={supportingImage.label}
+                    sizes="(min-width: 1024px) 27vw, (min-width: 640px) 50vw, 100vw"
+                    variant="supporting"
+                  />
+                ))}
+              </div>
             </div>
 
-            <div className={mediaFirst ? 'lg:order-1' : undefined}>
+            <div className={`min-w-0 ${mediaFirst ? 'lg:order-1' : ''}`}>
               <p className="text-sm font-semibold uppercase tracking-[0.24em] text-wedding-rose">
                 {story.pillar}
               </p>

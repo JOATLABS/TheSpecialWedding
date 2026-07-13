@@ -131,6 +131,7 @@ class RSVPService:
             for plus_one_data in rsvp_data.plus_ones:
                 plus_one_doc: dict[str, object] = {
                     "guest_id": guest_id_str,
+                    "wedding_id": wedding_id_str,
                     "name": plus_one_data.name,
                     "phone": plus_one_data.phone,
                     "email": plus_one_data.email,

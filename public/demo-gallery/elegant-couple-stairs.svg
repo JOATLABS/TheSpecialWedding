@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Sofia and Daniel on the garden terrace</title>
+  <desc id="desc">A warm editorial illustration of a wedding couple standing together on stone steps.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ead9cd"/><stop offset="1" stop-color="#b88273"/></linearGradient>
+    <linearGradient id="dress" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fffdf9"/><stop offset="1" stop-color="#e8ded4"/></linearGradient>
+    <filter id="soft"><feGaussianBlur stdDeviation="22"/></filter>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#sky)"/>
+  <circle cx="1330" cy="180" r="130" fill="#ffe8bd" opacity=".65" filter="url(#soft)"/>
+  <g fill="#51604a" opacity=".78"><circle cx="130" cy="220" r="190"/><circle cx="300" cy="170" r="150"/><circle cx="1460" cy="300" r="210"/></g>
+  <path d="M0 700h1600v300H0z" fill="#d7c5b3"/>
+  <path d="M170 710h1260v86H170zm95 110h1070v76H265zm110 100h850v80H375z" fill="#b49d88"/>
+  <g transform="translate(590 190)">
+    <circle cx="175" cy="115" r="58" fill="#8e5d45"/>
+    <path d="M110 185c-70 80-100 285-120 475h390c-25-200-63-395-135-475z" fill="url(#dress)"/>
+    <path d="M102 250c-80 80-117 190-142 310" fill="none" stroke="#f5eee8" stroke-width="42" stroke-linecap="round"/>
+    <circle cx="370" cy="105" r="62" fill="#70452f"/>
+    <path d="M305 180c-42 105-50 305-38 470h230c15-170 6-382-58-470z" fill="#25312d"/>
+    <path d="M300 212l72 93 72-93" fill="none" stroke="#f5f0e8" stroke-width="22"/>
+    <path d="M255 276c-18 68-20 150-10 232" fill="none" stroke="#25312d" stroke-width="50" stroke-linecap="round"/>
+    <path d="M248 360c-18 18-38 42-58 74" fill="none" stroke="#8e5d45" stroke-width="28" stroke-linecap="round"/>
+  </g>
+  <path d="M110 660c280-80 385-65 520 5M980 680c210-80 350-65 520-20" fill="none" stroke="#6c765c" stroke-width="22" stroke-linecap="round" opacity=".7"/>
+</svg>

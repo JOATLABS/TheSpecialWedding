@@ -52,6 +52,8 @@ import subprocess
 import sys
 import textwrap
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Optional
 
@@ -240,6 +242,120 @@ def window_exists(session: str, window: str) -> bool:
     return window in list_windows(session)
 
 
+def pane_process_name(session: str, window: str) -> str:
+    if not window_exists(session, window):
+        return ""
+    result = _tmux(
+        "list-panes",
+        "-t",
+        f"{session}:{window}",
+        "-F",
+        "#{pane_current_command}",
+        capture=True,
+        check=False,
+    )
+    return next(
+        (line.strip().lower() for line in result.stdout.splitlines() if line), ""
+    )
+
+
+def pane_process_names(session: str, window: str) -> set[str]:
+    """Return the tmux pane command and every descendant process name."""
+
+    if not window_exists(session, window):
+        return set()
+    pane = _tmux(
+        "display-message",
+        "-p",
+        "-t",
+        f"{session}:{window}.0",
+        "#{pane_pid}",
+        capture=True,
+        check=False,
+    )
+    try:
+        root_pid = int(pane.stdout.strip())
+    except (TypeError, ValueError):
+        return set()
+
+    process_table = subprocess.run(
+        ["ps", "-Ao", "pid=,ppid=,comm="],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    children: dict[int, list[tuple[int, str]]] = {}
+    for line in process_table.stdout.splitlines():
+        parts = line.strip().split(None, 2)
+        if len(parts) != 3:
+            continue
+        try:
+            pid, parent_pid = int(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+        children.setdefault(parent_pid, []).append((pid, Path(parts[2]).name.lower()))
+
+    names: set[str] = set()
+    pending = [root_pid]
+    visited: set[int] = set()
+    while pending:
+        parent_pid = pending.pop()
+        if parent_pid in visited:
+            continue
+        visited.add(parent_pid)
+        for child_pid, name in children.get(parent_pid, []):
+            names.add(name)
+            pending.append(child_pid)
+    current = pane_process_name(session, window)
+    if current:
+        names.add(current)
+    return names
+
+
+def _service_process_is_live(session: str, window: str) -> bool:
+    processes = pane_process_names(session, window)
+    if window == BACKEND_WINDOW:
+        return any(
+            process.startswith("python") or process == "uvicorn"
+            for process in processes
+        )
+    if window == FRONTEND_WINDOW:
+        return any(
+            process in {"node", "npm"} or process.startswith("next")
+            for process in processes
+        )
+    if window == STRIPE_WINDOW:
+        return "stripe" in processes
+    return False
+
+
+def _http_ready(url: str) -> bool:
+    try:
+        with urllib.request.urlopen(url, timeout=1.0) as response:
+            return 200 <= response.status < 400
+    except (OSError, urllib.error.URLError):
+        return False
+
+
+def service_is_ready(cfg: Config, window: str) -> bool:
+    if not _service_process_is_live(cfg.session_name, window):
+        return False
+    if window == BACKEND_WINDOW:
+        return _http_ready(f"http://127.0.0.1:{cfg.backend_port}/health/readyz")
+    if window == FRONTEND_WINDOW:
+        return _http_ready(f"http://127.0.0.1:{cfg.frontend_port}/")
+    return True
+
+
+def wait_for_service(cfg: Config, window: str, timeout_seconds: float = 45.0) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if service_is_ready(cfg, window):
+            return True
+        time.sleep(0.5)
+    return False
+
+
 def kill_window(session: str, window: str) -> None:
     if window_exists(session, window):
         _tmux("kill-window", "-t", f"{session}:{window}", check=False)
@@ -299,6 +415,16 @@ def cmd_up(cfg: Config, args: argparse.Namespace) -> int:
             err(f"failed to start {window}: {exc}")
             return 1
 
+    for window in windows:
+        if not wait_for_service(cfg, window):
+            process = pane_process_name(cfg.session_name, window) or "missing"
+            err(
+                f"{window} failed readiness (pane process: {process}); "
+                f"inspect {log_file(window)}"
+            )
+            return 1
+        info(f"ready: {window}")
+
     info(
         f"session `{cfg.session_name}` ready. "
         f"Attach: tmux attach -t {cfg.session_name}   "
@@ -334,21 +460,35 @@ def cmd_restart(cfg: Config, args: argparse.Namespace) -> int:
     for window in windows:
         start_window(cfg.session_name, window, window_cmd(cfg, window))
         info(f"restarted {window}")
+        if not wait_for_service(cfg, window):
+            err(f"{window} failed readiness after restart; inspect {log_file(window)}")
+            return 1
     return 0
 
 
 def cmd_status(cfg: Config, args: argparse.Namespace) -> int:
     if not session_exists(cfg.session_name):
         info(f"session `{cfg.session_name}` is down")
-        return 0
+        return 1
     wins = list_windows(cfg.session_name)
+    required_windows = set(cfg.enabled_windows())
     print(f"session `{cfg.session_name}` is up")
+    unhealthy = False
     for window in WINDOW_ORDER:
-        mark = "✓" if window in wins else "·"
+        present = window in wins
+        healthy = present and service_is_ready(cfg, window)
+        mark = "✓" if healthy else "!" if present else "·"
         log = log_file(window)
         log_note = f" ({log})" if log.exists() else ""
-        print(f"  {mark} {window}{log_note}")
-    return 0
+        process_note = (
+            f" process={pane_process_name(cfg.session_name, window) or 'missing'}"
+            if present
+            else ""
+        )
+        print(f"  {mark} {window}{process_note}{log_note}")
+        unhealthy = unhealthy or (window in required_windows and not healthy)
+        unhealthy = unhealthy or (present and not healthy)
+    return 1 if unhealthy else 0
 
 
 def cmd_logs(cfg: Config, args: argparse.Namespace) -> int:
@@ -528,7 +668,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_seed = sub.add_parser(
         "seed",
-        help="Run seed scripts (subscription plans, admin user, Mongo indexes).",
+        help="Run shared seed scripts (subscription plans, admin user, Mongo indexes).",
     )
     p_seed.add_argument(
         "--skip",

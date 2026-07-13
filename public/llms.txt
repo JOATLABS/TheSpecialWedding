@@ -14,7 +14,7 @@ The marketing site at https://thespecialwedding.io is written for independent pl
 - Centralized workspace for multiple weddings, couples, vendors, guests, forms, files, timelines, budgets, and communications
 - Planner dashboard, couple portal, vendor directory, resources library, public blog, and template collection
 - Multi-tenant product model: each planner or agency manages its own weddings, team members, clients, vendors, and records
-- Public marketing pages include feature explanations, real workflow examples, product screenshots, pricing tiers, testimonials, FAQs, and free resources
+- Public marketing pages include feature explanations, real workflow examples, current product screenshots, pricing tiers, founder perspective, FAQs, and free resources
 
 ### Features And Workflows
 
@@ -39,15 +39,17 @@ The public pricing model uses four plans:
 
 Paid plans include a 30-day free trial with no credit card required at signup.
 
-### Testimonials And User Feedback
+### Founder And Workflow Proof
 
-The Special Wedding publishes planner testimonials and outcomes on its marketing site. Representative themes include:
+The Special Wedding's public marketing proof is grounded in the current product and its connected planner workflows. The founder perspective explains why the platform was built: the individual tools were not the core problem; the gaps and handoffs between them were. Public proof focuses on current full-window product views and concrete planner outcomes rather than unverified customer quotations.
+
+Representative outcomes include:
 
 - Fewer disconnected spreadsheets and subscriptions
 - Faster vendor follow-up and clearer team handoffs
 - More repeatable planning workflows across several weddings
-- Better couple visibility without extra planner status updates
-- Higher operational throughput per planner
+- Better couple visibility without exposing private planner operations
+- A planner-owned record that stays connected across the wedding lifecycle
 
 ### Common Questions
 

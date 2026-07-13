@@ -30,6 +30,11 @@ describe('demo video production requirements', () => {
       assert.equal(socialTarget?.width, 1080);
       assert.equal(socialTarget?.height, 1920);
       assert.equal(socialTarget?.assetPath, `/demo-videos/exports/${requirement.demoId}-9x16.mp4`);
+
+      assert.match(requirement.rawRecordingPath, /^output\/demo-videos\/raw\//);
+      assert.doesNotMatch(requirement.rawRecordingPath, /(?:^|\/)public\//);
+      assert.match(requirement.captureReceiptPath, /^output\/demo-videos\/receipts\//);
+      assert.match(requirement.renderInputPath, /^demo-videos\/\.render-input\//);
     }
   });
 
@@ -42,6 +47,18 @@ describe('demo video production requirements', () => {
     assert.deepEqual(hero.routeParameters, ['id', 'slug']);
     assert.ok(hero.captureSurfaces.includes('planner-admin'));
     assert.ok(hero.captureSurfaces.includes('couple-portal'));
+    assert.equal(
+      hero.rawRecordingPath,
+      'output/demo-videos/raw/planner-command-center-walkthrough.mp4',
+    );
+    assert.equal(
+      hero.captureReceiptPath,
+      'output/demo-videos/receipts/planner-command-center-walkthrough.json',
+    );
+    assert.equal(
+      hero.renderInputPath,
+      'demo-videos/.render-input/planner-command-center-walkthrough.mp4',
+    );
 
     assert.ok(memories);
     assert.ok(memories.captureSurfaces.includes('guest-token'));

@@ -1,32 +1,32 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Features — 22 Tools for Professional Wedding Planners',
+  title: 'Features — One Connected Wedding Planner Workspace',
   description:
-    'Planner CRM, couple portal, built-in wedding microsite, vendor network, AI contracts, SMS reminders, seating charts, budget tracking, and more — the complete workspace for planners, couples, and vendors. See how The Special Wedding compares to HoneyBook, Aisle Planner, and Planning Pod.',
+    'See how one planner-owned record connects the planner command center, couple experience, guests, seating, vendors, contracts, budgets, and wedding website.',
   metadataBase: new URL('https://thespecialwedding.io'),
   alternates: {
     canonical: '/features',
   },
   openGraph: {
-    title: 'Features — 22 AI-Powered Tools for Professional Wedding Planners | The Special Wedding',
+    title: 'Features — One Connected Wedding Planner Workspace | The Special Wedding',
     description:
-      'Planner CRM, couple portal, built-in wedding microsite, vendor network, AI contracts, SMS reminders, and more. See how we compare to HoneyBook and Aisle Planner.',
+      'See the connected operating outcomes that protect planner time and give couples a calmer experience.',
     url: 'https://thespecialwedding.io/features',
     images: [
       {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'The Special Wedding — 22 tools for wedding planners',
+        alt: 'The Special Wedding connected operating system for wedding planners',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Features — 22 AI-Powered Tools for Professional Wedding Planners | The Special Wedding',
+    title: 'Features — One Connected Wedding Planner Workspace | The Special Wedding',
     description:
-      'Planner CRM, couple portal, built-in wedding microsite, vendor network, AI contracts, SMS reminders, and more — the complete wedding workspace.',
+      'See the connected operating outcomes that protect planner time and give couples a calmer experience.',
     images: ['/og-image.png'],
   },
 };

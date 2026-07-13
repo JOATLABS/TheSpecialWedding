@@ -108,19 +108,6 @@ def test_planner_wedding_venue_normalizes_legacy_object_shape() -> None:
     assert venue == "Verification Venue - 123 Verification Lane"
 
 
-def test_cached_planner_wedding_normalizes_legacy_venue_shape() -> None:
-    payload = planner_metrics_api._normalize_cached_planner_wedding(
-        {
-            "_id": ObjectId("507f1f77bcf86cd799439011"),
-            "couple_names": "Legacy Venue Couple",
-            "venue": {"venue_name": "Ballroom", "address": "Main Street"},
-        }
-    )
-
-    assert payload["id"] == "507f1f77bcf86cd799439011"
-    assert payload["venue"] == "Ballroom - Main Street"
-
-
 def test_planner_wedding_document_mapper_accepts_legacy_venue_shape() -> None:
     wedding = planner_metrics_api._planner_wedding_model_from_document(
         {
@@ -128,7 +115,10 @@ def test_planner_wedding_document_mapper_accepts_legacy_venue_shape() -> None:
             "couple_names": "Legacy Venue Couple",
             "date": "2026-10-18",
             "slug": "legacy-venue-couple",
-            "venue": {"name": "Verification Venue", "location": "123 Verification Lane"},
+            "venue": {
+                "name": "Verification Venue",
+                "location": "123 Verification Lane",
+            },
         }
     )
 

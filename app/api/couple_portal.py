@@ -54,6 +54,9 @@ from app.services.couple_portal_service import couple_portal_service
 from app.services.guest_export_service import guest_export_service
 from app.services.sse_manager import sse_manager
 from app.services.web_push_service import web_push_service
+from app.services.wedding_projection_cache_service import (
+    invalidate_wedding_projection_caches,
+)
 from app.utils.couple_archived_read_model import (
     build_archived_guest_stats,
     get_archived_faqs,
@@ -732,6 +735,7 @@ async def _save_wedding_events(
             status_code=409,
             detail="Wedding was modified by another user. Please refresh and try again.",
         )
+    await invalidate_wedding_projection_caches(str(wedding["_id"]))
 
 
 def _get_event_by_index(wedding: dict, event_index: int):
@@ -953,6 +957,7 @@ async def add_event_note(
         {"_id": wedding["_id"]},
         {"$set": {f"events.{event_index}.event_notes": event_notes}},
     )
+    await invalidate_wedding_projection_caches(str(wedding["_id"]))
 
     # Notify planner
     await _notify_planner_of_note(
@@ -1013,6 +1018,7 @@ async def add_item_note(
         {"_id": wedding["_id"]},
         {"$set": {f"events.{event_index}.order_of_events": order_of_events}},
     )
+    await invalidate_wedding_projection_caches(str(wedding["_id"]))
 
     # Notify planner
     await _notify_planner_of_note(
@@ -2950,6 +2956,7 @@ async def add_registry_couple(
 
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Wedding not found")
+    await invalidate_wedding_projection_caches(wedding_id)
 
     logger.info(
         f"Couple {couple['email']} added registry '{body.name}' to wedding {wedding_id}"
@@ -2990,6 +2997,7 @@ async def update_registry_couple(
     await mongo.get_weddings_collection().update_one(
         {"_id": wedding_oid}, {"$set": {f"registries.{index}": updated_item}}
     )
+    await invalidate_wedding_projection_caches(wedding_id)
 
     logger.info(
         f"Couple {couple['email']} updated registry[{index}] in wedding {wedding_id}"
@@ -3026,6 +3034,7 @@ async def delete_registry_couple(
     await mongo.get_weddings_collection().update_one(
         {"_id": wedding_oid}, {"$set": {"registries": registries}}
     )
+    await invalidate_wedding_projection_caches(wedding_id)
 
     logger.info(
         f"Couple {couple['email']} deleted registry '{removed_name}' from wedding {wedding_id}"
@@ -3098,6 +3107,7 @@ async def add_faq_couple(
 
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Wedding not found")
+    await invalidate_wedding_projection_caches(wedding_id)
 
     logger.info(
         f"Couple {couple['email']} added FAQ '{body.question[:50]}' to wedding {wedding_id}"
@@ -3138,6 +3148,7 @@ async def update_faq_couple(
     await mongo.get_weddings_collection().update_one(
         {"_id": wedding_oid}, {"$set": {f"faqs.{index}": updated_item}}
     )
+    await invalidate_wedding_projection_caches(wedding_id)
 
     logger.info(
         f"Couple {couple['email']} updated FAQ[{index}] in wedding {wedding_id}"
@@ -3173,6 +3184,7 @@ async def delete_faq_couple(
     await mongo.get_weddings_collection().update_one(
         {"_id": wedding_oid}, {"$set": {"faqs": faqs}}
     )
+    await invalidate_wedding_projection_caches(wedding_id)
 
     logger.info(
         f"Couple {couple['email']} deleted FAQ '{removed_q}' from wedding {wedding_id}"

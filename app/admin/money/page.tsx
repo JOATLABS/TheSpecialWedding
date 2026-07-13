@@ -285,7 +285,7 @@ export default function MoneyDashboard() {
             ai_credits_used: 0, // TODO: Get from AI usage endpoint
             ai_credits_total: subData.ai_credits_total || 100,
             weddings_used: weddingsTotal,
-            weddings_total: subData.weddings_total || 3
+            weddings_total: subData.weddings_total ?? 3
           });
         } else {
           setSubscription(null);
@@ -479,6 +479,11 @@ export default function MoneyDashboard() {
       </span>
     );
   };
+
+  const weddingsAreUnlimited = subscription?.weddings_total === -1;
+  const weddingsUsagePercent = subscription && !weddingsAreUnlimited && subscription.weddings_total > 0
+    ? Math.min(Math.max((subscription.weddings_used / subscription.weddings_total) * 100, 0), 100)
+    : 0;
 
   if (loading) {
     return (
@@ -1449,16 +1454,18 @@ export default function MoneyDashboard() {
             <div className="space-y-1">
               <p className="text-sm text-slate-500 dark:text-slate-400">Weddings</p>
               <p className="font-semibold text-slate-900 dark:text-white">
-                {subscription.weddings_used} / {subscription.weddings_total}
+                {subscription.weddings_used} / {weddingsAreUnlimited ? 'Unlimited' : subscription.weddings_total}
               </p>
               <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
                 <div
                   className="bg-primary-500 h-2 rounded-full transition-all"
-                  style={{ width: `${Math.min((subscription.weddings_used / subscription.weddings_total) * 100, 100)}%` }}
+                  style={{ width: `${weddingsUsagePercent}%` }}
                 />
               </div>
               <p className="text-xs text-slate-500">
-                {subscription.weddings_total - subscription.weddings_used} remaining
+                {weddingsAreUnlimited
+                  ? 'Unlimited weddings included'
+                  : `${Math.max(subscription.weddings_total - subscription.weddings_used, 0)} remaining`}
               </p>
             </div>
 

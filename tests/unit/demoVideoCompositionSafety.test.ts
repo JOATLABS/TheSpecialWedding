@@ -23,8 +23,14 @@ describe('demo video marketing composition safety', () => {
     }
   });
 
-  it('uses the product recording as the dominant frame with restrained safe-area captions', () => {
-    assert.match(source, /objectFit:\s*['"]cover['"]/);
+  it('preserves the full product window and reserves a separate web caption band', () => {
+    assert.match(source, /<Video[\s\S]*?src=\{staticFile\(props\.rawVideoPath\)\}[\s\S]*?objectFit:\s*['"]contain['"]/);
+    assert.doesNotMatch(source, /objectFit:\s*isVertical\s*\?\s*['"]contain['"]\s*:\s*['"]cover['"]/);
+    assert.match(source, /const WEB_CAPTION_BAND_HEIGHT = \d+/);
+    assert.match(source, /data-caption-band/);
+    assert.match(source, /data-product-window/);
+    assert.match(source, /bottom:\s*isVertical\s*\?\s*250\s*:\s*WEB_CAPTION_BAND_HEIGHT/);
+    assert.match(source, /height:\s*isVertical\s*\?\s*undefined\s*:\s*WEB_CAPTION_BAND_HEIGHT/);
     assert.match(source, /captionSafeArea/);
     assert.match(source, /fontSize:\s*isVertical\s*\?\s*\d+\s*:\s*\d+/);
     assert.doesNotMatch(source, /audience/);

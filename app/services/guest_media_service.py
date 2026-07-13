@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 import aiohttp
 from fastapi import HTTPException
 
+from app.constants.seed_sources import is_exact_marketing_capture_seed
 from app.core.database import mongo
 from app.core.settings import settings
 from app.services.media_storage import MediaStorage, StorageTarget, StorageTargetHealth
@@ -60,7 +61,9 @@ STREAM_STATUSES = {
     "failed",
     "unconfigured",
 }
-DEMO_VIDEO_SEED_SOURCE = "system:demo_video_seed"
+DEMO_PREVIEW_PATH_PATTERN = re.compile(
+    r"^/demo-gallery/[A-Za-z0-9][A-Za-z0-9._-]*\.svg$"
+)
 
 
 def _safe_filename(filename: str) -> str:
@@ -222,9 +225,9 @@ class GuestMediaService:
         environment = str(
             getattr(settings.environment, "value", settings.environment)
         ).lower()
-        return (
-            environment != "production"
-            and wedding.get("seed_source") == DEMO_VIDEO_SEED_SOURCE
+        return environment != "production" and is_exact_marketing_capture_seed(
+            wedding.get("seed_source"),
+            wedding.get("seed_scope"),
         )
 
     def _build_upload_token(
@@ -328,11 +331,58 @@ class GuestMediaService:
             "upload_token": upload_token,
         }
 
-    def _build_upload_link(self, wedding_slug: str, upload_token: str) -> str:
+    def _build_upload_link(
+        self,
+        wedding_slug: str,
+        upload_token: str,
+        *,
+        wedding_public_url: Optional[str] = None,
+    ) -> str:
+        if wedding_public_url:
+            parsed_public_url = urlparse(wedding_public_url)
+            if parsed_public_url.scheme == "https" and parsed_public_url.netloc:
+                return f"{wedding_public_url.rstrip('/')}/upload/{upload_token}"
         base = settings.frontend_url or ""
         if base:
             return f"{base.rstrip('/')}/{wedding_slug}/upload/{upload_token}"
         return f"/{wedding_slug}/upload/{upload_token}"
+
+    def _storage_health_payload(self, wedding: dict[str, Any]) -> dict[str, Any]:
+        if self._allow_demo_context_without_storage(wedding):
+            return {
+                "storage_ready": True,
+                "storage_status": "ready",
+                "storage_issue": None,
+            }
+        return {
+            "storage_ready": self.storage.is_configured,
+            "storage_status": self.storage.status,
+            "storage_issue": self.storage.issue,
+        }
+
+    def _demo_preview_url(
+        self,
+        wedding: dict[str, Any],
+        asset: dict[str, Any],
+    ) -> Optional[str]:
+        """Resolve one repository-owned preview only for an exact local demo seed."""
+        if not self._allow_demo_context_without_storage(wedding):
+            return None
+
+        preview_path = asset.get("demo_preview_url")
+        if not isinstance(preview_path, str) or not DEMO_PREVIEW_PATH_PATTERN.fullmatch(
+            preview_path
+        ):
+            return None
+
+        frontend_url = str(settings.frontend_url or "").rstrip("/")
+        parsed_frontend_url = urlparse(frontend_url)
+        if (
+            parsed_frontend_url.scheme not in {"http", "https"}
+            or not parsed_frontend_url.netloc
+        ):
+            return None
+        return f"{frontend_url}{preview_path}"
 
     def _event_options(self, wedding: dict[str, Any]) -> list[dict[str, Any]]:
         options = [{"value": NOT_SURE_EVENT, "label": "Not sure", "date": None}]
@@ -625,9 +675,7 @@ class GuestMediaService:
                     guest_media.get("upload_closes_at")
                 ),
                 "link_status": "open",
-                "storage_ready": self.storage.is_configured,
-                "storage_status": self.storage.status,
-                "storage_issue": self.storage.issue,
+                **self._storage_health_payload(wedding),
                 "stream_configured": self.stream_is_configured,
             },
             "events": self._event_options(wedding),
@@ -1198,9 +1246,7 @@ class GuestMediaService:
             "enabled": guest_media.get("enabled", True),
             "link_status": "open" if is_open else "closed",
             "upload_closes_at": self._serialize_datetime(upload_closes_at),
-            "storage_ready": self.storage.is_configured,
-            "storage_status": self.storage.status,
-            "storage_issue": self.storage.issue,
+            **self._storage_health_payload(wedding),
             "stream_configured": self.stream_is_configured,
         }
 
@@ -1212,10 +1258,18 @@ class GuestMediaService:
 
         summary = await self.get_dashboard_summary(str(wedding.get("_id")))
 
+        demo_public_url = (
+            str(wedding.get("public_site_url") or "")
+            if self._allow_demo_context_without_storage(wedding)
+            else None
+        )
+
         return {
             **summary,
             "upload_url": self._build_upload_link(
-                wedding.get("slug", ""), upload_token
+                wedding.get("slug", ""),
+                upload_token,
+                wedding_public_url=demo_public_url,
             ),
             "upload_token_last_rotated_at": self._serialize_datetime(
                 guest_media.get("last_rotated_at")
@@ -1430,6 +1484,9 @@ class GuestMediaService:
         serialized.pop("stream_security_signature", None)
         serialized.pop("stream_token", None)
         serialized.pop("stream_token_expires_at", None)
+        serialized.pop("demo_preview_url", None)
+        serialized.pop("seed_source", None)
+        serialized.pop("seed_scope", None)
         return serialized
 
     async def list_couple_assets(
@@ -1556,6 +1613,9 @@ class GuestMediaService:
         try:
             if variant == "preview":
                 if asset.get("media_type") == "image":
+                    demo_preview_url = self._demo_preview_url(wedding, asset)
+                    if demo_preview_url:
+                        return demo_preview_url
                     return self._image_preview_url(asset)
                 return await self._build_signed_stream_player_url(asset)
 

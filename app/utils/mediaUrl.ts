@@ -1,4 +1,10 @@
 const ABSOLUTE_URL_PATTERN = /^[a-z][a-z\d+\-.]*:/i;
+const REPOSITORY_STATIC_MEDIA_PREFIX = '/demo-gallery/';
+const REPOSITORY_STATIC_MEDIA_PATHS = new Set([
+  '/demo-gallery/elegant-ceremony-aisle.svg',
+  '/demo-gallery/elegant-couple-stairs.svg',
+  '/demo-gallery/elegant-reception-table.svg',
+]);
 
 export function resolveMediaUrl(value?: string | null): string | undefined {
   const normalized = value?.trim();
@@ -8,6 +14,10 @@ export function resolveMediaUrl(value?: string | null): string | undefined {
 
   if (normalized.startsWith('//') || ABSOLUTE_URL_PATTERN.test(normalized)) {
     return normalized;
+  }
+
+  if (normalized.startsWith(REPOSITORY_STATIC_MEDIA_PREFIX)) {
+    return REPOSITORY_STATIC_MEDIA_PATHS.has(normalized) ? normalized : undefined;
   }
 
   const mediaDomain = process.env.NEXT_PUBLIC_MEDIA_DOMAIN?.replace(/\/+$/, '');

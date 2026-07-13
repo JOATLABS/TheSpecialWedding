@@ -10,7 +10,6 @@ from fastapi import HTTPException
 
 from app.constants.roles import is_wedding_planner_role
 from app.constants.registration_sources import REGISTRATION_SOURCE_PUBLIC_SIGNUP
-from app.core.cache import CacheKeys, cache
 from app.core.database import mongo
 from app.core.events import EventFactory, event_bus
 from app.dependencies.auth_extended import invalidate_auth_cache
@@ -19,7 +18,17 @@ from app.services.notification_service import NotificationService
 from app.services.planner_onboarding_email_service import (
     planner_onboarding_email_service,
 )
+from app.services.wedding_projection_cache_service import (
+    invalidate_wedding_projection_caches,
+)
 from app.utils.auth_utils import get_password_hash, verify_password
+from app.utils.planner_ownership import (
+    build_wedding_owner_query,
+    combine_mongo_filters,
+    extract_wedding_owner_identity,
+    normalize_query_id,
+    wedding_belongs_to_owner,
+)
 from app.utils.serializers import serialize_mongo_doc
 
 
@@ -728,36 +737,88 @@ class UserManagementService:
                 status_code=500, detail=f"Error deleting user: {str(e)}"
             )
 
-    async def assign_wedding_to_planner(self, user_id: str, wedding_id: str) -> dict:
-        """Assign a wedding to a planner"""
+    async def _load_planner_assignment_target(self, user_id: str) -> dict:
+        """Resolve one root-managed planner assignment target."""
+        from bson import ObjectId
+
         try:
-            from bson import ObjectId
+            user_obj_id = ObjectId(user_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid user ID format")
 
-            # Convert string to ObjectId for user
-            try:
-                user_obj_id = ObjectId(user_id)
-            except Exception:
-                raise HTTPException(status_code=400, detail="Invalid user ID format")
+        user = await self.users_collection.find_one({"_id": user_obj_id})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
 
-            # Get user to verify they exist and are a planner
-            user = await self.users_collection.find_one({"_id": user_obj_id})
-            if not user:
-                raise HTTPException(status_code=404, detail="User not found")
+        if not is_wedding_planner_role(user.get("role")):
+            raise HTTPException(status_code=400, detail="User is not a wedding planner")
 
-            if user["role"] != "wedding_planner":
-                raise HTTPException(
-                    status_code=400, detail="User is not a wedding planner"
-                )
+        return user
 
-            # Update wedding with assigned planner (wedding_id may be string slug or ObjectId)
+    async def _sync_couple_assignment_mirrors(
+        self,
+        wedding_id: str,
+    ) -> None:
+        """Keep couple ownership mirrors aligned with the wedding source of truth."""
+        wedding = await self.weddings_collection.find_one(
+            {"_id": normalize_query_id(wedding_id)},
+            {"assigned_planner_id": 1, "assigned_planner_email": 1},
+        )
+        if not wedding:
+            raise HTTPException(status_code=404, detail="Wedding not found")
+
+        planner_id, planner_email = extract_wedding_owner_identity(wedding)
+        update: dict[str, Any] = {
+            "$set": {"updated_at": datetime.now(timezone.utc)},
+        }
+        if planner_id and planner_email:
+            update["$set"].update(
+                {
+                    "planner_id": planner_id,
+                    "planner_email": planner_email,
+                }
+            )
+        else:
+            update["$unset"] = {
+                "planner_id": "",
+                "planner_email": "",
+            }
+
+        await mongo.db["couple_users"].update_many(
+            {"wedding_id": str(wedding_id)},
+            update,
+        )
+
+    async def assign_wedding_to_planner(self, user_id: str, wedding_id: str) -> dict:
+        """Atomically replace both planner-owner mirrors on a wedding."""
+        try:
+            user = await self._load_planner_assignment_target(user_id)
+
+            existing_wedding = await self.weddings_collection.find_one(
+                {"_id": normalize_query_id(wedding_id)},
+                {"assigned_planner_id": 1, "assigned_planner_email": 1},
+            )
+            if not existing_wedding:
+                raise HTTPException(status_code=404, detail="Wedding not found")
+
+            planner_id = str(user["_id"])
+            planner_email = str(user["email"]).strip().lower()
             result = await self.weddings_collection.update_one(
-                {"_id": wedding_id}, {"$set": {"assigned_planner_email": user["email"]}}
+                {"_id": normalize_query_id(wedding_id)},
+                {
+                    "$set": {
+                        "assigned_planner_id": planner_id,
+                        "assigned_planner_email": planner_email,
+                    }
+                },
             )
 
             if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="Wedding not found")
+            await self._sync_couple_assignment_mirrors(wedding_id)
+            await invalidate_wedding_projection_caches(wedding_id)
 
-            return {"message": f"Wedding {wedding_id} assigned to {user['email']}"}
+            return {"message": f"Wedding {wedding_id} assigned to {planner_email}"}
 
         except HTTPException:
             raise
@@ -769,15 +830,50 @@ class UserManagementService:
     async def unassign_wedding_from_planner(
         self, user_id: str, wedding_id: str
     ) -> dict:
-        """Unassign a wedding from a planner"""
+        """Remove both planner-owner mirrors from the requested planner's wedding."""
         try:
-            # Update wedding to remove assigned planner
+            user = await self._load_planner_assignment_target(user_id)
+            existing_wedding = await self.weddings_collection.find_one(
+                {"_id": normalize_query_id(wedding_id)},
+                {"assigned_planner_id": 1, "assigned_planner_email": 1},
+            )
+            if not existing_wedding:
+                raise HTTPException(status_code=404, detail="Wedding not found")
+
+            if not wedding_belongs_to_owner(
+                existing_wedding,
+                planner_id=str(user["_id"]),
+                planner_email=user.get("email"),
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Wedding is not assigned to this planner",
+                )
+
+            owner_query = build_wedding_owner_query(
+                planner_id=str(user["_id"]),
+                planner_email=user.get("email"),
+            )
             result = await self.weddings_collection.update_one(
-                {"_id": wedding_id}, {"$unset": {"assigned_planner_email": ""}}
+                combine_mongo_filters(
+                    {"_id": normalize_query_id(wedding_id)},
+                    owner_query,
+                ),
+                {
+                    "$unset": {
+                        "assigned_planner_id": "",
+                        "assigned_planner_email": "",
+                    }
+                },
             )
 
             if result.matched_count == 0:
-                raise HTTPException(status_code=404, detail="Wedding not found")
+                raise HTTPException(
+                    status_code=409,
+                    detail="Wedding assignment changed before it could be removed",
+                )
+            await self._sync_couple_assignment_mirrors(wedding_id)
+            await invalidate_wedding_projection_caches(wedding_id)
 
             return {"message": f"Wedding {wedding_id} unassigned"}
 
@@ -1793,8 +1889,7 @@ class UserManagementService:
         """Verify email change using verification token.
 
         On success: flip `email` → `pending_email`, clear the pending fields,
-        cascade the new email to every denormalized FK across collections,
-        bust the couple portal cache so the change is visible immediately.
+        and cascade the new email to every denormalized FK across collections.
 
         Returns `old_email` and `new_email` so the route layer can reissue
         the auth cookie with a fresh JWT (otherwise the user gets force-logged-
@@ -1862,12 +1957,7 @@ class UserManagementService:
                 old_email=old_email, new_email=new_email
             )
 
-            # Step 3: bust caches that may be holding the stale email.
-            await self._invalidate_planner_email_caches(
-                user=user, old_email=old_email, new_email=new_email
-            )
-
-            # Step 3a: bust the per-email auth cache for BOTH addresses.
+            # Step 3: bust the per-email auth cache for BOTH addresses.
             # The cache is keyed by lowercased email; the OLD address now
             # has no user (the field flipped) so any cached snapshot under
             # it is dead weight, and the NEW address may have stale state
@@ -2087,39 +2177,6 @@ class UserManagementService:
                 results[key] = {"error": str(e)}
 
         return results
-
-    async def _invalidate_planner_email_caches(
-        self, *, user: dict, old_email: str, new_email: str
-    ) -> None:
-        """Bust caches that might be holding the stale planner email.
-
-        Currently targets the couple-portal dashboard cache, which is keyed
-        per (wedding_id, couple_email) but contains the planner's email in
-        the rendered payload. The TTL is short (10s) so this is mostly a
-        UX nicety, but doing it explicitly makes the change feel instant.
-        """
-        try:
-            user_id = str(user.get("_id") or "")
-            wedding_query = {
-                "$or": [
-                    {"assigned_planner_id": user_id},
-                    {"assigned_planner_email": new_email},
-                    {"assigned_planner_email": old_email},
-                ]
-            }
-            wedding_ids: list[str] = []
-            async for wedding in self.weddings_collection.find(
-                wedding_query, {"_id": 1}
-            ):
-                wedding_ids.append(str(wedding["_id"]))
-
-            for wedding_id in wedding_ids:
-                # Wildcard the couple_email portion of the key.
-                await cache.clear_pattern(
-                    f"{CacheKeys.couple_portal_dashboard(wedding_id, '*')}"
-                )
-        except Exception as e:
-            self.logger.warning("Failed to invalidate planner email caches: %s", e)
 
     async def get_user_profile(self, user_email: str) -> dict:
         """Get user profile information"""

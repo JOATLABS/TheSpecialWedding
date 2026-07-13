@@ -11,7 +11,7 @@ const NAV_LINKS = [
   { href: '/', label: 'Home' },
   { href: '/features', label: 'Features' },
   { href: '/resources/blog', label: 'Resources' },
-  { href: '/vendors', label: 'Find vendors' },
+  { href: '/vendors', label: 'Planner vendor directory' },
 ];
 
 export default function SaasNav() {

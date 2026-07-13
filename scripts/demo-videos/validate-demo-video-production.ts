@@ -8,6 +8,7 @@ import {
   getDemoVideoProductionRequirementById,
 } from '../../app/data/demoVideoProduction';
 import { parseCliArgs, resolveFromRepo } from './cli';
+import { validateManualDemoVideo } from './validate-manual-demo-video';
 
 type ValidationIssue = {
   demoId: string;
@@ -16,11 +17,15 @@ type ValidationIssue = {
 
 function publicAssetExists(assetPath: string): boolean {
   const withoutLeadingSlash = assetPath.replace(/^\//, '');
-  return fs.existsSync(resolveFromRepo('public', withoutLeadingSlash));
+  return fileExistsAndIsNonempty(resolveFromRepo('public', withoutLeadingSlash));
 }
 
 function staticAssetExists(assetPath: string): boolean {
-  return fs.existsSync(resolveFromRepo('public', assetPath));
+  return fileExistsAndIsNonempty(resolveFromRepo('public', assetPath));
+}
+
+function fileExistsAndIsNonempty(filePath: string): boolean {
+  return fs.existsSync(filePath) && fs.statSync(filePath).isFile() && fs.statSync(filePath).size > 0;
 }
 
 function validateRequirementInventory(demoIds: readonly string[], requireAssets: boolean): ValidationIssue[] {
@@ -57,8 +62,24 @@ function validateRequirementInventory(demoIds: readonly string[], requireAssets:
 
     if (!requireAssets) continue;
 
-    if (!staticAssetExists(requirement.rawRecordingPath)) {
-      issues.push({ demoId, message: `Missing raw recording at public/${requirement.rawRecordingPath}.` });
+    try {
+      validateManualDemoVideo(resolveFromRepo(requirement.captureReceiptPath));
+    } catch (error: unknown) {
+      issues.push({
+        demoId,
+        message: `Manual capture receipt/raw recording failed validation: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+
+    if (!fileExistsAndIsNonempty(resolveFromRepo(requirement.rawRecordingPath))) {
+      issues.push({ demoId, message: `Missing raw recording at ${requirement.rawRecordingPath}.` });
+    }
+
+    if (fs.existsSync(resolveFromRepo('public', requirement.renderInputPath))) {
+      issues.push({
+        demoId,
+        message: `Temporary Remotion input remains at public/${requirement.renderInputPath}; raw footage must stay outside public/.`,
+      });
     }
 
     if (!staticAssetExists(requirement.captionPath)) {

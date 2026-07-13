@@ -44,7 +44,7 @@ export default function FeaturesPage() {
               View planner plans
             </a>
             <Link
-              href="/#showcase"
+              href="#showcase"
               className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/20 px-7 py-3 text-base font-semibold text-white transition hover:border-white/40 hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
             >
               See the product story
@@ -53,7 +53,7 @@ export default function FeaturesPage() {
         </div>
       </section>
 
-      <section className="border-y border-white/5 bg-white/[0.015] px-6 py-20 sm:px-10 sm:py-24">
+      <section id="showcase" className="scroll-mt-24 border-y border-white/5 bg-white/[0.015] px-6 py-20 sm:px-10 sm:py-24">
         <div className="mx-auto max-w-6xl">
           <div className="mb-14 max-w-3xl">
             <p className="text-sm font-semibold uppercase tracking-[0.26em] text-wedding-rose">

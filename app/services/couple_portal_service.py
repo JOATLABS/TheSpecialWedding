@@ -11,15 +11,12 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, cast
 
-from app.core.cache import CacheKeys, cache
 from app.core.database import mongo
 from app.services.guest_media_service import guest_media_service
 from app.utils.messaging_roles import SENDER_ROLE_PLANNER
 from app.utils.planner_ownership import resolve_wedding_owner_identity
 
 logger = logging.getLogger(__name__)
-
-DASHBOARD_CACHE_TTL_SECONDS = 10
 
 
 class CouplePortalService:
@@ -42,13 +39,6 @@ class CouplePortalService:
         Get complete portal dashboard data for a couple.
         Aggregates wedding info, guest stats, budget summary, events, and planner info.
         """
-        cache_key = CacheKeys.couple_portal_dashboard(
-            str(wedding_id), couple_email.strip().lower()
-        )
-        cached_dashboard = await cache.get(cache_key)
-        if cached_dashboard is not None:
-            return cached_dashboard
-
         wedding = await mongo.get_weddings_collection().find_one(
             {"_id": wedding_id},
             {
@@ -151,7 +141,6 @@ class CouplePortalService:
             "memories_summary": memories_summary,
         }
 
-        await cache.set(cache_key, dashboard, expire=DASHBOARD_CACHE_TTL_SECONDS)
         return dashboard
 
     async def _get_guest_stats(self, wedding: Dict[str, Any]) -> Dict[str, Any]:

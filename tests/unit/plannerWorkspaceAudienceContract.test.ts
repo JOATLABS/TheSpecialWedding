@@ -26,7 +26,7 @@ describe('planner workspace audience contract', () => {
     const navigation = readSource('app/components/saas/SaasNav.tsx');
     const directory = readSource('app/vendors/VendorsDirectoryClient.tsx');
 
-    assert.match(navigation, /Find vendors/);
+    assert.match(navigation, /Planner vendor directory/);
     assert.match(navigation, /Create planner workspace/);
     assert.doesNotMatch(navigation, /portal\/ads\/signup/);
     assert.match(directory, /Use this directory to discover vendors for the weddings you manage/);

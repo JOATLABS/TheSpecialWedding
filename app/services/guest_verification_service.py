@@ -10,11 +10,15 @@ from urllib.parse import quote
 from bson.objectid import ObjectId
 from fastapi import HTTPException
 
+from app.constants.marketing_capture_media import MARKETING_CAPTURE_GALLERY_URLS
 from app.core.database import mongo
 from app.core.cache import CacheKeys, cache
 from app.services.gallery_media_service import GalleryUploadService
 from app.services.guest_service import GuestService
 from app.services.otp_service import OTPService
+from app.services.wedding_projection_cache_service import (
+    invalidate_wedding_projection_caches,
+)
 from app.services.wedding_service import WeddingService
 
 # Configure security logging
@@ -23,6 +27,75 @@ security_logger.setLevel(logging.INFO)
 
 
 class GuestVerificationService:
+    _repository_static_media_prefix = "/demo-gallery/"
+    _public_wedding_scalar_fields = {
+        "slug": str,
+        "couple_names": str,
+        "date": str,
+        "timezone": str,
+    }
+    _public_event_fields = {
+        "type": str,
+        "custom_type_label": str,
+        "date": str,
+    }
+    _public_event_detail_fields = {
+        "venue_name": str,
+        "location": str,
+        "time": str,
+        "attire": str,
+        "timezone": str,
+    }
+    _public_rsvp_fields = {
+        "greeting": str,
+        "help_text": str,
+        "help_button_label": str,
+    }
+    _public_registry_fields = {"name": str, "url": str, "color": str}
+    _public_faq_fields = {
+        "question": str,
+        "answer": str,
+        "link_url": str,
+        "link_label": str,
+    }
+    _public_theme_fields = {
+        "primary_color": str,
+        "secondary_color": str,
+        "accent_color": str,
+        "background_style": str,
+        "font_style": str,
+    }
+    _public_story_fields = {
+        "text": str,
+        "image_url": str,
+        "image_shape": str,
+    }
+    _public_venue_fields = {"name": str, "address": str}
+    _public_wedding_party_fields = {
+        "id": str,
+        "name": str,
+        "role": str,
+        "image_url": str,
+        "display_order": int,
+        "side": str,
+    }
+    _guest_response_fields = {
+        "name": str,
+        "phone": str,
+        "email": str,
+        "plus_one_allowed": bool,
+        "number_of_plus_ones_allowed": int,
+        "sms_opt_in": bool,
+        "email_opt_in": bool,
+    }
+    _rsvp_plus_one_fields = {
+        "name": str,
+        "phone": str,
+        "email": str,
+        "dietary": str,
+        "sms_opt_in": bool,
+        "email_opt_in": bool,
+    }
     _failed_attempts: Dict[str, Dict[str, Any]] = {}
     _attempt_locks: Dict[str, Dict[str, Any]] = {}
     _default_max_attempts = 5
@@ -31,6 +104,7 @@ class GuestVerificationService:
     _rsvp_link_lockout_duration = 600  # 10 minutes
     _attempt_lock_duration = 15
     _privacy_info_cache_ttl = 30
+    _privacy_info_cache_schema_version = 1
 
     def __init__(self):
         self.guest_service = GuestService()
@@ -59,6 +133,8 @@ class GuestVerificationService:
 
         if re.match(r"^[a-z][a-z0-9+\-.]*://", normalized, re.IGNORECASE):
             return normalized
+        if normalized.startswith(self._repository_static_media_prefix):
+            return normalized if normalized in MARKETING_CAPTURE_GALLERY_URLS else None
         if (
             normalized.startswith("//")
             or normalized.startswith("data:")
@@ -70,12 +146,13 @@ class GuestVerificationService:
 
     def _normalize_guest_media_fields(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         normalized_payload = {**payload}
-        normalized_payload["featured_image"] = self._resolve_guest_media_url(
-            normalized_payload.get("featured_image")
-        )
+        if "featured_image" in normalized_payload:
+            normalized_payload["featured_image"] = self._resolve_guest_media_url(
+                normalized_payload.get("featured_image")
+            )
 
         our_story = normalized_payload.get("our_story")
-        if isinstance(our_story, dict):
+        if isinstance(our_story, dict) and "image_url" in our_story:
             normalized_payload["our_story"] = {
                 **our_story,
                 "image_url": self._resolve_guest_media_url(our_story.get("image_url")),
@@ -88,35 +165,215 @@ class GuestVerificationService:
                     **member,
                     "image_url": self._resolve_guest_media_url(member.get("image_url")),
                 }
-                if isinstance(member, dict)
+                if isinstance(member, dict) and "image_url" in member
                 else member
                 for member in wedding_party
             ]
 
         return normalized_payload
 
+    @staticmethod
+    def _project_typed_fields(
+        value: Any,
+        allowed_fields: Dict[str, type],
+    ) -> Optional[Dict[str, Any]]:
+        if not isinstance(value, dict):
+            return None
+
+        return {
+            field: value[field]
+            for field, expected_type in allowed_fields.items()
+            if field in value and isinstance(value[field], expected_type)
+        }
+
+    def _project_public_events(self, value: Any) -> list[Dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+
+        projected_events = []
+        for event in value:
+            projected_event = self._project_typed_fields(
+                event,
+                self._public_event_fields,
+            )
+            if projected_event is None:
+                continue
+
+            details = self._project_typed_fields(
+                event.get("details"),
+                self._public_event_detail_fields,
+            )
+            if details:
+                projected_event["details"] = details
+
+            if projected_event:
+                projected_events.append(projected_event)
+
+        return projected_events
+
+    def _project_public_rsvp_config(self, value: Any) -> Optional[Dict[str, Any]]:
+        projected = self._project_typed_fields(value, self._public_rsvp_fields)
+        if projected is None:
+            return None
+
+        hide_phone_numbers = value.get("hide_phone_numbers") is not False
+        projected["hide_phone_numbers"] = hide_phone_numbers
+
+        phone_numbers = value.get("phone_numbers")
+        if not hide_phone_numbers and isinstance(phone_numbers, list):
+            projected["phone_numbers"] = [
+                phone.strip()
+                for phone in phone_numbers
+                if isinstance(phone, str) and phone.strip()
+            ]
+
+        return projected
+
+    def _project_public_dict_list(
+        self,
+        value: Any,
+        allowed_fields: Dict[str, type],
+    ) -> list[Dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+
+        projected_items = []
+        for item in value:
+            projected_item = self._project_typed_fields(item, allowed_fields)
+            if projected_item:
+                projected_items.append(projected_item)
+        return projected_items
+
+    def _project_guest_facing_wedding(
+        self,
+        wedding: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Build the explicit wedding contract used by every guest access path."""
+
+        projected = (
+            self._project_typed_fields(
+                wedding,
+                self._public_wedding_scalar_fields,
+            )
+            or {}
+        )
+
+        wedding_id = wedding.get("_id") or wedding.get("id")
+        if wedding_id is not None:
+            projected["id"] = str(wedding_id)
+
+        if isinstance(wedding.get("events"), list):
+            projected["events"] = self._project_public_events(wedding["events"])
+
+        rsvp_config = self._project_public_rsvp_config(wedding.get("rsvp_config"))
+        if rsvp_config is not None:
+            projected["rsvp_config"] = rsvp_config
+
+        for field, allowed_fields in (
+            ("registries", self._public_registry_fields),
+            ("faqs", self._public_faq_fields),
+            ("wedding_party", self._public_wedding_party_fields),
+        ):
+            if isinstance(wedding.get(field), list):
+                projected[field] = self._project_public_dict_list(
+                    wedding[field],
+                    allowed_fields,
+                )
+
+        for field, allowed_fields in (
+            ("theme_config", self._public_theme_fields),
+            ("our_story", self._public_story_fields),
+        ):
+            projected_value = self._project_typed_fields(
+                wedding.get(field),
+                allowed_fields,
+            )
+            if projected_value:
+                projected[field] = projected_value
+
+        featured_image = wedding.get("featured_image")
+        if isinstance(featured_image, str):
+            projected["featured_image"] = featured_image
+
+        venue = wedding.get("venue")
+        if isinstance(venue, str):
+            projected["venue"] = venue
+        else:
+            projected_venue = self._project_typed_fields(
+                venue,
+                self._public_venue_fields,
+            )
+            if projected_venue:
+                projected["venue"] = projected_venue
+
+        projected["privacy_mode"] = self._resolve_privacy_mode(wedding)
+        return projected
+
     def _serialize_wedding_response(self, wedding: Dict[str, Any]) -> Dict[str, Any]:
         return self._normalize_guest_media_fields(
-            {
-                **wedding,
-                "id": str(wedding.get("_id")),
-            }
+            self._project_guest_facing_wedding(wedding)
         )
 
     @staticmethod
+    def _resolve_privacy_mode(wedding: Dict[str, Any]) -> str:
+        """Resolve one fail-closed mode for serialization and authorization."""
+
+        privacy_settings = wedding.get("privacy_settings")
+        nested_mode = (
+            privacy_settings.get("privacy_mode")
+            if isinstance(privacy_settings, dict)
+            else None
+        )
+        return (
+            nested_mode
+            if nested_mode in {"public", "password", "private"}
+            else "private"
+        )
+
+    @classmethod
     def _serialize_guest_response(
+        cls,
         guest: Optional[Dict[str, Any]],
     ) -> Optional[Dict[str, Any]]:
         if not guest:
             return None
 
-        guest_response = guest.copy()
-        guest_id = guest_response.get("id") or guest_response.get("_id")
+        guest_response = (
+            cls._project_typed_fields(
+                guest,
+                cls._guest_response_fields,
+            )
+            or {}
+        )
+        guest_id = guest.get("id") or guest.get("_id")
         if guest_id is not None:
             guest_response["id"] = str(guest_id)
-        guest_response.pop("_id", None)
+        # Keep a final defense at the serialization boundary even though the
+        # explicit allowlist above cannot select the invite credential.
         guest_response.pop("token", None)
         return guest_response
+
+    @staticmethod
+    def _mongo_identifier_variants(identifier: Any) -> list[Any]:
+        """Return string/ObjectId variants for legacy mixed-ID collections."""
+
+        normalized = str(identifier)
+        variants: list[Any] = [normalized]
+        if ObjectId.is_valid(normalized):
+            variants.append(ObjectId(normalized))
+        return variants
+
+    def _serialize_rsvp_plus_one(self, plus_one: Dict[str, Any]) -> Dict[str, Any]:
+        projected = (
+            self._project_typed_fields(plus_one, self._rsvp_plus_one_fields) or {}
+        )
+        attending = plus_one.get("attending")
+        projected["attending"] = (
+            [event for event in attending if isinstance(event, str)]
+            if isinstance(attending, list)
+            else []
+        )
+        return projected
 
     async def invalidate_wedding_privacy_info(self, slug: Optional[str]) -> None:
         """Invalidate cached privacy bootstrap data for a wedding slug."""
@@ -126,38 +383,57 @@ class GuestVerificationService:
 
         await cache.delete(CacheKeys.wedding_privacy_info(normalized_slug))
 
-    async def _load_rsvp_data(self, guest_id: str) -> Optional[Dict[str, Any]]:
+    async def _load_rsvp_data(
+        self,
+        guest_id: str,
+        wedding_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        guest_id_variants = self._mongo_identifier_variants(guest_id)
+        wedding_id_variants = self._mongo_identifier_variants(wedding_id)
         existing_rsvp = await self.rsvp_collection.find_one(
             {
-                "$or": [
-                    {"guest_id": guest_id},
-                    {
-                        "guest_id": (
-                            ObjectId(guest_id)
-                            if ObjectId.is_valid(guest_id)
-                            else guest_id
-                        )
-                    },
-                ]
+                "guest_id": {"$in": guest_id_variants},
+                "wedding_id": {"$in": wedding_id_variants},
             }
         )
 
         if not existing_rsvp:
             return None
 
-        plus_ones_cursor = self.plus_ones_collection.find({"guest_id": guest_id})
-        plus_ones = await plus_ones_cursor.to_list(length=20)
-        for plus_one in plus_ones:
-            plus_one["id"] = str(plus_one.pop("_id", ""))
+        plus_ones_cursor = self.plus_ones_collection.find(
+            {
+                "guest_id": {"$in": guest_id_variants},
+                "$or": [
+                    {"wedding_id": {"$in": wedding_id_variants}},
+                    # Older plus-one rows predate wedding_id. Guest IDs are
+                    # globally unique and ownership was verified before this
+                    # read, so this is the narrow compatibility fallback.
+                    {"wedding_id": {"$exists": False}},
+                ],
+            }
+        )
+        plus_ones = [
+            self._serialize_rsvp_plus_one(plus_one)
+            for plus_one in await plus_ones_cursor.to_list(length=20)
+            if isinstance(plus_one, dict)
+        ]
+        attending = existing_rsvp.get("attending")
 
-        return {
+        response: Dict[str, Any] = {
             "has_rsvp": True,
-            "submitted_at": existing_rsvp.get("submitted_at"),
-            "attending": existing_rsvp.get("attending", []),
-            "dietary": existing_rsvp.get("dietary"),
-            "confirmed_by_admin": existing_rsvp.get("confirmed_by_admin"),
+            "attending": (
+                [event for event in attending if isinstance(event, str)]
+                if isinstance(attending, list)
+                else []
+            ),
             "plus_ones": plus_ones,
         }
+        submitted_at = existing_rsvp.get("submitted_at")
+        if isinstance(submitted_at, (str, datetime)):
+            response["submitted_at"] = submitted_at
+        if isinstance(existing_rsvp.get("dietary"), str):
+            response["dietary"] = existing_rsvp["dietary"]
+        return response
 
     async def get_session_access(
         self,
@@ -184,13 +460,29 @@ class GuestVerificationService:
         rsvp_data = None
 
         if guest_id:
-            guest = await self.guests_collection.find_one({"_id": ObjectId(guest_id)})
+            guest = await self.guests_collection.find_one(
+                {
+                    "_id": {"$in": self._mongo_identifier_variants(guest_id)},
+                    "wedding_id": {"$in": self._mongo_identifier_variants(wedding_id)},
+                }
+            )
             if not guest:
-                raise HTTPException(status_code=404, detail="Guest not found")
+                raise HTTPException(
+                    status_code=403,
+                    detail="Guest access session does not match this wedding",
+                )
+            if str(guest.get("wedding_id")) != str(wedding_id):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Guest access session does not match this wedding",
+                )
 
             guest_response = self._serialize_guest_response(guest)
             if guest_response is not None:
-                rsvp_data = await self._load_rsvp_data(str(guest_response["id"]))
+                rsvp_data = await self._load_rsvp_data(
+                    str(guest_response["id"]),
+                    str(wedding_id),
+                )
 
         return {
             "access": True,
@@ -514,7 +806,10 @@ class GuestVerificationService:
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
             guest_id_str = str(guest.get("id"))
-            rsvp_data = await self._load_rsvp_data(guest_id_str)
+            rsvp_data = await self._load_rsvp_data(
+                guest_id_str,
+                str(wedding.get("_id")),
+            )
 
             return {
                 "access": True,
@@ -591,8 +886,10 @@ class GuestVerificationService:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
             # Check privacy settings
-            privacy_settings = wedding.get("privacy_settings", {})
-            privacy_mode = privacy_settings.get("privacy_mode", "private")
+            privacy_settings = wedding.get("privacy_settings")
+            if not isinstance(privacy_settings, dict):
+                privacy_settings = {}
+            privacy_mode = self._resolve_privacy_mode(wedding)
 
             # If wedding is public, grant access immediately (no token was provided or token failed)
             if privacy_mode == "public":
@@ -811,8 +1108,13 @@ class GuestVerificationService:
         try:
             cache_key = CacheKeys.wedding_privacy_info(slug)
             cached_response = await cache.get(cache_key)
-            if cached_response is not None:
-                return cached_response
+            if (
+                isinstance(cached_response, dict)
+                and cached_response.get("schema_version")
+                == self._privacy_info_cache_schema_version
+                and isinstance(cached_response.get("response"), dict)
+            ):
+                return cached_response["response"]
 
             wedding = await self.weddings_collection.find_one(
                 {"slug": slug},
@@ -834,28 +1136,23 @@ class GuestVerificationService:
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
-            privacy_settings = wedding.get("privacy_settings", {})
-            privacy_mode = privacy_settings.get("privacy_mode", "private")
+            privacy_mode = self._resolve_privacy_mode(wedding)
 
             # Log privacy mode for debugging - don't expose settings (may contain password)
             security_logger.debug(f"Privacy info request for slug: {slug}")
 
-            # Resolve raw R2 keys on asset fields to full public URLs so the
-            # frontend doesn't have to concatenate NEXT_PUBLIC_MEDIA_DOMAIN.
-            resolved_wedding = self._normalize_guest_media_fields(wedding)
+            # Use the same explicit guest-facing contract as verified access
+            # responses so nested planner and tenant data cannot escape via
+            # the unauthenticated privacy bootstrap route.
+            resolved_wedding = self._serialize_wedding_response(wedding)
 
             # Base response with privacy info
             response = {
-                "id": str(resolved_wedding.get("_id")),
+                "id": resolved_wedding.get("id"),
                 "couple_names": resolved_wedding.get("couple_names"),
-                "date": resolved_wedding.get("date"),
                 "privacy_mode": privacy_mode,
                 "requires_password": privacy_mode == "password",
                 "requires_guest_verification": privacy_mode == "private",
-                "featured_image": resolved_wedding.get("featured_image"),
-                "theme_config": resolved_wedding.get("theme_config"),
-                "rsvp_config": resolved_wedding.get("rsvp_config"),
-                "events": resolved_wedding.get("events", []),
                 "verification_requirements": {
                     "otp_enabled": True,
                     "supports_phone": True,
@@ -867,6 +1164,12 @@ class GuestVerificationService:
             if privacy_mode == "public":
                 response.update(
                     {
+                        "date": resolved_wedding.get("date"),
+                        "timezone": resolved_wedding.get("timezone"),
+                        "featured_image": resolved_wedding.get("featured_image"),
+                        "theme_config": resolved_wedding.get("theme_config"),
+                        "rsvp_config": resolved_wedding.get("rsvp_config"),
+                        "events": resolved_wedding.get("events", []),
                         "registries": resolved_wedding.get("registries", []),
                         "faqs": resolved_wedding.get("faqs", []),
                         "our_story": resolved_wedding.get("our_story"),
@@ -876,7 +1179,14 @@ class GuestVerificationService:
                 )
 
             response = self._normalize_guest_media_fields(response)
-            await cache.set(cache_key, response, expire=self._privacy_info_cache_ttl)
+            await cache.set(
+                cache_key,
+                {
+                    "schema_version": self._privacy_info_cache_schema_version,
+                    "response": response,
+                },
+                expire=self._privacy_info_cache_ttl,
+            )
             return response
 
         except HTTPException:
@@ -927,8 +1237,11 @@ class GuestVerificationService:
             if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
-            await self.invalidate_wedding_privacy_info(
-                existing_wedding.get("slug") if existing_wedding else None
+            await invalidate_wedding_projection_caches(
+                wedding_id,
+                previous_slug=(
+                    existing_wedding.get("slug") if existing_wedding else None
+                ),
             )
 
             return {"message": "Privacy settings updated successfully"}

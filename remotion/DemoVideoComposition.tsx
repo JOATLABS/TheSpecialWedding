@@ -3,6 +3,8 @@ import { AbsoluteFill, staticFile, useCurrentFrame, useVideoConfig } from 'remot
 
 import type { DemoVideoRemotionProps } from './types';
 
+const WEB_CAPTION_BAND_HEIGHT = 176;
+
 function getActiveCaption(props: DemoVideoRemotionProps, frame: number, fps: number): string {
   const timestampMs = (frame / fps) * 1000;
   const activeCaption = props.captions.find(
@@ -46,21 +48,35 @@ export function DemoVideoComposition(props: DemoVideoRemotionProps) {
             />
           ) : null}
 
-          <AbsoluteFill
-            style={
-              isVertical
-                ? {
-                    inset: '174px 34px 250px',
-                    width: 'auto',
-                    height: 'auto',
-                    overflow: 'hidden',
-                    borderRadius: 30,
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    boxShadow: '0 30px 90px rgba(0,0,0,0.5)',
-                    backgroundColor: '#071020',
-                  }
-                : undefined
-            }
+          {!isVertical ? (
+            <div
+              data-caption-band
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: WEB_CAPTION_BAND_HEIGHT,
+                borderTop: '1px solid rgba(255,255,255,0.12)',
+                backgroundColor: '#020617',
+              }}
+            />
+          ) : null}
+
+          <div
+            data-product-window
+            style={{
+              position: 'absolute',
+              top: isVertical ? 174 : 0,
+              right: isVertical ? 34 : 0,
+              bottom: isVertical ? 250 : WEB_CAPTION_BAND_HEIGHT,
+              left: isVertical ? 34 : 0,
+              overflow: 'hidden',
+              borderRadius: isVertical ? 30 : 0,
+              border: isVertical ? '1px solid rgba(255,255,255,0.18)' : 'none',
+              boxShadow: isVertical ? '0 30px 90px rgba(0,0,0,0.5)' : 'none',
+              backgroundColor: '#071020',
+            }}
           >
             <Video
               src={staticFile(props.rawVideoPath)}
@@ -68,11 +84,11 @@ export function DemoVideoComposition(props: DemoVideoRemotionProps) {
               style={{
                 width: '100%',
                 height: '100%',
-                objectFit: isVertical ? 'contain' : 'cover',
+                objectFit: 'contain',
                 backgroundColor: '#071020',
               }}
             />
-          </AbsoluteFill>
+          </div>
         </>
       ) : null}
 
@@ -80,7 +96,9 @@ export function DemoVideoComposition(props: DemoVideoRemotionProps) {
         style={{
           position: 'absolute',
           left: isVertical ? 54 : 42,
-          top: isVertical ? 70 : 34,
+          top: isVertical ? 70 : undefined,
+          bottom: isVertical ? undefined : 66,
+          zIndex: 2,
           color: 'rgba(255,255,255,0.88)',
           fontFamily: "Georgia, 'Times New Roman', serif",
           fontSize: isVertical ? 30 : 22,
@@ -96,12 +114,15 @@ export function DemoVideoComposition(props: DemoVideoRemotionProps) {
         <div
           style={{
             position: 'absolute',
-            left: captionSafeArea,
+            left: isVertical ? captionSafeArea : 320,
             right: captionSafeArea,
-            bottom: isVertical ? 86 : 42,
+            bottom: isVertical ? 86 : 0,
+            height: isVertical ? undefined : WEB_CAPTION_BAND_HEIGHT,
             display: 'flex',
+            alignItems: 'center',
             justifyContent: 'center',
             pointerEvents: 'none',
+            zIndex: 2,
           }}
         >
           <span
@@ -113,7 +134,7 @@ export function DemoVideoComposition(props: DemoVideoRemotionProps) {
               boxShadow: '0 16px 54px rgba(0,0,0,0.4)',
               padding: isVertical ? '22px 28px' : '14px 22px',
               color: '#f8fafc',
-              fontSize: isVertical ? 38 : 28,
+              fontSize: isVertical ? 38 : 32,
               fontWeight: 650,
               lineHeight: 1.24,
               textAlign: 'center',

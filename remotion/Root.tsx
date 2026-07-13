@@ -5,12 +5,12 @@ import type { DemoVideoRemotionProps } from './types';
 
 const defaultProps: DemoVideoRemotionProps = {
   demoId: 'planner-command-center-walkthrough',
-  title: '2-minute planner walkthrough',
-  audience: 'Professional planners evaluating whether the workspace is real before starting a trial.',
+  title: 'Planner command center walkthrough',
+  audience: 'Professional planners evaluating a connected planner operating system.',
   rawVideoPath: '',
   captions: [],
   format: 'web-16x9',
-  durationSeconds: 12,
+  durationSeconds: 90,
 };
 
 const calculateMetadata: CalculateMetadataFunction<DemoVideoRemotionProps> = ({ props }) => {

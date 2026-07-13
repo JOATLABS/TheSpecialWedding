@@ -8,13 +8,21 @@ type ProductProofWindowProps = {
   label: string;
   sizes: string;
   priority?: boolean;
-  variant: 'hero' | 'story' | 'card';
+  variant: 'hero' | 'story' | 'supporting' | 'card';
 };
 
 const WINDOW_CLASSES = {
-  hero: 'overflow-hidden rounded-2xl border border-white/12 bg-[#071020] shadow-[0_32px_110px_rgba(0,0,0,0.58)] sm:rounded-[1.75rem]',
-  story: 'overflow-hidden rounded-2xl border border-white/10 bg-[#071020] shadow-2xl shadow-black/30 sm:rounded-[1.75rem]',
-  card: 'overflow-hidden border-b border-white/10 bg-[#071020]',
+  hero: 'min-w-0 overflow-hidden rounded-2xl border border-white/12 bg-[#071020] shadow-[0_32px_110px_rgba(0,0,0,0.58)] sm:rounded-[1.75rem]',
+  story: 'min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#071020] shadow-2xl shadow-black/30 sm:rounded-[1.75rem]',
+  supporting: 'min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#071020] shadow-lg shadow-black/20',
+  card: 'min-w-0 overflow-hidden border-b border-white/10 bg-[#071020]',
+} as const;
+
+const MATTE_CLASSES = {
+  hero: 'p-2 sm:p-3',
+  story: 'p-2 sm:p-3',
+  supporting: 'p-1.5 sm:p-2',
+  card: 'p-2',
 } as const;
 
 export function ProductProofWindow({
@@ -26,7 +34,7 @@ export function ProductProofWindow({
   variant,
 }: ProductProofWindowProps) {
   const frameAspectRatio = asset.render.frameAspectRatio.replace(':', ' / ');
-  const preload = priority || variant === 'story';
+  const preload = priority;
 
   return (
     <div
@@ -45,22 +53,25 @@ export function ProductProofWindow({
         <span className="h-2 w-2 rounded-full bg-emerald-300/70" />
         <span className="ml-2 truncate uppercase">{label}</span>
       </div>
-      <div
-        className="relative w-full bg-[#071020]"
-        style={{ aspectRatio: frameAspectRatio }}
-      >
-        <Image
-          src={asset.path}
-          alt={alt}
-          fill
-          unoptimized
-          loading={preload ? 'eager' : 'lazy'}
-          priority={preload}
-          quality={90}
-          sizes={sizes}
-          className="object-contain object-center"
-          data-product-proof-image
-        />
+      <div className={`bg-[#071020] ${MATTE_CLASSES[variant]}`} data-proof-matte>
+        <div
+          className="relative w-full"
+          style={{ aspectRatio: frameAspectRatio }}
+          data-proof-frame
+        >
+          <Image
+            src={asset.path}
+            alt={alt}
+            fill
+            unoptimized
+            loading={preload ? 'eager' : 'lazy'}
+            priority={preload}
+            quality={90}
+            sizes={sizes}
+            className="object-contain object-center"
+            data-product-proof-image
+          />
+        </div>
       </div>
     </div>
   );

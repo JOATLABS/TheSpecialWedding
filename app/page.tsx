@@ -7,15 +7,9 @@ import { PricingSignupSection } from "./components/landing-page/PricingSignupSec
 import HomepageTemplatesBand from "./components/saas/HomepageTemplatesBand";
 import MarketingFooter from "./components/saas/MarketingFooter";
 import SaasNav from "./components/saas/SaasNav";
-import { FEATURE_DEMO_VIDEOS, toPublicDemoVideo } from "./data/demoVideos";
+import { FEATURE_DEMO_VIDEOS, HERO_DEMO_VIDEO, toPublicDemoVideo } from "./data/demoVideos";
 import { serializeJsonLd } from "./seo/jsonLd";
 import type { ThemeConfig } from "./types/wedding";
-
-type Testimonial = {
-  name: string;
-  role: string;
-  quote: string;
-};
 
 export type PricingTier = {
   id: string;
@@ -106,24 +100,6 @@ const fallbackPricing: PricingTier[] = [
   },
 ];
 
-const testimonials: Testimonial[] = [
-  {
-    name: "Arielle Morgan",
-    role: "Owner, Linen & Light Events",
-    quote: "We stopped chasing spreadsheets and started running the studio from one place.",
-  },
-  {
-    name: "Maya Chen",
-    role: "Lead Planner, Atelier June",
-    quote: "Couples see progress without asking for updates, and our team always knows what changed.",
-  },
-  {
-    name: "Noah Rivera",
-    role: "Operations Director, Vow & Venue",
-    quote: "It gave our planners a repeatable operating system without making the experience feel generic.",
-  },
-];
-
 const faqs = [
   {
     question: "Can we bring over existing weddings?",
@@ -171,6 +147,7 @@ function SectionBridge({ label }: { label: string }) {
 }
 
 export default function HomePage() {
+  const heroDemo = toPublicDemoVideo(HERO_DEMO_VIDEO);
   const featureDemosByFeatureId = Object.fromEntries(
     FEATURE_DEMO_VIDEOS.map((demo) => [demo.featureId, toPublicDemoVideo(demo)]),
   );
@@ -211,7 +188,7 @@ export default function HomePage() {
               </Link>
             </div>
           </div>
-          <PhaseOneHeroProof />
+          <PhaseOneHeroProof demo={heroDemo} />
         </div>
       </section>
 
@@ -228,7 +205,7 @@ export default function HomePage() {
                 See how one connected record changes the work.
               </h2>
               <p className="mt-5 max-w-3xl text-base leading-7 text-slate-300 sm:text-lg">
-                Phase 1 is not a feature-count story. These are the four operating outcomes a systems-minded planner should be able to verify before signing up.
+                These are the four operating outcomes a systems-minded planner should be able to verify before signing up—not another disconnected feature list.
               </p>
             </div>
           </div>
@@ -240,19 +217,24 @@ export default function HomePage() {
 
       <PricingSignupSection pricing={fallbackPricing} theme={defaultTheme} />
 
-      <SectionBridge label="Planner stories" />
+      <SectionBridge label="Why this exists" />
 
       <section className="bg-slate-950 px-6 py-16 sm:px-8 lg:px-12">
-        <div className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-3">
-          {testimonials.map((testimonial) => (
-            <article key={testimonial.name} className="rounded-2xl border border-white/10 bg-white/[0.04] p-6">
-              <p className="text-sm leading-7 text-slate-200">"{testimonial.quote}"</p>
-              <div className="mt-6 border-t border-white/10 pt-5">
-                <p className="font-semibold text-white">{testimonial.name}</p>
-                <p className="text-sm text-slate-400">{testimonial.role}</p>
-              </div>
-            </article>
-          ))}
+        <div className="mx-auto grid max-w-7xl gap-8 rounded-3xl border border-white/10 bg-white/[0.035] p-7 sm:p-10 lg:grid-cols-[0.82fr_1.18fr] lg:items-center">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.28em] text-wedding-rose">Founder perspective</p>
+            <h2 className="mt-4 text-3xl font-semibold leading-tight text-white sm:text-4xl">
+              Built by a systems engineer who watched the gaps fail a real wedding.
+            </h2>
+          </div>
+          <div>
+            <p className="text-base leading-8 text-slate-300">
+              The Special Wedding began when JOAT Labs founder Emmanuel Akinwale watched his own planning experience fracture across spreadsheets, contracts, budget files, and email threads. Industrial engineering taught him the tools were not failing independently—the handoffs between them were.
+            </p>
+            <p className="mt-5 border-l-2 border-wedding-rose/70 pl-4 text-base font-semibold leading-7 text-slate-100">
+              The tools are not the problem. The gaps between them are.
+            </p>
+          </div>
         </div>
       </section>
 
