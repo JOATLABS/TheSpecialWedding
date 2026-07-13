@@ -26,6 +26,7 @@ export function ProductProofWindow({
   variant,
 }: ProductProofWindowProps) {
   const frameAspectRatio = asset.render.frameAspectRatio.replace(':', ' / ');
+  const preload = priority || variant === 'story';
 
   return (
     <div
@@ -53,8 +54,8 @@ export function ProductProofWindow({
           alt={alt}
           fill
           unoptimized
-          loading="eager"
-          priority={priority || variant === 'story'}
+          loading={preload ? 'eager' : 'lazy'}
+          priority={preload}
           quality={90}
           sizes={sizes}
           className="object-contain object-center"

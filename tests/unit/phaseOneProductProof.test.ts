@@ -100,8 +100,9 @@ describe('Phase 1 product-proof marketing composition', () => {
     assert.match(frame, /object-contain/);
     assert.match(frame, /unoptimized/);
     assert.match(frame, /quality=\{90\}/);
-    assert.match(frame, /loading="eager"/);
-    assert.match(frame, /priority=\{priority \|\| variant === 'story'\}/);
+    assert.match(frame, /const preload = priority \|\| variant === 'story'/);
+    assert.match(frame, /loading=\{preload \? 'eager' : 'lazy'\}/);
+    assert.match(frame, /priority=\{preload\}/);
     assert.match(frame, /data-proof-fit=\{asset\.render\.fit\}/);
     assert.match(frame, /data-proof-zoom=\{String\(asset\.render\.zoom\)\}/);
     assert.doesNotMatch(frame, /object-cover/);
