@@ -195,11 +195,45 @@ class StorefrontInquiryService:
         ).hexdigest()
         return ObjectId(digest[:24])
 
+    @staticmethod
+    def _normalize_operator_alert_email(value: Any) -> str | None:
+        if not isinstance(value, str):
+            return None
+        normalized = value.strip().lower()
+        return normalized or None
+
+    @staticmethod
+    def _operator_alert_metadata(inquiry: dict) -> dict[str, Any]:
+        notification = inquiry.get("notification")
+        notification = notification if isinstance(notification, dict) else {}
+        return {
+            "source": "storefront_inquiry",
+            "inquiry_id": str(inquiry.get("_id")),
+            "delivery_status": str(notification.get("status") or "unknown"),
+            "lead_name": str(inquiry.get("name") or "A storefront lead"),
+            "lead_email": str(inquiry.get("email") or "not provided"),
+            "lead_phone": inquiry.get("phone"),
+            "wedding_date": inquiry.get("wedding_date"),
+            "storefront_slug": inquiry.get("storefront_slug"),
+            "delivery_error": notification.get("error"),
+        }
+
+    @classmethod
+    def _operator_alert_matches_inquiry(cls, existing: dict, inquiry: dict) -> bool:
+        metadata = existing.get("metadata")
+        return bool(
+            existing.get("type") == PlannerNotificationTypes.DELIVERY_FAILURE
+            and isinstance(metadata, dict)
+            and metadata == cls._operator_alert_metadata(inquiry)
+        )
+
     async def _record_operator_alert_retry(
         self,
         inquiries: Any,
         inquiry: dict,
         error: str,
+        *,
+        planner_email: str | None = None,
     ) -> bool:
         notification = inquiry.get("notification")
         alert = (
@@ -215,6 +249,17 @@ class StorefrontInquiryService:
         )
         next_attempt = attempts + 1
         now = datetime.now(timezone.utc)
+        retry_fields: dict[str, Any] = {
+            "notification.operator_alert.status": "retry_pending",
+            "notification.operator_alert.error": error[:500],
+            "notification.operator_alert.attempt_count": next_attempt,
+            "notification.operator_alert.next_attempt_at": (
+                now + self._retry_delay(next_attempt)
+            ),
+            "updated_at": now,
+        }
+        if planner_email:
+            retry_fields["notification.operator_alert.planner_email"] = planner_email
         try:
             result = await inquiries.update_one(
                 {
@@ -225,15 +270,7 @@ class StorefrontInquiryService:
                     },
                 },
                 {
-                    "$set": {
-                        "notification.operator_alert.status": "retry_pending",
-                        "notification.operator_alert.error": error[:500],
-                        "notification.operator_alert.attempt_count": next_attempt,
-                        "notification.operator_alert.next_attempt_at": (
-                            now + self._retry_delay(next_attempt)
-                        ),
-                        "updated_at": now,
-                    }
+                    "$set": retry_fields,
                 },
             )
         except Exception:
@@ -282,8 +319,10 @@ class StorefrontInquiryService:
                 return await self._record_operator_alert_retry(
                     inquiries, inquiry, str(exc)
                 )
-        planner_email = planner.get("email") if isinstance(planner, dict) else None
-        if not isinstance(planner_email, str) or not planner_email.strip():
+        planner_email = self._normalize_operator_alert_email(
+            planner.get("email") if isinstance(planner, dict) else None
+        )
+        if not planner_email:
             return await self._record_operator_alert_retry(
                 inquiries,
                 inquiry,
@@ -299,13 +338,19 @@ class StorefrontInquiryService:
                 "Failed to read storefront inquiry operator alert",
                 extra={"inquiry_id": str(inquiry_id)},
             )
-            return await self._record_operator_alert_retry(inquiries, inquiry, str(exc))
+            return await self._record_operator_alert_retry(
+                inquiries,
+                inquiry,
+                str(exc),
+                planner_email=planner_email,
+            )
         if not existing:
-            delivery_status = str(notification.get("status") or "unknown")
-            lead_email = str(inquiry.get("email") or "not provided")
-            lead_name = str(inquiry.get("name") or "A storefront lead")
+            alert_metadata = self._operator_alert_metadata(inquiry)
+            delivery_status = alert_metadata["delivery_status"]
+            lead_email = alert_metadata["lead_email"]
+            lead_name = alert_metadata["lead_name"]
             document = create_notification_document(
-                planner_id=planner_email.strip().lower(),
+                planner_id=planner_email,
                 notification_type=PlannerNotificationTypes.DELIVERY_FAILURE,
                 title="Storefront inquiry needs attention",
                 message=(
@@ -313,26 +358,17 @@ class StorefrontInquiryService:
                     f"but its email notification ended as {delivery_status}. "
                     "Open this alert and follow up with the lead directly."
                 ),
-                metadata={
-                    "source": "storefront_inquiry",
-                    "inquiry_id": str(inquiry_id),
-                    "delivery_status": delivery_status,
-                    "lead_name": lead_name,
-                    "lead_email": lead_email,
-                    "lead_phone": inquiry.get("phone"),
-                    "wedding_date": inquiry.get("wedding_date"),
-                    "storefront_slug": inquiry.get("storefront_slug"),
-                    "delivery_error": notification.get("error"),
-                },
+                metadata=alert_metadata,
                 priority="high",
                 action_url="/admin/planner",
             )
             document["_id"] = alert_id
+            insert_error: Exception | None = None
             try:
                 await alerts.insert_one(document)
-            except DuplicateKeyError:
-                existing = await alerts.find_one({"_id": alert_id})
+                existing = document
             except Exception as exc:
+                insert_error = exc
                 try:
                     existing = await alerts.find_one({"_id": alert_id})
                 except Exception:
@@ -343,7 +379,73 @@ class StorefrontInquiryService:
                         extra={"inquiry_id": str(inquiry_id)},
                     )
                     return await self._record_operator_alert_retry(
-                        inquiries, inquiry, str(exc)
+                        inquiries,
+                        inquiry,
+                        str(insert_error),
+                        planner_email=planner_email,
+                    )
+
+        if not self._operator_alert_matches_inquiry(existing, inquiry):
+            return await self._record_operator_alert_retry(
+                inquiries,
+                inquiry,
+                "Deterministic operator alert does not match this inquiry",
+            )
+
+        existing_email = self._normalize_operator_alert_email(
+            existing.get("planner_id")
+        )
+        previous_email = self._normalize_operator_alert_email(
+            alert.get("planner_email") if isinstance(alert, dict) else None
+        )
+        if existing_email != planner_email:
+            if not previous_email or existing_email != previous_email:
+                return await self._record_operator_alert_retry(
+                    inquiries,
+                    inquiry,
+                    "Deterministic operator alert does not match the planner recipient",
+                )
+            try:
+                rerouted = await alerts.update_one(
+                    {
+                        "_id": alert_id,
+                        "planner_id": existing.get("planner_id"),
+                        "type": PlannerNotificationTypes.DELIVERY_FAILURE,
+                        "metadata": self._operator_alert_metadata(inquiry),
+                    },
+                    {"$set": {"planner_id": planner_email}},
+                )
+            except Exception as exc:
+                logger.exception(
+                    "Failed to reroute storefront inquiry operator alert",
+                    extra={"inquiry_id": str(inquiry_id)},
+                )
+                return await self._record_operator_alert_retry(
+                    inquiries,
+                    inquiry,
+                    str(exc),
+                )
+            if getattr(rerouted, "matched_count", 0) != 1:
+                try:
+                    reconciled = await alerts.find_one({"_id": alert_id})
+                except Exception as exc:
+                    return await self._record_operator_alert_retry(
+                        inquiries,
+                        inquiry,
+                        str(exc),
+                    )
+                if (
+                    not reconciled
+                    or not self._operator_alert_matches_inquiry(reconciled, inquiry)
+                    or self._normalize_operator_alert_email(
+                        reconciled.get("planner_id")
+                    )
+                    != planner_email
+                ):
+                    return await self._record_operator_alert_retry(
+                        inquiries,
+                        inquiry,
+                        "Operator alert recipient changed during reconciliation",
                     )
 
         now = datetime.now(timezone.utc)
@@ -360,6 +462,7 @@ class StorefrontInquiryService:
                     "$set": {
                         "notification.operator_alert.status": "visible",
                         "notification.operator_alert.notification_id": str(alert_id),
+                        "notification.operator_alert.planner_email": planner_email,
                         "notification.operator_alert.visible_at": now,
                         "updated_at": now,
                     },
@@ -378,6 +481,7 @@ class StorefrontInquiryService:
                 inquiries,
                 inquiry,
                 str(exc),
+                planner_email=planner_email,
             )
         return bool(getattr(visible, "matched_count", 0))
 

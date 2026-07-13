@@ -435,10 +435,9 @@ async def _guest_media_maintenance_scheduler():
             await asyncio.sleep(30)
 
 
-async def _storefront_media_maintenance_scheduler():
-    """Recover durable storefront media and inquiry work on the leader."""
+async def _storefront_media_recovery_scheduler():
+    """Recover durable storefront media independently on the leader."""
 
-    from app.services.storefront_inquiry_service import storefront_inquiry_service
     from app.services.storefront_media_service import storefront_media_service
 
     while True:
@@ -455,6 +454,15 @@ async def _storefront_media_maintenance_scheduler():
         except Exception as e:
             logger.error(f"Storefront media scheduler error: {e}", exc_info=True)
 
+        await asyncio.sleep(60)
+
+
+async def _storefront_inquiry_recovery_scheduler():
+    """Recover durable storefront inquiries independently on the leader."""
+
+    from app.services.storefront_inquiry_service import storefront_inquiry_service
+
+    while True:
         try:
             processed_inquiries = (
                 await storefront_inquiry_service.process_pending_notifications()
@@ -465,12 +473,25 @@ async def _storefront_media_maintenance_scheduler():
                     processed_inquiries,
                 )
         except asyncio.CancelledError:
-            logger.info("Storefront media scheduler shutting down")
+            logger.info("Storefront inquiry scheduler shutting down")
             raise
         except Exception as e:
             logger.error(f"Storefront inquiry scheduler error: {e}", exc_info=True)
 
         await asyncio.sleep(60)
+
+
+async def _storefront_media_maintenance_scheduler():
+    """Supervise independent storefront media and inquiry recovery loops."""
+
+    tasks = [
+        asyncio.create_task(_storefront_media_recovery_scheduler()),
+        asyncio.create_task(_storefront_inquiry_recovery_scheduler()),
+    ]
+    try:
+        await asyncio.gather(*tasks)
+    finally:
+        await _cancel_background_scheduler_tasks(tasks)
 
 
 def _start_background_scheduler_tasks() -> list[asyncio.Task]:
