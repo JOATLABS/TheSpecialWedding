@@ -1,9 +1,10 @@
-import Image from 'next/image';
 import Link from 'next/link';
 
 import DemoVideoLauncher from '@/components/saas/DemoVideoLauncher';
 import { PHASE_ONE_PRODUCT_STORIES } from '@/data/phaseOneProductProof';
 import type { PublicDemoVideo } from '@/data/publicDemoVideos';
+
+import { ProductProofWindow } from './ProductProofWindow';
 
 type PhaseOneProductStoriesProps = {
   demoVideosByFeatureId?: Record<string, PublicDemoVideo>;
@@ -26,17 +27,13 @@ export function PhaseOneProductStories({
             className="grid items-center gap-8 lg:grid-cols-[minmax(0,1.12fr)_minmax(320px,0.88fr)] lg:gap-14"
           >
             <div className={mediaFirst ? 'lg:order-2' : undefined}>
-              <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#071020] shadow-2xl shadow-black/30 sm:rounded-[1.75rem]">
-                <div className="relative aspect-video">
-                  <Image
-                    src={story.image}
-                    alt={story.imageAlt}
-                    fill
-                    sizes="(min-width: 1024px) 55vw, 100vw"
-                    className="object-cover object-top"
-                  />
-                </div>
-              </div>
+              <ProductProofWindow
+                asset={story.image}
+                alt={story.imageAlt}
+                label={`${story.pillar} · Full workspace`}
+                sizes="(min-width: 1024px) 55vw, 100vw"
+                variant="story"
+              />
             </div>
 
             <div className={mediaFirst ? 'lg:order-1' : undefined}>

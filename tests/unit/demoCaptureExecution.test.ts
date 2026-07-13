@@ -30,34 +30,29 @@ describe('demo capture execution', () => {
     assert.match(scenarios, /click|fill|drag|press/);
   });
 
-  it('captures every marketed surface with named output targets and safety scanning', () => {
+  it('validates manually captured product images without driving a browser or generating screenshots', () => {
     const capturePath = path.join(ROOT, 'scripts/demo-videos/capture-product-images.ts');
-    assert.equal(existsSync(capturePath), true, 'product-image capture runner is missing');
+    assert.equal(existsSync(capturePath), false, 'scripted product-image capture must stay removed');
 
-    const capture = source('scripts/demo-videos/capture-product-images.ts');
-    for (const featureId of [
-      'dashboard',
-      'real-time',
-      'couple-portal',
-      'wedding-website',
-      'configuration',
-      'gallery',
-      'guests',
-      'seating',
-      'guest-memories',
-      'communications',
-      'contracts',
-      'payments',
-      'budget',
-      'vendors',
-      'knowledge-base',
-      'forms',
-      'team',
-    ]) {
-      assert.match(capture, new RegExp(`['\"]${featureId}['\"]`));
-    }
-    assert.match(capture, /scanCaptureArtifact/);
-    assert.match(capture, /capture-receipt/);
+    const validatorPath = path.join(ROOT, 'scripts/demo-videos/validate-manual-product-images.ts');
+    assert.equal(existsSync(validatorPath), true, 'manual product-image validator is missing');
+
+    const validator = source('scripts/demo-videos/validate-manual-product-images.ts');
+    assert.match(validator, /MARKETING_CAPTURE_MANIFEST/);
+    assert.match(validator, /manual-in-app-browser/);
+    assert.match(validator, /entry\.status !== 'approved'/);
+    assert.match(validator, /PNG/);
+    assert.match(validator, /checksum/);
+    assert.doesNotMatch(validator, /playwright|puppeteer|chromium/i);
+    assert.doesNotMatch(
+      validator,
+      /\.goto\s*\(|\.screenshot\s*\(|page\.(?:locator|evaluate)|browser\.(?:newContext|close)/i,
+    );
+
+    const packageJson = source('package.json');
+    assert.match(
+      packageJson,
+      /"demo:validate-images": "tsx scripts\/demo-videos\/validate-manual-product-images\.ts"/,
+    );
   });
 });
-

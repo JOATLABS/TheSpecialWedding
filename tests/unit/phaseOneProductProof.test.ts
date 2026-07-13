@@ -15,10 +15,13 @@ function source(relativePath: string): string {
 describe('Phase 1 product-proof marketing composition', () => {
   it('uses one populated hero proof instead of the stale rotating screenshot stack', () => {
     const page = source('app/page.tsx');
+    const hero = source('app/components/landing-page/PhaseOneHeroProof.tsx');
 
     assert.match(page, /PhaseOneHeroProof/);
     assert.doesNotMatch(page, /StackStage/);
     assert.match(page, /built specifically for wedding planners/i);
+    assert.match(hero, /ProductProofWindow/);
+    assert.doesNotMatch(hero, /<Image/);
   });
 
   it('defines exactly four outcome-led stories for the homepage and features page', () => {
@@ -35,18 +38,22 @@ describe('Phase 1 product-proof marketing composition', () => {
       assert.match(proofData, new RegExp(outcome, 'i'));
     }
     assert.match(proofData, /satisfies readonly \[/);
+
+    const stories = source('app/components/landing-page/PhaseOneProductStories.tsx');
+    assert.match(stories, /ProductProofWindow/);
+    assert.doesNotMatch(stories, /<Image/);
   });
 
   it('uses intentional product-proof assets for every marketed capability', () => {
     const marketingFeatures = source('app/data/marketingFeatures.ts');
 
     assert.doesNotMatch(marketingFeatures, /image: '\/(?:dashboard|calendar_management|couple_portal_dashboard|seating|reminders)\.webp'/);
-    assert.match(marketingFeatures, /featureCapturePath/);
+    assert.match(marketingFeatures, /featureCapture/);
 
     for (const feature of MARKETING_FEATURES) {
       assert.ok(feature.id in MARKETING_CAPTURE_MANIFEST, `${feature.id} has no approved capture`);
       const entry = MARKETING_CAPTURE_MANIFEST[feature.id as keyof typeof MARKETING_CAPTURE_MANIFEST];
-      assert.equal(feature.image, entry.targets.features.path);
+      assert.equal(feature.image.path, entry.source.path);
     }
   });
 
@@ -56,10 +63,12 @@ describe('Phase 1 product-proof marketing composition', () => {
     assert.doesNotMatch(featuresPage, /const comparison/);
     assert.doesNotMatch(featuresPage, /HoneyBook|Aisle Planner|Planning Pod/);
     assert.match(featuresPage, /PhaseOneProductStories/);
+    assert.match(featuresPage, /ProductProofWindow/);
+    assert.doesNotMatch(featuresPage, /<Image/);
     assert.match(featuresPage, /\/compare/);
   });
 
-  it('declares three render contexts from one approved source capture', () => {
+  it('declares one manual full-window source and three non-cropping render contexts', () => {
     const manifestPath = path.join(ROOT, 'app/data/marketingCaptureManifest.ts');
     assert.equal(existsSync(manifestPath), true, 'marketing capture manifest is missing');
 
@@ -69,8 +78,34 @@ describe('Phase 1 product-proof marketing composition', () => {
     }
     assert.match(manifest, /features\.png\?v=\$\{spec\.checksum\.slice\(0, 12\)\}/);
     assert.doesNotMatch(manifest, /\$\{root\}\/(?:hero|homepage)\.png/);
+    assert.match(manifest, /captureMethod: 'manual-in-app-browser'/);
+    assert.match(manifest, /framing: 'full-window'/);
+    assert.match(manifest, /fit: 'contain'/);
+    assert.match(manifest, /zoom: false/);
     assert.match(manifest, /checksum/);
     assert.match(manifest, /build/);
+    assert.match(manifest, /status: spec\.status/);
+    assert.equal(
+      (manifest.match(/status: 'approved'/g) ?? []).length,
+      Object.keys(MARKETING_CAPTURE_MANIFEST).length,
+      'each manually reviewed capture must opt into approval explicitly',
+    );
+  });
+
+  it('uses one shared frame that never crops or zooms product proof', () => {
+    const framePath = path.join(ROOT, 'app/components/landing-page/ProductProofWindow.tsx');
+    assert.equal(existsSync(framePath), true, 'shared product-proof frame is missing');
+
+    const frame = source('app/components/landing-page/ProductProofWindow.tsx');
+    assert.match(frame, /object-contain/);
+    assert.match(frame, /unoptimized/);
+    assert.match(frame, /quality=\{90\}/);
+    assert.match(frame, /loading="eager"/);
+    assert.match(frame, /priority=\{priority \|\| variant === 'story'\}/);
+    assert.match(frame, /data-proof-fit=\{asset\.render\.fit\}/);
+    assert.match(frame, /data-proof-zoom=\{String\(asset\.render\.zoom\)\}/);
+    assert.doesNotMatch(frame, /object-cover/);
+    assert.doesNotMatch(frame, /(?:group-)?hover:scale|scale-\[/);
   });
 
   it('cache-busts approved captures without blocking existing local images', () => {
@@ -85,31 +120,42 @@ describe('Phase 1 product-proof marketing composition', () => {
 
     for (const entry of Object.values(MARKETING_CAPTURE_MANIFEST)) {
       assert.equal(entry.status, 'approved', `${entry.featureId} is not approved`);
-      assert.ok(entry.checksum, `${entry.featureId} is missing a checksum`);
+      assert.ok(entry.source.checksum, `${entry.featureId} is missing a checksum`);
+      assert.equal(entry.source.framing, 'full-window');
+      assert.equal(entry.source.captureMethod, 'manual-in-app-browser');
+      assert.equal(entry.source.width, 1440, `${entry.featureId} is not a 1440px-wide full window`);
+      assert.equal(entry.source.height, 900, `${entry.featureId} is not a 900px-tall full window`);
+      assert.deepEqual(entry.source.captureBounds, {
+        x: 0,
+        y: 0,
+        width: entry.source.width,
+        height: entry.source.height,
+      });
 
-      const targets = Object.values(entry.targets);
-      assert.equal(new Set(targets.map((target) => target.path)).size, 1);
-      assert.deepEqual(
-        targets.map((target) => target.aspectRatio),
-        ['10:7', '16:9', '16:10'],
-      );
-
-      for (const target of targets) {
-        const [publicPath, version] = target.path.split('?v=');
-        assert.equal(version, entry.checksum.slice(0, 12), `${target.path} has a stale cache key`);
-        const assetPath = path.join(ROOT, 'public', publicPath.replace(/^\//, ''));
-        assert.equal(existsSync(assetPath), true, `${target.path} is missing`);
-
-        const image = readFileSync(assetPath);
-        assert.equal(image.subarray(0, 8).toString('hex'), pngSignature, `${target.path} is not a PNG`);
-        assert.equal(image.readUInt32BE(16), target.width, `${target.path} has the wrong width`);
-        assert.equal(image.readUInt32BE(20), target.height, `${target.path} has the wrong height`);
-        assert.equal(
-          createHash('sha256').update(image).digest('hex'),
-          entry.checksum,
-          `${target.path} does not match its approved checksum`,
-        );
+      for (const render of Object.values(entry.renders)) {
+        assert.equal(render.frameAspectRatio, '16:10');
+        assert.equal(render.fit, 'contain');
+        assert.equal(render.zoom, false);
       }
+
+      const [publicPath, version] = entry.source.path.split('?v=');
+      assert.equal(
+        version,
+        entry.source.checksum.slice(0, 12),
+        `${entry.source.path} has a stale cache key`,
+      );
+      const assetPath = path.join(ROOT, 'public', publicPath.replace(/^\//, ''));
+      assert.equal(existsSync(assetPath), true, `${entry.source.path} is missing`);
+
+      const image = readFileSync(assetPath);
+      assert.equal(image.subarray(0, 8).toString('hex'), pngSignature, `${entry.source.path} is not a PNG`);
+      assert.equal(image.readUInt32BE(16), entry.source.width, `${entry.source.path} has the wrong width`);
+      assert.equal(image.readUInt32BE(20), entry.source.height, `${entry.source.path} has the wrong height`);
+      assert.equal(
+        createHash('sha256').update(image).digest('hex'),
+        entry.source.checksum,
+        `${entry.source.path} does not match its approved checksum`,
+      );
     }
   });
 });
