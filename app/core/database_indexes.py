@@ -2637,6 +2637,24 @@ async def create_storefront_indexes():
             name="idx_storefront_assets_state_reaping_lease_owner",
             background=True,
         )
+        await assets.create_index(
+            [
+                ("state", ASCENDING),
+                ("attach_claimed_at", ASCENDING),
+                ("owner_id", ASCENDING),
+            ],
+            name="idx_storefront_assets_state_attach_lease_owner",
+            background=True,
+        )
+        await assets.create_index(
+            [
+                ("state", ASCENDING),
+                ("claim_reconcile_due_at", ASCENDING),
+                ("owner_id", ASCENDING),
+            ],
+            name="idx_storefront_assets_state_claim_due_owner",
+            background=True,
+        )
         # Owner-triggered recovery uses the inverse prefix for targeted scans.
         await assets.create_index(
             [

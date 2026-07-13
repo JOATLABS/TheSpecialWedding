@@ -1564,6 +1564,161 @@ async def test_global_sweep_is_bounded_and_reclaims_owners_that_never_return(
 
 
 @pytest.mark.asyncio
+async def test_global_sweep_releases_stale_attaching_claim_after_entitlement_loss(
+    setup_media,
+):
+    service, mongo, storage, entitlements = setup_media
+    hero = await _finalize_ready_asset(service, storage, slot="hero")
+    claim = await service.claim_settings_assets(
+        _owner(), hero_asset_id=hero["asset_id"]
+    )
+    stale_at = datetime.now(timezone.utc) - timedelta(
+        seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS + 1
+    )
+    mongo.raw.storefront_assets.update_one(
+        {"_id": ObjectId(hero["asset_id"])},
+        {"$set": {"attach_claimed_at": stale_at, "updated_at": stale_at}},
+    )
+    entitlements.enabled_by_owner[OWNER_ID] = False
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+
+    stored = mongo.raw.storefront_assets.find_one({"_id": ObjectId(hero["asset_id"])})
+    assert stored["state"] == "ready"
+    assert "attach_claim_id" not in stored
+    assert "attach_claimed_at" not in stored
+    assert stored["cleanup_due_at"] > datetime.now()
+    assert claim["claim_id"] not in stored.values()
+
+
+@pytest.mark.asyncio
+async def test_global_sweep_promotes_stale_durable_claim_after_entitlement_loss(
+    setup_media,
+):
+    service, mongo, storage, entitlements = setup_media
+    about = await _finalize_ready_asset(service, storage, slot="about")
+    claim = await service.claim_settings_assets(
+        _owner(), about_asset_id=about["asset_id"]
+    )
+    stale_at = datetime.now(timezone.utc) - timedelta(
+        seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS + 1
+    )
+    mongo.raw.storefront_assets.update_one(
+        {"_id": ObjectId(about["asset_id"])},
+        {"$set": {"attach_claimed_at": stale_at, "updated_at": stale_at}},
+    )
+    mongo.raw.storefront_settings.insert_one(
+        {
+            "planner_id": OWNER_ID,
+            "revision": 1,
+            "about_asset_id": None,
+            "pending_about_asset_id": about["asset_id"],
+            "pending_about_claim_id": claim["claim_id"],
+            **_pending_asset_group(claim),
+        }
+    )
+    entitlements.enabled_by_owner[OWNER_ID] = False
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+
+    settings = mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert settings["about_asset_id"] == about["asset_id"]
+    assert not any(key.startswith("pending_") for key in settings)
+    stored = mongo.raw.storefront_assets.find_one({"_id": ObjectId(about["asset_id"])})
+    assert stored["state"] == "attached"
+    assert stored["attached_claim_id"] == claim["claim_id"]
+
+
+@pytest.mark.asyncio
+async def test_global_sweep_releases_orphaned_attached_claim_after_entitlement_loss(
+    setup_media,
+):
+    service, mongo, storage, entitlements = setup_media
+    hero = await _finalize_ready_asset(service, storage, slot="hero")
+    claim = await service.claim_settings_assets(
+        _owner(), hero_asset_id=hero["asset_id"]
+    )
+    mongo.raw.storefront_settings.insert_one(
+        {
+            "planner_id": OWNER_ID,
+            "revision": 1,
+            "hero_asset_id": None,
+            "pending_hero_asset_id": hero["asset_id"],
+            "pending_hero_claim_id": claim["claim_id"],
+            **_pending_asset_group(claim),
+        }
+    )
+    await service.attach_settings_asset_claims(_owner(), claim)
+    await service.promote_settings_asset_claims(_owner(), claim)
+    stale_at = datetime.now(timezone.utc) - timedelta(
+        seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS + 1
+    )
+    mongo.raw.storefront_settings.update_one(
+        {"planner_id": OWNER_ID},
+        {"$set": {"hero_asset_id": "replacement-hero"}},
+    )
+    mongo.raw.storefront_assets.update_one(
+        {"_id": ObjectId(hero["asset_id"])},
+        {"$set": {"updated_at": stale_at}},
+    )
+    entitlements.enabled_by_owner[OWNER_ID] = False
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+
+    stored = mongo.raw.storefront_assets.find_one({"_id": ObjectId(hero["asset_id"])})
+    assert stored["state"] == "ready"
+    assert "attached_claim_id" not in stored
+    assert "attached_at" not in stored
+    assert stored["cleanup_due_at"] > datetime.now()
+
+
+@pytest.mark.asyncio
+async def test_global_claim_recovery_is_token_fenced_from_successor_claim(
+    setup_media, monkeypatch
+):
+    service, mongo, storage, _ = setup_media
+    hero = await _finalize_ready_asset(service, storage, slot="hero")
+    claim = await service.claim_settings_assets(
+        _owner(), hero_asset_id=hero["asset_id"]
+    )
+    stale_at = datetime.now(timezone.utc) - timedelta(
+        seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS + 1
+    )
+    mongo.raw.storefront_assets.update_one(
+        {"_id": ObjectId(hero["asset_id"])},
+        {"$set": {"attach_claimed_at": stale_at, "updated_at": stale_at}},
+    )
+    settings = mongo.db["storefront_settings"]
+    original_find_one = settings.find_one
+    changed = False
+
+    async def install_successor_before_reconciliation(*args, **kwargs):
+        nonlocal changed
+        row = await original_find_one(*args, **kwargs)
+        if not changed:
+            changed = True
+            mongo.raw.storefront_assets.update_one(
+                {"_id": ObjectId(hero["asset_id"])},
+                {
+                    "$set": {
+                        "attach_claim_id": "successor-claim",
+                        "attach_claimed_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
+        return row
+
+    monkeypatch.setattr(settings, "find_one", install_successor_before_reconciliation)
+
+    assert await service.sweep_abandoned_assets(limit=1) == 0
+
+    stored = mongo.raw.storefront_assets.find_one({"_id": ObjectId(hero["asset_id"])})
+    assert stored["state"] == "attaching"
+    assert stored["attach_claim_id"] == "successor-claim"
+    assert stored["attach_claim_id"] != claim["claim_id"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("stale_state", ["finalizing", "finalization_recovery"])
 async def test_global_sweep_reclaims_crashed_finalization_receipts(
     setup_media, stale_state
@@ -1850,6 +2005,72 @@ async def test_global_sweep_alternates_queues_at_limit_one_under_persistent_fail
         candidate_key,
         ready_row["key"],
     ]
+
+
+@pytest.mark.asyncio
+async def test_global_sweep_fairly_budgets_cleanup_and_claim_queues_at_limit_one(
+    setup_media,
+):
+    service, mongo, storage, _ = setup_media
+    ready = await _finalize_ready_asset(service, storage, slot="about")
+    ready_row = mongo.raw.storefront_assets.find_one(
+        {"_id": ObjectId(ready["asset_id"])}
+    )
+    attaching = await _finalize_ready_asset(service, storage, slot="hero")
+    await service.claim_settings_assets(_owner(), hero_asset_id=attaching["asset_id"])
+    now = datetime.now(timezone.utc)
+    stale_at = now - timedelta(seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS + 1)
+    mongo.raw.storefront_assets.update_one(
+        {"_id": ready_row["_id"]},
+        {"$set": {"cleanup_due_at": now - timedelta(seconds=1)}},
+    )
+    mongo.raw.storefront_assets.update_one(
+        {"_id": ObjectId(attaching["asset_id"])},
+        {"$set": {"attach_claimed_at": stale_at, "updated_at": stale_at}},
+    )
+    candidate_key = f"storefront/{OWNER_ID}/hero/fair-detached.webp"
+    mongo.raw.storefront_asset_cleanup_receipts.insert_one(
+        {
+            "_id": ObjectId(),
+            "owner_id": OWNER_ID,
+            "slot": "hero",
+            "candidate_key": candidate_key,
+            "state": "cleanup_retry",
+            "cleanup_due_at": now - timedelta(seconds=1),
+            "updated_at": now,
+        }
+    )
+    storage.head_by_key[candidate_key] = {
+        "ContentLength": 10,
+        "ContentType": "image/webp",
+        "ETag": '"detached"',
+    }
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+    assert mongo.raw.storefront_assets.find_one({"_id": ready_row["_id"]}) is not None
+    assert (
+        mongo.raw.storefront_assets.find_one({"_id": ObjectId(attaching["asset_id"])})[
+            "state"
+        ]
+        == "attaching"
+    )
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+    assert mongo.raw.storefront_assets.find_one({"_id": ready_row["_id"]}) is None
+    assert (
+        mongo.raw.storefront_assets.find_one({"_id": ObjectId(attaching["asset_id"])})[
+            "state"
+        ]
+        == "attaching"
+    )
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+    assert (
+        mongo.raw.storefront_assets.find_one({"_id": ObjectId(attaching["asset_id"])})[
+            "state"
+        ]
+        == "ready"
+    )
 
 
 @pytest.mark.asyncio
