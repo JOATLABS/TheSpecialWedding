@@ -117,6 +117,12 @@ Recommended health checks:
 
 Keep staging and production variables fully separate.
 
+If planner storefronts are enabled, complete the dedicated
+[storefront infrastructure setup guide](../guides/STOREFRONT_INFRASTRUCTURE_SETUP.md).
+Its host-classification values must be present on the frontend, while its
+Cloudflare API and R2 credentials stay backend-only. Configure and verify
+staging before copying the independently scoped production values.
+
 ### Frontend app variables
 
 Required for both `frontend-prod` and `frontend-staging`:

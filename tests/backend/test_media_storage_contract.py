@@ -1,4 +1,5 @@
 from pathlib import Path
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -397,6 +398,98 @@ async def test_browser_upload_health_accepts_wildcard_cors_headers(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_browser_upload_health_offloads_blocking_target_probe(monkeypatch):
+    _install_fake_s3(monkeypatch)
+    _set_storage_settings(monkeypatch)
+    monkeypatch.setattr(settings, "cloudflare_account_id", R2_ACCOUNT_ID)
+    monkeypatch.setattr(settings, "cloudflare_api_token", "api-token")
+    storage = MediaStorage()
+    event_loop_thread = threading.get_ident()
+    probe_threads = []
+
+    def fake_target_health(target):
+        probe_threads.append(threading.get_ident())
+        return SimpleNamespace(
+            target=target,
+            bucket_name="storefront-staging-bucket",
+            status="ready",
+            issue=None,
+            is_ready=True,
+        )
+
+    async def fake_fetch_bucket_cors_rules(bucket_name: str):
+        return [
+            {
+                "allowed": {
+                    "methods": ["PUT"],
+                    "origins": ["https://app.example.com"],
+                    "headers": ["content-type"],
+                }
+            }
+        ]
+
+    monkeypatch.setattr(storage, "target_health", fake_target_health)
+    monkeypatch.setattr(
+        storage, "_fetch_bucket_cors_rules", fake_fetch_bucket_cors_rules
+    )
+
+    result = await storage.browser_upload_health(
+        StorageTarget.STOREFRONT_STAGING,
+        ["https://app.example.com"],
+    )
+
+    assert result.status == "ready"
+    assert probe_threads and probe_threads[0] != event_loop_thread
+
+
+@pytest.mark.asyncio
+async def test_private_storefront_preflight_offloads_blocking_target_probe(monkeypatch):
+    _install_fake_s3(monkeypatch)
+    _set_storage_settings(monkeypatch)
+    monkeypatch.setattr(settings, "cloudflare_account_id", R2_ACCOUNT_ID)
+    monkeypatch.setattr(settings, "cloudflare_api_token", "api-token")
+    storage = MediaStorage()
+    event_loop_thread = threading.get_ident()
+    probe_threads = []
+
+    def fake_require_target(target):
+        probe_threads.append(threading.get_ident())
+        return SimpleNamespace(
+            target=target,
+            bucket_name="storefront-staging-bucket",
+            public_domain=None,
+        )
+
+    responses = {
+        "domains/managed": {"enabled": False},
+        "domains/custom": {"domains": []},
+        "lifecycle": {
+            "rules": [
+                {
+                    "enabled": True,
+                    "conditions": {"prefix": "storefront/"},
+                    "deleteObjectsTransition": {
+                        "condition": {"type": "Age", "maxAge": 86_400}
+                    },
+                }
+            ]
+        },
+    }
+
+    async def fake_fetch(
+        bucket_name: str, suffix: str, *, account_id: str, jurisdiction: str
+    ):
+        return responses[suffix]
+
+    monkeypatch.setattr(storage, "require_target", fake_require_target)
+    monkeypatch.setattr(storage, "_fetch_r2_bucket_control", fake_fetch)
+
+    await storage.require_private_storefront_staging(force_refresh=True)
+
+    assert probe_threads and probe_threads[0] != event_loop_thread
+
+
+@pytest.mark.asyncio
 async def test_storefront_staging_privacy_requires_private_domains_and_expiry(
     monkeypatch,
 ):
@@ -675,6 +768,58 @@ async def test_r2_control_request_binds_jurisdiction_header(
         account_id=R2_ACCOUNT_ID,
         jurisdiction=jurisdiction,
     )
+
+    assert len(requests) == 1
+    assert f"/accounts/{R2_ACCOUNT_ID}/" in requests[0][0]
+    assert requests[0][1]["Authorization"] == "Bearer api-token"
+    assert requests[0][1].get("cf-r2-jurisdiction") == expected_header
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("jurisdiction", "expected_header"),
+    [("default", None), ("eu", "eu"), ("fedramp", "fedramp")],
+)
+async def test_r2_cors_request_binds_endpoint_account_and_jurisdiction(
+    monkeypatch, jurisdiction, expected_header
+):
+    _install_fake_s3(monkeypatch)
+    _set_storage_settings(monkeypatch)
+    endpoint_label = "" if jurisdiction == "default" else f".{jurisdiction}"
+    monkeypatch.setattr(
+        settings,
+        "s3_endpoint_url",
+        f"https://{R2_ACCOUNT_ID}{endpoint_label}.r2.cloudflarestorage.com",
+    )
+    monkeypatch.setattr(settings, "cloudflare_account_id", R2_ACCOUNT_ID)
+    monkeypatch.setattr(settings, "cloudflare_api_token", "api-token")
+    storage = MediaStorage()
+    requests = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"success": True, "result": {"rules": []}}
+
+    class FakeAsyncClient:
+        def __init__(self, *, timeout):
+            assert timeout == 10.0
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url, *, headers):
+            requests.append((url, headers))
+            return FakeResponse()
+
+    monkeypatch.setattr("app.services.media_storage.httpx.AsyncClient", FakeAsyncClient)
+
+    assert await storage._fetch_bucket_cors_rules("storefront-staging-bucket") == []
 
     assert len(requests) == 1
     assert f"/accounts/{R2_ACCOUNT_ID}/" in requests[0][0]

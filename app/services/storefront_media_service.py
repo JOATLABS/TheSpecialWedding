@@ -172,6 +172,12 @@ class StorefrontMediaService:
                 ),
             )
 
+    def _require_public_storefront_target(self):
+        target = self._storage.require_target(StorageTarget.BLOG_ASSETS)
+        if not getattr(target, "public_domain", None):
+            raise RuntimeError("Storefront public media requires BLOG_MEDIA_DOMAIN")
+        return target
+
     async def reserve(
         self,
         owner: Any,
@@ -194,7 +200,7 @@ class StorefrontMediaService:
                 self._storage.require_target, StorageTarget.STOREFRONT_STAGING
             )
             public_target = await asyncio.to_thread(
-                self._storage.require_target, StorageTarget.BLOG_ASSETS
+                self._require_public_storefront_target
             )
             if staging_target.bucket_name == public_target.bucket_name:
                 raise RuntimeError(
@@ -1476,6 +1482,14 @@ class StorefrontMediaService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Storefront upload must be reserved again before finalization",
             )
+
+        try:
+            await asyncio.to_thread(self._require_public_storefront_target)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Storefront image storage is temporarily unavailable",
+            ) from exc
 
         finalization_token = uuid4().hex
         finalization_started_at = datetime.now(timezone.utc)

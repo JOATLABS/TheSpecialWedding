@@ -138,6 +138,10 @@ class FakeStorage:
             StorageTarget.STOREFRONT_STAGING: "private-storefront-staging",
             StorageTarget.BLOG_ASSETS: "public-blog-assets",
         }
+        self.public_domain_by_target = {
+            StorageTarget.STOREFRONT_STAGING: None,
+            StorageTarget.BLOG_ASSETS: "https://cdn.example.test",
+        }
         self.privacy_error: Exception | None = None
 
     async def require_private_storefront_staging(self, *, force_refresh=False):
@@ -147,7 +151,10 @@ class FakeStorage:
     def require_target(self, target):
         if target in self.unavailable_targets:
             raise RuntimeError(f"{target.value} unavailable")
-        return SimpleNamespace(bucket_name=self.bucket_by_target[target])
+        return SimpleNamespace(
+            bucket_name=self.bucket_by_target[target],
+            public_domain=self.public_domain_by_target[target],
+        )
 
     def generate_presigned_put_url(
         self,
@@ -365,6 +372,21 @@ async def test_reserve_uses_server_generated_owner_slot_key_and_offloads_presign
     assert response["key"].startswith(stored["final_key_prefix"])
     assert "key" not in stored
     assert "cdn_url" not in stored
+
+
+@pytest.mark.asyncio
+async def test_reserve_fails_closed_without_a_public_storefront_media_domain(
+    setup_media,
+):
+    service, mongo, storage, _ = setup_media
+    storage.public_domain_by_target[StorageTarget.BLOG_ASSETS] = None
+
+    with pytest.raises(HTTPException) as unavailable:
+        await _reserve(service)
+
+    assert unavailable.value.status_code == 503
+    assert storage.presign_calls == []
+    assert mongo.raw.storefront_assets.count_documents({}) == 0
 
 
 @pytest.mark.asyncio
@@ -870,6 +892,31 @@ async def test_finalize_heads_exact_object_contract_and_marks_ready(setup_media)
     assert stored["actual_content_type"] == "image/png"
     assert stored["etag"] == f'"server-{stored["actual_size_bytes"]}"'
     assert stored["source_etag"] == '"upload-etag"'
+
+
+@pytest.mark.asyncio
+async def test_finalize_fails_closed_if_public_media_domain_was_removed_after_reserve(
+    setup_media,
+):
+    service, mongo, storage, _ = setup_media
+    reserved = await _reserve(service, size_bytes=1024)
+    staging_key = storage.presign_calls[-1]["key"]
+    storage.head_by_key[staging_key] = {
+        "ContentLength": 1024,
+        "ContentType": "image/webp",
+        "ETag": '"upload-etag"',
+    }
+    storage.public_domain_by_target[StorageTarget.BLOG_ASSETS] = None
+
+    with pytest.raises(HTTPException) as unavailable:
+        await service.finalize(_owner(), reserved["asset_id"])
+
+    assert unavailable.value.status_code == 503
+    assert storage.upload_calls == []
+    stored = mongo.raw.storefront_assets.find_one(
+        {"_id": ObjectId(reserved["asset_id"])}
+    )
+    assert stored["state"] == "reserved"
 
 
 @pytest.mark.asyncio
