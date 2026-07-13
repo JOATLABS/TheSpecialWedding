@@ -777,6 +777,7 @@ class StorefrontService:
                     "currency": 1,
                     "services.name": 1,
                     "services.description": 1,
+                    "services.included": 1,
                 },
             )
             for package in await package_cursor.to_list(length=50):
@@ -786,7 +787,13 @@ class StorefrontService:
                         "description": service.get("description"),
                     }
                     for service in package.get("services", [])
-                    if isinstance(service, dict) and service.get("name")
+                    if (
+                        isinstance(service, dict)
+                        and service.get("name")
+                        and (
+                            "included" not in service or service.get("included") is True
+                        )
+                    )
                 ]
                 try:
                     public_package = PublicPackage.model_validate(
