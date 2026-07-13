@@ -11,9 +11,12 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.constants.roles import ROLE_WEDDING_PLANNER
+from app.core.database import mongo
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     enforce_team_permission,
+    get_owner_identity,
     require_team_or_planner,
 )
 from app.services.package_service import package_service
@@ -21,9 +24,44 @@ from app.utils.planner_connect_scope import (
     connect_not_ready_detail,
     planner_can_collect_payments,
 )
+from app.utils.planner_ownership import normalize_planner_id, normalize_query_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _require_package_owner_id(current_user: ExtendedAuthUser) -> str:
+    """Resolve the planner business that owns package data for this session."""
+    owner_id, _ = get_owner_identity(current_user)
+    if not owner_id:
+        raise HTTPException(
+            status_code=403,
+            detail="A planner owner scope is required to access packages",
+        )
+    return owner_id
+
+
+async def _load_package_payment_owner(
+    current_user: ExtendedAuthUser, owner_id: str
+) -> dict:
+    """Load the owner whose Connect state governs a team-member package send."""
+    actor_id = normalize_planner_id((current_user.user_data or {}).get("_id"))
+    if current_user.is_wedding_planner and actor_id == owner_id:
+        return current_user.user_data
+
+    owner = await mongo.get_users_collection().find_one(
+        {
+            "_id": normalize_query_id(owner_id),
+            "role": ROLE_WEDDING_PLANNER,
+            "is_active": {"$ne": False},
+        }
+    )
+    if not owner:
+        raise HTTPException(
+            status_code=403,
+            detail="The planner owner scope for this package is unavailable",
+        )
+    return owner
 
 
 # ============================================================================
@@ -119,11 +157,8 @@ async def list_packages(
     - **include_templates**: Include template packages
     - **status**: Filter by status (draft, active, archived)
     """
+    planner_id = _require_package_owner_id(current_user)
     try:
-        planner_id = str(
-            (current_user.user_data or {}).get("_id") or current_user.email
-        )
-
         packages = await package_service.list_packages(
             planner_id=planner_id,
             include_templates=include_templates,
@@ -150,11 +185,8 @@ async def create_package(
     Packages start in 'draft' status. Activate them before sending to couples.
     """
     enforce_team_permission(current_user, "manage_contracts")
+    planner_id = _require_package_owner_id(current_user)
     try:
-        planner_id = str(
-            (current_user.user_data or {}).get("_id") or current_user.email
-        )
-
         package = await package_service.create_package(
             planner_id=planner_id,
             package_data=package_data.model_dump(exclude_unset=True),
@@ -174,10 +206,8 @@ async def get_package_stats(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Get package statistics for the planner."""
+    planner_id = _require_package_owner_id(current_user)
     try:
-        planner_id = str(
-            (current_user.user_data or {}).get("_id") or current_user.email
-        )
         stats = await package_service.get_package_stats(planner_id)
         return stats
 
@@ -191,11 +221,8 @@ async def get_package(
     package_id: str, current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Get a specific package by ID."""
+    planner_id = _require_package_owner_id(current_user)
     try:
-        planner_id = str(
-            (current_user.user_data or {}).get("_id") or current_user.email
-        )
-
         package = await package_service.get_package(package_id, planner_id)
         if not package:
             raise HTTPException(status_code=404, detail="Package not found")
@@ -221,11 +248,8 @@ async def update_package(
     Note: Active packages have limited editable fields.
     """
     enforce_team_permission(current_user, "manage_contracts")
+    planner_id = _require_package_owner_id(current_user)
     try:
-        planner_id = str(
-            (current_user.user_data or {}).get("_id") or current_user.email
-        )
-
         package = await package_service.update_package(
             package_id=package_id,
             planner_id=planner_id,
@@ -251,11 +275,8 @@ async def delete_package(
     Only packages in 'draft' status without contracts can be deleted.
     """
     enforce_team_permission(current_user, "manage_contracts")
+    planner_id = _require_package_owner_id(current_user)
     try:
-        planner_id = str(
-            (current_user.user_data or {}).get("_id") or current_user.email
-        )
-
         await package_service.delete_package(package_id, planner_id)
 
         return {"message": "Package deleted successfully"}
@@ -280,11 +301,8 @@ async def duplicate_package(
     Creates a copy of the package, optionally as a template.
     """
     enforce_team_permission(current_user, "manage_contracts")
+    planner_id = _require_package_owner_id(current_user)
     try:
-        planner_id = str(
-            (current_user.user_data or {}).get("_id") or current_user.email
-        )
-
         package = await package_service.duplicate_package(
             package_id=package_id,
             planner_id=planner_id,
@@ -314,17 +332,15 @@ async def send_package_to_couple(
     with a unique token for the couple to view and sign.
     """
     enforce_team_permission(current_user, "manage_contracts")
+    planner_id = _require_package_owner_id(current_user)
     try:
-        planner_id = str(
-            (current_user.user_data or {}).get("_id") or current_user.email
-        )
-
         # Gate: planner must have Stripe Connect onboarded with charges
         # enabled before sending a package. Without this, the deposit
         # auto-charge at sign time runs without `transfer_data.destination`
         # and the money silently lands in the platform Stripe account.
         # See app/utils/planner_connect_scope.py for the predicate.
-        if not planner_can_collect_payments(current_user.user_data):
+        payment_owner = await _load_package_payment_owner(current_user, planner_id)
+        if not planner_can_collect_payments(payment_owner):
             raise HTTPException(
                 status_code=400,
                 detail=connect_not_ready_detail(),

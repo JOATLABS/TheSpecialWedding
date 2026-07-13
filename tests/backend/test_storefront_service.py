@@ -743,7 +743,17 @@ async def test_public_projection_filters_packages_reviews_and_private_owner_fiel
                         "name": "Vendor sourcing",
                         "description": "Curated shortlists",
                         "internal_cost": 50,
-                    }
+                    },
+                    {
+                        "name": "Explicitly included",
+                        "description": "Published by explicit intent",
+                        "included": True,
+                    },
+                    {
+                        "name": "Explicitly excluded",
+                        "description": "Private package exclusion",
+                        "included": False,
+                    },
                 ],
                 "internal_margin": 0.42,
                 "contract_terms": "private",
@@ -846,7 +856,11 @@ async def test_public_projection_filters_packages_reviews_and_private_owner_fiel
     }
     assert package["total_amount"] == 12500
     assert package["services"] == [
-        {"name": "Vendor sourcing", "description": "Curated shortlists"}
+        {"name": "Vendor sourcing", "description": "Curated shortlists"},
+        {
+            "name": "Explicitly included",
+            "description": "Published by explicit intent",
+        },
     ]
     assert len(result["reviews"]) == 1
     assert "author_email" not in result["reviews"][0]
