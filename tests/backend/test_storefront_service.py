@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
 
+from app.constants.storefront import PENDING_ASSET_RECOVERY_FIELDS
 from app.dependencies.auth_extended import ExtendedAuthUser
 from app.models.storefront import StorefrontSettingsUpdate
 from app.services.storefront_entitlement_service import StorefrontEntitlements
@@ -586,6 +587,34 @@ async def test_new_asset_edit_retires_every_member_of_displaced_pending_group(
     stored = fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
     assert not any(key.startswith("pending_") for key in stored)
     assert ("paused-group", ("hero", "about")) in service._media.claim_release_entries
+
+
+@pytest.mark.asyncio
+async def test_successor_asset_edit_clears_stale_manifest_recovery_metadata(
+    setup_storefront,
+):
+    service, fake_mongo, _ = setup_storefront
+    await service.update_settings(
+        _owner(), StorefrontSettingsUpdate(slug="replace-recovery-metadata")
+    )
+    fake_mongo.raw.storefront_settings.update_one(
+        {"planner_id": OWNER_ID},
+        {
+            "$set": {
+                "pending_asset_recovery_status": "quarantined",
+                "pending_asset_recovery_error": "invalid_pending_manifest",
+                "pending_asset_recovery_attempts": 3,
+            }
+        },
+    )
+
+    saved = await service.update_settings(
+        _owner(), StorefrontSettingsUpdate(hero_asset_id="successor-hero")
+    )
+
+    assert saved["hero_asset_id"] == "successor-hero"
+    pre_promotion = service._media.pre_promotion_settings[-1]
+    assert not PENDING_ASSET_RECOVERY_FIELDS.intersection(pre_promotion)
 
 
 @pytest.mark.asyncio

@@ -57,6 +57,14 @@ class AsyncCursor:
     def __init__(self, cursor):
         self._cursor = cursor
 
+    def sort(self, *args, **kwargs):
+        self._cursor = self._cursor.sort(*args, **kwargs)
+        return self
+
+    def limit(self, limit):
+        self._cursor = self._cursor.limit(limit)
+        return self
+
     async def to_list(self, length=None):
         rows = list(self._cursor)
         return rows if length is None else rows[:length]
@@ -1630,6 +1638,358 @@ async def test_global_sweep_promotes_stale_durable_claim_after_entitlement_loss(
 
 
 @pytest.mark.asyncio
+async def test_global_sweep_promotes_stale_clear_only_manifest_without_asset_rows(
+    setup_media,
+):
+    service, mongo, _storage, entitlements = setup_media
+    claim = await service.claim_settings_assets(_owner(), hero_asset_id=None)
+    stale_at = datetime.now(timezone.utc) - timedelta(
+        seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS + 1
+    )
+    mongo.raw.storefront_settings.insert_one(
+        {
+            "planner_id": OWNER_ID,
+            "revision": 1,
+            "hero_asset_id": "stable-hero",
+            "pending_hero_asset_id": None,
+            "pending_hero_claim_id": claim["claim_id"],
+            "pending_asset_group": claim["manifest"],
+            "updated_at": stale_at,
+        }
+    )
+    entitlements.enabled_by_owner[OWNER_ID] = False
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+
+    settings = mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert settings["hero_asset_id"] is None
+    assert not any(key.startswith("pending_") for key in settings)
+    assert mongo.raw.storefront_assets.count_documents({}) == 0
+
+
+@pytest.mark.asyncio
+async def test_global_sweep_rolls_back_crash_after_settings_cas_when_asset_is_missing(
+    setup_media,
+):
+    service, mongo, storage, entitlements = setup_media
+    hero = await _finalize_ready_asset(service, storage, slot="hero")
+    claim = await service.claim_settings_assets(
+        _owner(), hero_asset_id=hero["asset_id"]
+    )
+    stale_at = datetime.now(timezone.utc) - timedelta(
+        seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS + 1
+    )
+    mongo.raw.storefront_settings.insert_one(
+        {
+            "planner_id": OWNER_ID,
+            "revision": 1,
+            "hero_asset_id": "stable-hero",
+            "pending_hero_asset_id": hero["asset_id"],
+            "pending_hero_claim_id": claim["claim_id"],
+            "pending_asset_group": claim["manifest"],
+            "updated_at": stale_at,
+        }
+    )
+    mongo.raw.storefront_assets.delete_one({"_id": ObjectId(hero["asset_id"])})
+    entitlements.enabled_by_owner[OWNER_ID] = False
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+
+    settings = mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert settings["hero_asset_id"] == "stable-hero"
+    assert not any(key.startswith("pending_") for key in settings)
+
+
+@pytest.mark.asyncio
+async def test_global_settings_recovery_quarantines_poison_before_next_owner(
+    setup_media,
+):
+    service, mongo, _storage, _entitlements = setup_media
+    now = datetime.now(timezone.utc)
+    valid_claim = await service.claim_settings_assets(
+        _owner(SECOND_OWNER_ID), hero_asset_id=None
+    )
+    mongo.raw.storefront_settings.insert_many(
+        [
+            {
+                "planner_id": OWNER_ID,
+                "revision": 1,
+                "hero_asset_id": "owner-one-stable",
+                "pending_asset_group": {"malformed": True},
+                "updated_at": now - timedelta(hours=2),
+            },
+            {
+                "planner_id": SECOND_OWNER_ID,
+                "revision": 1,
+                "hero_asset_id": "owner-two-stable",
+                "pending_hero_asset_id": None,
+                "pending_hero_claim_id": valid_claim["claim_id"],
+                "pending_asset_group": valid_claim["manifest"],
+                "updated_at": now - timedelta(hours=1),
+            },
+        ]
+    )
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+    poison = mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert poison["pending_asset_recovery_status"] == "quarantined"
+    assert poison["hero_asset_id"] == "owner-one-stable"
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+    recovered = mongo.raw.storefront_settings.find_one({"planner_id": SECOND_OWNER_ID})
+    assert recovered["hero_asset_id"] is None
+    assert not any(key.startswith("pending_") for key in recovered)
+
+
+@pytest.mark.asyncio
+async def test_global_settings_recovery_quarantines_missing_owner_without_starving(
+    setup_media,
+):
+    service, mongo, _storage, _entitlements = setup_media
+    now = datetime.now(timezone.utc)
+    claim = await service.claim_settings_assets(
+        _owner(SECOND_OWNER_ID), hero_asset_id=None
+    )
+    poison_id = ObjectId("407f1f77bcf86cd799439012")
+    mongo.raw.storefront_settings.insert_many(
+        [
+            {
+                "_id": poison_id,
+                "revision": 1,
+                "pending_asset_group": None,
+                "updated_at": now - timedelta(hours=2),
+            },
+            {
+                "planner_id": SECOND_OWNER_ID,
+                "revision": 1,
+                "hero_asset_id": "owner-two-stable",
+                "pending_hero_asset_id": None,
+                "pending_hero_claim_id": claim["claim_id"],
+                "pending_asset_group": claim["manifest"],
+                "updated_at": now - timedelta(hours=1),
+            },
+        ]
+    )
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+    poison = mongo.raw.storefront_settings.find_one({"_id": poison_id})
+    assert poison["pending_asset_recovery_status"] == "quarantined"
+    assert poison["pending_asset_recovery_error"] == "invalid_planner_owner"
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+    recovered = mongo.raw.storefront_settings.find_one({"planner_id": SECOND_OWNER_ID})
+    assert recovered["hero_asset_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_global_settings_recovery_defers_transient_failure_without_losing_intent(
+    setup_media, monkeypatch
+):
+    service, mongo, _storage, _entitlements = setup_media
+    now = datetime.now(timezone.utc)
+    first_claim = await service.claim_settings_assets(_owner(), hero_asset_id=None)
+    second_claim = await service.claim_settings_assets(
+        _owner(SECOND_OWNER_ID), hero_asset_id=None
+    )
+    for owner_id, claim, stable, updated_at in (
+        (OWNER_ID, first_claim, "owner-one-stable", now - timedelta(hours=2)),
+        (
+            SECOND_OWNER_ID,
+            second_claim,
+            "owner-two-stable",
+            now - timedelta(hours=1),
+        ),
+    ):
+        mongo.raw.storefront_settings.insert_one(
+            {
+                "planner_id": owner_id,
+                "revision": 1,
+                "hero_asset_id": stable,
+                "pending_hero_asset_id": None,
+                "pending_hero_claim_id": claim["claim_id"],
+                "pending_asset_group": claim["manifest"],
+                "updated_at": updated_at,
+            }
+        )
+
+    original_promote = service.promote_settings_asset_claims
+    failed_once = False
+
+    async def fail_first_owner_once(owner, claim):
+        nonlocal failed_once
+        if claim["owner_id"] == OWNER_ID and not failed_once:
+            failed_once = True
+            raise RuntimeError("transient mongo failure")
+        await original_promote(owner, claim)
+
+    monkeypatch.setattr(service, "promote_settings_asset_claims", fail_first_owner_once)
+
+    assert await service.sweep_abandoned_assets(limit=1) == 0
+    deferred = mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert deferred["hero_asset_id"] == "owner-one-stable"
+    assert deferred["pending_asset_group"] == first_claim["manifest"]
+    assert deferred["pending_hero_claim_id"] == first_claim["claim_id"]
+    assert deferred["pending_asset_recovery_status"] == "retry_pending"
+    assert deferred["pending_asset_recovery_due_at"] > datetime.now()
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+    recovered = mongo.raw.storefront_settings.find_one({"planner_id": SECOND_OWNER_ID})
+    assert recovered["hero_asset_id"] is None
+    assert not any(key.startswith("pending_") for key in recovered)
+
+    mongo.raw.storefront_settings.update_one(
+        {"planner_id": OWNER_ID},
+        {"$set": {"pending_asset_recovery_due_at": now - timedelta(seconds=1)}},
+    )
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+    retried = mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert retried["hero_asset_id"] is None
+    assert not any(key.startswith("pending_") for key in retried)
+
+
+@pytest.mark.asyncio
+async def test_global_settings_recovery_counts_one_owner_against_limit_one(
+    setup_media,
+):
+    service, mongo, _storage, _entitlements = setup_media
+    now = datetime.now(timezone.utc)
+    claims = {
+        owner_id: await service.claim_settings_assets(
+            _owner(owner_id), hero_asset_id=None
+        )
+        for owner_id in (OWNER_ID, SECOND_OWNER_ID)
+    }
+    for offset, owner_id in enumerate((OWNER_ID, SECOND_OWNER_ID), start=1):
+        claim = claims[owner_id]
+        mongo.raw.storefront_settings.insert_one(
+            {
+                "planner_id": owner_id,
+                "revision": 1,
+                "hero_asset_id": f"stable-{owner_id}",
+                "pending_hero_asset_id": None,
+                "pending_hero_claim_id": claim["claim_id"],
+                "pending_asset_group": claim["manifest"],
+                "updated_at": now - timedelta(hours=3 - offset),
+            }
+        )
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+
+    rows = list(mongo.raw.storefront_settings.find({}))
+    assert sum("pending_asset_group" not in row for row in rows) == 1
+    assert sum("pending_asset_group" in row for row in rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_reconcile_transient_promotion_failure_preserves_complete_pending_intent(
+    setup_media, monkeypatch
+):
+    service, mongo, storage, _entitlements = setup_media
+    hero = await _finalize_ready_asset(service, storage, slot="hero")
+    claim = await service.claim_settings_assets(
+        _owner(), hero_asset_id=hero["asset_id"]
+    )
+    mongo.raw.storefront_settings.insert_one(
+        {
+            "planner_id": OWNER_ID,
+            "revision": 1,
+            "hero_asset_id": "stable-hero",
+            "pending_hero_asset_id": hero["asset_id"],
+            "pending_hero_claim_id": claim["claim_id"],
+            "pending_asset_group": claim["manifest"],
+        }
+    )
+    await service.attach_settings_asset_claims(_owner(), claim)
+
+    async def transient_promotion_failure(_owner_arg, _claim_arg):
+        raise RuntimeError("transient mongo failure")
+
+    monkeypatch.setattr(
+        service, "promote_settings_asset_claims", transient_promotion_failure
+    )
+
+    with pytest.raises(RuntimeError, match="transient mongo failure"):
+        await service.reconcile_settings_asset_claims(_owner(), claim)
+
+    settings = mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert settings["hero_asset_id"] == "stable-hero"
+    assert settings["pending_hero_asset_id"] == hero["asset_id"]
+    assert settings["pending_hero_claim_id"] == claim["claim_id"]
+    assert settings["pending_asset_group"] == claim["manifest"]
+    stored = mongo.raw.storefront_assets.find_one({"_id": ObjectId(hero["asset_id"])})
+    assert stored["state"] == "attached"
+    assert stored["attached_claim_id"] == claim["claim_id"]
+
+
+@pytest.mark.asyncio
+async def test_global_settings_recovery_lease_fences_stale_worker_from_promotion(
+    setup_media, monkeypatch
+):
+    service, mongo, _storage, _entitlements = setup_media
+    claim = await service.claim_settings_assets(_owner(), hero_asset_id=None)
+    mongo.raw.storefront_settings.insert_one(
+        {
+            "planner_id": OWNER_ID,
+            "revision": 1,
+            "hero_asset_id": "stable-hero",
+            "pending_hero_asset_id": None,
+            "pending_hero_claim_id": claim["claim_id"],
+            "pending_asset_group": claim["manifest"],
+            "updated_at": datetime.now(timezone.utc) - timedelta(hours=1),
+        }
+    )
+    original_promote = service.promote_settings_asset_claims
+    successor_token = "successor-recovery-token"
+    installed_successor = False
+
+    async def install_successor_lease_before_promote(owner, claimed):
+        nonlocal installed_successor
+        if not installed_successor:
+            installed_successor = True
+            mongo.raw.storefront_settings.update_one(
+                {"planner_id": OWNER_ID},
+                {
+                    "$set": {
+                        "pending_asset_recovery_status": "recovering",
+                        "pending_asset_recovery_token": successor_token,
+                        "pending_asset_recovery_lease_expires_at": datetime.now(
+                            timezone.utc
+                        )
+                        + timedelta(minutes=5),
+                    }
+                },
+            )
+        await original_promote(owner, claimed)
+
+    monkeypatch.setattr(
+        service,
+        "promote_settings_asset_claims",
+        install_successor_lease_before_promote,
+    )
+
+    assert await service.sweep_abandoned_assets(limit=1) == 0
+    fenced = mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert fenced["hero_asset_id"] == "stable-hero"
+    assert fenced["pending_asset_group"] == claim["manifest"]
+    assert fenced["pending_asset_recovery_token"] == successor_token
+    assert fenced["pending_asset_recovery_status"] == "recovering"
+
+    mongo.raw.storefront_settings.update_one(
+        {"planner_id": OWNER_ID},
+        {
+            "$set": {
+                "pending_asset_recovery_lease_expires_at": datetime.now(timezone.utc)
+                - timedelta(seconds=1)
+            }
+        },
+    )
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+    recovered = mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    assert recovered["hero_asset_id"] is None
+    assert not any(key.startswith("pending_") for key in recovered)
+
+
+@pytest.mark.asyncio
 async def test_global_sweep_releases_orphaned_attached_claim_after_entitlement_loss(
     setup_media,
 ):
@@ -1716,6 +2076,46 @@ async def test_global_claim_recovery_is_token_fenced_from_successor_claim(
     assert stored["state"] == "attaching"
     assert stored["attach_claim_id"] == "successor-claim"
     assert stored["attach_claim_id"] != claim["claim_id"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("state", "timestamp_field"),
+    [("attaching", "attach_claimed_at"), ("attached", "updated_at")],
+)
+async def test_global_claim_recovery_quarantines_malformed_receipt_without_starving(
+    setup_media, state, timestamp_field
+):
+    service, mongo, storage, _entitlements = setup_media
+    valid = await _finalize_ready_asset(service, storage, slot="hero")
+    await service.claim_settings_assets(_owner(), hero_asset_id=valid["asset_id"])
+    stale_at = datetime.now(timezone.utc) - timedelta(
+        seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS + 1
+    )
+    mongo.raw.storefront_assets.update_one(
+        {"_id": ObjectId(valid["asset_id"])},
+        {"$set": {"attach_claimed_at": stale_at, "updated_at": stale_at}},
+    )
+    poison_id = ObjectId("407f1f77bcf86cd799439011")
+    poison = {
+        "_id": poison_id,
+        "owner_id": OWNER_ID,
+        "slot": "about",
+        "state": state,
+        timestamp_field: stale_at - timedelta(hours=1),
+    }
+    mongo.raw.storefront_assets.insert_one(poison)
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+    quarantined = mongo.raw.storefront_assets.find_one({"_id": poison_id})
+    assert quarantined["state"] == "claim_quarantined"
+    assert quarantined["claim_reconcile_error"] == "invalid_claim_receipt"
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+    recovered = mongo.raw.storefront_assets.find_one(
+        {"_id": ObjectId(valid["asset_id"])}
+    )
+    assert recovered["state"] == "ready"
 
 
 @pytest.mark.asyncio

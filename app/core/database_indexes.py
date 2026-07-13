@@ -7,6 +7,12 @@ import logging
 
 from pymongo import ASCENDING, DESCENDING, TEXT
 
+from app.constants.storefront import (
+    PENDING_ASSET_GROUP_FIELD,
+    PENDING_ASSET_RECOVERY_DUE_FIELD,
+    PENDING_ASSET_RECOVERY_LEASE_FIELD,
+    PENDING_ASSET_RECOVERY_STATUS_FIELD,
+)
 from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
@@ -2581,6 +2587,18 @@ async def create_storefront_indexes():
             # Legacy settings may predate slugs. They remain non-routable and
             # do not block startup while an explicit migration is prepared.
             partialFilterExpression={"slug": {"$type": "string"}},
+        )
+        await settings.create_index(
+            [
+                (PENDING_ASSET_RECOVERY_STATUS_FIELD, ASCENDING),
+                (PENDING_ASSET_RECOVERY_DUE_FIELD, ASCENDING),
+                (PENDING_ASSET_RECOVERY_LEASE_FIELD, ASCENDING),
+                ("updated_at", ASCENDING),
+                ("planner_id", ASCENDING),
+            ],
+            name="idx_storefront_settings_pending_recovery_due_owner",
+            background=True,
+            partialFilterExpression={PENDING_ASSET_GROUP_FIELD: {"$exists": True}},
         )
         await domains.create_index(
             [("planner_id", ASCENDING)],

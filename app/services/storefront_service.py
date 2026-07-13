@@ -15,6 +15,7 @@ from pymongo.errors import DuplicateKeyError
 from app.constants.roles import is_wedding_planner_role
 from app.constants.storefront import (
     PENDING_ASSET_GROUP_FIELD,
+    PENDING_ASSET_RECOVERY_FIELDS,
     RESERVED_STOREFRONT_SLUGS,
 )
 from app.core.database import mongo
@@ -250,6 +251,10 @@ class StorefrontService:
             pending_unsets: dict[str, str] = {}
             displaced_pending_claims: dict[str, list[dict[str, str]]] = {}
             if explicit_asset_changes:
+                # A successor edit supersedes any lease/quarantine metadata
+                # from the manifest it replaces. The pending claim itself is
+                # fenced independently by its new claim token.
+                pending_unsets.update(dict.fromkeys(PENDING_ASSET_RECOVERY_FIELDS, ""))
                 asset_claim = await self._media.claim_settings_assets(
                     owner, **explicit_asset_changes
                 )
