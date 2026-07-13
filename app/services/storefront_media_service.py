@@ -3250,6 +3250,21 @@ class StorefrontMediaService:
         claim_filter["planner_id"] = (
             planner_id if "planner_id" in candidate else {"$exists": False}
         )
+        attempts = candidate.get(PENDING_ASSET_RECOVERY_ATTEMPTS_FIELD)
+        if PENDING_ASSET_RECOVERY_ATTEMPTS_FIELD in candidate:
+            claim_filter[PENDING_ASSET_RECOVERY_ATTEMPTS_FIELD] = attempts
+            claim_filter["$and"].append(
+                {PENDING_ASSET_RECOVERY_ATTEMPTS_FIELD: {"$exists": True}}
+            )
+        else:
+            claim_filter[PENDING_ASSET_RECOVERY_ATTEMPTS_FIELD] = {"$exists": False}
+        normalized_attempts = (
+            attempts
+            if isinstance(attempts, int)
+            and not isinstance(attempts, bool)
+            and attempts >= 0
+            else 0
+        )
         claimed = await self._mongo.db["storefront_settings"].update_one(
             claim_filter,
             {
@@ -3258,13 +3273,13 @@ class StorefrontMediaService:
                     PENDING_ASSET_RECOVERY_TOKEN_FIELD: recovery_token,
                     PENDING_ASSET_RECOVERY_LEASE_FIELD: now
                     + timedelta(seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS),
+                    PENDING_ASSET_RECOVERY_ATTEMPTS_FIELD: normalized_attempts + 1,
                     "updated_at": now,
                 },
                 "$unset": {
                     PENDING_ASSET_RECOVERY_DUE_FIELD: "",
                     PENDING_ASSET_RECOVERY_ERROR_FIELD: "",
                 },
-                "$inc": {PENDING_ASSET_RECOVERY_ATTEMPTS_FIELD: 1},
             },
         )
         if not getattr(claimed, "modified_count", 0):
