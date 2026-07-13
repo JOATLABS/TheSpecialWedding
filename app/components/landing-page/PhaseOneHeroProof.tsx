@@ -1,10 +1,16 @@
 import { getMarketingCaptureAsset } from '@/data/marketingCaptureManifest';
+import type { PublicDemoVideo } from '@/data/publicDemoVideos';
 
+import DemoVideoLauncher from '../saas/DemoVideoLauncher';
 import { ProductProofWindow } from './ProductProofWindow';
 
 const heroProof = getMarketingCaptureAsset('dashboard', 'hero');
 
-export function PhaseOneHeroProof() {
+type PhaseOneHeroProofProps = {
+  demo: PublicDemoVideo;
+};
+
+export function PhaseOneHeroProof({ demo }: PhaseOneHeroProofProps) {
   return (
     <div
       className="relative mx-auto w-full max-w-3xl"
@@ -20,6 +26,15 @@ export function PhaseOneHeroProof() {
         priority
         variant="hero"
       />
+      {demo.assetUrl ? (
+        <div className="relative mt-5 flex justify-center">
+          <DemoVideoLauncher
+            demo={demo}
+            label="Watch the planner workspace walkthrough"
+            variant="hero"
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

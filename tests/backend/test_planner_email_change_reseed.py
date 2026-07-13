@@ -163,13 +163,7 @@ def test_verify_email_change_seeds_catalog_for_new_email_when_planner(
     async def _noop_cascade(*_a, **_kw):
         return {"forms": 0}
 
-    async def _noop_invalidate_caches(*_a, **_kw):
-        return None
-
     monkeypatch.setattr(svc, "_cascade_planner_email_change", _noop_cascade)
-    monkeypatch.setattr(
-        svc, "_invalidate_planner_email_caches", _noop_invalidate_caches
-    )
 
     import app.services.form_service as form_service_module
 
@@ -204,13 +198,7 @@ def test_verify_email_change_does_not_seed_for_non_planner_role(
     async def _noop_cascade(*_a, **_kw):
         return {}
 
-    async def _noop_invalidate_caches(*_a, **_kw):
-        return None
-
     monkeypatch.setattr(svc, "_cascade_planner_email_change", _noop_cascade)
-    monkeypatch.setattr(
-        svc, "_invalidate_planner_email_caches", _noop_invalidate_caches
-    )
 
     import app.services.form_service as form_service_module
 
@@ -239,13 +227,7 @@ def test_verify_email_change_swallows_seed_failure(service, monkeypatch, fake_st
     async def _noop_cascade(*_a, **_kw):
         return {}
 
-    async def _noop_invalidate_caches(*_a, **_kw):
-        return None
-
     monkeypatch.setattr(svc, "_cascade_planner_email_change", _noop_cascade)
-    monkeypatch.setattr(
-        svc, "_invalidate_planner_email_caches", _noop_invalidate_caches
-    )
 
     import app.services.form_service as form_service_module
 

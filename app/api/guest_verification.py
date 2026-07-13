@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     check_wedding_access,
+    enforce_team_permission,
     require_admin_or_planner,
 )
 from app.dependencies.guest_access import (
@@ -272,6 +273,7 @@ async def update_wedding_privacy_settings(
     """
     Update privacy settings for a wedding - Admin only
     """
+    enforce_team_permission(current_user, "manage_wedding_settings")
     # Check if user has access to this wedding
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")

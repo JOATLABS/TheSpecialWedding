@@ -62,9 +62,27 @@ describe('demo video manifest', () => {
     }
   });
 
-  it('keeps the hero walkthrough at the requested two-minute target', () => {
+  it('keeps the connected hero walkthrough inside the Phase 1 60-90 second target', () => {
     assert.equal(HERO_DEMO_VIDEO.id, 'planner-command-center-walkthrough');
-    assert.equal(HERO_DEMO_VIDEO.durationSeconds, 120);
+    assert.equal(HERO_DEMO_VIDEO.durationSeconds, 90);
     assert.equal(HERO_DEMO_VIDEO.priority, 'hero');
+    assert.deepEqual(
+      HERO_DEMO_VIDEO.captureCheckpoints?.map((checkpoint) => checkpoint.route),
+      [
+        '/admin/planner',
+        '/admin/weddings/wedding_marketing_capture_sofia_daniel',
+        '/sofia-and-daniel',
+        '/couple/dashboard',
+        '/admin/guests',
+        '/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel',
+        '/admin/vendors',
+        '/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel',
+        '/admin/planner',
+      ],
+    );
+    for (const checkpoint of HERO_DEMO_VIDEO.captureCheckpoints ?? []) {
+      assert.ok(checkpoint.action.trim(), `capture action missing for ${checkpoint.label}`);
+      assert.ok(checkpoint.visibleResult.trim(), `visible result missing for ${checkpoint.label}`);
+    }
   });
 });

@@ -11,6 +11,13 @@ export type DemoScriptStep = {
   voiceover: string;
 };
 
+export type DemoCaptureCheckpoint = {
+  label: string;
+  route: string;
+  action: string;
+  visibleResult: string;
+};
+
 export type DemoVideo = {
   id: string;
   featureId?: MarketingFeature['id'];
@@ -27,47 +34,70 @@ export type DemoVideo = {
   socialThumbnailUrl?: string;
   recordedAt?: string;
   appBuildLabel?: string;
+  appBuildCommit?: string;
   routePlan: readonly string[];
+  captureCheckpoints?: readonly DemoCaptureCheckpoint[];
   seedRequirements: readonly string[];
   script: readonly DemoScriptStep[];
   recordingChecklist: readonly string[];
   captureNotes: string;
 };
 
+export type PublicDemoVideoPublicationApproval = {
+  approval: 'approved';
+  captureReceiptPath: string;
+  appBuildCommit: string;
+  appBuildLabel: string;
+  recordedAt: string;
+  assetUrl: string;
+  thumbnailUrl: string;
+  captionUrl: string;
+  transcriptUrl: string;
+  socialAssetUrl: string;
+  socialThumbnailUrl: string;
+};
+
 const defaultChecklist = [
   'Start from the product UI, not a mocked slide.',
-  'Move through the flow with natural pauses, hover states, and visible saves.',
+  'Move through the flow with natural pauses and verify each visible result.',
   'Keep private real customer data out of the frame.',
   'End on the activation action the viewer should remember.',
 ] as const;
 
-const DEMO_VIDEO_RECORDED_AT = '2026-07-01';
-const DEMO_VIDEO_APP_BUILD_LABEL = 'Public-safe browser walkthrough';
-const DEMO_VIDEO_PUBLIC_ROOT = '/demo-videos';
+/**
+ * Publication is intentionally allowlisted. A rendered file becoming present under
+ * `public/` is not approval, and adding a new demo definition must never publish it.
+ * Add a complete entry only after the manual receipt and public playback review pass.
+ */
+export const APPROVED_PUBLIC_DEMO_VIDEO_PUBLICATIONS: Readonly<
+  Partial<Record<string, PublicDemoVideoPublicationApproval>>
+> = Object.freeze({});
 
-const DEMO_VIDEO_IDS_REQUIRING_PUBLIC_RETAKE = new Set([
-  'planner-command-center-walkthrough',
-  'morning-view-demo',
-  'wedding-timeline-demo',
-  'couple-portal-demo',
-  'microsite-auto-publishes-demo',
-  'wedding-configuration-demo',
-  'gallery-management-demo',
-  'guest-management-demo',
-  'seating-orchestrator-demo',
-  'guest-memories-demo',
-  'planner-communications-demo',
-  'contract-sign-pay-demo',
-  'payment-autopilot-demo',
-  'budget-quote-demo',
-  'vendor-directory-crm-demo',
-  'knowledge-base-demo',
-  'forms-canvas-demo',
-  'team-permissions-audit-demo',
-]);
+function isCompletePublicationApproval(
+  approval: PublicDemoVideoPublicationApproval | undefined,
+  demoId: string,
+): approval is PublicDemoVideoPublicationApproval {
+  if (!approval || approval.approval !== 'approved') return false;
 
-function attachPublishedDemoAssets(demo: DemoVideo): DemoVideo {
-  if (DEMO_VIDEO_IDS_REQUIRING_PUBLIC_RETAKE.has(demo.id)) {
+  const assetUrls = [
+    approval.assetUrl,
+    approval.thumbnailUrl,
+    approval.captionUrl,
+    approval.transcriptUrl,
+    approval.socialAssetUrl,
+    approval.socialThumbnailUrl,
+  ];
+
+  return /^[0-9a-f]{40}$/i.test(approval.appBuildCommit)
+    && approval.captureReceiptPath === `output/demo-videos/receipts/${demoId}.json`
+    && assetUrls.every((url) => url.startsWith('/demo-videos/'))
+    && Number.isFinite(Date.parse(approval.recordedAt))
+    && approval.appBuildLabel.trim().length > 0;
+}
+
+export function applyDemoVideoPublicationApproval(demo: DemoVideo): DemoVideo {
+  const approval = APPROVED_PUBLIC_DEMO_VIDEO_PUBLICATIONS[demo.id];
+  if (!isCompletePublicationApproval(approval, demo.id)) {
     return {
       ...demo,
       status: 'recording',
@@ -78,6 +108,7 @@ function attachPublishedDemoAssets(demo: DemoVideo): DemoVideo {
       socialAssetUrl: undefined,
       socialThumbnailUrl: undefined,
       recordedAt: undefined,
+      appBuildCommit: undefined,
       appBuildLabel: 'Public retake required',
     };
   }
@@ -85,14 +116,15 @@ function attachPublishedDemoAssets(demo: DemoVideo): DemoVideo {
   return {
     ...demo,
     status: 'published',
-    assetUrl: `${DEMO_VIDEO_PUBLIC_ROOT}/exports/${demo.id}-16x9.mp4`,
-    thumbnailUrl: `${DEMO_VIDEO_PUBLIC_ROOT}/thumbnails/${demo.id}-16x9.png`,
-    captionUrl: `${DEMO_VIDEO_PUBLIC_ROOT}/captions/${demo.id}.json`,
-    transcriptUrl: `${DEMO_VIDEO_PUBLIC_ROOT}/transcripts/${demo.id}.md`,
-    socialAssetUrl: `${DEMO_VIDEO_PUBLIC_ROOT}/exports/${demo.id}-9x16.mp4`,
-    socialThumbnailUrl: `${DEMO_VIDEO_PUBLIC_ROOT}/thumbnails/${demo.id}-9x16.png`,
-    recordedAt: demo.recordedAt ?? DEMO_VIDEO_RECORDED_AT,
-    appBuildLabel: demo.appBuildLabel ?? DEMO_VIDEO_APP_BUILD_LABEL,
+    assetUrl: approval.assetUrl,
+    thumbnailUrl: approval.thumbnailUrl,
+    captionUrl: approval.captionUrl,
+    transcriptUrl: approval.transcriptUrl,
+    socialAssetUrl: approval.socialAssetUrl,
+    socialThumbnailUrl: approval.socialThumbnailUrl,
+    recordedAt: approval.recordedAt,
+    appBuildCommit: approval.appBuildCommit,
+    appBuildLabel: approval.appBuildLabel,
   };
 }
 
@@ -100,7 +132,7 @@ const HERO_DEMO_VIDEO_DRAFT: DemoVideo = {
   id: 'planner-command-center-walkthrough',
   title: 'Planner command center walkthrough',
   audience: 'Professional planners who want to see active weddings, guests, timelines, vendors, and next actions stay connected.',
-  durationSeconds: 120,
+  durationSeconds: 90,
   priority: 'hero',
   status: 'scripted',
   routePlan: [
@@ -110,9 +142,68 @@ const HERO_DEMO_VIDEO_DRAFT: DemoVideo = {
     '/[slug]',
     '/couple/dashboard',
     '/admin/guests',
-    '/admin/weddings/[id]/seating',
+    '/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel',
     '/admin/vendors',
-    '/admin/budget',
+    '/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel',
+  ],
+  captureCheckpoints: [
+    {
+      label: 'Planner command center',
+      route: '/admin/planner',
+      action: 'Scan both active wedding cards and their next actions.',
+      visibleResult:
+        'Two active weddings show populated setup, RSVP, vendor, budget, and next-action signals.',
+    },
+    {
+      label: 'Wedding source record',
+      route: '/admin/weddings/wedding_marketing_capture_sofia_daniel',
+      action: "Open Sofia & Daniel's wedding source record and inspect its schedule and story state.",
+      visibleResult: 'The seeded schedule and story state are populated for Sofia & Daniel.',
+    },
+    {
+      label: 'Public wedding plan',
+      route: '/sofia-and-daniel',
+      action: 'Open the public microsite for the same wedding.',
+      visibleResult:
+        'The public schedule and story match the seeded wedding without planner-only controls.',
+    },
+    {
+      label: 'Couple portal plan',
+      route: '/couple/dashboard',
+      action: "Open Sofia & Daniel's couple portal and inspect the shared wedding plan.",
+      visibleResult:
+        'The couple portal shows the same seeded wedding context without planner-only operations.',
+    },
+    {
+      label: 'Guest operations',
+      route: '/admin/guests',
+      action: 'Inspect the populated guest list, RSVP, meal, household, and plus-one state.',
+      visibleResult: 'Seeded guests show varied RSVP, meal, household, and plus-one data.',
+    },
+    {
+      label: 'Seating plan',
+      route: '/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel',
+      action: "Open Sofia & Daniel's seating plan and inspect assigned guests.",
+      visibleResult: 'The seeded floor plan shows populated tables and guest assignments.',
+    },
+    {
+      label: 'Vendor operations',
+      route: '/admin/vendors',
+      action: 'Inspect assigned vendors and their operational status.',
+      visibleResult: 'Seeded vendor assignments and contract/payment context are visible.',
+    },
+    {
+      label: 'Budget checkpoint',
+      route: '/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel',
+      action: 'Inspect category totals, recorded payments, and budget status.',
+      visibleResult: 'Seeded budget categories, actual payments, and totals are populated.',
+    },
+    {
+      label: 'Return to command center',
+      route: '/admin/planner',
+      action: 'Return to the planner command center and pause on the connected portfolio.',
+      visibleResult: 'The two active weddings and their next actions remain visible.',
+    },
   ],
   seedRequirements: [
     'One paid demo planner with two active weddings and one incomplete setup.',
@@ -121,46 +212,46 @@ const HERO_DEMO_VIDEO_DRAFT: DemoVideo = {
   ],
   script: [
     {
-      timestamp: '0:00-0:15',
+      timestamp: '0:00-0:12',
       action: 'Open Morning View and scan the active wedding cards.',
       voiceover: 'This is the planner command center: weddings, unread updates, payments, guests, and next actions in one place.',
     },
     {
-      timestamp: '0:15-0:35',
-      action: 'Open the featured wedding setup and edit one event detail.',
-      voiceover: 'A planner changes the source record once. Timeline, couple portal, reminders, and the public site all read from this same record.',
+      timestamp: '0:12-0:28',
+      action: 'Open the featured wedding setup and inspect the shared schedule and story state.',
+      voiceover: 'The wedding record is the source of truth. Timeline, couple portal, reminders, and the public site all read from the same plan.',
     },
     {
-      timestamp: '0:35-0:55',
-      action: 'Open the public microsite and couple portal in sequence.',
-      voiceover: 'The couple and their guests see the polished version of the same plan without a second website builder or spreadsheet.',
+      timestamp: '0:28-0:45',
+      action: 'Open the public microsite, then the couple portal for the same plan.',
+      voiceover: 'Guests and the couple see the right view of the same plan without a second website builder or spreadsheet.',
     },
     {
-      timestamp: '0:55-1:20',
-      action: 'Move from Guest Management to Seating and assign one guest.',
+      timestamp: '0:45-1:01',
+      action: 'Move from Guest Management to the populated seating plan.',
       voiceover: 'Guest data flows into RSVP tracking, meals, plus-ones, seating, and day-of exports instead of being patched in five places.',
     },
     {
-      timestamp: '1:20-1:45',
-      action: 'Open vendor CRM, contract canvas, and payment/budget checkpoint.',
+      timestamp: '1:01-1:17',
+      action: 'Open vendor CRM and the payment/budget checkpoint.',
       voiceover: 'Vendors, contracts, quotes, and payments stay tied to the wedding record, so the business side does not split off into a separate tool stack.',
     },
     {
-      timestamp: '1:45-2:00',
-      action: 'Return to the dashboard and show the trial CTA.',
+      timestamp: '1:17-1:30',
+      action: 'Return to the dashboard and pause on the connected wedding portfolio.',
       voiceover: 'The activation moment is simple: start one wedding, invite the couple, and let the workspace become the operating system.',
     },
   ],
   recordingChecklist: [
     'Record desktop first, then a short mobile proof pass for homepage and public microsite.',
-    'Show at least one real save, one navigation transition, one public/couple surface, and one planner-only surface.',
+    'Show navigation transitions, one public/couple surface, and planner-only operational surfaces without mutating the seeded workspace.',
     'Do not trigger live payments, SMS sends, or external vendor emails during capture.',
   ],
   captureNotes:
     'Hero footage should be recorded locally with seeded demo data, then packaged in Remotion with captions and a CTA outro.',
 };
 
-export const HERO_DEMO_VIDEO: DemoVideo = attachPublishedDemoAssets(HERO_DEMO_VIDEO_DRAFT);
+export const HERO_DEMO_VIDEO: DemoVideo = applyDemoVideoPublicationApproval(HERO_DEMO_VIDEO_DRAFT);
 
 const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
   {
@@ -390,7 +481,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     durationSeconds: 60,
     priority: 'phase-one',
     status: 'scripted',
-    routePlan: ['/admin/weddings/[id]/seating'],
+    routePlan: ['/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel'],
     seedRequirements: [
       'Venue layout with room outline, fixtures, at least six tables, and unassigned guests.',
     ],
@@ -482,7 +573,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     durationSeconds: 60,
     priority: 'phase-one',
     status: 'scripted',
-    routePlan: ['/admin/vendors', '/admin/vendors/contracts/new', '/vendor-contract/[id]/[token]', '/admin/budget'],
+    routePlan: ['/admin/vendors', '/admin/vendors/contracts/new', '/vendor-contract/[id]/[token]', '/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel'],
     seedRequirements: [
       'Vendor record with service details, draft contract, public signing token, and test payment milestone.',
     ],
@@ -517,7 +608,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     durationSeconds: 45,
     priority: 'phase-two',
     status: 'scripted',
-    routePlan: ['/admin/planner/billing', '/admin/budget'],
+    routePlan: ['/admin/planner/billing', '/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel'],
     seedRequirements: ['Payment schedule with upcoming, paid, and failed/retry-safe test milestones.'],
     script: [
       {
@@ -550,7 +641,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     durationSeconds: 60,
     priority: 'phase-two',
     status: 'scripted',
-    routePlan: ['/admin/budget', '/admin/budget/quotes'],
+    routePlan: ['/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel', '/admin/budget/quotes'],
     seedRequirements: ['Budget template, three vendor quotes, one overrun warning, and one AI comparison response fixture.'],
     script: [
       {
@@ -698,7 +789,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
 
 export const DEMO_VIDEO_PLAYLIST: readonly DemoVideo[] = [
   HERO_DEMO_VIDEO,
-  ...FEATURE_DEMO_VIDEO_DRAFTS.map(attachPublishedDemoAssets),
+  ...FEATURE_DEMO_VIDEO_DRAFTS.map(applyDemoVideoPublicationApproval),
 ];
 
 export const FEATURE_DEMO_VIDEOS = DEMO_VIDEO_PLAYLIST.filter(

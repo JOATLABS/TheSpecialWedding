@@ -11,7 +11,6 @@ const REMOVED_DEMO_ROUTE_FILES = [
 
 const PUBLIC_DEMO_COPY_FILES = [
   'app/components/saas/DemoVideoModal.tsx',
-  'app/data/marketingDemoVideos.ts',
 ] as const;
 
 const PUBLIC_CLIENT_DEMO_FILES = [
@@ -33,12 +32,6 @@ const INTERNAL_COPY_PATTERNS = [
   /Final marketing MP4s/i,
   /wired for R2/i,
 ] as const;
-
-function patternsForFile(filePath: string): readonly RegExp[] {
-  if (filePath !== 'app/data/marketingDemoVideos.ts') return INTERNAL_COPY_PATTERNS;
-
-  return INTERNAL_COPY_PATTERNS.filter((pattern) => pattern.source !== 'Review-ready');
-}
 
 const DEMO_MODAL_JUNK_PATTERNS = [
   /Why planners watch/i,
@@ -62,10 +55,14 @@ describe('public demo video copy', () => {
   it('keeps internal production language off public demo surfaces', () => {
     for (const filePath of PUBLIC_DEMO_COPY_FILES) {
       const source = readFileSync(filePath, 'utf8');
-      for (const pattern of patternsForFile(filePath)) {
+      for (const pattern of INTERNAL_COPY_PATTERNS) {
         assert.equal(pattern.test(source), false, `${filePath} contains ${pattern}`);
       }
     }
+  });
+
+  it('keeps the removed competing marketing video manifest from drifting back in', () => {
+    assert.equal(existsSync('app/data/marketingDemoVideos.ts'), false);
   });
 
   it('keeps the demo modal focused on video playback', () => {

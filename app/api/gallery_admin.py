@@ -1,5 +1,9 @@
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 
+from app.constants.marketing_capture_media import (
+    allow_local_demo_gallery_fallback,
+    gallery_fallback_items_for_wedding,
+)
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     check_wedding_access,
@@ -106,11 +110,27 @@ async def list_gallery_files(
             parsed_prefix["wedding_slug"], current_user
         )
         planner_scope = gallery_service.get_planner_scope_from_wedding(wedding)
-        return gallery_service.list_wedding_files(
-            folder=parsed_prefix["folder"],
-            wedding_slug=parsed_prefix["wedding_slug"],
-            planner_scope=planner_scope,
-        )
+        try:
+            files = gallery_service.list_wedding_files(
+                folder=parsed_prefix["folder"],
+                wedding_slug=parsed_prefix["wedding_slug"],
+                planner_scope=planner_scope,
+            )
+        except HTTPException as exc:
+            if (
+                exc.status_code == 503
+                and parsed_prefix["folder"] == "gallery"
+                and allow_local_demo_gallery_fallback(wedding)
+            ):
+                return gallery_fallback_items_for_wedding(wedding)
+            raise
+        if (
+            not files
+            and parsed_prefix["folder"] == "gallery"
+            and allow_local_demo_gallery_fallback(wedding)
+        ):
+            return gallery_fallback_items_for_wedding(wedding)
+        return files
 
     if not current_user.is_root_admin:
         # If no wedding slug specified and not root admin, return empty

@@ -47,6 +47,23 @@ describe('resolveMediaUrl', () => {
     );
   });
 
+  it('preserves repository-owned static demo media without treating it as an R2 key', () => {
+    process.env.NEXT_PUBLIC_MEDIA_DOMAIN = 'https://media.example.com/';
+
+    assert.equal(
+      resolveMediaUrl('/demo-gallery/elegant-couple-stairs.svg'),
+      '/demo-gallery/elegant-couple-stairs.svg',
+    );
+  });
+
+  it('rejects unapproved or traversing repository demo-media paths', () => {
+    process.env.NEXT_PUBLIC_MEDIA_DOMAIN = 'https://media.example.com/';
+
+    assert.equal(resolveMediaUrl('/demo-gallery/unapproved.svg'), undefined);
+    assert.equal(resolveMediaUrl('/demo-gallery/../api/private'), undefined);
+    assert.equal(resolveMediaUrl('/demo-gallery/%2e%2e/api/private'), undefined);
+  });
+
   it('returns the normalized key when no public media domain is configured', () => {
     delete process.env.NEXT_PUBLIC_MEDIA_DOMAIN;
 

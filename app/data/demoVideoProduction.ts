@@ -27,6 +27,8 @@ export type DemoVideoProductionRequirement = {
   routeParameters: readonly string[];
   sideEffectGuards: readonly string[];
   rawRecordingPath: string;
+  captureReceiptPath: string;
+  renderInputPath: string;
   captionPath: string;
   transcriptPath: string;
   exportTargets: readonly DemoVideoExportTarget[];
@@ -131,7 +133,9 @@ export function getDemoVideoProductionRequirement(demo: DemoVideo): DemoVideoPro
     captureSurfaces,
     routeParameters: getRouteParameters(demo.routePlan),
     sideEffectGuards: getSideEffectGuards(demo.routePlan, captureSurfaces),
-    rawRecordingPath: `${STATIC_DEMO_VIDEO_ROOT}/raw/${demo.id}.webm`,
+    rawRecordingPath: `output/demo-videos/raw/${demo.id}.mp4`,
+    captureReceiptPath: `output/demo-videos/receipts/${demo.id}.json`,
+    renderInputPath: `${STATIC_DEMO_VIDEO_ROOT}/.render-input/${demo.id}.mp4`,
     captionPath: `${STATIC_DEMO_VIDEO_ROOT}/captions/${demo.id}.json`,
     transcriptPath: `${STATIC_DEMO_VIDEO_ROOT}/transcripts/${demo.id}.md`,
     exportTargets: buildExportTargets(demo.id),

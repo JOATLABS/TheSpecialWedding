@@ -16,10 +16,12 @@ from app.dependencies.auth_extended import (
 from app.models.subscription import SubscriptionStatus
 from app.models.wedding import WeddingCreateModel
 from app.services.cascade_delete_service import cascade_delete_service
-from app.services.guest_verification_service import GuestVerificationService
 from app.services.sse_manager import sse_manager
 from app.services.stripe_service import stripe_service
 from app.services.subscription_service import SubscriptionService
+from app.services.wedding_projection_cache_service import (
+    invalidate_wedding_projection_caches,
+)
 from app.services.wedding_service import WeddingService
 from app.utils.meter_state import update_wedding_meter_state
 from app.utils.period_parsing import coerce_period_start
@@ -33,7 +35,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 wedding_service = WeddingService()
 subscription_service = SubscriptionService()
-guest_verification_service = GuestVerificationService()
 
 
 def _get_planner_scope(
@@ -132,12 +133,18 @@ async def create_wedding(
     wedding_data = wedding.model_dump(by_alias=True, exclude_none=True)
     wedding_data["created_by"] = current_user.email
     if not current_user.is_root_admin:
-        if owner_email and not wedding_data.get("assigned_planner_email"):
-            wedding_data["assigned_planner_email"] = owner_email
-        if owner_id and not wedding_data.get("assigned_planner_id"):
-            wedding_data["assigned_planner_id"] = owner_id
+        if not owner_id or not owner_email:
+            raise HTTPException(
+                status_code=403,
+                detail="Planner ownership context is unavailable",
+            )
+        # Client-supplied ownership is never authoritative for non-root actors.
+        # This keeps create parity with update and prevents tenant injection.
+        wedding_data["assigned_planner_email"] = owner_email
+        wedding_data["assigned_planner_id"] = owner_id
 
     result = await wedding_service.create_wedding(wedding_data)
+    await invalidate_wedding_projection_caches(str(result["id"]))
 
     # Increment usage and meter (idempotent per period)
     if not current_user.is_root_admin and owner_id:
@@ -289,9 +296,6 @@ async def update_wedding_admin(
 
     existing_wedding = await wedding_service.get_wedding(wedding_id)
     previous_slug = existing_wedding.get("slug")
-    should_invalidate_privacy = (
-        "privacy_settings" in wedding or "slug" in wedding or "rsvp_config" in wedding
-    )
 
     # Add update metadata
     wedding["updated_by"] = current_user.email
@@ -303,17 +307,11 @@ async def update_wedding_admin(
             wedding["assigned_planner_id"] = owner_id
 
     result = await wedding_service.update_wedding(wedding_id, wedding)
+    await invalidate_wedding_projection_caches(
+        wedding_id,
+        previous_slug=previous_slug,
+    )
     await _sync_couple_owner_mirrors(wedding_id)
-
-    if should_invalidate_privacy:
-        updated_slug = wedding.get("slug") or previous_slug
-        slugs_to_invalidate = []
-        for slug in (previous_slug, updated_slug):
-            if slug and slug not in slugs_to_invalidate:
-                slugs_to_invalidate.append(slug)
-
-        for slug in slugs_to_invalidate:
-            await guest_verification_service.invalidate_wedding_privacy_info(slug)
 
     # Broadcast SSE data-change so planner UI updates
     await sse_manager.broadcast_data_change(
@@ -360,6 +358,10 @@ async def delete_wedding_admin(
         try:
             result = await cascade_delete_service.hard_delete_wedding(
                 wedding_id, current_user.email
+            )
+            await invalidate_wedding_projection_caches(
+                wedding_id,
+                previous_slug=wedding.get("slug"),
             )
             logger.info(f"Hard deleted wedding {wedding_id}: {result}")
             await sse_manager.broadcast_data_change(
@@ -454,6 +456,10 @@ async def delete_wedding_admin(
                     "cancelled_at": datetime.now(timezone.utc),
                 }
             },
+        )
+        await invalidate_wedding_projection_caches(
+            wedding_id,
+            previous_slug=wedding.get("slug"),
         )
 
         logger.info(f"Soft deleted wedding {wedding_id}: {result}")

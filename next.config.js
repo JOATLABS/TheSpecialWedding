@@ -1,5 +1,33 @@
 /** @type {import('next').NextConfig} */
 const path = require('path')
+const { execFileSync } = require('child_process')
+
+const FULL_GIT_COMMIT = /^[0-9a-f]{40}$/i
+
+const resolveAppBuildCommit = () => {
+  const environmentCommit = [
+    process.env.NEXT_PUBLIC_APP_BUILD_COMMIT,
+    process.env.VERCEL_GIT_COMMIT_SHA,
+    process.env.CF_PAGES_COMMIT_SHA,
+    process.env.GITHUB_SHA,
+    process.env.SOURCE_VERSION,
+  ].find((candidate) => FULL_GIT_COMMIT.test(candidate || ''))
+
+  if (environmentCommit) return environmentCommit
+
+  try {
+    const checkoutCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: __dirname,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+    return FULL_GIT_COMMIT.test(checkoutCommit) ? checkoutCommit : 'unverified-build'
+  } catch {
+    return 'unverified-build'
+  }
+}
+
+const appBuildCommit = resolveAppBuildCommit()
 
 const buildRemotePattern = (value, defaultProtocol = 'https') => {
   if (!value) return null
@@ -29,6 +57,10 @@ const remotePatterns = [
 
 const nextConfig = {
   outputFileTracingRoot: path.join(__dirname),
+
+  env: {
+    NEXT_PUBLIC_APP_BUILD_COMMIT: appBuildCommit,
+  },
 
   images: {
     formats: ['image/avif', 'image/webp'],

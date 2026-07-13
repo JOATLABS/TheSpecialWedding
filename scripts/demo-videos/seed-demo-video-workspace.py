@@ -28,20 +28,27 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.constants.seed_sources import (  # noqa: E402
+    LEGACY_SMOKE_SEED_SCOPE,
+    MARKETING_CAPTURE_SEED_SCOPE,
+    MARKETING_CAPTURE_SEED_SOURCE,
+    SMOKE_ACCOUNT_SEED_SOURCE,
+)
+from testbed._marketing_capture_seed_ownership import (  # noqa: E402
+    replace_scoped_document,
+)
 
-MARKETING_CAPTURE_SEED_SOURCE = "system:marketing_capture_seed"
-MARKETING_CAPTURE_SEED_SCOPE = "phase1_showcase_workspace_v1"
 MARKETING_CAPTURE_TIMEZONE_NAME = "America/Chicago"
 MARKETING_CAPTURE_TIMEZONE = ZoneInfo(MARKETING_CAPTURE_TIMEZONE_NAME)
-MARKETING_CAPTURE_PLANNER_EMAIL = (
-    "amina@studio.thespecialwedding.io"
-)
+MARKETING_CAPTURE_PLANNER_EMAIL = "amina@studio.thespecialwedding.io"
+MARKETING_CAPTURE_PLANNER_USER_ID = "user_marketing_capture_amina_cole"
 MARKETING_CAPTURE_TEAM_EMAIL = "maya@studio.thespecialwedding.io"
 MARKETING_CAPTURE_TEAM_PASSWORD = "CaptureTeam2026!"
 MARKETING_CAPTURE_COMPANY = "Marigold & Co. Weddings"
 MARKETING_CAPTURE_PLANNER_FIRST_NAME = "Amina"
 MARKETING_CAPTURE_PLANNER_LAST_NAME = "Cole"
 MARKETING_CAPTURE_PUBLIC_ORIGIN = "https://www.thespecialwedding.io"
+MARKETING_CAPTURE_VENDOR_ORIGIN = "https://vendors.thespecialwedding.io"
 DEFAULT_CAPTURE_ANCHOR_LOCAL = "2026-07-12T10:00:00"
 DEFAULT_PRIMARY_WEDDING_ID = "wedding_marketing_capture_sofia_daniel"
 DEFAULT_PRIMARY_SLUG = "sofia-and-daniel"
@@ -61,6 +68,8 @@ DEMO_SUBSCRIPTION_ID = "marketing_capture_signature_subscription"
 DEMO_PLAN_ID = "plan_signature"
 DEMO_PUBLIC_FORM_ID = "form_marketing_capture_couple_intake"
 DEMO_COUPLE_FORM_ID = "67c200000000000000000001"
+DEMO_KB_ARTICLE_ID = "67c900000000000000000001"
+DEMO_KB_ARTICLE_SLUG = "planner-command-center-first-steps"
 DEMO_VENDOR_CONTRACT_ID = "67c100000000000000000001"
 DEMO_VENDOR_CONTRACT_TOKEN = "marketing-capture-vendor-contract-token"
 DEMO_VENDOR_PROFILE_ID = "67c400000000000000000001"
@@ -73,9 +82,9 @@ DEMO_VENDOR_DIRECTORY_FIXTURES = [
         "token": DEMO_VENDOR_CONTRACT_TOKEN,
         "business_name": "Luna & Co. Photography",
         "contact_name": "Elena Rivera",
-        "email": "hello@lunalanephoto.com",
-        "phone": "(555) 014-1188",
-        "website": "https://lunalanephoto.com",
+        "email": "luna.lane@vendors.thespecialwedding.io",
+        "phone": "(312) 555-0131",
+        "website": f"{MARKETING_CAPTURE_VENDOR_ORIGIN}/luna-and-co-photography",
         "service_category": "photographer",
         "service_subcategories": [
             "Wedding photography",
@@ -104,9 +113,9 @@ DEMO_VENDOR_DIRECTORY_FIXTURES = [
         "token": "marketing-capture-vendor-contract-token-floral",
         "business_name": "Ever After Floral Studio",
         "contact_name": "Nadia Blake",
-        "email": "studio@everafterfloral.co",
-        "phone": "(555) 014-2299",
-        "website": "https://everafterfloral.co",
+        "email": "ever.after@vendors.thespecialwedding.io",
+        "phone": "(312) 555-0132",
+        "website": f"{MARKETING_CAPTURE_VENDOR_ORIGIN}/ever-after-floral-studio",
         "service_category": "decorator",
         "service_subcategories": [
             "Floral design",
@@ -135,9 +144,9 @@ DEMO_VENDOR_DIRECTORY_FIXTURES = [
         "token": "marketing-capture-vendor-contract-token-mc",
         "business_name": "Elton Mensah MC Services",
         "contact_name": "Elton Mensah",
-        "email": "bookings@eltonmensahmc.com",
-        "phone": "(555) 014-6631",
-        "website": "https://eltonmensahmc.com",
+        "email": "elton.mensah@vendors.thespecialwedding.io",
+        "phone": "(405) 555-0133",
+        "website": f"{MARKETING_CAPTURE_VENDOR_ORIGIN}/elton-mensah-mc-services",
         "service_category": "mc",
         "service_subcategories": [
             "Reception hosting",
@@ -166,9 +175,9 @@ DEMO_VENDOR_DIRECTORY_FIXTURES = [
         "token": "marketing-capture-vendor-contract-token-venue",
         "business_name": "The Glasshouse at Riverbend",
         "contact_name": "Marisol Chen",
-        "email": "events@glasshouseriverbend.com",
-        "phone": "(555) 014-4410",
-        "website": "https://glasshouseriverbend.com",
+        "email": "glasshouse@vendors.thespecialwedding.io",
+        "phone": "(405) 555-0134",
+        "website": f"{MARKETING_CAPTURE_VENDOR_ORIGIN}/glasshouse-riverbend",
         "service_category": "venue",
         "service_subcategories": ["Reception venue", "Ceremony garden", "In-house bar"],
         "service_description": "Modern garden venue with ceremony lawn, reception hall, and private wedding-suite access.",
@@ -191,9 +200,9 @@ DEMO_VENDOR_DIRECTORY_FIXTURES = [
         "assignment_id": "67c400000000000000000105",
         "business_name": "Harvest Table Catering",
         "contact_name": "Priya Shah",
-        "email": "events@harvesttablecatering.com",
-        "phone": "(555) 014-7300",
-        "website": "https://harvesttablecatering.com",
+        "email": "harvest.table@vendors.thespecialwedding.io",
+        "phone": "(918) 555-0135",
+        "website": f"{MARKETING_CAPTURE_VENDOR_ORIGIN}/harvest-table-catering",
         "service_category": "caterer",
         "service_subcategories": [
             "Dinner service",
@@ -216,9 +225,9 @@ DEMO_VENDOR_DIRECTORY_FIXTURES = [
         "assignment_id": "67c400000000000000000106",
         "business_name": "Atlas Coach",
         "contact_name": "Marcus Hill",
-        "email": "routes@atlascoach.co",
-        "phone": "(555) 014-8802",
-        "website": "https://atlascoach.co",
+        "email": "atlas.coach@vendors.thespecialwedding.io",
+        "phone": "(405) 555-0136",
+        "website": f"{MARKETING_CAPTURE_VENDOR_ORIGIN}/atlas-coach",
         "service_category": "transportation",
         "service_subcategories": [
             "Guest shuttle",
@@ -253,24 +262,24 @@ MARKETING_CAPTURE_TEAM_USER_ID = ObjectId("67c700000000000000000002")
 MARKETING_CAPTURE_GALLERY_ASSETS = [
     {
         "_id": ObjectId("67c800000000000000000001"),
-        "key": "gallery/marketing-capture/sofia-daniel/terrace-portrait.jpg",
-        "url": f"{MARKETING_CAPTURE_PUBLIC_ORIGIN}/demo-gallery/elegant-couple-stairs.jpg",
+        "key": "gallery/sofia-and-daniel/20270125-terrace-portrait.svg",
+        "url": "/demo-gallery/elegant-couple-stairs.svg",
         "alt": "Sofia and Daniel on the garden terrace",
         "approved_for_marketing": True,
         "credit": "Marigold & Co. Weddings",
     },
     {
         "_id": ObjectId("67c800000000000000000002"),
-        "key": "gallery/marketing-capture/sofia-daniel/ceremony-aisle.jpg",
-        "url": f"{MARKETING_CAPTURE_PUBLIC_ORIGIN}/demo-gallery/elegant-ceremony-aisle.jpg",
+        "key": "gallery/sofia-and-daniel/20270125-ceremony-aisle.svg",
+        "url": "/demo-gallery/elegant-ceremony-aisle.svg",
         "alt": "Garden ceremony aisle at the Glasshouse",
         "approved_for_marketing": True,
         "credit": "Marigold & Co. Weddings",
     },
     {
         "_id": ObjectId("67c800000000000000000003"),
-        "key": "gallery/marketing-capture/sofia-daniel/reception-table.jpg",
-        "url": f"{MARKETING_CAPTURE_PUBLIC_ORIGIN}/demo-gallery/elegant-reception-table.jpg",
+        "key": "gallery/sofia-and-daniel/20270125-reception-table.svg",
+        "url": "/demo-gallery/elegant-reception-table.svg",
         "alt": "Candlelit reception table design",
         "approved_for_marketing": True,
         "credit": "Marigold & Co. Weddings",
@@ -393,13 +402,19 @@ async def _load_planner(planner_email: str) -> dict[str, Any]:
         )
     if planner.get("role") != "wedding_planner":
         raise RuntimeError(f"{planner_email} is not a wedding_planner account.")
-    if planner.get("seed_source") not in {
-        "system:smoke_account_seed",
-        MARKETING_CAPTURE_SEED_SOURCE,
+    if str(planner.get("_id") or "") != MARKETING_CAPTURE_PLANNER_USER_ID:
+        raise RuntimeError(
+            "The marketing-capture planner email is not attached to its fixed "
+            "showcase identity."
+        )
+    ownership = (planner.get("seed_source"), planner.get("seed_scope"))
+    if ownership not in {
+        (SMOKE_ACCOUNT_SEED_SOURCE, LEGACY_SMOKE_SEED_SCOPE),
+        (MARKETING_CAPTURE_SEED_SOURCE, MARKETING_CAPTURE_SEED_SCOPE),
     }:
         raise RuntimeError(
             "Refusing to take over an existing owner that was not created by the "
-            "dedicated smoke or marketing-capture seed."
+            "fixed smoke bootstrap or this exact marketing-capture scope."
         )
     return planner
 
@@ -418,10 +433,6 @@ async def _assert_capture_namespace_available(
 
     planner_id = str(planner["_id"])
     planner_email = str(planner["email"])
-    allowed_sources = {
-        "system:smoke_account_seed",
-        MARKETING_CAPTURE_SEED_SOURCE,
-    }
     for wedding_id, slug in (
         (primary_id, primary_slug),
         (secondary_id, secondary_slug),
@@ -437,7 +448,18 @@ async def _assert_capture_namespace_available(
                 or str(existing.get("assigned_planner_email") or "").lower()
                 == planner_email
             )
-            if not owner_matches or existing.get("seed_source") not in allowed_sources:
+            ownership = (existing.get("seed_source"), existing.get("seed_scope"))
+            canonical_owner = ownership == (
+                MARKETING_CAPTURE_SEED_SOURCE,
+                MARKETING_CAPTURE_SEED_SCOPE,
+            )
+            fixed_legacy_owner = (
+                wedding_id == DEFAULT_PRIMARY_WEDDING_ID
+                and slug == DEFAULT_PRIMARY_SLUG
+                and str(existing.get("_id") or "") == DEFAULT_PRIMARY_WEDDING_ID
+                and ownership == (SMOKE_ACCOUNT_SEED_SOURCE, LEGACY_SMOKE_SEED_SCOPE)
+            )
+            if not owner_matches or not (canonical_owner or fixed_legacy_owner):
                 raise RuntimeError(
                     f"Wedding {wedding_id}/{slug} collides with an existing owner; "
                     "capture seeding stopped before mutation."
@@ -450,14 +472,110 @@ async def _assert_capture_namespace_available(
         "user_subscriptions": [DEMO_SUBSCRIPTION_ID],
         "seating_layouts": [ObjectId(DEMO_SEATING_LAYOUT_ID)],
         "contracts": [ObjectId(DEMO_CLIENT_CONTRACT_ID)],
+        "kb_articles": [ObjectId(DEMO_KB_ARTICLE_ID)],
     }
     for collection_name, ids in deterministic_ids.items():
         async for existing in mongo.db[collection_name].find({"_id": {"$in": ids}}):
-            if existing.get("seed_source") not in allowed_sources:
+            ownership = (existing.get("seed_source"), existing.get("seed_scope"))
+            canonical_owner = ownership == (
+                MARKETING_CAPTURE_SEED_SOURCE,
+                MARKETING_CAPTURE_SEED_SCOPE,
+            )
+            fixed_legacy_couple = (
+                collection_name == "couple_users"
+                and str(existing.get("_id") or "") == DEMO_COUPLE_ID
+                and existing.get("email") == DEMO_COUPLE_EMAIL
+                and ownership == (SMOKE_ACCOUNT_SEED_SOURCE, LEGACY_SMOKE_SEED_SCOPE)
+            )
+            if not (canonical_owner or fixed_legacy_couple):
                 raise RuntimeError(
                     f"{collection_name} contains a deterministic capture ID owned by "
                     "an existing owner; capture seeding stopped before mutation."
                 )
+
+    kb_article_id = ObjectId(DEMO_KB_ARTICLE_ID)
+    kb_candidates = (
+        await mongo.db["kb_articles"]
+        .find(
+            {
+                "$or": [
+                    {"_id": kb_article_id},
+                    {"slug": DEMO_KB_ARTICLE_SLUG},
+                ]
+            }
+        )
+        .to_list(length=3)
+    )
+    for existing in kb_candidates:
+        if (
+            existing.get("seed_source") != MARKETING_CAPTURE_SEED_SOURCE
+            or existing.get("seed_scope") != MARKETING_CAPTURE_SEED_SCOPE
+            or existing.get("_id") != kb_article_id
+        ):
+            raise RuntimeError(
+                f"Knowledge Base article {DEMO_KB_ARTICLE_SLUG!r} collides with "
+                "an existing owner or ID; capture seeding stopped before mutation."
+            )
+
+
+async def _migrate_legacy_smoke_workspace() -> None:
+    """Retag only the three fixed smoke-bootstrap identities for this showcase."""
+
+    from app.core.database import mongo
+
+    canonical_ownership = {
+        "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+        "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+    }
+    await mongo.get_users_collection().update_one(
+        {
+            "_id": MARKETING_CAPTURE_PLANNER_USER_ID,
+            "email": MARKETING_CAPTURE_PLANNER_EMAIL,
+            "seed_source": SMOKE_ACCOUNT_SEED_SOURCE,
+            "seed_scope": LEGACY_SMOKE_SEED_SCOPE,
+        },
+        {"$set": canonical_ownership},
+    )
+    await mongo.get_weddings_collection().update_one(
+        {
+            "_id": DEFAULT_PRIMARY_WEDDING_ID,
+            "slug": DEFAULT_PRIMARY_SLUG,
+            "seed_source": SMOKE_ACCOUNT_SEED_SOURCE,
+            "seed_scope": LEGACY_SMOKE_SEED_SCOPE,
+        },
+        {"$set": canonical_ownership},
+    )
+    await mongo.get_couple_users_collection().update_one(
+        {
+            "_id": DEMO_COUPLE_ID,
+            "email": DEMO_COUPLE_EMAIL,
+            "wedding_id": DEFAULT_PRIMARY_WEDDING_ID,
+            "seed_source": SMOKE_ACCOUNT_SEED_SOURCE,
+            "seed_scope": LEGACY_SMOKE_SEED_SCOPE,
+        },
+        {"$set": canonical_ownership},
+    )
+
+
+async def _replace_seed_owned_document(
+    collection: Any, document: dict[str, Any]
+) -> None:
+    """Replace only a deterministic row owned by the exact capture scope."""
+
+    await _replace_marketing_capture_owned_document(collection, document)
+
+
+async def _replace_marketing_capture_owned_document(
+    collection: Any, document: dict[str, Any]
+) -> None:
+    """Replace only a row already owned by this exact capture scope."""
+
+    await replace_scoped_document(
+        collection,
+        document,
+        seed_source=MARKETING_CAPTURE_SEED_SOURCE,
+        seed_scope=MARKETING_CAPTURE_SEED_SCOPE,
+    )
 
 
 def _guest_doc(
@@ -475,7 +593,7 @@ def _guest_doc(
         hashlib.sha256(f"{wedding_id}:{index}".encode("utf-8")).hexdigest()[:24]
     )
     invited_at = _utc_now() - timedelta(days=invited_days_ago)
-    phone_suffix = f"{5500 + index:04d}"
+    phone_suffix = f"{100 + index:04d}"
     token_material = f"{MARKETING_CAPTURE_SEED_SCOPE}:{wedding_id}:token"
     token_prefix = (
         hashlib.sha256(token_material.encode("utf-8")).hexdigest()[:10].upper()
@@ -488,6 +606,7 @@ def _guest_doc(
         "email": f"{name.lower().replace(' ', '.')}@{email_domain}",
         "phone": f"+1312555{phone_suffix}",
         "group_id": group_id,
+        "household_id": f"{wedding_id}:{group_id}:{(index - 1) // 2 + 1}",
         "role": "guest",
         "table_id": table_id,
         "plus_one_allowed": plus_ones > 0,
@@ -500,6 +619,14 @@ def _guest_doc(
         "phone_status": "valid",
         "age_group": "adult",
         "language_preference": "English",
+        "accessibility_needs": (
+            "Step-free route and an aisle seat near the terrace entrance"
+            if index == 1
+            else None
+        ),
+        "seating_preference": (
+            "quiet_corner" if index in {15, 16} else "near_dance_floor"
+        ),
         "created_at": invited_at - timedelta(days=1),
         "updated_at": _utc_now(),
         "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
@@ -524,8 +651,8 @@ async def _seed_demo_subscription(planner: dict[str, Any]) -> None:
         "staff_seats": plan.get("staff_seats", 5),
         "max_weddings": plan.get("max_weddings", -1),
     }
-    await mongo.db["user_subscriptions"].replace_one(
-        {"_id": DEMO_SUBSCRIPTION_ID},
+    await _replace_seed_owned_document(
+        mongo.db["user_subscriptions"],
         {
             "_id": DEMO_SUBSCRIPTION_ID,
             "user_id": planner_id,
@@ -544,7 +671,6 @@ async def _seed_demo_subscription(planner: dict[str, Any]) -> None:
             "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
             "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
         },
-        upsert=True,
     )
 
 
@@ -601,7 +727,7 @@ def _activity_doc(
     message: str,
     activity_type: str,
     hours_ago: int,
-    actor_email: str = "system",
+    actor_email: str = "system@studio.thespecialwedding.io",
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     timestamp = _utc_now() - timedelta(hours=hours_ago)
@@ -629,6 +755,7 @@ async def _replace_seeded_docs(
         {
             "wedding_id": {"$in": wedding_ids},
             "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
         }
     )
     if docs:
@@ -684,6 +811,11 @@ async def _upsert_wedding(
             "enabled": True,
             "deadline": _date_from_now(72 if ready else 110),
             "intro_text": "Please RSVP for the ceremony and reception.",
+            "greeting": "Join us in celebrating our special day! Please let us know if you'll be attending.",
+            "help_text": "Check your phone for your personal invitation link. If you need help, use the Get Help button and our planner will text you.",
+            "help_button_label": "Get Help",
+            "hide_phone_numbers": True,
+            "phone_numbers": ["(312) 555-0142", "(312) 555-0168"] if ready else [],
             "contact_email": planner_email,
         },
         "theme": {
@@ -861,7 +993,11 @@ async def _upsert_wedding(
         "created_by": MARKETING_CAPTURE_SEED_SOURCE,
     }
     await mongo.get_weddings_collection().update_one(
-        {"_id": wedding_id},
+        {
+            "_id": wedding_id,
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+        },
         {"$set": {**common, "events": events}, "$setOnInsert": insert},
         upsert=True,
     )
@@ -883,8 +1019,8 @@ async def _seed_accepted_team_fixture(planner: dict[str, Any], primary_id: str) 
     team_member_id = str(MARKETING_CAPTURE_TEAM_MEMBER_ID)
     team_user_id = str(MARKETING_CAPTURE_TEAM_USER_ID)
 
-    await mongo.get_users_collection().replace_one(
-        {"_id": MARKETING_CAPTURE_TEAM_USER_ID},
+    await _replace_seed_owned_document(
+        mongo.get_users_collection(),
         {
             "_id": MARKETING_CAPTURE_TEAM_USER_ID,
             "email": MARKETING_CAPTURE_TEAM_EMAIL,
@@ -904,10 +1040,9 @@ async def _seed_accepted_team_fixture(planner: dict[str, Any], primary_id: str) 
             "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
             "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
         },
-        upsert=True,
     )
-    await mongo.db["team_members"].replace_one(
-        {"_id": MARKETING_CAPTURE_TEAM_MEMBER_ID},
+    await _replace_seed_owned_document(
+        mongo.db["team_members"],
         {
             "_id": MARKETING_CAPTURE_TEAM_MEMBER_ID,
             "owner_id": planner_id,
@@ -930,7 +1065,6 @@ async def _seed_accepted_team_fixture(planner: dict[str, Any], primary_id: str) 
             "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
             "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
         },
-        upsert=True,
     )
 
 
@@ -950,26 +1084,8 @@ async def _seed_couple_portal_fixture(
     planner_email = str(planner["email"])
     planner_id = str(planner["_id"])
 
-    await mongo.get_couple_users_collection().delete_many(
-        {
-            "wedding_id": primary_id,
-            "$or": [
-                {
-                    "seed_source": {
-                        "$in": [
-                            MARKETING_CAPTURE_SEED_SOURCE,
-                            "system:setup_smoke_accounts",
-                        ]
-                    }
-                },
-                {"email": {"$regex": "^(demo|test)[^@]*@", "$options": "i"}},
-                {"_id": {"$regex": "^couple_demo_video_"}},
-            ],
-        }
-    )
-
-    await mongo.get_couple_users_collection().replace_one(
-        {"_id": DEMO_COUPLE_ID},
+    await _replace_seed_owned_document(
+        mongo.get_couple_users_collection(),
         {
             "_id": DEMO_COUPLE_ID,
             "email": DEMO_COUPLE_EMAIL,
@@ -1006,11 +1122,14 @@ async def _seed_couple_portal_fixture(
             "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
             "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
         },
-        upsert=True,
     )
 
     await mongo.db["couple_messages"].delete_many(
-        {"wedding_id": primary_id, "seed_source": MARKETING_CAPTURE_SEED_SOURCE}
+        {
+            "wedding_id": primary_id,
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+        }
     )
     await mongo.db["couple_messages"].insert_many(
         [
@@ -1072,27 +1191,16 @@ async def _seed_communications_fixture(
 
     await mongo.db["reminders_sent"].delete_many(
         {
-            "$or": [
-                {
-                    "wedding_id": primary_id,
-                    "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
-                },
-                {"phone": "+13195296088"},
-                {"recipient": "+13195296088"},
-                {"to": "+13195296088"},
-            ]
+            "wedding_id": primary_id,
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
         }
     )
     await mongo.db["email_logs"].delete_many(
         {
-            "$or": [
-                {
-                    "wedding_id": primary_id,
-                    "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
-                },
-                {"to": {"$regex": "^(demo|test)[^@]*@", "$options": "i"}},
-                {"recipient": {"$regex": "^(demo|test)[^@]*@", "$options": "i"}},
-            ]
+            "wedding_id": primary_id,
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
         }
     )
 
@@ -1103,7 +1211,7 @@ async def _seed_communications_fixture(
             "wedding_slug": wedding_slug,
             "guest_id": "marketing_capture_guest_amara",
             "guest_name": "Amara Bennett",
-            "phone": "+13125555001",
+            "phone": "+13125550101",
             "message": f"Hi Amara, this is a warm reminder from Marigold & Co. Weddings for {couple_names}'s wedding weekend. Please arrive 15 minutes early for ceremony seating.",
             "status": "success",
             "provider": "twilio",
@@ -1123,7 +1231,7 @@ async def _seed_communications_fixture(
             "wedding_slug": wedding_slug,
             "guest_id": "marketing_capture_guest_mateo",
             "guest_name": "Mateo Rivera",
-            "phone": "+13125555004",
+            "phone": "+13125550104",
             "message": f"Hi Mateo, Marigold & Co. Weddings is confirming RSVP details for {couple_names}. Please check the wedding site for schedule and FAQ updates.",
             "status": "success",
             "provider": "twilio",
@@ -1236,7 +1344,7 @@ async def _seed_communications_fixture(
         [
             {
                 "_id": ObjectId("67cd00000000000000000001"),
-                "phone": "+13125555001",
+                "phone": "+13125550101",
                 "message": (
                     "Could you confirm the accessibility entrance and shuttle "
                     "drop-off point?"
@@ -1383,6 +1491,8 @@ async def _seed_people_and_activity(
             plus_one_names=plus_names,
             dietary="Vegetarian"
             if guest["name"] in {"Priya Shah", "Noor Patel"}
+            else "Gluten-free"
+            if guest["name"] == "Grace Ellis"
             else None,
         )
         rsvps.append(rsvp)
@@ -1475,10 +1585,15 @@ async def _seed_seating_fixture(primary_id: str, secondary_id: str) -> None:
         for key, name, shape, capacity, x, y in table_specs
     ]
     wedding_ids = [primary_id, secondary_id]
-    await mongo.db["tables"].delete_many({"wedding_id": {"$in": wedding_ids}})
+    capture_filter = {
+        "wedding_id": {"$in": wedding_ids},
+        "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+        "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+    }
+    await mongo.db["tables"].delete_many(capture_filter)
     await mongo.db["tables"].insert_many(tables)
 
-    await mongo.db["seating_layouts"].delete_many({"wedding_id": {"$in": wedding_ids}})
+    await mongo.db["seating_layouts"].delete_many(capture_filter)
     await mongo.db["seating_layouts"].insert_one(
         {
             "_id": ObjectId(DEMO_SEATING_LAYOUT_ID),
@@ -1553,48 +1668,121 @@ async def _seed_ai_cache(primary_id: str, planner: dict[str, Any]) -> None:
     from app.services.ai_cache_service import ai_cache_service
     from app.services.ai_service import ai_service
 
-    plan = await ai_service._resolve_subscription_plan(str(planner["_id"]))
-    await ai_cache_service.cache_response(
-        feature="dashboard_insights",
-        tenant_id=primary_id,
-        context={"demo_seed": "morning-view", "version": 1},
-        response={
-            "insights": [
-                {
-                    "title": "RSVP follow-up window is open",
-                    "description": "6 invited guests are still pending. Send the reminder batch before the hotel count locks.",
-                    "priority": "high",
-                    "action_url": "/admin/communications/reminders",
-                    "icon": "users",
-                },
-                {
-                    "title": "Seating is ready for final pass",
-                    "description": "18 RSVPs are in and 16 guests already have table context for the seating review.",
-                    "priority": "medium",
-                    "action_url": f"/admin/weddings/{primary_id}/seating",
-                    "icon": "check-circle",
-                },
-                {
-                    "title": "Public site essentials are complete",
-                    "description": "Schedule, RSVP, access, and theme are configured, so the couple can preview the site confidently.",
-                    "priority": "low",
-                    "action_url": f"/admin/weddings/{primary_id}",
-                    "icon": "calendar",
-                },
-            ]
-        },
-        ttl_hours=24 * 14,
-        subscription_plan=plan,
+    plan = ai_cache_service._normalize_plan(
+        await ai_service._resolve_subscription_plan(str(planner["_id"]))
     )
-    await mongo.db["ai_cache"].update_many(
-        {"tenant_id": primary_id, "feature": "budget_insights"},
-        {
-            "$set": {
-                "created_at": _utc_now(),
-                "expires_at": _utc_now() + timedelta(hours=24),
+    fixtures = (
+        (
+            "dashboard_insights",
+            {"demo_seed": "morning-view", "version": 1},
+            {
+                "insights": [
+                    {
+                        "title": "RSVP follow-up window is open",
+                        "description": "6 invited guests are still pending. Send the reminder batch before the hotel count locks.",
+                        "priority": "high",
+                        "action_url": "/admin/communications/reminders",
+                        "icon": "users",
+                    },
+                    {
+                        "title": "Seating is ready for final pass",
+                        "description": "18 RSVPs are in and 16 guests already have table context for the seating review.",
+                        "priority": "medium",
+                        "action_url": f"/admin/seating?weddingId={primary_id}",
+                        "icon": "check-circle",
+                    },
+                    {
+                        "title": "Public site essentials are complete",
+                        "description": "Schedule, RSVP, access, and theme are configured, so the couple can preview the site confidently.",
+                        "priority": "low",
+                        "action_url": f"/admin/weddings/{primary_id}",
+                        "icon": "calendar",
+                    },
+                ]
+            },
+        ),
+        (
+            "budget_insights",
+            {"demo_seed": "budget-control", "version": 1},
+            {
+                "summary": "Attire & Beauty is $950 over plan while the remaining categories retain $45,800 of unspent budget.",
+                "recommendations": [
+                    "Confirm final alteration charges before approving the next invoice.",
+                    "Protect the Guest Experience reserve until transportation headcount locks.",
+                ],
+                "risk_level": "attention",
+            },
+        ),
+    )
+    now = _utc_now()
+    for feature, context, response in fixtures:
+        cache_key = ai_cache_service._generate_cache_key(
+            feature,
+            primary_id,
+            context,
+            subscription_plan=plan,
+        )
+        context_json = json.dumps(context, sort_keys=True, default=str)
+        await _replace_marketing_capture_owned_document(
+            mongo.db["ai_cache"],
+            {
+                "_id": cache_key,
+                "feature": feature,
+                "tenant_id": primary_id,
+                "subscription_plan": plan,
+                "context_hash": hashlib.sha256(context_json.encode()).hexdigest(),
+                "response": response,
+                "created_at": now,
+                "expires_at": now + timedelta(hours=24),
+                "hit_count": 0,
                 "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
                 "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
-            }
+            },
+        )
+
+
+async def _seed_knowledge_base_fixture(planner: dict[str, Any]) -> None:
+    """Publish one isolated support article without touching global KB content."""
+
+    from app.core.database import mongo
+
+    now = _utc_now()
+    author_email = str(planner["email"])
+    await _replace_marketing_capture_owned_document(
+        mongo.db["kb_articles"],
+        {
+            "_id": ObjectId(DEMO_KB_ARTICLE_ID),
+            "title": "Planner Command Center: Your First 30 Minutes",
+            "slug": DEMO_KB_ARTICLE_SLUG,
+            "excerpt": "A practical first-session checklist for turning a new wedding into a connected planning workspace.",
+            "content": """# Planner Command Center: Your First 30 Minutes
+
+Start with the wedding workspace as your source of truth. Confirm the couple's public-site essentials, invite your collaborators, and add the next planning milestones to the shared calendar.
+
+Then review the guest list, seating progress, vendor commitments, forms, and money from the planner command center. Each surface stays connected to the same wedding so the couple sees clear progress without needing access to your internal operating details.
+""",
+            "category": "getting-started",
+            "tags": ["planner", "command-center", "onboarding", "workflow"],
+            "status": "published",
+            "is_official": True,
+            "featured": True,
+            "author_email": author_email,
+            "author_name": "Amina Cole",
+            "author_id": str(planner["_id"]),
+            "created_by": author_email,
+            "updated_by": author_email,
+            "view_count": 0,
+            "helpful_count": 0,
+            "not_helpful_count": 0,
+            "feedback": [],
+            "order": 1,
+            "estimated_read_minutes": 2,
+            "card_image": None,
+            "og_image": None,
+            "created_at": now,
+            "updated_at": now,
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
         },
     )
 
@@ -1623,7 +1811,7 @@ async def _seed_gallery_fixture(
                 "wedding_slug": wedding_slug,
                 "storage_provider": "approved_showcase_cdn",
                 "media_type": "image",
-                "mime_type": "image/jpeg",
+                "mime_type": "image/svg+xml",
                 "display_order": index,
                 "is_public": True,
                 "uploaded_by": planner_email,
@@ -1672,21 +1860,25 @@ async def _seed_guest_media_fixture(
     )
     asset_collection = mongo.db["guest_media_assets"]
     await asset_collection.delete_many(
-        {"wedding_id": primary_id, "seed_source": MARKETING_CAPTURE_SEED_SOURCE}
+        {
+            "wedding_id": primary_id,
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+        }
     )
     preview_urls = (
         {
-            "couple": "/demo-gallery/elegant-couple-stairs.jpg",
-            "ceremony": "/demo-gallery/elegant-ceremony-aisle.jpg",
-            "reception": "/demo-gallery/elegant-reception-table.jpg",
-            "dance": "/demo-gallery/elegant-couple-stairs.jpg",
+            "couple": "/demo-gallery/elegant-couple-stairs.svg",
+            "ceremony": "/demo-gallery/elegant-ceremony-aisle.svg",
+            "reception": "/demo-gallery/elegant-reception-table.svg",
+            "dance": "/demo-gallery/elegant-couple-stairs.svg",
         }
         if stock_media_allowed
         else {
-            "couple": "/demo-gallery/elegant-reception-table.jpg",
-            "ceremony": "/demo-gallery/elegant-reception-table.jpg",
-            "reception": "/demo-gallery/elegant-reception-table.jpg",
-            "dance": "/demo-gallery/elegant-reception-table.jpg",
+            "couple": "/demo-gallery/elegant-reception-table.svg",
+            "ceremony": "/demo-gallery/elegant-reception-table.svg",
+            "reception": "/demo-gallery/elegant-reception-table.svg",
+            "dance": "/demo-gallery/elegant-reception-table.svg",
         }
     )
     memory_fixtures = (
@@ -1884,9 +2076,6 @@ async def _seed_form_fixture(
 
     now = _utc_now()
     couple_form_object_id = ObjectId(DEMO_COUPLE_FORM_ID)
-    await mongo.get_forms_collection().delete_many(
-        {"seed_source": MARKETING_CAPTURE_SEED_SOURCE}
-    )
     common_form = {
         "title": "Couple Intake Questionnaire",
         "description": "A short planning intake for timeline, priorities, and VIP details.",
@@ -1942,10 +2131,9 @@ async def _seed_form_fixture(
         "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
         "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
     }
-    await mongo.get_forms_collection().replace_one(
-        {"_id": DEMO_PUBLIC_FORM_ID},
+    await _replace_seed_owned_document(
+        mongo.get_forms_collection(),
         {"_id": DEMO_PUBLIC_FORM_ID, **common_form, "shared_with_couple": False},
-        upsert=True,
     )
     couple_form = {
         **common_form,
@@ -1960,13 +2148,17 @@ async def _seed_form_fixture(
         "submission_count": 0,
         "unread_responses": 0,
     }
-    await mongo.get_forms_collection().replace_one(
-        {"_id": couple_form_object_id},
+    await _replace_seed_owned_document(
+        mongo.get_forms_collection(),
         {"_id": couple_form_object_id, **couple_form},
-        upsert=True,
     )
     await mongo.get_collection("form_responses").delete_many(
-        {"seed_source": MARKETING_CAPTURE_SEED_SOURCE}
+        {
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+            "wedding_id": primary_id,
+            "form_id": DEMO_PUBLIC_FORM_ID,
+        }
     )
     response_email = couple_email or DEMO_COUPLE_EMAIL
     await mongo.get_collection("form_responses").insert_one(
@@ -1990,7 +2182,12 @@ async def _seed_form_fixture(
         }
     )
     await mongo.get_collection("form_submissions").delete_many(
-        {"seed_source": MARKETING_CAPTURE_SEED_SOURCE}
+        {
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+            "wedding_id": primary_id,
+            "form_id": DEMO_COUPLE_FORM_ID,
+        }
     )
     if couple_email:
         await mongo.get_collection("form_submissions").insert_one(
@@ -2016,6 +2213,8 @@ async def _seed_form_fixture(
         {
             "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
             "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+            "wedding_id": primary_id,
+            "form_id": DEMO_PUBLIC_FORM_ID,
         }
     )
     await mongo.get_collection("form_distributions").insert_one(
@@ -2163,6 +2362,21 @@ async def _seed_budget_fixture(primary_id: str) -> None:
             "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
             "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
         },
+        {
+            "_id": ObjectId("67c700000000000000000009"),
+            "id": ObjectId("67c700000000000000000009"),
+            "category_id": "budget_marketing_capture_attire",
+            "vendor_name": "Mira Bridal Atelier",
+            "amount": 2750.0,
+            "payment_method": "card",
+            "payment_date": now - timedelta(days=7),
+            "description": "Final tailoring, pressing, and delivery balance",
+            "status": "completed",
+            "notes": "Final alteration invoice reconciled after the last fitting.",
+            "created_at": now - timedelta(days=7),
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+        },
     ]
     payments_by_category: dict[str, list[dict[str, Any]]] = {}
     for payment in payment_records:
@@ -2217,7 +2431,7 @@ async def _seed_budget_fixture(primary_id: str) -> None:
             "name": "Attire & Beauty",
             "description": "Wedding attire, alterations, hair, makeup, and getting-ready support.",
             "budgeted_amount": 9200.0,
-            "actual_spent": 7400.0,
+            "actual_spent": 10150.0,
             "payment_status": "partial",
             "priority": 3,
             "percentage_of_total": 11.2,
@@ -2240,7 +2454,7 @@ async def _seed_budget_fixture(primary_id: str) -> None:
             "vendor_id": "67c400000000000000000001",
             "category_id": "budget_marketing_capture_photo",
             "vendor_name": "DFam Productions",
-            "vendor_email": "bookings@dfamproductions.co",
+            "vendor_email": "dfam.productions@vendors.thespecialwedding.io",
             "vendor_phone": "(405) 555-0198",
             "service_category": "photography",
             "quote_amount": 7600.0,
@@ -2278,8 +2492,8 @@ async def _seed_budget_fixture(primary_id: str) -> None:
             "vendor_id": "67c400000000000000000002",
             "category_id": "budget_marketing_capture_photo",
             "vendor_name": "Luna & Co. Photography",
-            "vendor_email": "hello@lunalanephoto.com",
-            "vendor_phone": "(555) 014-1188",
+            "vendor_email": "luna.lane@vendors.thespecialwedding.io",
+            "vendor_phone": "(312) 555-0131",
             "service_category": "photography",
             "quote_amount": 6800.0,
             "quote_details": {
@@ -2313,8 +2527,8 @@ async def _seed_budget_fixture(primary_id: str) -> None:
             "wedding_id": primary_id,
             "category_id": "budget_marketing_capture_photo",
             "vendor_name": "Golden Hour Collective",
-            "vendor_email": "studio@goldenhourcollective.co",
-            "vendor_phone": "(405) 555-0142",
+            "vendor_email": "golden.hour@vendors.thespecialwedding.io",
+            "vendor_phone": "(405) 555-0197",
             "service_category": "photography",
             "quote_amount": 5900.0,
             "quote_details": {
@@ -2346,7 +2560,11 @@ async def _seed_budget_fixture(primary_id: str) -> None:
         },
     ]
     await mongo.get_collection("budget_categories").delete_many(
-        {"wedding_id": primary_id, "seed_source": MARKETING_CAPTURE_SEED_SOURCE}
+        {
+            "wedding_id": primary_id,
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+        }
     )
     await mongo.get_collection("payment_records").delete_many(
         {
@@ -2356,7 +2574,11 @@ async def _seed_budget_fixture(primary_id: str) -> None:
         }
     )
     await mongo.db["vendor_quotes"].delete_many(
-        {"wedding_id": primary_id, "seed_source": MARKETING_CAPTURE_SEED_SOURCE}
+        {
+            "wedding_id": primary_id,
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+        }
     )
     await mongo.get_collection("payment_records").insert_many(payment_records)
     await mongo.db["vendor_quotes"].insert_many(vendor_quote_records)
@@ -2542,7 +2764,11 @@ async def _seed_service_packages_fixture(planner: dict[str, Any]) -> None:
         },
     ]
     await mongo.get_collection("packages").delete_many(
-        {"planner_id": planner_id, "seed_source": MARKETING_CAPTURE_SEED_SOURCE}
+        {
+            "planner_id": planner_id,
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+        }
     )
     await mongo.get_collection("packages").insert_many(packages)
 
@@ -2710,7 +2936,11 @@ async def _seed_calendar_fixture(
     ]
 
     await mongo.get_planner_tasks_collection().delete_many(
-        {"wedding_id": primary_id, "seed_source": MARKETING_CAPTURE_SEED_SOURCE}
+        {
+            "wedding_id": primary_id,
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+        }
     )
     await mongo.get_planner_tasks_collection().insert_many(docs)
 
@@ -2767,10 +2997,9 @@ async def _seed_vendor_directory_fixture(
             "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
             "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
         }
-        await mongo.get_collection("vendor_profiles").replace_one(
-            {"_id": vendor_object_id},
+        await _replace_seed_owned_document(
+            mongo.get_collection("vendor_profiles"),
             vendor,
-            upsert=True,
         )
 
         assignment = {
@@ -2796,10 +3025,9 @@ async def _seed_vendor_directory_fixture(
             "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
             "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
         }
-        await mongo.get_collection("vendor_assignments").replace_one(
-            {"_id": assignment_object_id},
+        await _replace_seed_owned_document(
+            mongo.get_collection("vendor_assignments"),
             assignment,
-            upsert=True,
         )
     return DEMO_VENDOR_PROFILE_ID
 
@@ -2812,6 +3040,7 @@ async def _seed_vendor_contract_fixture(
 ) -> str:
     from app.core.database import mongo
     from app.models.vendor import ContractKind, ContractStatus
+    from app.models.vendor_contracts import VendorContractActivityType
     from app.services.vendor_service import vendor_service
 
     now = _utc_now()
@@ -2851,7 +3080,11 @@ async def _seed_vendor_contract_fixture(
         "signed": ContractStatus.SIGNED.value,
     }
     await mongo.get_collection("vendor_payment_milestones").delete_many(
-        {"wedding_id": primary_id, "seed_source": MARKETING_CAPTURE_SEED_SOURCE}
+        {
+            "wedding_id": primary_id,
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+        }
     )
     await mongo.get_collection("vendor_contract_activities").delete_many(
         {
@@ -2951,36 +3184,63 @@ async def _seed_vendor_contract_fixture(
             "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
             "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
         }
-        await mongo.get_collection("vendor_contracts").replace_one(
-            {"_id": contract_object_id},
+        await _replace_seed_owned_document(
+            mongo.get_collection("vendor_contracts"),
             contract,
-            upsert=True,
         )
-        await mongo.get_collection("vendor_contract_activities").replace_one(
-            {"_id": ObjectId(f"67ce00000000000000000{index + 1:03d}")},
+        if signed_at:
+            activity_type = VendorContractActivityType.CONTRACT_SIGNED
+            activity_title = "Contract signed"
+            activity_description = f"{fixture['business_name']} signed the contract."
+            actor_type = "vendor"
+            actor_identifier = fixture["email"]
+            actor_display_name = fixture["contact_name"]
+            activity_created_at = signed_at
+        elif viewed_at:
+            activity_type = VendorContractActivityType.CONTRACT_VIEWED
+            activity_title = "Contract viewed"
+            activity_description = f"{fixture['business_name']} viewed the contract."
+            actor_type = "vendor"
+            actor_identifier = fixture["email"]
+            actor_display_name = fixture["contact_name"]
+            activity_created_at = viewed_at
+        elif sent_at:
+            activity_type = VendorContractActivityType.CONTRACT_SENT
+            activity_title = "Contract sent"
+            activity_description = f"Sent to {fixture['business_name']} for review."
+            actor_type = "planner"
+            actor_identifier = planner_email
+            actor_display_name = planner_name or "Amina Cole"
+            activity_created_at = sent_at
+        else:
+            activity_type = VendorContractActivityType.CONTRACT_CREATED
+            activity_title = "Contract created"
+            activity_description = f"Created for {fixture['business_name']}."
+            actor_type = "planner"
+            actor_identifier = planner_email
+            actor_display_name = planner_name or "Amina Cole"
+            activity_created_at = contract["created_at"]
+        await _replace_seed_owned_document(
+            mongo.get_collection("vendor_contract_activities"),
             {
                 "_id": ObjectId(f"67ce00000000000000000{index + 1:03d}"),
                 "contract_id": fixture["contract_id"],
+                "root_contract_id": str(contract_object_id),
                 "wedding_id": primary_id,
                 "vendor_profile_id": fixture["profile_id"],
-                "activity_type": (
-                    "signed"
-                    if contract_status == ContractStatus.SIGNED.value
-                    else "sent"
-                    if sent_at
-                    else "created"
-                ),
+                "activity_type": activity_type.value,
+                "title": activity_title,
+                "description": activity_description,
                 "actor": {
-                    "role": "planner",
-                    "email": planner_email,
-                    "name": planner_name or "Amina Cole",
+                    "type": actor_type,
+                    "identifier": actor_identifier,
+                    "display_name": actor_display_name,
                 },
                 "metadata": {"contract_number": fixture["contract_number"]},
-                "created_at": signed_at or viewed_at or sent_at or now,
+                "created_at": activity_created_at,
                 "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
                 "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
             },
-            upsert=True,
         )
 
         remaining_amount = max(
@@ -3138,7 +3398,7 @@ async def _seed_client_contract_portal_fixture(
         "payment_method_brand": "visa",
         "planner_name": planner.get("company_name") or "The Special Wedding Studio",
         "planner_email": planner_email,
-        "planner_phone": planner.get("phone") or "(555) 014-2026",
+        "planner_phone": "(312) 555-0100",
         "sent_at": now - timedelta(days=9),
         "viewed_at": now - timedelta(days=8),
         "signed_at": now - timedelta(days=7),
@@ -3149,16 +3409,16 @@ async def _seed_client_contract_portal_fixture(
         "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
         "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
     }
-    await mongo.get_collection("contracts").replace_one(
-        {"_id": contract_object_id},
+    await _replace_seed_owned_document(
+        mongo.get_collection("contracts"),
         contract,
-        upsert=True,
     )
 
     await mongo.get_collection("scheduled_payments").delete_many(
         {
             "contract_id": str(contract_object_id),
             "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
         }
     )
     await mongo.get_collection("scheduled_payments").insert_many(
@@ -3208,6 +3468,25 @@ async def _seed_client_contract_portal_fixture(
                 "receipt_url": None,
                 "created_at": now - timedelta(days=11),
                 "updated_at": now,
+                "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+                "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+            },
+            {
+                "_id": ObjectId("67c300000000000000000104"),
+                "contract_id": str(contract_object_id),
+                "planner_id": planner_id,
+                "name": "Welcome dinner add-on",
+                "amount": 650,
+                "currency": "usd",
+                "due_date": now - timedelta(days=1),
+                "status": "failed",
+                "paid_at": None,
+                "receipt_url": None,
+                "retry_count": 1,
+                "last_error": "Payment method requires an update",
+                "next_retry_at": now + timedelta(days=2),
+                "created_at": now - timedelta(days=6),
+                "updated_at": now - timedelta(hours=8),
                 "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
                 "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
             },
@@ -3330,7 +3609,11 @@ async def _seed_planner_notifications_fixture(
         },
     ]
     await mongo.get_collection("planner_notifications").delete_many(
-        {"planner_id": planner_email, "seed_source": MARKETING_CAPTURE_SEED_SOURCE}
+        {
+            "planner_id": planner_email,
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+        }
     )
     await mongo.get_collection("planner_notifications").insert_many(notifications)
 
@@ -3359,8 +3642,15 @@ async def seed_demo_workspace(args: argparse.Namespace) -> None:
         secondary_slug=args.secondary_slug,
     )
 
+    await _migrate_legacy_smoke_workspace()
+    planner = await _load_planner(planner_email)
+
     await mongo.get_users_collection().update_one(
-        {"_id": planner["_id"]},
+        {
+            "_id": planner["_id"],
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+        },
         {
             "$set": {
                 "onboarding_completed": True,
@@ -3445,6 +3735,7 @@ async def seed_demo_workspace(args: argparse.Namespace) -> None:
     )
     await _seed_seating_fixture(primary_id, secondary_id)
     await _seed_ai_cache(primary_id, planner)
+    await _seed_knowledge_base_fixture(planner)
     await _seed_gallery_fixture(primary_id, planner_email, args.primary_slug)
     upload_token = await _seed_guest_media_fixture(
         primary_id,
@@ -3509,6 +3800,7 @@ async def seed_demo_workspace(args: argparse.Namespace) -> None:
             "primarySlug": args.primary_slug,
             "secondaryWeddingId": secondary_id,
             "secondarySlug": args.secondary_slug,
+            "knowledgeBaseArticleSlug": DEMO_KB_ARTICLE_SLUG,
             "guestMemoriesUploadToken": upload_token,
             "formId": public_form_id,
             "coupleFormId": couple_form_id,

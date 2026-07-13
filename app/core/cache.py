@@ -349,13 +349,25 @@ class CacheManager:
 
         try:
             prefixed_pattern = self._get_key_with_prefix(pattern)
-            keys = await self.redis_client.keys(prefixed_pattern)
+            deleted = 0
+            batch: list[bytes] = []
 
-            if keys:
-                deleted = await self.redis_client.delete(*keys)
-                return deleted
+            # Redis KEYS blocks the server while it walks the entire keyspace.
+            # SCAN keeps wildcard invalidation incremental, which matters when a
+            # production cache contains keys for many planner tenants.
+            async for key in self.redis_client.scan_iter(
+                match=prefixed_pattern,
+                count=100,
+            ):
+                batch.append(key)
+                if len(batch) >= 100:
+                    deleted += int(await self.redis_client.delete(*batch))
+                    batch.clear()
 
-            return 0
+            if batch:
+                deleted += int(await self.redis_client.delete(*batch))
+
+            return deleted
 
         except Exception as e:
             logger.warning(f"Cache clear pattern failed for {pattern}: {str(e)}")
@@ -484,14 +496,6 @@ class CacheKeys:
     @staticmethod
     def session(session_id: str) -> str:
         return f"session:{session_id}"
-
-    @staticmethod
-    def couple_portal_dashboard(wedding_id: str, couple_email: str) -> str:
-        return f"couple_portal_dashboard:{wedding_id}:{couple_email}"
-
-    @staticmethod
-    def planner_weddings(scope: str, include_cancelled: bool) -> str:
-        return f"planner_weddings:{scope}:include_cancelled:{int(include_cancelled)}"
 
     @staticmethod
     def wedding_privacy_info(slug: str) -> str:

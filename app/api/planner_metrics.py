@@ -1,4 +1,3 @@
-import hashlib
 import logging
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -7,7 +6,6 @@ from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.core.cache import CacheKeys, cache
 from app.core.database import mongo
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
@@ -40,8 +38,6 @@ from app.utils.rsvp_status import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-PLANNER_WEDDINGS_CACHE_TTL_SECONDS = 15
 
 
 def _safe_isoformat(value: Any) -> str:
@@ -91,24 +87,6 @@ def _parse_date_safe(value: Optional[Any]) -> Optional[datetime]:
         return None
 
 
-def _planner_weddings_scope_key(
-    current_user: ExtendedAuthUser,
-    include_cancelled: bool,
-    accessible_ids: Optional[List[str]],
-) -> str:
-    scope_parts = [
-        current_user.email or "anonymous",
-        "root" if current_user.is_root_admin else "scoped",
-        "include_cancelled" if include_cancelled else "active_only",
-    ]
-    if accessible_ids is not None:
-        digest = hashlib.sha256(
-            ",".join(sorted(accessible_ids)).encode("utf-8")
-        ).hexdigest()[:12]
-        scope_parts.append(digest)
-    return CacheKeys.planner_weddings(":".join(scope_parts), include_cancelled)
-
-
 def _build_owned_weddings_query(
     current_user: ExtendedAuthUser,
     *,
@@ -154,19 +132,6 @@ def _build_owned_weddings_query(
         filters.append({"status": {"$ne": "cancelled"}})
 
     return combine_mongo_filters(*filters), accessible_ids, owner_email
-
-
-def _normalize_cached_planner_wedding(payload: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(payload)
-    if "id" in payload:
-        normalized["venue"] = _normalize_planner_wedding_venue(normalized.get("venue"))
-        return normalized
-    if "_id" in payload:
-        normalized["id"] = str(normalized.pop("_id"))
-        normalized["venue"] = _normalize_planner_wedding_venue(normalized.get("venue"))
-        return normalized
-    normalized["venue"] = _normalize_planner_wedding_venue(normalized.get("venue"))
-    return normalized
 
 
 def _planner_wedding_model_from_document(
@@ -859,20 +824,10 @@ async def get_planner_weddings(
         weddings_collection = mongo.get_weddings_collection()
 
         # Build query based on user role
-        query, accessible_ids, _owner_email = _build_owned_weddings_query(
+        query, _accessible_ids, _owner_email = _build_owned_weddings_query(
             current_user,
             include_cancelled=include_cancelled,
         )
-
-        cache_key = _planner_weddings_scope_key(
-            current_user, include_cancelled, accessible_ids
-        )
-        cached_weddings = await cache.get(cache_key)
-        if cached_weddings is not None:
-            return [
-                PlannerWeddingModel(**_normalize_cached_planner_wedding(wedding))
-                for wedding in cached_weddings
-            ]
 
         # Safety cap: typical planner has <5k weddings
         MAX_WEDDINGS_LIST = 5000
@@ -908,12 +863,6 @@ async def get_planner_weddings(
 
         # Sort by date (upcoming first)
         wedding_list.sort(key=lambda x: x.date or "9999-12-31")
-
-        await cache.set(
-            cache_key,
-            [wedding.model_dump(by_alias=False) for wedding in wedding_list],
-            expire=PLANNER_WEDDINGS_CACHE_TTL_SECONDS,
-        )
 
         return wedding_list
 

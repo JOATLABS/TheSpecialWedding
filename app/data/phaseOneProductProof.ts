@@ -8,6 +8,11 @@ export type PhaseOneProductStory = {
   proof: string;
   image: MarketingCaptureAsset;
   imageAlt: string;
+  supportingImages: readonly {
+    label: string;
+    image: MarketingCaptureAsset;
+    imageAlt: string;
+  }[];
   featureIds: readonly string[];
 };
 
@@ -21,6 +26,18 @@ export const PHASE_ONE_PRODUCT_STORIES = [
     proof: 'Wedding configuration → couple portal → public schedule',
     image: getMarketingCaptureAsset('wedding-configuration', 'homepage'),
     imageAlt: 'Populated wedding configuration for Sofia and Daniel in the Marigold and Co. planner workspace',
+    supportingImages: [
+      {
+        label: 'Couple view',
+        image: getMarketingCaptureAsset('couple-portal', 'homepage'),
+        imageAlt: 'Sofia and Daniel couple portal reflecting their shared wedding plan',
+      },
+      {
+        label: 'Guest view',
+        image: getMarketingCaptureAsset('wedding-website', 'homepage'),
+        imageAlt: 'Sofia and Daniel public wedding website showing guest-facing details',
+      },
+    ],
     featureIds: ['real-time', 'wedding-configuration', 'couple-portal', 'wedding-website'],
   },
   {
@@ -32,6 +49,18 @@ export const PHASE_ONE_PRODUCT_STORIES = [
     proof: 'Two active weddings, one prioritized morning view',
     image: getMarketingCaptureAsset('dashboard', 'homepage'),
     imageAlt: 'Populated Morning View showing active weddings and prioritized planner work',
+    supportingImages: [
+      {
+        label: 'Conversation changes',
+        image: getMarketingCaptureAsset('inbox', 'homepage'),
+        imageAlt: 'Planner inbox showing wedding conversations in one operational queue',
+      },
+      {
+        label: 'Financial changes',
+        image: getMarketingCaptureAsset('budget', 'homepage'),
+        imageAlt: 'Wedding budget showing current category spend and remaining funds',
+      },
+    ],
     featureIds: ['dashboard', 'inbox', 'payments-autopilot', 'budget'],
   },
   {
@@ -43,6 +72,18 @@ export const PHASE_ONE_PRODUCT_STORIES = [
     proof: 'One guided portal, planner-owned boundaries',
     image: getMarketingCaptureAsset('couple-portal', 'homepage'),
     imageAlt: 'Sofia and Daniel couple portal with their shared wedding plan and next actions',
+    supportingImages: [
+      {
+        label: 'Planner-controlled intake',
+        image: getMarketingCaptureAsset('forms', 'homepage'),
+        imageAlt: 'Planner form workspace with the couple intake questionnaire',
+      },
+      {
+        label: 'Shared couple experience',
+        image: getMarketingCaptureAsset('guest-memories', 'homepage'),
+        imageAlt: 'Couple portal Guest Memories experience for Sofia and Daniel',
+      },
+    ],
     featureIds: ['couple-portal', 'forms', 'guest-memories', 'inbox'],
   },
   {
@@ -54,6 +95,18 @@ export const PHASE_ONE_PRODUCT_STORIES = [
     proof: 'Guest → RSVP → table → venue plan',
     image: getMarketingCaptureAsset('seating-orchestrator', 'homepage'),
     imageAlt: 'Venue-aware seating plan with tables, fixtures, and assigned guests',
+    supportingImages: [
+      {
+        label: 'Guest records',
+        image: getMarketingCaptureAsset('guest-management', 'homepage'),
+        imageAlt: 'Planner guest management workspace with RSVP and household details',
+      },
+      {
+        label: 'Vendor delivery',
+        image: getMarketingCaptureAsset('vendor-network', 'homepage'),
+        imageAlt: 'Planner vendor workspace connecting wedding partners to delivery',
+      },
+    ],
     featureIds: ['guest-management', 'seating-orchestrator', 'vendor-network', 'team'],
   },
 ] as const satisfies readonly [

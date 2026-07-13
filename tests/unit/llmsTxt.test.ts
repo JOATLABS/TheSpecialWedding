@@ -41,4 +41,11 @@ describe('llms.txt public authority file', () => {
       );
     }
   });
+
+  it('uses current product and founder proof instead of unverified testimonial claims', () => {
+    assert.match(llmsText, /Founder And Workflow Proof/);
+    assert.match(llmsText, /current full-window product views/);
+    assert.doesNotMatch(llmsText, /publishes planner testimonials/);
+    assert.doesNotMatch(llmsText, /Phase 1/);
+  });
 });

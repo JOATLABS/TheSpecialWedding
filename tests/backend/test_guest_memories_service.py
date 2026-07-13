@@ -3,6 +3,8 @@ import sys
 import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -43,6 +45,10 @@ def _install_test_stubs() -> None:
         class ClientError(Exception):
             pass
 
+        class BotoCoreError(Exception):
+            pass
+
+        botocore_exceptions.BotoCoreError = BotoCoreError
         botocore_exceptions.ClientError = ClientError
         sys.modules["botocore.exceptions"] = botocore_exceptions
 
@@ -76,7 +82,24 @@ def _install_test_stubs() -> None:
         settings_module.settings = types.SimpleNamespace(
             api_base_url=None,
             cors_origins=[],
+            environment="test",
             frontend_url="https://app.example.com",
+            s3_endpoint_url=None,
+            s3_access_key_id=None,
+            s3_secret_access_key=None,
+            s3_region="auto",
+            s3_healthcheck_ttl_seconds=0,
+            s3_credentials_configured=False,
+            primary_media_bucket_name=None,
+            normalized_media_domain=None,
+            guest_media_bucket_name=None,
+            normalized_guest_media_domain=None,
+            ad_media_bucket_name=None,
+            normalized_ad_media_domain=None,
+            blog_media_bucket_name=None,
+            normalized_blog_media_domain=None,
+            form_uploads_bucket_name=None,
+            normalized_form_uploads_domain=None,
             secret_key="test-secret-key-with-sufficient-length-123456",
         )
         sys.modules["app.core.settings"] = settings_module
@@ -90,6 +113,10 @@ def _install_test_stubs() -> None:
 _install_test_stubs()
 
 import app.services.guest_media_service as guest_media_module  # noqa: E402
+from app.constants.seed_sources import (  # noqa: E402
+    MARKETING_CAPTURE_SEED_SCOPE,
+    MARKETING_CAPTURE_SEED_SOURCE,
+)
 from app.services.guest_export_service import GuestExportService  # noqa: E402
 from app.services.guest_media_service import GuestMediaService  # noqa: E402
 
@@ -178,6 +205,9 @@ def test_serialize_asset_uses_authenticated_relative_paths_for_images():
             "upload_status": "uploaded",
             "original_bucket": "guest-memories",
             "original_key": "guest-media/demo/asset.jpg",
+            "demo_preview_url": "/demo-gallery/elegant-couple-stairs.svg",
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
             "stream_uid": None,
             "stream_playback_base_url": None,
         }
@@ -190,6 +220,9 @@ def test_serialize_asset_uses_authenticated_relative_paths_for_images():
     assert "original_bucket" not in serialized
     assert "original_key" not in serialized
     assert "stream_uid" not in serialized
+    assert "demo_preview_url" not in serialized
+    assert "seed_source" not in serialized
+    assert "seed_scope" not in serialized
 
 
 def test_serialize_asset_uses_authenticated_relative_paths_for_videos():
@@ -222,6 +255,232 @@ def test_serialize_asset_uses_authenticated_relative_paths_for_videos():
     assert "stream_uid" not in serialized
     assert "stream_token" not in serialized
     assert "stream_token_expires_at" not in serialized
+
+
+def test_marketing_capture_memories_use_public_site_url_and_clean_storage_health():
+    service = _build_service()
+    wedding = {
+        "_id": "wedding_marketing_capture_sofia_daniel",
+        "slug": "sofia-and-daniel",
+        "couple_names": "Sofia & Daniel",
+        "public_site_url": "https://www.thespecialwedding.io/sofia-and-daniel",
+    }
+    service.storage = SimpleNamespace(
+        is_configured=False,
+        status="unavailable",
+        issue="SignatureDoesNotMatch",
+    )
+    service._allow_demo_context_without_storage = lambda _wedding: True
+    service._get_wedding_by_id = AsyncMock(return_value=wedding)
+    service.ensure_guest_media_config = AsyncMock(
+        return_value={
+            "config": {"last_rotated_at": None},
+            "upload_token": "showcase-token",
+        }
+    )
+    service.get_dashboard_summary = AsyncMock(
+        return_value={"pending_count": 4, **service._storage_health_payload(wedding)}
+    )
+    service._event_options = lambda _wedding: []
+
+    settings = asyncio.run(service.get_couple_settings(str(wedding["_id"])))
+
+    assert settings["upload_url"] == (
+        "https://www.thespecialwedding.io/sofia-and-daniel/upload/showcase-token"
+    )
+    assert settings["storage_ready"] is True
+    assert settings["storage_status"] == "ready"
+    assert settings["storage_issue"] is None
+
+
+def test_normal_memories_preserve_real_storage_failures():
+    service = _build_service()
+    service.storage = SimpleNamespace(
+        is_configured=False,
+        status="unavailable",
+        issue="Signer credentials are invalid",
+    )
+    service._allow_demo_context_without_storage = lambda _wedding: False
+
+    assert service._storage_health_payload({"slug": "real-wedding"}) == {
+        "storage_ready": False,
+        "storage_status": "unavailable",
+        "storage_issue": "Signer credentials are invalid",
+    }
+
+
+@pytest.mark.asyncio
+async def test_marketing_capture_preview_uses_allowlisted_local_demo_asset(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    service = _build_service()
+    wedding = {
+        "_id": "wedding_marketing_capture_sofia_daniel",
+        "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+        "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+    }
+    asset = {
+        "_id": "marketing_capture_memory_pending_001",
+        "wedding_id": str(wedding["_id"]),
+        "media_type": "image",
+        "upload_status": "uploaded",
+        "original_key": "guest-media/sofia-and-daniel/demo/memory.jpg",
+        "demo_preview_url": "/demo-gallery/elegant-couple-stairs.svg",
+    }
+    service._get_wedding_by_id = AsyncMock(return_value=wedding)
+    service.assets = SimpleNamespace(find_one=AsyncMock(return_value=asset))
+    service.storage = SimpleNamespace(
+        create_presigned_download_url=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("exact demo preview must not call unavailable storage")
+        )
+    )
+    monkeypatch.setattr(guest_media_module.settings, "environment", "test")
+    monkeypatch.setattr(
+        guest_media_module.settings,
+        "frontend_url",
+        "http://127.0.0.1:3000",
+    )
+
+    preview_url = await service.get_asset_redirect_url(
+        str(wedding["_id"]),
+        str(asset["_id"]),
+        "preview",
+    )
+
+    assert preview_url == (
+        "http://127.0.0.1:3000/demo-gallery/elegant-couple-stairs.svg"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "unsafe_preview_url",
+    [
+        "https://attacker.example/demo.svg",
+        "/demo-gallery/../secret.svg",
+        "/not-demo-gallery/image.svg",
+    ],
+)
+async def test_marketing_capture_preview_rejects_non_allowlisted_demo_urls(
+    monkeypatch: pytest.MonkeyPatch,
+    unsafe_preview_url: str,
+):
+    service = _build_service()
+    wedding = {
+        "_id": "wedding_marketing_capture_sofia_daniel",
+        "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+        "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+    }
+    asset = {
+        "_id": "marketing_capture_memory_pending_001",
+        "wedding_id": str(wedding["_id"]),
+        "media_type": "image",
+        "upload_status": "uploaded",
+        "original_key": "guest-media/sofia-and-daniel/demo/memory.jpg",
+        "demo_preview_url": unsafe_preview_url,
+    }
+    service._get_wedding_by_id = AsyncMock(return_value=wedding)
+    service.assets = SimpleNamespace(find_one=AsyncMock(return_value=asset))
+    service.storage = SimpleNamespace(
+        create_presigned_download_url=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("storage remains authoritative")
+        )
+    )
+    monkeypatch.setattr(guest_media_module.settings, "environment", "test")
+
+    with pytest.raises(guest_media_module.HTTPException) as exc_info:
+        await service.get_asset_redirect_url(
+            str(wedding["_id"]),
+            str(asset["_id"]),
+            "preview",
+        )
+
+    assert exc_info.value.status_code == 503
+
+
+@pytest.mark.parametrize("seed_scope", [None, "another-demo"])
+def test_marketing_capture_storage_bypass_requires_exact_seed_scope(seed_scope):
+    service = _build_service()
+    guest_media_module.settings.environment = "test"
+
+    assert not service._allow_demo_context_without_storage(
+        {
+            "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+            "seed_scope": seed_scope,
+        }
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("seed_scope", [None, "another-demo"])
+async def test_marketing_capture_preview_does_not_bypass_storage_for_wrong_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    seed_scope: str | None,
+):
+    service = _build_service()
+    wedding = {
+        "_id": "wedding_marketing_capture_sofia_daniel",
+        "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+        "seed_scope": seed_scope,
+    }
+    asset = {
+        "_id": "marketing_capture_memory_pending_001",
+        "wedding_id": str(wedding["_id"]),
+        "media_type": "image",
+        "upload_status": "uploaded",
+        "original_key": "guest-media/sofia-and-daniel/demo/memory.jpg",
+        "demo_preview_url": "/demo-gallery/elegant-couple-stairs.svg",
+    }
+    service._get_wedding_by_id = AsyncMock(return_value=wedding)
+    service.assets = SimpleNamespace(find_one=AsyncMock(return_value=asset))
+    service.storage = SimpleNamespace(
+        create_presigned_download_url=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("storage remains authoritative")
+        )
+    )
+    monkeypatch.setattr(guest_media_module.settings, "environment", "test")
+
+    with pytest.raises(guest_media_module.HTTPException) as exc_info:
+        await service.get_asset_redirect_url(
+            str(wedding["_id"]),
+            str(asset["_id"]),
+            "preview",
+        )
+
+    assert exc_info.value.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_normal_tenant_preview_preserves_storage_failure(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    service = _build_service()
+    wedding = {"_id": "real-wedding", "seed_source": None}
+    asset = {
+        "_id": "real-memory",
+        "wedding_id": "real-wedding",
+        "media_type": "image",
+        "upload_status": "uploaded",
+        "original_key": "guest-media/real-wedding/memory.jpg",
+        "demo_preview_url": "/demo-gallery/elegant-couple-stairs.svg",
+    }
+    service._get_wedding_by_id = AsyncMock(return_value=wedding)
+    service.assets = SimpleNamespace(find_one=AsyncMock(return_value=asset))
+    service.storage = SimpleNamespace(
+        create_presigned_download_url=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("SignatureDoesNotMatch")
+        )
+    )
+    monkeypatch.setattr(guest_media_module.settings, "environment", "test")
+
+    with pytest.raises(guest_media_module.HTTPException) as exc_info:
+        await service.get_asset_redirect_url(
+            str(wedding["_id"]),
+            str(asset["_id"]),
+            "preview",
+        )
+
+    assert exc_info.value.status_code == 503
 
 
 def test_build_stream_copy_payload_enforces_private_stream_defaults():
