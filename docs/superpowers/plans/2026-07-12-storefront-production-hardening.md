@@ -178,33 +178,33 @@
 - Upload response is `{asset_id, upload_url, cdn_url, key, max_size_bytes}` with `key` inside `storefront/{owner_id}/`; `storefront_assets` is the source of truth for reserve/finalize/attach/cleanup state.
 - Inquiry capture stores planner/slug/contact/wedding/message/request metadata and attempts planner email notification without losing the persisted inquiry if email delivery fails.
 
-- [ ] **Step 1: Write domain, media, and inquiry failing tests**
+- [x] **Step 1: Write domain, media, and inquiry failing tests**
 
   Cover normalization, duplicate reservation, pending versus active domain, hostname+SSL promotion, missing credentials, Cloudflare create/database compensation, delete failure state retention, owner-scoped upload prefixes, disallowed type/oversize finalization cleanup, foreign-key deletion denial, published-storefront inquiry gating, input validation, rate limiting, persistence, and notification failure resilience.
 
-- [ ] **Step 2: Run focused tests and capture RED**
+- [x] **Step 2: Run focused tests and capture RED**
 
   Run: `PYTHONPATH=. /Users/emmanuelakinwale/Developer/WeddingWebApp/.venv.nosync/bin/pytest tests/backend/test_storefront_domain_service.py tests/backend/test_storefront_media.py tests/backend/test_storefront_inquiries.py -q --tb=short`
 
   Expected RED: current Cloudflare mock branch, client-controlled folder, and missing inquiry lifecycle violate assertions.
 
-- [ ] **Step 3: Implement fail-closed Cloudflare lifecycle**
+- [x] **Step 3: Implement fail-closed Cloudflare lifecycle**
 
   Reserve and track candidates in `storefront_domains`, separate from design settings. Promote only when hostname status and SSL status are both active. Preserve the child row and mark cleanup retry state when provider deletion fails. Compensate by deleting the newly created Cloudflare hostname if Mongo persistence fails.
 
-- [ ] **Step 4: Implement owner-scoped presign/finalize/delete**
+- [x] **Step 4: Implement owner-scoped presign/finalize/delete**
 
   Remove the public `folder` parameter. Reserve an owner/slot-scoped asset, return canonical upload keys, sign the declared size where supported, HEAD-validate the same 5 MB/type contract before marking an asset ready, delete invalid completions, and reject finalize/cleanup/attach operations outside the authenticated owner.
 
-- [ ] **Step 5: Implement public inquiry capture**
+- [x] **Step 5: Implement public inquiry capture**
 
   Add `POST /api/storefront/{identifier}/inquiries`, validate the storefront through the same public resolver, apply per-IP/identifier rate limits, persist allowlisted fields, and send a planner notification using the existing Resend service contract.
 
-- [ ] **Step 6: Run focused tests and capture GREEN**
+- [x] **Step 6: Run focused tests and capture GREEN**
 
   Re-run the Step 2 command with zero failures.
 
-- [ ] **Step 7: Commit Task 3**
+- [x] **Step 7: Commit Task 3**
 
   Commit subject: `feat: complete storefront external lifecycles`
 
@@ -229,37 +229,37 @@
 - `uploadStorefrontImage(file, slot, transport, fetchImpl)` validates JPEG/PNG/WebP and 5 MB before reserve, PUTs to `upload_url`, finalizes `asset_id`, and returns the ready asset.
 - `StorefrontView` is a pure shared renderer used by both the modal's live design preview and the public storefront.
 
-- [ ] **Step 1: Write typed client and admin-contract failing tests**
+- [x] **Step 1: Write typed client and admin-contract failing tests**
 
   Assert exact route families, payload/response keys, file checks, reserve/upload/finalize order, cleanup behavior, canonical access booleans rather than plan substring checks, storefront-specific upgrade copy/CTA, accessible file input semantics, slug/publication controls, custom-domain capability separation, live design preview behavior, and Save & Preview behavior.
 
-- [ ] **Step 2: Run focused tests and capture RED**
+- [x] **Step 2: Run focused tests and capture RED**
 
   Run: `PATH=/Users/emmanuelakinwale/.nvm/versions/node/v22.23.0/bin:$PATH npx tsx --test tests/unit/storefrontApi.test.ts tests/unit/storefrontAdminContract.test.ts`
 
   Expected RED: typed client is missing and current source contains `/api/storefront/*` plus plan substring gating.
 
-- [ ] **Step 3: Implement typed client and entitlement-driven entry point**
+- [x] **Step 3: Implement typed client and entitlement-driven entry point**
 
   Fetch access on `/admin/packages`; open settings only when `storefront_enabled`, otherwise pass storefront-specific title, description, feature list, CTA label, and `/admin/planner/billing` destination to `UpgradeModal`.
 
-- [ ] **Step 4: Implement settings, upload, and domain UX**
+- [x] **Step 4: Implement settings, upload, and domain UX**
 
   Replace `any` settings with typed saved/draft state. Add explicit contact fields, editable pre-publication slug with platform URL, explicit publication switch, pointer/keyboard/mobile file input, local object-URL preview, error/success feedback, pending-asset tracking, and cleanup on close or failed save. Render custom-domain controls only when `custom_domain_enabled` and state clearly that domain operations apply immediately and are separate from design settings.
 
-- [ ] **Step 5: Implement the real live design preview**
+- [x] **Step 5: Implement the real live design preview**
 
   Add Edit and Preview views inside the modal. Render the shared `StorefrontView` from current draft settings plus owner package/review preview data so unsaved design changes are visible without DNS, publication, or an external domain. Preview mode disables inquiry submission.
 
-- [ ] **Step 6: Implement Save & Preview**
+- [x] **Step 6: Implement Save & Preview**
 
   Save the current design, then open `/storefront/{savedSlug}?preview=1` in a new tab. A draft can preview without being published and without a custom domain.
 
-- [ ] **Step 7: Run focused tests and capture GREEN**
+- [x] **Step 7: Run focused tests and capture GREEN**
 
   Re-run the Step 2 command with zero failures.
 
-- [ ] **Step 8: Commit Task 4**
+- [x] **Step 8: Commit Task 4**
 
   Commit subject: `feat: deliver storefront configuration workflow`
 
@@ -283,37 +283,37 @@
 - Public page fetches `/api/storefront/{identifier}` with revalidation; authenticated `preview=1` forwards the `admin_token` cookie to `/admin/storefront/preview/{slug}` with `cache: "no-store"`.
 - Inquiry form posts the public request model and renders submitting, success, validation, rate-limit, and retry states.
 
-- [ ] **Step 1: Write public rendering, host routing, and inquiry UI failing tests**
+- [x] **Step 1: Write public rendering, host routing, and inquiry UI failing tests**
 
   Assert total-amount/currency/service rendering, no `price/features` legacy fields, preview auth forwarding/no-store behavior, active custom-host root rewrite, platform/local host pass-through, non-root custom-host pass-through, inquiry payload, and visible success/error states.
 
-- [ ] **Step 2: Run focused tests and capture RED**
+- [x] **Step 2: Run focused tests and capture RED**
 
   Run: `PATH=/Users/emmanuelakinwale/.nvm/versions/node/v22.23.0/bin:$PATH npx tsx --test tests/unit/storefrontPublicContract.test.ts tests/unit/storefrontHostRouting.test.ts tests/unit/storefrontInquiryForm.test.tsx`
 
   Expected RED: current page renders incompatible package fields, proxy has no host rewrite, and form has no submit handler.
 
-- [ ] **Step 3: Implement public data rendering and authenticated preview fetch**
+- [x] **Step 3: Implement public data rendering and authenticated preview fetch**
 
   Render only typed public DTO data through the shared `StorefrontView`, format currency through `Intl.NumberFormat`, display included service names, expose only settings-authored contact details, and keep preview requests private/no-store.
 
-- [ ] **Step 4: Implement safe custom-host rewrite**
+- [x] **Step 4: Implement safe custom-host rewrite**
 
-  Normalize `Host`/`x-forwarded-host`, exclude localhost, IPs, platform frontend/API/staging hosts, and rewrite only `/` to `/storefront/{encodedHost}`.
+  Normalize the actual `Host` authority without trusting `x-forwarded-host`, exclude localhost, IPs, and configured platform frontend/API/staging hosts, and rewrite only a verified custom-host `/` to `/storefront/{encodedHost}`. Missing or malformed authority and non-root custom-host product routes fail closed; the runtime proxy permits only the exact custom-host inquiry POST.
 
-- [ ] **Step 5: Implement inquiry conversion flow**
+- [x] **Step 5: Implement inquiry conversion flow**
 
   Replace the decorative form with the client component, associate every label/input, validate required fields, submit to the public inquiry route, and retain user-entered values on failure.
 
-- [ ] **Step 6: Update changelog**
+- [x] **Step 6: Update changelog**
 
   Record the entitlement, route, privacy, lifecycle, preview, upload, package DTO, custom-host, and inquiry fixes plus any genuinely remaining operational follow-up.
 
-- [ ] **Step 7: Run focused tests and capture GREEN**
+- [x] **Step 7: Run focused tests and capture GREEN**
 
   Re-run the Step 2 command with zero failures.
 
-- [ ] **Step 8: Commit Task 5**
+- [x] **Step 8: Commit Task 5**
 
   Commit subject: `feat: launch secure public storefront flow`
 
@@ -321,16 +321,16 @@
 
 ## Final Verification And Hostile Review
 
-**Storefront branch deployment gate: BLOCKED** until Task 3 restores the secure media/domain endpoints and Tasks 4-5 complete the typed admin, preview, inquiry, and public rendering contracts. Intermediate task commits are not independently deployable.
+**Storefront branch code gate: READY.** The implementation, adversarial review, focused/full suites, production build, isolated runtime checks, and real browser journey are complete. Production activation still requires the documented Cloudflare for SaaS and private R2 configuration; those deployment controls are external prerequisites, not subscription or publication mutations performed by this branch.
 
-- [ ] Generate a whole-branch review package from `fbef0023` to `HEAD` and dispatch the final senior reviewer.
-- [ ] Fix and re-review every Critical or Important finding.
-- [ ] Run `PATH=/Users/emmanuelakinwale/.nvm/versions/node/v22.23.0/bin:$PATH npm run lint`.
-- [ ] Run `PATH=/Users/emmanuelakinwale/.nvm/versions/node/v22.23.0/bin:$PATH npm run type-check`.
-- [ ] Run `PATH=/Users/emmanuelakinwale/.nvm/versions/node/v22.23.0/bin:$PATH npm test`.
-- [ ] Run `PATH=/Users/emmanuelakinwale/.nvm/versions/node/v22.23.0/bin:$PATH npm run build`.
-- [ ] Run `/Users/emmanuelakinwale/Developer/WeddingWebApp/.venv.nosync/bin/ruff check app/` and `/Users/emmanuelakinwale/Developer/WeddingWebApp/.venv.nosync/bin/ruff format --check app/` with `PYTHONPATH=.`.
-- [ ] Run `PYTHONPATH=. /Users/emmanuelakinwale/Developer/WeddingWebApp/.venv.nosync/bin/pytest tests/backend/test_app_boot_smoke.py tests/backend/test_storefront_entitlements.py tests/backend/test_storefront_plan_contract.py tests/backend/test_storefront_service.py tests/backend/test_storefront_api_contract.py tests/backend/test_storefront_indexes.py tests/backend/test_storefront_domain_service.py tests/backend/test_storefront_media.py tests/backend/test_storefront_inquiries.py -q --tb=short`.
-- [ ] Start the testbed with frontend, seed a Signature planner plus Solo planner, and visibly verify upgrade gating, settings round-trip, draft preview, publication, package rendering, image picker, domain pending state, and inquiry success in a real browser.
-- [ ] Re-run `git diff --check fbef0023..HEAD` and inspect `git status --short`.
-- [ ] Mark the goal complete only after the acceptance matrix and adversarial checklist are satisfied.
+- [x] Generate a whole-branch review package from `fbef0023` to `HEAD` and dispatch the final senior reviewers.
+- [x] Fix and independently re-review every Critical or Important finding; final cross-reviews approved with none remaining.
+- [x] Run Node 22 `npm run lint` and the copy-artifact guard.
+- [x] Run Node 22 `npm run type-check`.
+- [x] Run the full Node 22 frontend suite: 320 passed, 0 failed.
+- [x] Run the production frontend build with explicit internal/public/frontend URL configuration.
+- [x] Run Ruff check and format over all 36 Python files changed from `fbef0023`; all passed. Repo-wide Ruff was also run and only exposed unrelated pre-existing drift in `app/api/ai.py` and `app/services/ai_service.py`.
+- [x] Run the focused storefront/bootstrap backend gate and the full backend gate: 2,077 passed, 1 skipped, 0 failed.
+- [x] Use disposable Mongo/Redis and isolated ports to visibly verify Signature settings, live draft preview, internal-slug preview, publication, package/review rendering, inquiry success, truthful post-success edits, and Solo upgrade gating. After the final adversarial-only follow-ups, recheck the final runtime: public slug 200, custom-host admin 404, and platform admin redirect intact. External R2/Cloudflare mutations were deliberately not attempted.
+- [x] Re-run `git diff --check fbef0023..HEAD` and inspect a clean `git status --short` after restoring generated Next/TypeScript files.
+- [x] Mark the goal complete only after the acceptance matrix and adversarial checklist are satisfied.
