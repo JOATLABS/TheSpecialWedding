@@ -115,7 +115,7 @@ function isAllowedCustomStorefrontRequest(
   pathSegments: string[],
 ): boolean {
   const requestUrl = new URL(request.url);
-  const storefrontHost = resolveCustomStorefrontHost(
+  const storefrontAuthority = resolveCustomStorefrontHost(
     request.headers.get('host'),
     {
       platformDomains: process.env.STOREFRONT_PLATFORM_DOMAINS,
@@ -124,7 +124,10 @@ function isAllowedCustomStorefrontRequest(
       cnameTarget: process.env.STOREFRONT_CNAME_TARGET,
     },
   );
-  if (!storefrontHost) {
+  if (storefrontAuthority.kind === 'invalid') {
+    return false;
+  }
+  if (storefrontAuthority.kind === 'platform') {
     return true;
   }
 
@@ -140,7 +143,7 @@ function isAllowedCustomStorefrontRequest(
     pathSegments.length === 4 &&
     pathSegments[0] === 'api' &&
     pathSegments[1] === 'storefront' &&
-    requestedIdentifier === storefrontHost &&
+    requestedIdentifier === storefrontAuthority.hostname &&
     pathSegments[3] === 'inquiries'
   );
 }
