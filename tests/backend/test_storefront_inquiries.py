@@ -256,6 +256,26 @@ class FailOperatorAlertBookkeepingCollection(FailOperatorAlertMarkerCollection):
         return await super().update_one(query, update)
 
 
+class FailTerminalRereadCollection(FakeCollection):
+    def __init__(self, documents: list[dict] | None = None) -> None:
+        super().__init__(documents)
+        self.fail_terminal_reread = False
+
+    async def update_one(self, query: dict, update: dict) -> SimpleNamespace:
+        result = await super().update_one(query, update)
+        if getattr(result, "matched_count", 0) and update.get("$set", {}).get(
+            "notification.status"
+        ) in {"failed", "delivery_unknown", "quarantined"}:
+            self.fail_terminal_reread = True
+        return result
+
+    async def find_one(self, query: dict, *_args, **_kwargs) -> dict | None:
+        if self.fail_terminal_reread:
+            self.fail_terminal_reread = False
+            raise RuntimeError("terminal inquiry reread failed")
+        return await super().find_one(query)
+
+
 class FakeStorefrontService:
     def __init__(
         self,
@@ -870,6 +890,35 @@ async def test_operator_alert_bookkeeping_outage_preserves_accepted_inquiry(
     notification = inquiries.documents[0]["notification"]
     assert notification["status"] == "failed"
     assert notification["operator_alert"]["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_terminal_alert_reread_failure_does_not_reject_durable_inquiry(
+    monkeypatch,
+):
+    inquiries = FailTerminalRereadCollection()
+    service, mongo, _storefront, _limiter, _email = make_service(
+        inquiry_collection=inquiries,
+        email_result={"success": False, "error": "email is not configured"},
+    )
+    monkeypatch.setattr(
+        storefront_inquiry_service_module,
+        "STOREFRONT_NOTIFICATION_MAX_DELIVERY_ATTEMPTS",
+        1,
+    )
+
+    result = await service.capture(
+        "luxe-light",
+        inquiry_payload(),
+        client_ip="203.0.113.10",
+        user_agent=None,
+    )
+
+    assert result["success"] is True
+    notification = inquiries.documents[0]["notification"]
+    assert notification["status"] == "failed"
+    assert notification["operator_alert"]["status"] == "pending"
+    assert mongo.db["planner_notifications"].documents == []
 
 
 @pytest.mark.asyncio
