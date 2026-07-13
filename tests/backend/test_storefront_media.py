@@ -1881,6 +1881,70 @@ async def test_global_settings_recovery_counts_one_owner_against_limit_one(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("malformed_attempts", [None, "not-a-number"])
+async def test_malformed_recovery_attempt_count_does_not_starve_later_media_manifest(
+    setup_media,
+    malformed_attempts,
+):
+    service, mongo, storage, _entitlements = setup_media
+    now = datetime.now(timezone.utc)
+    clear_claim = await service.claim_settings_assets(_owner(), hero_asset_id=None)
+
+    reserved = await _reserve(
+        service,
+        owner_id=SECOND_OWNER_ID,
+        slot="about",
+        size_bytes=1024,
+    )
+    staging_key = storage.presign_calls[-1]["key"]
+    storage.head_by_key[staging_key] = {
+        "ContentLength": 1024,
+        "ContentType": "image/webp",
+        "ETag": '"second-owner-about"',
+    }
+    await service.finalize(_owner(SECOND_OWNER_ID), reserved["asset_id"])
+    media_claim = await service.claim_settings_assets(
+        _owner(SECOND_OWNER_ID), about_asset_id=reserved["asset_id"]
+    )
+
+    mongo.raw.storefront_settings.insert_many(
+        [
+            {
+                "planner_id": OWNER_ID,
+                "revision": 1,
+                "hero_asset_id": "stable-hero",
+                "pending_hero_asset_id": None,
+                "pending_hero_claim_id": clear_claim["claim_id"],
+                "pending_asset_group": clear_claim["manifest"],
+                "pending_asset_recovery_attempts": malformed_attempts,
+                "updated_at": now - timedelta(hours=2),
+            },
+            {
+                "planner_id": SECOND_OWNER_ID,
+                "revision": 1,
+                "about_asset_id": None,
+                "pending_about_asset_id": reserved["asset_id"],
+                "pending_about_claim_id": media_claim["claim_id"],
+                "pending_asset_group": media_claim["manifest"],
+                "updated_at": now - timedelta(hours=1),
+            },
+        ]
+    )
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+    first = mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
+    second = mongo.raw.storefront_settings.find_one({"planner_id": SECOND_OWNER_ID})
+    assert first["hero_asset_id"] is None
+    assert "pending_asset_group" not in first
+    assert "pending_asset_group" in second
+
+    assert await service.sweep_abandoned_assets(limit=1) == 1
+    second = mongo.raw.storefront_settings.find_one({"planner_id": SECOND_OWNER_ID})
+    assert second["about_asset_id"] == reserved["asset_id"]
+    assert "pending_asset_group" not in second
+
+
+@pytest.mark.asyncio
 async def test_reconcile_transient_promotion_failure_preserves_complete_pending_intent(
     setup_media, monkeypatch
 ):
