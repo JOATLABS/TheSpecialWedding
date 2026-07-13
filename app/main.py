@@ -444,26 +444,33 @@ async def _storefront_media_maintenance_scheduler():
     while True:
         try:
             processed = await storefront_media_service.sweep_abandoned_assets()
-            processed_inquiries = (
-                await storefront_inquiry_service.process_pending_notifications()
-            )
             if processed:
                 logger.info(
                     "Storefront media scheduler cleaned %s abandoned asset(s)",
                     processed,
                 )
-            if processed_inquiries:
-                logger.info(
-                    "Storefront scheduler recovered %s inquiry notification(s)",
-                    processed_inquiries,
-                )
-            await asyncio.sleep(60)
         except asyncio.CancelledError:
             logger.info("Storefront media scheduler shutting down")
             raise
         except Exception as e:
             logger.error(f"Storefront media scheduler error: {e}", exc_info=True)
-            await asyncio.sleep(60)
+
+        try:
+            processed_inquiries = (
+                await storefront_inquiry_service.process_pending_notifications()
+            )
+            if processed_inquiries:
+                logger.info(
+                    "Storefront scheduler recovered %s inquiry notification(s)",
+                    processed_inquiries,
+                )
+        except asyncio.CancelledError:
+            logger.info("Storefront media scheduler shutting down")
+            raise
+        except Exception as e:
+            logger.error(f"Storefront inquiry scheduler error: {e}", exc_info=True)
+
+        await asyncio.sleep(60)
 
 
 def _start_background_scheduler_tasks() -> list[asyncio.Task]:

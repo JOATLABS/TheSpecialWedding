@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
 from starlette.requests import Request
 
+import app.services.storefront_inquiry_service as storefront_inquiry_service_module
 import app.utils.rate_limiter as rate_limiter_module
 from app.core.settings import Settings
 from app.models.storefront import StorefrontInquiryRequest
@@ -34,6 +35,10 @@ def _get_path(document: dict, path: str):
 
 def _matches(document: dict, query: dict) -> bool:
     for key, expected in query.items():
+        if key == "$and":
+            if not all(_matches(document, candidate) for candidate in expected):
+                return False
+            continue
         if key == "$or":
             if not any(_matches(document, candidate) for candidate in expected):
                 return False
@@ -45,6 +50,10 @@ def _matches(document: dict, query: dict) -> bool:
             ):
                 return False
             if "$lte" in expected and (actual is _MISSING or actual > expected["$lte"]):
+                return False
+            if "$in" in expected and (
+                actual is _MISSING or actual not in expected["$in"]
+            ):
                 return False
         elif actual is _MISSING or actual != expected:
             return False
@@ -201,6 +210,50 @@ class FakeMongo:
 
     def get_users_collection(self) -> FakeCollection:
         return self.db["users"]
+
+
+class FailOnceUsersCollection(FakeCollection):
+    def __init__(self, documents: list[dict]) -> None:
+        super().__init__(documents)
+        self.failures_remaining = 1
+
+    async def find_one(self, query: dict, *_args, **_kwargs) -> dict | None:
+        if self.failures_remaining:
+            self.failures_remaining -= 1
+            raise RuntimeError("transient planner lookup failure")
+        return await super().find_one(query)
+
+
+class FailOnceFindCollection(FakeCollection):
+    def __init__(self) -> None:
+        super().__init__()
+        self.failures_remaining = 1
+
+    async def find_one(self, query: dict, *_args, **_kwargs) -> dict | None:
+        if self.failures_remaining:
+            self.failures_remaining -= 1
+            raise RuntimeError("transient operator alert lookup failure")
+        return await super().find_one(query)
+
+
+class FailOperatorAlertMarkerCollection(FakeCollection):
+    async def update_one(self, query: dict, update: dict) -> SimpleNamespace:
+        if (
+            update.get("$set", {}).get("notification.operator_alert.status")
+            == "visible"
+        ):
+            raise RuntimeError("operator alert marker write failed")
+        return await super().update_one(query, update)
+
+
+class FailOperatorAlertBookkeepingCollection(FailOperatorAlertMarkerCollection):
+    async def update_one(self, query: dict, update: dict) -> SimpleNamespace:
+        if (
+            update.get("$set", {}).get("notification.operator_alert.status")
+            == "retry_pending"
+        ):
+            raise RuntimeError("operator alert retry write failed")
+        return await super().update_one(query, update)
 
 
 class FakeStorefrontService:
@@ -600,6 +653,12 @@ async def test_ambiguous_notification_past_provider_window_is_quarantined():
     notification = mongo.db["storefront_inquiries"].documents[0]["notification"]
     assert notification["status"] == "delivery_unknown"
     assert "claim_token" not in notification
+    assert notification["operator_alert"]["status"] == "visible"
+    alerts = mongo.db["planner_notifications"].documents
+    assert len(alerts) == 1
+    assert alerts[0]["planner_id"] == "private-planner@example.test"
+    assert alerts[0]["type"] == "delivery_failure"
+    assert alerts[0]["metadata"]["inquiry_id"] == str(stale["_id"])
     assert email.calls == []
 
 
@@ -607,7 +666,7 @@ async def test_ambiguous_notification_past_provider_window_is_quarantined():
 @pytest.mark.parametrize(
     "notification_result,notification_error,expected_status",
     [
-        ({"success": False, "error": "not configured"}, None, "failed"),
+        ({"success": False, "error": "not configured"}, None, "retry_pending"),
         (None, RuntimeError("provider unavailable"), "retry_pending"),
     ],
 )
@@ -632,6 +691,215 @@ async def test_notification_failure_never_loses_persisted_inquiry(
         mongo.db["storefront_inquiries"].updated[-1][1]["$set"]["notification.status"]
         == expected_status
     )
+
+
+@pytest.mark.asyncio
+async def test_transient_planner_lookup_is_known_not_sent_and_retried():
+    service, mongo, _storefront, _limiter, email = make_service()
+    payload = inquiry_payload()
+    pending = pending_inquiry_document(service, payload)
+    pending["created_at"] = datetime.now(timezone.utc)
+    inquiries = FakeCollection([pending])
+    mongo.db.collections["storefront_inquiries"] = inquiries
+    mongo.db.collections["users"] = FailOnceUsersCollection(
+        [
+            {
+                "_id": ObjectId(OWNER_ID),
+                "email": "private-planner@example.test",
+                "company_name": "Luxe & Light",
+            }
+        ]
+    )
+    email.inquiries = inquiries
+
+    assert await service.process_pending_notifications(limit=1) == 1
+    notification = inquiries.documents[0]["notification"]
+    assert notification["status"] == "retry_pending"
+    assert notification["delivery_outcome"] == "not_sent"
+    assert notification["next_attempt_at"] > notification["attempted_at"]
+    assert email.calls == []
+
+    notification["next_attempt_at"] = datetime.now(timezone.utc) - timedelta(seconds=1)
+    assert await service.process_pending_notifications(limit=1) == 1
+    assert notification["status"] == "sent"
+    assert len(email.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_missing_planner_recipient_retries_as_known_not_sent():
+    service, mongo, _storefront, _limiter, email = make_service()
+    mongo.db.collections["users"] = FakeCollection(
+        [
+            {
+                "_id": ObjectId(OWNER_ID),
+                "company_name": "Luxe & Light",
+            }
+        ]
+    )
+
+    result = await service.capture(
+        "luxe-light",
+        inquiry_payload(),
+        client_ip="203.0.113.10",
+        user_agent=None,
+    )
+
+    assert result["success"] is True
+    notification = mongo.db["storefront_inquiries"].documents[0]["notification"]
+    assert notification["status"] == "retry_pending"
+    assert notification["delivery_outcome"] == "not_sent"
+    assert notification["next_attempt_at"] > notification["attempted_at"]
+    assert email.calls == []
+
+
+@pytest.mark.asyncio
+async def test_known_not_sent_retries_back_off_then_terminalize_with_visible_alert():
+    service, mongo, _storefront, _limiter, email = make_service(
+        email_result={"success": False, "error": "email is not configured"}
+    )
+    payload = inquiry_payload()
+    pending = pending_inquiry_document(service, payload)
+    pending["created_at"] = datetime.now(timezone.utc)
+    pending["notification"]["attempt_count"] = 1
+    inquiries = FakeCollection([pending])
+    mongo.db.collections["storefront_inquiries"] = inquiries
+    email.inquiries = inquiries
+
+    assert await service.process_pending_notifications(limit=1) == 1
+    notification = inquiries.documents[0]["notification"]
+    retry_delay = notification["next_attempt_at"] - notification["attempted_at"]
+    assert retry_delay >= timedelta(minutes=2)
+    assert notification["status"] == "retry_pending"
+    assert notification["delivery_outcome"] == "not_sent"
+
+    notification["attempt_count"] = 4
+    notification["next_attempt_at"] = datetime.now(timezone.utc) - timedelta(seconds=1)
+    assert await service.process_pending_notifications(limit=1) == 1
+    assert notification["status"] == "failed"
+    assert "next_attempt_at" not in notification
+    assert notification["operator_alert"]["status"] == "visible"
+    alerts = mongo.db["planner_notifications"].documents
+    assert len(alerts) == 1
+    assert alerts[0]["title"] == "Storefront inquiry needs attention"
+    assert alerts[0]["metadata"]["delivery_status"] == "failed"
+    assert alerts[0]["metadata"]["lead_email"] == str(payload.email)
+
+
+@pytest.mark.asyncio
+async def test_operator_alert_storage_failure_is_deferred_with_backoff():
+    service, mongo, _storefront, _limiter, email = make_service()
+    payload = inquiry_payload()
+    terminal = pending_inquiry_document(service, payload)
+    terminal["created_at"] = datetime.now(timezone.utc)
+    terminal["notification"] = {
+        "status": "delivery_unknown",
+        "delivery_outcome": "unknown",
+        "error": "provider acknowledgement was lost",
+        "operator_alert": {"status": "pending"},
+    }
+    inquiries = FakeCollection([terminal])
+    mongo.db.collections["storefront_inquiries"] = inquiries
+    mongo.db.collections["planner_notifications"] = FailOnceFindCollection()
+    email.inquiries = inquiries
+
+    assert await service.process_pending_notifications(limit=1) == 1
+
+    alert = inquiries.documents[0]["notification"]["operator_alert"]
+    assert alert["status"] == "retry_pending"
+    assert alert["attempt_count"] == 1
+    assert alert["next_attempt_at"] > datetime.now(timezone.utc)
+    assert "transient operator alert lookup failure" in alert["error"]
+
+
+@pytest.mark.asyncio
+async def test_operator_alert_marker_failure_does_not_reject_durable_inquiry(
+    monkeypatch,
+):
+    inquiries = FailOperatorAlertMarkerCollection()
+    service, mongo, _storefront, _limiter, _email = make_service(
+        inquiry_collection=inquiries,
+        email_result={"success": False, "error": "email is not configured"},
+    )
+    monkeypatch.setattr(
+        storefront_inquiry_service_module,
+        "STOREFRONT_NOTIFICATION_MAX_DELIVERY_ATTEMPTS",
+        1,
+    )
+
+    result = await service.capture(
+        "luxe-light",
+        inquiry_payload(),
+        client_ip="203.0.113.10",
+        user_agent=None,
+    )
+
+    assert result["success"] is True
+    assert len(mongo.db["planner_notifications"].documents) == 1
+    notification = inquiries.documents[0]["notification"]
+    assert notification["status"] == "failed"
+    assert notification["operator_alert"]["status"] == "retry_pending"
+    assert notification["operator_alert"]["next_attempt_at"] > datetime.now(
+        timezone.utc
+    )
+
+
+@pytest.mark.asyncio
+async def test_operator_alert_bookkeeping_outage_preserves_accepted_inquiry(
+    monkeypatch,
+):
+    inquiries = FailOperatorAlertBookkeepingCollection()
+    service, mongo, _storefront, _limiter, _email = make_service(
+        inquiry_collection=inquiries,
+        email_result={"success": False, "error": "email is not configured"},
+    )
+    monkeypatch.setattr(
+        storefront_inquiry_service_module,
+        "STOREFRONT_NOTIFICATION_MAX_DELIVERY_ATTEMPTS",
+        1,
+    )
+
+    result = await service.capture(
+        "luxe-light",
+        inquiry_payload(),
+        client_ip="203.0.113.10",
+        user_agent=None,
+    )
+
+    assert result["success"] is True
+    assert len(mongo.db["planner_notifications"].documents) == 1
+    notification = inquiries.documents[0]["notification"]
+    assert notification["status"] == "failed"
+    assert notification["operator_alert"]["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_invalid_oldest_rows_are_quarantined_so_valid_work_can_progress():
+    service, mongo, _storefront, _limiter, email = make_service()
+    payload = inquiry_payload()
+    invalid_rows = []
+    for _ in range(10):
+        invalid = pending_inquiry_document(service, payload)
+        invalid["_id"] = ObjectId()
+        invalid["planner_id"] = None
+        invalid["created_at"] = datetime.now(timezone.utc) - timedelta(days=1)
+        invalid_rows.append(invalid)
+    valid = pending_inquiry_document(service, payload)
+    valid["_id"] = ObjectId()
+    valid["created_at"] = datetime.now(timezone.utc)
+    inquiries = FakeCollection([*invalid_rows, valid])
+    mongo.db.collections["storefront_inquiries"] = inquiries
+    email.inquiries = inquiries
+
+    assert await service.process_pending_notifications(limit=10) == 10
+    assert all(
+        row["notification"]["status"] == "quarantined"
+        for row in inquiries.documents[:10]
+    )
+    assert inquiries.documents[-1]["notification"]["status"] == "pending"
+
+    assert await service.process_pending_notifications(limit=10) == 1
+    assert inquiries.documents[-1]["notification"]["status"] == "sent"
+    assert len(email.calls) == 1
 
 
 @pytest.mark.asyncio

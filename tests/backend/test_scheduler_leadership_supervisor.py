@@ -5,6 +5,8 @@ import asyncio
 import pytest
 
 import app.main as main
+import app.services.storefront_inquiry_service as inquiry_module
+import app.services.storefront_media_service as media_module
 
 
 def _install_scheduler_task_factory(monkeypatch):
@@ -163,3 +165,43 @@ async def test_shutdown_after_leadership_loss_does_not_release_the_lease(
     await _cancel(supervisor)
 
     assert releases == []
+
+
+@pytest.mark.asyncio
+async def test_storefront_inquiry_recovery_continues_when_media_recovery_fails(
+    monkeypatch,
+):
+    media_calls = 0
+    inquiry_calls = 0
+
+    class FailingMedia:
+        async def sweep_abandoned_assets(self):
+            nonlocal media_calls
+            media_calls += 1
+            raise RuntimeError("persistent media outage")
+
+    class RecoveringInquiries:
+        async def process_pending_notifications(self):
+            nonlocal inquiry_calls
+            inquiry_calls += 1
+            return 1
+
+    async def stop_after_tick(_seconds: float):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(
+        media_module, "storefront_media_service", FailingMedia(), raising=False
+    )
+    monkeypatch.setattr(
+        inquiry_module,
+        "storefront_inquiry_service",
+        RecoveringInquiries(),
+        raising=False,
+    )
+    monkeypatch.setattr(main.asyncio, "sleep", stop_after_tick)
+
+    with pytest.raises(asyncio.CancelledError):
+        await main._storefront_media_maintenance_scheduler()
+
+    assert media_calls == 1
+    assert inquiry_calls == 1
