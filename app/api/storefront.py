@@ -1,242 +1,216 @@
-import logging
-from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
-from bson import ObjectId
+"""Planner-owned storefront administration and allowlisted public reads."""
 
-from app.core.database import mongo
-from app.dependencies.auth_extended import ExtendedAuthUser, require_admin_or_planner
-from app.services.cloudflare_service import CloudflareService, CloudflareServiceError
+from typing import Literal
 
-logger = logging.getLogger(__name__)
+from fastapi import APIRouter, Depends, Query, Request, Response, status
+
+from app.constants.storefront import CUSTOM_DOMAIN_FEATURE, STOREFRONT_FEATURE
+from app.dependencies.auth_extended import ExtendedAuthUser
+from app.dependencies.storefront_access import (
+    require_storefront_feature,
+    require_storefront_owner,
+)
+from app.models.storefront import (
+    PublicStorefrontResponse,
+    StorefrontAccessResponse,
+    StorefrontAssetDeleteResponse,
+    StorefrontAssetResponse,
+    StorefrontDomainConnectRequest,
+    StorefrontDomainResponse,
+    StorefrontInquiryRequest,
+    StorefrontInquiryResponse,
+    StorefrontSettingsEnvelope,
+    StorefrontSettingsUpdate,
+    StorefrontSettingsUpdateEnvelope,
+    StorefrontUploadCompleteRequest,
+    StorefrontUploadReservationResponse,
+)
+from app.services.storefront_domain_service import storefront_domain_service
+from app.services.storefront_entitlement_service import StorefrontEntitlements
+from app.services.storefront_inquiry_service import storefront_inquiry_service
+from app.services.storefront_media_service import (
+    MAX_STOREFRONT_ASSET_SIZE_BYTES,
+    storefront_media_service,
+)
+from app.services.storefront_service import storefront_service
+from app.utils.rate_limiter import get_client_ip
+
 router = APIRouter()
 public_router = APIRouter()
 
-class StorefrontSettingsModel(BaseModel):
-    title: Optional[str] = Field(None, max_length=100)
-    description: Optional[str] = Field(None, max_length=2000)
-    hero_image_url: Optional[str] = None
-    about_image_url: Optional[str] = None
-    theme_color: Optional[str] = Field(None, max_length=20)
-    packages_enabled: bool = True
-    reviews_enabled: bool = True
-    custom_domain: Optional[str] = None
+require_planner_storefront = require_storefront_feature(STOREFRONT_FEATURE)
+require_custom_domain = require_storefront_feature(CUSTOM_DOMAIN_FEATURE)
 
-class CustomDomainRequest(BaseModel):
-    domain: str
 
-@router.post("/storefront/custom-domain")
-async def add_custom_domain(
-    req: CustomDomainRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+@router.get("/storefront/access", response_model=StorefrontAccessResponse)
+async def get_storefront_access(
+    current_user: ExtendedAuthUser = Depends(require_storefront_owner),
 ):
-    """Add a custom domain and configure Cloudflare for SaaS."""
-    user_id = str((current_user.user_data or {}).get("_id", ""))
-    
-    try:
-        cf_response = await CloudflareService.add_custom_hostname(req.domain)
-    except CloudflareServiceError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-        
-    update_data = {
-        "custom_domain": req.domain,
-        "cloudflare_hostname_id": cf_response.get("id"),
-        "cloudflare_hostname_status": cf_response.get("status"),
-        "ownership_verification": cf_response.get("ownership_verification")
-    }
-    
-    await mongo.db["storefront_settings"].update_one(
-        {"planner_id": user_id},
-        {"$set": update_data},
-        upsert=True
-    )
-    
-    return {"status": "success", "data": update_data}
+    """Return independent current-plan capabilities for the planner owner."""
 
-@router.get("/storefront/custom-domain/status")
-async def get_custom_domain_status(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
-):
-    """Get the current DNS verification status of the custom domain."""
-    user_id = str((current_user.user_data or {}).get("_id", ""))
-    settings = await mongo.db["storefront_settings"].find_one({"planner_id": user_id})
-    
-    if not settings or not settings.get("cloudflare_hostname_id"):
-        return {"status": "none"}
-        
-    hostname_id = settings["cloudflare_hostname_id"]
-    try:
-        cf_response = await CloudflareService.get_custom_hostname_status(hostname_id)
-        if cf_response:
-            # Update DB with latest status
-            await mongo.db["storefront_settings"].update_one(
-                {"planner_id": user_id},
-                {"$set": {"cloudflare_hostname_status": cf_response.get("status")}}
-            )
-            return {"status": "success", "data": cf_response}
-    except CloudflareServiceError:
-        pass
-        
-    # Fallback to cached data
-    return {
-        "status": "success", 
-        "data": {
-            "status": settings.get("cloudflare_hostname_status", "pending"), 
-            "ownership_verification": settings.get("ownership_verification")
-        }
-    }
+    return await storefront_service.get_access(current_user)
 
-@router.delete("/storefront/custom-domain")
-async def remove_custom_domain(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
-):
-    """Remove the custom domain configuration."""
-    user_id = str((current_user.user_data or {}).get("_id", ""))
-    settings = await mongo.db["storefront_settings"].find_one({"planner_id": user_id})
-    
-    if settings and settings.get("cloudflare_hostname_id"):
-        hostname_id = settings["cloudflare_hostname_id"]
-        try:
-            await CloudflareService.delete_custom_hostname(hostname_id)
-        except CloudflareServiceError:
-            pass # Ignore deletion errors to allow users to force-remove from their DB
-            
-    await mongo.db["storefront_settings"].update_one(
-        {"planner_id": user_id},
-        {"$unset": {
-            "custom_domain": "", 
-            "cloudflare_hostname_id": "", 
-            "cloudflare_hostname_status": "", 
-            "ownership_verification": ""
-        }}
-    )
-    
-    return {"status": "success"}
 
-@router.get("/storefront/settings")
+@router.get("/storefront/settings", response_model=StorefrontSettingsEnvelope)
 async def get_storefront_settings(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+    current_user: ExtendedAuthUser = Depends(require_storefront_owner),
+    _entitlements: StorefrontEntitlements = Depends(require_planner_storefront),
 ):
-    """Get the planner's storefront settings."""
-    user_id = str((current_user.user_data or {}).get("_id", ""))
-    
-    settings = await mongo.db["storefront_settings"].find_one({"planner_id": user_id})
-    if not settings:
-        return {"settings": None}
-    
-    # Exclude _id
-    settings.pop("_id", None)
-    return {"settings": settings}
+    """Read the entitled planner owner's authored storefront settings."""
 
-@router.post("/storefront/settings")
+    return {"settings": await storefront_service.get_settings(current_user)}
+
+
+@router.post(
+    "/storefront/settings",
+    response_model=StorefrontSettingsUpdateEnvelope,
+)
 async def update_storefront_settings(
-    settings: StorefrontSettingsModel,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+    settings: StorefrontSettingsUpdate,
+    current_user: ExtendedAuthUser = Depends(require_storefront_owner),
+    _entitlements: StorefrontEntitlements = Depends(require_planner_storefront),
 ):
-    """Update the planner's storefront settings."""
-    user_id = str((current_user.user_data or {}).get("_id", ""))
-    
-    update_data = settings.dict(exclude_unset=True)
-    update_data["planner_id"] = user_id
-    
-    result = await mongo.db["storefront_settings"].update_one(
-        {"planner_id": user_id},
-        {"$set": update_data},
-        upsert=True
-    )
-    
-    return {"status": "success", "settings": update_data}
+    """Create or edit allowlisted settings without touching provider state."""
+
+    saved = await storefront_service.update_settings(current_user, settings)
+    return {"status": "success", "settings": saved}
 
 
-@router.get("/storefront/upload-url")
-async def get_storefront_upload_url(
-    filename: str = Query(..., min_length=1),
-    content_type: str = Query(default="image/jpeg"),
-    folder: str = Query(default="storefront"),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+@router.get(
+    "/storefront/preview-data",
+    response_model=PublicStorefrontResponse,
+)
+async def get_storefront_preview_data(
+    current_user: ExtendedAuthUser = Depends(require_storefront_owner),
+    _entitlements: StorefrontEntitlements = Depends(require_planner_storefront),
 ):
-    """Get a presigned URL to upload a storefront image directly to R2.
+    """Return canonical owner content even before first settings persistence."""
 
-    Uses the same BLOG_ASSETS bucket and BlogUploadService as the blog
-    image upload flow, but under a ``storefront/`` key prefix so files
-    are logically separated.
-    """
-    from app.services.blog_upload_service import BlogUploadService
+    return await storefront_service.get_owner_preview_seed(current_user)
 
-    blog_upload = BlogUploadService()
-    return blog_upload.create_presigned_upload_url(
-        filename=filename,
-        folder=folder,
+
+@router.get(
+    "/storefront/preview/{slug}",
+    response_model=PublicStorefrontResponse,
+)
+async def preview_storefront(
+    slug: str,
+    current_user: ExtendedAuthUser = Depends(require_storefront_owner),
+    _entitlements: StorefrontEntitlements = Depends(require_planner_storefront),
+):
+    """Render the owner's saved draft through the public DTO without publishing."""
+
+    return await storefront_service.get_owner_preview(current_user, slug)
+
+
+@router.post(
+    "/storefront/custom-domain",
+    response_model=StorefrontDomainResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def connect_storefront_custom_domain(
+    payload: StorefrontDomainConnectRequest,
+    current_user: ExtendedAuthUser = Depends(require_storefront_owner),
+    _entitlements: StorefrontEntitlements = Depends(require_custom_domain),
+):
+    return await storefront_domain_service.connect(current_user, payload.domain)
+
+
+@router.get(
+    "/storefront/custom-domain/status",
+    response_model=StorefrontDomainResponse | None,
+)
+async def refresh_storefront_custom_domain(
+    current_user: ExtendedAuthUser = Depends(require_storefront_owner),
+    _entitlements: StorefrontEntitlements = Depends(require_custom_domain),
+):
+    return await storefront_domain_service.refresh(current_user)
+
+
+@router.delete(
+    "/storefront/custom-domain",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def disconnect_storefront_custom_domain(
+    current_user: ExtendedAuthUser = Depends(require_storefront_owner),
+    _entitlements: StorefrontEntitlements = Depends(require_custom_domain),
+):
+    await storefront_domain_service.disconnect(current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/storefront/upload-url",
+    response_model=StorefrontUploadReservationResponse,
+)
+async def reserve_storefront_upload(
+    filename: str = Query(min_length=1, max_length=255),
+    slot: Literal["hero", "about"] = Query(),
+    content_type: Literal["image/jpeg", "image/png", "image/webp"] = Query(),
+    size_bytes: int = Query(gt=0, le=MAX_STOREFRONT_ASSET_SIZE_BYTES),
+    current_user: ExtendedAuthUser = Depends(require_storefront_owner),
+    _entitlements: StorefrontEntitlements = Depends(require_planner_storefront),
+):
+    # The original filename is validated for request bounds but intentionally
+    # never participates in the storage key.
+    _ = filename
+    return await storefront_media_service.reserve(
+        current_user,
+        slot=slot,
         content_type=content_type,
+        size_bytes=size_bytes,
     )
 
-@public_router.get("/storefront/{domain_or_planner_id}")
-async def get_public_storefront(domain_or_planner_id: str):
-    """Public endpoint to fetch storefront data by custom domain or planner ID."""
-    # First try to find by custom domain
-    settings = await mongo.db["storefront_settings"].find_one({"custom_domain": domain_or_planner_id})
-    
-    if not settings:
-        # Fallback to planner ID
-        settings = await mongo.db["storefront_settings"].find_one({"planner_id": domain_or_planner_id})
-        
-    if not settings:
-        # Check if the domain_or_planner_id is actually a valid user ID (for a preview before saving)
-        try:
-            planner_check = await mongo.get_users_collection().find_one({"_id": ObjectId(domain_or_planner_id)})
-            if planner_check:
-                settings = {
-                    "planner_id": domain_or_planner_id,
-                    "title": None,
-                    "description": None,
-                    "hero_image_url": None,
-                    "about_image_url": None,
-                    "theme_color": "#0f172a",
-                    "packages_enabled": True,
-                    "reviews_enabled": True,
-                    "custom_domain": None,
-                }
-        except Exception:
-            pass
 
-    if not settings:
-        # If it's literally "preview", maybe just 404 or provide dummy. We'll raise 404.
-        raise HTTPException(status_code=404, detail="Storefront not found")
-        
-    planner_id = settings["planner_id"]
-    
-    # Fetch planner details
-    planner = await mongo.get_users_collection().find_one({"_id": ObjectId(planner_id)})
-    if not planner:
-        raise HTTPException(status_code=404, detail="Planner not found")
-        
-    # Fetch packages
-    packages_cursor = mongo.db["packages"].find({"user_id": planner_id})
-    packages = await packages_cursor.to_list(length=50)
-    
-    # Fetch reviews (from external integrations or manual entry)
-    # For now, we mock or fetch from a 'planner_reviews' collection
-    reviews_cursor = mongo.db["planner_reviews"].find({"planner_id": planner_id, "is_published": True})
-    reviews = await reviews_cursor.to_list(length=20)
-    
-    settings.pop("_id", None)
-    
-    # Format packages and reviews to remove ObjectId
-    for p in packages:
-        p["_id"] = str(p["_id"])
-    for r in reviews:
-        r["_id"] = str(r["_id"])
-        
-    return {
-        "storefront": settings,
-        "planner": {
-            "company_name": planner.get("company_name"),
-            "first_name": planner.get("first_name"),
-            "last_name": planner.get("last_name"),
-            "profile_image_url": planner.get("profile_image_url"),
-            "support_phone": planner.get("support_phone"),
-            "email": planner.get("email"),
-        },
-        "packages": packages if settings.get("packages_enabled", True) else [],
-        "reviews": reviews if settings.get("reviews_enabled", True) else []
-    }
+@router.post(
+    "/storefront/upload-complete",
+    response_model=StorefrontAssetResponse,
+)
+async def finalize_storefront_upload(
+    payload: StorefrontUploadCompleteRequest,
+    current_user: ExtendedAuthUser = Depends(require_storefront_owner),
+    _entitlements: StorefrontEntitlements = Depends(require_planner_storefront),
+):
+    return await storefront_media_service.finalize(current_user, payload.asset_id)
+
+
+@router.delete(
+    "/storefront/upload",
+    response_model=StorefrontAssetDeleteResponse,
+)
+async def delete_storefront_upload(
+    asset_id: str = Query(min_length=1, max_length=120),
+    current_user: ExtendedAuthUser = Depends(require_storefront_owner),
+    _entitlements: StorefrontEntitlements = Depends(require_planner_storefront),
+):
+    return await storefront_media_service.cleanup(current_user, asset_id)
+
+
+@public_router.get(
+    "/storefront/{identifier}",
+    response_model=PublicStorefrontResponse,
+)
+async def get_public_storefront(identifier: str):
+    """Resolve only a stored, published, currently entitled storefront slug."""
+
+    return await storefront_service.get_public_storefront(identifier)
+
+
+@public_router.post(
+    "/storefront/{identifier}/inquiries",
+    response_model=StorefrontInquiryResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_storefront_inquiry(
+    identifier: str,
+    payload: StorefrontInquiryRequest,
+    request: Request,
+):
+    """Persist a lead for the exact same public storefront that can render."""
+
+    return await storefront_inquiry_service.capture(
+        identifier,
+        payload,
+        client_ip=get_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )

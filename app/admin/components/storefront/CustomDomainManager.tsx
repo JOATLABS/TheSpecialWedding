@@ -1,223 +1,354 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Globe, CheckCircle2, AlertCircle, Loader2, Copy, Trash2, ShieldCheck, ArrowRight } from 'lucide-react';
-import { useAdmin } from '../../../contexts/AdminContext';
+import {
+  AlertCircle,
+  Check,
+  Copy,
+  Globe2,
+  Loader2,
+  RefreshCw,
+  ShieldCheck,
+  Trash2,
+} from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 
-interface VerificationRecord {
-  type: string;
-  name: string;
-  value: string;
+import { useAdmin } from '@/contexts/AdminContext';
+import {
+  connectCustomDomain,
+  refreshCustomDomain,
+  removeCustomDomain,
+  type StorefrontDomain,
+  type StorefrontOwnershipVerificationHttp,
+} from '@/services/storefrontApi';
+
+function DomainValue({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    await navigator.clipboard.writeText(value);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
+      <div className="mt-1 flex items-center gap-2">
+        <code className="min-w-0 flex-1 break-all text-xs text-slate-800 dark:text-slate-200">
+          {value}
+        </code>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          className="rounded-md p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
+          aria-label={`Copy ${label}`}
+        >
+          {copied ? (
+            <Check className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" />
+          ) : (
+            <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
+        </button>
+      </div>
+    </div>
+  );
 }
 
-interface CustomDomainProps {
-  initialDomain?: string;
-  initialStatus?: string;
-  verification?: VerificationRecord;
-  onDomainUpdate: (domain: string | null) => void;
+function statusTone(status: string) {
+  if (status === 'active') {
+    return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300';
+  }
+  if (status === 'failed' || status === 'error' || status === 'deletion_failed') {
+    return 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300';
+  }
+  return 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300';
 }
 
-export function CustomDomainManager({ initialDomain, initialStatus, verification, onDomainUpdate }: CustomDomainProps) {
+export function StorefrontHttpVerification({
+  verification,
+}: {
+  verification: StorefrontOwnershipVerificationHttp | null;
+}) {
+  if (!verification) {
+    return null;
+  }
+  return (
+    <>
+      {verification.http_url ? (
+        <DomainValue label="HTTP verification URL" value={verification.http_url} />
+      ) : null}
+      {verification.http_body ? (
+        <DomainValue label="HTTP verification body" value={verification.http_body} />
+      ) : null}
+    </>
+  );
+}
+
+export function CustomDomainManager() {
   const { apiRequest } = useAdmin();
-  const [domain, setDomain] = useState(initialDomain || '');
-  const [status, setStatus] = useState(initialStatus || 'none');
-  const [records, setRecords] = useState<VerificationRecord | null>(verification || null);
-  const [loading, setLoading] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [error, setError] = useState('');
-  const [copied, setCopied] = useState('');
+  const [domainInput, setDomainInput] = useState('');
+  const [domain, setDomain] = useState<StorefrontDomain | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
-  const handleAddDomain = async () => {
-    if (!domain) return;
+  const loadDomain = useCallback(async () => {
     setLoading(true);
-    setError('');
+    setError(null);
     try {
-      const res = await apiRequest('/api/storefront/custom-domain', 'POST', { domain });
-      if (res.status === 'success') {
-        setStatus(res.data.cloudflare_hostname_status || 'pending');
-        setRecords(res.data.ownership_verification);
-        onDomainUpdate(domain);
-      } else {
-        setError('Failed to add domain');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Error adding custom domain');
+      setDomain(await refreshCustomDomain(apiRequest));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to load the custom domain');
     } finally {
       setLoading(false);
     }
+  }, [apiRequest]);
+
+  useEffect(() => {
+    void loadDomain();
+  }, [loadDomain]);
+
+  const handleConnect = async () => {
+    const hostname = domainInput.trim();
+    if (!hostname) {
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const connected = await connectCustomDomain(hostname, apiRequest);
+      setDomain(connected);
+      setDomainInput('');
+      setMessage('Domain connection started. Add the provider records below, then verify.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to connect the domain');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const checkStatus = async () => {
-    setChecking(true);
+  const handleRefresh = async () => {
+    setSubmitting(true);
+    setError(null);
+    setMessage(null);
     try {
-      const res = await apiRequest('/api/storefront/custom-domain/status', 'GET');
-      if (res.status === 'success' && res.data) {
-        setStatus(res.data.status);
-      }
-    } catch (err) {
-      console.error(err);
+      const refreshed = await refreshCustomDomain(apiRequest);
+      setDomain(refreshed);
+      setMessage(
+        refreshed?.status === 'active'
+          ? 'The custom domain is active and secured.'
+          : 'Verification refreshed. DNS and SSL activation can take time.',
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to verify the domain');
     } finally {
-      setChecking(false);
+      setSubmitting(false);
     }
   };
 
   const handleRemove = async () => {
-    setLoading(true);
+    if (!window.confirm('Remove this custom domain? Your platform storefront URL will keep working.')) {
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    setMessage(null);
     try {
-      await apiRequest('/api/storefront/custom-domain', 'DELETE');
-      setDomain('');
-      setStatus('none');
-      setRecords(null);
-      onDomainUpdate(null);
-    } catch (err) {
-      console.error(err);
+      await removeCustomDomain(apiRequest);
+      setDomain(null);
+      setMessage('Custom domain removed. Your platform storefront URL is unchanged.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to remove the domain');
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
-  const copyToClipboard = (text: string, type: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(type);
-    setTimeout(() => setCopied(''), 2000);
-  };
-
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
-          Custom Domain Configuration
-        </label>
-        {status === 'active' && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400">
-            <CheckCircle2 className="h-3 w-3" /> Active
-          </span>
-        )}
-        {(status === 'pending' || status === 'pending_validation') && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/20 dark:text-amber-400">
-            <Loader2 className="h-3 w-3 animate-spin" /> Pending DNS
-          </span>
-        )}
-      </div>
-
-      {(!status || status === 'none') ? (
-        <div className="space-y-3">
-          <div className="flex rounded-lg overflow-hidden border border-slate-200/70 dark:border-slate-700/50 focus-within:ring-2 focus-within:ring-primary-400/40">
-            <span className="inline-flex items-center bg-slate-50/80 dark:bg-slate-800/60 px-2.5 text-xs text-slate-400 border-r border-slate-200/70 dark:border-slate-700/50">https://</span>
-            <input 
-              type="text" 
-              value={domain} 
-              onChange={e => setDomain(e.target.value)} 
-              className="flex-1 bg-white/60 dark:bg-slate-900/40 px-2.5 py-2 text-xs text-slate-900 dark:text-white outline-none" 
-              placeholder="www.yourdomain.com" 
-              disabled={loading}
-            />
-            <button 
-              onClick={handleAddDomain}
-              disabled={loading || !domain}
-              className="px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 transition-colors border-l border-slate-200/70 dark:border-slate-700/50 disabled:opacity-50"
+    <section aria-labelledby="custom-domain-heading" className="space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <Globe2 className="h-5 w-5 text-slate-500" aria-hidden="true" />
+            <h3
+              id="custom-domain-heading"
+              className="text-sm font-semibold text-slate-900 dark:text-white"
             >
-              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Connect'}
-            </button>
+              Custom domain
+            </h3>
           </div>
-          {error && <p className="text-[11px] text-red-500 flex items-center gap-1"><AlertCircle className="h-3 w-3"/> {error}</p>}
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-            Enter your custom domain (e.g., weddings.janedoe.com). You will need access to your DNS settings.
+          <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+            Domain changes apply immediately and are separate from saved design settings.
+            Your platform URL remains available throughout setup.
           </p>
         </div>
-      ) : (
-        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 p-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Globe className="h-4 w-4 text-slate-400" />
-              <span className="text-sm font-medium text-slate-900 dark:text-white">{domain}</span>
+        {domain ? (
+          <span
+            className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${statusTone(
+              domain.status,
+            )}`}
+          >
+            {domain.status}
+          </span>
+        ) : null}
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 rounded-xl bg-slate-50 p-4 text-xs text-slate-500 dark:bg-slate-900/50">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          Checking custom-domain status…
+        </div>
+      ) : domain ? (
+        <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-900/40">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs text-slate-500">Connected hostname</p>
+              <p className="font-semibold text-slate-900 dark:text-white">{domain.hostname}</p>
             </div>
-            <button 
-              onClick={handleRemove}
-              disabled={loading}
-              className="text-slate-400 hover:text-red-500 transition-colors"
-              title="Remove Domain"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          </div>
-
-          {status !== 'active' && records && (
-            <div className="space-y-3">
-              <div className="rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-700/50 p-3">
-                <h4 className="text-[11px] font-semibold text-amber-800 dark:text-amber-400 flex items-center gap-1.5 mb-2">
-                  <ShieldCheck className="h-3.5 w-3.5" /> Required DNS Records
-                </h4>
-                <p className="text-[11px] text-amber-700 dark:text-amber-500 mb-3">
-                  Please add these records to your domain registrar (e.g., GoDaddy, Namecheap) to verify ownership and connect your domain.
-                </p>
-
-                <div className="space-y-2">
-                  {/* CNAME Record */}
-                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded p-2">
-                    <div className="flex text-[10px] text-slate-500 dark:text-slate-400 mb-1">
-                      <span className="w-16">Type</span>
-                      <span className="w-1/3">Name</span>
-                      <span>Target</span>
-                    </div>
-                    <div className="flex items-center text-[11px] font-mono text-slate-800 dark:text-slate-200">
-                      <span className="w-16 font-semibold">CNAME</span>
-                      <span className="w-1/3 truncate pr-2">{domain}</span>
-                      <div className="flex-1 flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded px-1.5 py-0.5 border border-slate-100 dark:border-slate-700">
-                        <span className="truncate">cname.thespecialwedding.com</span>
-                        <button onClick={() => copyToClipboard('cname.thespecialwedding.com', 'cname')} className="text-slate-400 hover:text-primary-500">
-                          {copied === 'cname' ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* TXT Verification Record */}
-                  {records.name && (
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded p-2">
-                      <div className="flex text-[10px] text-slate-500 dark:text-slate-400 mb-1">
-                        <span className="w-16">Type</span>
-                        <span className="w-1/3">Name</span>
-                        <span>Value</span>
-                      </div>
-                      <div className="flex items-center text-[11px] font-mono text-slate-800 dark:text-slate-200">
-                        <span className="w-16 font-semibold uppercase">{records.type}</span>
-                        <div className="w-1/3 pr-2 flex items-center gap-1 group">
-                          <span className="truncate">{records.name}</span>
-                          <button onClick={() => copyToClipboard(records.name, 'txt_name')} className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {copied === 'txt_name' ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-                          </button>
-                        </div>
-                        <div className="flex-1 flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded px-1.5 py-0.5 border border-slate-100 dark:border-slate-700">
-                          <span className="truncate">{records.value}</span>
-                          <button onClick={() => copyToClipboard(records.value, 'txt_val')} className="text-slate-400 hover:text-primary-500">
-                            {copied === 'txt_val' ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              <button 
-                onClick={checkStatus}
-                disabled={checking}
-                className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm transition hover:bg-slate-50 dark:hover:bg-slate-700/60 disabled:opacity-50"
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => void handleRefresh()}
+                disabled={submitting}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
               >
-                {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRight className="h-3.5 w-3.5" />}
-                Verify Connection
+                {submitting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
+                Verify now
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleRemove()}
+                disabled={submitting}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:bg-slate-800 dark:text-red-300"
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                Remove
               </button>
             </div>
-          )}
-          
-          {status === 'active' && (
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Your domain is successfully connected and secured with SSL. It may take a few minutes for all DNS caches to update globally.
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="rounded-lg bg-white p-3 dark:bg-slate-900">
+              <p className="text-[10px] font-bold uppercase text-slate-500">Provider</p>
+              <p className="mt-1 text-xs font-semibold">{domain.provider_status}</p>
+            </div>
+            <div className="rounded-lg bg-white p-3 dark:bg-slate-900">
+              <p className="text-[10px] font-bold uppercase text-slate-500">SSL</p>
+              <p className="mt-1 text-xs font-semibold">{domain.ssl_status}</p>
+            </div>
+          </div>
+
+          {domain.status !== 'active' ? (
+            <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
+              <div className="flex items-center gap-2 text-xs font-semibold text-amber-900 dark:text-amber-200">
+                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                Add the exact DNS values supplied by the provider
+              </div>
+              {domain.cname_target ? (
+                <DomainValue label="CNAME target" value={domain.cname_target} />
+              ) : null}
+              {domain.ownership_verification?.name ? (
+                <DomainValue
+                  label={`${domain.ownership_verification.type || 'TXT'} name`}
+                  value={domain.ownership_verification.name}
+                />
+              ) : null}
+              {domain.ownership_verification?.value ? (
+                <DomainValue
+                  label={`${domain.ownership_verification.type || 'TXT'} value`}
+                  value={domain.ownership_verification.value}
+                />
+              ) : null}
+              <StorefrontHttpVerification verification={domain.ownership_verification_http} />
+              {domain.ssl_validation_records.flatMap((record, index) => {
+                const values: Array<{ label: string; value: string }> = [];
+                if (record.txt_name) {
+                  values.push({ label: `SSL TXT ${index + 1} name`, value: record.txt_name });
+                }
+                if (record.txt_value) {
+                  values.push({ label: `SSL TXT ${index + 1} value`, value: record.txt_value });
+                }
+                if (record.cname_name) {
+                  values.push({ label: `SSL CNAME ${index + 1} name`, value: record.cname_name });
+                }
+                if (record.cname_target) {
+                  values.push({ label: `SSL CNAME ${index + 1} target`, value: record.cname_target });
+                }
+                return values.map((value) => (
+                  <DomainValue key={value.label} label={value.label} value={value.value} />
+                ));
+              })}
+            </div>
+          ) : (
+            <p className="flex items-center gap-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+              Domain and SSL are active.
             </p>
           )}
+
+          {domain.last_error ? (
+            <p className="flex items-start gap-2 text-xs text-red-700 dark:text-red-300">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              {domain.last_error}
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <label htmlFor="storefront-custom-domain" className="text-xs font-medium text-slate-700 dark:text-slate-300">
+            Domain name
+          </label>
+          <div className="flex overflow-hidden rounded-lg border border-slate-300 bg-white focus-within:ring-2 focus-within:ring-primary-500 dark:border-slate-700 dark:bg-slate-900">
+            <input
+              id="storefront-custom-domain"
+              type="text"
+              inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              value={domainInput}
+              onChange={(event) => setDomainInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void handleConnect();
+                }
+              }}
+              placeholder="weddings.example.com"
+              disabled={submitting}
+              className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => void handleConnect()}
+              disabled={submitting || !domainInput.trim()}
+              className="inline-flex items-center gap-2 border-l border-slate-200 bg-slate-100 px-4 text-xs font-semibold text-slate-800 transition hover:bg-slate-200 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            >
+              {submitting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              ) : null}
+              Connect
+            </button>
+          </div>
         </div>
       )}
-    </div>
+
+      {error ? (
+        <p role="alert" className="flex items-start gap-2 text-xs text-red-600 dark:text-red-300">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          {error}
+        </p>
+      ) : null}
+      {message ? (
+        <p role="status" className="text-xs text-emerald-700 dark:text-emerald-300">
+          {message}
+        </p>
+      ) : null}
+    </section>
   );
 }

@@ -11,10 +11,11 @@ bcrypt==4.0.1
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
 email-validator>=2.0.0
+idna>=3.10
 bleach>=6.0.0
 twilio>=8.12.0
 telnyx>=2.0.0
-resend>=0.7.0
+resend>=2.10.0
 boto3>=1.34.0
 # Cloudflare R2 uses the S3-compatible boto3 client; install its published stubs.
 boto3-stubs[s3]>=1.34.0

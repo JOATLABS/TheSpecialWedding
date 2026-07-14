@@ -4,6 +4,7 @@ Uses Redis when available so limits hold across replicas, with an
 in-memory fallback for local/dev environments without Redis.
 """
 
+import ipaddress
 import logging
 import time
 from collections import deque
@@ -12,6 +13,7 @@ from typing import Deque, Dict, Tuple
 from fastapi import HTTPException, Request
 
 from app.core.cache import CacheKeys, cache
+from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -137,15 +139,38 @@ public_slug_limiter = create_rate_limiter("public_slug", requests_per_minute=100
 
 
 def get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """Resolve a client IP without trusting attacker-supplied proxy headers.
 
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip
+    Forwarding headers are accepted only from an explicitly configured proxy
+    network and only through the one header that ingress guarantees it
+    overwrites. Private address space alone is never a trust signal.
+    """
 
-    return request.client.host if request.client else "unknown"
+    direct_ip = request.client.host if request.client else "unknown"
+    configured_header = settings.trusted_proxy_client_ip_header
+    if not configured_header or not settings.trusted_proxy_cidrs:
+        return direct_ip
+
+    try:
+        direct_address = ipaddress.ip_address(direct_ip)
+        trusted_networks = [
+            ipaddress.ip_network(cidr, strict=False)
+            for cidr in settings.trusted_proxy_cidrs
+        ]
+    except ValueError:
+        return direct_ip
+    if not any(direct_address in network for network in trusted_networks):
+        return direct_ip
+
+    value = request.headers.get(configured_header)
+    if not value or "," in value:
+        return direct_ip
+    candidate = value.strip()
+    try:
+        ipaddress.ip_address(candidate)
+    except ValueError:
+        return direct_ip
+    return candidate
 
 
 async def check_rate_limit(
