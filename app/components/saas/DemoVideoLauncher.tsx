@@ -47,6 +47,7 @@ export default function DemoVideoLauncher({
       <button
         type="button"
         onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
         className={`${variantClasses(variant)} ${className}`.trim()}
         data-testid={`demo-launcher-${demo.id}`}
       >
