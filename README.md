@@ -147,11 +147,17 @@ The platform requires these environment variables (set via `.env` or Coolify das
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
 | `GOOGLE_GEMINI_API_KEY` | Google Gemini API key |
 | `MEDIA_DOMAIN` | Cloudflare R2 public domain |
-| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | R2 credentials |
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | R2 credentials |
 | `S3_BUCKET_NAME` / `S3_ENDPOINT_URL` | R2 bucket config |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push VAPID keys |
 | `VAPID_EMAIL` | VAPID contact email |
 | `REDIS_URL` | Redis connection string |
+
+Planner storefronts use additional Cloudflare for SaaS and private R2 settings.
+Use the [storefront infrastructure setup guide](docs/guides/STOREFRONT_INFRASTRUCTURE_SETUP.md)
+for the exact environment matrix, Cloudflare/R2 controls, rollout checks, and
+rollback behavior. The internal platform-slug storefront does not require a
+custom domain.
 
 ### Production Deployment (Coolify)
 

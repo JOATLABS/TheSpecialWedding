@@ -6,7 +6,7 @@ import json
 import ipaddress
 from enum import Enum
 from functools import lru_cache
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 from urllib.parse import urlparse
 
 from pydantic import Field, field_validator
@@ -235,6 +235,17 @@ class Settings(BaseSettings):
     allowed_hosts: Annotated[List[str], NoDecode] = Field(
         default=[], alias="ALLOWED_HOSTS"
     )
+    trusted_proxy_cidrs: Annotated[List[str], NoDecode] = Field(
+        default=[], alias="TRUSTED_PROXY_CIDRS"
+    )
+    trusted_proxy_client_ip_header: Optional[
+        Literal[
+            "CF-Connecting-IP",
+            "True-Client-IP",
+            "X-Real-IP",
+            "X-Forwarded-For",
+        ]
+    ] = Field(default=None, alias="TRUSTED_PROXY_CLIENT_IP_HEADER")
     # Database
     mongo_uri: str = Field(default="mongodb://localhost:27017", alias="MONGO_URI")
     mongo_db: str = Field(default="wedding", alias="MONGO_DB")
@@ -295,6 +306,21 @@ class Settings(BaseSettings):
     s3_blog_bucket_name: Optional[str] = Field(
         default=None, alias="S3_BLOG_BUCKET_NAME"
     )
+    s3_storefront_staging_bucket_name: Optional[str] = Field(
+        default=None, alias="S3_STOREFRONT_STAGING_BUCKET_NAME"
+    )
+    storefront_staging_lifecycle_max_age_days: int = Field(
+        default=1,
+        ge=1,
+        le=7,
+        alias="STOREFRONT_STAGING_LIFECYCLE_MAX_AGE_DAYS",
+    )
+    storefront_image_decode_concurrency: int = Field(
+        default=1,
+        ge=1,
+        le=2,
+        alias="STOREFRONT_IMAGE_DECODE_CONCURRENCY",
+    )
     s3_form_uploads_bucket_name: Optional[str] = Field(
         default=None, alias="S3_FORM_UPLOADS_BUCKET_NAME"
     )
@@ -320,6 +346,17 @@ class Settings(BaseSettings):
     )
     cloudflare_api_token: Optional[str] = Field(
         default=None, alias="CLOUDFLARE_API_TOKEN"
+    )
+    cloudflare_zone_id: Optional[str] = Field(default=None, alias="CLOUDFLARE_ZONE_ID")
+    storefront_cname_target: Optional[str] = Field(
+        default=None, alias="STOREFRONT_CNAME_TARGET"
+    )
+    storefront_platform_domains: Annotated[List[str], NoDecode] = Field(
+        default_factory=lambda: [
+            "thespecialwedding.io",
+            "thespecialwedding.com",
+        ],
+        alias="STOREFRONT_PLATFORM_DOMAINS",
     )
     # Security Features
     # CSRF disabled - JWT Bearer auth is already CSRF-immune (browsers don't auto-attach
@@ -440,7 +477,13 @@ class Settings(BaseSettings):
     }
 
     @field_validator(
-        "cors_origins", "cors_methods", "cors_headers", "allowed_hosts", mode="before"
+        "cors_origins",
+        "cors_methods",
+        "cors_headers",
+        "allowed_hosts",
+        "storefront_platform_domains",
+        "trusted_proxy_cidrs",
+        mode="before",
     )
     @classmethod
     def parse_string_lists(cls, v):
@@ -452,6 +495,22 @@ class Settings(BaseSettings):
     def parse_allowed_hosts(cls, v):
         """Parse explicit host allowlist from JSON or comma-separated values."""
         return _parse_env_list(v)
+
+    @field_validator("trusted_proxy_cidrs")
+    @classmethod
+    def validate_trusted_proxy_cidrs(cls, values: List[str]) -> List[str]:
+        """Canonicalize explicit proxy networks and reject ambiguous entries."""
+
+        normalized: list[str] = []
+        for value in values:
+            try:
+                network = ipaddress.ip_network(value, strict=False)
+            except ValueError as exc:
+                raise ValueError(f"Invalid trusted proxy CIDR: {value}") from exc
+            canonical = str(network)
+            if canonical not in normalized:
+                normalized.append(canonical)
+        return normalized
 
     @field_validator("environment", mode="before")
     @classmethod
@@ -598,6 +657,11 @@ class Settings(BaseSettings):
     def blog_media_bucket_name(self) -> Optional[str]:
         """Dedicated blog asset bucket."""
         return self.s3_blog_bucket_name
+
+    @property
+    def storefront_staging_bucket_name(self) -> Optional[str]:
+        """Private staging bucket for browser-uploaded storefront assets."""
+        return self.s3_storefront_staging_bucket_name
 
     @property
     def form_uploads_bucket_name(self) -> Optional[str]:

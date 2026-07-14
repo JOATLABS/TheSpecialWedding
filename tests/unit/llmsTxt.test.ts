@@ -12,6 +12,9 @@ describe('llms.txt public authority file', () => {
       '**Boutique**: $49/month',
       '**Signature**: $149/month',
       '**Enterprise**: $399/month',
+      'a planner storefront on a shareable platform URL',
+      'an optional custom domain',
+      'including the planner storefront and optional custom domain',
       'https://thespecialwedding.io/resources/templates',
       'Paid plans include a 30-day free trial',
     ]) {
@@ -28,7 +31,6 @@ describe('llms.txt public authority file', () => {
       'Starter',
       'Pro: $59',
       'QR check-in',
-      'custom domains',
       'white-label',
       'API access',
       'dedicated support',

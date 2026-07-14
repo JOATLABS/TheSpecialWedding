@@ -1,0 +1,22 @@
+[
+  {
+    "input": "münchen.example",
+    "ascii": "xn--mnchen-3ya.example"
+  },
+  {
+    "input": "faß.de",
+    "ascii": "xn--fa-hia.de"
+  },
+  {
+    "input": "straße.de",
+    "ascii": "xn--strae-oqa.de"
+  },
+  {
+    "input": "xn--fa-hia.de",
+    "ascii": "xn--fa-hia.de"
+  },
+  {
+    "input": "xn--strae-oqa.de",
+    "ascii": "xn--strae-oqa.de"
+  }
+]

@@ -102,7 +102,10 @@ from app.api.vendor_import import router as vendor_import_router
 from app.api.vendor_management import router as vendor_management_router
 from app.api.vendor_public import router as vendor_public_router
 from app.api.vendor_signup import router as vendor_signup_router
-from app.api.storefront import router as storefront_router, public_router as storefront_public_router
+from app.api.storefront import (
+    router as storefront_router,
+    public_router as storefront_public_router,
+)
 from app.api.web_push import router as web_push_router
 from app.api.wedding import router as wedding_router
 from app.core.cache import cache, close_cache, init_cache
@@ -155,6 +158,8 @@ class MongoJSONResponse(JSONResponse):
 
 SCHEDULER_LEASE_NAME = "background_schedulers"
 SCHEDULER_LEASE_TTL_SECONDS = 180
+SCHEDULER_LEADERSHIP_RETRY_SECONDS = 30
+SCHEDULER_LEADERSHIP_RENEWAL_SECONDS = max(30, SCHEDULER_LEASE_TTL_SECONDS // 3)
 
 
 def _build_scheduler_holder_id() -> str:
@@ -218,37 +223,6 @@ async def _release_scheduler_leadership(holder_id: str) -> None:
         )
     except Exception as e:
         logger.warning(f"Failed to release scheduler leadership: {e}")
-
-
-async def _scheduler_leadership_heartbeat(
-    holder_id: str, tasks: list[asyncio.Task]
-) -> None:
-    """
-    Renew scheduler leadership and fail closed if this replica loses the lease.
-    """
-    renewal_interval = max(30, SCHEDULER_LEASE_TTL_SECONDS // 3)
-
-    try:
-        while True:
-            await asyncio.sleep(renewal_interval)
-            still_leader = await _acquire_scheduler_leadership(holder_id)
-            if still_leader:
-                continue
-
-            logger.warning(
-                "Scheduler leadership lost; cancelling background scheduler tasks"
-            )
-            for task in tasks:
-                if task and not task.done():
-                    task.cancel()
-            return
-    except asyncio.CancelledError:
-        raise
-    except Exception as e:
-        logger.error(f"Scheduler leadership heartbeat failed: {e}", exc_info=True)
-        for task in tasks:
-            if task and not task.done():
-                task.cancel()
 
 
 async def _nightly_rollup_scheduler():
@@ -461,17 +435,136 @@ async def _guest_media_maintenance_scheduler():
             await asyncio.sleep(30)
 
 
+async def _storefront_media_recovery_scheduler():
+    """Recover durable storefront media independently on the leader."""
+
+    from app.services.storefront_media_service import storefront_media_service
+
+    while True:
+        try:
+            processed = await storefront_media_service.sweep_abandoned_assets()
+            if processed:
+                logger.info(
+                    "Storefront media scheduler cleaned %s abandoned asset(s)",
+                    processed,
+                )
+        except asyncio.CancelledError:
+            logger.info("Storefront media scheduler shutting down")
+            raise
+        except Exception as e:
+            logger.error(f"Storefront media scheduler error: {e}", exc_info=True)
+
+        await asyncio.sleep(60)
+
+
+async def _storefront_inquiry_recovery_scheduler():
+    """Recover durable storefront inquiries independently on the leader."""
+
+    from app.services.storefront_inquiry_service import storefront_inquiry_service
+
+    while True:
+        try:
+            processed_inquiries = (
+                await storefront_inquiry_service.process_pending_notifications()
+            )
+            if processed_inquiries:
+                logger.info(
+                    "Storefront scheduler recovered %s inquiry notification(s)",
+                    processed_inquiries,
+                )
+        except asyncio.CancelledError:
+            logger.info("Storefront inquiry scheduler shutting down")
+            raise
+        except Exception as e:
+            logger.error(f"Storefront inquiry scheduler error: {e}", exc_info=True)
+
+        await asyncio.sleep(60)
+
+
+async def _storefront_media_maintenance_scheduler():
+    """Supervise independent storefront media and inquiry recovery loops."""
+
+    tasks = [
+        asyncio.create_task(_storefront_media_recovery_scheduler()),
+        asyncio.create_task(_storefront_inquiry_recovery_scheduler()),
+    ]
+    try:
+        await asyncio.gather(*tasks)
+    finally:
+        await _cancel_background_scheduler_tasks(tasks)
+
+
+def _start_background_scheduler_tasks() -> list[asyncio.Task]:
+    """Start one generation of scheduler tasks after leadership is confirmed."""
+    rollup_task = asyncio.create_task(_nightly_rollup_scheduler())
+    billing_task = asyncio.create_task(_monthly_billing_scheduler())
+    guest_media_task = asyncio.create_task(_guest_media_maintenance_scheduler())
+    storefront_media_task = asyncio.create_task(
+        _storefront_media_maintenance_scheduler()
+    )
+    form_reminder_task = asyncio.create_task(_form_reminder_scheduler())
+    return [
+        rollup_task,
+        billing_task,
+        guest_media_task,
+        storefront_media_task,
+        form_reminder_task,
+    ]
+
+
+async def _cancel_background_scheduler_tasks(tasks: list[asyncio.Task]) -> None:
+    """Cancel and fully drain one scheduler generation before another starts."""
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def _background_scheduler_supervisor(holder_id: str) -> None:
+    """Continuously acquire, renew, and safely recover scheduler leadership."""
+    scheduler_tasks: list[asyncio.Task] = []
+    owns_lease = False
+
+    try:
+        while True:
+            acquired = await _acquire_scheduler_leadership(holder_id)
+            if not acquired:
+                if owns_lease:
+                    logger.warning(
+                        "Scheduler leadership lost; cancelling background schedulers"
+                    )
+                owns_lease = False
+                await _cancel_background_scheduler_tasks(scheduler_tasks)
+                scheduler_tasks = []
+                await asyncio.sleep(SCHEDULER_LEADERSHIP_RETRY_SECONDS)
+                continue
+
+            owns_lease = True
+            if not scheduler_tasks:
+                scheduler_tasks = _start_background_scheduler_tasks()
+                logger.info(
+                    "Background schedulers started on leader replica %s", holder_id
+                )
+
+            await asyncio.sleep(SCHEDULER_LEADERSHIP_RENEWAL_SECONDS)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logger.error(f"Scheduler leadership supervisor failed: {e}", exc_info=True)
+    finally:
+        await _cancel_background_scheduler_tasks(scheduler_tasks)
+        if owns_lease:
+            await _release_scheduler_leadership(holder_id)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management"""
     # Startup
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"Environment: {settings.environment}")
-    rollup_task: asyncio.Task | None = None
-    billing_task: asyncio.Task | None = None
-    guest_media_task: asyncio.Task | None = None
-    form_reminder_task: asyncio.Task | None = None
-    scheduler_heartbeat_task: asyncio.Task | None = None
+    scheduler_supervisor_task: asyncio.Task | None = None
     scheduler_holder_id: str | None = None
 
     try:
@@ -566,54 +659,25 @@ async def lifespan(app: FastAPI):
         await sse_manager.start_redis_listener()
         logger.info("SSE Redis pub/sub listener started")
 
-        # Only one replica should run the long-lived background schedulers.
+        # Every replica supervises the singleton lease so a follower can take over.
         scheduler_holder_id = _build_scheduler_holder_id()
-        if await _acquire_scheduler_leadership(scheduler_holder_id):
-            rollup_task = asyncio.create_task(_nightly_rollup_scheduler())
-            billing_task = asyncio.create_task(_monthly_billing_scheduler())
-            guest_media_task = asyncio.create_task(_guest_media_maintenance_scheduler())
-            form_reminder_task = asyncio.create_task(_form_reminder_scheduler())
-            scheduler_heartbeat_task = asyncio.create_task(
-                _scheduler_leadership_heartbeat(
-                    scheduler_holder_id,
-                    [rollup_task, billing_task, guest_media_task, form_reminder_task],
-                )
-            )
-            logger.info(
-                f"Background schedulers started on leader replica {scheduler_holder_id}"
-            )
-        else:
-            logger.info("Background schedulers not started on this replica")
+        scheduler_supervisor_task = asyncio.create_task(
+            _background_scheduler_supervisor(scheduler_holder_id)
+        )
+        logger.info("Background scheduler leadership supervisor started")
 
         logger.info("Application startup complete")
 
         yield  # Application runs here
 
-        # Cancel background tasks on shutdown
-        for task in [
-            scheduler_heartbeat_task,
-            rollup_task,
-            billing_task,
-            guest_media_task,
-            form_reminder_task,
-        ]:
-            if task and not task.done():
-                task.cancel()
-        for task in [
-            scheduler_heartbeat_task,
-            rollup_task,
-            billing_task,
-            guest_media_task,
-            form_reminder_task,
-        ]:
-            if not task:
-                continue
+        # The supervisor drains child schedulers and conditionally releases its lease.
+        if scheduler_supervisor_task and not scheduler_supervisor_task.done():
+            scheduler_supervisor_task.cancel()
+        if scheduler_supervisor_task:
             try:
-                await task
+                await scheduler_supervisor_task
             except asyncio.CancelledError:
                 pass
-        if scheduler_holder_id:
-            await _release_scheduler_leadership(scheduler_holder_id)
 
         # Stop SSE Redis listener
         await sse_manager.stop_redis_listener()
@@ -628,6 +692,14 @@ async def lifespan(app: FastAPI):
     finally:
         # Shutdown
         logger.info("Shutting down application")
+
+        # Also cover failures raised after the supervisor starts but before yield.
+        if scheduler_supervisor_task and not scheduler_supervisor_task.done():
+            scheduler_supervisor_task.cancel()
+            try:
+                await scheduler_supervisor_task
+            except asyncio.CancelledError:
+                pass
 
         # Defensive: if startup raised before the post-yield drain
         # could run, flush whatever is in the buffer before we close

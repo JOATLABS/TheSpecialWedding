@@ -93,6 +93,192 @@ test('runtime proxy forwards method path query headers cookies and body to the b
   );
 });
 
+test('runtime proxy grants unrestricted access only to a valid platform Host authority', async () => {
+  process.env.BACKEND_SERVICE_URL = 'http://backend-prod:8000';
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return new Response('must not be reached');
+  }) as typeof fetch;
+
+  const invalidHosts: Array<string | null> = [
+    null,
+    'thespecialwedding.io, studio.example.com',
+    'thespecialwedding.io:invalid',
+    'thespecialwedding.io:70000',
+    'studio.example.com:',
+    'https://thespecialwedding.io',
+  ];
+
+  for (const host of invalidHosts) {
+    const headers = new Headers({ 'content-type': 'application/json' });
+    if (host !== null) {
+      headers.set('host', host);
+    }
+    const response = await POST(
+      new Request('https://thespecialwedding.io/api/proxy/admin/token/login', {
+        method: 'POST',
+        headers,
+        body: '{}',
+      }),
+      proxyContext(['admin', 'token', 'login']),
+    );
+
+    assert.equal(response.status, 404, String(host));
+  }
+  assert.equal(calls, 0);
+
+  let captured: CapturedFetch | null = null;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    captured = { input, init };
+    return new Response('platform request', { status: 200 });
+  }) as typeof fetch;
+  const platformResponse = await POST(
+    new Request('https://thespecialwedding.io/api/proxy/admin/token/login', {
+      method: 'POST',
+      headers: {
+        host: 'thespecialwedding.io:443',
+        'content-type': 'application/json',
+      },
+      body: '{}',
+    }),
+    proxyContext(['admin', 'token', 'login']),
+  );
+
+  assert.equal(platformResponse.status, 200);
+  const platformFetch = captured as CapturedFetch | null;
+  assert.ok(platformFetch);
+  assert.equal(String(platformFetch.input), 'http://backend-prod:8000/admin/token/login');
+});
+
+test('custom storefront hosts reject arbitrary, cross-host, and non-POST proxy requests', async () => {
+  process.env.BACKEND_SERVICE_URL = 'http://backend-prod:8000';
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return new Response('must not be reached');
+  }) as typeof fetch;
+
+  const arbitrary = await POST(
+    new Request('https://studio.example.com/api/proxy/admin/token/login', {
+      method: 'POST',
+      headers: { host: 'studio.example.com' },
+      body: '{}',
+    }),
+    proxyContext(['admin', 'token', 'login']),
+  );
+  const crossHost = await POST(
+    new Request(
+      'https://studio.example.com/api/proxy/api/storefront/other.example.com/inquiries',
+      {
+        method: 'POST',
+        headers: { host: 'studio.example.com' },
+        body: '{}',
+      },
+    ),
+    proxyContext(['api', 'storefront', 'other.example.com', 'inquiries']),
+  );
+  const wrongMethod = await GET(
+    new Request(
+      'https://studio.example.com/api/proxy/api/storefront/studio.example.com/inquiries',
+      { headers: { host: 'studio.example.com' } },
+    ),
+    proxyContext(['api', 'storefront', 'studio.example.com', 'inquiries']),
+  );
+  const queryVariant = await POST(
+    new Request(
+      'https://studio.example.com/api/proxy/api/storefront/studio.example.com/inquiries?preview=1',
+      {
+        method: 'POST',
+        headers: { host: 'studio.example.com' },
+        body: '{}',
+      },
+    ),
+    proxyContext(['api', 'storefront', 'studio.example.com', 'inquiries']),
+  );
+
+  assert.equal(arbitrary.status, 404);
+  assert.equal(crossHost.status, 404);
+  assert.equal(wrongMethod.status, 404);
+  assert.equal(queryVariant.status, 404);
+  assert.equal(calls, 0);
+});
+
+test('custom storefront host forwards only its exact inquiry POST contract', async () => {
+  process.env.BACKEND_SERVICE_URL = 'http://backend-prod:8000';
+  let captured: CapturedFetch | null = null;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    captured = { input, init };
+    return new Response(
+      JSON.stringify({ success: true, inquiry_id: 'inquiry-1' }),
+      { status: 201, headers: { 'content-type': 'application/json' } },
+    );
+  }) as typeof fetch;
+
+  const response = await POST(
+    new Request(
+      'https://studio.example.com/api/proxy/api/storefront/studio.example.com/inquiries',
+      {
+        method: 'POST',
+        headers: {
+          host: 'studio.example.com',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ name: 'Ada', email: 'ada@example.test', message: 'Hello' }),
+      },
+    ),
+    proxyContext(['api', 'storefront', 'studio.example.com', 'inquiries']),
+  );
+
+  assert.equal(response.status, 201);
+  const seen = captured as CapturedFetch | null;
+  assert.ok(seen);
+  assert.equal(
+    String(seen.input),
+    'http://backend-prod:8000/api/storefront/studio.example.com/inquiries',
+  );
+  assert.equal(new Headers(seen.init?.headers).get('x-forwarded-host'), 'studio.example.com');
+});
+
+test('custom storefront ports and IDNA hosts retain the exact inquiry-only contract', async () => {
+  process.env.BACKEND_SERVICE_URL = 'http://backend-prod:8000';
+  const targets: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    targets.push(String(input));
+    return new Response('accepted', { status: 202 });
+  }) as typeof fetch;
+
+  const portResponse = await POST(
+    new Request(
+      'https://studio.example.com/api/proxy/api/storefront/studio.example.com/inquiries',
+      {
+        method: 'POST',
+        headers: { host: 'studio.example.com:443' },
+        body: '{}',
+      },
+    ),
+    proxyContext(['api', 'storefront', 'studio.example.com', 'inquiries']),
+  );
+  const idnaResponse = await POST(
+    new Request(
+      'https://xn--mnchen-3ya.example/api/proxy/api/storefront/xn--mnchen-3ya.example/inquiries',
+      {
+        method: 'POST',
+        headers: { host: 'xn--mnchen-3ya.example' },
+        body: '{}',
+      },
+    ),
+    proxyContext(['api', 'storefront', 'xn--mnchen-3ya.example', 'inquiries']),
+  );
+
+  assert.equal(portResponse.status, 202);
+  assert.equal(idnaResponse.status, 202);
+  assert.deepEqual(targets, [
+    'http://backend-prod:8000/api/storefront/studio.example.com/inquiries',
+    'http://backend-prod:8000/api/storefront/xn--mnchen-3ya.example/inquiries',
+  ]);
+});
+
 test('runtime proxy supports the bare /api/proxy path', async () => {
   process.env.BACKEND_SERVICE_URL = 'http://backend-prod:8000';
   let captured: CapturedFetch | null = null;
@@ -103,7 +289,9 @@ test('runtime proxy supports the bare /api/proxy path', async () => {
   }) as typeof fetch;
 
   const response = await GET(
-    new Request('https://thespecialwedding.io/api/proxy?health=1'),
+    new Request('https://thespecialwedding.io/api/proxy?health=1', {
+      headers: { host: 'thespecialwedding.io' },
+    }),
     proxyContext([]),
   );
 
@@ -127,6 +315,7 @@ test('runtime proxy preserves multiple Set-Cookie headers from the backend', asy
     new Request('https://thespecialwedding.io/api/proxy/admin/token/refresh', {
       headers: {
         cookie: 'admin_refresh=old-refresh',
+        host: 'thespecialwedding.io',
       },
     }),
     proxyContext(['admin', 'token', 'refresh']),
@@ -148,7 +337,9 @@ test('runtime proxy fails closed when target origin equals frontend origin', asy
   }) as typeof fetch;
 
   const response = await GET(
-    new Request('https://thespecialwedding.io/api/proxy/health/livez'),
+    new Request('https://thespecialwedding.io/api/proxy/health/livez', {
+      headers: { host: 'thespecialwedding.io' },
+    }),
     proxyContext(['health', 'livez']),
   );
 
@@ -170,7 +361,9 @@ test('runtime proxy fails closed when no backend target can be resolved', async 
   }) as typeof fetch;
 
   const response = await GET(
-    new Request('https://thespecialwedding.io/api/proxy/admin/token/refresh'),
+    new Request('https://thespecialwedding.io/api/proxy/admin/token/refresh', {
+      headers: { host: 'thespecialwedding.io' },
+    }),
     proxyContext(['admin', 'token', 'refresh']),
   );
 
@@ -188,7 +381,9 @@ test('runtime proxy fails closed when backend target uses an unsupported scheme'
   }) as typeof fetch;
 
   const response = await GET(
-    new Request('https://thespecialwedding.io/api/proxy/health/livez'),
+    new Request('https://thespecialwedding.io/api/proxy/health/livez', {
+      headers: { host: 'thespecialwedding.io' },
+    }),
     proxyContext(['health', 'livez']),
   );
 

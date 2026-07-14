@@ -7,6 +7,12 @@ import logging
 
 from pymongo import ASCENDING, DESCENDING, TEXT
 
+from app.constants.storefront import (
+    PENDING_ASSET_GROUP_FIELD,
+    PENDING_ASSET_RECOVERY_DUE_FIELD,
+    PENDING_ASSET_RECOVERY_LEASE_FIELD,
+    PENDING_ASSET_RECOVERY_STATUS_FIELD,
+)
 from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
@@ -2558,6 +2564,206 @@ async def create_guest_media_indexes():
         logger.error(f"Error creating guest media indexes: {e}")
 
 
+async def create_storefront_indexes():
+    """Fail startup unless storefront ownership/lifecycle indexes exist."""
+
+    settings = mongo.db["storefront_settings"]
+    domains = mongo.db["storefront_domains"]
+    assets = mongo.db["storefront_assets"]
+    asset_cleanup_receipts = mongo.db["storefront_asset_cleanup_receipts"]
+    inquiries = mongo.db["storefront_inquiries"]
+    try:
+        await settings.create_index(
+            [("planner_id", ASCENDING)],
+            name="idx_storefront_settings_planner_unique",
+            unique=True,
+            background=True,
+        )
+        await settings.create_index(
+            [("slug", ASCENDING)],
+            name="idx_storefront_settings_slug_unique",
+            unique=True,
+            background=True,
+            # Legacy settings may predate slugs. They remain non-routable and
+            # do not block startup while an explicit migration is prepared.
+            partialFilterExpression={"slug": {"$type": "string"}},
+        )
+        await settings.create_index(
+            [
+                (PENDING_ASSET_RECOVERY_STATUS_FIELD, ASCENDING),
+                (PENDING_ASSET_RECOVERY_DUE_FIELD, ASCENDING),
+                (PENDING_ASSET_RECOVERY_LEASE_FIELD, ASCENDING),
+                ("updated_at", ASCENDING),
+                ("planner_id", ASCENDING),
+            ],
+            name="idx_storefront_settings_pending_recovery_due_owner",
+            background=True,
+            partialFilterExpression={PENDING_ASSET_GROUP_FIELD: {"$exists": True}},
+        )
+        await domains.create_index(
+            [("planner_id", ASCENDING)],
+            name="idx_storefront_domains_planner_unique",
+            unique=True,
+            background=True,
+        )
+        await domains.create_index(
+            [("hostname", ASCENDING)],
+            name="idx_storefront_domains_hostname_unique",
+            unique=True,
+            background=True,
+        )
+        await assets.create_index(
+            [("owner_id", ASCENDING), ("slot", ASCENDING)],
+            name="idx_storefront_assets_reserved_slot_unique",
+            unique=True,
+            background=True,
+            partialFilterExpression={"state": "reserved"},
+        )
+        await assets.create_index(
+            [
+                ("owner_id", ASCENDING),
+                ("state", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_storefront_assets_owner_state_created",
+            background=True,
+        )
+        await assets.create_index(
+            [("reservation_expires_at", ASCENDING)],
+            name="idx_storefront_assets_reservation_ttl",
+            expireAfterSeconds=0,
+            partialFilterExpression={"state": "reserved"},
+            background=True,
+        )
+        # The leader-elected sweep scans every owner. These are query indexes,
+        # never TTL indexes: storage deletion must precede receipt deletion.
+        await assets.create_index(
+            [
+                ("state", ASCENDING),
+                ("cleanup_due_at", ASCENDING),
+                ("owner_id", ASCENDING),
+            ],
+            name="idx_storefront_assets_state_cleanup_due_owner",
+            background=True,
+        )
+        await assets.create_index(
+            [
+                ("state", ASCENDING),
+                ("reaping_started_at", ASCENDING),
+                ("owner_id", ASCENDING),
+            ],
+            name="idx_storefront_assets_state_reaping_lease_owner",
+            background=True,
+        )
+        await assets.create_index(
+            [
+                ("state", ASCENDING),
+                ("attach_claimed_at", ASCENDING),
+                ("owner_id", ASCENDING),
+            ],
+            name="idx_storefront_assets_state_attach_lease_owner",
+            background=True,
+        )
+        await assets.create_index(
+            [
+                ("state", ASCENDING),
+                ("claim_reconcile_due_at", ASCENDING),
+                ("owner_id", ASCENDING),
+            ],
+            name="idx_storefront_assets_state_claim_due_owner",
+            background=True,
+        )
+        # Owner-triggered recovery uses the inverse prefix for targeted scans.
+        await assets.create_index(
+            [
+                ("owner_id", ASCENDING),
+                ("state", ASCENDING),
+                ("cleanup_due_at", ASCENDING),
+            ],
+            name="idx_storefront_assets_owner_state_cleanup_due",
+            background=True,
+        )
+        await assets.create_index(
+            [
+                ("owner_id", ASCENDING),
+                ("state", ASCENDING),
+                ("reaping_started_at", ASCENDING),
+            ],
+            name="idx_storefront_assets_owner_state_reaping_lease",
+            background=True,
+        )
+        await asset_cleanup_receipts.create_index(
+            [("owner_id", ASCENDING), ("candidate_key", ASCENDING)],
+            name="idx_storefront_asset_cleanup_candidate_unique",
+            unique=True,
+            background=True,
+        )
+        await asset_cleanup_receipts.create_index(
+            [
+                ("state", ASCENDING),
+                ("cleanup_due_at", ASCENDING),
+            ],
+            name="idx_storefront_asset_cleanup_state_due",
+            background=True,
+        )
+        await asset_cleanup_receipts.create_index(
+            [("state", ASCENDING), ("reaping_started_at", ASCENDING)],
+            name="idx_storefront_asset_cleanup_state_reaping",
+            background=True,
+        )
+        await inquiries.create_index(
+            [("planner_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_storefront_inquiries_owner_created",
+            background=True,
+        )
+        await inquiries.create_index(
+            [("storefront_slug", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_storefront_inquiries_slug_created",
+            background=True,
+        )
+        await inquiries.create_index(
+            [("planner_id", ASCENDING), ("idempotency_key", ASCENDING)],
+            name="idx_storefront_inquiries_owner_idempotency_unique",
+            unique=True,
+            background=True,
+            partialFilterExpression={
+                "planner_id": {"$type": "string"},
+                "idempotency_key": {"$type": "string"},
+            },
+        )
+        await inquiries.create_index(
+            [
+                ("notification.status", ASCENDING),
+                ("notification.next_attempt_at", ASCENDING),
+                ("created_at", ASCENDING),
+            ],
+            name="idx_storefront_inquiries_notification_retry_due",
+            background=True,
+        )
+        await inquiries.create_index(
+            [
+                ("notification.status", ASCENDING),
+                ("notification.lease_expires_at", ASCENDING),
+                ("created_at", ASCENDING),
+            ],
+            name="idx_storefront_inquiries_notification_lease_due",
+            background=True,
+        )
+        await inquiries.create_index(
+            [
+                ("notification.operator_alert.status", ASCENDING),
+                ("notification.operator_alert.next_attempt_at", ASCENDING),
+                ("created_at", ASCENDING),
+            ],
+            name="idx_storefront_inquiries_operator_alert_due",
+            background=True,
+        )
+        logger.info("Storefront lifecycle indexes created/verified")
+    except Exception as exc:
+        logger.error("Error creating storefront lifecycle indexes: %s", exc)
+        raise
+
+
 async def create_all_indexes():
     """Create all database indexes (called on app startup)"""
     try:
@@ -2596,6 +2802,11 @@ async def create_all_indexes():
         logger.info("All database indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")
+
+    # Storefront uniqueness is an authorization and public-routing invariant,
+    # not a performance optimization. Fail application startup if Mongo cannot
+    # enforce it, even though legacy index setup above remains best-effort.
+    await create_storefront_indexes()
 
 
 # Index usage examples and query patterns

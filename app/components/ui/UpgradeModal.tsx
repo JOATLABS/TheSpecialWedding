@@ -9,13 +9,26 @@ interface UpgradeModalProps {
   onClose: () => void;
   title?: string;
   description?: string;
+  features?: readonly string[];
+  ctaLabel?: string;
+  ctaHref?: string;
 }
+
+const DEFAULT_FEATURES = [
+  'Unlimited AI Chat & Workflow Automation',
+  'Automated Budget & Vendor Insights',
+  'Instant Email & Contract Drafting',
+  'Smart Seating Optimization',
+] as const;
 
 export default function UpgradeModal({
   isOpen,
   onClose,
   title = "Unlock Unlimited AI Power",
   description = "You've reached the limit of your free AI credits. Upgrade to a premium plan to continue using the AI assistant for seamless wedding planning.",
+  features = DEFAULT_FEATURES,
+  ctaLabel = 'View Premium Plans',
+  ctaHref = '/admin/saas',
 }: UpgradeModalProps) {
   const router = useRouter();
 
@@ -47,7 +60,9 @@ export default function UpgradeModal({
             >
               <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white dark:bg-slate-800 p-6 text-left align-middle shadow-2xl transition-all border border-slate-200 dark:border-slate-700">
                 <button
+                  type="button"
                   onClick={onClose}
+                  aria-label="Close upgrade dialog"
                   className="absolute right-4 top-4 rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-300 transition-colors"
                 >
                   <X className="h-5 w-5" />
@@ -70,13 +85,8 @@ export default function UpgradeModal({
                   </p>
 
                   <div className="space-y-3 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl mb-6">
-                    {[
-                      'Unlimited AI Chat & Workflow Automation',
-                      'Automated Budget & Vendor Insights',
-                      'Instant Email & Contract Drafting',
-                      'Smart Seating Optimization',
-                    ].map((feature, i) => (
-                      <div key={i} className="flex items-center gap-3">
+                    {features.map((feature) => (
+                      <div key={feature} className="flex items-center gap-3">
                         <div className="flex h-5 w-5 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
                           <Check className="h-3 w-3 flex-shrink-0" />
                         </div>
@@ -92,10 +102,10 @@ export default function UpgradeModal({
                     className="inline-flex w-full justify-center rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-3 text-sm font-semibold text-white shadow-md hover:from-indigo-500 hover:to-violet-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 transition-all hover:shadow-lg items-center gap-2 group"
                     onClick={() => {
                       onClose();
-                      router.push('/admin/saas');
+                      router.push(ctaHref);
                     }}
                   >
-                    View Premium Plans
+                    {ctaLabel}
                     <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
                   </button>
                   <button
