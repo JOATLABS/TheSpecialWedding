@@ -156,7 +156,7 @@ def _get_default_saas_config():
             },
             {
                 "title": "Ceremony & reception timeline",
-                "description": "Publish schedules for planners, vendors, and couples with role-based visibility.",
+                "description": "Build the planner timeline and present prepared event details in the couple and public schedules.",
                 "category": "Execution",
                 "status": "available",
                 "order": 6,
@@ -231,7 +231,7 @@ def _get_default_saas_config():
                 "name": "Priya Chandran",
                 "company": "Verdant Celebrations",
                 "role": "Senior Planner",
-                "content": "Coordinating twelve vendors across two venues was a nightmare of group texts and missed emails. Now every florist, caterer, and photographer has role-based access to the timeline, uploads deliverables to the gallery, and signs off on contracts inside the platform. The automated reminders alone saved me from three near-disasters last season.",
+                "content": "Coordinating twelve vendors across two venues was a nightmare of group texts and missed emails. Now each vendor's contact details, agreements, payment status, and internal notes stay attached to the wedding in the private planner workspace, alongside the timeline and reminders my team uses. One operating record keeps us from chasing scattered updates.",
                 "order": 3,
             },
             {
@@ -287,7 +287,7 @@ def _get_default_saas_config():
             },
             {
                 "question": "Is there support on the wedding day?",
-                "answer": "Signature and Agency plans include live chat with our success team plus on-call escalation for critical day-of moments.",
+                "answer": "Boutique includes email support. Signature includes priority support with a 12-hour response target, and Enterprise includes support-assisted launch planning. We do not currently advertise an on-call day-of service.",
             },
             {
                 "question": "What's next for messaging?",

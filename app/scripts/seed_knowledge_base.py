@@ -575,12 +575,13 @@ For independent planners running their solo practice with paid planning tools an
 - Email support
 
 ### Signature — $149/month *(Most Popular)*
-For agencies running a team of planners. Everything in Boutique, plus team seats and agency-grade reporting.
+For agencies running a team of planners. Everything in Boutique, plus five staff seats, higher AI and storage limits, a planner storefront, and custom-domain options.
 - Unlimited weddings
 - Unlimited guests
 - Everything in Boutique, plus:
 - Team collaboration (5 staff seats)
-- Cross-wedding analytics & revenue tracking
+- Planner storefront on a shareable platform URL
+- Optional custom domain
 - 1,500 AI credits/month
 - 100GB guest memories storage
 - Priority support (12h response)

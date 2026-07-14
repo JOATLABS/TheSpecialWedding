@@ -81,7 +81,7 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
   {
     _id: 'plan_signature',
     name: 'Signature',
-    description: 'For agencies running a team of planners. Everything in Boutique, plus team seats and agency-grade reporting.',
+    description: 'For agencies running a team of planners. Everything in Boutique, plus five staff seats, higher AI and storage limits, a planner storefront, and custom-domain options.',
     price_monthly: 149,
     price_yearly: 1490,
     billing_model: 'flat_rate',
@@ -94,7 +94,6 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
       'Unlimited guests',
       'Everything in Boutique',
       'Team collaboration (5 staff seats)',
-      'Cross-wedding analytics & revenue tracking',
       '1,500 AI credits/month',
       '100GB guest memories storage',
       'Priority support (12h response)',

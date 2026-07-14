@@ -144,7 +144,7 @@ export const faqs: FAQ[] = [
   {
     question: 'Is there support on the wedding day?',
     answer:
-      'Signature and Enterprise plans include live chat with our success team plus on-call escalation for critical day-of moments.',
+      'Boutique includes email support. Signature includes priority support with a 12-hour response target, and Enterprise includes support-assisted launch planning. We do not currently advertise an on-call day-of service.',
     category: 'Day-of Support',
   },
   {

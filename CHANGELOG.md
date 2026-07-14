@@ -3,8 +3,8 @@
 ## 2026-07-14 — Public marketing copy matches visible planner proof
 
 - Replaced automatic-publishing, unseen dashboard-signal, live-propagation, couple-view parity, and vendor-delivery claims with the exact read-only outcomes demonstrated by the Phase 1 planner walkthrough contracts.
-- Removed the unfinished vendor-collaboration promise from every public Signature-plan source, disabled the corresponding Signature and Enterprise entitlement defaults, and described the proven planner-owned vendor CRM, contract, and milestone workflow instead.
-- Replaced the two stale hidden product proofs with manually driven, native 1440×900 Chrome captures of the public venue view and populated planner Gallery Management view. Each untouched PNG now carries a build-bound visual-review receipt and publishes through the existing full-window, uncropped image contract. Follow-up gap: the hero and seven Phase 1 walkthrough recordings still require clean-build human capture and playback approval before publication.
+- Removed unfinished vendor-access and non-gated analytics promises from pricing, FAQ, AI-readable metadata, Knowledge Base, static and seeded blog copy, public testimonials, and SaaS defaults. Signature now describes implemented team-seat, storefront, custom-domain, AI, and storage differences; disabled Signature and Enterprise vendor-collaboration entitlements stay explicit. Revision-gated seed refreshes repair only untouched legacy defaults while preserving operator-authored, admin-edited, current, and future-revision copy.
+- Replaced the two stale hidden product proofs with manually driven, native 1440×900 Chrome captures of the public wedding view and populated planner Gallery Management view. Each untouched PNG now carries a build-bound visual-review receipt, all 17 reviewed scenes are mandatory at the publication gate, and every public render uses the existing full-window, uncropped image contract. Follow-up gap: the hero and seven Phase 1 walkthrough recordings still require clean-build human capture and playback approval before publication.
 
 ## 2026-07-14 — Outcome-led manual walkthrough contracts
 

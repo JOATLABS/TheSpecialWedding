@@ -350,7 +350,7 @@ export const SaasLandingPage: React.FC = () => {
       {
         _id: 'plan_signature',
         name: 'Signature',
-        description: 'For agencies running a team of planners. Everything in Boutique, plus team seats and agency-grade reporting.',
+        description: 'For agencies running a team of planners. Everything in Boutique, plus five staff seats, higher AI and storage limits, a planner storefront, and custom-domain options.',
         price_monthly: 149,
         price_yearly: 1490,
         billing_model: 'flat_rate',
