@@ -440,7 +440,9 @@ def cleanup_marketing_capture_workspace_state(
         if fixture_is_owned:
             for artifact_path in (
                 fixture_path,
-                ROOT / "output" / "demo-videos" / "state" / "demo-public-safe.json",
+                ROOT / "output" / "demo-videos" / "state" / "demo-planner.json",
+                ROOT / "output" / "demo-videos" / "state" / "demo-couple.json",
+                ROOT / "output" / "demo-videos" / "state" / "demo-public.json",
                 ROOT / "output" / "demo-videos" / "route-audit-receipt.json",
             ):
                 if artifact_path.exists():

@@ -43,7 +43,13 @@ function run(command: string, args: readonly string[]): string {
   return result.stdout;
 }
 
-function createVideo(filePath: string, width: number, height: number, withAudio = true): void {
+function createVideo(
+  filePath: string,
+  width: number,
+  height: number,
+  withAudio = true,
+  durationSeconds = 75,
+): void {
   mkdirSync(path.dirname(filePath), { recursive: true });
   const args = [
     '-v',
@@ -52,7 +58,7 @@ function createVideo(filePath: string, width: number, height: number, withAudio 
     '-f',
     'lavfi',
     '-i',
-    `color=c=0x1b2440:s=${width}x${height}:r=5:d=0.6`,
+    `color=c=0x1b2440:s=${width}x${height}:r=1:d=${durationSeconds}`,
   ];
 
   if (withAudio) {
@@ -60,7 +66,7 @@ function createVideo(filePath: string, width: number, height: number, withAudio 
       '-f',
       'lavfi',
       '-i',
-      'sine=frequency=440:sample_rate=44100:duration=0.6',
+      `sine=frequency=440:sample_rate=44100:duration=${durationSeconds}`,
       '-shortest',
     );
   }
@@ -171,6 +177,12 @@ describe('demo video playback approval', () => {
         },
       };
     });
+    const captionPath = `public/${requirement.captionPath}`;
+    const transcriptPath = `public/${requirement.transcriptPath}`;
+    mkdirSync(path.dirname(path.join(fixtureRoot, captionPath)), { recursive: true });
+    mkdirSync(path.dirname(path.join(fixtureRoot, transcriptPath)), { recursive: true });
+    writeFileSync(path.join(fixtureRoot, captionPath), 'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nPlanner proof.\n');
+    writeFileSync(path.join(fixtureRoot, transcriptPath), '# Planner command center walkthrough\n\nApproved narration.\n');
 
     approvedReceipt = {
       schemaVersion: 1,
@@ -178,6 +190,10 @@ describe('demo video playback approval', () => {
       reviewedAt: '2026-07-13T12:00:00.000Z',
       reviewer: 'Jordan Lee',
       reviewMethod: 'human-normal-speed-playback',
+      sidecars: {
+        captions: artifactEvidence(fixtureRoot, captionPath),
+        transcript: artifactEvidence(fixtureRoot, transcriptPath),
+      },
       targets,
       websitePlayback: {
         desktopApproved: true,
@@ -404,6 +420,23 @@ describe('demo video playback approval', () => {
       /socialPlayback.*not allowed/i,
     );
   });
+
+  it('binds reviewed captions and transcript to their exact canonical bytes', () => {
+    const captionPath = path.join(fixtureRoot, approvedReceipt.sidecars.captions.artifactPath);
+    const originalCaption = readFileSync(captionPath);
+
+    try {
+      writeFileSync(captionPath, 'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nAltered proof.\n');
+      writeReceipt(approvedReceipt);
+      assert.throws(
+        () => validateDemoVideoPlaybackApproval(DEMO_ID, { rootDir: fixtureRoot }),
+        /captions SHA-256 does not match the approval receipt/,
+      );
+    } finally {
+      writeFileSync(captionPath, originalCaption);
+      writeReceipt(approvedReceipt);
+    }
+  });
 });
 
 describe('Phase 1 social video playback approval', () => {
@@ -424,9 +457,15 @@ describe('Phase 1 social video playback approval', () => {
     const thumbnailPath = `public/${target.thumbnailPath.replace(/^\//, '')}`;
     const absoluteVideoPath = path.join(fixtureRoot, videoPath);
     const absoluteThumbnailPath = path.join(fixtureRoot, thumbnailPath);
-    createVideo(absoluteVideoPath, target.width, target.height);
+    createVideo(absoluteVideoPath, target.width, target.height, true, 30);
     createThumbnail(absoluteThumbnailPath, target.width, target.height);
     const media = probe(absoluteVideoPath);
+    const captionPath = `public/${requirement.captionPath}`;
+    const transcriptPath = `public/${requirement.transcriptPath}`;
+    mkdirSync(path.dirname(path.join(fixtureRoot, captionPath)), { recursive: true });
+    mkdirSync(path.dirname(path.join(fixtureRoot, transcriptPath)), { recursive: true });
+    writeFileSync(path.join(fixtureRoot, captionPath), 'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nSocial proof.\n');
+    writeFileSync(path.join(fixtureRoot, transcriptPath), '# One plan. Three clear views.\n\nApproved narration.\n');
 
     approvedReceipt = {
       schemaVersion: 1,
@@ -434,6 +473,10 @@ describe('Phase 1 social video playback approval', () => {
       reviewedAt: '2026-07-14T12:00:00.000Z',
       reviewer: 'Jordan Lee',
       reviewMethod: 'human-normal-speed-playback',
+      sidecars: {
+        captions: artifactEvidence(fixtureRoot, captionPath),
+        transcript: artifactEvidence(fixtureRoot, transcriptPath),
+      },
       targets: [
         {
           format: target.format,
@@ -558,7 +601,7 @@ describe('Phase 1 social video playback approval', () => {
     const originalVideo = readFileSync(absoluteVideoPath);
 
     try {
-      createVideo(absoluteVideoPath, 1080, 1918);
+      createVideo(absoluteVideoPath, 1080, 1918, true, 30);
       const portraitDrift = cloneReceipt(approvedReceipt);
       const media = probe(absoluteVideoPath);
       portraitDrift.targets[0].video = {
@@ -574,7 +617,7 @@ describe('Phase 1 social video playback approval', () => {
         /must be 1080x1920/,
       );
 
-      createVideo(absoluteVideoPath, 1080, 1920, false);
+      createVideo(absoluteVideoPath, 1080, 1920, false, 30);
       const missingAudio = cloneReceipt(approvedReceipt);
       const silentMedia = probe(absoluteVideoPath);
       missingAudio.targets[0].video = {
@@ -589,6 +632,34 @@ describe('Phase 1 social video playback approval', () => {
       assert.throws(
         () => validateDemoVideoPlaybackApproval(SOCIAL_DEMO_ID, { rootDir: fixtureRoot }),
         /does not contain an audio stream/,
+      );
+    } finally {
+      writeFileSync(absoluteVideoPath, originalVideo);
+      writeReceipt(approvedReceipt);
+    }
+  });
+
+  it('rejects a portrait export outside the authored social duration bounds', () => {
+    const target = approvedReceipt.targets[0];
+    const absoluteVideoPath = path.join(fixtureRoot, target.video.artifactPath);
+    const originalVideo = readFileSync(absoluteVideoPath);
+
+    try {
+      createVideo(absoluteVideoPath, 1080, 1920, true, 10);
+      const tooShort = cloneReceipt(approvedReceipt);
+      const media = probe(absoluteVideoPath);
+      tooShort.targets[0].video = {
+        ...tooShort.targets[0].video,
+        ...artifactEvidence(fixtureRoot, target.video.artifactPath),
+        width: media.width,
+        height: media.height,
+        durationSeconds: media.durationSeconds,
+      };
+      writeReceipt(tooShort);
+
+      assert.throws(
+        () => validateDemoVideoPlaybackApproval(SOCIAL_DEMO_ID, { rootDir: fixtureRoot }),
+        /duration must stay within 25-35 seconds/,
       );
     } finally {
       writeFileSync(absoluteVideoPath, originalVideo);

@@ -27,8 +27,17 @@ async function login(
 async function main(): Promise<void> {
   const args = parseCliArgs(process.argv.slice(2));
   const baseUrl = args.values.get('base-url') ?? 'http://localhost:3100';
-  const outputPath = path.resolve(
-    args.values.get('output') ?? resolveFromRepo('output', 'demo-videos', 'state', 'demo-public-safe.json'),
+  const plannerOutputPath = path.resolve(
+    args.values.get('planner-output')
+      ?? resolveFromRepo('output', 'demo-videos', 'state', 'demo-planner.json'),
+  );
+  const coupleOutputPath = path.resolve(
+    args.values.get('couple-output')
+      ?? resolveFromRepo('output', 'demo-videos', 'state', 'demo-couple.json'),
+  );
+  const publicOutputPath = path.resolve(
+    args.values.get('public-output')
+      ?? resolveFromRepo('output', 'demo-videos', 'state', 'demo-public.json'),
   );
 
   const plannerEmail = args.values.get('planner-email') ?? process.env.DEMO_VIDEO_PLANNER_EMAIL ?? process.env.SMOKE_PLANNER_EMAIL;
@@ -44,21 +53,36 @@ async function main(): Promise<void> {
   }
 
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext();
+  try {
+    const plannerContext = await browser.newContext();
+    await login(plannerContext, baseUrl, '/api/proxy/admin/token', plannerEmail, plannerPassword);
+    fs.mkdirSync(path.dirname(plannerOutputPath), { recursive: true });
+    await plannerContext.storageState({ path: plannerOutputPath });
+    await plannerContext.close();
 
-  await login(context, baseUrl, '/api/proxy/admin/token', plannerEmail, plannerPassword);
-  await login(context, baseUrl, '/api/proxy/couple/login', coupleEmail, couplePassword);
+    const coupleContext = await browser.newContext();
+    await login(coupleContext, baseUrl, '/api/proxy/couple/login', coupleEmail, couplePassword);
+    fs.mkdirSync(path.dirname(coupleOutputPath), { recursive: true });
+    await coupleContext.storageState({ path: coupleOutputPath });
+    await coupleContext.close();
 
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  await context.storageState({ path: outputPath });
-  await context.close();
-  await browser.close();
-
-  if (!args.flags.has('allow-personal-state')) {
-    assertPublicSafeStorageState(outputPath);
+    const publicContext = await browser.newContext();
+    fs.mkdirSync(path.dirname(publicOutputPath), { recursive: true });
+    await publicContext.storageState({ path: publicOutputPath });
+    await publicContext.close();
+  } finally {
+    await browser.close();
   }
 
-  console.log(`Demo browser storage state written to ${outputPath}`);
+  if (!args.flags.has('allow-personal-state')) {
+    for (const outputPath of [plannerOutputPath, coupleOutputPath, publicOutputPath]) {
+      assertPublicSafeStorageState(outputPath);
+    }
+  }
+
+  console.log(`Planner demo state written to ${plannerOutputPath}`);
+  console.log(`Couple demo state written to ${coupleOutputPath}`);
+  console.log(`Public demo state written to ${publicOutputPath}`);
 }
 
 main().catch((error: unknown) => {

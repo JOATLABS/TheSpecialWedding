@@ -12,6 +12,7 @@ import {
 } from '../../app/data/demoVideoProduction';
 import type { DemoVideoProductionChannel } from '../../app/data/demoVideos';
 import { getRequiredValue, parseCliArgs, resolveFromRepo } from './cli';
+import { getManualRecordingDurationBounds } from './validate-manual-demo-video';
 
 type PlaybackArtifactEvidence = {
   artifactPath: string;
@@ -64,6 +65,10 @@ type DemoVideoPlaybackApprovalReceiptBase = {
   reviewedAt: string;
   reviewer: string;
   reviewMethod: 'human-normal-speed-playback';
+  sidecars: {
+    captions: PlaybackArtifactEvidence;
+    transcript: PlaybackArtifactEvidence;
+  };
   targets: DemoVideoPlaybackApprovalTarget[];
 };
 
@@ -89,6 +94,7 @@ type ParsedPlaybackApprovalReceipt = {
   reviewedAt: string;
   reviewer: string;
   reviewMethod: 'human-normal-speed-playback';
+  sidecars?: unknown;
   targets: unknown[];
   websitePlayback?: unknown;
   socialPlayback?: unknown;
@@ -278,6 +284,10 @@ function assertReceiptIdentity(
   if (!Array.isArray(parsed.targets)) {
     throw new Error('Playback approval targets must be an array.');
   }
+  if (parsed.sidecars === undefined) {
+    throw new Error('Playback approval sidecars are required.');
+  }
+  assertRecord(parsed.sidecars, 'Playback approval sidecars');
 }
 
 function assertProductionChannelPlayback(
@@ -311,12 +321,12 @@ function assertProductionChannelPlayback(
   assertExplicitTrue(parsed.websitePlayback.mobileApproved, 'mobileApproved');
 }
 
-function assertArtifact(
+function assertArtifactFile(
   evidence: Record<string, unknown>,
   expectedPath: string,
   rootDir: string,
   label: string,
-): { absolutePath: string; probe: MediaProbe } {
+): { absolutePath: string; bytes: Buffer } {
   if (evidence.artifactPath !== expectedPath) {
     throw new Error(`${label} must use the canonical production path ${expectedPath}.`);
   }
@@ -348,7 +358,41 @@ function assertArtifact(
     throw new Error(`${label} SHA-256 does not match the approval receipt.`);
   }
 
-  return { absolutePath, probe: probeMedia(absolutePath, label) };
+  return { absolutePath, bytes };
+}
+
+function assertMediaArtifact(
+  evidence: Record<string, unknown>,
+  expectedPath: string,
+  rootDir: string,
+  label: string,
+): { absolutePath: string; probe: MediaProbe } {
+  const artifact = assertArtifactFile(evidence, expectedPath, rootDir, label);
+  return { absolutePath: artifact.absolutePath, probe: probeMedia(artifact.absolutePath, label) };
+}
+
+function validateSidecars(
+  parsed: ParsedPlaybackApprovalReceipt,
+  captionPath: string,
+  transcriptPath: string,
+  rootDir: string,
+): void {
+  assertRecord(parsed.sidecars, 'Playback approval sidecars');
+  assertRecord(parsed.sidecars.captions, 'captions evidence');
+  assertRecord(parsed.sidecars.transcript, 'transcript evidence');
+
+  assertArtifactFile(
+    parsed.sidecars.captions,
+    `public/${captionPath.replace(/^\/+/, '')}`,
+    rootDir,
+    'captions',
+  );
+  assertArtifactFile(
+    parsed.sidecars.transcript,
+    `public/${transcriptPath.replace(/^\/+/, '')}`,
+    rootDir,
+    'transcript',
+  );
 }
 
 function validateTarget(
@@ -370,7 +414,7 @@ function validateTarget(
   assertExplicitTrue(value.video.hasAudio, `${expected.format} video hasAudio`);
 
   const expectedVideoPath = `public/${expected.assetPath.replace(/^\//, '')}`;
-  const videoArtifact = assertArtifact(
+  const videoArtifact = assertMediaArtifact(
     value.video,
     expectedVideoPath,
     rootDir,
@@ -401,7 +445,7 @@ function validateTarget(
   }
 
   const expectedThumbnailPath = `public/${expected.thumbnailPath.replace(/^\//, '')}`;
-  const thumbnailArtifact = assertArtifact(
+  const thumbnailArtifact = assertMediaArtifact(
     value.thumbnail,
     expectedThumbnailPath,
     rootDir,
@@ -442,6 +486,7 @@ export function validateDemoVideoPlaybackApproval(
   const parsed = readReceipt(receiptPath);
   assertReceiptIdentity(parsed, demoId);
   assertProductionChannelPlayback(parsed, requirement.productionChannel);
+  validateSidecars(parsed, requirement.captionPath, requirement.transcriptPath, rootDir);
 
   if (parsed.targets.length !== requirement.exportTargets.length) {
     throw new Error(
@@ -467,6 +512,14 @@ export function validateDemoVideoPlaybackApproval(
   });
 
   const durations = validatedTargets.map((target) => target.durationSeconds);
+  const { minimumDuration, maximumDuration } = getManualRecordingDurationBounds(demo);
+  for (const durationSeconds of durations) {
+    if (durationSeconds < minimumDuration || durationSeconds > maximumDuration) {
+      throw new Error(
+        `Rendered video duration must stay within ${minimumDuration}-${maximumDuration} seconds for ${demoId}.`,
+      );
+    }
+  }
   if (Math.max(...durations) - Math.min(...durations) > 0.5) {
     throw new Error('Rendered production targets must have matching ffprobe durations.');
   }

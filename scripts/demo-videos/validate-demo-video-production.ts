@@ -13,6 +13,7 @@ import {
   validateDemoVideoPlaybackApproval,
 } from './validate-demo-video-playback-approval';
 import { validateManualDemoVideo } from './validate-manual-demo-video';
+import { findUnexpectedPublicRenderInputs } from './render-input-safety';
 
 type ValidationIssue = {
   demoId: string;
@@ -34,6 +35,15 @@ function fileExistsAndIsNonempty(filePath: string): boolean {
 
 function validateRequirementInventory(demoIds: readonly string[], requireAssets: boolean): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
+
+  if (requireAssets) {
+    for (const artifactPath of findUnexpectedPublicRenderInputs(resolveFromRepo())) {
+      issues.push({
+        demoId: 'public-render-staging',
+        message: `Temporary Remotion input remains under public/: ${artifactPath}.`,
+      });
+    }
+  }
 
   for (const demoId of demoIds) {
     const demo = DEMO_VIDEO_PRODUCTION_CATALOG.find((item) => item.id === demoId);
@@ -193,8 +203,16 @@ function summarize(demoIds: readonly string[], requireAssets: boolean): void {
 function main(): void {
   const args = parseCliArgs(process.argv.slice(2));
   const demoFilter = args.values.get('demo');
-  const requireAssets = args.flags.has('require-assets');
-  const demoIds = demoFilter ? [demoFilter] : DEMO_VIDEO_PRODUCTION_REQUIREMENTS.map((item) => item.demoId);
+  const publishedOnly = args.flags.has('published');
+  const requireAssets = args.flags.has('require-assets') || publishedOnly;
+  const publishedDemoIds = DEMO_VIDEO_PRODUCTION_CATALOG
+    .filter((demo) => demo.status === 'published')
+    .map((demo) => demo.id);
+  const demoIds = demoFilter
+    ? [demoFilter]
+    : publishedOnly
+      ? publishedDemoIds
+      : DEMO_VIDEO_PRODUCTION_REQUIREMENTS.map((item) => item.demoId);
   const issues = validateRequirementInventory(demoIds, requireAssets);
 
   summarize(demoIds, requireAssets);

@@ -41,7 +41,9 @@ pages 3-11, 14-15, 22, and 24. The product claim is:
 - Public demo-video URLs remain unset until the corresponding media passes the
   capture receipt, safety scan, human frame review, and channel-specific
   playback check: desktop plus mobile for website video, or portrait-mobile
-  plus safe-area review for social video.
+  plus safe-area review for social video. The playback receipt binds the exact
+  reviewed WebVTT captions and Markdown transcript by canonical path, checksum,
+  and byte length as well as the export and thumbnail.
 
 ## Acceptance matrix
 
@@ -61,7 +63,7 @@ pages 3-11, 14-15, 22, and 24. The product claim is:
 | P12 | Homepage hero | The hero uses one strong populated command-center proof, preserves the existing brand system and CTA flow, and clearly says the product is built for wedding planners. It does not auto-cycle stale screenshots. |
 | P13 | Homepage stories | The feature section contains four outcome-led stories: Connection Over Tools, Disorganization Tax, Couple Experience plus Boundaries, and Built for Planners. Each story uses current product proof and describes a connected outcome rather than a feature count. |
 | P14 | Features page | The top of `/features` uses the same four outcomes. Detailed capabilities remain discoverable lower on the page. The 29-row competitor matrix no longer leads or defines the product story; comparison research remains available through `/compare`. |
-| P15 | Video capture | Recording executes explicit feature actions and verifies visible results. Generic waypoint cursor motion and engineering-review framing are removed. The connected website walkthrough is a separate 16:9 story. Phase 1 social video consists of four independent manual takes: `connection-over-tools-social` (30 seconds), `disorganization-tax-social` (25 seconds), `couple-experience-boundaries-social` (20 seconds), and `built-for-planners-social` (35 seconds). Each social ID has its own exact checkpoints, 1440x900 full-window raw recording, narration, capture receipt, 1080x1920 export, and playback approval. Reusing, cropping, zooming, or squeezing a website take into portrait is forbidden. No website or social video may publish until its own safety and channel-specific playback gates pass. |
+| P15 | Video capture | Recording executes explicit feature actions and verifies visible results. Generic waypoint cursor motion and engineering-review framing are removed. The connected website walkthrough is a separate 16:9 story. Phase 1 social video consists of four independent manual takes: `connection-over-tools-social` (30 seconds), `disorganization-tax-social` (25 seconds), `couple-experience-boundaries-social` (20 seconds), and `built-for-planners-social` (35 seconds). Each social ID has its own exact checkpoints, 1440x900 full-window raw recording, narration, capture receipt, 1080x1920 export, checksum-bound captions/transcript sidecars, and playback approval. Reusing, cropping, zooming, or squeezing a website take into portrait is forbidden. No website or social video may publish until its own safety and channel-specific playback gates pass. |
 | P16 | Frontend proof | Automated contracts pass, the testbed lifecycle passes, and manually driven visible Chrome verifies page identity, non-blank UI, no framework overlay, console health, seeded interactions, desktop, and mobile layouts. Screenshots and a capture receipt identify the exact tested build. Website exports receive visible desktop and mobile playback review; social exports receive visible portrait-mobile and social-overlay-safe-area review. |
 
 ## Entry-point and parity inventory
@@ -118,6 +120,10 @@ pages 3-11, 14-15, 22, and 24. The product claim is:
     rejected, or stale files cannot silently re-enable a launcher. Website
     publications and Phase 1 social publications use separate explicit
     allowlists.
+13. Automated route preflight keeps planner, couple, and public browser states
+    isolated. It fails on same-origin HTTP errors, failed requests, console or
+    page errors, unexpected final routes, blank shells, and known error pages;
+    it remains setup evidence and never substitutes for visible frontend proof.
 
 ## Verification gate
 

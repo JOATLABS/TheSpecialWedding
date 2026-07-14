@@ -221,6 +221,21 @@ describe('Phase 1 social video pipeline', () => {
 
     assert.match(routeVerifier, /DEMO_VIDEO_PRODUCTION_CATALOG/);
     assert.doesNotMatch(routeVerifier, /DEMO_VIDEO_PLAYLIST/);
+    assert.match(routeVerifier, /plannerStorageState/);
+    assert.match(routeVerifier, /coupleStorageState/);
+    assert.match(routeVerifier, /publicStorageState/);
+    assert.match(routeVerifier, /page\.on\(['"]pageerror['"]/);
+    assert.match(routeVerifier, /status\s*>=\s*400/);
+    assert.match(routeVerifier, /final route/);
+
+    const stateCreator = readFileSync(
+      path.resolve('scripts/demo-videos/create-demo-storage-state.ts'),
+      'utf8',
+    );
+    assert.match(stateCreator, /demo-planner\.json/);
+    assert.match(stateCreator, /demo-couple\.json/);
+    assert.match(stateCreator, /demo-public\.json/);
+    assert.doesNotMatch(stateCreator, /await login\(context[\s\S]*?admin\/token[\s\S]*?couple\/login/);
   });
 
   it('keeps social publication on its own empty, canonical allowlist', () => {

@@ -122,7 +122,9 @@ npm run demo:verify-routes -- \
   --demo built-for-planners-social
 ```
 
-The route verifier accepts repeated `--demo` values and resolves them through the combined production catalog; it does not add social stories to the website playlist. These tools are non-acceptance setup only. They may prove that routes resolve and seeded sessions work, but their headless browser state, navigation, and receipts do not prove the visible journey and must never be used as recorded footage. The production recording requires a fresh visible browser, a visible login, and human-driven interactions.
+`demo:auth-state` writes three isolated states: `output/demo-videos/state/demo-planner.json`, `output/demo-videos/state/demo-couple.json`, and `output/demo-videos/state/demo-public.json`. Planner and couple credentials are never combined into one context, and the public state contains no authenticated session. The route verifier chooses the state from the route family, accepts repeated `--demo` values, and resolves them through the combined production catalog without adding social stories to the website playlist. It fails on any same-origin HTTP response at or above 400, failed request, console error, page error, unexpected final route, blank shell, or known error page.
+
+These tools are non-acceptance setup only. They may prove that routes resolve and seeded sessions work, but their headless browser state, navigation, and receipts do not prove the visible journey and must never be used as recorded footage. The production recording requires a fresh visible browser, a visible login, and human-driven interactions.
 
 ## 3. Prepare The Visible Browser
 
@@ -466,6 +468,18 @@ After watching the complete website export at normal speed and testing the websi
   "reviewedAt": "REPLACE_WITH_EXACT_ISO_TIMESTAMP",
   "reviewer": "REPLACE_WITH_HUMAN_REVIEWER_NAME",
   "reviewMethod": "human-normal-speed-playback",
+  "sidecars": {
+    "captions": {
+      "artifactPath": "public/demo-videos/captions/planner-command-center-walkthrough.vtt",
+      "artifactSha256": "REPLACE_WITH_SHA256",
+      "byteLength": 0
+    },
+    "transcript": {
+      "artifactPath": "public/demo-videos/transcripts/planner-command-center-walkthrough.md",
+      "artifactSha256": "REPLACE_WITH_SHA256",
+      "byteLength": 0
+    }
+  },
   "targets": [
     {
       "format": "web-16x9",
@@ -503,7 +517,7 @@ After watching the complete website export at normal speed and testing the websi
 }
 ```
 
-Save it as `output/demo-videos/playback-approvals/planner-command-center-walkthrough.json`. Populate hashes, byte lengths, dimensions, and duration from the real artifacts; the validator re-probes and re-hashes both files.
+Save it as `output/demo-videos/playback-approvals/planner-command-center-walkthrough.json`. Populate hashes, byte lengths, dimensions, and duration from the real artifacts. The validator re-probes the video and thumbnail, re-hashes all four artifacts, and binds the exact reviewed WebVTT captions and Markdown transcript to the approval receipt. Editing either sidecar after review invalidates the approval.
 
 ### Social human playback approval
 
@@ -518,6 +532,18 @@ Create `output/demo-videos/playback-approvals/connection-over-tools-social.json`
   "reviewedAt": "REPLACE_WITH_EXACT_ISO_TIMESTAMP",
   "reviewer": "REPLACE_WITH_HUMAN_REVIEWER_NAME",
   "reviewMethod": "human-normal-speed-playback",
+  "sidecars": {
+    "captions": {
+      "artifactPath": "public/demo-videos/captions/connection-over-tools-social.vtt",
+      "artifactSha256": "REPLACE_WITH_SHA256",
+      "byteLength": 0
+    },
+    "transcript": {
+      "artifactPath": "public/demo-videos/transcripts/connection-over-tools-social.md",
+      "artifactSha256": "REPLACE_WITH_SHA256",
+      "byteLength": 0
+    }
+  },
   "targets": [
     {
       "format": "social-9x16",
@@ -555,7 +581,7 @@ Create `output/demo-videos/playback-approvals/connection-over-tools-social.json`
 }
 ```
 
-A social receipt must contain exactly one `social-9x16` target and `socialPlayback`; `websitePlayback` is forbidden. A website receipt must contain exactly one `web-16x9` target and `websitePlayback`; `socialPlayback` is forbidden. Repeat the social review and receipt with the exact canonical ID, duration, export, and thumbnail paths for each of the other three stories.
+A social receipt must contain exactly one `social-9x16` target and `socialPlayback`; `websitePlayback` is forbidden. A website receipt must contain exactly one `web-16x9` target and `websitePlayback`; `socialPlayback` is forbidden. Both receipt types must include the exact canonical captions and transcript paths, checksums, and byte lengths. Repeat the social review and receipt with the exact canonical ID, duration, export, thumbnail, captions, and transcript paths for each of the other three stories.
 
 ```bash
 npm run demo:validate-playback -- --demo planner-command-center-walkthrough

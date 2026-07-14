@@ -21,12 +21,14 @@ type CaptureFixtures = {
 
 type RouteReceipt = {
   demoId: string;
+  session: 'planner' | 'couple' | 'public';
   route: string;
   resolvedRoute: string;
   url: string;
   ok: boolean;
   text: string;
   networkIssues: NetworkIssue[];
+  runtimeIssues: string[];
 };
 
 type NetworkIssue = {
@@ -97,7 +99,13 @@ function shouldInspectNetworkUrl(requestUrl: string, baseUrl: string): boolean {
 }
 
 function isBadNetworkStatus(status: number): boolean {
-  return status === 403 || status >= 500;
+  return status >= 400;
+}
+
+function sessionForRoute(route: string): RouteReceipt['session'] {
+  if (route.startsWith('/admin')) return 'planner';
+  if (route.startsWith('/couple')) return 'couple';
+  return 'public';
 }
 
 function networkKey(issue: NetworkIssue): string {
@@ -125,11 +133,18 @@ async function main(): Promise<void> {
   const baseUrl = args.values.get('base-url') ?? 'http://localhost:3100';
   const fixturesPath = args.values.get('fixtures') ?? resolveFromRepo('output', 'demo-videos', 'capture-fixtures.json');
   const receiptPath = args.values.get('receipt') ?? resolveFromRepo('output', 'demo-videos', 'route-audit-receipt.json');
-  const storageState = args.values.get('storage-state') ?? resolveFromRepo('output', 'demo-videos', 'state', 'demo-public-safe.json');
+  const plannerStorageState = args.values.get('planner-storage-state')
+    ?? resolveFromRepo('output', 'demo-videos', 'state', 'demo-planner.json');
+  const coupleStorageState = args.values.get('couple-storage-state')
+    ?? resolveFromRepo('output', 'demo-videos', 'state', 'demo-couple.json');
+  const publicStorageState = args.values.get('public-storage-state')
+    ?? resolveFromRepo('output', 'demo-videos', 'state', 'demo-public.json');
   const demoFilters = args.repeatedValues.get('demo');
   const fixtures = readFixtures(fixturesPath);
   if (!args.flags.has('allow-personal-state')) {
-    assertPublicSafeStorageState(storageState);
+    for (const storageState of [plannerStorageState, coupleStorageState, publicStorageState]) {
+      assertPublicSafeStorageState(storageState);
+    }
   }
   const demos = demoFilters?.length
     ? DEMO_VIDEO_PRODUCTION_CATALOG.filter((demo) => demoFilters.includes(demo.id))
@@ -140,18 +155,40 @@ async function main(): Promise<void> {
   }
 
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    storageState,
-    viewport: { width: 1440, height: 900 },
-  });
+  const contexts = {
+    planner: await browser.newContext({
+      storageState: plannerStorageState,
+      viewport: { width: 1440, height: 900 },
+    }),
+    couple: await browser.newContext({
+      storageState: coupleStorageState,
+      viewport: { width: 1440, height: 900 },
+    }),
+    public: await browser.newContext({
+      storageState: publicStorageState,
+      viewport: { width: 1440, height: 900 },
+    }),
+  };
   const receipts: RouteReceipt[] = [];
 
   for (const demo of demos) {
     const routeParams = routeParamsForDemo(demo.id, fixtures);
     for (const route of demo.routePlan) {
+      const session = sessionForRoute(route);
+      const context = contexts[session];
       const page = await context.newPage();
       const networkIssues: NetworkIssue[] = [];
+      const runtimeIssues: string[] = [];
       const successfulRequests = new Set<string>();
+
+      page.on('console', (message) => {
+        if (message.type() === 'error') {
+          runtimeIssues.push(`console error: ${message.text()}`);
+        }
+      });
+      page.on('pageerror', (error) => {
+        runtimeIssues.push(`page error: ${error.message}`);
+      });
 
       page.on('response', (response) => {
         const request = response.request();
@@ -191,27 +228,40 @@ async function main(): Promise<void> {
       await page.locator('body').waitFor({ state: 'visible', timeout: 20_000 });
       await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
       await page.waitForTimeout(1_500);
-      const text = (await page.locator('body').innerText()).replace(/\s+/g, ' ').trim();
+      const fullText = (await page.locator('body').innerText()).replace(/\s+/g, ' ').trim();
+      const text = fullText;
       const sample = text.slice(0, 700);
       const meaningfulNetworkIssues = filterBenignNetworkIssues(networkIssues, successfulRequests);
-      const visibleOk = sample.length > 20 && sample !== 'Loading...' && !BAD_PAGE_PATTERN.test(sample);
-      const ok = visibleOk && meaningfulNetworkIssues.length === 0;
+      const expectedUrl = new URL(resolvedRoute, baseUrl);
+      const actualUrl = new URL(page.url());
+      const finalRoute = `${actualUrl.pathname}${actualUrl.search}`;
+      const expectedRoute = `${expectedUrl.pathname}${expectedUrl.search}`;
+      if (actualUrl.origin !== expectedUrl.origin || finalRoute !== expectedRoute) {
+        runtimeIssues.push(`final route ${finalRoute} did not match ${expectedRoute}`);
+      }
+      const visibleOk = text.length > 20 && text !== 'Loading...' && !BAD_PAGE_PATTERN.test(text);
+      const ok = visibleOk
+        && meaningfulNetworkIssues.length === 0
+        && runtimeIssues.length === 0;
       receipts.push({
         demoId: demo.id,
+        session,
         route,
         resolvedRoute,
         url: page.url(),
         ok,
         text: sample,
         networkIssues: meaningfulNetworkIssues,
+        runtimeIssues,
       });
       console.log(
-        `${ok ? 'OK' : 'BAD'} ${demo.id} ${resolvedRoute}${meaningfulNetworkIssues.length ? ` (${meaningfulNetworkIssues.length} network issue(s))` : ''}`,
+        `${ok ? 'OK' : 'BAD'} ${demo.id} ${session} ${resolvedRoute}${meaningfulNetworkIssues.length ? ` (${meaningfulNetworkIssues.length} network issue(s))` : ''}${runtimeIssues.length ? ` (${runtimeIssues.length} runtime issue(s))` : ''}`,
       );
       await page.close();
     }
   }
 
+  await Promise.all(Object.values(contexts).map((context) => context.close()));
   await browser.close();
 
   fs.mkdirSync(path.dirname(receiptPath), { recursive: true });
