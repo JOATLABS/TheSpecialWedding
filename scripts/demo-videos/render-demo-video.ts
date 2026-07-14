@@ -11,7 +11,7 @@ import {
   type DemoVideoExportFormat,
 } from '../../app/data/demoVideoProduction';
 import type { DemoVideoRemotionProps } from '../../remotion/types';
-import { buildCaptionsForDemo } from './captions';
+import { buildWebVttForDemo } from './captions';
 import { getNumberValue, getRequiredValue, parseCliArgs, resolveFromRepo } from './cli';
 import { validateManualDemoVideo } from './validate-manual-demo-video';
 
@@ -124,7 +124,7 @@ function main(): void {
   assertFileExists(rawRecordingFile, 'Validated manual recording');
   assertFileExists(narrationFile, 'Approved narration');
 
-  const captions = buildCaptionsForDemo(demo, durationSeconds);
+  const webVtt = buildWebVttForDemo(demo, durationSeconds);
   const captionFile = resolveFromRepo('public', requirement.captionPath);
   const transcriptFile = resolveFromRepo('public', requirement.transcriptPath);
   const outputFile = resolveFromRepo('public', target.assetPath.replace(/^\//, ''));
@@ -137,12 +137,12 @@ function main(): void {
     audience: demo.audience,
     rawVideoPath: requirement.renderInputPath,
     narrationPath: requirement.renderNarrationInputPath,
-    captions,
     format,
     durationSeconds,
   };
 
-  writeJson(captionFile, captions);
+  fs.mkdirSync(path.dirname(captionFile), { recursive: true });
+  fs.writeFileSync(captionFile, webVtt);
   fs.mkdirSync(path.dirname(transcriptFile), { recursive: true });
   fs.writeFileSync(transcriptFile, buildDemoVideoTranscript(demo));
   writeJson(propsFile, props);
@@ -179,7 +179,7 @@ function main(): void {
   assertFileExists(outputFile, 'Rendered MP4');
   assertRenderedAudioStream(outputFile);
   assertFileExists(thumbnailFile, 'Rendered thumbnail');
-  assertFileExists(captionFile, 'Caption JSON');
+  assertFileExists(captionFile, 'WebVTT captions');
   assertFileExists(transcriptFile, 'Transcript');
 
   console.log(`Rendered video: ${target.assetPath}`);

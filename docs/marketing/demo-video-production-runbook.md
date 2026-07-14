@@ -10,7 +10,7 @@ This runbook produces a real, manually driven product walkthrough from the isola
 - Manual recording receipt validator: `scripts/demo-videos/validate-manual-demo-video.ts`
 - Remotion entry point: `remotion/index.ts`
 
-The hero is one connected 85-second planner-OS story. The browser recording is a human-driven 1440x900 full-window take. Remotion renders that take with `contain`, adds a separately recorded narration track and accessible captions, and owns the final five-second activation outro.
+The hero is one connected 85-second planner-OS story. The browser recording is a human-driven 1440x900 full-window take. Remotion renders that take with `contain`, adds a separately recorded narration track, and owns the final five-second activation outro. Captions ship as a WebVTT sidecar through the website video player's native caption track, so they remain accessible without permanently covering product controls in the footage.
 
 The website walkthrough is a 16:9 deliverable. Do not turn the same 85-second desktop take into a social video by squeezing it into 9:16. Phase 1 social videos need their own 20-35 second, pillar-native storyboards and manual capture receipts for Connection Over Tools, Disorganization Tax, Couple Experience + Boundaries, and Built for Planners.
 
@@ -20,7 +20,7 @@ Generated media and receipts are gitignored. A complete demo has:
 - narration master: `output/demo-videos/narration/{demoId}.m4a`
 - manual receipt: `output/demo-videos/receipts/{demoId}.json`
 - human playback approval: `output/demo-videos/playback-approvals/{demoId}.json`
-- captions: `public/demo-videos/captions/{demoId}.json`
+- WebVTT captions: `public/demo-videos/captions/{demoId}.vtt`
 - transcript: `public/demo-videos/transcripts/{demoId}.md`
 - website export and thumbnail: `public/demo-videos/exports/{demoId}-16x9.mp4` and `public/demo-videos/thumbnails/{demoId}-16x9.png`
 

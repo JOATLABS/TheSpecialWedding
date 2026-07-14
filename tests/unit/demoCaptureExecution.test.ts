@@ -87,7 +87,7 @@ describe('demo capture execution', () => {
     assert.match(renderer, /ffprobe/);
     assert.match(renderer, /Rendered walkthrough does not contain an audio stream/);
     assert.match(renderer, /buildWebVttForDemo/);
-    assert.match(renderer, /\.vtt/);
+    assert.match(renderer, /requirement\.captionPath/);
     assert.doesNotMatch(renderer, /writeJson\(captionFile/);
 
     const productionValidator = source('scripts/demo-videos/validate-demo-video-production.ts');

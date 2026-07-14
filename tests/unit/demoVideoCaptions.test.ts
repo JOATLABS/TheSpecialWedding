@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
+
+import { HERO_DEMO_VIDEO } from '../../app/data/demoVideos';
+import { buildWebVttForDemo } from '../../scripts/demo-videos/captions';
 
 describe('demo video WebVTT captions', () => {
   it('provides a canonical WebVTT sidecar generator', () => {
-    const source = readFileSync('scripts/demo-videos/captions.ts', 'utf8');
-    assert.match(source, /buildWebVttForDemo/);
-    assert.match(source, /WEBVTT/);
-    assert.match(source, /00:00:00\.000/);
+    const webVtt = buildWebVttForDemo(HERO_DEMO_VIDEO);
+
+    assert.match(webVtt, /^WEBVTT\n\n/);
+    assert.match(webVtt, /00:00:00\.000 --> 00:00:10\.000/);
+    assert.match(webVtt, /Start with one wedding in the planner command center/);
+    assert.match(webVtt, /00:01:20\.000 --> 00:01:25\.000/);
   });
 });

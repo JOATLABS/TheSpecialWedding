@@ -38,3 +38,31 @@ export function buildCaptionsForDemo(demo: DemoVideo, durationSeconds = demo.dur
     };
   });
 }
+
+function formatWebVttTimestamp(timestampMs: number): string {
+  const safeTimestampMs = Math.max(0, Math.round(timestampMs));
+  const hours = Math.floor(safeTimestampMs / 3_600_000);
+  const minutes = Math.floor((safeTimestampMs % 3_600_000) / 60_000);
+  const seconds = Math.floor((safeTimestampMs % 60_000) / 1_000);
+  const milliseconds = safeTimestampMs % 1_000;
+
+  return [
+    String(hours).padStart(2, '0'),
+    String(minutes).padStart(2, '0'),
+    `${String(seconds).padStart(2, '0')}.${String(milliseconds).padStart(3, '0')}`,
+  ].join(':');
+}
+
+export function buildWebVttForDemo(
+  demo: DemoVideo,
+  durationSeconds = demo.durationSeconds,
+): string {
+  const cues = buildCaptionsForDemo(demo, durationSeconds).flatMap((caption, index) => [
+    String(index + 1),
+    `${formatWebVttTimestamp(caption.startMs)} --> ${formatWebVttTimestamp(caption.endMs)}`,
+    caption.text.replaceAll('-->', '—>'),
+    '',
+  ]);
+
+  return `WEBVTT\n\n${cues.join('\n').trimEnd()}\n`;
+}

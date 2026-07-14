@@ -11,21 +11,10 @@ import type { DemoVideoRemotionProps } from './types';
 
 const OUTRO_DURATION_SECONDS = 5;
 
-function getActiveCaption(props: DemoVideoRemotionProps, frame: number, fps: number): string {
-  const timestampMs = (frame / fps) * 1000;
-  const activeCaption = props.captions.find(
-    (caption) => timestampMs >= caption.startMs && timestampMs <= caption.endMs,
-  );
-
-  return activeCaption?.text ?? '';
-}
-
 export function DemoVideoComposition(props: DemoVideoRemotionProps) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const activeCaption = getActiveCaption(props, frame, fps);
   const isVertical = props.format === 'social-9x16';
-  const captionSafeArea = isVertical ? 66 : 220;
   const outroStartFrame = Math.max(0, Math.ceil((props.durationSeconds - OUTRO_DURATION_SECONDS) * fps));
   const outroOpacity = interpolate(
     frame,
@@ -103,40 +92,6 @@ export function DemoVideoComposition(props: DemoVideoRemotionProps) {
           }}
         >
           {props.title}
-        </div>
-      ) : null}
-
-      {activeCaption && outroOpacity < 0.98 ? (
-        <div
-          style={{
-            position: 'absolute',
-            left: captionSafeArea,
-            right: captionSafeArea,
-            bottom: isVertical ? 132 : 48,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            pointerEvents: 'none',
-            zIndex: 2,
-          }}
-        >
-          <span
-            style={{
-              maxWidth: isVertical ? 850 : 1320,
-              borderRadius: isVertical ? 22 : 16,
-              backgroundColor: 'rgba(2, 6, 23, 0.88)',
-              border: '1px solid rgba(255,255,255,0.12)',
-              boxShadow: '0 16px 54px rgba(0,0,0,0.4)',
-              padding: isVertical ? '22px 28px' : '12px 20px',
-              color: '#f8fafc',
-              fontSize: isVertical ? 38 : 28,
-              fontWeight: 650,
-              lineHeight: 1.24,
-              textAlign: 'center',
-            }}
-          >
-            {activeCaption}
-          </span>
         </div>
       ) : null}
 

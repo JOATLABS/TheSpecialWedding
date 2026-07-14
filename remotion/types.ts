@@ -1,5 +1,3 @@
-import type { Caption } from '@remotion/captions';
-
 import type { DemoVideoExportFormat } from '../app/data/demoVideoProduction';
 
 export type DemoVideoRemotionProps = {
@@ -8,7 +6,6 @@ export type DemoVideoRemotionProps = {
   audience: string;
   rawVideoPath: string;
   narrationPath: string;
-  captions: Caption[];
   format: DemoVideoExportFormat;
   durationSeconds: number;
 };
