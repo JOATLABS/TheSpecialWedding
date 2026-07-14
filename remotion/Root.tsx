@@ -9,7 +9,6 @@ const defaultProps: DemoVideoRemotionProps = {
   audience: 'Professional planners evaluating a connected planner operating system.',
   rawVideoPath: '',
   narrationPath: '',
-  captions: [],
   format: 'web-16x9',
   durationSeconds: 90,
 };

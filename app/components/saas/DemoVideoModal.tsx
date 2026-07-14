@@ -66,6 +66,15 @@ export default function DemoVideoModal({ demo, open, onClose }: DemoVideoModalPr
           ) : (
             <video controls autoPlay playsInline className="aspect-video w-full bg-black" poster={demo.thumbnailUrl}>
               <source src={demo.assetUrl} />
+              {demo.captionUrl ? (
+                <track
+                  kind="captions"
+                  src={demo.captionUrl}
+                  srcLang="en"
+                  label="English"
+                  default
+                />
+              ) : null}
             </video>
           )
         ) : (

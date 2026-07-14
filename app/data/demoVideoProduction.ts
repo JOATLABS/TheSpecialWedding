@@ -139,7 +139,7 @@ export function getDemoVideoProductionRequirement(demo: DemoVideo): DemoVideoPro
     captureReceiptPath: `output/demo-videos/receipts/${demo.id}.json`,
     renderInputPath: `${STATIC_DEMO_VIDEO_ROOT}/.render-input/${demo.id}.mp4`,
     renderNarrationInputPath: `${STATIC_DEMO_VIDEO_ROOT}/.render-input/${demo.id}.m4a`,
-    captionPath: `${STATIC_DEMO_VIDEO_ROOT}/captions/${demo.id}.json`,
+    captionPath: `${STATIC_DEMO_VIDEO_ROOT}/captions/${demo.id}.vtt`,
     transcriptPath: `${STATIC_DEMO_VIDEO_ROOT}/transcripts/${demo.id}.md`,
     playbackApprovalPath: `output/demo-videos/playback-approvals/${demo.id}.json`,
     exportTargets: buildExportTargets(demo.id),

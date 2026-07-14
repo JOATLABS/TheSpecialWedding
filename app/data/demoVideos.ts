@@ -80,12 +80,6 @@ export function isCompletePublicationApproval(
 ): approval is PublicDemoVideoPublicationApproval {
   if (!approval || approval.approval !== 'approved') return false;
 
-  const requiredAssetUrls = [
-    approval.assetUrl,
-    approval.thumbnailUrl,
-    approval.captionUrl,
-    approval.transcriptUrl,
-  ];
   const socialAssetsArePaired = Boolean(approval.socialAssetUrl) === Boolean(approval.socialThumbnailUrl);
   const socialAssetUrls = [approval.socialAssetUrl, approval.socialThumbnailUrl].filter(
     (url): url is string => Boolean(url),
@@ -94,7 +88,10 @@ export function isCompletePublicationApproval(
   return /^[0-9a-f]{40}$/i.test(approval.appBuildCommit)
     && approval.captureReceiptPath === `output/demo-videos/receipts/${demoId}.json`
     && approval.playbackApprovalPath === `output/demo-videos/playback-approvals/${demoId}.json`
-    && requiredAssetUrls.every((url) => url.startsWith('/demo-videos/'))
+    && approval.assetUrl === `/demo-videos/exports/${demoId}-16x9.mp4`
+    && approval.thumbnailUrl === `/demo-videos/thumbnails/${demoId}-16x9.png`
+    && approval.captionUrl === `/demo-videos/captions/${demoId}.vtt`
+    && approval.transcriptUrl === `/demo-videos/transcripts/${demoId}.md`
     && socialAssetsArePaired
     && socialAssetUrls.every((url) => url.startsWith('/demo-videos/'))
     && Number.isFinite(Date.parse(approval.recordedAt))
