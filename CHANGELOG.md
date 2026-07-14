@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-07-14 — Wedding media access reports the real state
+
+- Kept Story editing available to team members with wedding-settings permission while independently gating uploaded-media browsing on Manage Gallery permission. Permission denials and storage failures now preserve current selections and render explicit states instead of falsely claiming that zero images exist.
+
 ## 2026-07-14 — Public marketing copy matches visible planner proof
 
 - Replaced automatic-publishing, unseen dashboard-signal, live-propagation, couple-view parity, and vendor-delivery claims with the exact read-only outcomes demonstrated by the Phase 1 planner walkthrough contracts.
