@@ -580,7 +580,6 @@ For agencies running a team of planners. Everything in Boutique, plus team seats
 - Unlimited guests
 - Everything in Boutique, plus:
 - Team collaboration (5 staff seats)
-- Vendor-collaboration workspaces
 - Cross-wedding analytics & revenue tracking
 - 1,500 AI credits/month
 - 100GB guest memories storage

@@ -34,7 +34,7 @@ export default function FeaturesPage() {
             One connected operating system, built specifically for wedding planners.
           </h1>
           <p className="mx-auto mt-6 max-w-3xl text-base leading-8 text-slate-300 sm:text-lg">
-            Protect planner time, give couples a calmer experience, and keep every wedding surface reading from one planner-owned record.
+            Protect planner time, give couples a calmer experience, and present one coherent wedding plan across planner, couple, public, and guest-response views.
           </p>
           <div className="mt-9 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <a

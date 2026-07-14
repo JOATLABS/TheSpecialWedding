@@ -110,5 +110,14 @@ def test_storefront_features_are_explicit_and_independent_in_both_seed_paths(
         assert matrix[plan_name]["custom_domain"] is enabled
 
 
-def test_storefront_catalog_change_bumps_the_seed_version():
-    assert _seed_version() == "2026-07-12T00:00:00+00:00"
+def test_unfinished_vendor_collaboration_is_disabled_in_both_seed_paths(
+    boot_matrix: dict[str, dict[str, bool]],
+    manual_matrix: dict[str, dict[str, bool]],
+):
+    for matrix in (boot_matrix, manual_matrix):
+        assert matrix["Signature"]["vendor_collaboration"] is False
+        assert matrix["Enterprise"]["vendor_collaboration"] is False
+
+
+def test_plan_catalog_change_bumps_the_seed_version():
+    assert _seed_version() == "2026-07-14T00:00:00+00:00"

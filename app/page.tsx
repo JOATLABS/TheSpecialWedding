@@ -75,7 +75,7 @@ const fallbackPricing: PricingTier[] = [
       "Unlimited weddings",
       "Unlimited guests",
       "Team collaboration (5 staff seats)",
-      "Vendor-collaboration workspaces",
+      "Cross-wedding analytics & revenue tracking",
       "Planner storefront on a shareable platform URL",
       "Optional custom domain",
       "1,500 AI credits/month",
@@ -175,7 +175,7 @@ export default function HomePage() {
               The connected operating system built specifically for wedding planners.
             </h1>
             <p className="mt-7 text-lg leading-8 text-slate-300 sm:text-xl">
-              Replace scattered spreadsheets, messages, documents, and timelines with one planner-owned workspace that keeps couples, guests, vendors, and teams aligned.
+              Manage the wedding record, public details, couple timeline, and guest-response context from one planner-owned workspace—while planner-only operations stay private.
             </p>
             <div className="mt-9 flex flex-col gap-4 sm:flex-row sm:items-center">
               <Link

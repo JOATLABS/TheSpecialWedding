@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-14 — Public marketing copy matches visible planner proof
+
+- Replaced automatic-publishing, unseen dashboard-signal, live-propagation, couple-view parity, and vendor-delivery claims with the exact read-only outcomes demonstrated by the Phase 1 planner walkthrough contracts.
+- Removed the unfinished vendor-collaboration promise from every public Signature-plan source, disabled the corresponding Signature and Enterprise entitlement defaults, and described the proven planner-owned vendor CRM, contract, and milestone workflow instead.
+- Replaced the two stale hidden product proofs with manually driven, native 1440×900 Chrome captures of the public venue view and populated planner Gallery Management view. Each untouched PNG now carries a build-bound visual-review receipt and publishes through the existing full-window, uncropped image contract. Follow-up gap: the hero and seven Phase 1 walkthrough recordings still require clean-build human capture and playback approval before publication.
+
 ## 2026-07-14 — Outcome-led manual walkthrough contracts
 
 - Replaced the overloaded eight-checkpoint hero tour with a recordable 75-second planner-OS story that follows one wedding source into the public and couple views, then shows the same wedding's guest-response state in planner operations without implying the recording created it. Seating, vendors, contracts, and budget remain in their own focused clips.

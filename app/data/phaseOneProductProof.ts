@@ -20,10 +20,10 @@ export const PHASE_ONE_PRODUCT_STORIES = [
   {
     id: 'connection',
     pillar: 'Connection Over Tools',
-    headline: 'Change the plan once. Every surface stays aligned.',
+    headline: 'One wedding plan, presented clearly across each audience.',
     description:
-      'The planner record drives event days, the couple portal, guest-facing details, and the public wedding site. A schedule change stops being a chain of PDFs, texts, and spreadsheet corrections.',
-    proof: 'Wedding configuration → couple portal → public schedule',
+      'Start with the planner-owned event plan, then compare the matching venue and time in the public microsite and couple timeline. Planner controls remain private.',
+    proof: 'Planner event record → public schedule → couple timeline',
     image: getMarketingCaptureAsset('wedding-configuration', 'homepage'),
     imageAlt: 'Populated wedding configuration for Sofia and Daniel in the Marigold and Co. planner workspace',
     supportingImages: [
@@ -43,20 +43,20 @@ export const PHASE_ONE_PRODUCT_STORIES = [
   {
     id: 'disorganization-tax',
     pillar: 'Disorganization Tax',
-    headline: 'Start the morning knowing what changed overnight.',
+    headline: 'Start the morning with the weddings that need attention.',
     description:
-      'Morning View brings active weddings, RSVP movement, unread conversations, upcoming work, and financial signals into one operational view—before the first client message arrives.',
-    proof: 'Two active weddings, one prioritized morning view',
+      'Morning View compares active weddings using RSVP movement, recent activity, pending forms, and setup progress, then points the planner to the next wedding action.',
+    proof: 'Two active weddings · RSVP, activity, forms, and setup signals',
     image: getMarketingCaptureAsset('dashboard', 'homepage'),
     imageAlt: 'Populated Morning View showing active weddings and prioritized planner work',
     supportingImages: [
       {
-        label: 'Conversation changes',
+        label: 'Planner inbox',
         image: getMarketingCaptureAsset('inbox', 'homepage'),
         imageAlt: 'Planner inbox showing wedding conversations in one operational queue',
       },
       {
-        label: 'Financial changes',
+        label: 'Wedding budget',
         image: getMarketingCaptureAsset('budget', 'homepage'),
         imageAlt: 'Wedding budget showing current category spend and remaining funds',
       },
@@ -66,9 +66,9 @@ export const PHASE_ONE_PRODUCT_STORIES = [
   {
     id: 'couple-boundaries',
     pillar: 'Couple Experience + Boundaries',
-    headline: 'Give couples answers without becoming their human API.',
+    headline: 'Give couples a clear view without exposing planner operations.',
     description:
-      'The couple sees the schedule, messages, forms, registry, FAQs, memories, and payment checkpoints you choose to share. Planner-only operations remain private, and fewer questions spill into late-night texts.',
+      'The couple portal brings the wedding overview, shared timeline, payment context, and assigned forms into one guided experience. Planner-only controls remain private.',
     proof: 'One guided portal, planner-owned boundaries',
     image: getMarketingCaptureAsset('couple-portal', 'homepage'),
     imageAlt: 'Sofia and Daniel couple portal with their shared wedding plan and next actions',
@@ -89,10 +89,10 @@ export const PHASE_ONE_PRODUCT_STORIES = [
   {
     id: 'built-for-planners',
     pillar: 'Built for Planners',
-    headline: 'Move from guest list to event-day floor plan without rebuilding the data.',
+    headline: 'Review guest context and a venue-aware seating plan in wedding-specific workspaces.',
     description:
-      'Guest households, RSVP status, meals, plus-ones, tables, room geometry, and venue fixtures stay connected. This is wedding-planner infrastructure, not a generic project board with wedding labels.',
-    proof: 'Guest → RSVP → table → venue plan',
+      'Guest Management shows response, group, meal, and plus-one context. Seating shows the room outline, fixtures, tables, assignments, and layout checks. Planner Vendor Management keeps private contacts, contracts, and payment status in its own operational view.',
+    proof: 'Guest context · seating plan · planner vendor records',
     image: getMarketingCaptureAsset('seating-orchestrator', 'homepage'),
     imageAlt: 'Venue-aware seating plan with tables, fixtures, and assigned guests',
     supportingImages: [
@@ -102,9 +102,9 @@ export const PHASE_ONE_PRODUCT_STORIES = [
         imageAlt: 'Planner guest management workspace with RSVP and household details',
       },
       {
-        label: 'Vendor delivery',
+        label: 'Planner vendor records',
         image: getMarketingCaptureAsset('vendor-network', 'homepage'),
-        imageAlt: 'Planner vendor workspace connecting wedding partners to delivery',
+        imageAlt: 'Planner Vendor Management showing private contacts, contracts, and payment status',
       },
     ],
     featureIds: ['guest-management', 'seating-orchestrator', 'vendor-network', 'team'],

@@ -94,7 +94,6 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
       'Unlimited guests',
       'Everything in Boutique',
       'Team collaboration (5 staff seats)',
-      'Vendor-collaboration workspaces',
       'Cross-wedding analytics & revenue tracking',
       '1,500 AI credits/month',
       '100GB guest memories storage',

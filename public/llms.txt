@@ -22,7 +22,7 @@ The marketing site at https://thespecialwedding.io is written for independent pl
 - Wedding website and couple portal for RSVP collection, guest-facing details, gallery uploads, forms, and planner-couple messaging
 - Guest management for guest lists, plus-ones, dietary needs, accessibility notes, seating assignments, and RSVP status
 - Seating orchestration with table planning, capacity awareness, and guest-detail context
-- Vendor CRM and vendor directory for vendor discovery, assignments, contracts, payments, files, and collaboration workflows
+- Planner-owned vendor CRM and public vendor directory for discovery, private contacts, assignments, agreements, files, and payment context
 - AI-assisted tools for package pricing, contract drafting, vendor outreach, cash-flow guidance, and planning content
 - Communication tools for planner inboxes, reminders, invitations, support threads, and couple messaging
 - Media and guest memories features for collecting and organizing wedding-day photos and gallery uploads
@@ -34,7 +34,7 @@ The public pricing model uses four plans:
 
 - **Solo**: Free plan for trying The Special Wedding with one active wedding. Includes guest list and RSVP tools, a branded wedding website, a basic timeline builder, and 1GB guest memories storage.
 - **Boutique**: $49/month for independent planners. Includes unlimited weddings, unlimited guests, vendor management, seating orchestration, automated reminders, Google and Outlook calendar sync, 300 AI credits per month, 25GB guest memories storage, and email support.
-- **Signature**: $149/month for planning agencies. Includes everything in Boutique plus 5 staff seats, vendor-collaboration workspaces, cross-wedding analytics and revenue tracking, a planner storefront on a shareable platform URL, an optional custom domain, 1,500 AI credits per month, 100GB guest memories storage, priority support, and support-assisted onboarding by request.
+- **Signature**: $149/month for planning agencies. Includes everything in Boutique plus 5 staff seats, cross-wedding analytics and revenue tracking, a planner storefront on a shareable platform URL, an optional custom domain, 1,500 AI credits per month, 100GB guest memories storage, priority support, and support-assisted onboarding by request.
 - **Enterprise**: $399/month for larger planning teams. Includes everything in Signature, including the planner storefront and optional custom domain, plus 20 staff seats, 5,000 AI credits per month, 500GB guest memories storage, and support-assisted launch planning.
 
 Paid plans include a 30-day free trial with no credit card required at signup.
@@ -56,7 +56,7 @@ Representative outcomes include:
 - Existing guest lists can be imported from spreadsheets.
 - Each wedding has its own workspace, guest list, budget, seating, branding, and couple-facing portal.
 - Planner teams can collaborate through staff seats on the Signature and Enterprise plans.
-- Vendors can be invited into dedicated workspaces with role-based access to timelines, contracts, and file exchanges.
+- Vendor relationships are managed through private planner-owned records; the public vendor directory is separate and vendors are not given access to the planner workspace.
 - Customers can export their data. After cancellation, account data is retained for 30 days before permanent deletion.
 - The Special Wedding differs from generic CRMs because it includes wedding-specific tools such as seating charts, guest RSVPs, timelines, guest memories, vendor contracts, and planner AI workflows.
 

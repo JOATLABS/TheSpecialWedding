@@ -17,9 +17,9 @@ from app.core.database import mongo
 
 BLOG_ARTICLES = [
     {
-        "title": "Introducing The Special Wedding: One Platform to Replace Your Entire Tool Stack",
+        "title": "Introducing The Special Wedding: A Connected Operating System for Wedding Planners",
         "slug": "introducing-the-special-wedding",
-        "excerpt": "Stop jumping between 8+ tools. We built The Special Wedding to give professional wedding planners everything they need in one purpose-built platform — powered by AI.",
+        "excerpt": "One planner-owned workspace for the wedding record, couple experience, public details, guests, seating, vendors, and business operations.",
         "category": "platform-updates",
         "tags": [
             "wedding planner software",
@@ -30,8 +30,8 @@ BLOG_ARTICLES = [
         "featured": True,
         "published_date": "2026-03-19",
         "read_time": 7,
-        "meta_description": "The Special Wedding is the all-in-one platform for professional wedding planners. Purpose-built for weddings, powered by AI.",
-        "content": """Wedding planners today juggle an overwhelming array of tools. Client management in HoneyBook. Seating charts in Excel. Contracts in DocuSign. Guest RSVP tracking in yet another app. Payment collection through Stripe or PayPal directly. Timeline management in Asana. Budget tracking in a spreadsheet. The vendor collaboration happens on email threads that spiral into 47 reply-alls.
+        "meta_description": "The Special Wedding is a connected operating system built specifically for professional wedding planners.",
+        "content": """Wedding planners today juggle an overwhelming array of tools. Client management in HoneyBook. Seating charts in Excel. Contracts in DocuSign. Guest RSVP tracking in yet another app. Payment collection through Stripe or PayPal directly. Timeline management in Asana. Budget tracking in a spreadsheet. Vendor details and decisions disappear into email threads that spiral into 47 reply-alls.
 
 It's inefficient. It's error-prone. And it's costing you precious hours every week that you could spend on what you actually love: making weddings special.
 
@@ -55,7 +55,7 @@ The Special Wedding is purpose-built from the ground up for wedding planners. We
 
 **Timeline & Reminders:** Build the wedding timeline, set automated reminders for yourself and guests, manage vendor confirmations — all on one calendar that actually works with the rest of your system.
 
-**Vendor Collaboration:** Instead of forwarding emails between you, the couple, and vendors, bring everyone into the platform. Share documents, send updates, get confirmations — all in context, all traceable.
+**Planner Vendor Management:** Keep private contacts, notes, files, agreements, quote context, and payment status attached to the wedding inside the planner workspace. The public vendor directory supports discovery without giving vendors access to planner operations.
 
 **Contracts & Documentation:** Create, send, and track contracts with e-signature. Store all planning documents in one searchable library tied to each wedding.
 
@@ -89,18 +89,14 @@ The Special Wedding is designed for people who plan weddings professionally. Tha
 
 Your couples' information and wedding details are some of the most sensitive data you manage. The Special Wedding encrypts everything at rest and in transit. We use SOC 2 compliance standards, regular security audits, and automated backups. Your data belongs to you — we're just securely holding it for you.
 
-### What Planners Are Saying
+### What You Can Verify
 
-"I cut my planning time by 25% in the first month just from not managing multiple tools. More importantly, I stopped losing information between apps." — Sarah, boutique planner, Brooklyn
-
-"The seating chart alone is worth it. Used to spend 6 hours manually arranging. Now I spend 30 minutes tweaking AI suggestions." — Marcus, destination wedding specialist, Miami
-
-"For the first time I have one place where all the couple's information lives. No more forwarding emails or copying details between apps." — Jessica, agency owner (managing 3 planners), Portland
+The public product proof shows the current planner workspace, couple portal, public wedding, guest management, seating, vendor records, budget, forms, and gallery in a fictional seeded wedding. Review those visible workflows before deciding whether the platform fits your studio.
 
 ### Get Started Today
 
 <!-- SYNC-WITH-SEED: trial_days — update when SEED_VERSION bumps paid trial length -->
-Sign up for a free 30-day trial. No credit card required until the trial ends. You get full access to all features, unlimited weddings during the trial, and dedicated onboarding support to make sure you're set up for success.
+Choose a paid plan for a 30-day trial with no credit card required at signup, or start with Solo for one active wedding. Access follows the limits and features of the selected plan.
 
 Stop managing your tools. Start managing your weddings.""",
     },

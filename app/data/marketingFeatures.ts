@@ -27,11 +27,9 @@ export type MarketingFeature = {
   blogSlug?: string;
 };
 
-// Brand anchor: "Run every wedding from one record."
-// Every entry tells a story, not a capability bullet: open with a recognizable
-// planner moment, name the tools TSW replaces, and ladder back to one record,
-// five surfaces (planner, couple, guest, vendor, team) synced live. Keep each
-// screenshot aligned with the exact product surface being described.
+// Phase 1 copy must describe the prepared state visible in approved product
+// proof. Do not imply mutation, automatic publishing, vendor access, or
+// cross-surface propagation unless an approved capture contract demonstrates it.
 export const MARKETING_FEATURES: MarketingFeature[] = [
   {
     id: 'dashboard',
@@ -39,9 +37,9 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     title: 'The Morning View',
     category: 'Operations',
     image: featureCapture('dashboard'),
-    tagline: 'Open the app at 8am and see exactly what changed overnight — no CSV, no refresh.',
+    tagline: 'Compare active weddings by RSVP movement, recent activity, pending forms, and setup progress.',
     description:
-      "Most planners start their week stitching together HoneyBook pipeline, Aisle Planner tasks, a Google Sheet of RSVPs, and a Stripe tab for overdue invoices. The Morning View replaces that ritual. One live dashboard surfaces every wedding's RSVP velocity, cash-flow alerts, overdue payments, unread couple messages, upcoming milestones, and AI-surfaced insights — because every surface writes to the same record this reads from. Activation funnels, retention cohorts, and the full audit log live here too, so you know what your business is doing without ever exporting anything.",
+      'Morning View gives planners a portfolio scan of populated status, progress, and next-action context. Open the wedding record when setup needs attention.',
     ai: true,
   },
   {
@@ -50,31 +48,31 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     title: 'Wedding Timeline & Event Days',
     category: 'Operations',
     image: featureCapture('real-time'),
-    tagline: "Build each event day once — ceremony, reception, brunch, cultural events — and keep the planner, couple, team, and slug aligned.",
+    tagline: 'Present rehearsal, ceremony, reception, brunch, and cultural-event details across planner, couple, and public views.',
     description:
-      "A wedding is rarely one block on one calendar. Configure the rehearsal, ceremony, reception, brunch, and cultural events with dates, venues, times, attire, and order-of-events. The planner timeline, couple portal, reminders, and public slug all read from the same event-day record, so a time change updates the guest-facing schedule instead of becoming another PDF you have to resend.",
+      'Configure each event day with its date, venue, time, attire, and order of events. The planner record, couple timeline, and public schedule present the prepared details for their respective audiences.',
     ai: false,
   },
   {
     id: 'couple-portal',
     icon: '💍',
-    title: 'The Couple Sees What You See',
+    title: 'A Guided Couple Portal',
     category: 'Planner Portal',
     image: featureCapture('couple-portal'),
-    tagline: 'Stop being the human API between the couple and every planning tool.',
+    tagline: 'Share the schedule, payment context, forms, and next steps couples need while planner-only work stays private.',
     description:
-      "Nine months out, your couple texts for the fourth time: 'what time is cocktail hour again?' Because the answer lives in a Google Doc they can't find, a venue email they've archived, and a timeline PDF you sent in January. The Couple Portal ends that loop. Couples log into the same record you work in — dashboard, timeline, payments, forms, inbox, meetings, push notifications. They maintain their own registry URLs and FAQ entries (rendered on both the portal and the public microsite). They annotate events and order-of-events with threaded, status-tracked notes you reply to in place. They submit forms on their schedule. The inbound texts stop because the answer is always live on the record they're already reading.",
+      'Couples get a guided dashboard for their wedding overview, timeline, payment context, and assigned forms. Planner-only controls and internal operations remain outside the couple view.',
     ai: false,
   },
   {
     id: 'wedding-website',
     icon: '🌐',
-    title: 'The Microsite Auto-Publishes',
+    title: 'Planner Record → Public Microsite',
     category: 'Wedding Website',
     image: featureCapture('wedding-website'),
-    tagline: 'Every wedding ships with a branded microsite — no Squarespace, no extra login, never out of date.',
+    tagline: 'Present the wedding story, schedule, and approved gallery in a polished guest-facing view without planner controls.',
     description:
-      "Booking a couple used to mean another $200/yr Squarespace site, another login, another place the schedule can go stale. Not here. The second a wedding exists in your dashboard, its public microsite is live: theme colors, fonts, the couple's story, wedding party, event schedule, gallery, RSVP flow, and guest memory uploads. Every surface reads the same record you write to — so the website can never drift from the plan. The wedding-website builder category, for this couple, ceases to exist.",
+      'Prepare the story, branding, event details, and gallery in the planner wedding record. The public microsite presents those approved details for guests while private planning work stays out of view.',
     ai: false,
   },
   {
@@ -83,9 +81,9 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     title: 'Wedding Configuration',
     category: 'Planner Setup',
     image: featureCapture('wedding-configuration'),
-    tagline: 'Set the wedding details once: event days, RSVP rules, privacy, registry, FAQ, theme, story, and slug content.',
+    tagline: 'Review event days, RSVP rules, privacy, registry, FAQs, theme, story, and public-wedding settings in one planner record.',
     description:
-      "The Configure screen is the easy setup layer for what appears on the public wedding slug. Add event days with venue, time, location, and attire; choose RSVP and privacy rules; maintain registry and FAQ content; set theme and story details; then save once and let the public microsite, couple portal, RSVP flow, and guest schedule read the same source. No rebuilding the wedding website every time a planner edits a detail.",
+      'The Configure screen groups the planner-owned details behind the wedding experience: event days, venue, time, attire, RSVP and privacy rules, registry, FAQs, theme, and story. Public and couple views present the prepared details for their audiences while planner controls remain private.',
     ai: false,
   },
   {
@@ -94,9 +92,9 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     title: 'Gallery Management',
     category: 'Planner Media',
     image: featureCapture('gallery-management'),
-    tagline: 'Manage public galleries, story images, wedding-party photos, and guest-list-to-slug publishing from one place.',
+    tagline: 'Review each wedding gallery and its approved media from the planner workspace.',
     description:
-      "Gallery Management is more than uploading pretty photos. The planner can organize public gallery assets, assign story and wedding-party images, and sync wedding-party members from the guest list so bridesmaids, groomsmen, maid of honor, and best man details can appear on the slug without double entry. The same media library feeds the microsite gallery and the couple-facing story, while Guest Memories stays the upload-and-review flow for photos guests capture at the wedding.",
+      'Select a wedding and review its populated gallery, image labels, folder category, and total count from one planner workspace. Uploading new media and reviewing Guest Memories remain separate, clearly labelled workflows.',
     ai: false,
   },
   {
@@ -105,9 +103,9 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     title: 'Guest Management',
     category: 'Guest Pipeline',
     image: featureCapture('guest-management'),
-    tagline: 'Manage the wedding guest list, RSVP status, plus-ones, groups, and guest details from one planner page.',
+    tagline: 'Review invitation, RSVP, group, meal, and plus-one context from one planner page.',
     description:
-      "This is the planner's guest operating table, not a generic spreadsheet. Import the list, clean up households, manage RSVP status, track plus-ones, capture meal and accessibility notes, and open the full guest profile when something changes. Every guest record feeds the RSVP flow, reminder sends, seating chart, catering counts, couple portal, and day-of exports, so the same person is never patched in five places.",
+      'Guest Management combines populated totals with filterable table and card views, so planners can inspect response and guest context without rebuilding a spreadsheet.',
     ai: false,
   },
   {
