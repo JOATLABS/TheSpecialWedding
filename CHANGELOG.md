@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-14 — Phase 1 stories match their visible product proof
+
+- Made the planner Events view the lead proof for Connection Over Tools and removed the unsupported claim that the existing couple overview still displays the same venue and time. The story now describes the exact planner event, public guest, and guided couple contexts visible in its three full-window images.
+- Strengthened the agency strategy's Disorganization Tax and Built for Planners category positions without promising unseen automation: Morning View is framed as one prioritized operating view, while guest, seating, and private vendor work are framed as connected wedding-specific workflows rather than generic project-tool substitutes.
+- Added regression coverage for the exact story copy, proof mapping, and non-cropping render contract. Follow-up gap: the hero and seven supporting walkthroughs still need genuine manually driven raw footage, narration, and normal-speed desktop/mobile playback approval before publication.
+
 ## 2026-07-14 — Wedding media access reports the real state
 
 - Kept Story editing available to team members with wedding-settings permission while independently gating uploaded-media browsing on Manage Gallery permission. Permission denials and storage failures now preserve current selections and render explicit states instead of falsely claiming that zero images exist.
