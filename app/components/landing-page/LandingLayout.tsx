@@ -2,7 +2,6 @@
 
 import React, { useState, useCallback, useRef } from "react";
 import Link from "next/link";
-import Image from 'next/image';
 
 import { SectionWrapper } from '@/components/landing-page/SectionWrapper';
 import { Modern3DBackground } from "@/components/landing-page/Modern3DBackground";
@@ -21,6 +20,7 @@ import RSVPModal from '@/components/RSVPModal';
 import GuestHelpRequestModal from '@/components/GuestHelpRequestModal';
 import { resolveMediaUrl } from '@/utils/mediaUrl';
 import { RSVPHelpBlock } from '@/components/landing-page/RSVPHelpBlock';
+import { LandingGalleryPreview } from '@/components/landing-page/LandingGalleryPreview';
 
 /* ═══════════════════════════════════════════════════════════
    Wedding page content — rendered as primary + lightweight clone
@@ -30,11 +30,23 @@ interface WeddingContentProps {
   isClone: boolean;
   wedding: LandingLayoutProps['wedding'];
   images: LandingLayoutProps['images'];
+  galleryLoading: boolean;
+  galleryError: boolean;
+  onGalleryRetry?: () => void;
   onCelebrateClick?: () => void;
   onRequestHelp?: () => void;
 }
 
-function WeddingContent({ isClone, wedding, images, onCelebrateClick, onRequestHelp }: WeddingContentProps) {
+function WeddingContent({
+  isClone,
+  wedding,
+  images,
+  galleryLoading,
+  galleryError,
+  onGalleryRetry,
+  onCelebrateClick,
+  onRequestHelp,
+}: WeddingContentProps) {
   return (
     <div className="relative z-10">
       {/* Hero */}
@@ -78,24 +90,12 @@ function WeddingContent({ isClone, wedding, images, onCelebrateClick, onRequestH
       <SectionWrapper id={isClone ? undefined : "gallery"}>
         <GlassCard className="max-w-6xl mx-auto p-8" depth="mid" theme={wedding.theme_config}>
           <h2 className="text-4xl font-bold text-center mb-6 theme-primary">Gallery</h2>
-          {images.length > 0 ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              {images.slice(0, 8).map((img, i) => (
-                <div key={img.key} className="relative w-full h-48 rounded-lg overflow-hidden shadow-lg">
-                  <Image
-                    src={img.url}
-                    alt={`Memory ${i + 1}`}
-                    fill
-                    className="object-cover"
-                    sizes="(max-width: 768px) 50vw, 25vw"
-                    onError={(event) => { event.currentTarget.style.display = 'none'; }}
-                  />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-center text-gray-600 dark:text-gray-300 mb-6">Photos will be added soon!</p>
-          )}
+          <LandingGalleryPreview
+            images={images}
+            loading={galleryLoading}
+            error={galleryError}
+            onRetry={isClone ? undefined : onGalleryRetry}
+          />
           <div className="text-center">
             {!isClone ? (
               <Link
@@ -272,7 +272,15 @@ function WeddingContent({ isClone, wedding, images, onCelebrateClick, onRequestH
    Main layout — assembles fixed layers + infinite scroll content
    ═══════════════════════════════════════════════════════════ */
 
-export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, guest, openGuestRsvpOnLoad }) => {
+export const LandingLayout: React.FC<LandingLayoutProps> = ({
+  wedding,
+  images,
+  galleryLoading = false,
+  galleryError = false,
+  onGalleryRetry,
+  guest,
+  openGuestRsvpOnLoad,
+}) => {
   // Apply theme CSS variables (--theme-primary, --theme-secondary, etc.)
   useTheme(wedding);
 
@@ -322,6 +330,9 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, g
               isClone={isClone}
               wedding={wedding}
               images={images}
+              galleryLoading={galleryLoading}
+              galleryError={galleryError}
+              onGalleryRetry={onGalleryRetry}
               onCelebrateClick={() => {
                 if (guest) {
                   setManualRSVPModalOpen(true);

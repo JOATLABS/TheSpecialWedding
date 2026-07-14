@@ -286,6 +286,15 @@ def test_public_gallery_does_not_bypass_storage_for_wrong_or_missing_seed_scope(
 def test_marketing_capture_gallery_keys_look_like_real_wedding_media():
     for item in MARKETING_CAPTURE_GALLERY_ITEMS:
         assert item["key"].startswith("gallery/sofia-and-daniel/20270125-")
+        assert item["key"].endswith(".webp")
+        assert item["url"].endswith(".webp")
+        assert item["content_type"] == "image/webp"
+        assert item["display_name"]
+        assert item["alt"]
+        assert (
+            item["credit"]
+            == "Fictional capture fixture generated for The Special Wedding"
+        )
         assert "marketing-capture" not in item["key"]
         assert "test" not in item["key"]
 

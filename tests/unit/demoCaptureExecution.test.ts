@@ -265,8 +265,20 @@ describe('demo capture execution', () => {
 
     const validator = source('scripts/demo-videos/validate-manual-product-images.ts');
     assert.match(validator, /MARKETING_CAPTURE_MANIFEST/);
-    assert.match(validator, /manual-in-app-browser/);
+    assert.match(validator, /manual-visible-browser/);
+    assert.match(validator, /pageZoomPercent/);
+    assert.match(validator, /devicePixelRatio/);
+    assert.match(validator, /Capture screenshot/);
+    assert.match(validator, /scriptedBrowserCaptureWasUsed/);
     assert.match(validator, /entry\.status !== 'approved'/);
+    assert.match(validator, /runtimeBuildIdentity/);
+    assert.match(validator, /MARKETING_CAPTURE_BUILD_IDENTITY_SELECTOR/);
+    assert.match(validator, /merge-base/);
+    assert.match(validator, /--is-ancestor/);
+    assert.match(validator, /capture build must be an ancestor of current HEAD/);
+    assert.match(validator, /--verify-git-ancestry/);
+    assert.match(validator, /validatePublishedProductImages/);
+    assert.match(validator, /--published/);
     assert.match(validator, /PNG/);
     assert.match(validator, /checksum/);
     assert.doesNotMatch(validator, /playwright|puppeteer|chromium/i);
@@ -275,10 +287,49 @@ describe('demo capture execution', () => {
       /\.goto\s*\(|\.screenshot\s*\(|page\.(?:locator|evaluate)|browser\.(?:newContext|close)/i,
     );
 
+    const pureContractStart = validator.indexOf('export function assertManualFullWindowContract');
+    const pureContractEnd = validator.indexOf(
+      '\nexport function validateApprovedProductImage',
+      pureContractStart,
+    );
+    assert.ok(pureContractStart >= 0 && pureContractEnd > pureContractStart);
+    const pureContract = validator.slice(pureContractStart, pureContractEnd);
+    assert.doesNotMatch(pureContract, /execFileSync|assertCaptureBuildAncestry/);
+
     const packageJson = source('package.json');
     assert.match(
       packageJson,
-      /"demo:validate-images": "tsx scripts\/demo-videos\/validate-manual-product-images\.ts"/,
+      /"demo:validate-images": "tsx scripts\/demo-videos\/validate-manual-product-images\.ts --verify-git-ancestry"/,
     );
+    assert.match(
+      packageJson,
+      /"demo:validate-published-images": "tsx scripts\/demo-videos\/validate-manual-product-images\.ts --published"/,
+    );
+    assert.match(
+      packageJson,
+      /"demo:validate-published-ancestry": "tsx scripts\/demo-videos\/validate-manual-product-images\.ts --published --verify-git-ancestry"/,
+    );
+    assert.match(
+      packageJson,
+      /"build": "node scripts\/ensure-deps\.mjs && npm run demo:validate-published-images && next build --webpack"/,
+    );
+    const packageConfig = JSON.parse(packageJson) as { scripts: Record<string, string> };
+    assert.doesNotMatch(packageConfig.scripts.build, /git|ancestry|--verify-git-ancestry/);
+
+    const ci = source('.github/workflows/ci.yml');
+    assert.match(
+      ci,
+      /frontend-lint:[\s\S]*?actions\/checkout@v7\s+with:\s+fetch-depth: 0[\s\S]*?npm run demo:validate-published-ancestry[\s\S]*?npm run build/,
+    );
+
+    const runbook = source('docs/marketing/demo-video-production-runbook.md');
+    assert.match(runbook, /NODE_ENV=production npm run build/);
+    assert.match(runbook, /TESTBED_GOOGLE_MAPS_API_KEY=""/);
+    assert.match(runbook, /browser zoom.*100%/i);
+    assert.match(runbook, /Responsive.*1440(?:×|x)900.*DPR 1/i);
+    assert.match(runbook, /Capture screenshot/);
+    assert.match(runbook, /not [`*]*Capture full size screenshot/i);
+    assert.match(runbook, /original 1440(?:×|x)900 PNG/i);
+    assert.match(runbook, /no crop, resize, stitching, scripted navigation, or scripted screenshot/i);
   });
 });

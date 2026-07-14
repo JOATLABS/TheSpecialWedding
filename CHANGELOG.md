@@ -1,10 +1,15 @@
 # Changelog
 
-## 2026-07-14 — Fail-closed marketing-capture frontend startup
+## 2026-07-13 — Fail-closed marketing-capture frontend startup
 
-- Bound the testbed frontend command, health check, and marketing-capture route preflight to one canonical origin so an invalid host can no longer pass readiness through a different hostname.
-- Forced the capture-only Next server to run with `NODE_ENV=production`, preventing the repository's development default from silently invalidating a production-like take.
+- Bound the testbed frontend command, backend proxy targets, health check, and marketing-capture route preflight to canonical `127.0.0.1` origins so inherited deployment variables or an invalid host cannot redirect capture traffic or credentials outside the isolated runtime.
+- Scoped `NODE_ENV=production` and the intentionally blank Maps key to the capture-only Next server, and made the runbook stop the same named `marketing-capture` tmux session before rebuilding so a stale server cannot survive behind the new build.
 - Added contract coverage proving the harness injects the canonical origin and rejects unreachable or 404 frontend checkpoints before any manual visual review begins.
+- Replaced the capture fixture's simplistic gallery SVGs with approved fictional WebP media, kept guest-memory previews on the canonical frontend origin, added an honest gallery-loading state, removed fake Knowledge Base image placeholders and raw storage-key labels, and made a missing Maps embed render as a clean Directions state instead of a failed provider page.
+- Made public gallery reads cancelable and latest-request-only across the wedding landing page and full gallery, separated network failures from genuinely empty galleries, added explicit retry states, and removed failed preview images without hiding healthy photos.
+- Recorded the three fictional gallery fixtures' exact generation prompts, source and derived hashes, dimensions, conversion history, privacy boundaries, and repository credit so demo media cannot be mistaken for customer, venue, photographer, or stock-library work.
+- Corrected the Phase 1 vendor story to the implemented planner workflow: vendor agreement details, contract sections, payment milestones, and wedding budget context. The clip no longer enters a client portal or claims couple signing, connected-account funds, vendor payouts, or Stripe behavior that its visible route does not prove.
+- Unified stills and video on a `manual-visible-browser` contract. Final stills require visible Chrome at 100% zoom, DevTools Responsive 1440x900 at DPR 1, the `Capture screenshot` command, an untouched original PNG, and an individual manual review tied to the exact served Git build. Runtime rendering and Gitless production builds reject status-only approval, checksum/build drift, scripted capture, stale runtime identity, and invalid receipts, while full-history CI and final local validation separately enforce capture-build ancestry. One canonical scene contract now keeps all 17 routes, sessions, stable text, and genuinely non-mutating interactions in parity; the local-only testbed carries the correct planner/couple credentials per scene and rejects dirty checkouts, unsafe origins, redirects, blank shells, the wrong served build, and gallery-byte drift without following redirects or forwarding credentials. Follow-up gap: all 17 stills and the hero plus seven Phase 1 walkthrough takes remain pending until the rebuilt seeded frontend is driven, captured, and inspected one scene at a time.
 
 All notable changes to this project will be documented in this file.
 

@@ -249,12 +249,15 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
           ) : selectedEvent?.details?.location ? (
             <div className="flex h-full items-center justify-center bg-gray-100 px-6 text-center dark:bg-gray-700">
               <div className="max-w-md">
-                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-wedding-rose">Map unavailable</p>
+                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-wedding-rose">Directions</p>
                 <p className="mt-3 text-lg font-semibold theme-primary">
                   {selectedEvent.details?.venue_name || formatEventType(selectedEvent.type)}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
                   {selectedEvent.details.location}
+                </p>
+                <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                  Open the venue in your preferred map app.
                 </p>
                 <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-center">
                   <a

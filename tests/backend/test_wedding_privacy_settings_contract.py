@@ -304,22 +304,22 @@ def test_serialize_wedding_response_preserves_repository_static_media_paths():
         {
             "_id": "wed_static_media",
             "privacy_settings": {"privacy_mode": "public"},
-            "featured_image": "/demo-gallery/elegant-couple-stairs.svg",
-            "our_story": {"image_url": "/demo-gallery/elegant-couple-stairs.svg"},
+            "featured_image": "/demo-gallery/sofia-daniel-terrace.webp",
+            "our_story": {"image_url": "/demo-gallery/sofia-daniel-terrace.webp"},
             "wedding_party": [
                 {
                     "id": "party_1",
-                    "image_url": "/demo-gallery/elegant-ceremony-aisle.svg",
+                    "image_url": "/demo-gallery/sofia-daniel-ceremony.webp",
                 }
             ],
         }
     )
 
-    assert result["featured_image"] == "/demo-gallery/elegant-couple-stairs.svg"
-    assert result["our_story"]["image_url"] == "/demo-gallery/elegant-couple-stairs.svg"
+    assert result["featured_image"] == "/demo-gallery/sofia-daniel-terrace.webp"
+    assert result["our_story"]["image_url"] == "/demo-gallery/sofia-daniel-terrace.webp"
     assert (
         result["wedding_party"][0]["image_url"]
-        == "/demo-gallery/elegant-ceremony-aisle.svg"
+        == "/demo-gallery/sofia-daniel-ceremony.webp"
     )
 
 

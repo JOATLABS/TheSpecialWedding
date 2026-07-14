@@ -1,5 +1,9 @@
 export const MARKETING_CAPTURE_BUILD = '3d089827224b33db223d99c4950631d7f533f64d';
 
+export const MARKETING_CAPTURE_RUNTIME_ORIGIN = 'http://127.0.0.1:3100' as const;
+export const MARKETING_CAPTURE_BUILD_IDENTITY_SELECTOR =
+  'meta[name="tsw-app-build-commit"]' as const;
+
 export const MARKETING_CAPTURE_VIEWPORT = {
   width: 1440,
   height: 900,
@@ -17,13 +21,41 @@ export type MarketingCaptureStatus = 'pending' | 'captured' | 'approved';
 export type MarketingCaptureTarget = 'hero' | 'homepage' | 'features';
 export type MarketingCaptureSession = (typeof MARKETING_CAPTURE_SESSIONS)[number];
 
+export type MarketingCaptureReviewReceipt = {
+  schemaVersion: 1;
+  featureId: string;
+  capturedAt: string;
+  reviewedAt: string;
+  reviewer: string;
+  appBuildCommit: string;
+  artifactSha256: string;
+  runtimeBuildIdentity: {
+    origin: typeof MARKETING_CAPTURE_RUNTIME_ORIGIN;
+    identitySelector: typeof MARKETING_CAPTURE_BUILD_IDENTITY_SELECTOR;
+    observedCommit: string;
+    verifiedAt: string;
+  };
+  browser: 'Google Chrome';
+  browserWasVisible: true;
+  interactionsWereManual: true;
+  scriptedBrowserCaptureWasUsed: false;
+  pageZoomPercent: 100;
+  viewportMode: 'Responsive';
+  devicePixelRatio: 1;
+  captureCommand: 'Capture screenshot';
+  fullSizeScreenshotWasUsed: false;
+  originalPngReviewed: true;
+  postCaptureTransformsApplied: false;
+};
+
 export type MarketingCaptureSource = {
   path: string;
   width: number;
   height: number;
   checksum: string;
   framing: 'full-window';
-  captureMethod: 'manual-in-app-browser';
+  captureMethod: 'manual-visible-browser';
+  reviewReceipt: MarketingCaptureReviewReceipt | null;
   captureBounds: {
     x: 0;
     y: 0;
@@ -40,6 +72,9 @@ export type MarketingCaptureRender = {
 };
 
 export type MarketingCaptureAsset = MarketingCaptureSource & {
+  featureId: string;
+  status: MarketingCaptureStatus;
+  build: string;
   render: MarketingCaptureRender;
 };
 
@@ -72,6 +107,7 @@ type CaptureSpec = {
   height: number;
   checksum: string;
   build?: string;
+  reviewReceipt?: MarketingCaptureReviewReceipt;
 };
 
 const CAPTURE_SPECS = {
@@ -87,6 +123,7 @@ const CAPTURE_SPECS = {
     status: 'pending',
     route: '/admin/weddings/wedding_marketing_capture_sofia_daniel',
     focal: 'main',
+    interaction: 'Open Events and wait for the Traditional event at The Glasshouse at Riverbend at 4:00 PM.',
     width: 1440,
     height: 900,
     checksum: '0bce1885ad9a4bf3ed46f927656a3de24696ba10a2edf98c219f8eecab1b89ff',
@@ -103,6 +140,7 @@ const CAPTURE_SPECS = {
     status: 'pending',
     route: '/sofia-and-daniel',
     focal: 'main',
+    interaction: 'Open the Venue section and wait for The Glasshouse at Riverbend.',
     width: 1440,
     height: 900,
     checksum: '5bd9238a0d5f1f1fa008d1f9ddc765216a0d033b34eb2ac4cd3bf43098b14890',
@@ -129,6 +167,7 @@ const CAPTURE_SPECS = {
     status: 'pending',
     route: '/admin/guests',
     focal: 'main',
+    interaction: 'Verify the wedding picker shows Sofia & Daniel; select it if needed.',
     width: 1440,
     height: 900,
     checksum: '5ddc34fb9174f62e3462f120c18c3ba5264c7c3ba49d3d18544202a6f5ee64a8',
@@ -137,6 +176,7 @@ const CAPTURE_SPECS = {
     status: 'pending',
     route: '/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel',
     focal: 'main',
+    interaction: 'Select Sofia & Daniel, then use the in-product Zoom out control twice until the canvas reads 70%. Keep Chrome page zoom at 100%.',
     width: 1440,
     height: 900,
     checksum: '322e6169246a4abf25f12b0047db01a94d31b2ae27f81673a793332e8b5726eb',
@@ -201,8 +241,9 @@ const CAPTURE_SPECS = {
   },
   forms: {
     status: 'pending',
-    route: '/admin/forms',
+    route: '/admin/forms/form_marketing_capture_couple_intake/edit',
     focal: 'main',
+    interaction: 'Open the seeded Couple Intake Questionnaire edit builder without changing any fields.',
     width: 1440,
     height: 900,
     checksum: 'e9bb6e66211abcf4b73ce458be4d5dbc130199868ca2c835c7d0cadef5c6642d',
@@ -219,18 +260,18 @@ const CAPTURE_SPECS = {
 
 const CAPTURE_SCENE_CONTEXT = {
   dashboard: { session: 'planner', expectedText: 'Welcome back, Marigold & Co. Weddings!' },
-  'real-time': { session: 'planner', expectedText: 'Sofia & Daniel' },
-  'couple-portal': { session: 'couple', expectedText: 'Sofia & Daniel' },
-  'wedding-website': { session: 'public', expectedText: 'Sofia & Daniel' },
+  'real-time': { session: 'planner', expectedText: 'The Glasshouse at Riverbend' },
+  'couple-portal': { session: 'couple', expectedText: '24 guests added so far' },
+  'wedding-website': { session: 'public', expectedText: 'The Glasshouse at Riverbend' },
   'wedding-configuration': { session: 'planner', expectedText: 'RSVP Configuration' },
-  'gallery-management': { session: 'planner', expectedText: 'Gallery Management' },
+  'gallery-management': { session: 'planner', expectedText: 'Garden terrace portrait' },
   'guest-management': { session: 'planner', expectedText: 'Guest Management' },
-  'seating-orchestrator': { session: 'planner', expectedText: 'Seating Arrangement' },
-  'guest-memories': { session: 'couple', expectedText: 'Guest Memories' },
-  inbox: { session: 'planner', expectedText: 'Inbox' },
+  'seating-orchestrator': { session: 'planner', expectedText: '70%' },
+  'guest-memories': { session: 'couple', expectedText: 'Review queue' },
+  inbox: { session: 'planner', expectedText: 'Sofia & Daniel' },
   'book-the-client': { session: 'planner', expectedText: 'Payment Milestones' },
   'payments-autopilot': { session: 'planner', expectedText: 'Money' },
-  budget: { session: 'planner', expectedText: 'Budget Overview' },
+  budget: { session: 'planner', expectedText: '$82,500' },
   'vendor-network': { session: 'planner', expectedText: 'Vendor Management' },
   'knowledge-base': { session: 'planner', expectedText: 'Knowledge Base' },
   forms: { session: 'planner', expectedText: 'Couple Intake Questionnaire' },
@@ -239,6 +280,95 @@ const CAPTURE_SCENE_CONTEXT = {
   keyof typeof CAPTURE_SPECS,
   { session: MarketingCaptureSession; expectedText: string }
 >;
+
+function parseCanonicalIsoDateTime(value: string): number | null {
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== value) {
+    return null;
+  }
+  return parsed;
+}
+
+/**
+ * Browser-safe publication gate for marketing proof images.
+ *
+ * This deliberately repeats the capture receipt's immutable attestations at
+ * render time. A status flip alone must never make an unreviewed, stale, or
+ * scripted artifact public.
+ */
+export function isMarketingCaptureAssetApproved(
+  asset: MarketingCaptureAsset,
+): boolean {
+  const receipt = asset.reviewReceipt;
+  if (
+    asset.status !== 'approved'
+    || asset.captureMethod !== 'manual-visible-browser'
+    || asset.framing !== 'full-window'
+    || asset.width !== MARKETING_CAPTURE_VIEWPORT.width
+    || asset.height !== MARKETING_CAPTURE_VIEWPORT.height
+    || asset.captureBounds.x !== 0
+    || asset.captureBounds.y !== 0
+    || asset.captureBounds.width !== asset.width
+    || asset.captureBounds.height !== asset.height
+    || asset.render.frameAspectRatio !== '16:10'
+    || asset.render.fit !== 'contain'
+    || asset.render.zoom !== false
+    || !/^[0-9a-f]{40}$/.test(asset.build)
+    || !/^[0-9a-f]{64}$/.test(asset.checksum)
+    || !receipt
+  ) {
+    return false;
+  }
+
+  const runtimeBuildIdentity = receipt.runtimeBuildIdentity;
+  if (
+    !runtimeBuildIdentity
+    || typeof receipt.capturedAt !== 'string'
+    || typeof receipt.reviewedAt !== 'string'
+    || typeof receipt.reviewer !== 'string'
+    || typeof runtimeBuildIdentity.verifiedAt !== 'string'
+  ) {
+    return false;
+  }
+
+  const capturedAt = parseCanonicalIsoDateTime(receipt.capturedAt);
+  const reviewedAt = parseCanonicalIsoDateTime(receipt.reviewedAt);
+  const runtimeVerifiedAt = parseCanonicalIsoDateTime(
+    runtimeBuildIdentity.verifiedAt,
+  );
+  const runtimeWasVerifiedNearCapture =
+    runtimeVerifiedAt !== null
+    && capturedAt !== null
+    && runtimeVerifiedAt <= capturedAt
+    && capturedAt - runtimeVerifiedAt <= 24 * 60 * 60 * 1000;
+
+  return (
+    receipt.schemaVersion === 1
+    && receipt.featureId === asset.featureId
+    && receipt.reviewer.trim().length > 0
+    && receipt.appBuildCommit === asset.build
+    && receipt.artifactSha256 === asset.checksum
+    && runtimeBuildIdentity.origin === MARKETING_CAPTURE_RUNTIME_ORIGIN
+    && runtimeBuildIdentity.identitySelector
+      === MARKETING_CAPTURE_BUILD_IDENTITY_SELECTOR
+    && runtimeBuildIdentity.observedCommit === asset.build
+    && runtimeWasVerifiedNearCapture
+    && capturedAt !== null
+    && reviewedAt !== null
+    && capturedAt <= reviewedAt
+    && receipt.browser === 'Google Chrome'
+    && receipt.browserWasVisible === true
+    && receipt.interactionsWereManual === true
+    && receipt.scriptedBrowserCaptureWasUsed === false
+    && receipt.pageZoomPercent === 100
+    && receipt.viewportMode === 'Responsive'
+    && receipt.devicePixelRatio === 1
+    && receipt.captureCommand === 'Capture screenshot'
+    && receipt.fullSizeScreenshotWasUsed === false
+    && receipt.originalPngReviewed === true
+    && receipt.postCaptureTransformsApplied === false
+  );
+}
 
 function buildEntry(
   featureId: string,
@@ -268,7 +398,8 @@ function buildEntry(
       height: spec.height,
       checksum: spec.checksum,
       framing: 'full-window',
-      captureMethod: 'manual-in-app-browser',
+      captureMethod: 'manual-visible-browser',
+      reviewReceipt: spec.reviewReceipt ?? null,
       captureBounds: {
         x: 0,
         y: 0,
@@ -311,6 +442,9 @@ export function getMarketingCaptureAsset(
   const entry = MARKETING_CAPTURE_MANIFEST[featureId];
   return {
     ...entry.source,
+    featureId: entry.featureId,
+    status: entry.status,
+    build: entry.build,
     render: entry.renders[target],
   };
 }

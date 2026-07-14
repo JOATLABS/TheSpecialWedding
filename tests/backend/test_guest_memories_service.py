@@ -205,7 +205,7 @@ def test_serialize_asset_uses_authenticated_relative_paths_for_images():
             "upload_status": "uploaded",
             "original_bucket": "guest-memories",
             "original_key": "guest-media/demo/asset.jpg",
-            "demo_preview_url": "/demo-gallery/elegant-couple-stairs.svg",
+            "demo_preview_url": "/demo-gallery/sofia-daniel-terrace.webp",
             "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
             "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
             "stream_uid": None,
@@ -325,7 +325,7 @@ async def test_marketing_capture_preview_uses_allowlisted_local_demo_asset(
         "media_type": "image",
         "upload_status": "uploaded",
         "original_key": "guest-media/sofia-and-daniel/demo/memory.jpg",
-        "demo_preview_url": "/demo-gallery/elegant-couple-stairs.svg",
+        "demo_preview_url": "/demo-gallery/sofia-daniel-terrace.webp",
     }
     service._get_wedding_by_id = AsyncMock(return_value=wedding)
     service.assets = SimpleNamespace(find_one=AsyncMock(return_value=asset))
@@ -338,7 +338,7 @@ async def test_marketing_capture_preview_uses_allowlisted_local_demo_asset(
     monkeypatch.setattr(
         guest_media_module.settings,
         "frontend_url",
-        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3100",
     )
 
     preview_url = await service.get_asset_redirect_url(
@@ -348,7 +348,7 @@ async def test_marketing_capture_preview_uses_allowlisted_local_demo_asset(
     )
 
     assert preview_url == (
-        "http://127.0.0.1:3000/demo-gallery/elegant-couple-stairs.svg"
+        "http://127.0.0.1:3100/demo-gallery/sofia-daniel-terrace.webp"
     )
 
 
@@ -356,9 +356,10 @@ async def test_marketing_capture_preview_uses_allowlisted_local_demo_asset(
 @pytest.mark.parametrize(
     "unsafe_preview_url",
     [
-        "https://attacker.example/demo.svg",
-        "/demo-gallery/../secret.svg",
-        "/not-demo-gallery/image.svg",
+        "https://attacker.example/demo.webp",
+        "/demo-gallery/../secret.webp",
+        "/demo-gallery/unapproved.webp",
+        "/not-demo-gallery/image.webp",
     ],
 )
 async def test_marketing_capture_preview_rejects_non_allowlisted_demo_urls(
@@ -429,7 +430,7 @@ async def test_marketing_capture_preview_does_not_bypass_storage_for_wrong_scope
         "media_type": "image",
         "upload_status": "uploaded",
         "original_key": "guest-media/sofia-and-daniel/demo/memory.jpg",
-        "demo_preview_url": "/demo-gallery/elegant-couple-stairs.svg",
+        "demo_preview_url": "/demo-gallery/sofia-daniel-terrace.webp",
     }
     service._get_wedding_by_id = AsyncMock(return_value=wedding)
     service.assets = SimpleNamespace(find_one=AsyncMock(return_value=asset))
@@ -462,7 +463,7 @@ async def test_normal_tenant_preview_preserves_storage_failure(
         "media_type": "image",
         "upload_status": "uploaded",
         "original_key": "guest-media/real-wedding/memory.jpg",
-        "demo_preview_url": "/demo-gallery/elegant-couple-stairs.svg",
+        "demo_preview_url": "/demo-gallery/sofia-daniel-terrace.webp",
     }
     service._get_wedding_by_id = AsyncMock(return_value=wedding)
     service.assets = SimpleNamespace(find_one=AsyncMock(return_value=asset))

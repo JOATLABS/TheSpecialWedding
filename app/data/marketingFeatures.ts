@@ -146,12 +146,12 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
   {
     id: 'book-the-client',
     icon: '📝',
-    title: 'Contract Canvas → Sign → Pay',
+    title: 'Vendor Contracts → Payment Milestones',
     category: 'Business Engine',
     image: featureCapture('book-the-client'),
-    tagline: 'Build a contract from the vendor or package record, send it for signature, and collect payment into the planner account.',
+    tagline: 'Keep vendor scope, agreement status, payment milestones, and budget context connected in one planner-owned workflow.',
     description:
-      "A planner should not have to leave the vendor directory to turn a quote into an agreement. Open the contract canvas, pull in vendor details, package pricing, clauses, deliverables, and payment terms, then send a secure signature link to the couple. The couple signs and pays through Stripe; funds land in the planner's connected account so the planner can pay the vendor from the same operational record. Contract, payment, vendor notes, and couple communication stay together instead of splitting across DocuSign, Stripe, and a side spreadsheet.",
+      'A planner can keep each vendor agreement beside the operational record it belongs to. Review the vendor, contract value, status, key dates, scope, clauses, deliverables, and payment milestones, then return to the wedding budget to see the same commitment in context. Agreement details, milestone status, vendor notes, and budget totals remain connected instead of splitting across documents and side spreadsheets.',
     ai: true,
   },
   {
@@ -182,9 +182,9 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     title: 'Vendor Directory & CRM',
     category: 'Business Engine',
     image: featureCapture('vendor-network'),
-    tagline: 'Keep vendor discovery, private vendor records, notes, files, contracts, and payout history tied to the wedding.',
+    tagline: 'Keep vendor discovery, private vendor records, notes, files, agreements, and payment status tied to the wedding.',
     description:
-      "The vendor directory is the planner's source record for the people and companies behind each wedding. Browse public vendor listings, save private contacts to your studio rolodex, attach documents, record notes, compare quotes, and launch the contract canvas when a vendor agreement needs to become a couple-facing signature and payment flow. The directory is not just a list of names; it is the vendor memory that keeps contracts, files, payouts, and collaboration history from disappearing into email.",
+      "The vendor directory is the planner's source record for the people and companies behind each wedding. Browse public vendor listings, save private contacts to your studio rolodex, attach documents, record notes, compare quotes, and open a vendor agreement when scope, terms, and payment milestones need to be formalized. The directory is not just a list of names; it is the vendor memory that keeps agreements, files, milestone status, and collaboration history from disappearing into email.",
     ai: true,
   },
   {

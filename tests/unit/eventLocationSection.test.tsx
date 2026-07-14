@@ -42,14 +42,16 @@ describe('EventLocationSection map fallback', () => {
 
   it('keeps directions links visible when the secure map URL cannot be created', async () => {
     mock.method(globalThis, 'fetch', async () => ({
-      ok: false,
-      status: 503,
-      json: async () => ({ error: 'Maps service unavailable' }),
+      ok: true,
+      status: 200,
+      json: async () => ({ embedUrl: null, mapAvailable: false }),
     }) as Response);
 
     const view = render(<EventLocationSection wedding={weddingWithLocation as any} />);
 
-    await view.findByText('Map unavailable');
+    await view.findByText('Directions');
+    assert.ok(view.getByText('Open the venue in your preferred map app.'));
+    assert.equal(view.queryByText('Map unavailable'), null);
 
     assert.equal(
       view.getByRole('heading', { name: 'The Celebration Hall' }).textContent,

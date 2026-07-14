@@ -20,16 +20,28 @@ NON_PRODUCTION_ENVIRONMENTS = {
 
 MARKETING_CAPTURE_GALLERY_ITEMS = [
     {
-        "key": "gallery/sofia-and-daniel/20270125-terrace-portrait.svg",
-        "url": "/demo-gallery/elegant-couple-stairs.svg",
+        "key": "gallery/sofia-and-daniel/20270125-terrace-portrait.webp",
+        "url": "/demo-gallery/sofia-daniel-terrace.webp",
+        "content_type": "image/webp",
+        "display_name": "Garden terrace portrait",
+        "alt": "Fictional newlyweds on the glasshouse garden terrace",
+        "credit": "Fictional capture fixture generated for The Special Wedding",
     },
     {
-        "key": "gallery/sofia-and-daniel/20270125-ceremony-aisle.svg",
-        "url": "/demo-gallery/elegant-ceremony-aisle.svg",
+        "key": "gallery/sofia-and-daniel/20270125-ceremony-aisle.webp",
+        "url": "/demo-gallery/sofia-daniel-ceremony.webp",
+        "content_type": "image/webp",
+        "display_name": "Glasshouse ceremony aisle",
+        "alt": "Fictional garden ceremony aisle at the glasshouse",
+        "credit": "Fictional capture fixture generated for The Special Wedding",
     },
     {
-        "key": "gallery/sofia-and-daniel/20270125-reception-table.svg",
-        "url": "/demo-gallery/elegant-reception-table.svg",
+        "key": "gallery/sofia-and-daniel/20270125-reception-table.webp",
+        "url": "/demo-gallery/sofia-daniel-reception.webp",
+        "content_type": "image/webp",
+        "display_name": "Candlelit reception table",
+        "alt": "Fictional candlelit reception table inside the glasshouse",
+        "credit": "Fictional capture fixture generated for The Special Wedding",
     },
 ]
 

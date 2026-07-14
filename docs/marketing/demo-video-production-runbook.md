@@ -1,12 +1,15 @@
 # Demo Video Production Runbook
 
-This runbook produces a real, manually driven product walkthrough from the isolated Phase 1 showcase workspace. Automation may prepare data and audit routes; it must not navigate, interact with, or record the browser footage.
+This runbook produces real, manually driven product stills and walkthroughs from the isolated Phase 1 showcase workspace. Automation may prepare data, audit routes, and validate completed artifacts; it must not navigate or interact with the browser for final capture, take a final screenshot, or record the browser footage.
 
 ## Source Of Truth
 
 - Story and target duration: `app/data/demoVideos.ts`
 - Capture surfaces and export requirements: `app/data/demoVideoProduction.ts`
+- Canonical 17-scene route/session/interaction contract: `app/data/marketingCaptureScenes.json`
+- Still-image scenes and per-image receipts: `app/data/marketingCaptureManifest.ts`
 - Testbed seed and verification driver: `testbed/verify_marketing_capture_workspace.py`
+- Manual still-image validator: `scripts/demo-videos/validate-manual-product-images.ts`
 - Manual recording receipt validator: `scripts/demo-videos/validate-manual-demo-video.ts`
 - Remotion entry point: `remotion/index.ts`
 
@@ -36,13 +39,16 @@ hash -r
 node --version
 # Must be v22.x.
 
+TESTBED_SESSION_NAME=marketing-capture \
 .venv.nosync/bin/python testbed/testbed.py down
-npm run build
+NODE_ENV=production npm run build
 
 TESTBED_SESSION_NAME=marketing-capture \
 TESTBED_FRONTEND_PORT=3100 \
 TESTBED_FRONTEND_ORIGIN=http://127.0.0.1:3100 \
 TESTBED_FRONTEND_CMD="npm run start -- --hostname 127.0.0.1" \
+TESTBED_FRONTEND_NODE_ENV=production \
+TESTBED_GOOGLE_MAPS_API_KEY="" \
 TESTBED_UVICORN_ARGS="" \
 .venv.nosync/bin/python testbed/testbed.py up --with-frontend
 
@@ -52,7 +58,7 @@ TESTBED_NON_INTERACTIVE=1 \
   --frontend-url http://127.0.0.1:3100
 ```
 
-The driver refuses non-local Mongo, removes only its owned seed namespace, reseeds the complete Phase 1 world, checks collection ownership and counts, verifies planner/team/couple authentication, and confirms the public wedding route.
+The driver refuses non-local Mongo and any service origin other than the exact `http://127.0.0.1:8000` backend and `http://127.0.0.1:3100` frontend before it handles fixture credentials. It removes only its owned seed namespace, reseeds the complete Phase 1 world, verifies planner/team/couple authentication, sends the planner cookie only to planner scenes and the couple bearer only to couple scenes, binds all 17 route shells to the clean served build, and verifies every gallery fixture as the exact reviewed 1600x1000 WebP bytes. These preflights support the manual review; they do not replace it.
 
 Run the production inventory check as well:
 
@@ -97,6 +103,22 @@ These tools are non-acceptance setup only. They may prove that routes resolve an
 5. Verify the build marker in the visible app, then enter browser full-screen/presentation mode. Hide the address bar and browser chrome before recording so no local origin appears.
 6. Keep the complete product viewport visible. Do not zoom the page, crop the app, or enlarge one card at the expense of the full window.
 7. Close unrelated windows and notifications. Rehearse the clicks, tab switches, scroll distances, and readable pauses without recording. Do not create a navigation or interaction script.
+
+### Manual still-image protocol
+
+Every final product still is captured one at a time from the visible frontend in Google Chrome:
+
+1. Keep browser zoom exactly 100%.
+2. Open Chrome DevTools Device Toolbar and select `Responsive`, `1440x900`, and `DPR 1`.
+3. Drive the frontend manually to the manifest route and required stable state. Wait for data, fonts, and images to finish loading, and confirm there is no framework overlay or console error.
+4. Open the DevTools command palette and choose `Capture screenshot`, not `Capture full size screenshot`.
+5. Inspect the original 1440x900 PNG at native resolution before approving or moving it to its manifest path.
+6. Hash the untouched PNG and add that scene's explicit `source.reviewReceipt` to `marketingCaptureManifest.ts`. The receipt must name the scene, captured build, artifact checksum, visible Chrome settings, capture command, operator review time, and the fact that no scripted capture or post-capture transform was used. Never generate or copy one shared receipt across scenes.
+7. After all 17 images have individual receipts, run `npm run demo:validate-images`. It validates every PNG and its full Git ancestry. `npm run build` performs the same published receipt/file/hash gate without requiring `.git`, so Gitless Docker builds remain deployable; CI separately runs the full-history published-ancestry gate.
+
+Changing a scene to `approved` without its own receipt is rejected. A receipt whose build or checksum differs from the scene and original PNG is also rejected. There is no crop, resize, stitching, scripted navigation, or scripted screenshot call in the final-still workflow. If the complete product shell is not legible inside the 1440x900 viewport, repair or restage the frontend and retake the still; do not zoom into a card or transform the PNG afterward.
+
+The capture runtime deliberately leaves `TESTBED_GOOGLE_MAPS_API_KEY` blank. The public wedding page must therefore show its intentional Directions fallback without an embedded provider page, failed resource, or console error.
 
 For the hero walkthrough, manually connect these exact checkpoints in one 85-second story:
 

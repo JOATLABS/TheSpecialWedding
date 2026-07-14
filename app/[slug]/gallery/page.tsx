@@ -1,7 +1,7 @@
 // app/[slug]/gallery/page.tsx
 'use client';
 
-import { useCallback, useContext, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { GalleryGrid } from '@/components/GalleryGrid';
 import { formatDate } from '@/utils/dateFormat';
@@ -26,10 +26,12 @@ export default function GalleryPage() {
   const [accessGranted, setAccessGranted] = useState(Boolean(hasPublicAccess));
   const [galleryAccess, setGalleryAccess] = useState<PublicGalleryAccess | null>(null);
   const [galleryLoading, setGalleryLoading] = useState(Boolean(hasPublicAccess));
+  const [galleryError, setGalleryError] = useState(false);
   const [checkingSessionAccess, setCheckingSessionAccess] = useState(!hasPublicAccess);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  const galleryRequestRef = useRef<AbortController | null>(null);
 
   const handleGuestVerified = (
     weddingData: any,
@@ -44,8 +46,29 @@ export default function GalleryPage() {
 
   const fetchGallery = useCallback(
     async (cursor?: string | null, append = false) => {
+      galleryRequestRef.current?.abort();
+      galleryRequestRef.current = null;
+
       if (!slug || !wedding) {
+        if (append) {
+          setLoadingMore(false);
+        } else {
+          setGalleryLoading(false);
+        }
         return;
+      }
+
+      const controller = new AbortController();
+      galleryRequestRef.current = controller;
+
+      setGalleryError(false);
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setImages([]);
+        setNextCursor(null);
+        setHasMore(false);
+        setGalleryLoading(true);
       }
 
       try {
@@ -55,23 +78,40 @@ export default function GalleryPage() {
           access: galleryAccess,
           limit: 60,
           cursor,
+          signal: controller.signal,
         });
+
+        if (controller.signal.aborted || galleryRequestRef.current !== controller) {
+          return;
+        }
 
         setImages((currentImages) => append ? [...currentImages, ...galleryPage.items] : galleryPage.items);
         setNextCursor(galleryPage.nextCursor);
         setHasMore(galleryPage.hasMore);
-      } catch (err: any) {
+      } catch (err: unknown) {
+        if (
+          controller.signal.aborted
+          || galleryRequestRef.current !== controller
+          || (err instanceof Error && err.name === 'AbortError')
+        ) {
+          return;
+        }
+
         console.warn('Gallery could not be loaded:', err);
+        setGalleryError(true);
         if (!append) {
           setImages([]);
           setNextCursor(null);
           setHasMore(false);
         }
       } finally {
-        if (append) {
-          setLoadingMore(false);
-        } else {
-          setGalleryLoading(false);
+        if (galleryRequestRef.current === controller) {
+          galleryRequestRef.current = null;
+          if (append) {
+            setLoadingMore(false);
+          } else {
+            setGalleryLoading(false);
+          }
         }
       }
     },
@@ -79,9 +119,19 @@ export default function GalleryPage() {
   );
 
   useEffect(() => {
-    if (accessGranted && wedding) {
-      fetchGallery();
+    if (!accessGranted || !wedding) {
+      return;
     }
+
+    void fetchGallery();
+
+    return () => {
+      const activeRequest = galleryRequestRef.current;
+      activeRequest?.abort();
+      if (galleryRequestRef.current === activeRequest) {
+        galleryRequestRef.current = null;
+      }
+    };
   }, [accessGranted, fetchGallery, wedding]);
 
   const handleLoadMore = () => {
@@ -89,7 +139,6 @@ export default function GalleryPage() {
       return;
     }
 
-    setLoadingMore(true);
     void fetchGallery(nextCursor, true);
   };
 
@@ -195,13 +244,41 @@ export default function GalleryPage() {
 
       {/* Gallery */}
       <section className="px-4 py-12 max-w-7xl mx-auto">
+        {galleryError ? (
+          <div
+            className="mx-auto mb-8 max-w-2xl rounded-xl border border-amber-200 bg-amber-50 px-6 py-7 text-center"
+            role="alert"
+          >
+            <h2 className="text-xl font-semibold text-amber-950">
+              Gallery temporarily unavailable
+            </h2>
+            <p className="mt-2 text-amber-800">
+              {images.length > 0
+                ? 'We couldn\'t load more photos. The photos already loaded are still available.'
+                : 'We couldn\'t load these photos. Please try again.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                if (images.length > 0 && nextCursor) {
+                  void fetchGallery(nextCursor, true);
+                  return;
+                }
+                void fetchGallery();
+              }}
+              className="mt-5 rounded-lg border border-amber-700 px-5 py-2.5 font-semibold text-amber-900 transition-colors hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-700 focus:ring-offset-2"
+            >
+              Try gallery again
+            </button>
+          </div>
+        ) : null}
         {images.length > 0 ? (
           <>
             <p className="text-center text-gray-600 mb-8">
               {images.length} photo{images.length !== 1 ? 's' : ''}
             </p>
             <GalleryGrid images={images} />
-            {hasMore && (
+            {hasMore && !galleryError && (
               <div className="mt-8 text-center">
                 <button
                   type="button"
@@ -214,7 +291,7 @@ export default function GalleryPage() {
               </div>
             )}
           </>
-        ) : (
+        ) : galleryError ? null : (
           <div className="text-center py-24">
             <div className="text-gray-400">
               <svg className="mx-auto h-24 w-24 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

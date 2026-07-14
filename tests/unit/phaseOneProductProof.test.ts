@@ -5,19 +5,56 @@ import path from 'node:path';
 import { describe, it } from 'node:test';
 import {
   MARKETING_CAPTURE_BUILD,
+  MARKETING_CAPTURE_BUILD_IDENTITY_SELECTOR,
   MARKETING_CAPTURE_MANIFEST,
+  MARKETING_CAPTURE_RUNTIME_ORIGIN,
   MARKETING_CAPTURE_SAFETY_ASSERTIONS,
   MARKETING_CAPTURE_VIEWPORT,
   type MarketingCaptureEntry,
 } from '../../app/data/marketingCaptureManifest';
 import { PHASE_ONE_PRODUCT_STORIES } from '../../app/data/phaseOneProductProof';
 import { MARKETING_FEATURES } from '../../app/data/marketingFeatures';
-import { assertManualFullWindowContract } from '../../scripts/demo-videos/validate-manual-product-images';
+import {
+  assertManualFullWindowContract,
+  validateApprovedProductImage,
+} from '../../scripts/demo-videos/validate-manual-product-images';
 
 const ROOT = process.cwd();
 
 function source(relativePath: string): string {
   return readFileSync(path.join(ROOT, relativePath), 'utf8');
+}
+
+function approvedEntry(entry: MarketingCaptureEntry): MarketingCaptureEntry {
+  const approved = JSON.parse(JSON.stringify(entry)) as MarketingCaptureEntry;
+  approved.status = 'approved';
+  approved.source.reviewReceipt = {
+    schemaVersion: 1,
+    featureId: approved.featureId,
+    capturedAt: '2026-07-14T12:00:00.000Z',
+    reviewedAt: '2026-07-14T12:05:00.000Z',
+    reviewer: 'Visible frontend capture review',
+    appBuildCommit: approved.build,
+    artifactSha256: approved.source.checksum,
+    runtimeBuildIdentity: {
+      origin: MARKETING_CAPTURE_RUNTIME_ORIGIN,
+      identitySelector: MARKETING_CAPTURE_BUILD_IDENTITY_SELECTOR,
+      observedCommit: approved.build,
+      verifiedAt: '2026-07-14T11:59:00.000Z',
+    },
+    browser: 'Google Chrome',
+    browserWasVisible: true,
+    interactionsWereManual: true,
+    scriptedBrowserCaptureWasUsed: false,
+    pageZoomPercent: 100,
+    viewportMode: 'Responsive',
+    devicePixelRatio: 1,
+    captureCommand: 'Capture screenshot',
+    fullSizeScreenshotWasUsed: false,
+    originalPngReviewed: true,
+    postCaptureTransformsApplied: false,
+  };
+  return approved;
 }
 
 describe('Phase 1 product-proof marketing composition', () => {
@@ -122,7 +159,12 @@ describe('Phase 1 product-proof marketing composition', () => {
     }
     assert.match(manifest, /features\.png\?v=\$\{spec\.checksum\.slice\(0, 12\)\}/);
     assert.doesNotMatch(manifest, /\$\{root\}\/(?:hero|homepage)\.png/);
-    assert.match(manifest, /captureMethod: 'manual-in-app-browser'/);
+    assert.match(manifest, /captureMethod: 'manual-visible-browser'/);
+    assert.match(manifest, /pageZoomPercent: 100/);
+    assert.match(manifest, /devicePixelRatio: 1/);
+    assert.match(manifest, /captureCommand: 'Capture screenshot'/);
+    assert.match(manifest, /scriptedBrowserCaptureWasUsed: false/);
+    assert.match(manifest, /reviewReceipt: spec\.reviewReceipt \?\? null/);
     assert.match(manifest, /framing: 'full-window'/);
     assert.match(manifest, /fit: 'contain'/);
     assert.match(manifest, /zoom: false/);
@@ -139,18 +181,18 @@ describe('Phase 1 product-proof marketing composition', () => {
   it('pins every scene to its exact build, session, stable state, viewport, and safety review', () => {
     const expectedSceneContext = {
       dashboard: ['planner', 'Welcome back, Marigold & Co. Weddings!'],
-      'real-time': ['planner', 'Sofia & Daniel'],
-      'couple-portal': ['couple', 'Sofia & Daniel'],
-      'wedding-website': ['public', 'Sofia & Daniel'],
+      'real-time': ['planner', 'The Glasshouse at Riverbend'],
+      'couple-portal': ['couple', '24 guests added so far'],
+      'wedding-website': ['public', 'The Glasshouse at Riverbend'],
       'wedding-configuration': ['planner', 'RSVP Configuration'],
-      'gallery-management': ['planner', 'Gallery Management'],
+      'gallery-management': ['planner', 'Garden terrace portrait'],
       'guest-management': ['planner', 'Guest Management'],
-      'seating-orchestrator': ['planner', 'Seating Arrangement'],
-      'guest-memories': ['couple', 'Guest Memories'],
-      inbox: ['planner', 'Inbox'],
+      'seating-orchestrator': ['planner', '70%'],
+      'guest-memories': ['couple', 'Review queue'],
+      inbox: ['planner', 'Sofia & Daniel'],
       'book-the-client': ['planner', 'Payment Milestones'],
       'payments-autopilot': ['planner', 'Money'],
-      budget: ['planner', 'Budget Overview'],
+      budget: ['planner', '$82,500'],
       'vendor-network': ['planner', 'Vendor Management'],
       'knowledge-base': ['planner', 'Knowledge Base'],
       forms: ['planner', 'Couple Intake Questionnaire'],
@@ -179,18 +221,36 @@ describe('Phase 1 product-proof marketing composition', () => {
       assert.deepEqual(entry.viewport, MARKETING_CAPTURE_VIEWPORT);
       assert.deepEqual(entry.safetyAssertions, MARKETING_CAPTURE_SAFETY_ASSERTIONS);
       assert.equal(entry.status, 'pending', `${featureId} must await the final manual retake`);
-      assert.doesNotThrow(() => assertManualFullWindowContract(featureId, {
-        ...entry,
-        status: 'approved',
-      }));
+      assert.equal(entry.source.reviewReceipt, null, `${featureId} must not carry a generated receipt`);
+      assert.throws(
+        () => assertManualFullWindowContract(featureId, { ...entry, status: 'approved' }),
+        /explicit per-image manual review receipt/,
+      );
+      assert.doesNotThrow(() => assertManualFullWindowContract(featureId, approvedEntry(entry)));
     }
 
-    for (const featureId of ['wedding-configuration', 'gallery-management', 'guest-memories', 'book-the-client'] as const) {
+    for (const featureId of [
+      'real-time',
+      'wedding-website',
+      'wedding-configuration',
+      'gallery-management',
+      'guest-management',
+      'seating-orchestrator',
+      'guest-memories',
+      'book-the-client',
+      'forms',
+    ] as const) {
       assert.ok(
         MARKETING_CAPTURE_MANIFEST[featureId].safeInteraction,
         `${featureId} must declare the manual interaction needed to reach its stable state`,
       );
     }
+
+    assert.equal(
+      MARKETING_CAPTURE_MANIFEST.inbox.safeInteraction,
+      undefined,
+      'the inbox still must remain on its populated list so capture does not mark a thread read',
+    );
 
     assert.equal(
       MARKETING_CAPTURE_MANIFEST.budget.sourceRoute,
@@ -200,10 +260,9 @@ describe('Phase 1 product-proof marketing composition', () => {
   });
 
   it('rejects incomplete or self-consistent-but-wrong manual capture receipts', () => {
-    const cloneDashboard = (): MarketingCaptureEntry => ({
-      ...JSON.parse(JSON.stringify(MARKETING_CAPTURE_MANIFEST.dashboard)) as MarketingCaptureEntry,
-      status: 'approved',
-    });
+    const cloneDashboard = (): MarketingCaptureEntry => approvedEntry(
+      MARKETING_CAPTURE_MANIFEST.dashboard,
+    );
 
     const invalidReceipts: Array<{
       label: string;
@@ -216,16 +275,25 @@ describe('Phase 1 product-proof marketing composition', () => {
         message: /exact captured Git build/,
       },
       {
-        label: 'unknown Git build',
-        mutate: (entry) => { entry.build = '0000000000000000000000000000000000000000'; },
-        message: /capture build does not exist in this Git repository/,
-      },
-      {
         label: 'unsupported session',
         mutate: (entry) => {
           entry.requiredSession = 'vendor' as MarketingCaptureEntry['requiredSession'];
         },
         message: /browser session required/,
+      },
+      {
+        label: 'wrong receipt schema',
+        mutate: (entry) => {
+          (entry.source.reviewReceipt as { schemaVersion: number }).schemaVersion = 2;
+        },
+        message: /unsupported schema version/,
+      },
+      {
+        label: 'wrong receipt feature',
+        mutate: (entry) => {
+          (entry.source.reviewReceipt as { featureId: string }).featureId = 'inbox';
+        },
+        message: /same capture feature/,
       },
       {
         label: 'unresolved route parameter',
@@ -258,6 +326,71 @@ describe('Phase 1 product-proof marketing composition', () => {
         },
         message: /manual public-safety review assertions/,
       },
+      {
+        label: 'non-default browser zoom',
+        mutate: (entry) => {
+          (entry.source.reviewReceipt as { pageZoomPercent: number }).pageZoomPercent = 125;
+        },
+        message: /browser zoom must be exactly 100%/,
+      },
+      {
+        label: 'high-DPI capture',
+        mutate: (entry) => {
+          (entry.source.reviewReceipt as { devicePixelRatio: number }).devicePixelRatio = 2;
+        },
+        message: /device pixel ratio must be 1/,
+      },
+      {
+        label: 'full-size screenshot command',
+        mutate: (entry) => {
+          (entry.source.reviewReceipt as { captureCommand: string }).captureCommand = 'Capture full size screenshot';
+        },
+        message: /Chrome DevTools Capture screenshot command/,
+      },
+      {
+        label: 'scripted capture attestation',
+        mutate: (entry) => {
+          (entry.source.reviewReceipt as { scriptedBrowserCaptureWasUsed: boolean })
+            .scriptedBrowserCaptureWasUsed = true;
+        },
+        message: /scripted browser capture must be false/,
+      },
+      {
+        label: 'receipt checksum drift',
+        mutate: (entry) => {
+          if (entry.source.reviewReceipt) {
+            entry.source.reviewReceipt.artifactSha256 = '0'.repeat(64);
+          }
+        },
+        message: /receipt must match the captured PNG checksum/,
+      },
+      {
+        label: 'receipt build drift',
+        mutate: (entry) => {
+          if (entry.source.reviewReceipt) {
+            entry.source.reviewReceipt.appBuildCommit = '0'.repeat(40);
+          }
+        },
+        message: /receipt must match the exact captured Git build/,
+      },
+      {
+        label: 'served runtime build drift',
+        mutate: (entry) => {
+          if (entry.source.reviewReceipt) {
+            entry.source.reviewReceipt.runtimeBuildIdentity.observedCommit = '0'.repeat(40);
+          }
+        },
+        message: /runtime identity must match the isolated capture build/,
+      },
+      {
+        label: 'runtime verified after capture',
+        mutate: (entry) => {
+          if (entry.source.reviewReceipt) {
+            entry.source.reviewReceipt.runtimeBuildIdentity.verifiedAt = '2026-07-14T12:01:00.000Z';
+          }
+        },
+        message: /must be verified within 24 hours before capture/,
+      },
     ];
 
     for (const { label, mutate, message } of invalidReceipts) {
@@ -269,6 +402,27 @@ describe('Phase 1 product-proof marketing composition', () => {
         label,
       );
     }
+
+    const unknownBuild = cloneDashboard();
+    unknownBuild.build = '0000000000000000000000000000000000000000';
+    if (!unknownBuild.source.reviewReceipt) {
+      throw new Error('approved test fixture is missing its receipt');
+    }
+    unknownBuild.source.reviewReceipt.appBuildCommit = unknownBuild.build;
+    unknownBuild.source.reviewReceipt.runtimeBuildIdentity.observedCommit = unknownBuild.build;
+
+    assert.doesNotThrow(
+      () => validateApprovedProductImage('dashboard', unknownBuild),
+      'the Docker-safe artifact validator must not invoke Git by default',
+    );
+    assert.throws(
+      () => validateApprovedProductImage(
+        'dashboard',
+        unknownBuild,
+        { verifyGitAncestry: true },
+      ),
+      /capture build does not exist in this Git repository/,
+    );
   });
 
   it('uses one shared frame that never crops or zooms product proof', () => {
@@ -278,7 +432,7 @@ describe('Phase 1 product-proof marketing composition', () => {
     const frame = source('app/components/landing-page/ProductProofWindow.tsx');
     assert.match(frame, /object-contain/);
     assert.match(frame, /unoptimized/);
-    assert.match(frame, /quality=\{90\}/);
+    assert.doesNotMatch(frame, /quality=\{/);
     assert.match(frame, /const preload = priority/);
     assert.match(frame, /loading=\{preload \? 'eager' : 'lazy'\}/);
     assert.match(frame, /priority=\{preload\}/);
@@ -310,7 +464,8 @@ describe('Phase 1 product-proof marketing composition', () => {
       assert.equal(entry.status, 'pending', `${entry.featureId} must not claim approval`);
       assert.ok(entry.source.checksum, `${entry.featureId} is missing a checksum`);
       assert.equal(entry.source.framing, 'full-window');
-      assert.equal(entry.source.captureMethod, 'manual-in-app-browser');
+      assert.equal(entry.source.captureMethod, 'manual-visible-browser');
+      assert.equal(entry.source.reviewReceipt, null);
       assert.equal(entry.source.width, 1440, `${entry.featureId} is not a 1440px-wide full window`);
       assert.equal(entry.source.height, 900, `${entry.featureId} is not a 900px-tall full window`);
       assert.deepEqual(entry.source.captureBounds, {

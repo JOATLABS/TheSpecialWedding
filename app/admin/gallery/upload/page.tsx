@@ -12,6 +12,7 @@ import WeddingPicker from '../../components/WeddingPicker';
 import { toast } from 'sonner';
 import { Upload, Images, ChevronDown, Heart, FolderOpen } from 'lucide-react';
 import { uploadGalleryFileViaPresignedUrl } from './galleryUploadClient';
+import { getGalleryImageAlt, getGalleryImageLabel } from './galleryImagePresentation';
 
 interface Wedding {
   id?: string;
@@ -390,7 +391,7 @@ export default function AdminGalleryUploadPage() {
                             <div className={`relative aspect-square overflow-hidden rounded-lg shadow-lg bg-gray-100 dark:bg-slate-700 ${isFeatured ? 'ring-4 ring-purple-600' : ''}`}>
                               <Image
                                 src={image.url || image.file_url || '#'}
-                                alt={`Gallery image ${index + 1}`}
+                                alt={getGalleryImageAlt(image, index)}
                                 fill
                                 className="object-cover transition-transform group-hover:scale-105"
                                 sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
@@ -413,7 +414,7 @@ export default function AdminGalleryUploadPage() {
                           {/* Image Info */}
                           <div className="mt-2">
                             <p className="text-xs text-gray-600 dark:text-gray-400 truncate">
-                              {image.key || image.filename || `image-${index + 1}`}
+                              {getGalleryImageLabel(image, index)}
                             </p>
                             <div className="flex items-center gap-2 mt-1">
                               {/* Folder Badge */}

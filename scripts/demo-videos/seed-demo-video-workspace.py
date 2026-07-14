@@ -34,6 +34,9 @@ from app.constants.seed_sources import (  # noqa: E402
     MARKETING_CAPTURE_SEED_SOURCE,
     SMOKE_ACCOUNT_SEED_SOURCE,
 )
+from app.constants.marketing_capture_media import (  # noqa: E402
+    MARKETING_CAPTURE_GALLERY_ITEMS,
+)
 from testbed._marketing_capture_seed_ownership import (  # noqa: E402
     replace_scoped_document,
 )
@@ -261,29 +264,11 @@ MARKETING_CAPTURE_TEAM_MEMBER_ID = ObjectId("67c700000000000000000001")
 MARKETING_CAPTURE_TEAM_USER_ID = ObjectId("67c700000000000000000002")
 MARKETING_CAPTURE_GALLERY_ASSETS = [
     {
-        "_id": ObjectId("67c800000000000000000001"),
-        "key": "gallery/sofia-and-daniel/20270125-terrace-portrait.svg",
-        "url": "/demo-gallery/elegant-couple-stairs.svg",
-        "alt": "Sofia and Daniel on the garden terrace",
+        **fixture,
+        "_id": ObjectId(f"67c80000000000000000000{index}"),
         "approved_for_marketing": True,
-        "credit": "Marigold & Co. Weddings",
-    },
-    {
-        "_id": ObjectId("67c800000000000000000002"),
-        "key": "gallery/sofia-and-daniel/20270125-ceremony-aisle.svg",
-        "url": "/demo-gallery/elegant-ceremony-aisle.svg",
-        "alt": "Garden ceremony aisle at the Glasshouse",
-        "approved_for_marketing": True,
-        "credit": "Marigold & Co. Weddings",
-    },
-    {
-        "_id": ObjectId("67c800000000000000000003"),
-        "key": "gallery/sofia-and-daniel/20270125-reception-table.svg",
-        "url": "/demo-gallery/elegant-reception-table.svg",
-        "alt": "Candlelit reception table design",
-        "approved_for_marketing": True,
-        "credit": "Marigold & Co. Weddings",
-    },
+    }
+    for index, fixture in enumerate(MARKETING_CAPTURE_GALLERY_ITEMS, start=1)
 ]
 _VENUE_PLAN_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000"><rect width="1600" height="1000" fill="#f7f4ef"/><rect x="80" y="80" width="1440" height="840" rx="24" fill="#fffdf9" stroke="#9a8f80" stroke-width="8"/><path d="M620 80h360v130H620z" fill="#e8dfd2"/><text x="800" y="155" text-anchor="middle" font-family="Arial" font-size="34" fill="#4a4038">Ceremony stage</text><path d="M660 430h280v190H660z" fill="#ead3cf"/><text x="800" y="530" text-anchor="middle" font-family="Arial" font-size="30" fill="#6f3f3a">Dance floor</text><path d="M80 760h120v160H80z" fill="#d9e6de"/><text x="140" y="845" text-anchor="middle" font-family="Arial" font-size="22" fill="#315a46">Entry</text></svg>"""
 MARKETING_CAPTURE_VENUE_BACKGROUND = "data:image/svg+xml;base64," + base64.b64encode(
@@ -851,7 +836,7 @@ async def _upsert_wedding(
                     "role": "maid_of_honor",
                     "side": "bride",
                     "display_order": 0,
-                    "image_url": MARKETING_CAPTURE_GALLERY_ASSETS[1]["url"],
+                    "image_url": None,
                 },
                 {
                     "id": "party-elliot-brooks",
@@ -859,7 +844,7 @@ async def _upsert_wedding(
                     "role": "best_man",
                     "side": "groom",
                     "display_order": 0,
-                    "image_url": MARKETING_CAPTURE_GALLERY_ASSETS[2]["url"],
+                    "image_url": None,
                 },
             ]
             if ready
@@ -1811,7 +1796,7 @@ async def _seed_gallery_fixture(
                 "wedding_slug": wedding_slug,
                 "storage_provider": "approved_showcase_cdn",
                 "media_type": "image",
-                "mime_type": "image/svg+xml",
+                "mime_type": fixture["content_type"],
                 "display_order": index,
                 "is_public": True,
                 "uploaded_by": planner_email,
@@ -1866,21 +1851,12 @@ async def _seed_guest_media_fixture(
             "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
         }
     )
-    preview_urls = (
-        {
-            "couple": "/demo-gallery/elegant-couple-stairs.svg",
-            "ceremony": "/demo-gallery/elegant-ceremony-aisle.svg",
-            "reception": "/demo-gallery/elegant-reception-table.svg",
-            "dance": "/demo-gallery/elegant-couple-stairs.svg",
-        }
-        if stock_media_allowed
-        else {
-            "couple": "/demo-gallery/elegant-reception-table.svg",
-            "ceremony": "/demo-gallery/elegant-reception-table.svg",
-            "reception": "/demo-gallery/elegant-reception-table.svg",
-            "dance": "/demo-gallery/elegant-reception-table.svg",
-        }
-    )
+    preview_urls = {
+        "couple": MARKETING_CAPTURE_GALLERY_ASSETS[0]["url"],
+        "ceremony": MARKETING_CAPTURE_GALLERY_ASSETS[1]["url"],
+        "reception": MARKETING_CAPTURE_GALLERY_ASSETS[2]["url"],
+        "dance": MARKETING_CAPTURE_GALLERY_ASSETS[0]["url"],
+    }
     memory_fixtures = (
         [
             (

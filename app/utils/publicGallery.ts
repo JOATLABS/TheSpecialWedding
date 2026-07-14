@@ -17,6 +17,9 @@ export interface PublicGalleryPage {
 interface GalleryImageResponse {
   key: string;
   url: string;
+  display_name?: string;
+  alt?: string;
+  credit?: string;
 }
 
 interface GalleryResponseEnvelope {
@@ -31,6 +34,7 @@ interface FetchPublicGalleryPageOptions {
   access?: PublicGalleryAccess | null;
   limit?: number;
   cursor?: string | null;
+  signal?: AbortSignal;
 }
 
 const EMPTY_GALLERY_PAGE: PublicGalleryPage = {
@@ -43,6 +47,15 @@ function normalizeGalleryItems(items: GalleryImageResponse[] = []): GalleryImage
   return items.map((image) => ({
     key: image.key,
     url: image.url,
+    ...(typeof image.display_name === 'string' && image.display_name.trim()
+      ? { displayName: image.display_name.trim() }
+      : {}),
+    ...(typeof image.alt === 'string' && image.alt.trim()
+      ? { alt: image.alt.trim() }
+      : {}),
+    ...(typeof image.credit === 'string' && image.credit.trim()
+      ? { credit: image.credit.trim() }
+      : {}),
   }));
 }
 
@@ -58,6 +71,7 @@ export async function fetchPublicGalleryPage({
   access,
   limit = 60,
   cursor,
+  signal,
 }: FetchPublicGalleryPageOptions): Promise<PublicGalleryPage> {
   if (!slug) {
     return EMPTY_GALLERY_PAGE;
@@ -80,7 +94,9 @@ export async function fetchPublicGalleryPage({
       params.set('cursor', cursor);
     }
 
-    response = await fetch(`${API_URL}/gallery?${params.toString()}`);
+    response = await fetch(`${API_URL}/gallery?${params.toString()}`, {
+      signal,
+    });
   } else {
     response = await fetch(`${API_URL}/gallery/verified`, {
       method: 'POST',
@@ -93,6 +109,7 @@ export async function fetchPublicGalleryPage({
         limit,
         ...(cursor ? { cursor } : {}),
       }),
+      signal,
     });
   }
 

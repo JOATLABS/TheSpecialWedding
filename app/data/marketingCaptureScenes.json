@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 1,
+  "scenes": [
+    {
+      "featureId": "dashboard",
+      "session": "planner",
+      "route": "/admin/planner",
+      "title": "Planner command center",
+      "expectation": "Amina Cole sees Marigold & Co. Weddings with two realistic weddings and populated metrics.",
+      "expectedVisibleText": "Welcome back, Marigold & Co. Weddings!",
+      "safeInteraction": null
+    },
+    {
+      "featureId": "real-time",
+      "session": "planner",
+      "route": "/admin/weddings/wedding_marketing_capture_sofia_daniel",
+      "title": "Wedding command center — Events",
+      "expectation": "The Traditional event shows The Glasshouse at Riverbend at 4:00 PM.",
+      "expectedVisibleText": "The Glasshouse at Riverbend",
+      "safeInteraction": "Open Events and wait for the Traditional event at The Glasshouse at Riverbend at 4:00 PM."
+    },
+    {
+      "featureId": "couple-portal",
+      "session": "couple",
+      "route": "/couple/dashboard",
+      "title": "Couple portal",
+      "expectation": "Sofia & Daniel see forms, messages, meetings, payments, and guest memories.",
+      "expectedVisibleText": "24 guests added so far",
+      "safeInteraction": null
+    },
+    {
+      "featureId": "wedding-website",
+      "session": "public",
+      "route": "/sofia-and-daniel",
+      "title": "Public microsite",
+      "expectation": "The public showcase uses approved fictional media on www.thespecialwedding.io.",
+      "expectedVisibleText": "The Glasshouse at Riverbend",
+      "safeInteraction": "Open the Venue section and wait for The Glasshouse at Riverbend."
+    },
+    {
+      "featureId": "wedding-configuration",
+      "session": "planner",
+      "route": "/admin/weddings/wedding_marketing_capture_sofia_daniel",
+      "title": "Wedding configuration — RSVP",
+      "expectation": "RSVP Configuration opens without changing the seeded settings.",
+      "expectedVisibleText": "RSVP Configuration",
+      "safeInteraction": "Open the RSVP section without changing any fields."
+    },
+    {
+      "featureId": "gallery-management",
+      "session": "planner",
+      "route": "/admin/gallery/upload",
+      "title": "Gallery management",
+      "expectation": "Sofia & Daniel's three approved fictional gallery items are visible.",
+      "expectedVisibleText": "Garden terrace portrait",
+      "safeInteraction": "Select Sofia & Daniel, open Manage Gallery, and wait for the three seeded gallery items."
+    },
+    {
+      "featureId": "guest-management",
+      "session": "planner",
+      "route": "/admin/guests",
+      "title": "Guest management",
+      "expectation": "Guest Management shows the populated Sofia & Daniel guest list.",
+      "expectedVisibleText": "Guest Management",
+      "safeInteraction": "Verify the wedding picker shows Sofia & Daniel; select it if needed."
+    },
+    {
+      "featureId": "seating-orchestrator",
+      "session": "planner",
+      "route": "/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel",
+      "title": "Seating orchestrator",
+      "expectation": "The seeded floorplan, fixtures, tables, and assigned guests render at 70% canvas zoom.",
+      "expectedVisibleText": "70%",
+      "safeInteraction": "Select Sofia & Daniel, then use the in-product Zoom out control twice until the canvas reads 70%. Keep Chrome page zoom at 100%."
+    },
+    {
+      "featureId": "guest-memories",
+      "session": "couple",
+      "route": "/couple/dashboard",
+      "title": "Guest memories",
+      "expectation": "Guest Memories opens in the couple portal with its populated review queue.",
+      "expectedVisibleText": "Review queue",
+      "safeInteraction": "Open Memories in the couple portal and wait for the review queue."
+    },
+    {
+      "featureId": "inbox",
+      "session": "planner",
+      "route": "/admin/communications/inbox",
+      "title": "Unified inbox",
+      "expectation": "The populated Sofia & Daniel thread is visible alongside the other channel types.",
+      "expectedVisibleText": "Sofia & Daniel",
+      "safeInteraction": null
+    },
+    {
+      "featureId": "book-the-client",
+      "session": "planner",
+      "route": "/admin/vendors/contracts/67c100000000000000000001",
+      "title": "Vendor contract",
+      "expectation": "Payment Milestones are visible for the seeded Luna & Co. Photography contract.",
+      "expectedVisibleText": "Payment Milestones",
+      "safeInteraction": "Open Payments and wait for Payment Milestones without changing the contract."
+    },
+    {
+      "featureId": "payments-autopilot",
+      "session": "planner",
+      "route": "/admin/money",
+      "title": "Money workspace",
+      "expectation": "The planner-owned Money workspace shows populated financial context.",
+      "expectedVisibleText": "Money",
+      "safeInteraction": null
+    },
+    {
+      "featureId": "budget",
+      "session": "planner",
+      "route": "/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel",
+      "title": "Budget",
+      "expectation": "The Sofia & Daniel budget shows the seeded $82,500 total.",
+      "expectedVisibleText": "$82,500",
+      "safeInteraction": null
+    },
+    {
+      "featureId": "vendor-network",
+      "session": "planner",
+      "route": "/admin/vendors",
+      "title": "Vendor network",
+      "expectation": "Vendor Management shows the seeded planner vendor network.",
+      "expectedVisibleText": "Vendor Management",
+      "safeInteraction": null
+    },
+    {
+      "featureId": "knowledge-base",
+      "session": "planner",
+      "route": "/admin/support?tab=knowledge_base",
+      "title": "Knowledge Base",
+      "expectation": "The planner Knowledge Base shows the published seeded article.",
+      "expectedVisibleText": "Knowledge Base",
+      "safeInteraction": null
+    },
+    {
+      "featureId": "forms",
+      "session": "planner",
+      "route": "/admin/forms/form_marketing_capture_couple_intake/edit",
+      "title": "Forms",
+      "expectation": "The Couple Intake Questionnaire edit builder opens without changing fields.",
+      "expectedVisibleText": "Couple Intake Questionnaire",
+      "safeInteraction": "Open the seeded Couple Intake Questionnaire edit builder without changing any fields."
+    },
+    {
+      "featureId": "team",
+      "session": "planner",
+      "route": "/admin/planner/team",
+      "title": "Team management",
+      "expectation": "Team Management shows the seeded planner team member.",
+      "expectedVisibleText": "Team Management",
+      "safeInteraction": null
+    }
+  ],
+  "galleryAssets": [
+    {
+      "path": "/demo-gallery/sofia-daniel-terrace.webp",
+      "sha256": "b0c1ae45b2d377618a518a999b0599fbf33d37d36442c2842e5cce6c9b05f453",
+      "width": 1600,
+      "height": 1000
+    },
+    {
+      "path": "/demo-gallery/sofia-daniel-ceremony.webp",
+      "sha256": "d56ac91b101c697bce3b23d60e5d9dd6b58386e40c56b7ed8b67c813794d1f0c",
+      "width": 1600,
+      "height": 1000
+    },
+    {
+      "path": "/demo-gallery/sofia-daniel-reception.webp",
+      "sha256": "829bb93d0538cb772b402c22b275f94eeb3a8fc9562039ddcbad9e736c1bb661",
+      "width": 1600,
+      "height": 1000
+    }
+  ]
+}

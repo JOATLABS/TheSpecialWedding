@@ -97,8 +97,12 @@ export function getSideEffectGuards(
     guards.push('Use demo contract tokens only; do not request a real legal signature.');
   }
 
-  if (routes.some((route) => route.includes('/budget') || route.includes('/pay'))) {
-    guards.push('Use fixture or Stripe test-mode payment states only.');
+  if (routes.some((route) => route.includes('/budget'))) {
+    guards.push('Use seeded read-only finance records; do not record or initiate a payment.');
+  }
+
+  if (routes.some((route) => route.includes('/pay'))) {
+    guards.push('Use Stripe test-mode payment states only.');
   }
 
   if (surfaces.includes('client-payment-token')) {
