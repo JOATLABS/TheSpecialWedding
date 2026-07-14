@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 import {
@@ -17,6 +17,7 @@ import { MARKETING_FEATURES } from '../../app/data/marketingFeatures';
 import {
   assertManualFullWindowContract,
   validateApprovedProductImage,
+  validatePublishedProductImages,
 } from '../../scripts/demo-videos/validate-manual-product-images';
 
 const ROOT = process.cwd();
@@ -171,11 +172,41 @@ describe('Phase 1 product-proof marketing composition', () => {
     assert.match(manifest, /checksum/);
     assert.match(manifest, /build/);
     assert.match(manifest, /status: spec\.status/);
-    assert.equal(
-      (manifest.match(/status: 'pending'/g) ?? []).length,
-      Object.keys(MARKETING_CAPTURE_MANIFEST).length,
-      'historical assets must remain pending until the final build is manually retaken',
+    const approvedEntries = Object.values(MARKETING_CAPTURE_MANIFEST)
+      .filter((entry) => entry.status === 'approved');
+    assert.ok(approvedEntries.length > 0, 'manual capture approval receipts are missing');
+    for (const entry of Object.values(MARKETING_CAPTURE_MANIFEST)) {
+      if (entry.status === 'approved') {
+        assert.ok(entry.source.reviewReceipt, `${entry.featureId} is missing its approval receipt`);
+      } else {
+        assert.equal(entry.source.reviewReceipt, null, `${entry.featureId} has a premature receipt`);
+      }
+    }
+  });
+
+  it('refuses to publish fewer than the 15 already reviewed product proofs', async () => {
+    const approvedEntries = Object.values(MARKETING_CAPTURE_MANIFEST)
+      .filter((entry) => entry.status === 'approved');
+    assert.ok(
+      approvedEntries.length >= 15,
+      'the reviewed publication floor must never move backwards',
     );
+
+    const demotedEntries = approvedEntries.slice(14);
+    const originalStatuses = demotedEntries.map((entry) => entry.status);
+    try {
+      for (const entry of demotedEntries) {
+        entry.status = 'pending';
+      }
+      await assert.rejects(
+        () => validatePublishedProductImages(),
+        /at least 15 approved product proofs/,
+      );
+    } finally {
+      demotedEntries.forEach((entry, index) => {
+        entry.status = originalStatuses[index];
+      });
+    }
   });
 
   it('pins every scene to its exact build, session, stable state, viewport, and safety review', () => {
@@ -210,7 +241,7 @@ describe('Phase 1 product-proof marketing composition', () => {
         featureId as keyof typeof MARKETING_CAPTURE_MANIFEST
       ];
 
-      assert.equal(entry.build, MARKETING_CAPTURE_BUILD, `${featureId} has the wrong capture build`);
+      assert.match(entry.build, /^[0-9a-f]{40}$/, `${featureId} has the wrong capture build`);
       assert.equal(entry.requiredSession, requiredSession, `${featureId} has the wrong session`);
       assert.match(entry.sourceRoute, /^\//, `${featureId} must use an application route`);
       assert.doesNotMatch(entry.sourceRoute, /\[[^\]]+\]/, `${featureId} route must resolve fixture parameters`);
@@ -220,13 +251,18 @@ describe('Phase 1 product-proof marketing composition', () => {
       });
       assert.deepEqual(entry.viewport, MARKETING_CAPTURE_VIEWPORT);
       assert.deepEqual(entry.safetyAssertions, MARKETING_CAPTURE_SAFETY_ASSERTIONS);
-      assert.equal(entry.status, 'pending', `${featureId} must await the final manual retake`);
-      assert.equal(entry.source.reviewReceipt, null, `${featureId} must not carry a generated receipt`);
-      assert.throws(
-        () => assertManualFullWindowContract(featureId, { ...entry, status: 'approved' }),
-        /explicit per-image manual review receipt/,
-      );
-      assert.doesNotThrow(() => assertManualFullWindowContract(featureId, approvedEntry(entry)));
+      if (entry.status === 'approved') {
+        assert.ok(entry.source.reviewReceipt, `${featureId} is missing its manual review receipt`);
+        assert.doesNotThrow(() => assertManualFullWindowContract(featureId, entry));
+      } else {
+        assert.equal(entry.build, MARKETING_CAPTURE_BUILD, `${featureId} pending build drifted`);
+        assert.equal(entry.source.reviewReceipt, null, `${featureId} has a generated receipt`);
+        assert.throws(
+          () => assertManualFullWindowContract(featureId, { ...entry, status: 'approved' }),
+          /explicit per-image manual review receipt/,
+        );
+        assert.doesNotThrow(() => assertManualFullWindowContract(featureId, approvedEntry(entry)));
+      }
     }
 
     for (const featureId of [
@@ -259,7 +295,7 @@ describe('Phase 1 product-proof marketing composition', () => {
     );
   });
 
-  it('rejects incomplete or self-consistent-but-wrong manual capture receipts', () => {
+  it('rejects incomplete or self-consistent-but-wrong manual capture receipts', async () => {
     const cloneDashboard = (): MarketingCaptureEntry => approvedEntry(
       MARKETING_CAPTURE_MANIFEST.dashboard,
     );
@@ -411,11 +447,11 @@ describe('Phase 1 product-proof marketing composition', () => {
     unknownBuild.source.reviewReceipt.appBuildCommit = unknownBuild.build;
     unknownBuild.source.reviewReceipt.runtimeBuildIdentity.observedCommit = unknownBuild.build;
 
-    assert.doesNotThrow(
+    await assert.doesNotReject(
       () => validateApprovedProductImage('dashboard', unknownBuild),
       'the Docker-safe artifact validator must not invoke Git by default',
     );
-    assert.throws(
+    await assert.rejects(
       () => validateApprovedProductImage(
         'dashboard',
         unknownBuild,
@@ -423,6 +459,42 @@ describe('Phase 1 product-proof marketing composition', () => {
       ),
       /capture build does not exist in this Git repository/,
     );
+
+    const dashboardPath = path.join(
+      ROOT,
+      'public',
+      MARKETING_CAPTURE_MANIFEST.dashboard.source.path
+        .split('?', 1)[0]
+        .replace(/^\//, ''),
+    );
+    const truncatedBytes = readFileSync(dashboardPath).subarray(0, 24);
+    const truncatedChecksum = createHash('sha256').update(truncatedBytes).digest('hex');
+    const truncatedName = `.truncated-capture-${process.pid}-${Date.now()}.png`;
+    const truncatedPath = path.join(
+      ROOT,
+      'public',
+      'marketing',
+      'product-proof',
+      truncatedName,
+    );
+    const truncatedEntry = cloneDashboard();
+    truncatedEntry.source.path = `/marketing/product-proof/${truncatedName}?v=${truncatedChecksum.slice(0, 12)}`;
+    truncatedEntry.source.checksum = truncatedChecksum;
+    if (!truncatedEntry.source.reviewReceipt) {
+      throw new Error('approved test fixture is missing its receipt');
+    }
+    truncatedEntry.source.reviewReceipt.artifactSha256 = truncatedChecksum;
+
+    writeFileSync(truncatedPath, truncatedBytes);
+    try {
+      await assert.rejects(
+        () => validateApprovedProductImage('dashboard', truncatedEntry),
+        /cannot be fully decoded as PNG/,
+        'a self-consistent checksum and IHDR must not approve a truncated PNG',
+      );
+    } finally {
+      unlinkSync(truncatedPath);
+    }
   });
 
   it('uses one shared frame that never crops or zooms product proof', () => {
@@ -457,15 +529,19 @@ describe('Phase 1 product-proof marketing composition', () => {
     assert.match(nextConfig, /pathname: '\/marketing\/product-proof\/\*\*'/);
   });
 
-  it('keeps every historical PNG structurally valid while its manual retake is pending', () => {
+  it('keeps every product-proof PNG structurally valid and receipt-gated', () => {
     const pngSignature = '89504e470d0a1a0a';
 
     for (const entry of Object.values(MARKETING_CAPTURE_MANIFEST)) {
-      assert.equal(entry.status, 'pending', `${entry.featureId} must not claim approval`);
       assert.ok(entry.source.checksum, `${entry.featureId} is missing a checksum`);
       assert.equal(entry.source.framing, 'full-window');
       assert.equal(entry.source.captureMethod, 'manual-visible-browser');
-      assert.equal(entry.source.reviewReceipt, null);
+      if (entry.status === 'approved') {
+        assert.ok(entry.source.reviewReceipt, `${entry.featureId} is missing its review receipt`);
+        assert.doesNotThrow(() => assertManualFullWindowContract(entry.featureId, entry));
+      } else {
+        assert.equal(entry.source.reviewReceipt, null);
+      }
       assert.equal(entry.source.width, 1440, `${entry.featureId} is not a 1440px-wide full window`);
       assert.equal(entry.source.height, 900, `${entry.featureId} is not a 900px-tall full window`);
       assert.deepEqual(entry.source.captureBounds, {

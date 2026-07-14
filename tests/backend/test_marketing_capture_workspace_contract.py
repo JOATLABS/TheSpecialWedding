@@ -62,6 +62,138 @@ def _required_text(path: Path) -> str:
     return path.read_text()
 
 
+def _capture_app_shell(*, scripts: tuple[str, ...] = ()) -> str:
+    script_tags = "".join(f'<script src="{source}"></script>' for source in scripts)
+    return (
+        '<html><head><meta name="tsw-app-build-commit" '
+        f'content="{EXPECTED_CAPTURE_BUILD}">{script_tags}</head></html>'
+    )
+
+
+def _capture_readiness_payload(url: str):
+    if url.endswith("/api/proxy/couple/profile"):
+        return {
+            "id": marketing_capture_driver.COUPLE_ID,
+            "email": marketing_capture_driver.COUPLE_EMAIL,
+            "partner1_name": "Sofia",
+            "partner2_name": "Daniel",
+            "wedding_id": marketing_capture_driver.PRIMARY_WEDDING_ID,
+        }
+    if url.endswith("/api/proxy/couple/portal/dashboard"):
+        return {
+            "archived": False,
+            "wedding": {
+                "id": marketing_capture_driver.PRIMARY_WEDDING_ID,
+                "couple_names": "Sofia & Daniel",
+            },
+            "guest_stats": {"guest_list_total": 24},
+        }
+    if url.endswith("/api/proxy/admin/profile"):
+        return {
+            "id": marketing_capture_driver.PLANNER_USER_ID,
+            "email": marketing_capture_driver.PLANNER_EMAIL,
+            "company_name": "Marigold & Co. Weddings",
+        }
+    if url.endswith("/api/proxy/admin/planner/weddings"):
+        return [
+            {
+                "_id": marketing_capture_driver.PRIMARY_WEDDING_ID,
+                "slug": marketing_capture_driver.PRIMARY_SLUG,
+                "couple_names": "Sofia & Daniel",
+                "venue": "The Glasshouse at Riverbend",
+            },
+            {
+                "_id": marketing_capture_driver.SECONDARY_WEDDING_ID,
+                "slug": marketing_capture_driver.SECONDARY_SLUG,
+                "couple_names": "Avery & Morgan",
+                "venue": "",
+            },
+        ]
+    if url.endswith("/api/proxy/admin/gallery/list"):
+        return marketing_capture_driver.MARKETING_CAPTURE_GALLERY_ITEMS
+    if url.endswith("/api/proxy/couple-portal/conversations"):
+        return {
+            "conversations": [
+                {
+                    "id": marketing_capture_driver.COUPLE_ID,
+                    "email": marketing_capture_driver.COUPLE_EMAIL,
+                    "partner1_name": "Sofia",
+                    "partner2_name": "Daniel",
+                    "wedding_id": marketing_capture_driver.PRIMARY_WEDDING_ID,
+                }
+            ],
+            "count": 1,
+        }
+    if url.endswith(
+        f"/api/proxy/admin/weddings/{marketing_capture_driver.PRIMARY_WEDDING_ID}/budget"
+    ):
+        return {
+            "wedding_id": marketing_capture_driver.PRIMARY_WEDDING_ID,
+            "summary": {"total_budget": 82_500.0},
+        }
+    if url.endswith("/api/proxy/admin/forms/form_marketing_capture_couple_intake"):
+        return {
+            "id": "form_marketing_capture_couple_intake",
+            "wedding_id": marketing_capture_driver.PRIMARY_WEDDING_ID,
+            "name": "Couple Intake Questionnaire",
+        }
+    if url.endswith("/api/proxy/admin/team/members"):
+        return {
+            "members": [
+                {
+                    "id": marketing_capture_driver.TEAM_MEMBER_ID,
+                    "owner_id": marketing_capture_driver.PLANNER_USER_ID,
+                    "owner_email": marketing_capture_driver.PLANNER_EMAIL,
+                    "user_id": marketing_capture_driver.TEAM_USER_ID,
+                    "email": marketing_capture_driver.TEAM_EMAIL,
+                    "first_name": "Maya",
+                    "last_name": "Thompson",
+                    "status": "active",
+                    "role": "editor",
+                    "wedding_access": "assigned",
+                    "assigned_wedding_ids": [
+                        marketing_capture_driver.PRIMARY_WEDDING_ID
+                    ],
+                }
+            ],
+            "total": 1,
+            "skip": 0,
+            "limit": 50,
+        }
+    if url.endswith("/api/proxy/admin/team/seats"):
+        return {
+            "total_seats": 5,
+            "used_seats": 1,
+            "available_seats": 4,
+            "members_by_status": {"active": 1},
+        }
+    raise AssertionError(f"unexpected readiness URL {url}")
+
+
+def _planner_team_scene() -> dict:
+    return {
+        "featureId": "team",
+        "session": "planner",
+        "route": "/admin/planner/team",
+        "title": "Team management",
+        "expectation": "The seeded team is visible.",
+        "expectedVisibleText": "Team Management",
+        "safeInteraction": None,
+    }
+
+
+def _planner_static_scene() -> dict:
+    return {
+        "featureId": "vendor-network",
+        "session": "planner",
+        "route": "/admin/vendors",
+        "title": "Vendor network",
+        "expectation": "The seeded vendor network is visible.",
+        "expectedVisibleText": "Vendor Management",
+        "safeInteraction": None,
+    }
+
+
 def _async_function(source: str, name: str) -> ast.AsyncFunctionDef:
     module = ast.parse(source)
     function = next(
@@ -185,6 +317,39 @@ def test_testbed_frontend_process_uses_the_same_canonical_origin_as_readiness():
     assert "PORT=3100" in command
 
 
+def test_marketing_capture_verifier_requires_the_canonical_running_capture_stack(
+    monkeypatch,
+):
+    runtime_verifier = getattr(
+        marketing_capture_driver,
+        "verify_frontend_capture_runtime",
+        None,
+    )
+    assert callable(runtime_verifier), (
+        "the standalone capture verifier must prove the running Next/Node runtime"
+    )
+    observed: dict = {}
+
+    def _not_ready(cfg, window):
+        observed["session_name"] = cfg.session_name
+        observed["frontend_origin"] = cfg.frontend_origin
+        observed["frontend_node_env"] = cfg.frontend_node_env
+        observed["window"] = window
+        return False
+
+    monkeypatch.setattr(testbed_cli, "service_is_ready", _not_ready)
+
+    with pytest.raises(RuntimeError, match="Next start under Node 22"):
+        runtime_verifier("http://127.0.0.1:3100")
+
+    assert observed == {
+        "session_name": "marketing-capture",
+        "frontend_origin": "http://127.0.0.1:3100",
+        "frontend_node_env": None,
+        "window": testbed_cli.FRONTEND_WINDOW,
+    }
+
+
 def test_testbed_frontend_does_not_override_optional_environment_by_default():
     cfg = SimpleNamespace(
         backend_port=8000,
@@ -224,9 +389,23 @@ def test_marketing_capture_preflights_every_frontend_checkpoint(monkeypatch):
     requests_made: list[tuple[str, dict]] = []
     planner_token = "seeded-planner-jwt"
     couple_token = "seeded-couple-jwt"
+    scenes = marketing_capture_driver.MARKETING_CAPTURE_E2E_CHECKPOINTS
+    stable_text_by_route: dict[str, list[str]] = {}
+    for scene in scenes:
+        stable_text_by_route.setdefault(scene["route"], []).append(
+            scene["expectedVisibleText"]
+        )
 
     def _reachable(url, **kwargs):
         requests_made.append((url, kwargs))
+        if "/api/proxy/" in url:
+            payload = _capture_readiness_payload(url)
+            return SimpleNamespace(
+                status_code=200,
+                headers={},
+                text="readiness payload",
+                json=lambda: payload,
+            )
         if "/admin/" in url and kwargs.get("cookies") != {"admin_token": planner_token}:
             return SimpleNamespace(
                 status_code=307,
@@ -238,7 +417,11 @@ def test_marketing_capture_preflights_every_frontend_checkpoint(monkeypatch):
             headers={},
             text=(
                 '<html><head><meta name="tsw-app-build-commit" '
-                f'content="{EXPECTED_CAPTURE_BUILD}"></head></html>'
+                f'content="{EXPECTED_CAPTURE_BUILD}"></head><body>'
+                + " ".join(
+                    stable_text_by_route[url.removeprefix("http://127.0.0.1:3100")]
+                )
+                + "</body></html>"
             ),
         )
 
@@ -251,29 +434,332 @@ def test_marketing_capture_preflights_every_frontend_checkpoint(monkeypatch):
         couple_token=couple_token,
     )
 
-    scenes = marketing_capture_driver.MARKETING_CAPTURE_E2E_CHECKPOINTS
     expected_routes = [scene["route"] for scene in scenes]
+    route_requests = [
+        (url, kwargs) for url, kwargs in requests_made if "/api/proxy/" not in url
+    ]
     assert len(marketing_capture_driver.MARKETING_CAPTURE_E2E_CHECKPOINTS) == 17
-    assert [url for url, _kwargs in requests_made] == [
+    assert [url for url, _kwargs in route_requests] == [
         f"http://127.0.0.1:3100{route}" for route in expected_routes
     ]
-    for scene, (_url, kwargs) in zip(scenes, requests_made, strict=True):
+    for scene, (_url, kwargs) in zip(scenes, route_requests, strict=True):
         assert kwargs["allow_redirects"] is False
         assert kwargs["timeout"] == 15
         if scene["session"] == "planner":
             assert kwargs["cookies"] == {"admin_token": planner_token}
             assert "headers" not in kwargs
         elif scene["session"] == "couple":
-            assert kwargs["headers"] == {"Authorization": f"Bearer {couple_token}"}
-            assert "cookies" not in kwargs
+            assert kwargs["cookies"] == {"couple_token": couple_token}
+            assert "headers" not in kwargs
         else:
             assert "cookies" not in kwargs
             assert "headers" not in kwargs
 
 
+def test_marketing_capture_checkpoint_rejects_generic_shell_without_stable_text(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        marketing_capture_driver,
+        "MARKETING_CAPTURE_E2E_CHECKPOINTS",
+        (_planner_static_scene(),),
+    )
+    monkeypatch.setattr(
+        marketing_capture_driver.requests,
+        "get",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            status_code=200,
+            headers={},
+            text=_capture_app_shell(),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="stable visible text.*Vendor Management"):
+        marketing_capture_driver.verify_frontend_checkpoint_routes(
+            "http://127.0.0.1:3100",
+            EXPECTED_CAPTURE_BUILD,
+            planner_token="seeded-planner-jwt",
+            couple_token="seeded-couple-jwt",
+        )
+
+
+def test_marketing_capture_checkpoint_reads_stable_text_from_served_route_bundle(
+    monkeypatch,
+):
+    route = "/admin/vendors"
+    script_path = "/_next/static/chunks/app/admin/vendors/page-demo.js"
+    calls: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        marketing_capture_driver,
+        "MARKETING_CAPTURE_E2E_CHECKPOINTS",
+        (_planner_static_scene(),),
+    )
+
+    def _get(url, **kwargs):
+        calls.append((url, kwargs))
+        if url == f"http://127.0.0.1:3100{route}":
+            return SimpleNamespace(
+                status_code=200,
+                headers={},
+                text=_capture_app_shell(scripts=(script_path,)),
+            )
+        if url == f"http://127.0.0.1:3100{script_path}":
+            return SimpleNamespace(
+                status_code=200,
+                headers={"content-type": "application/javascript"},
+                text='self.__next_f.push(["Vendor Management"]);',
+            )
+        raise AssertionError(f"unexpected GET {url}")
+
+    monkeypatch.setattr(marketing_capture_driver.requests, "get", _get)
+
+    marketing_capture_driver.verify_frontend_checkpoint_routes(
+        "http://127.0.0.1:3100",
+        EXPECTED_CAPTURE_BUILD,
+        planner_token="seeded-planner-jwt",
+        couple_token="seeded-couple-jwt",
+    )
+
+    assert [url for url, _kwargs in calls] == [
+        f"http://127.0.0.1:3100{route}",
+        f"http://127.0.0.1:3100{script_path}",
+    ]
+    assert all(
+        kwargs["allow_redirects"] is False and kwargs["timeout"] == 15
+        for _url, kwargs in calls
+    )
+
+
+def test_marketing_capture_team_checkpoint_proves_exact_seeded_member_and_seats(
+    monkeypatch,
+):
+    calls: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        marketing_capture_driver,
+        "MARKETING_CAPTURE_E2E_CHECKPOINTS",
+        (_planner_team_scene(),),
+    )
+
+    def _get(url, **kwargs):
+        calls.append((url, kwargs))
+        if "/api/proxy/" in url:
+            payload = _capture_readiness_payload(url)
+            return SimpleNamespace(
+                status_code=200,
+                headers={},
+                text="capture readiness payload",
+                json=lambda: payload,
+            )
+        return SimpleNamespace(
+            status_code=200,
+            headers={},
+            text=_capture_app_shell(),
+        )
+
+    monkeypatch.setattr(marketing_capture_driver.requests, "get", _get)
+
+    marketing_capture_driver.verify_frontend_checkpoint_routes(
+        "http://127.0.0.1:3100",
+        EXPECTED_CAPTURE_BUILD,
+        planner_token="seeded-planner-jwt",
+        couple_token="seeded-couple-jwt",
+    )
+
+    members_call = next(item for item in calls if item[0].endswith("/team/members"))
+    assert members_call[1]["headers"] == {"Authorization": "Bearer seeded-planner-jwt"}
+    assert members_call[1]["params"] == {"skip": 0, "limit": 50}
+    seats_call = next(item for item in calls if item[0].endswith("/team/seats"))
+    assert seats_call[1]["headers"] == {"Authorization": "Bearer seeded-planner-jwt"}
+    route_call = next(item for item in calls if item[0].endswith("/admin/planner/team"))
+    assert route_call[1]["cookies"] == {"admin_token": "seeded-planner-jwt"}
+
+
+@pytest.mark.parametrize(
+    ("corrupt_endpoint", "expected_error"),
+    [
+        ("/team/members", "wrong seeded member"),
+        ("/team/seats", "wrong seeded usage"),
+    ],
+)
+def test_marketing_capture_team_checkpoint_rejects_wrong_seeded_state(
+    monkeypatch,
+    corrupt_endpoint,
+    expected_error,
+):
+    monkeypatch.setattr(
+        marketing_capture_driver,
+        "MARKETING_CAPTURE_E2E_CHECKPOINTS",
+        (_planner_team_scene(),),
+    )
+
+    def _get(url, **_kwargs):
+        if "/api/proxy/" in url:
+            payload = _capture_readiness_payload(url)
+            if url.endswith(corrupt_endpoint):
+                if corrupt_endpoint == "/team/members":
+                    payload["members"][0]["owner_id"] = "another-tenant"
+                else:
+                    payload["used_seats"] = 2
+            return SimpleNamespace(
+                status_code=200,
+                headers={},
+                text="capture readiness payload",
+                json=lambda: payload,
+            )
+        return SimpleNamespace(
+            status_code=200,
+            headers={},
+            text=_capture_app_shell(),
+        )
+
+    monkeypatch.setattr(marketing_capture_driver.requests, "get", _get)
+
+    with pytest.raises(RuntimeError, match=expected_error):
+        marketing_capture_driver.verify_frontend_checkpoint_routes(
+            "http://127.0.0.1:3100",
+            EXPECTED_CAPTURE_BUILD,
+            planner_token="seeded-planner-jwt",
+            couple_token="seeded-couple-jwt",
+        )
+
+
+def test_marketing_capture_couple_checkpoint_proves_exact_cookie_session(
+    monkeypatch,
+):
+    route = "/couple/dashboard"
+    profile_url = "http://127.0.0.1:3100/api/proxy/couple/profile"
+    dashboard_url = "http://127.0.0.1:3100/api/proxy/couple/portal/dashboard"
+    calls: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        marketing_capture_driver,
+        "MARKETING_CAPTURE_E2E_CHECKPOINTS",
+        (
+            {
+                "featureId": "couple-portal",
+                "session": "couple",
+                "route": route,
+                "title": "Couple portal",
+                "expectation": "The seeded couple dashboard is populated.",
+                "expectedVisibleText": "24 guests added so far",
+                "safeInteraction": None,
+            },
+        ),
+    )
+
+    def _get(url, **kwargs):
+        calls.append((url, kwargs))
+        if url == f"http://127.0.0.1:3100{route}":
+            return SimpleNamespace(
+                status_code=200,
+                headers={},
+                text=_capture_app_shell(),
+            )
+        if url == profile_url:
+            return SimpleNamespace(
+                status_code=200,
+                headers={},
+                text="couple profile",
+                json=lambda: {
+                    "id": marketing_capture_driver.COUPLE_ID,
+                    "email": marketing_capture_driver.COUPLE_EMAIL,
+                    "partner1_name": "Sofia",
+                    "partner2_name": "Daniel",
+                    "wedding_id": marketing_capture_driver.PRIMARY_WEDDING_ID,
+                },
+            )
+        if url == dashboard_url:
+            return SimpleNamespace(
+                status_code=200,
+                headers={},
+                text="couple dashboard",
+                json=lambda: {
+                    "wedding": {
+                        "id": marketing_capture_driver.PRIMARY_WEDDING_ID,
+                        "couple_names": "Sofia & Daniel",
+                    },
+                    "guest_stats": {"guest_list_total": 24},
+                },
+            )
+        raise AssertionError(f"unexpected GET {url}")
+
+    monkeypatch.setattr(marketing_capture_driver.requests, "get", _get)
+
+    marketing_capture_driver.verify_frontend_checkpoint_routes(
+        "http://127.0.0.1:3100",
+        EXPECTED_CAPTURE_BUILD,
+        planner_token="seeded-planner-jwt",
+        couple_token="seeded-couple-jwt",
+    )
+
+    assert [url for url, _kwargs in calls] == [
+        profile_url,
+        dashboard_url,
+        f"http://127.0.0.1:3100{route}",
+    ]
+    for _url, kwargs in calls:
+        assert kwargs["cookies"] == {"couple_token": "seeded-couple-jwt"}
+        assert "headers" not in kwargs
+        assert kwargs["allow_redirects"] is False
+
+
+def test_marketing_capture_couple_checkpoint_rejects_wrong_session_identity(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        marketing_capture_driver,
+        "MARKETING_CAPTURE_E2E_CHECKPOINTS",
+        (
+            {
+                "featureId": "couple-portal",
+                "session": "couple",
+                "route": "/couple/dashboard",
+                "title": "Couple portal",
+                "expectation": "The seeded couple dashboard is populated.",
+                "expectedVisibleText": "24 guests added so far",
+                "safeInteraction": None,
+            },
+        ),
+    )
+
+    def _get(url, **_kwargs):
+        if url.endswith("/api/proxy/couple/profile"):
+            return SimpleNamespace(
+                status_code=200,
+                headers={},
+                text="wrong couple profile",
+                json=lambda: {
+                    "id": "couple_from_another_wedding",
+                    "email": "other@couples.thespecialwedding.io",
+                    "wedding_id": "wedding_from_another_tenant",
+                },
+            )
+        return SimpleNamespace(
+            status_code=200,
+            headers={},
+            text=_capture_app_shell(),
+            json=lambda: {},
+        )
+
+    monkeypatch.setattr(marketing_capture_driver.requests, "get", _get)
+
+    with pytest.raises(RuntimeError, match="wrong seeded couple session"):
+        marketing_capture_driver.verify_frontend_checkpoint_routes(
+            "http://127.0.0.1:3100",
+            EXPECTED_CAPTURE_BUILD,
+            planner_token="seeded-planner-jwt",
+            couple_token="wrong-couple-jwt",
+        )
+
+
 def test_marketing_capture_admin_checkpoint_reproduces_307_without_cookie(
     monkeypatch,
 ):
+    monkeypatch.setattr(
+        marketing_capture_driver,
+        "MARKETING_CAPTURE_E2E_CHECKPOINTS",
+        (_planner_static_scene(),),
+    )
+
     def _proxy_like_response(url, **kwargs):
         if "/admin/" in url and "admin_token" not in kwargs.get("cookies", {}):
             return SimpleNamespace(
@@ -286,12 +772,13 @@ def test_marketing_capture_admin_checkpoint_reproduces_307_without_cookie(
             headers={},
             text=(
                 f'<meta name="tsw-app-build-commit" content="{EXPECTED_CAPTURE_BUILD}">'  # noqa: E501
+                "Vendor Management"
             ),
         )
 
     assert (
         _proxy_like_response(
-            "http://127.0.0.1:3100/admin/planner",
+            "http://127.0.0.1:3100/admin/vendors",
             allow_redirects=False,
         ).status_code
         == 307
@@ -310,6 +797,11 @@ def test_marketing_capture_admin_checkpoint_reproduces_307_without_cookie(
 
 
 def test_marketing_capture_frontend_preflight_rejects_a_404(monkeypatch):
+    monkeypatch.setattr(
+        marketing_capture_driver,
+        "MARKETING_CAPTURE_E2E_CHECKPOINTS",
+        (_planner_static_scene(),),
+    )
     monkeypatch.setattr(
         marketing_capture_driver.requests,
         "get",
@@ -331,6 +823,11 @@ def test_marketing_capture_frontend_preflight_rejects_a_404(monkeypatch):
 
 def test_marketing_capture_frontend_preflight_rejects_redirects(monkeypatch):
     observed_kwargs: dict = {}
+    monkeypatch.setattr(
+        marketing_capture_driver,
+        "MARKETING_CAPTURE_E2E_CHECKPOINTS",
+        (_planner_static_scene(),),
+    )
 
     def _redirect(_url, **kwargs):
         observed_kwargs.update(kwargs)
@@ -355,6 +852,11 @@ def test_marketing_capture_frontend_preflight_rejects_redirects(monkeypatch):
 
 def test_marketing_capture_frontend_preflight_rejects_location_on_200(monkeypatch):
     monkeypatch.setattr(
+        marketing_capture_driver,
+        "MARKETING_CAPTURE_E2E_CHECKPOINTS",
+        (_planner_static_scene(),),
+    )
+    monkeypatch.setattr(
         marketing_capture_driver.requests,
         "get",
         lambda *_args, **_kwargs: SimpleNamespace(
@@ -377,6 +879,11 @@ def test_marketing_capture_frontend_preflight_rejects_location_on_200(monkeypatc
 
 def test_marketing_capture_frontend_preflight_rejects_stale_build(monkeypatch):
     stale_build = "b" * 40
+    monkeypatch.setattr(
+        marketing_capture_driver,
+        "MARKETING_CAPTURE_E2E_CHECKPOINTS",
+        (_planner_static_scene(),),
+    )
     monkeypatch.setattr(
         marketing_capture_driver.requests,
         "get",
@@ -458,6 +965,22 @@ def test_marketing_capture_route_preflight_can_resolve_real_seed_tokens(
 ):
     login_calls: list[tuple[str, dict]] = []
     route_calls: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        marketing_capture_driver,
+        "MARKETING_CAPTURE_E2E_CHECKPOINTS",
+        (
+            _planner_team_scene(),
+            {
+                "featureId": "guest-memories",
+                "session": "couple",
+                "route": "/couple/dashboard",
+                "title": "Guest memories",
+                "expectation": "The seeded review queue is visible.",
+                "expectedVisibleText": "Review queue",
+                "safeInteraction": "Open Memories.",
+            },
+        ),
+    )
 
     def _post(url, **kwargs):
         login_calls.append((url, kwargs))
@@ -470,11 +993,23 @@ def test_marketing_capture_route_preflight_can_resolve_real_seed_tokens(
 
     def _get(url, **kwargs):
         route_calls.append((url, kwargs))
+        if "/api/proxy/" in url:
+            payload = _capture_readiness_payload(url)
+            return SimpleNamespace(
+                status_code=200,
+                headers={},
+                text="capture readiness payload",
+                json=lambda: payload,
+            )
+        visible_text = (
+            "Team Management" if url.endswith("/admin/planner/team") else "Review queue"
+        )
         return SimpleNamespace(
             status_code=200,
             headers={},
             text=(
                 f'<meta name="tsw-app-build-commit" content="{EXPECTED_CAPTURE_BUILD}">'  # noqa: E501
+                f"{visible_text}"
             ),
         )
 
@@ -498,7 +1033,7 @@ def test_marketing_capture_route_preflight_can_resolve_real_seed_tokens(
     planner_request = next(
         kwargs
         for url, kwargs in route_calls
-        if url == "http://127.0.0.1:3100/admin/planner"
+        if url == "http://127.0.0.1:3100/admin/planner/team"
     )
     assert planner_request["cookies"] == {"admin_token": "planner-token"}
     couple_request = next(
@@ -506,7 +1041,8 @@ def test_marketing_capture_route_preflight_can_resolve_real_seed_tokens(
         for url, kwargs in route_calls
         if url == "http://127.0.0.1:3100/couple/dashboard"
     )
-    assert couple_request["headers"] == {"Authorization": "Bearer couple-token"}
+    assert couple_request["cookies"] == {"couple_token": "couple-token"}
+    assert "headers" not in couple_request
 
 
 @pytest.mark.parametrize("status_code", [200, 307])
@@ -537,6 +1073,68 @@ def test_marketing_capture_login_rejects_redirects_without_forwarding_credential
 
     assert observed_kwargs["allow_redirects"] is False
     assert observed_kwargs["timeout"] == 15
+
+
+@pytest.mark.parametrize("status_code", [200, 307])
+def test_marketing_capture_json_readiness_rejects_any_location_header(
+    monkeypatch,
+    status_code,
+):
+    readiness_get = getattr(
+        marketing_capture_driver,
+        "_get_json_readiness",
+        None,
+    )
+    assert callable(readiness_get), "capture JSON probes need one fail-closed helper"
+    observed_kwargs: dict = {}
+
+    def _redirect(_url, **kwargs):
+        observed_kwargs.update(kwargs)
+        return SimpleNamespace(
+            status_code=status_code,
+            headers={"Location": "https://attacker.example/collect"},
+            text="redirect",
+            json=lambda: {"slug": marketing_capture_driver.PRIMARY_SLUG},
+        )
+
+    monkeypatch.setattr(marketing_capture_driver.requests, "get", _redirect)
+
+    with pytest.raises(RuntimeError, match="unexpectedly redirected"):
+        readiness_get(
+            "http://127.0.0.1:8000/weddings/slug/sofia-and-daniel",
+            label="Public showcase wedding",
+        )
+
+    assert observed_kwargs["allow_redirects"] is False
+    assert observed_kwargs["timeout"] == 15
+
+
+def test_marketing_capture_json_readiness_rejects_redirect_status_without_location(
+    monkeypatch,
+):
+    readiness_get = getattr(
+        marketing_capture_driver,
+        "_get_json_readiness",
+        None,
+    )
+    assert callable(readiness_get), "capture JSON probes need one fail-closed helper"
+    monkeypatch.setattr(
+        marketing_capture_driver.requests,
+        "get",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            status_code=307,
+            headers={},
+            text="redirect without location",
+            json=lambda: {},
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="returned HTTP 307"):
+        readiness_get(
+            "http://127.0.0.1:8000/public/kb/articles/slug/"
+            "planner-command-center-first-steps",
+            label="Published showcase Knowledge Base article",
+        )
 
 
 def test_marketing_capture_preflights_public_gallery_payload_and_assets(monkeypatch):
@@ -592,6 +1190,111 @@ def test_marketing_capture_preflights_public_gallery_payload_and_assets(monkeypa
         kwargs["allow_redirects"] is False and kwargs["timeout"] == 15
         for _url, kwargs in requested
     )
+
+
+def test_marketing_capture_preflights_all_admin_gallery_prefixes_through_frontend_proxy(
+    monkeypatch,
+):
+    verifier = getattr(
+        marketing_capture_driver,
+        "verify_frontend_admin_gallery_prefixes",
+        None,
+    )
+    assert callable(verifier), "marketing capture must preflight admin gallery prefixes"
+
+    frontend_origin = "http://127.0.0.1:3100"
+    backend_origin = "http://127.0.0.1:8000"
+    login_url = f"{backend_origin}/admin/token"
+    list_url = f"{frontend_origin}/api/proxy/admin/gallery/list"
+    calls: list[tuple[str, str, dict]] = []
+
+    def _post(url, **kwargs):
+        calls.append(("POST", url, kwargs))
+        return SimpleNamespace(
+            status_code=200,
+            headers={},
+            text="planner login",
+            json=lambda: {"access_token": "seeded-planner-jwt"},
+        )
+
+    def _get(url, **kwargs):
+        calls.append(("GET", url, kwargs))
+        prefix = kwargs["params"]["prefix"]
+        payload = (
+            marketing_capture_driver.MARKETING_CAPTURE_GALLERY_ITEMS
+            if prefix.startswith("gallery/")
+            else []
+        )
+        return SimpleNamespace(
+            status_code=200,
+            headers={},
+            text="gallery list",
+            json=lambda: payload,
+        )
+
+    monkeypatch.setattr(marketing_capture_driver.requests, "post", _post)
+    monkeypatch.setattr(marketing_capture_driver.requests, "get", _get)
+
+    verifier(frontend_origin, backend_origin)
+
+    assert [(method, url) for method, url, _kwargs in calls] == [
+        ("POST", login_url),
+        ("GET", list_url),
+        ("GET", list_url),
+        ("GET", list_url),
+    ]
+    assert [
+        kwargs["params"]["prefix"] for method, _url, kwargs in calls if method == "GET"
+    ] == [
+        "gallery/sofia-and-daniel/",
+        "our-story/sofia-and-daniel/",
+        "wedding-party/sofia-and-daniel/",
+    ]
+    assert all(
+        kwargs["headers"] == {"Authorization": "Bearer seeded-planner-jwt"}
+        and kwargs["allow_redirects"] is False
+        and kwargs["timeout"] == 15
+        for method, _url, kwargs in calls
+        if method == "GET"
+    )
+
+
+def test_marketing_capture_admin_gallery_preflight_rejects_optional_prefix_503(
+    monkeypatch,
+):
+    verifier = getattr(
+        marketing_capture_driver,
+        "verify_frontend_admin_gallery_prefixes",
+        None,
+    )
+    assert callable(verifier), "marketing capture must preflight admin gallery prefixes"
+
+    def _post(_url, **_kwargs):
+        return SimpleNamespace(
+            status_code=200,
+            headers={},
+            text="planner login",
+            json=lambda: {"access_token": "seeded-planner-jwt"},
+        )
+
+    def _get(_url, **kwargs):
+        prefix = kwargs["params"]["prefix"]
+        return SimpleNamespace(
+            status_code=503 if prefix.startswith("our-story/") else 200,
+            headers={},
+            text="storage unavailable",
+            json=lambda: (
+                marketing_capture_driver.MARKETING_CAPTURE_GALLERY_ITEMS
+                if prefix.startswith("gallery/")
+                else []
+            ),
+        )
+
+    monkeypatch.setattr(marketing_capture_driver.requests, "post", _post)
+    monkeypatch.setattr(marketing_capture_driver.requests, "get", _get)
+
+    with pytest.raises(RuntimeError, match="our-story.*HTTP 503"):
+        verifier("http://127.0.0.1:3100", "http://127.0.0.1:8000")
 
 
 def test_marketing_capture_gallery_asset_rejects_invalid_webp_bytes():
@@ -975,6 +1678,9 @@ def test_testbed_driver_resets_then_seeds_then_verifies_before_browser_checkpoin
     frontend_origin_index = main_source.find(
         "frontend_url = require_local_capture_origin("
     )
+    runtime_gate_index = main_source.find(
+        "verify_frontend_capture_runtime(frontend_url)"
+    )
     capture_clean_gate_index = main_source.find(
         "capture_ready_build = require_clean_capture_checkout()"
     )
@@ -983,12 +1689,16 @@ def test_testbed_driver_resets_then_seeds_then_verifies_before_browser_checkpoin
         -1
         < backend_origin_index
         < frontend_origin_index
+        < runtime_gate_index
         < initial_clean_gate_index
         < database_open_index
     )
     assert -1 < capture_clean_gate_index < route_preflight_index
     gallery_preflight_index = main_source.find(
         "verify_frontend_gallery_assets(frontend_url)"
+    )
+    admin_gallery_preflight_index = main_source.find(
+        "verify_frontend_admin_gallery_prefixes(frontend_url, backend_url)"
     )
     memory_preflight_index = main_source.find(
         "verify_frontend_couple_memory_preview(frontend_url, backend_url)"
@@ -1000,6 +1710,7 @@ def test_testbed_driver_resets_then_seeds_then_verifies_before_browser_checkpoin
         -1
         < route_preflight_index
         < gallery_preflight_index
+        < admin_gallery_preflight_index
         < memory_preflight_index
         < checkpoint_output_index
     )

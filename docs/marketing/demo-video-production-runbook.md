@@ -58,7 +58,7 @@ TESTBED_NON_INTERACTIVE=1 \
   --frontend-url http://127.0.0.1:3100
 ```
 
-The driver refuses non-local Mongo and any service origin other than the exact `http://127.0.0.1:8000` backend and `http://127.0.0.1:3100` frontend before it handles fixture credentials. It removes only its owned seed namespace, reseeds the complete Phase 1 world, verifies planner/team/couple authentication, sends the planner cookie only to planner scenes and the couple bearer only to couple scenes, binds all 17 route shells to the clean served build, and verifies every gallery fixture as the exact reviewed 1600x1000 WebP bytes. These preflights support the manual review; they do not replace it.
+The driver refuses non-local Mongo and any service origin other than the exact `http://127.0.0.1:8000` backend and `http://127.0.0.1:3100` frontend before it handles fixture credentials. Before reset or seed, it also inspects the canonical `marketing-capture` tmux process and fails unless the visible frontend is a real `next start` process running under Node 22; this proof does not depend on a later shell retaining `TESTBED_FRONTEND_NODE_ENV`. It removes only its owned seed namespace, reseeds the complete Phase 1 world, verifies planner/team/couple authentication, sends the planner cookie only to planner scenes and the couple cookie only to couple scenes, binds all 17 route shells to the clean served build, checks their exact seeded stable text through frontend-proxy data or served Next bundles, and verifies every gallery fixture as the exact reviewed 1600x1000 WebP bytes. These preflights support the manual review; they do not replace it.
 
 Run the production inventory check as well:
 
@@ -75,7 +75,7 @@ TESTBED_SESSION_NAME=marketing-capture .venv.nosync/bin/python testbed/testbed.p
 curl -fsS http://127.0.0.1:3100/ >/dev/null
 ```
 
-The worktree must be clean. The visible app's `meta[name="tsw-app-build-commit"]` must equal the full commit returned by `git rev-parse HEAD`. A development server, a Node 26 process, or a stale build marker invalidates the take.
+The worktree must be clean. `testbed.py status` must print `runtime=next-start node=node-22` for the frontend even though the status command does not repeat the startup-only `TESTBED_FRONTEND_NODE_ENV` export. The visible app's `meta[name="tsw-app-build-commit"]` must equal the full commit returned by `git rev-parse HEAD`. A development server, any non-Node-22 process, or a stale build marker invalidates the take.
 
 ## 2. Optional Automated Preflight Is Not Acceptance Evidence
 
@@ -114,7 +114,7 @@ Every final product still is captured one at a time from the visible frontend in
 4. Open the DevTools command palette and choose `Capture screenshot`, not `Capture full size screenshot`.
 5. Inspect the original 1440x900 PNG at native resolution before approving or moving it to its manifest path.
 6. Hash the untouched PNG and add that scene's explicit `source.reviewReceipt` to `marketingCaptureManifest.ts`. The receipt must name the scene, captured build, artifact checksum, visible Chrome settings, capture command, operator review time, and the fact that no scripted capture or post-capture transform was used. Never generate or copy one shared receipt across scenes.
-7. After all 17 images have individual receipts, run `npm run demo:validate-images`. It validates every PNG and its full Git ancestry. `npm run build` performs the same published receipt/file/hash gate without requiring `.git`, so Gitless Docker builds remain deployable; CI separately runs the full-history published-ancestry gate.
+7. After all 17 images have individual receipts, run `npm run demo:validate-images`. It validates every PNG and its full Git ancestry. `npm run build` performs the same published receipt/file/hash gate without requiring `.git`, so Gitless Docker builds remain deployable; CI separately runs the full-history published-ancestry gate. Until the final two captures are approved, build and CI also enforce the current floor of 15 reviewed proofs so an accidental status regression cannot silently replace published images with placeholders; moving forward from 15 to all 17 remains valid.
 
 Changing a scene to `approved` without its own receipt is rejected. A receipt whose build or checksum differs from the scene and original PNG is also rejected. There is no crop, resize, stitching, scripted navigation, or scripted screenshot call in the final-still workflow. If the complete product shell is not legible inside the 1440x900 viewport, repair or restage the frontend and retake the still; do not zoom into a card or transform the PNG afterward.
 

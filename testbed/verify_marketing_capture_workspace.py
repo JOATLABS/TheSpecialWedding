@@ -14,6 +14,7 @@ import sys
 from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlparse
 
@@ -33,6 +34,7 @@ from testbed.cleanup_marketing_capture_workspace_state import (  # noqa: E402
     _load_database,
     cleanup_marketing_capture_workspace_state,
 )
+from testbed import testbed as testbed_cli  # noqa: E402
 from app.models.vendor_contracts import (  # noqa: E402
     VendorContractActivityItem,
     VendorContractActivityType,
@@ -52,6 +54,8 @@ PLANNER_PASSWORD = "CapturePlanner2026!"  # pragma: allowlist secret
 PLANNER_USER_ID = "user_marketing_capture_amina_cole"
 TEAM_EMAIL = "maya@studio.thespecialwedding.io"
 TEAM_PASSWORD = "CaptureTeam2026!"  # pragma: allowlist secret
+TEAM_MEMBER_ID = "67c700000000000000000001"
+TEAM_USER_ID = "67c700000000000000000002"
 COUPLE_EMAIL = "sofia.daniel@couples.thespecialwedding.io"
 COUPLE_PASSWORD = "CaptureCouple2026!"  # pragma: allowlist secret
 COUPLE_ID = "couple_marketing_capture_sofia_daniel"
@@ -68,6 +72,18 @@ RESERVED_FICTIONAL_PHONE_PATTERN = re.compile(r"^1?[2-9]\d{2}55501\d{2}$")
 FULL_GIT_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 MARKETING_CAPTURE_SCENES_PATH = ROOT / "app" / "data" / "marketingCaptureScenes.json"
 MARKETING_CAPTURE_SESSIONS = frozenset({"planner", "couple", "public"})
+MARKETING_CAPTURE_API_TEXT_FEATURES = frozenset(
+    {
+        "dashboard",
+        "real-time",
+        "couple-portal",
+        "gallery-management",
+        "inbox",
+        "budget",
+        "forms",
+        "team",
+    }
+)
 
 
 class _BuildCommitMetaParser(HTMLParser):
@@ -76,15 +92,22 @@ class _BuildCommitMetaParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.commits: list[str] = []
+        self.script_sources: list[str] = []
 
     def handle_starttag(
         self,
         tag: str,
         attrs: list[tuple[str, str | None]],
     ) -> None:
-        if tag.lower() != "meta":
-            return
+        normalized_tag = tag.lower()
         attributes = {key.lower(): value for key, value in attrs}
+        if normalized_tag == "script":
+            source = attributes.get("src")
+            if source:
+                self.script_sources.append(source)
+            return
+        if normalized_tag != "meta":
+            return
         if attributes.get("name") != "tsw-app-build-commit":
             return
         content = attributes.get("content")
@@ -167,6 +190,41 @@ def _require_no_redirect(response: Any, label: str) -> None:
     )
 
 
+def _get_json_readiness(
+    url: str,
+    *,
+    label: str,
+    headers: dict[str, str] | None = None,
+    cookies: dict[str, str] | None = None,
+    params: dict[str, str] | None = None,
+) -> Any:
+    """Fetch one readiness payload without allowing redirects or HTML shells."""
+
+    request_kwargs: dict[str, Any] = {
+        "timeout": 15,
+        "allow_redirects": False,
+    }
+    if headers is not None:
+        request_kwargs["headers"] = headers
+    if cookies is not None:
+        request_kwargs["cookies"] = cookies
+    if params is not None:
+        request_kwargs["params"] = params
+    try:
+        response = requests.get(url, **request_kwargs)
+    except requests.RequestException as exc:
+        raise RuntimeError(f"{label} is unreachable: {exc}") from exc
+    _require_no_redirect(response, label)
+    _require(
+        response.status_code == 200,
+        f"{label} returned HTTP {response.status_code}",
+    )
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise RuntimeError(f"{label} returned invalid JSON") from exc
+
+
 def require_local_capture_origin(
     value: str,
     *,
@@ -199,6 +257,29 @@ def require_local_capture_origin(
         "with no credentials, path, query, or fragment",
     )
     return value
+
+
+def verify_frontend_capture_runtime(frontend_url: str) -> None:
+    """Require the canonical tmux frontend to be Next start running on Node 22."""
+
+    frontend_origin = require_local_capture_origin(
+        frontend_url,
+        expected_port=3100,
+        label="Marketing capture frontend",
+    )
+    capture_runtime = SimpleNamespace(
+        session_name=testbed_cli.MARKETING_CAPTURE_SESSION_NAME,
+        frontend_origin=frontend_origin,
+        frontend_node_env=None,
+    )
+    _require(
+        testbed_cli.service_is_ready(
+            capture_runtime,
+            testbed_cli.FRONTEND_WINDOW,
+        ),
+        "Marketing capture frontend must be the canonical tmux Next start under "
+        "Node 22 before reset, seed, verification, or capture",
+    )
 
 
 def _load_marketing_capture_contract() -> tuple[
@@ -815,43 +896,317 @@ def verify_seeded_workspace(
     _login(backend_url, "/admin/token", PLANNER_EMAIL, PLANNER_PASSWORD)
     _login(backend_url, "/admin/token", TEAM_EMAIL, TEAM_PASSWORD)
     _login(backend_url, "/couple/login", COUPLE_EMAIL, COUPLE_PASSWORD)
-    try:
-        public_response = requests.get(
-            f"{backend_url}/weddings/slug/{PRIMARY_SLUG}",
-            timeout=15,
-            allow_redirects=False,
-        )
-    except requests.RequestException as exc:
-        raise RuntimeError(f"Public showcase route is unreachable: {exc}") from exc
-    _require_no_redirect(public_response, "Public showcase wedding")
-    _require(
-        public_response.status_code == 200,
-        f"Public showcase wedding returned HTTP {public_response.status_code}",
+    public_payload = _get_json_readiness(
+        f"{backend_url}/weddings/slug/{PRIMARY_SLUG}",
+        label="Public showcase wedding",
     )
-    try:
-        kb_response = requests.get(
-            f"{backend_url}/public/kb/articles/slug/{DEMO_KB_ARTICLE_SLUG}",
-            timeout=15,
-            allow_redirects=False,
-        )
-    except requests.RequestException as exc:
-        raise RuntimeError(
-            f"Published showcase Knowledge Base route is unreachable: {exc}"
-        ) from exc
-    _require_no_redirect(kb_response, "Published showcase Knowledge Base article")
-    try:
-        kb_payload = kb_response.json()
-    except ValueError as exc:
-        raise RuntimeError(
-            "Published showcase Knowledge Base route returned invalid JSON"
-        ) from exc
+    public_venue = (
+        public_payload.get("venue") if isinstance(public_payload, dict) else None
+    )
+    public_venue_name = (
+        public_venue.get("name") if isinstance(public_venue, dict) else public_venue
+    )
     _require(
-        kb_response.status_code == 200
-        and isinstance(kb_payload, dict)
-        and kb_payload.get("slug") == DEMO_KB_ARTICLE_SLUG,
-        "Published showcase Knowledge Base article is not publicly readable",
+        isinstance(public_payload, dict)
+        and str(public_payload.get("id") or public_payload.get("_id") or "")
+        == PRIMARY_WEDDING_ID
+        and public_payload.get("couple_names") == "Sofia & Daniel"
+        and public_payload.get("privacy_mode") == "public"
+        and public_venue_name == "The Glasshouse at Riverbend",
+        "Public showcase wedding returned the wrong seeded visible state",
+    )
+    kb_payload = _get_json_readiness(
+        f"{backend_url}/public/kb/articles/slug/{DEMO_KB_ARTICLE_SLUG}",
+        label="Published showcase Knowledge Base article",
+    )
+    _require(
+        isinstance(kb_payload, dict)
+        and kb_payload.get("slug") == DEMO_KB_ARTICLE_SLUG
+        and kb_payload.get("title") == "Planner Command Center: Your First 30 Minutes",
+        "Published showcase Knowledge Base article returned the wrong visible state",
     )
     return counts
+
+
+def _verify_couple_capture_session(
+    frontend_origin: str,
+    couple_token: str,
+) -> None:
+    """Prove the cookie session resolves to the exact seeded couple and wedding."""
+
+    profile = _get_json_readiness(
+        f"{frontend_origin}/api/proxy/couple/profile",
+        label="Marketing capture couple profile",
+        cookies={"couple_token": couple_token},
+    )
+    _require(
+        isinstance(profile, dict)
+        and profile.get("id") == COUPLE_ID
+        and profile.get("email") == COUPLE_EMAIL
+        and profile.get("partner1_name") == "Sofia"
+        and profile.get("partner2_name") == "Daniel"
+        and profile.get("wedding_id") == PRIMARY_WEDDING_ID,
+        "Marketing capture frontend resolved the wrong seeded couple session",
+    )
+
+
+def _find_primary_capture_wedding(payload: Any) -> dict[str, Any]:
+    weddings = payload if isinstance(payload, list) else []
+    wedding = next(
+        (
+            candidate
+            for candidate in weddings
+            if isinstance(candidate, dict)
+            and str(candidate.get("id") or candidate.get("_id") or "")
+            == PRIMARY_WEDDING_ID
+        ),
+        None,
+    )
+    _require(
+        isinstance(wedding, dict)
+        and wedding.get("slug") == PRIMARY_SLUG
+        and wedding.get("couple_names") == "Sofia & Daniel",
+        "Marketing capture planner wedding payload is missing Sofia & Daniel",
+    )
+    return wedding
+
+
+def _api_backed_scene_text(
+    feature_id: str,
+    *,
+    frontend_origin: str,
+    planner_token: str,
+    couple_token: str,
+) -> str | None:
+    """Resolve dynamic stable text through the same frontend proxy used by the UI."""
+
+    planner_headers = {"Authorization": f"Bearer {planner_token}"}
+    couple_cookies = {"couple_token": couple_token}
+
+    if feature_id == "dashboard":
+        profile = _get_json_readiness(
+            f"{frontend_origin}/api/proxy/admin/profile",
+            label="Marketing capture planner profile",
+            headers=planner_headers,
+        )
+        company_name = (
+            profile.get("company_name") if isinstance(profile, dict) else None
+        )
+        _require(
+            isinstance(profile, dict)
+            and profile.get("id") == PLANNER_USER_ID
+            and profile.get("email") == PLANNER_EMAIL
+            and company_name == "Marigold & Co. Weddings",
+            "Marketing capture frontend resolved the wrong seeded planner profile",
+        )
+        return f"Welcome back, {company_name}!"
+
+    if feature_id == "real-time":
+        weddings = _get_json_readiness(
+            f"{frontend_origin}/api/proxy/admin/planner/weddings",
+            label="Marketing capture planner weddings",
+            headers=planner_headers,
+        )
+        wedding = _find_primary_capture_wedding(weddings)
+        venue = wedding.get("venue")
+        venue_name = venue.get("name") if isinstance(venue, dict) else venue
+        _require(
+            venue_name == "The Glasshouse at Riverbend",
+            "Marketing capture planner wedding returned the wrong venue",
+        )
+        return str(venue_name)
+
+    if feature_id == "couple-portal":
+        dashboard = _get_json_readiness(
+            f"{frontend_origin}/api/proxy/couple/portal/dashboard",
+            label="Marketing capture couple dashboard",
+            cookies=couple_cookies,
+        )
+        wedding = dashboard.get("wedding") if isinstance(dashboard, dict) else None
+        guest_stats = (
+            dashboard.get("guest_stats") if isinstance(dashboard, dict) else None
+        )
+        guest_total = (
+            guest_stats.get("guest_list_total")
+            if isinstance(guest_stats, dict)
+            else None
+        )
+        _require(
+            isinstance(wedding, dict)
+            and wedding.get("id") == PRIMARY_WEDDING_ID
+            and wedding.get("couple_names") == "Sofia & Daniel"
+            and guest_total == 24,
+            "Marketing capture couple dashboard returned the wrong seeded state",
+        )
+        return f"{guest_total} guests added so far"
+
+    if feature_id == "gallery-management":
+        gallery = _get_json_readiness(
+            f"{frontend_origin}/api/proxy/admin/gallery/list",
+            label="Marketing capture admin gallery",
+            headers=planner_headers,
+            params={"prefix": f"gallery/{PRIMARY_SLUG}/"},
+        )
+        first_item = gallery[0] if isinstance(gallery, list) and gallery else None
+        _require(
+            isinstance(first_item, dict)
+            and first_item.get("display_name") == "Garden terrace portrait"
+            and first_item.get("url") == MARKETING_CAPTURE_GALLERY_ITEMS[0]["url"],
+            "Marketing capture admin gallery returned the wrong seeded media",
+        )
+        return str(first_item["display_name"])
+
+    if feature_id == "inbox":
+        payload = _get_json_readiness(
+            f"{frontend_origin}/api/proxy/couple-portal/conversations",
+            label="Marketing capture couple conversations",
+            headers=planner_headers,
+        )
+        conversations = (
+            payload.get("conversations") if isinstance(payload, dict) else None
+        )
+        conversation = next(
+            (
+                item
+                for item in (conversations or [])
+                if isinstance(item, dict)
+                and item.get("id") == COUPLE_ID
+                and item.get("wedding_id") == PRIMARY_WEDDING_ID
+            ),
+            None,
+        )
+        _require(
+            isinstance(conversation, dict)
+            and conversation.get("partner1_name") == "Sofia"
+            and conversation.get("partner2_name") == "Daniel",
+            "Marketing capture inbox returned the wrong seeded couple conversation",
+        )
+        return f"{conversation['partner1_name']} & {conversation['partner2_name']}"
+
+    if feature_id == "budget":
+        payload = _get_json_readiness(
+            f"{frontend_origin}/api/proxy/admin/weddings/{PRIMARY_WEDDING_ID}/budget",
+            label="Marketing capture budget",
+            headers=planner_headers,
+        )
+        summary = payload.get("summary") if isinstance(payload, dict) else None
+        total_budget = (
+            summary.get("total_budget") if isinstance(summary, dict) else None
+        )
+        _require(
+            isinstance(total_budget, (int, float)) and total_budget == 82_500,
+            "Marketing capture budget returned the wrong seeded total",
+        )
+        return f"${total_budget:,.0f}"
+
+    if feature_id == "forms":
+        form = _get_json_readiness(
+            f"{frontend_origin}/api/proxy/admin/forms/"
+            "form_marketing_capture_couple_intake",
+            label="Marketing capture form builder",
+            headers=planner_headers,
+        )
+        _require(
+            isinstance(form, dict)
+            and form.get("id") == "form_marketing_capture_couple_intake"
+            and form.get("wedding_id") == PRIMARY_WEDDING_ID
+            and form.get("name") == "Couple Intake Questionnaire",
+            "Marketing capture form builder returned the wrong seeded form",
+        )
+        return str(form["name"])
+
+    if feature_id == "team":
+        members_payload = _get_json_readiness(
+            f"{frontend_origin}/api/proxy/admin/team/members",
+            label="Marketing capture team members",
+            headers=planner_headers,
+            params={"skip": 0, "limit": 50},
+        )
+        members = (
+            members_payload.get("members")
+            if isinstance(members_payload, dict)
+            else None
+        )
+        member = members[0] if isinstance(members, list) and len(members) == 1 else None
+        _require(
+            isinstance(members_payload, dict)
+            and members_payload.get("total") == 1
+            and members_payload.get("skip") == 0
+            and members_payload.get("limit") == 50
+            and isinstance(member, dict)
+            and member.get("id") == TEAM_MEMBER_ID
+            and member.get("owner_id") == PLANNER_USER_ID
+            and member.get("owner_email") == PLANNER_EMAIL
+            and member.get("user_id") == TEAM_USER_ID
+            and member.get("email") == TEAM_EMAIL
+            and member.get("first_name") == "Maya"
+            and member.get("last_name") == "Thompson"
+            and member.get("status") == "active"
+            and member.get("role") == "editor"
+            and member.get("wedding_access") == "assigned"
+            and member.get("assigned_wedding_ids") == [PRIMARY_WEDDING_ID],
+            "Marketing capture team list returned the wrong seeded member",
+        )
+
+        seats = _get_json_readiness(
+            f"{frontend_origin}/api/proxy/admin/team/seats",
+            label="Marketing capture team seats",
+            headers=planner_headers,
+        )
+        _require(
+            isinstance(seats, dict)
+            and seats.get("total_seats") == 5
+            and seats.get("used_seats") == 1
+            and seats.get("available_seats") == 4
+            and seats.get("members_by_status") == {"active": 1},
+            "Marketing capture team seats returned the wrong seeded usage",
+        )
+        return "Team Management"
+
+    return None
+
+
+def _load_served_checkpoint_scripts(
+    frontend_origin: str,
+    script_sources: list[str],
+    cache: dict[str, str],
+) -> str:
+    """Load only same-origin Next.js route bundles referenced by the app shell."""
+
+    script_text: list[str] = []
+    for source in script_sources:
+        parsed = urlparse(source)
+        if not (
+            parsed.scheme == ""
+            and parsed.netloc == ""
+            and parsed.path.startswith("/_next/static/")
+            and parsed.path.endswith(".js")
+            and parsed.params == ""
+            and parsed.query == ""
+            and parsed.fragment == ""
+        ):
+            continue
+        if source not in cache:
+            script_url = f"{frontend_origin}{source}"
+            try:
+                response = requests.get(
+                    script_url,
+                    timeout=15,
+                    allow_redirects=False,
+                )
+            except requests.RequestException as exc:
+                raise RuntimeError(
+                    f"Frontend checkpoint bundle is unreachable: {script_url}: {exc}"
+                ) from exc
+            _require_no_redirect(response, f"Frontend checkpoint bundle {script_url}")
+            _require(
+                response.status_code == 200 and bool(response.text.strip()),
+                "Frontend checkpoint bundle returned an invalid response: "
+                f"{script_url}; HTTP {response.status_code}",
+            )
+            cache[source] = response.text
+        script_text.append(cache[source])
+    return "\n".join(script_text)
 
 
 def verify_frontend_checkpoint_routes(
@@ -909,10 +1264,20 @@ def verify_frontend_checkpoint_routes(
         "Frontend checkpoint preflight received an empty couple token",
     )
 
+    if any(scene["session"] == "couple" for scene in MARKETING_CAPTURE_E2E_CHECKPOINTS):
+        _verify_couple_capture_session(origin, couple_token)
+
+    script_cache: dict[str, str] = {}
     for scene in MARKETING_CAPTURE_E2E_CHECKPOINTS:
         title = scene["title"]
         route = scene["route"]
         url = f"{origin}{route}"
+        api_backed_text = _api_backed_scene_text(
+            scene["featureId"],
+            frontend_origin=origin,
+            planner_token=planner_token,
+            couple_token=couple_token,
+        )
         request_kwargs: dict[str, Any] = {
             "timeout": 15,
             "allow_redirects": False,
@@ -920,7 +1285,7 @@ def verify_frontend_checkpoint_routes(
         if scene["session"] == "planner":
             request_kwargs["cookies"] = {"admin_token": planner_token}
         elif scene["session"] == "couple":
-            request_kwargs["headers"] = {"Authorization": f"Bearer {couple_token}"}
+            request_kwargs["cookies"] = {"couple_token": couple_token}
         try:
             response = requests.get(url, **request_kwargs)
         except requests.RequestException as exc:
@@ -942,6 +1307,29 @@ def verify_frontend_checkpoint_routes(
             "Frontend checkpoint served the wrong app build: "
             f"{url}; expected {expected_build}, observed "
             f"{parser.commits or ['missing meta[name=tsw-app-build-commit]']}",
+        )
+
+        expected_visible_text = scene["expectedVisibleText"]
+        if scene["featureId"] in MARKETING_CAPTURE_API_TEXT_FEATURES:
+            _require(
+                api_backed_text == expected_visible_text,
+                "Frontend checkpoint API returned the wrong stable visible text: "
+                f"{url}; expected {expected_visible_text!r}, "
+                f"observed {api_backed_text!r}",
+            )
+            continue
+
+        served_text = document
+        if expected_visible_text not in served_text:
+            served_text += _load_served_checkpoint_scripts(
+                origin,
+                parser.script_sources,
+                script_cache,
+            )
+        _require(
+            expected_visible_text in served_text,
+            "Frontend checkpoint is missing stable visible text "
+            f"{expected_visible_text!r}: {url}",
         )
 
 
@@ -1044,6 +1432,71 @@ def verify_frontend_gallery_assets(frontend_url: str) -> None:
             asset_response,
             asset_url=asset_url,
             asset_contract=MARKETING_CAPTURE_GALLERY_ASSET_CONTRACT[item["url"]],
+        )
+
+
+def verify_frontend_admin_gallery_prefixes(
+    frontend_url: str,
+    backend_url: str,
+) -> None:
+    """Require the seeded planner gallery view to load without failed prefixes."""
+
+    frontend_origin = require_local_capture_origin(
+        frontend_url,
+        expected_port=3100,
+        label="Marketing capture frontend",
+    )
+    backend_origin = require_local_capture_origin(
+        backend_url,
+        expected_port=8000,
+        label="Marketing capture backend",
+    )
+    planner_token = _login(
+        backend_origin,
+        "/admin/token",
+        PLANNER_EMAIL,
+        PLANNER_PASSWORD,
+    )
+    list_url = f"{frontend_origin}/api/proxy/admin/gallery/list"
+    expected_payloads = {
+        "gallery": MARKETING_CAPTURE_GALLERY_ITEMS,
+        "our-story": [],
+        "wedding-party": [],
+    }
+
+    for folder, expected_payload in expected_payloads.items():
+        prefix = f"{folder}/{PRIMARY_SLUG}/"
+        try:
+            response = requests.get(
+                list_url,
+                params={"prefix": prefix},
+                headers={"Authorization": f"Bearer {planner_token}"},
+                timeout=15,
+                allow_redirects=False,
+            )
+        except requests.RequestException as exc:
+            raise RuntimeError(
+                f"Marketing capture admin gallery prefix {folder} is unreachable: {exc}"
+            ) from exc
+        _require_no_redirect(
+            response,
+            f"Marketing capture admin gallery prefix {folder}",
+        )
+        _require(
+            response.status_code == 200,
+            "Marketing capture admin gallery prefix "
+            f"{folder} returned HTTP {response.status_code}",
+        )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Marketing capture admin gallery prefix {folder} returned invalid JSON"
+            ) from exc
+        _require(
+            payload == expected_payload,
+            "Marketing capture admin gallery prefix "
+            f"{folder} returned unexpected media",
         )
 
 
@@ -1239,6 +1692,7 @@ def main() -> int:
         expected_port=3100,
         label="Marketing capture frontend",
     )
+    verify_frontend_capture_runtime(frontend_url)
     capture_build = require_clean_capture_checkout()
     print(f"[BUILD] Clean marketing-capture checkout at {capture_build}")
 
@@ -1289,6 +1743,7 @@ def main() -> int:
         backend_url=backend_url,
     )
     verify_frontend_gallery_assets(frontend_url)
+    verify_frontend_admin_gallery_prefixes(frontend_url, backend_url)
     verify_frontend_couple_memory_preview(frontend_url, backend_url)
     for scene in MARKETING_CAPTURE_E2E_CHECKPOINTS:
         print(

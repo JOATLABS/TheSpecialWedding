@@ -10,6 +10,7 @@ from app.dependencies.auth_extended import (
     require_admin_or_planner,
 )
 from app.dependencies.guest_access import (
+    GUEST_ACCESS_COOKIE_NAME,
     get_guest_access_session,
     set_guest_access_session,
 )
@@ -139,6 +140,9 @@ async def get_wedding_with_session_access(slug: str, request: Request):
     Get wedding and guest data from the guest access session cookie.
     """
     try:
+        if not request.cookies.get(GUEST_ACCESS_COOKIE_NAME):
+            return Response(status_code=204)
+
         session = get_guest_access_session(request, slug=slug)
         result = await verification_service.get_session_access(
             slug=slug,

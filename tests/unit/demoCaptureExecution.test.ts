@@ -289,7 +289,7 @@ describe('demo capture execution', () => {
 
     const pureContractStart = validator.indexOf('export function assertManualFullWindowContract');
     const pureContractEnd = validator.indexOf(
-      '\nexport function validateApprovedProductImage',
+      '\nexport async function validateApprovedProductImage',
       pureContractStart,
     );
     assert.ok(pureContractStart >= 0 && pureContractEnd > pureContractStart);

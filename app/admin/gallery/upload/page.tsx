@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -10,7 +10,11 @@ import { Button } from '@/components/ui/Button';
 import PageHeader from '../../components/PageHeader';
 import WeddingPicker from '../../components/WeddingPicker';
 import { toast } from 'sonner';
-import { Upload, Images, ChevronDown, Heart, FolderOpen } from 'lucide-react';
+import { Upload, Images, ChevronDown, FolderOpen } from 'lucide-react';
+import {
+  fetchGalleryImagesForWedding,
+  type GalleryImage,
+} from './galleryImageListClient';
 import { uploadGalleryFileViaPresignedUrl } from './galleryUploadClient';
 import { getGalleryImageAlt, getGalleryImageLabel } from './galleryImagePresentation';
 
@@ -24,7 +28,7 @@ interface Wedding {
 }
 
 export default function AdminGalleryUploadPage() {
-  const { token, logout } = useAdmin();
+  const { token } = useAdmin();
   const router = useRouter();
 
   const [files, setFiles] = useState<File[]>([]);
@@ -33,11 +37,13 @@ export default function AdminGalleryUploadPage() {
   const [weddings, setWeddings] = useState<Wedding[]>([]);
   const [selectedWedding, setSelectedWedding] = useState<string>('');
   const [selectedWeddingSlug, setSelectedWeddingSlug] = useState<string>('');
-  const [uploadedImages, setUploadedImages] = useState<any[]>([]);
+  const [uploadedImages, setUploadedImages] = useState<GalleryImage[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
+  const [galleryLoadError, setGalleryLoadError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'upload' | 'manage'>('upload');
   const [currentFeaturedImage, setCurrentFeaturedImage] = useState<string | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string>('gallery');
+  const galleryLoadRequestRef = useRef(0);
 
   // redirect if not logged in
   useEffect(() => {
@@ -72,42 +78,42 @@ export default function AdminGalleryUploadPage() {
   const handleWeddingChange = (weddingId: string) => {
     setSelectedWedding(weddingId);
     const wedding = weddings.find(w => (w.id || w._id) === weddingId);
-    setSelectedWeddingSlug(wedding?.slug || '');
+    const nextWeddingSlug = wedding?.slug || '';
+    if (nextWeddingSlug !== selectedWeddingSlug) {
+      setUploadedImages([]);
+    }
+    setGalleryLoadError(null);
+    setSelectedWeddingSlug(nextWeddingSlug);
     setCurrentFeaturedImage(wedding?.featured_image || null);
     if (wedding?.slug) {
-      fetchUploadedImages(wedding.slug);
+      void fetchUploadedImages(wedding.slug);
+    } else {
+      galleryLoadRequestRef.current += 1;
+      setLoadingImages(false);
     }
   };
 
   const fetchUploadedImages = async (weddingSlug: string) => {
+    const requestId = ++galleryLoadRequestRef.current;
     setLoadingImages(true);
+    setGalleryLoadError(null);
     try {
-      const baseUrl = getApiBaseUrl();
-
-      // Fetch from all folders
-      const folders = ['gallery', 'our-story', 'wedding-party'];
-      const allImages = [];
-
-      for (const folder of folders) {
-        const response = await fetch(
-          `${baseUrl}/admin/gallery/list?prefix=${folder}/${weddingSlug}/`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          allImages.push(...(Array.isArray(data) ? data : []));
-        }
-      }
-
-      console.log('Fetched all images:', allImages);
-      setUploadedImages(allImages);
-    } catch (err) {
-      console.error('Failed to fetch images:', err);
-      setUploadedImages([]);
+      const images = await fetchGalleryImagesForWedding({
+        baseUrl: getApiBaseUrl(),
+        token: token || '',
+        weddingSlug,
+      });
+      if (requestId !== galleryLoadRequestRef.current) return;
+      setUploadedImages(images);
+    } catch (err: unknown) {
+      if (requestId !== galleryLoadRequestRef.current) return;
+      const message = err instanceof Error ? err.message : 'Gallery image loading failed';
+      setGalleryLoadError(message);
+      toast.error('Failed to load gallery images');
     } finally {
-      setLoadingImages(false);
+      if (requestId === galleryLoadRequestRef.current) {
+        setLoadingImages(false);
+      }
     }
   };
 
@@ -377,6 +383,25 @@ export default function AdminGalleryUploadPage() {
                       <div className="animate-spin h-8 w-8 border-4 border-wedding-sage border-t-transparent rounded-full"></div>
                       <span className="ml-3 text-wedding-navy dark:text-gray-300">Loading images...</span>
                     </div>
+                  ) : galleryLoadError ? (
+                    <div
+                      role="alert"
+                      className="rounded-xl border border-red-200 bg-red-50 px-6 py-8 text-center dark:border-red-900/60 dark:bg-red-950/30"
+                    >
+                      <p className="text-lg font-semibold text-red-800 dark:text-red-200">
+                        Gallery images are temporarily unavailable
+                      </p>
+                      <p className="mt-2 text-sm text-red-700 dark:text-red-300">
+                        No partial folder result was shown. Try again to load the complete gallery.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void fetchUploadedImages(selectedWeddingSlug)}
+                        className="mt-4 rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-800"
+                      >
+                        Try again
+                      </button>
+                    </div>
                   ) : uploadedImages.length === 0 ? (
                     <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                       <p className="text-lg">No images uploaded yet</p>
@@ -385,7 +410,8 @@ export default function AdminGalleryUploadPage() {
                   ) : (
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                       {uploadedImages.map((image, index) => {
-                        const isFeatured = currentFeaturedImage === (image.key || image.filename);
+                        const imageKey = image.key || image.filename;
+                        const isFeatured = Boolean(imageKey) && currentFeaturedImage === imageKey;
                         return (
                           <div key={index} className="relative group">
                             <div className={`relative aspect-square overflow-hidden rounded-lg shadow-lg bg-gray-100 dark:bg-slate-700 ${isFeatured ? 'ring-4 ring-purple-600' : ''}`}>
@@ -438,12 +464,14 @@ export default function AdminGalleryUploadPage() {
                           </div>
 
                           {/* Delete Button */}
-                          <button
-                            onClick={() => handleDeleteImage(image.key || image.filename)}
-                            className="absolute top-2 right-2 bg-red-600/90 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg hover:bg-red-700 transition-colors opacity-0 group-hover:opacity-100 shadow-lg z-10"
-                          >
-                            Delete
-                          </button>
+                          {imageKey && (
+                            <button
+                              onClick={() => handleDeleteImage(imageKey)}
+                              className="absolute top-2 right-2 bg-red-600/90 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg hover:bg-red-700 transition-colors opacity-0 group-hover:opacity-100 shadow-lg z-10"
+                            >
+                              Delete
+                            </button>
+                          )}
 
                           {/* Copy URL Button */}
                           <button
@@ -457,35 +485,36 @@ export default function AdminGalleryUploadPage() {
                           </button>
 
                           {/* Set as Featured Button */}
-                          <button
-                            onClick={async () => {
-                              try {
-                                const baseUrl = getApiBaseUrl();
-                                const response = await fetch(`${baseUrl}/admin/weddings/${selectedWedding}`, {
-                                  method: 'PUT',
-                                  headers: {
-                                    'Authorization': `Bearer ${token}`,
-                                    'Content-Type': 'application/json',
-                                  },
-                                  body: JSON.stringify({
-                                    featured_image: image.key || image.filename
-                                  }),
-                                });
+                          {imageKey && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const baseUrl = getApiBaseUrl();
+                                  const response = await fetch(`${baseUrl}/admin/weddings/${selectedWedding}`, {
+                                    method: 'PUT',
+                                    headers: {
+                                      'Authorization': `Bearer ${token}`,
+                                      'Content-Type': 'application/json',
+                                    },
+                                    body: JSON.stringify({ featured_image: imageKey }),
+                                  });
 
-                                if (!response.ok) {
-                                  throw new Error('Failed to set featured image');
+                                  if (!response.ok) {
+                                    throw new Error('Failed to set featured image');
+                                  }
+
+                                  toast.success('Featured background updated');
+                                  setCurrentFeaturedImage(imageKey);
+                                } catch (err: unknown) {
+                                  const message = err instanceof Error ? err.message : 'Unknown error';
+                                  toast.error(`Failed to update: ${message}`);
                                 }
-
-                                toast.success('Featured background updated');
-                                setCurrentFeaturedImage(image.key || image.filename);
-                              } catch (err: any) {
-                                toast.error(`Failed to update: ${err.message}`);
-                              }
-                            }}
-                            className="absolute bottom-2 left-2 right-2 bg-purple-600/90 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg hover:bg-purple-700 transition-colors opacity-0 group-hover:opacity-100 shadow-lg z-20"
-                          >
-                            Set as Background
-                          </button>
+                              }}
+                              className="absolute bottom-2 left-2 right-2 bg-purple-600/90 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg hover:bg-purple-700 transition-colors opacity-0 group-hover:opacity-100 shadow-lg z-20"
+                            >
+                              Set as Background
+                            </button>
+                          )}
                         </div>
                         );
                       })}

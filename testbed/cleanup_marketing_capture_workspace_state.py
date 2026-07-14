@@ -9,16 +9,18 @@ delete.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import sys
 from pathlib import Path
-from urllib.parse import urlparse
 
 from bson import ObjectId
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.database import Database
+from pymongo.errors import ConfigurationError, InvalidURI
+from pymongo.uri_parser import parse_uri
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -101,12 +103,19 @@ SEEDED_COLLECTIONS = (
 
 
 def _load_database() -> tuple[MongoClient, Database]:
-    load_dotenv(ROOT / ".env")
+    shell_environment = dict(os.environ)
+    load_dotenv(ROOT / ".env", override=False)
     testbed_env = ROOT / "testbed" / ".env"
     if testbed_env.exists():
         load_dotenv(testbed_env, override=True)
+    os.environ.update(shell_environment)
 
-    environment = os.getenv("ENVIRONMENT", os.getenv("NODE_ENV", "development"))
+    environment = _shell_authoritative_setting(
+        shell_environment,
+        "ENVIRONMENT",
+        "NODE_ENV",
+        default="development",
+    )
     if environment.strip().lower() not in {
         "development",
         "dev",
@@ -117,23 +126,59 @@ def _load_database() -> tuple[MongoClient, Database]:
     }:
         raise RuntimeError("Marketing-capture cleanup is local/test only")
 
-    uri = (os.getenv("MONGO_URI") or os.getenv("MONGODB_URI") or "").strip()
+    uri = _shell_authoritative_setting(
+        shell_environment,
+        "MONGO_URI",
+        "MONGODB_URI",
+        default="",
+    ).strip()
     if not uri:
         raise RuntimeError("MONGO_URI is required")
-    parsed = urlparse(uri)
-    if parsed.scheme == "mongodb+srv" or parsed.hostname not in {
-        "localhost",
-        "127.0.0.1",
-        "::1",
-        "mongo",
-        "mongodb",
-    }:
+    if not uri.startswith("mongodb://"):
+        raise RuntimeError("Marketing-capture cleanup refuses non-local Mongo")
+    try:
+        nodes = parse_uri(uri)["nodelist"]
+    except (ConfigurationError, InvalidURI, ValueError) as exc:
+        raise RuntimeError("Marketing-capture cleanup refuses non-local Mongo") from exc
+    if not nodes or any(
+        host.lower() != "localhost" and not _is_loopback_ip(host)
+        for host, _port in nodes
+    ):
         raise RuntimeError("Marketing-capture cleanup refuses non-local Mongo")
 
+    database_name = _shell_authoritative_setting(
+        shell_environment,
+        "MONGO_DB",
+        "MONGO_NAME",
+        default="wedding",
+    ).strip()
+    if not database_name:
+        raise RuntimeError("MONGO_DB is required")
     client = MongoClient(uri)
-    database = client[os.getenv("MONGO_DB") or os.getenv("MONGO_NAME", "wedding")]
+    database = client[database_name]
     client.admin.command("ping")
     return client, database
+
+
+def _is_loopback_ip(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _shell_authoritative_setting(
+    shell_environment: dict[str, str],
+    primary_name: str,
+    alias_name: str,
+    *,
+    default: str,
+) -> str:
+    if primary_name in shell_environment:
+        return shell_environment[primary_name]
+    if alias_name in shell_environment:
+        return shell_environment[alias_name]
+    return os.getenv(primary_name) or os.getenv(alias_name) or default
 
 
 def _seed_filter() -> dict[str, str]:
