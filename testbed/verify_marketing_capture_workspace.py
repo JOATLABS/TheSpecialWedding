@@ -591,6 +591,22 @@ MARKETING_CAPTURE_E2E_CHECKPOINTS = (
 )
 
 
+def verify_frontend_checkpoint_routes(frontend_url: str) -> None:
+    origin = frontend_url.rstrip("/")
+    for title, route, _expectation in MARKETING_CAPTURE_E2E_CHECKPOINTS:
+        url = f"{origin}{route}"
+        try:
+            response = requests.get(url, timeout=15, allow_redirects=True)
+        except requests.RequestException as exc:
+            raise RuntimeError(
+                f"Frontend checkpoint is unreachable ({title}): {exc}"
+            ) from exc
+        _require(
+            200 <= response.status_code < 400,
+            f"Frontend checkpoint returned HTTP {response.status_code}: {url}",
+        )
+
+
 def _non_interactive() -> bool:
     return os.getenv("TESTBED_NON_INTERACTIVE", "0").strip().lower() in {
         "1",
@@ -693,6 +709,7 @@ def main() -> int:
         client.close()
 
     frontend_url = args.frontend_url.rstrip("/")
+    verify_frontend_checkpoint_routes(frontend_url)
     for title, route, expectation in MARKETING_CAPTURE_E2E_CHECKPOINTS:
         print(
             f"\nCHECKPOINT — {title}\n  URL: {frontend_url}{route}\n  Expect: {expectation}"

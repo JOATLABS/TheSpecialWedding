@@ -113,6 +113,10 @@ class Config:
         self.session_name = os.getenv("TESTBED_SESSION_NAME", "testbed")
         self.backend_port = int(os.getenv("TESTBED_BACKEND_PORT", "8000"))
         self.frontend_port = int(os.getenv("TESTBED_FRONTEND_PORT", "3000"))
+        self.frontend_origin = os.getenv(
+            "TESTBED_FRONTEND_ORIGIN",
+            f"http://127.0.0.1:{self.frontend_port}",
+        ).rstrip("/")
         self.uvicorn_app = os.getenv("TESTBED_UVICORN_APP", "app.main:app")
         self.uvicorn_args = os.getenv("TESTBED_UVICORN_ARGS", "--reload")
         self.stripe_webhook_path = os.getenv(
@@ -178,6 +182,8 @@ def build_stripe_cmd(cfg: Config) -> str:
 def build_frontend_cmd(cfg: Config) -> str:
     return (
         f"cd {shell_quote(str(REPO_ROOT))} && "
+        "NODE_ENV=production "
+        f"FRONTEND_URL={shell_quote(cfg.frontend_origin)} "
         f"PORT={cfg.frontend_port} {cfg.frontend_cmd}"
     )
 
@@ -343,7 +349,7 @@ def service_is_ready(cfg: Config, window: str) -> bool:
     if window == BACKEND_WINDOW:
         return _http_ready(f"http://127.0.0.1:{cfg.backend_port}/health/readyz")
     if window == FRONTEND_WINDOW:
-        return _http_ready(f"http://127.0.0.1:{cfg.frontend_port}/")
+        return _http_ready(f"{cfg.frontend_origin}/")
     return True
 
 

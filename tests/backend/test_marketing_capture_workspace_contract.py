@@ -119,6 +119,50 @@ def test_testbed_service_status_checks_process_and_http_readiness():
     assert "failed readiness" in testbed_source
 
 
+def test_testbed_frontend_process_uses_the_same_canonical_origin_as_readiness():
+    cfg = SimpleNamespace(
+        frontend_port=3100,
+        frontend_origin="http://127.0.0.1:3100",
+        frontend_cmd="npm run start -- --hostname 127.0.0.1",
+    )
+
+    command = testbed_cli.build_frontend_cmd(cfg)
+
+    assert "NODE_ENV=production" in command
+    assert "FRONTEND_URL=http://127.0.0.1:3100" in command
+    assert "PORT=3100" in command
+
+
+def test_marketing_capture_preflights_every_frontend_checkpoint(monkeypatch):
+    requested_urls: list[str] = []
+
+    def _reachable(url, **_kwargs):
+        requested_urls.append(url)
+        return SimpleNamespace(status_code=200)
+
+    monkeypatch.setattr(marketing_capture_driver.requests, "get", _reachable)
+
+    marketing_capture_driver.verify_frontend_checkpoint_routes("http://127.0.0.1:3100")
+
+    assert requested_urls == [
+        f"http://127.0.0.1:3100{route}"
+        for _, route, _ in marketing_capture_driver.MARKETING_CAPTURE_E2E_CHECKPOINTS
+    ]
+
+
+def test_marketing_capture_frontend_preflight_rejects_a_404(monkeypatch):
+    monkeypatch.setattr(
+        marketing_capture_driver.requests,
+        "get",
+        lambda *_args, **_kwargs: SimpleNamespace(status_code=404),
+    )
+
+    with pytest.raises(RuntimeError, match="Frontend checkpoint returned HTTP 404"):
+        marketing_capture_driver.verify_frontend_checkpoint_routes(
+            "http://127.0.0.1:3100"
+        )
+
+
 @pytest.mark.parametrize("process_name", ["node", "npm", "next-server"])
 def test_testbed_frontend_liveness_accepts_supported_runtime_names(
     monkeypatch, process_name
