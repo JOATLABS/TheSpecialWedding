@@ -7,12 +7,6 @@ export type DemoVideoPriority = 'hero' | 'phase-one' | 'phase-two';
 
 export type DemoVideoProductionChannel = 'website' | 'social';
 
-export type DemoVideoDistributionChannel =
-  | 'website'
-  | 'instagram-reels'
-  | 'facebook-reels'
-  | 'tiktok';
-
 export type DemoScriptStep = {
   timestamp: string;
   action: string;
@@ -38,15 +32,12 @@ export type DemoVideo = {
   thumbnailUrl?: string;
   captionUrl?: string;
   transcriptUrl?: string;
-  socialAssetUrl?: string;
-  socialThumbnailUrl?: string;
   recordedAt?: string;
   appBuildLabel?: string;
   appBuildCommit?: string;
   productionChannel?: DemoVideoProductionChannel;
   phaseOnePillar?: string;
   socialOutcome?: string;
-  distributionChannels?: readonly DemoVideoDistributionChannel[];
   routePlan: readonly string[];
   captureCheckpoints?: readonly DemoCaptureCheckpoint[];
   seedRequirements: readonly string[];
@@ -59,7 +50,6 @@ export type PhaseOneSocialVideo = DemoVideo & {
   productionChannel: 'social';
   phaseOnePillar: string;
   socialOutcome: string;
-  distributionChannels: readonly Exclude<DemoVideoDistributionChannel, 'website'>[];
 };
 
 export type PublicDemoVideoPublicationApproval = {
@@ -73,6 +63,8 @@ export type PublicDemoVideoPublicationApproval = {
   thumbnailUrl: string;
   captionUrl: string;
   transcriptUrl: string;
+  // Legacy fields stay readable only so stale website approvals fail closed.
+  // Social stories publish through PhaseOneSocialVideoPublicationApproval.
   socialAssetUrl?: string;
   socialThumbnailUrl?: string;
 };
@@ -88,7 +80,6 @@ export type PhaseOneSocialVideoPublicationApproval = {
   thumbnailUrl: string;
   captionUrl: string;
   transcriptUrl: string;
-  distributionChannels: readonly Exclude<DemoVideoDistributionChannel, 'website'>[];
 };
 
 const defaultChecklist = [
@@ -117,11 +108,6 @@ export function isCompletePublicationApproval(
 ): approval is PublicDemoVideoPublicationApproval {
   if (!approval || approval.approval !== 'approved') return false;
 
-  const socialAssetsArePaired = Boolean(approval.socialAssetUrl) === Boolean(approval.socialThumbnailUrl);
-  const socialAssetUrls = [approval.socialAssetUrl, approval.socialThumbnailUrl].filter(
-    (url): url is string => Boolean(url),
-  );
-
   return /^[0-9a-f]{40}$/i.test(approval.appBuildCommit)
     && approval.captureReceiptPath === `output/demo-videos/receipts/${demoId}.json`
     && approval.playbackApprovalPath === `output/demo-videos/playback-approvals/${demoId}.json`
@@ -129,8 +115,8 @@ export function isCompletePublicationApproval(
     && approval.thumbnailUrl === `/demo-videos/thumbnails/${demoId}-16x9.png`
     && approval.captionUrl === `/demo-videos/captions/${demoId}.vtt`
     && approval.transcriptUrl === `/demo-videos/transcripts/${demoId}.md`
-    && socialAssetsArePaired
-    && socialAssetUrls.every((url) => url.startsWith('/demo-videos/'))
+    && approval.socialAssetUrl === undefined
+    && approval.socialThumbnailUrl === undefined
     && Number.isFinite(Date.parse(approval.recordedAt))
     && approval.appBuildLabel.trim().length > 0;
 }
@@ -145,8 +131,6 @@ export function applyDemoVideoPublicationApproval(demo: DemoVideo): DemoVideo {
       thumbnailUrl: undefined,
       captionUrl: undefined,
       transcriptUrl: undefined,
-      socialAssetUrl: undefined,
-      socialThumbnailUrl: undefined,
       recordedAt: undefined,
       appBuildCommit: undefined,
       appBuildLabel: 'Public retake required',
@@ -160,17 +144,10 @@ export function applyDemoVideoPublicationApproval(demo: DemoVideo): DemoVideo {
     thumbnailUrl: approval.thumbnailUrl,
     captionUrl: approval.captionUrl,
     transcriptUrl: approval.transcriptUrl,
-    socialAssetUrl: approval.socialAssetUrl,
-    socialThumbnailUrl: approval.socialThumbnailUrl,
     recordedAt: approval.recordedAt,
     appBuildCommit: approval.appBuildCommit,
     appBuildLabel: approval.appBuildLabel,
   };
-}
-
-function arraysMatch<T>(actual: readonly T[], expected: readonly T[]): boolean {
-  return actual.length === expected.length
-    && actual.every((value, index) => value === expected[index]);
 }
 
 export function isCompletePhaseOneSocialVideoPublicationApproval(
@@ -186,7 +163,6 @@ export function isCompletePhaseOneSocialVideoPublicationApproval(
     && approval.thumbnailUrl === `/demo-videos/thumbnails/${story.id}-9x16.png`
     && approval.captionUrl === `/demo-videos/captions/${story.id}.vtt`
     && approval.transcriptUrl === `/demo-videos/transcripts/${story.id}.md`
-    && arraysMatch(approval.distributionChannels, story.distributionChannels)
     && Number.isFinite(Date.parse(approval.recordedAt))
     && approval.appBuildLabel.trim().length > 0;
 }
@@ -203,8 +179,6 @@ export function applyPhaseOneSocialVideoPublicationApproval(
       thumbnailUrl: undefined,
       captionUrl: undefined,
       transcriptUrl: undefined,
-      socialAssetUrl: undefined,
-      socialThumbnailUrl: undefined,
       recordedAt: undefined,
       appBuildCommit: undefined,
       appBuildLabel: 'Public social cut not approved',
@@ -218,8 +192,6 @@ export function applyPhaseOneSocialVideoPublicationApproval(
     thumbnailUrl: approval.thumbnailUrl,
     captionUrl: approval.captionUrl,
     transcriptUrl: approval.transcriptUrl,
-    socialAssetUrl: approval.assetUrl,
-    socialThumbnailUrl: approval.thumbnailUrl,
     recordedAt: approval.recordedAt,
     appBuildCommit: approval.appBuildCommit,
     appBuildLabel: approval.appBuildLabel,
@@ -1084,12 +1056,6 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
   },
 ];
 
-export const PHASE_ONE_SOCIAL_DISTRIBUTION_CHANNELS = [
-  'instagram-reels',
-  'facebook-reels',
-  'tiktok',
-] as const satisfies readonly Exclude<DemoVideoDistributionChannel, 'website'>[];
-
 const PHASE_ONE_SOCIAL_VIDEO_STORY_DRAFTS = [
   {
     id: 'connection-over-tools-social',
@@ -1102,7 +1068,6 @@ const PHASE_ONE_SOCIAL_VIDEO_STORY_DRAFTS = [
     phaseOnePillar: 'Connection Over Tools',
     socialOutcome:
       'Keep planner, couple, and guest context connected without exposing planner controls.',
-    distributionChannels: PHASE_ONE_SOCIAL_DISTRIBUTION_CHANNELS,
     routePlan: [
       '/admin/weddings/wedding_marketing_capture_sofia_daniel',
       '/sofia-and-daniel',
@@ -1171,7 +1136,6 @@ const PHASE_ONE_SOCIAL_VIDEO_STORY_DRAFTS = [
     phaseOnePillar: 'Disorganization Tax',
     socialOutcome:
       'See what needs attention across active weddings before another sheet or inbox steals the day.',
-    distributionChannels: PHASE_ONE_SOCIAL_DISTRIBUTION_CHANNELS,
     routePlan: [
       '/admin/planner',
       '/admin/communications/inbox',
@@ -1240,7 +1204,6 @@ const PHASE_ONE_SOCIAL_VIDEO_STORY_DRAFTS = [
     phaseOnePillar: 'Couple Experience + Boundaries',
     socialOutcome:
       'Give couples the timeline, forms, and payment context they need while operations stay private.',
-    distributionChannels: PHASE_ONE_SOCIAL_DISTRIBUTION_CHANNELS,
     routePlan: [
       '/admin/forms/form_marketing_capture_couple_intake/edit',
       '/couple/dashboard',
@@ -1308,7 +1271,6 @@ const PHASE_ONE_SOCIAL_VIDEO_STORY_DRAFTS = [
     phaseOnePillar: 'Built for Planners',
     socialOutcome:
       'Run RSVP, seating, and vendor workflows generic event tools were never designed to understand.',
-    distributionChannels: PHASE_ONE_SOCIAL_DISTRIBUTION_CHANNELS,
     routePlan: [
       '/admin/guests',
       '/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel',
@@ -1376,6 +1338,11 @@ export const DEMO_VIDEO_PLAYLIST: readonly DemoVideo[] = [
   ...FEATURE_DEMO_VIDEO_DRAFTS.map(applyDemoVideoPublicationApproval),
 ];
 
+export const DEMO_VIDEO_PRODUCTION_CATALOG: readonly DemoVideo[] = [
+  ...DEMO_VIDEO_PLAYLIST,
+  ...PHASE_ONE_SOCIAL_VIDEO_STORIES,
+];
+
 export const FEATURE_DEMO_VIDEOS = DEMO_VIDEO_PLAYLIST.filter(
   (demo): demo is DemoVideo & { featureId: MarketingFeature['id'] } =>
     typeof demo.featureId === 'string',
@@ -1401,8 +1368,6 @@ export function toPublicDemoVideo(demo: DemoVideo): PublicDemoVideo {
     thumbnailUrl: demo.thumbnailUrl,
     captionUrl: demo.captionUrl,
     transcriptUrl: demo.transcriptUrl,
-    socialAssetUrl: demo.socialAssetUrl,
-    socialThumbnailUrl: demo.socialThumbnailUrl,
     recordedAt: demo.recordedAt,
   };
 }

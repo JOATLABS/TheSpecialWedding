@@ -197,11 +197,6 @@ describe('demo video manifest', () => {
         assert.ok(demo.thumbnailUrl, `published demo must have thumbnailUrl: ${demo.id}`);
         assert.ok(demo.captionUrl, `published demo must have captionUrl: ${demo.id}`);
         assert.ok(demo.transcriptUrl, `published demo must have transcriptUrl: ${demo.id}`);
-        assert.equal(
-          Boolean(demo.socialAssetUrl),
-          Boolean(demo.socialThumbnailUrl),
-          `published social assets must be paired when present: ${demo.id}`,
-        );
         assert.ok(demo.recordedAt, `published demo must have recordedAt: ${demo.id}`);
         assert.ok(demo.appBuildLabel, `published demo must have appBuildLabel: ${demo.id}`);
       }

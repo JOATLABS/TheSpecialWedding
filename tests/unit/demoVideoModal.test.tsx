@@ -11,39 +11,6 @@ import { installDom } from './testDom';
 let DemoVideoLauncher: typeof import('../../app/components/saas/DemoVideoLauncher').default;
 let domHandle: ReturnType<typeof installDom> | null = null;
 
-type CommonJsModuleLoader = {
-  _resolveFilename: (
-    request: string,
-    parent: unknown,
-    isMain: boolean,
-    options?: unknown,
-  ) => string;
-};
-
-async function importDemoVideoLauncherForTest() {
-  const moduleApi = await import('node:module');
-  const moduleLoader = moduleApi.default as unknown as CommonJsModuleLoader;
-  const resolveFilename = moduleLoader._resolveFilename;
-
-  moduleLoader._resolveFilename = function resolveTestModule(
-    request,
-    parent,
-    isMain,
-    options,
-  ) {
-    const testRequest = request.startsWith('lucide-react/dist/esm/icons/')
-      ? `${request}.mjs`
-      : request;
-    return resolveFilename.call(this, testRequest, parent, isMain, options);
-  };
-
-  try {
-    return await import('../../app/components/saas/DemoVideoLauncher');
-  } finally {
-    moduleLoader._resolveFilename = resolveFilename;
-  }
-}
-
 const PUBLISHED_DEMO: PublicDemoVideo = {
   id: 'planner-command-center-walkthrough',
   title: 'Planner command center walkthrough',
@@ -73,7 +40,7 @@ async function openDemo(view: ReturnType<typeof renderLauncher>) {
 describe('DemoVideoLauncher modal accessibility', { concurrency: false }, () => {
   before(async () => {
     domHandle = installDom();
-    ({ default: DemoVideoLauncher } = await importDemoVideoLauncherForTest());
+    ({ default: DemoVideoLauncher } = await import('../../app/components/saas/DemoVideoLauncher'));
   });
 
   afterEach(() => cleanup());

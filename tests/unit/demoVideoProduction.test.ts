@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { DEMO_VIDEO_PLAYLIST } from '../../app/data/demoVideos';
+import {
+  DEMO_VIDEO_PRODUCTION_CATALOG,
+  DEMO_VIDEO_PLAYLIST,
+  PHASE_ONE_SOCIAL_VIDEO_STORIES,
+} from '../../app/data/demoVideos';
 import {
   DEMO_VIDEO_PRODUCTION_REQUIREMENTS,
   buildDemoVideoTranscript,
@@ -10,14 +14,30 @@ import {
 } from '../../app/data/demoVideoProduction';
 
 describe('demo video production requirements', () => {
-  it('tracks production requirements for every scripted demo', () => {
+  it('exposes one production catalog without adding social stories to the website playlist', () => {
+    assert.deepEqual(DEMO_VIDEO_PRODUCTION_CATALOG.map((demo) => demo.id), [
+      ...DEMO_VIDEO_PLAYLIST.map((demo) => demo.id),
+      ...PHASE_ONE_SOCIAL_VIDEO_STORIES.map((demo) => demo.id),
+    ]);
+    assert.equal(
+      DEMO_VIDEO_PLAYLIST.some((demo) => demo.productionChannel === 'social'),
+      false,
+    );
+  });
+
+  it('tracks production requirements for every website demo and every separate social story', () => {
     const requirementIds = DEMO_VIDEO_PRODUCTION_REQUIREMENTS.map((requirement) => requirement.demoId);
 
-    assert.deepEqual(requirementIds, DEMO_VIDEO_PLAYLIST.map((demo) => demo.id));
+    assert.deepEqual(requirementIds, [
+      ...DEMO_VIDEO_PLAYLIST.map((demo) => demo.id),
+      ...PHASE_ONE_SOCIAL_VIDEO_STORIES.map((demo) => demo.id),
+    ]);
   });
 
   it('defines a website export without squeezing the same desktop take into a social cut', () => {
-    for (const requirement of DEMO_VIDEO_PRODUCTION_REQUIREMENTS) {
+    for (const requirement of DEMO_VIDEO_PRODUCTION_REQUIREMENTS.filter(
+      (item) => item.productionChannel === 'website',
+    )) {
       const webTarget = getDemoVideoExportTarget(requirement, 'web-16x9');
       const socialTarget = getDemoVideoExportTarget(requirement, 'social-9x16');
 

@@ -1,4 +1,8 @@
-import { DEMO_VIDEO_PLAYLIST, type DemoVideo } from './demoVideos';
+import {
+  DEMO_VIDEO_PRODUCTION_CATALOG,
+  type DemoVideo,
+  type DemoVideoProductionChannel,
+} from './demoVideos';
 
 export type DemoVideoCaptureSurface =
   | 'planner-admin'
@@ -24,6 +28,7 @@ export type DemoVideoExportTarget = {
 
 export type DemoVideoProductionRequirement = {
   demoId: DemoVideo['id'];
+  productionChannel: DemoVideoProductionChannel;
   captureSurfaces: readonly DemoVideoCaptureSurface[];
   routeParameters: readonly string[];
   sideEffectGuards: readonly string[];
@@ -120,7 +125,24 @@ export function getSideEffectGuards(
   return unique(guards);
 }
 
-function buildExportTargets(demoId: string): DemoVideoExportTarget[] {
+function buildExportTargets(
+  demoId: string,
+  productionChannel: DemoVideoProductionChannel,
+): DemoVideoExportTarget[] {
+  if (productionChannel === 'social') {
+    return [
+      {
+        format: 'social-9x16',
+        compositionId: 'DemoVideo9x16',
+        width: 1080,
+        height: 1920,
+        fps: DEFAULT_FPS,
+        assetPath: `${PUBLIC_DEMO_VIDEO_ROOT}/exports/${demoId}-9x16.mp4`,
+        thumbnailPath: `${PUBLIC_DEMO_VIDEO_ROOT}/thumbnails/${demoId}-9x16.png`,
+      },
+    ];
+  }
+
   return [
     {
       format: 'web-16x9',
@@ -136,9 +158,11 @@ function buildExportTargets(demoId: string): DemoVideoExportTarget[] {
 
 export function getDemoVideoProductionRequirement(demo: DemoVideo): DemoVideoProductionRequirement {
   const captureSurfaces = getCaptureSurfaces(demo.routePlan);
+  const productionChannel = demo.productionChannel ?? 'website';
 
   return {
     demoId: demo.id,
+    productionChannel,
     captureSurfaces,
     routeParameters: getRouteParameters(demo.routePlan),
     sideEffectGuards: getSideEffectGuards(demo.routePlan, captureSurfaces),
@@ -150,12 +174,12 @@ export function getDemoVideoProductionRequirement(demo: DemoVideo): DemoVideoPro
     captionPath: `${STATIC_DEMO_VIDEO_ROOT}/captions/${demo.id}.vtt`,
     transcriptPath: `${STATIC_DEMO_VIDEO_ROOT}/transcripts/${demo.id}.md`,
     playbackApprovalPath: `output/demo-videos/playback-approvals/${demo.id}.json`,
-    exportTargets: buildExportTargets(demo.id),
+    exportTargets: buildExportTargets(demo.id, productionChannel),
   };
 }
 
 export const DEMO_VIDEO_PRODUCTION_REQUIREMENTS: readonly DemoVideoProductionRequirement[] =
-  DEMO_VIDEO_PLAYLIST.map(getDemoVideoProductionRequirement);
+  DEMO_VIDEO_PRODUCTION_CATALOG.map(getDemoVideoProductionRequirement);
 
 export function getDemoVideoProductionRequirementById(
   demoId: string,
@@ -164,7 +188,7 @@ export function getDemoVideoProductionRequirementById(
 }
 
 export function getDemoVideoById(demoId: string): DemoVideo | undefined {
-  return DEMO_VIDEO_PLAYLIST.find((demo) => demo.id === demoId);
+  return DEMO_VIDEO_PRODUCTION_CATALOG.find((demo) => demo.id === demoId);
 }
 
 export function getDemoVideoExportTarget(
@@ -172,6 +196,25 @@ export function getDemoVideoExportTarget(
   format: DemoVideoExportFormat,
 ): DemoVideoExportTarget | undefined {
   return requirement.exportTargets.find((target) => target.format === format);
+}
+
+export function resolveDemoVideoRenderTarget(
+  requirement: DemoVideoProductionRequirement,
+  requestedFormat?: DemoVideoExportFormat,
+): DemoVideoExportTarget {
+  const canonicalFormat = requirement.productionChannel === 'social'
+    ? 'social-9x16'
+    : 'web-16x9';
+  const format = requestedFormat ?? canonicalFormat;
+  const target = getDemoVideoExportTarget(requirement, format);
+
+  if (!target) {
+    throw new Error(
+      `Demo "${requirement.demoId}" does not define a ${format} export target.`,
+    );
+  }
+
+  return target;
 }
 
 export function buildDemoVideoTranscript(demo: DemoVideo): string {

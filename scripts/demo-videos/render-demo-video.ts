@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url';
 import {
   buildDemoVideoTranscript,
   getDemoVideoById,
-  getDemoVideoExportTarget,
   getDemoVideoProductionRequirementById,
+  resolveDemoVideoRenderTarget,
   type DemoVideoExportFormat,
 } from '../../app/data/demoVideoProduction';
 import type { DemoVideoRemotionProps } from '../../remotion/types';
@@ -85,7 +85,7 @@ export function withTemporaryRenderInput<T>(
 function main(): void {
   const args = parseCliArgs(process.argv.slice(2));
   const demoId = getRequiredValue(args, 'demo');
-  const format = (args.values.get('format') ?? 'web-16x9') as DemoVideoExportFormat;
+  const requestedFormat = args.values.get('format') as DemoVideoExportFormat | undefined;
   const demo = getDemoVideoById(demoId);
   const requirement = getDemoVideoProductionRequirementById(demoId);
 
@@ -96,10 +96,8 @@ function main(): void {
     throw new Error('Manual demo renders do not accept --raw or --duration-seconds overrides.');
   }
 
-  const target = getDemoVideoExportTarget(requirement, format);
-  if (!target) {
-    throw new Error(`Demo "${demoId}" does not define a ${format} export target.`);
-  }
+  const target = resolveDemoVideoRenderTarget(requirement, requestedFormat);
+  const format = target.format;
 
   const receiptPath = args.values.get('receipt')
     ? path.resolve(args.values.get('receipt')!)
@@ -139,6 +137,8 @@ function main(): void {
     narrationPath: requirement.renderNarrationInputPath,
     format,
     durationSeconds,
+    phaseOnePillar: demo.phaseOnePillar,
+    socialOutcome: demo.socialOutcome,
   };
 
   fs.mkdirSync(path.dirname(captionFile), { recursive: true });

@@ -50,6 +50,7 @@ export type ManualDemoVideoCaptureReceipt = {
     browserWasVisible: true;
     interactionsWereManual: true;
     scriptedBrowserCaptureWasUsed: false;
+    dedicatedChannelTake?: true;
     fullWindowWasVisible: true;
     browserAddressBarWasHidden: true;
     realCustomerDataWasExcluded: true;
@@ -88,9 +89,34 @@ export type ManualRecordingDurationBounds = {
 
 const MANUAL_RECORDING_DURATION_TOLERANCE_SECONDS = 5;
 
+export function assertDedicatedChannelTake(
+  demo: Pick<DemoVideo, 'productionChannel'>,
+  operatorAttestation: { dedicatedChannelTake?: unknown },
+): void {
+  if (
+    demo.productionChannel === 'social'
+    && operatorAttestation.dedicatedChannelTake !== true
+  ) {
+    throw new Error('operatorAttestation.dedicatedChannelTake must be explicitly true for social footage.');
+  }
+}
+
 export function getManualRecordingDurationBounds(
-  demo: Pick<DemoVideo, 'durationSeconds'>,
+  demo: Pick<DemoVideo, 'durationSeconds' | 'productionChannel'>,
 ): ManualRecordingDurationBounds {
+  if (demo.productionChannel === 'social') {
+    return {
+      minimumDuration: Math.max(
+        20,
+        demo.durationSeconds - MANUAL_RECORDING_DURATION_TOLERANCE_SECONDS,
+      ),
+      maximumDuration: Math.min(
+        35,
+        demo.durationSeconds + MANUAL_RECORDING_DURATION_TOLERANCE_SECONDS,
+      ),
+    };
+  }
+
   return {
     minimumDuration: Math.max(1, demo.durationSeconds - MANUAL_RECORDING_DURATION_TOLERANCE_SECONDS),
     maximumDuration: demo.durationSeconds + MANUAL_RECORDING_DURATION_TOLERANCE_SECONDS,
@@ -554,6 +580,7 @@ export function validateManualDemoVideo(
   if (!demo || !requirement) {
     throw new Error(`Unknown demo id in manual capture receipt: ${receipt.demoId}`);
   }
+  assertDedicatedChannelTake(demo, receipt.operatorAttestation);
   validateManualCaptureCheckpoints(receipt.checkpoints, demo);
   if (receipt.review.reviewedFrameCount < receipt.checkpoints.length) {
     throw new Error('Manual capture review must include at least one frame from every product checkpoint.');

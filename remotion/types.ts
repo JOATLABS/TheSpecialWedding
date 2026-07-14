@@ -4,6 +4,8 @@ export type DemoVideoRemotionProps = {
   demoId: string;
   title: string;
   audience: string;
+  phaseOnePillar?: string;
+  socialOutcome?: string;
   rawVideoPath: string;
   narrationPath: string;
   format: DemoVideoExportFormat;

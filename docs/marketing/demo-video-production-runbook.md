@@ -5,19 +5,35 @@ This runbook produces real, manually driven product stills and walkthroughs from
 ## Source Of Truth
 
 - Story and target duration: `app/data/demoVideos.ts`
+- Website-only public playlist: `DEMO_VIDEO_PLAYLIST` in `app/data/demoVideos.ts`
+- Four independent Phase 1 social stories: `PHASE_ONE_SOCIAL_VIDEO_STORIES` in
+  `app/data/demoVideos.ts`
+- Combined website-plus-social production inventory:
+  `DEMO_VIDEO_PRODUCTION_CATALOG` in `app/data/demoVideos.ts`
 - Capture surfaces and export requirements: `app/data/demoVideoProduction.ts`
 - Canonical 17-scene route/session/interaction contract: `app/data/marketingCaptureScenes.json`
 - Still-image scenes and per-image receipts: `app/data/marketingCaptureManifest.ts`
 - Testbed seed and verification driver: `testbed/verify_marketing_capture_workspace.py`
 - Manual still-image validator: `scripts/demo-videos/validate-manual-product-images.ts`
 - Manual recording receipt validator: `scripts/demo-videos/validate-manual-demo-video.ts`
+- Channel-specific human playback validator:
+  `scripts/demo-videos/validate-demo-video-playback-approval.ts`
 - Remotion entry point: `remotion/index.ts`
 
 The hero is one connected 75-second planner-OS story. The browser recording is a human-driven 1440x900 full-window take. Remotion renders that take with `contain`, adds a separately recorded narration track, and owns the final five-second activation outro. Captions ship as a WebVTT sidecar through the website video player's native caption track, so they remain accessible without permanently covering product controls in the footage.
 
-The website walkthrough is a 16:9 deliverable. Do not turn the same 75-second desktop take into a social video by squeezing it into 9:16. Phase 1 social videos need their own 20-35 second, pillar-native storyboards and manual capture receipts for Connection Over Tools, Disorganization Tax, Couple Experience + Boundaries, and Built for Planners.
+The website walkthrough is a 16:9 deliverable. Do not turn the same 75-second desktop take into a social video by squeezing it into 9:16. Phase 1 social videos have their own 20-35 second, pillar-native storyboards, manually driven raw takes, narration masters, capture receipts, portrait renders, and playback approvals:
 
-Generated media and receipts are gitignored. A complete demo has:
+| Social demo ID | Pillar | Product action before the five-second outro | Authored total | Ordered visible proof |
+| --- | --- | ---: | ---: | --- |
+| `connection-over-tools-social` | Connection Over Tools | 25 seconds | 30 seconds | Planner event source -> public schedule -> couple Timeline |
+| `disorganization-tax-social` | Disorganization Tax | 20 seconds | 25 seconds | Morning View -> planner inbox -> wedding budget |
+| `couple-experience-boundaries-social` | Couple Experience + Boundaries | 15 seconds | 20 seconds | Planner-owned intake -> couple form -> couple Payments |
+| `built-for-planners-social` | Built for Planners | 30 seconds | 35 seconds | Guest context -> venue-aware seating -> private planner vendor records |
+
+The raw source for every row remains a distinct human-driven 1440x900 full-window browser recording. The operator records the full authored duration and leaves a clean final five-second hold for Remotion's activation outro. `social-9x16` describes the 1080x1920 rendered canvas, not permission to crop or zoom the source application. The portrait composition contains the complete 16:10 product window and uses the remaining canvas for the pillar, title, outcome, and activation story.
+
+Generated media and receipts are gitignored. Every complete demo has these common, ID-scoped artifacts:
 
 - raw manual recording: `output/demo-videos/raw/{demoId}.mp4`
 - narration master: `output/demo-videos/narration/{demoId}.m4a`
@@ -25,9 +41,10 @@ Generated media and receipts are gitignored. A complete demo has:
 - human playback approval: `output/demo-videos/playback-approvals/{demoId}.json`
 - WebVTT captions: `public/demo-videos/captions/{demoId}.vtt`
 - transcript: `public/demo-videos/transcripts/{demoId}.md`
-- website export and thumbnail: `public/demo-videos/exports/{demoId}-16x9.mp4` and `public/demo-videos/thumbnails/{demoId}-16x9.png`
 
-Do not set public manifest URLs until the final publication gate passes.
+A website demo has only its channel-native export and thumbnail: `public/demo-videos/exports/{demoId}-16x9.mp4` and `public/demo-videos/thumbnails/{demoId}-16x9.png` at 1920x1080. A social demo instead has only `public/demo-videos/exports/{demoId}-9x16.mp4` and `public/demo-videos/thumbnails/{demoId}-9x16.png` at 1080x1920.
+
+The demo ID separates the artifacts; do not invent a parallel `social/` path subtree. Do not set public manifest URLs until the final publication gate passes. Website publications are allowlisted in `APPROVED_PUBLIC_DEMO_VIDEO_PUBLICATIONS`; the four social publications are allowlisted separately in `APPROVED_PHASE_ONE_SOCIAL_VIDEO_PUBLICATIONS`.
 
 ## 1. Start And Seed The Isolated Workspace
 
@@ -64,7 +81,13 @@ Run the production inventory check as well:
 
 ```bash
 npm run demo:requirements -- --demo planner-command-center-walkthrough
+npm run demo:requirements -- --demo connection-over-tools-social
+npm run demo:requirements -- --demo disorganization-tax-social
+npm run demo:requirements -- --demo couple-experience-boundaries-social
+npm run demo:requirements -- --demo built-for-planners-social
 ```
+
+The website command must report only `web-16x9`; every social command must report only `social-9x16`. Running `npm run demo:requirements` without `--demo` checks the complete `DEMO_VIDEO_PRODUCTION_CATALOG`. It does not require media until `--require-assets` is supplied.
 
 Before rehearsal, confirm all of the following:
 
@@ -90,9 +113,16 @@ npm run demo:auth-state -- --base-url http://127.0.0.1:3100
 npm run demo:verify-routes -- \
   --base-url http://127.0.0.1:3100 \
   --demo planner-command-center-walkthrough
+
+npm run demo:verify-routes -- \
+  --base-url http://127.0.0.1:3100 \
+  --demo connection-over-tools-social \
+  --demo disorganization-tax-social \
+  --demo couple-experience-boundaries-social \
+  --demo built-for-planners-social
 ```
 
-These tools are non-acceptance setup only. They may prove that routes resolve and seeded sessions work, but their headless browser state, navigation, and receipts do not prove the visible journey and must never be used as recorded footage. The production recording requires a fresh visible browser, a visible login, and human-driven interactions.
+The route verifier accepts repeated `--demo` values and resolves them through the combined production catalog; it does not add social stories to the website playlist. These tools are non-acceptance setup only. They may prove that routes resolve and seeded sessions work, but their headless browser state, navigation, and receipts do not prove the visible journey and must never be used as recorded footage. The production recording requires a fresh visible browser, a visible login, and human-driven interactions.
 
 ## 3. Prepare The Visible Browser
 
@@ -142,7 +172,24 @@ For the supporting Phase 1 clips:
 - Seating uses the in-product canvas Zoom out control twice to reach a visible `70%` readout while browser page zoom remains `100%`.
 - Vendor Directory & CRM starts on a prepared public-directory tab and manually switches to a separately prepared authenticated planner tab with the address bar already hidden. Never open or promote the unfinished vendor portal.
 
-The manual recording validator accepts only a five-second tolerance on either side of each authored duration. A 60-second feature take therefore must run 55–65 seconds; the old 75-percent shortcut is not accepted.
+### Manual social-video protocol
+
+1. Select exactly one of the four social IDs. Prepare only that story's required planner, couple, and public tabs and rehearse its exact ordered checkpoints from `app/data/demoVideos.ts`.
+2. Record a new native 1440x900 full-window take into `output/demo-videos/raw/{socialDemoId}.mp4`. Never copy, crop, resize, or reframe the website walkthrough as its source.
+3. Keep browser zoom at 100%, the address bar hidden, the complete product shell visible, and every interaction human-driven. Portrait framing is added later; it is not created by zooming the browser.
+4. Complete the product actions before the final five seconds, then hold a clean, publicly safe frame while Remotion's activation outro will cover the final five seconds.
+5. Review and hash at least one exact frame for every ordered checkpoint. Each social ID receives its own schema-version-2 manual capture receipt.
+
+The manual recording validator accepts only a five-second tolerance on either side of each website authored duration. A 60-second website feature take therefore must run 55–65 seconds; the old 75-percent shortcut is not accepted. Social tolerance is also five seconds but is hard-clamped to the approved 20–35 second range:
+
+| Social demo ID | Accepted raw duration |
+| --- | ---: |
+| `connection-over-tools-social` | 25–35 seconds |
+| `disorganization-tax-social` | 20–30 seconds |
+| `couple-experience-boundaries-social` | 20–25 seconds |
+| `built-for-planners-social` | 30–35 seconds |
+
+These are fail-closed technical bounds, not permission to truncate the storyboard. The operator targets the authored total and the human review still requires every product action plus the clean five-second outro hold; a take missing either is rejected even if its file duration falls inside the validator tolerance.
 
 Use natural cursor movement and readable pauses. Do not trigger a payment, SMS, email, legal signature, vendor send, or upload of private media.
 
@@ -169,6 +216,23 @@ ffmpeg -y -f avfoundation \
   -c:v h264_videotoolbox -b:v 12M -movflags +faststart -an \
   output/demo-videos/raw/planner-command-center-walkthrough.mp4
 ```
+
+For a social take, record directly to that story's canonical raw path with the same full-window filter. For example:
+
+```bash
+SOCIAL_DEMO_ID=connection-over-tools-social
+mkdir -p output/demo-videos/raw
+ffmpeg -y -f avfoundation \
+  -framerate 30 \
+  -capture_cursor 1 \
+  -capture_mouse_clicks 0 \
+  -i "SCREEN_DEVICE_INDEX:none" \
+  -vf "scale=w=1440:h=900:force_original_aspect_ratio=decrease:flags=lanczos,pad=1440:900:(ow-iw)/2:(oh-ih)/2:0x071020,setsar=1,format=nv12" \
+  -c:v h264_videotoolbox -b:v 12M -movflags +faststart -an \
+  "output/demo-videos/raw/${SOCIAL_DEMO_ID}.mp4"
+```
+
+Repeat that native recording with a fresh manually driven take for each remaining social ID. Changing only the filename while reusing footage is not an acceptable capture.
 
 Re-list AVFoundation devices immediately before every take because the screen index can change. The source display does not have to be 16:10: the scale-plus-pad filter preserves its aspect ratio instead of stretching it to 1440x900. The small matte is preferable to distorted UI.
 
@@ -206,6 +270,7 @@ Create `output/demo-videos/receipts/planner-command-center-walkthrough.json` aft
     "browserWasVisible": true,
     "interactionsWereManual": true,
     "scriptedBrowserCaptureWasUsed": false,
+    "dedicatedChannelTake": true,
     "fullWindowWasVisible": true,
     "browserAddressBarWasHidden": true,
     "realCustomerDataWasExcluded": true,
@@ -269,14 +334,88 @@ Create `output/demo-videos/receipts/planner-command-center-walkthrough.json` aft
 }
 ```
 
+### Social manual capture receipt
+
+Social raw footage uses the same schema-version-2 manual receipt contract. The validator derives the channel from the social demo ID; do not add a `productionChannel` field or create a separate schema. Use the exact story ID, raw path, ordered catalog checkpoints, 1440x900 source dimensions, and full-window capture bounds. For `connection-over-tools-social`, the receipt shape is:
+
+```json
+{
+  "schemaVersion": 2,
+  "demoId": "connection-over-tools-social",
+  "captureMethod": "manual-visible-browser",
+  "recordedAt": "2026-07-14T18:00:00.000Z",
+  "appBuildCommit": "REPLACE_WITH_GIT_COMMIT",
+  "runtimeBuildIdentity": {
+    "origin": "http://127.0.0.1:3100",
+    "identitySelector": "meta[name=\"tsw-app-build-commit\"]",
+    "observedCommit": "REPLACE_WITH_GIT_COMMIT",
+    "verifiedAt": "2026-07-14T17:55:00.000Z"
+  },
+  "source": {
+    "artifactPath": "output/demo-videos/raw/connection-over-tools-social.mp4",
+    "artifactSha256": "REPLACE_WITH_SHA256",
+    "byteLength": 0,
+    "width": 1440,
+    "height": 900,
+    "durationSeconds": 30,
+    "captureBounds": { "x": 0, "y": 0, "width": 1440, "height": 900 }
+  },
+  "operatorAttestation": {
+    "browserWasVisible": true,
+    "interactionsWereManual": true,
+    "scriptedBrowserCaptureWasUsed": false,
+    "fullWindowWasVisible": true,
+    "browserAddressBarWasHidden": true,
+    "realCustomerDataWasExcluded": true,
+    "sideEffectsWereTriggered": false
+  },
+  "checkpoints": [
+    {
+      "label": "Connection planner source",
+      "route": "/admin/weddings/wedding_marketing_capture_sofia_daniel",
+      "action": "Open Events and hold on The Glasshouse at Riverbend at 4:00 PM.",
+      "visibleResult": "The planner-owned event record shows The Glasshouse at Riverbend and the 4:00 PM start.",
+      "atSeconds": 5,
+      "frameSha256": "REPLACE_WITH_FRAME_SHA256"
+    },
+    {
+      "label": "Connection guest view",
+      "route": "/sofia-and-daniel",
+      "action": "Switch manually to the public schedule and hold on the same venue and time.",
+      "visibleResult": "The public wedding schedule shows the Glasshouse venue and 4:00 PM without planner controls.",
+      "atSeconds": 14,
+      "frameSha256": "REPLACE_WITH_FRAME_SHA256"
+    },
+    {
+      "label": "Connection couple view",
+      "route": "/couple/dashboard",
+      "action": "Switch manually to the couple Timeline and hold on the matching event plan.",
+      "visibleResult": "The couple Timeline presents the same Glasshouse event inside the guided couple workspace.",
+      "atSeconds": 23,
+      "frameSha256": "REPLACE_WITH_FRAME_SHA256"
+    }
+  ],
+  "review": {
+    "reviewedFrameCount": 3,
+    "rawFrameReview": "approved",
+    "publicSafetyReview": "approved"
+  }
+}
+```
+
+The other three social receipts keep the same fields but must use their own IDs, canonical raw paths, authored durations, and exact ordered checkpoints from `PHASE_ONE_SOCIAL_VIDEO_STORIES`. `dedicatedChannelTake` is required and must be explicitly true for every social receipt; do not copy Connection footage or checkpoint text into another story.
+
 Use `git rev-parse HEAD`, `shasum -a 256`, `stat -f %z`, and `ffprobe` to populate the real commit, checksum, byte length, dimensions, and duration. For every reviewed checkpoint timestamp, extract the exact PNG bytes from the MP4 and hash those bytes (for example, `ffmpeg -v error -i RAW.mp4 -ss 5.000 -map 0:v:0 -frames:v 1 -f image2pipe -vcodec png pipe:1 | shasum -a 256`). Then run:
 
 ```bash
 npm run demo:validate-manual-video -- \
   --receipt output/demo-videos/receipts/planner-command-center-walkthrough.json
+
+npm run demo:validate-manual-video -- \
+  --receipt output/demo-videos/receipts/connection-over-tools-social.json
 ```
 
-The validator does not launch or control a browser. It rejects scripted-capture attestations, non-full-window bounds, placeholder, duplicate, out-of-plan, reordered, or altered checkpoints, extra or missing query parameters, a runtime marker that disagrees with the recorded clean commit, wrong raw paths, checksum/size mismatches, checkpoint timestamps that are not strictly increasing, reviewed-frame hashes that do not match frames extracted from the MP4, non-1440x900 footage, footage outside the current 70–80 second hero window, insufficient frame review, and unapproved safety review. The recorded commit may later be an ancestor of a clean publication commit, so adding the approval manifest does not make the original receipt unverifiable; unrelated histories still fail closed.
+The validator does not launch or control a browser. It rejects scripted-capture attestations, non-full-window bounds, placeholder, duplicate, out-of-plan, reordered, or altered checkpoints, extra or missing query parameters, a runtime marker that disagrees with the recorded clean commit, wrong raw paths, checksum/size mismatches, checkpoint timestamps that are not strictly increasing, reviewed-frame hashes that do not match frames extracted from the MP4, non-1440x900 footage, footage outside the channel-specific authored bounds, insufficient frame review, and unapproved safety review. The hero remains limited to 70–80 seconds, while social durations use the clamped table above. The recorded commit may later be an ancestor of a clean publication commit, so adding the approval manifest does not make the original receipt unverifiable; unrelated histories still fail closed.
 
 ## 6. Narration And Post-Production
 
@@ -290,6 +429,11 @@ ffmpeg -y -i /path/to/approved-narration-source.wav \
   -af "highpass=f=80,lowpass=f=16000,loudnorm=I=-16:TP=-1.5:LRA=11" \
   -c:a aac -b:a 192k \
   output/demo-videos/narration/planner-command-center-walkthrough.m4a
+
+ffmpeg -y -i /path/to/approved-connection-narration-source.wav \
+  -af "highpass=f=80,lowpass=f=16000,loudnorm=I=-16:TP=-1.5:LRA=11" \
+  -c:a aac -b:a 192k \
+  output/demo-videos/narration/connection-over-tools-social.m4a
 ```
 
 Only after the manual capture receipt and narration master exist, render the contained website format:
@@ -303,7 +447,15 @@ npm run demo:render -- \
 
 The renderer fails closed when narration is missing and probes the finished MP4 to ensure it contains an audio stream. It uses the exact raw recording duration, fills the 16:9 canvas height with the 16:10 product window, preserves the complete window with `contain`, writes accessible WebVTT captions beside the video instead of burning them over product controls, and fades to the activation CTA for the final five seconds.
 
-Do not run `--format social-9x16` for a desktop walkthrough. Social output must come from a separately defined, 20-35 second Phase 1 story with its own manual capture contract.
+Only after one social story's manual receipt and narration master exist, render its channel-native portrait format:
+
+```bash
+npm run demo:render -- \
+  --demo connection-over-tools-social \
+  --receipt output/demo-videos/receipts/connection-over-tools-social.json
+```
+
+Render target resolution is channel-aware. Omitting `--format` selects `web-16x9` for a website ID and `social-9x16` for a social ID. An explicit matching format is allowed, but requesting `social-9x16` for a website ID or `web-16x9` for a social ID fails closed. The portrait renderer creates a 1080x1920 composition with the complete 1440x900 source window contained inside a 16:10 product frame, plus the story's pillar, title, outcome, and five-second activation outro. It does not enlarge one product card or leave a cropped fragment in place of the application shell.
 
 After watching the complete website export at normal speed and testing the website modal on desktop and mobile, create the canonical human playback approval receipt and validate it:
 
@@ -353,8 +505,61 @@ After watching the complete website export at normal speed and testing the websi
 
 Save it as `output/demo-videos/playback-approvals/planner-command-center-walkthrough.json`. Populate hashes, byte lengths, dimensions, and duration from the real artifacts; the validator re-probes and re-hashes both files.
 
+### Social human playback approval
+
+Watch the complete 1080x1920 social export at normal speed with narration audible, then inspect it in a portrait-mobile presentation with representative top, right, and bottom social-control overlays. The pillar, title, complete product window, outcome, and activation CTA must remain legible and unobscured. `safeAreaApproved` is a human visual attestation; the validator requires that explicit approval and independently verifies the artifact paths, hashes, byte lengths, dimensions, duration, and audio stream. It does not infer visual safety from dimensions alone.
+
+Create `output/demo-videos/playback-approvals/connection-over-tools-social.json` with the channel-specific schema-version-1 shape:
+
+```json
+{
+  "schemaVersion": 1,
+  "demoId": "connection-over-tools-social",
+  "reviewedAt": "REPLACE_WITH_EXACT_ISO_TIMESTAMP",
+  "reviewer": "REPLACE_WITH_HUMAN_REVIEWER_NAME",
+  "reviewMethod": "human-normal-speed-playback",
+  "targets": [
+    {
+      "format": "social-9x16",
+      "video": {
+        "artifactPath": "public/demo-videos/exports/connection-over-tools-social-9x16.mp4",
+        "artifactSha256": "REPLACE_WITH_SHA256",
+        "byteLength": 0,
+        "width": 1080,
+        "height": 1920,
+        "durationSeconds": 30,
+        "hasAudio": true
+      },
+      "thumbnail": {
+        "artifactPath": "public/demo-videos/thumbnails/connection-over-tools-social-9x16.png",
+        "artifactSha256": "REPLACE_WITH_SHA256",
+        "byteLength": 0,
+        "width": 1080,
+        "height": 1920
+      },
+      "review": {
+        "fullNormalSpeedPlaybackCompleted": true,
+        "captionsApproved": true,
+        "narrationAndAudioApproved": true,
+        "fullUncroppedProductWindowApproved": true,
+        "localAndDevelopmentContentExcluded": true,
+        "privateContentExcluded": true,
+        "publicSafetyApproved": true
+      }
+    }
+  ],
+  "socialPlayback": {
+    "portraitMobileApproved": true,
+    "safeAreaApproved": true
+  }
+}
+```
+
+A social receipt must contain exactly one `social-9x16` target and `socialPlayback`; `websitePlayback` is forbidden. A website receipt must contain exactly one `web-16x9` target and `websitePlayback`; `socialPlayback` is forbidden. Repeat the social review and receipt with the exact canonical ID, duration, export, and thumbnail paths for each of the other three stories.
+
 ```bash
 npm run demo:validate-playback -- --demo planner-command-center-walkthrough
+npm run demo:validate-playback -- --demo connection-over-tools-social
 ```
 
 Then require every generated asset:
@@ -363,21 +568,27 @@ Then require every generated asset:
 npm run demo:requirements -- \
   --demo planner-command-center-walkthrough \
   --require-assets
+
+npm run demo:requirements -- \
+  --demo connection-over-tools-social \
+  --require-assets
 ```
 
-Rendering always revalidates the manual receipt; arbitrary raw-file and duration overrides are rejected. The validated raw recording and narration master stay outside the deployable `public/` tree and are copied into ignored Remotion staging paths only for the render. Both staging files are removed even when rendering fails. Captions may clarify the visible action, but must not hide the product or claim a result the recording does not show.
+Repeat `demo:validate-playback` and `demo:requirements -- --require-assets` for `disorganization-tax-social`, `couple-experience-boundaries-social`, and `built-for-planners-social`; one approved story cannot satisfy another story's gate. The asset gate also requires the approved export duration to match the validated raw take within the media-probe tolerance and, once an allowlist entry exists, requires its build commit to match the manual capture receipt. Rendering always revalidates the manual receipt; arbitrary raw-file and duration overrides are rejected. The validated raw recording and narration master stay outside the deployable `public/` tree and are copied into ignored Remotion staging paths only for the render. Both staging files are removed even when rendering fails. Captions may clarify the visible action, but must not hide the product or claim a result the recording does not show.
 
 ## 7. Publication Gate
 
 Before changing a demo to `published` or attaching CDN URLs:
 
-1. Watch the entire 16:9 export at normal speed with narration audible.
+1. Watch the entire channel-native export at normal speed with narration audible: 1920x1080 for website or 1080x1920 for social.
 2. Confirm the connected story uses the approved fictional Phase 1 workspace.
 3. Confirm the product window is complete and never cropped or digitally zoomed.
 4. Confirm no local origin, developer UI, private data, tokens, or real contact/payment information is visible.
 5. Confirm no real message, payment, signature, vendor action, or private upload occurred.
-6. Confirm captions are accurate, readable, and inside safe areas.
-7. Load the website demo modal in a visible desktop browser and a mobile viewport; prove playback, poster, controls, and fallback behavior.
-8. Record the human playback approval separately from the raw-capture receipt and make `npm run demo:validate-playback` pass.
+6. Confirm captions are accurate and readable. For social, confirm the pillar, title, complete product window, outcome, and activation CTA remain inside human-reviewed social-overlay safe areas.
+7. For website video, load the demo modal in a visible desktop browser and a mobile viewport and prove playback, poster, controls, captions, and fallback behavior. For social video, watch the portrait export in a visible portrait-mobile presentation and complete both `portraitMobileApproved` and `safeAreaApproved` review.
+8. Confirm the raw footage came from that exact story's manually driven browser take. A route preflight, scripted browser pass, website recording, or another social story cannot serve as its final capture evidence.
+9. Record the human playback approval separately from the raw-capture receipt and make `npm run demo:validate-playback` plus `npm run demo:requirements -- --require-assets` pass for that exact ID.
+10. Add the publication only to its channel's explicit allowlist: `APPROVED_PUBLIC_DEMO_VIDEO_PUBLICATIONS` for website or `APPROVED_PHASE_ONE_SOCIAL_VIDEO_PUBLICATIONS` for social.
 
 If any item fails, keep the public manifest in its retake-safe `recording` state.

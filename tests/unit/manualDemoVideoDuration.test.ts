@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { getDemoVideoById } from '../../app/data/demoVideoProduction';
-import { getManualRecordingDurationBounds } from '../../scripts/demo-videos/validate-manual-demo-video';
+import { assertRenderedDurationMatchesManualCapture } from '../../scripts/demo-videos/validate-demo-video-playback-approval';
+import {
+  assertDedicatedChannelTake,
+  getManualRecordingDurationBounds,
+} from '../../scripts/demo-videos/validate-manual-demo-video';
 
 describe('manual demo video duration bounds', () => {
   it('keeps human-driven takes close to their authored duration', () => {
@@ -27,5 +31,38 @@ describe('manual demo video duration bounds', () => {
     assert.ok(morningView);
     const bounds = getManualRecordingDurationBounds(morningView);
     assert.ok(45 < bounds.minimumDuration);
+  });
+
+  it('requires an explicit dedicated take for social footage only', () => {
+    assert.throws(
+      () => assertDedicatedChannelTake(
+        { productionChannel: 'social' },
+        {},
+      ),
+      /dedicatedChannelTake must be explicitly true/,
+    );
+    assert.throws(
+      () => assertDedicatedChannelTake(
+        { productionChannel: 'social' },
+        { dedicatedChannelTake: false },
+      ),
+      /dedicatedChannelTake must be explicitly true/,
+    );
+    assert.doesNotThrow(() => assertDedicatedChannelTake(
+      { productionChannel: 'social' },
+      { dedicatedChannelTake: true },
+    ));
+    assert.doesNotThrow(() => assertDedicatedChannelTake(
+      { productionChannel: 'website' },
+      {},
+    ));
+  });
+
+  it('requires the approved export to preserve the validated raw take duration', () => {
+    assert.doesNotThrow(() => assertRenderedDurationMatchesManualCapture(30, 30.2));
+    assert.throws(
+      () => assertRenderedDurationMatchesManualCapture(30, 29.5),
+      /duration must match the validated manual recording/,
+    );
   });
 });

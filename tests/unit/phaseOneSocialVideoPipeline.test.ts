@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 
@@ -34,17 +35,10 @@ const SOCIAL_STORIES = [
   },
 ] as const;
 
-const SOCIAL_DISTRIBUTION_CHANNELS = [
-  'instagram-reels',
-  'facebook-reels',
-  'tiktok',
-] as const;
-
 type SocialStory = DemoVideo & {
   productionChannel: 'social';
   phaseOnePillar: string;
   socialOutcome: string;
-  distributionChannels: readonly string[];
 };
 
 type SocialPublicationApproval = {
@@ -58,7 +52,6 @@ type SocialPublicationApproval = {
   thumbnailUrl: string;
   captionUrl: string;
   transcriptUrl: string;
-  distributionChannels: readonly string[];
 };
 
 function getSocialStories(): readonly SocialStory[] {
@@ -88,7 +81,6 @@ describe('Phase 1 social video pipeline', () => {
 
     for (const story of stories) {
       assert.equal(story.productionChannel, 'social');
-      assert.deepEqual(story.distributionChannels, SOCIAL_DISTRIBUTION_CHANNELS);
       assert.ok(story.durationSeconds >= 20 && story.durationSeconds <= 35);
       assert.ok(story.socialOutcome.length >= 40);
       assert.equal(story.priority, 'phase-one');
@@ -97,8 +89,6 @@ describe('Phase 1 social video pipeline', () => {
       assert.equal(story.thumbnailUrl, undefined);
       assert.equal(story.captionUrl, undefined);
       assert.equal(story.transcriptUrl, undefined);
-      assert.equal(story.socialAssetUrl, undefined);
-      assert.equal(story.socialThumbnailUrl, undefined);
     }
   });
 
@@ -137,7 +127,6 @@ describe('Phase 1 social video pipeline', () => {
       const requirement = demoVideoProduction.getDemoVideoProductionRequirementById(story.id);
       assert.ok(requirement);
       assert.equal(requirement.productionChannel, 'social');
-      assert.deepEqual(requirement.distributionChannels, SOCIAL_DISTRIBUTION_CHANNELS);
       assert.match(requirement.rawRecordingPath, /^output\/demo-videos\/raw\//);
       assert.match(requirement.captureReceiptPath, /^output\/demo-videos\/receipts\//);
       assert.equal(rawPaths.has(requirement.rawRecordingPath), false);
@@ -224,6 +213,16 @@ describe('Phase 1 social video pipeline', () => {
     assert.doesNotMatch(render.stderr, /does not define a web-16x9 export target/);
   });
 
+  it('includes social stories in route preflight without adding them to the website playlist', () => {
+    const routeVerifier = readFileSync(
+      path.resolve('scripts/demo-videos/verify-demo-routes.ts'),
+      'utf8',
+    );
+
+    assert.match(routeVerifier, /DEMO_VIDEO_PRODUCTION_CATALOG/);
+    assert.doesNotMatch(routeVerifier, /DEMO_VIDEO_PLAYLIST/);
+  });
+
   it('keeps social publication on its own empty, canonical allowlist', () => {
     const stories = getSocialStories();
     const publicationApi = demoVideos as unknown as {
@@ -257,7 +256,6 @@ describe('Phase 1 social video pipeline', () => {
       thumbnailUrl: `/demo-videos/thumbnails/${story.id}-9x16.png`,
       captionUrl: `/demo-videos/captions/${story.id}.vtt`,
       transcriptUrl: `/demo-videos/transcripts/${story.id}.md`,
-      distributionChannels: SOCIAL_DISTRIBUTION_CHANNELS,
     };
     assert.equal(
       publicationApi.isCompletePhaseOneSocialVideoPublicationApproval?.(approval, story),

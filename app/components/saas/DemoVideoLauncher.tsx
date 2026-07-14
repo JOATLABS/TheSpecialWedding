@@ -1,6 +1,6 @@
 'use client';
 
-import PlayCircle from 'lucide-react/dist/esm/icons/play-circle';
+import PlayCircle from 'lucide-react/dist/esm/icons/play-circle.mjs';
 import { useState } from 'react';
 
 import type { PublicDemoVideo } from '@/data/publicDemoVideos';
