@@ -15,6 +15,14 @@ from bson import ObjectId
 
 from app.core.database import mongo
 
+SYSTEM_BLOG_AUTHOR_EMAIL = "hello@thespecialwedding.io"
+PUBLIC_COPY_SEED_SLUG = "introducing-the-special-wedding"
+PUBLIC_COPY_SEED_REVISION = 2
+PUBLIC_COPY_SEED_REVISIONS = {
+    PUBLIC_COPY_SEED_SLUG: PUBLIC_COPY_SEED_REVISION,
+    "managing-200-guests": 2,
+}
+
 BLOG_ARTICLES = [
     {
         "title": "Introducing The Special Wedding: A Connected Operating System for Wedding Planners",
@@ -241,9 +249,9 @@ This guide walks you through a system that manages large guest lists without the
 
 The first mistake planners make with large guest lists is trying to manage them in spreadsheets. Email attachments get out of sync. Multiple people edit the same file and create versions. Data gets duplicated. Updates in one place don't reflect in another.
 
-**Use a centralized system** where all guest information lives in one place, and everyone accessing it sees the same current data. The Special Wedding's guest management system is built for exactly this — one source of truth for every guest, with real-time updates visible across your team and to the couple through their portal.
+**Use a centralized system** where the planner reviews invitation, RSVP, group, meal, dietary, accessibility, and plus-one context from one Guest Management workspace. Couple-facing views remain separate from planner controls.
 
-Import your guest list in bulk using a CSV or Google Sheet. Map your columns (name, phone, email, group, plus-one status, dietary notes) and everything syncs in seconds.
+Import your guest list in bulk using a CSV or Google Sheet. Map your columns (name, phone, email, group, plus-one status, dietary notes), then review the mapped rows before using them for RSVP, seating, or communications.
 
 ### Step 1: Segment Guests into Groups
 
@@ -260,7 +268,7 @@ The benefit: you can segment communication, track RSVP rates by group, assign se
 
 With 200 guests, manual RSVP tracking is impossible. People will respond via email, text, phone call, and some won't respond at all. You need a system that:
 
-**Centralizes RSVP collection:** Guests get a personalized RSVP link via SMS or email. They can RSVP online, confirm dietary requirements, answer preference questions, and add plus-one names — all in one place. That data flows directly into your guest list without manual data entry.
+**Centralizes RSVP collection:** Guests get a personalized RSVP link via SMS or email. They can RSVP online, confirm dietary requirements, answer preference questions, and add plus-one names. Planners review stored responses in Guest Management before using them for seating or communications.
 
 **Tracks RSVP status by date:** Create a timeline: send invitations 8-10 weeks out, set a soft deadline 6 weeks out, send a first reminder 4 weeks out, send a hard deadline 3 weeks out, send final reminders at 2 weeks and 1 week. Track how many have responded at each stage. For large weddings, you'll need to proactively chase down responses.
 
@@ -785,14 +793,57 @@ The couple will notice. Their guests will have a better time. That's what it's a
 async def seed_blog():
     """
     Seed the blog_articles collection with blog posts.
-    Checks if any articles already exist; if so, returns early.
+
+    Existing collections receive only the revision-gated canonical public-copy
+    refresh. Operator-authored articles and already-refreshed seed records are
+    never overwritten.
     """
     collection = mongo.db["blog_articles"]
 
-    # Check if articles already exist
     existing_count = await collection.count_documents({})
     if existing_count > 0:
-        return {"inserted": 0, "message": "already seeded"}
+        updated = 0
+        for slug, seed_revision in PUBLIC_COPY_SEED_REVISIONS.items():
+            canonical_article = next(
+                article for article in BLOG_ARTICLES if article["slug"] == slug
+            )
+            refresh_result = await collection.update_one(
+                {
+                    "slug": slug,
+                    "created_by": SYSTEM_BLOG_AUTHOR_EMAIL,
+                    "$or": [
+                        {"seed_revision": {"$exists": False}},
+                        {"seed_revision": {"$lt": seed_revision}},
+                    ],
+                    "$expr": {"$eq": ["$created_at", "$updated_at"]},
+                },
+                {
+                    "$set": {
+                        "title": canonical_article["title"],
+                        "excerpt": canonical_article["excerpt"],
+                        "content": canonical_article["content"],
+                        "category": canonical_article["category"],
+                        "tags": canonical_article["tags"],
+                        "featured": canonical_article.get("featured", False),
+                        "meta_description": canonical_article.get(
+                            "meta_description", canonical_article["excerpt"]
+                        ),
+                        "estimated_read_minutes": canonical_article.get("read_time", 5),
+                        "seed_revision": seed_revision,
+                        # Keep the editorial timestamp untouched. The
+                        # created_at == updated_at invariant is the durable
+                        # signal that no operator has edited this seeded copy,
+                        # so later canonical revisions can still advance.
+                        "seed_refreshed_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
+            updated += refresh_result.modified_count
+        return {
+            "inserted": 0,
+            "updated": updated,
+            "message": "public copy refreshed" if updated else "already seeded",
+        }
 
     inserted = 0
     now = datetime.now(timezone.utc)
@@ -812,8 +863,8 @@ async def seed_blog():
             "tags": article_data["tags"],
             "featured": article_data.get("featured", False),
             "author_name": "The Special Wedding",
-            "author_email": "hello@thespecialwedding.io",
-            "created_by": "hello@thespecialwedding.io",
+            "author_email": SYSTEM_BLOG_AUTHOR_EMAIL,
+            "created_by": SYSTEM_BLOG_AUTHOR_EMAIL,
             "meta_title": None,
             "meta_description": article_data.get(
                 "meta_description", article_data["excerpt"]
@@ -826,12 +877,13 @@ async def seed_blog():
             "view_count": 0,
             "created_at": now,
             "updated_at": now,
+            "seed_revision": PUBLIC_COPY_SEED_REVISIONS.get(article_data["slug"], 1),
         }
 
         await collection.insert_one(doc)
         inserted += 1
 
-    return {"inserted": inserted}
+    return {"inserted": inserted, "updated": 0}
 
 
 # Allow running directly

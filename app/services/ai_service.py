@@ -1130,7 +1130,9 @@ class AIService:
 
         # Make AI API call
         try:
-            response = await self._call_gemini(feature, prompt, context, model, tools=tools)
+            response = await self._call_gemini(
+                feature, prompt, context, model, tools=tools
+            )
             # Treat the raw model output as untrusted HTML — escape every
             # string leaf before it leaves the service boundary so a
             # prompt-injection-induced ``<script>`` in the response can
@@ -1283,7 +1285,12 @@ class AIService:
             raise AIGenerationError(f"AI generation failed: {str(e)}")
 
     async def _call_gemini(
-        self, feature: str, prompt: str, context: Dict[str, Any], model: str, tools: Optional[list] = None
+        self,
+        feature: str,
+        prompt: str,
+        context: Dict[str, Any],
+        model: str,
+        tools: Optional[list] = None,
     ) -> Any:
         """
         Make the actual Gemini API call using the new SDK with proper async.
@@ -1402,10 +1409,7 @@ class AIService:
                 for fc in response.function_calls:
                     # Convert args to a standard dict if it's a mapping
                     args = dict(fc.args) if hasattr(fc, "args") and fc.args else {}
-                    function_calls.append({
-                        "name": fc.name,
-                        "args": args
-                    })
+                    function_calls.append({"name": fc.name, "args": args})
                 return {"function_calls": function_calls}
 
             # Extract text from response

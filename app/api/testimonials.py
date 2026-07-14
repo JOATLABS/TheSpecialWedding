@@ -21,7 +21,23 @@ router = APIRouter()
 
 COLLECTION = "testimonials"
 
-# ── Default seed data (matches the hardcoded values in app/page.tsx) ──────────
+LEGACY_PRIYA_VENDOR_ACCESS_QUOTE = (
+    "Coordinating twelve vendors across two venues was a nightmare of group "
+    "texts and missed emails. Now every florist, caterer, and photographer has "
+    "role-based access to the timeline, uploads deliverables to the gallery, "
+    "and signs off on contracts inside the platform. The automated reminders "
+    "alone saved me from three near-disasters last season."
+)
+
+PRIYA_PLANNER_QUOTE = (
+    "Coordinating twelve vendors across two venues was a nightmare of group "
+    "texts and missed emails. Now each vendor's contact details, agreements, "
+    "payment status, and internal notes stay attached to the wedding in the "
+    "private planner workspace, alongside the timeline and reminders my team "
+    "uses. One operating record keeps us from chasing scattered updates."
+)
+
+# ── Default seed data (kept in sync with public SaaS defaults) ────────────────
 
 DEFAULT_TESTIMONIALS: List[Dict[str, Any]] = [
     {
@@ -61,13 +77,7 @@ DEFAULT_TESTIMONIALS: List[Dict[str, Any]] = [
         "name": "Priya Chandran",
         "company": "Verdant Celebrations",
         "role": "Senior Planner",
-        "quote": (
-            "Coordinating twelve vendors across two venues was a nightmare of group "
-            "texts and missed emails. Now every florist, caterer, and photographer has "
-            "role-based access to the timeline, uploads deliverables to the gallery, "
-            "and signs off on contracts inside the platform. The automated reminders "
-            "alone saved me from three near-disasters last season."
-        ),
+        "quote": PRIYA_PLANNER_QUOTE,
         "is_active": True,
         "display_order": 3,
         "created_at": datetime(2025, 1, 1, tzinfo=timezone.utc),
@@ -149,6 +159,22 @@ async def _ensure_seeded() -> None:
                 {"$setOnInsert": dict(t)},
                 upsert=True,
             )
+
+    # Legacy default rows have no seed marker. Match the exact retired quote so
+    # public copy is repaired without overwriting an admin's edited testimonial.
+    await mongo.db[COLLECTION].update_one(
+        {
+            "name": "Priya Chandran",
+            "company": "Verdant Celebrations",
+            "quote": LEGACY_PRIYA_VENDOR_ACCESS_QUOTE,
+        },
+        {
+            "$set": {
+                "quote": PRIYA_PLANNER_QUOTE,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
 
 
 # ── Public endpoint (no auth — consumed by landing page) ─────────────────────

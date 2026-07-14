@@ -70,7 +70,7 @@ export const blogPosts = {
         <h3 className="text-xl font-semibold text-white mt-8">Plans for independent planners and teams</h3>
 
         <p>
-          Solo lets a planner try the platform with one active wedding. Boutique adds unlimited weddings and guests plus the paid planning toolkit. Signature adds five staff seats, cross-wedding analytics, higher AI and storage limits, a planner storefront, and an optional custom domain. Enterprise expands the team, AI, storage, and launch-support limits.
+          Solo lets a planner try the platform with one active wedding. Boutique adds unlimited weddings and guests plus the paid planning toolkit. Signature adds five staff seats, higher AI and storage limits, a planner storefront, and an optional custom domain. Enterprise expands the team, AI, storage, and launch-support limits.
         </p>
 
         <p>
@@ -718,7 +718,7 @@ export const blogPosts = {
         <h3 className="text-xl font-semibold text-white mt-8">The case for a platform</h3>
 
         <p>
-          The real answer? You shouldn't need to choose. You should have one platform that handles proposals, contracts, payments, guest management, seating, vendor collaboration, timelines, and invoicing.
+          The real answer? You shouldn't need to choose. You should have one planner platform for proposals, contracts, payments, guest management, seating, timelines, invoicing, and private vendor records.
         </p>
 
         <p>
@@ -726,7 +726,7 @@ export const blogPosts = {
         </p>
 
         <p>
-          Like The Special Wedding, which handles all of this in one interface. No tab-switching. No manual data sync. One source of truth for contracts, clients, guests, vendors, and budgets.
+          The Special Wedding brings those planner-facing records into one operating workspace. The public vendor directory remains a separate discovery surface, and vendors are not invited into private planner operations.
         </p>
 
         <p>
@@ -1380,11 +1380,11 @@ export const blogPosts = {
   },
   'the-built-in-wedding-website': {
     title: "The Built-In Wedding Website: Why Your Couples Shouldn't Pay Squarespace or The Knot",
-    excerpt: "Every wedding on The Special Wedding ships with a branded public microsite — gallery, RSVP, registry, QR memory uploads — wired to the same data you already work in. No separate subscription, no copy-paste, no drift.",
+    excerpt: "Every wedding on The Special Wedding can present a branded public microsite with approved schedule, story, gallery, registry, RSVP, and QR-memory details prepared from the planner wedding record.",
     category: 'Product',
     date: '2026-05-04',
     readTime: 7,
-    ogDescription: 'Every wedding gets a public microsite built in — no Squarespace, no The Knot, no copy-paste. See how the couple-facing site and planner workspace share one data model.',
+    ogDescription: 'See how the planner wedding record prepares the approved schedule, story, gallery, registry, RSVP, and QR-memory details presented on the public microsite.',
     relatedTemplates: ['couple_intake', 'guest_dietary_access'],
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
@@ -1407,7 +1407,7 @@ export const blogPosts = {
         </p>
 
         <p>
-          <strong>Branded presentation:</strong> The couple configures colors, fonts, background style, and event-type copy once. The microsite renders with that branding, and so does the couple portal and any guest-facing page. No re-theming three systems.
+          <strong>Branded presentation:</strong> The planner configures colors, fonts, background style, and event copy in Wedding Configuration. The public microsite presents the approved branding, while the couple portal keeps its own audience-appropriate view.
         </p>
 
         <p>
@@ -1415,25 +1415,25 @@ export const blogPosts = {
         </p>
 
         <p>
-          <strong>RSVP flow:</strong> Guests RSVP directly on the microsite. The response flows into the planner's guest list immediately. Meal choices, plus-ones, dietary notes, accessibility flags — all of it lands in the same record the planner will use for seating.
+          <strong>RSVP flow:</strong> Guests use the microsite RSVP flow for attendance, event, meal, plus-one, dietary, and accessibility responses. The planner reviews the stored response and guest context in Guest Management before using it for seating and communications.
         </p>
 
         <p>
-          <strong>Registry and FAQs:</strong> The couple manages a registry (external URLs or internal) and a FAQ list on their end. Both surface on the public microsite. Guests stop asking the planner the same five questions because the answers live where they're looking.
+          <strong>Registry and FAQs:</strong> The planner maintains approved registry links and FAQ content in Wedding Configuration. The public microsite presents that prepared information without exposing planner controls.
         </p>
 
         <p>
           <strong>QR memory uploads:</strong> A QR code on every table — or printed on signs around the reception — lets guests upload photos from their phone during or after the event. Everything flows into a private review queue in the couple portal before it appears in the public gallery.
         </p>
 
-        <h3 className="text-xl font-semibold text-white mt-8">What changes when the microsite shares a database</h3>
+        <h3 className="text-xl font-semibold text-white mt-8">What the connected product proof demonstrates</h3>
 
         <p>
-          The mechanical difference is obvious: one data model instead of two. But the operational difference is bigger than that.
+          The seeded product proof lets a planner compare the wedding record with the public schedule, story, and gallery, then inspect guest-response context in Guest Management. Each surface presents the details appropriate to its audience.
         </p>
 
         <p>
-          When a guest RSVPs on the public microsite at 10pm on a Tuesday, the planner's dashboard shows the updated head count on Wednesday morning. When a meal preference changes two weeks before the event, the caterer rollup updates automatically. When the couple swaps a ceremony time, the guest-facing schedule and the planner's timeline stay in sync — because they're the same record.
+          The public view does not expose planner notes, contracts, or operational controls. Caterer handoffs and other vendor-facing deliverables remain explicit planner workflows rather than an implied automatic vendor sync.
         </p>
 
         <p>
@@ -1583,90 +1583,50 @@ export const blogPosts = {
     ),
   },
   'real-time-planning-not-email-tag': {
-    title: 'Real-Time Planning, Not Email Tag: The Operational Layer Most Platforms Skip',
-    excerpt: 'Server-sent events push changes to the couple the second you save them. Inbound emails auto-thread to the right couple. An audit log captures every write. Planning stops being a sync-every-morning operation.',
+    title: 'Shared Wedding Views Without Exposing Planner Operations',
+    excerpt: 'The planner workspace, couple portal, public microsite, and guest-response tools each present the context their audience needs while planner-only controls remain private.',
     category: 'Product',
     date: '2026-05-25',
     readTime: 7,
-    ogDescription: 'Real-time SSE updates, inbound email threading, and a full activity audit log — the operational layer that turns wedding planning from async email tag into shared real-time work.',
+    ogDescription: 'See how one planner-owned wedding record supports distinct planner, couple, public, and guest-response views without exposing private operations.',
     relatedTemplates: ['order_of_events', 'day_of_emergency_contacts'],
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
         <p>
-          Most wedding platforms are built like spreadsheets with a UI. You change a value, you save it, and the next person who opens the page sees the change — whenever that is. If the couple wants to know what happened since their last check-in, they read their email and piece it together from the message thread.
+          A wedding plan serves several audiences, but those audiences should not share one unrestricted dashboard. Planners need operational controls and private context. Couples need a guided view of their wedding. Guests need clear public details and an RSVP path.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">One planner-owned record, distinct audience views</h3>
+
+        <p>
+          The planner workspace owns the detailed wedding record: event days, guest context, forms, payments, vendor records, seating, and configuration. Planner-only controls and internal notes remain inside that operational boundary.
         </p>
 
         <p>
-          That's a 2015 architecture running against a 2026 expectation. Couples today expect real-time updates — from their bank, their food delivery, their calendar. The wedding is the single most coordinated project of their adult life, and it's the one place they're still refreshing pages and asking "did you get my message?"
+          The couple portal presents a guided overview, timeline, payment context, and assigned forms. The public microsite presents the prepared story, schedule, registry, FAQ, and approved gallery for guests. Neither view exposes the planner dashboard.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">Guest responses return to planner operations</h3>
+
+        <p>
+          Guests submit attendance and event choices through the RSVP flow. Guest Management then shows the stored invitation, response, group, meal, and plus-one context for planner review. Seating and communications remain explicit planner actions.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">What to verify before signing up</h3>
+
+        <p>
+          Open the seeded planner wedding record, couple portal, public wedding, and Guest Management views side by side. Compare the prepared event and guest context, and confirm that each audience sees only the information intended for it.
         </p>
 
         <p>
-          The Special Wedding's real-time layer is built so the planner and the couple never have to ask that question again.
-        </p>
-
-        <h3 className="text-xl font-semibold text-white mt-8">Server-sent events push changes the moment you save them</h3>
-
-        <p>
-          When a planner saves an update — a new vendor confirmation, a shifted timeline, a payment received — the couple portal updates live. No refresh, no page reload. The couple can literally watch the change appear if they're on the page.
-        </p>
-
-        <p>
-          This isn't a cosmetic thing. It's what makes the couple portal feel like a shared workspace instead of a static dashboard. The couple stops treating the portal like a report they check weekly and starts treating it like a document they're in with the planner.
-        </p>
-
-        <p>
-          For the planner, the benefit is quieter but just as real: fewer "did you see my update?" messages. Fewer "can you confirm this is updated?" loops. The act of saving is the act of communicating.
-        </p>
-
-        <h3 className="text-xl font-semibold text-white mt-8">Inbound emails thread into the planner inbox automatically</h3>
-
-        <p>
-          Every wedding gets a routing address. When a vendor, a couple's family member, or anyone else emails that address, the message is parsed and threaded into the planner inbox against the right couple's record. The planner sees it in the same workspace as every other message tied to that wedding.
-        </p>
-
-        <p>
-          That sounds small, and it isn't. The typical planner inbox has vendor emails from three separate email addresses, couple texts in two different threads, and internal team notes in Slack. The inbound threading is what lets the planner stop context-switching across channels. Everything about a specific wedding lands in one place, regardless of where it originated.
-        </p>
-
-        <h3 className="text-xl font-semibold text-white mt-8">An activity audit log for every write</h3>
-
-        <p>
-          Every change to a wedding — guest added, seating reshuffled, payment logged, contract signed, vendor invited — is captured in an activity audit log tied to that wedding. You can see who did what, when, and what the change was.
-        </p>
-
-        <p>
-          This is operationally useful for teams: if three planners share a wedding, you can trace the work history without asking anyone. It's also useful for couples: the audit log is the canonical answer to "what happened this week?" without anyone having to draft a status update.
-        </p>
-
-        <p>
-          And it matters for accountability. When an RSVP was marked "yes" and then changed to "no" two weeks later, the audit log has the record. When a vendor's contract was modified, the audit log has the record. The platform stops being a black box and starts being a system you can actually audit.
-        </p>
-
-        <h3 className="text-xl font-semibold text-white mt-8">Why this is the ops layer nobody sees</h3>
-
-        <p>
-          The features that show up in a feature comparison — guest management, seating, contracts — are the visible ones. The real-time layer is invisible. It shows up as the absence of friction. Couples who aren't asking "what's happening?" are not going to write a review praising the SSE architecture. They're just going to feel like the planning went smoothly.
-        </p>
-
-        <p>
-          That's the point. The ops layer is what makes the rest of the platform work as a shared workspace instead of a collection of forms. Without it, every feature is a silo. With it, everything is one project that the planner, the couple, and the team are in together in real time.
-        </p>
-
-        <h3 className="text-xl font-semibold text-white mt-8">What it replaces</h3>
-
-        <p>
-          Status-update emails. Daily sync meetings with couples. The Sunday-night "here's what changed this week" rundown. Slack channels dedicated to ping-pong between the planner and the couple. The shared Google Doc that everyone forgets to update.
-        </p>
-
-        <p>
-          It replaces all of that with the simpler thing: you do the work in the platform, and the people who need to know see it instantly. Planning stops being the sum of updates sent and starts being a thing everyone is doing together.
+          The value is not a promise that every view updates invisibly or that every external participant joins the planner workspace. The value is a clear planner-owned source with deliberate audience boundaries and visible review points.
         </p>
       </div>
     ),
   },
   'the-ops-layer-nobody-sees': {
     title: 'The Ops Layer Nobody Sees: Team Permissions, Audit Logs, and the Operational Backbone',
-    excerpt: "Team member permissions across 12+ scopes. Activity audit logs on every write. OTP guest access. The infrastructure nobody markets because it's boring — and the reason planning teams scale on The Special Wedding.",
+    excerpt: "Team member permissions, activity history for supported operations, and OTP guest access are the less glamorous safeguards planning teams need as they grow.",
     category: 'Product',
     date: '2026-06-01',
     readTime: 7,
@@ -1679,7 +1639,7 @@ export const blogPosts = {
         </p>
 
         <p>
-          But nobody scales a planning team on glamorous features. Teams scale on the boring ones: permissions that don't leak data across weddings, audit logs that let you trace a change six months after the event, guest access controls that don't require creating accounts, CSV imports that don't lose data, support infrastructure that exists when you need it at 11pm the night before the wedding.
+          But nobody scales a planning team on glamorous features. Teams scale on the boring ones: permission boundaries between weddings, visible activity history for supported operations, lightweight guest access, and import safeguards that let planners review data before using it.
         </p>
 
         <p>
@@ -1699,7 +1659,7 @@ export const blogPosts = {
         <h3 className="text-xl font-semibold text-white mt-8">Activity audit log</h3>
 
         <p>
-          Every write is captured. Who added the guest, who changed the seating, who marked the payment received, who invited the vendor. Six months later, when someone asks "who authorized this?", you have the answer. Three planners sharing a wedding can each see what the others did without needing a status meeting.
+          The planner Activity Log records supported operational events so a team can review visible work history in one place. It is an operational aid for the events the platform emits, not a promise that every database write is a complete legal audit trail.
         </p>
 
         <p>
@@ -1729,7 +1689,7 @@ export const blogPosts = {
         <h3 className="text-xl font-semibold text-white mt-8">In-app support and knowledge base</h3>
 
         <p>
-          When something breaks at 11pm the night before the wedding, the planner doesn't want to Google documentation. They want answers in the platform. The Special Wedding has an in-app knowledge base with searchable guides, a support desk that actually responds, and a pattern of publishing postmortems when something goes wrong — because planners who trust a platform enough to run their business on it deserve transparency.
+          The in-app Knowledge Base and support ticket flow give planners documented help paths without promising an on-call day-of service. Response times follow the active plan, and the searchable guides keep routine workflow answers inside the platform.
         </p>
 
         <p>

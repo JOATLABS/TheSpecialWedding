@@ -19,7 +19,7 @@ import { resolveFromRepo } from './cli';
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const VERIFIED_CAPTURE_BUILDS = new Set<string>();
-export const MINIMUM_PUBLISHED_PRODUCT_PROOF_COUNT = 15;
+export const MINIMUM_PUBLISHED_PRODUCT_PROOF_COUNT = 17;
 
 export type ManualProductImageValidation = {
   featureId: string;

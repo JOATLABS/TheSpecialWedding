@@ -12,14 +12,34 @@ function source(relativePath: string): string {
   return readFileSync(path.join(ROOT, relativePath), 'utf8');
 }
 
-const SAFE_VENDOR_PLAN_COPY = 'Planner-owned vendor CRM, contracts & milestones';
-
 const PRICING_COPY_SOURCES = [
   'app/page.tsx',
   'app/components/saas/SignupModal.tsx',
   'app/api/subscription_management.py',
   'scripts/seed_subscription_plans.py',
 ] as const;
+
+const PUBLIC_COPY_TRUTH_SOURCES = [
+  ...PRICING_COPY_SOURCES,
+  'public/llms.txt',
+  'app/resources/resourcesShared.ts',
+  'app/scripts/seed_knowledge_base.py',
+  'app/resources/blog/data.tsx',
+  'app/scripts/seed_blog.py',
+  'app/api/saas_config.py',
+] as const;
+
+const RETIRED_VENDOR_ACCESS_PROMISES =
+  /vendor[- ]collaboration workspaces?|invite photographers, caterers, and venues into dedicated workspaces|token-based vendor workspaces|all three paths a vendor can take|vendors can be invited into dedicated workspaces|Planner-owned vendor CRM, contracts & milestones|dedicated vendor portal|vendor portal access|every florist, caterer, and photographer has|role-based access to the timeline|uploads deliverables to the gallery|signs off on contracts inside the platform|publish schedules for planners, vendors, and couples/i;
+
+const UNIMPLEMENTED_SIGNATURE_PROMISES =
+  /cross-wedding analytics(?: &| and)? revenue tracking|agency-grade reporting/i;
+
+const RETIRED_AUTOMATION_PROMISES =
+  /no copy-paste, no drift|no manual data sync|caterer rollup updates automatically|guest-facing schedule and the planner's timeline stay in sync|server-sent events push changes|couple portal updates live\. no refresh|inbound emails auto-thread|audit log captures every write|every write is captured|real-time updates visible across your team and to the couple|everything syncs in seconds|the couple configures colors, fonts, background style, and event-type copy/i;
+
+const RETIRED_SUPPORT_PROMISES =
+  /live chat with our success team|on-call escalation for critical day-of moments|Signature and Agency plans|support infrastructure that exists when you need it at 11pm|support desk that actually responds/i;
 
 const APPROVED_STORY_COPY = [
   {
@@ -88,6 +108,20 @@ const APPROVED_FEATURE_COPY = {
       'Present the wedding story, schedule, and approved gallery in a polished guest-facing view without planner controls.',
     description:
       'Prepare the story, branding, event details, and gallery in the planner wedding record. The public microsite presents those approved details for guests while private planning work stays out of view.',
+  },
+  'wedding-configuration': {
+    title: 'Wedding Configuration',
+    tagline:
+      'Review event days, RSVP rules, privacy, registry, FAQs, theme, story, and public-wedding settings in one planner record.',
+    description:
+      'The Configure screen groups the planner-owned details behind the wedding experience: event days, venue, time, attire, RSVP and privacy rules, registry, FAQs, theme, and story. Public and couple views present the prepared details for their audiences while planner controls remain private.',
+  },
+  'gallery-management': {
+    title: 'Gallery Management',
+    tagline:
+      'Review each wedding gallery and its approved media from the planner workspace.',
+    description:
+      'Select a wedding and review its populated gallery, image labels, folder category, and total count from one planner workspace. Uploading new media and reviewing Guest Memories remain separate, clearly labelled workflows.',
   },
   'guest-management': {
     title: 'Guest Management',
@@ -161,21 +195,39 @@ describe('public marketing copy truth contract', () => {
 
     assert.doesNotMatch(
       humanFacingCopy,
-      /auto[- ]?publish|never out of date|every surface stays aligned|the couple sees what you see|what changed overnight|vendor[- ]collaboration workspaces?|vendor portal|vendor delivery|can never drift|every surface writes/i,
+      /auto[- ]?publish|never out of date|every surface stays aligned|the couple sees what you see|what changed overnight|vendor[- ]collaboration workspaces?|vendor portal|vendor delivery|can never drift|every surface writes|save once|guest-list-to-slug publishing|same media library feeds|read the same source/i,
     );
   });
 
-  it('keeps every public pricing source free of unfinished vendor-access promises', () => {
+  it('keeps every public source free of unfinished vendor-access promises', () => {
+    for (const relativePath of PUBLIC_COPY_TRUTH_SOURCES) {
+      assert.doesNotMatch(
+        source(relativePath),
+        RETIRED_VENDOR_ACCESS_PROMISES,
+        `${relativePath} must not promise unfinished vendor access`,
+      );
+      assert.doesNotMatch(
+        source(relativePath),
+        UNIMPLEMENTED_SIGNATURE_PROMISES,
+        `${relativePath} must not promise analytics that are not plan-gated`,
+      );
+      assert.doesNotMatch(
+        source(relativePath),
+        RETIRED_AUTOMATION_PROMISES,
+        `${relativePath} must not promise unverified automatic propagation`,
+      );
+      assert.doesNotMatch(
+        source(relativePath),
+        RETIRED_SUPPORT_PROMISES,
+        `${relativePath} must match the actual paid-plan support contract`,
+      );
+    }
+
     for (const relativePath of PRICING_COPY_SOURCES) {
       const pricingSource = source(relativePath);
       assert.ok(
-        pricingSource.includes(SAFE_VENDOR_PLAN_COPY),
-        `${relativePath} must use the approved planner-owned vendor feature copy`,
-      );
-      assert.doesNotMatch(
-        pricingSource,
-        /vendor[- ]collaboration workspaces?|vendor portal/i,
-        `${relativePath} must not promise unfinished vendor access`,
+        pricingSource.includes('Team collaboration (5 staff seats)'),
+        `${relativePath} must use an implemented Signature-plan differentiator`,
       );
     }
 

@@ -750,7 +750,7 @@ plans = [
     {
         "_id": "plan_signature",
         "name": "Signature",
-        "description": "For agencies running a team of planners. Everything in Boutique, plus team seats and agency-grade reporting.",
+        "description": "For agencies running a team of planners. Everything in Boutique, plus five staff seats, higher AI and storage limits, a planner storefront, and custom-domain options.",
         "price_monthly": 149,
         "price_yearly": 1490,  # 10x monthly
         "trial_days": 30,
@@ -790,7 +790,6 @@ plans = [
             "Unlimited guests",
             "Everything in Boutique",
             "Team collaboration (5 staff seats)",
-            "Cross-wedding analytics & revenue tracking",
             "Planner storefront on a shareable platform URL",
             "Custom domain (app.yourbrand.com)",
             "1,500 AI credits/month",

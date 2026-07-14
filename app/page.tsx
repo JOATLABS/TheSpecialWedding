@@ -75,7 +75,6 @@ const fallbackPricing: PricingTier[] = [
       "Unlimited weddings",
       "Unlimited guests",
       "Team collaboration (5 staff seats)",
-      "Cross-wedding analytics & revenue tracking",
       "Planner storefront on a shareable platform URL",
       "Optional custom domain",
       "1,500 AI credits/month",

@@ -16,6 +16,7 @@ import { PHASE_ONE_PRODUCT_STORIES } from '../../app/data/phaseOneProductProof';
 import { MARKETING_FEATURES } from '../../app/data/marketingFeatures';
 import {
   assertManualFullWindowContract,
+  MINIMUM_PUBLISHED_PRODUCT_PROOF_COUNT,
   validateApprovedProductImage,
   validatePublishedProductImages,
 } from '../../scripts/demo-videos/validate-manual-product-images';
@@ -184,28 +185,25 @@ describe('Phase 1 product-proof marketing composition', () => {
     }
   });
 
-  it('refuses to publish fewer than the 15 already reviewed product proofs', async () => {
+  it('requires every one of the 17 reviewed product proofs for publication', async () => {
     const approvedEntries = Object.values(MARKETING_CAPTURE_MANIFEST)
       .filter((entry) => entry.status === 'approved');
-    assert.ok(
-      approvedEntries.length >= 15,
-      'the reviewed publication floor must never move backwards',
-    );
+    assert.equal(MINIMUM_PUBLISHED_PRODUCT_PROOF_COUNT, 17);
+    assert.equal(approvedEntries.length, MINIMUM_PUBLISHED_PRODUCT_PROOF_COUNT);
 
-    const demotedEntries = approvedEntries.slice(14);
-    const originalStatuses = demotedEntries.map((entry) => entry.status);
-    try {
-      for (const entry of demotedEntries) {
+    for (const featureId of ['wedding-website', 'gallery-management'] as const) {
+      const entry = MARKETING_CAPTURE_MANIFEST[featureId];
+      const originalStatus = entry.status;
+      try {
         entry.status = 'pending';
+        await assert.rejects(
+          () => validatePublishedProductImages(),
+          /at least 17 approved product proofs/,
+          `${featureId} must not be allowed to regress to a placeholder`,
+        );
+      } finally {
+        entry.status = originalStatus;
       }
-      await assert.rejects(
-        () => validatePublishedProductImages(),
-        /at least 15 approved product proofs/,
-      );
-    } finally {
-      demotedEntries.forEach((entry, index) => {
-        entry.status = originalStatuses[index];
-      });
     }
   });
 
