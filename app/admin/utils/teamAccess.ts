@@ -44,6 +44,15 @@ export function canManageCouplePortal(userProfile?: UserProfile | null): boolean
   );
 }
 
+export function canManageGallery(userProfile?: UserProfile | null): boolean {
+  if (!userProfile) return false;
+  return Boolean(
+    userProfile.is_root_admin ||
+      userProfile.is_wedding_planner ||
+      userProfile.team_permissions?.manage_gallery
+  );
+}
+
 export function getPlannerScopedUserId(
   userProfile?: UserProfile | null,
 ): string | null {

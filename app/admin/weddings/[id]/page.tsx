@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
-import { canManageCouplePortal } from '@/admin/utils/teamAccess';
+import { canManageCouplePortal, canManageGallery } from '@/admin/utils/teamAccess';
 import { extractGuestList } from '@/admin/utils/guestListResponse';
 import { Wedding, WeddingEvent, RegistryItem, FAQItem, WeddingPartyMember } from '@/types/wedding';
 import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
@@ -31,6 +31,14 @@ import {
   type PrivacyMode,
 } from './privacySettings';
 import { WeddingSetupGuide } from './WeddingSetupGuide';
+import {
+  buildWeddingMediaOptions,
+  getWeddingMediaAvailabilityText,
+  getWeddingMediaLoadNotice,
+  parseWeddingMediaList,
+  type WeddingMediaItem,
+  type WeddingMediaLoadError,
+} from './weddingMediaAvailability';
 import {
   buildWeddingSetupSummary,
   isWeddingSetupTab,
@@ -70,47 +78,7 @@ interface Guest {
   group_id?: string;
 }
 
-interface WeddingMediaItem {
-  key: string;
-  url?: string;
-  size?: number;
-}
-
-interface WeddingMediaOption {
-  value: string;
-  label: string;
-}
-
 const STORY_MEDIA_FOLDERS = ['our-story', 'wedding-party'] as const;
-
-const buildMediaLabel = (value: string) => {
-  const parts = value.split('/').filter(Boolean);
-  const filename = parts[parts.length - 1] || value;
-  return parts.length >= 2 ? `${filename} (${parts[0]})` : filename;
-};
-
-const buildMediaOptions = (
-  items: WeddingMediaItem[],
-  currentValue?: string,
-): WeddingMediaOption[] => {
-  const options = items.map((item) => ({
-    value: item.key,
-    label: buildMediaLabel(item.key),
-  }));
-
-  const normalizedCurrentValue = currentValue?.trim();
-  if (
-    normalizedCurrentValue &&
-    !options.some((option) => option.value === normalizedCurrentValue)
-  ) {
-    options.unshift({
-      value: normalizedCurrentValue,
-      label: `Current selection: ${buildMediaLabel(normalizedCurrentValue)}`,
-    });
-  }
-
-  return options;
-};
 
 const getSetupStatusDotClass = (status?: WeddingSetupStatus) => {
   if (status === 'complete') {
@@ -141,8 +109,12 @@ export default function WeddingDetailsPage() {
  const [guests, setGuests] = useState<Guest[]>([]);
  const [uploadedMedia, setUploadedMedia] = useState<WeddingMediaItem[]>([]);
  const [loadingUploadedMedia, setLoadingUploadedMedia] = useState(false);
+ const [uploadedMediaLoadError, setUploadedMediaLoadError] = useState<WeddingMediaLoadError>(null);
+ const uploadedMediaRequestRef = useRef(0);
  const [showAdRail, setShowAdRail] = useState(false);
  const canViewCoupleTab = canManageCouplePortal(userProfile);
+ const canBrowseGalleryMedia = canManageGallery(userProfile);
+ const uploadedMediaLoadNotice = getWeddingMediaLoadNotice(uploadedMediaLoadError);
 
  // Vendors tab state — fetched lazily when the tab is activated.
  const [vendorAssignments, setVendorAssignments] = useState<VendorAssignment[]>([]);
@@ -299,9 +271,23 @@ export default function WeddingDetailsPage() {
  }, [token, weddingId]);
 
  const fetchUploadedMedia = useCallback(async (weddingSlug: string) => {
-   if (!token) return;
+   const requestId = ++uploadedMediaRequestRef.current;
 
+   if (!token) {
+     setLoadingUploadedMedia(false);
+     return;
+   }
+
+   if (!canBrowseGalleryMedia) {
+     setUploadedMedia([]);
+     setUploadedMediaLoadError('permission');
+     setLoadingUploadedMedia(false);
+     return;
+   }
+
+   setUploadedMedia([]);
    setLoadingUploadedMedia(true);
+   setUploadedMediaLoadError(null);
    try {
      const baseUrl = getApiBaseUrl();
      const nextMedia: WeddingMediaItem[] = [];
@@ -318,12 +304,21 @@ export default function WeddingDetailsPage() {
          }
        );
 
+       if (requestId !== uploadedMediaRequestRef.current) return;
+
        if (!response.ok) {
+         if (response.status === 403) {
+           setUploadedMedia([]);
+           setUploadedMediaLoadError('permission');
+           return;
+         }
          throw new Error(`Failed to load ${folder} media`);
        }
 
-       const data = await response.json();
-       for (const item of Array.isArray(data) ? data : []) {
+       const data = parseWeddingMediaList(await response.json());
+       if (requestId !== uploadedMediaRequestRef.current) return;
+
+       for (const item of data) {
          if (!item?.key || seenKeys.has(item.key)) {
            continue;
          }
@@ -332,15 +327,21 @@ export default function WeddingDetailsPage() {
        }
      }
 
+     if (requestId !== uploadedMediaRequestRef.current) return;
      setUploadedMedia(nextMedia);
+     setUploadedMediaLoadError(null);
    } catch (err) {
+     if (requestId !== uploadedMediaRequestRef.current) return;
      console.error('Failed to fetch wedding media:', err);
      setUploadedMedia([]);
+     setUploadedMediaLoadError('unavailable');
      toast.error('Failed to load uploaded story and wedding-party images');
    } finally {
-     setLoadingUploadedMedia(false);
+     if (requestId === uploadedMediaRequestRef.current) {
+       setLoadingUploadedMedia(false);
+     }
    }
- }, [token]);
+ }, [canBrowseGalleryMedia, token]);
 
  // Fetch guests when story tab is active (for sync feature)
  useEffect(() => {
@@ -350,10 +351,24 @@ export default function WeddingDetailsPage() {
  }, [activeTab, fetchGuests]);
 
  useEffect(() => {
-   if (activeTab === 'story' && wedding?.slug) {
-     fetchUploadedMedia(wedding.slug);
+   if (activeTab !== 'story' || !wedding?.slug) {
+     return;
    }
- }, [activeTab, fetchUploadedMedia, wedding?.slug]);
+
+   if (!canBrowseGalleryMedia) {
+     uploadedMediaRequestRef.current += 1;
+     setUploadedMedia([]);
+     setUploadedMediaLoadError('permission');
+     setLoadingUploadedMedia(false);
+     return;
+   }
+
+   fetchUploadedMedia(wedding.slug);
+
+   return () => {
+     uploadedMediaRequestRef.current += 1;
+   };
+ }, [activeTab, canBrowseGalleryMedia, fetchUploadedMedia, wedding?.slug]);
 
  // Fetch vendor assignments + budget categories when the vendors tab opens.
  // Both calls happen in parallel; budget-categories is a best-effort
@@ -1670,6 +1685,20 @@ const addEvent = () => {
  </ul>
  </div>
 
+ {uploadedMediaLoadNotice && (
+ <div
+ role={uploadedMediaLoadNotice.role}
+ className={`rounded-lg border p-4 mb-6 ${
+ uploadedMediaLoadError === 'permission'
+   ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200'
+   : 'border-red-200 bg-red-50 text-red-900 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200'
+ }`}
+ >
+ <p className="font-semibold">{uploadedMediaLoadNotice.title}</p>
+ <p className="mt-1 text-sm">{uploadedMediaLoadNotice.description}</p>
+ </div>
+ )}
+
  {/* Our Story Section */}
  <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-6">
  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Our Story</h3>
@@ -1721,7 +1750,7 @@ const addEvent = () => {
  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
  >
  <option value="">No story image</option>
- {buildMediaOptions(ourStoryImages, wedding.our_story?.image_url).map((option) => (
+ {buildWeddingMediaOptions(ourStoryImages, wedding.our_story?.image_url).map((option) => (
  <option key={option.value} value={option.value}>
  {option.label}
  </option>
@@ -1729,9 +1758,12 @@ const addEvent = () => {
  </select>
  <div className="mt-2 flex items-center justify-between gap-3 text-sm text-gray-500 dark:text-gray-400">
  <span>
- {loadingUploadedMedia
-   ? 'Loading uploaded story images...'
-   : `${ourStoryImages.length} uploaded story image${ourStoryImages.length === 1 ? '' : 's'} available`}
+ {getWeddingMediaAvailabilityText({
+   kind: 'story',
+   count: ourStoryImages.length,
+   loading: loadingUploadedMedia,
+   error: uploadedMediaLoadError,
+ })}
  </span>
  {wedding.our_story?.image_url && (
  <code className="truncate rounded bg-gray-100 px-2 py-1 text-xs dark:bg-slate-800">
@@ -1910,7 +1942,7 @@ const addEvent = () => {
  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
  >
  <option value="">No member photo</option>
- {buildMediaOptions(weddingPartyImages, member.image_url).map((option) => (
+ {buildWeddingMediaOptions(weddingPartyImages, member.image_url).map((option) => (
  <option key={option.value} value={option.value}>
  {option.label}
  </option>
@@ -1918,9 +1950,12 @@ const addEvent = () => {
  </select>
  <div className="mt-2 flex items-center justify-between gap-3 text-sm text-gray-500 dark:text-gray-400">
  <span>
- {loadingUploadedMedia
-   ? 'Loading uploaded wedding-party images...'
-   : `${weddingPartyImages.length} uploaded wedding-party image${weddingPartyImages.length === 1 ? '' : 's'} available`}
+ {getWeddingMediaAvailabilityText({
+   kind: 'wedding-party',
+   count: weddingPartyImages.length,
+   loading: loadingUploadedMedia,
+   error: uploadedMediaLoadError,
+ })}
  </span>
  {member.image_url && (
  <code className="truncate rounded bg-gray-100 px-2 py-1 text-xs dark:bg-slate-800">
