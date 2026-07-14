@@ -1,6 +1,9 @@
 import Image from 'next/image';
 
-import type { MarketingCaptureAsset } from '@/data/marketingCaptureManifest';
+import {
+  isMarketingCaptureAssetApproved,
+  type MarketingCaptureAsset,
+} from '@/data/marketingCaptureManifest';
 
 type ProductProofWindowProps = {
   asset: MarketingCaptureAsset;
@@ -35,6 +38,7 @@ export function ProductProofWindow({
 }: ProductProofWindowProps) {
   const frameAspectRatio = asset.render.frameAspectRatio.replace(':', ' / ');
   const preload = priority;
+  const isApprovedForPublication = isMarketingCaptureAssetApproved(asset);
 
   return (
     <div
@@ -59,18 +63,29 @@ export function ProductProofWindow({
           style={{ aspectRatio: frameAspectRatio }}
           data-proof-frame
         >
-          <Image
-            src={asset.path}
-            alt={alt}
-            fill
-            unoptimized
-            loading={preload ? 'eager' : 'lazy'}
-            priority={preload}
-            quality={90}
-            sizes={sizes}
-            className="object-contain object-center"
-            data-product-proof-image
-          />
+          {isApprovedForPublication ? (
+            <Image
+              src={asset.path}
+              alt={alt}
+              fill
+              unoptimized
+              loading={preload ? 'eager' : 'lazy'}
+              priority={preload}
+              sizes={sizes}
+              className="object-contain object-center"
+              data-product-proof-image
+            />
+          ) : (
+            <div
+              className="flex h-full w-full items-center justify-center rounded-lg border border-white/8 bg-[radial-gradient(circle_at_50%_20%,rgba(99,102,241,0.16),transparent_58%)] px-6 text-center"
+              role="status"
+              data-product-proof-refreshing
+            >
+              <p className="max-w-sm text-sm font-medium leading-6 text-slate-300">
+                Current product image is being refreshed
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

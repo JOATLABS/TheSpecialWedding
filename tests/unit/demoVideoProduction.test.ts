@@ -81,10 +81,15 @@ describe('demo video production requirements', () => {
     );
 
     assert.ok(contract);
-    assert.ok(contract.captureSurfaces.includes('client-payment-token'));
+    assert.deepEqual(contract.captureSurfaces, ['planner-admin']);
+    assert.equal(contract.captureSurfaces.includes('client-payment-token'), false);
     assert.equal(contract.captureSurfaces.includes('vendor-token'), false);
-    assert.ok(contract.sideEffectGuards.some((guard) => guard.includes('read-only client payment')));
-    assert.ok(contract.sideEffectGuards.some((guard) => guard.includes('Stripe test-mode')));
+    assert.equal(
+      contract.sideEffectGuards.some((guard) => guard.includes('read-only client payment')),
+      false,
+    );
+    assert.equal(contract.sideEffectGuards.some((guard) => guard.includes('Stripe test-mode')), false);
+    assert.ok(contract.sideEffectGuards.some((guard) => guard.includes('seeded read-only finance')));
   });
 
   it('builds a transcript from the approved script', () => {

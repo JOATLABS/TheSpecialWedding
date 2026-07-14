@@ -125,6 +125,13 @@ class Config:
         self.stripe_listen_extra = os.getenv("TESTBED_STRIPE_LISTEN_EXTRA", "")
         self.with_frontend = _truthy(os.getenv("TESTBED_WITH_FRONTEND"))
         self.frontend_cmd = os.getenv("TESTBED_FRONTEND_CMD", "npm run dev")
+        frontend_node_env = os.getenv("TESTBED_FRONTEND_NODE_ENV")
+        self.frontend_node_env = (
+            frontend_node_env.strip()
+            if frontend_node_env and frontend_node_env.strip()
+            else None
+        )
+        self.google_maps_api_key = os.getenv("TESTBED_GOOGLE_MAPS_API_KEY")
         self.python_bin = os.getenv("TESTBED_PYTHON", sys.executable)
 
     # -- dotenv loading --------------------------------------------------------
@@ -165,6 +172,7 @@ def _truthy(value: Optional[str]) -> bool:
 def build_backend_cmd(cfg: Config) -> str:
     return (
         f"cd {shell_quote(str(REPO_ROOT))} && "
+        f"FRONTEND_URL={shell_quote(cfg.frontend_origin)} "
         f"{shell_quote(cfg.python_bin)} -m uvicorn {cfg.uvicorn_app} "
         f"--host 0.0.0.0 --port {cfg.backend_port} {cfg.uvicorn_args}"
     )
@@ -180,11 +188,22 @@ def build_stripe_cmd(cfg: Config) -> str:
 
 
 def build_frontend_cmd(cfg: Config) -> str:
+    environment = []
+    frontend_node_env = getattr(cfg, "frontend_node_env", None)
+    google_maps_api_key = getattr(cfg, "google_maps_api_key", None)
+    backend_origin = f"http://127.0.0.1:{cfg.backend_port}"
+    if frontend_node_env:
+        environment.append(f"NODE_ENV={shell_quote(frontend_node_env)}")
+    environment.append(f"FRONTEND_URL={shell_quote(cfg.frontend_origin)}")
+    environment.append(f"BACKEND_SERVICE_URL={shell_quote(backend_origin)}")
+    environment.append(f"INTERNAL_API_BASE_URL={shell_quote(backend_origin)}")
+    if google_maps_api_key is not None:
+        environment.append(f"GOOGLE_MAPS_API_KEY={shell_quote(google_maps_api_key)}")
+    environment.append(f"PORT={cfg.frontend_port}")
+
     return (
         f"cd {shell_quote(str(REPO_ROOT))} && "
-        "NODE_ENV=production "
-        f"FRONTEND_URL={shell_quote(cfg.frontend_origin)} "
-        f"PORT={cfg.frontend_port} {cfg.frontend_cmd}"
+        f"{' '.join(environment)} {cfg.frontend_cmd}"
     )
 
 

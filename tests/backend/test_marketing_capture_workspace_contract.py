@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib.util
+from io import BytesIO
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -9,6 +11,7 @@ from types import SimpleNamespace
 import mongomock
 import pytest
 from bson import ObjectId
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -38,6 +41,18 @@ MARKETING_CAPTURE_MEDIA = ROOT / "app" / "constants" / "marketing_capture_media.
 GALLERY_API = ROOT / "app" / "api" / "gallery_public.py"
 GALLERY_ADMIN_API = ROOT / "app" / "api" / "gallery_admin.py"
 GUEST_MEDIA_SERVICE = ROOT / "app" / "services" / "guest_media_service.py"
+EXPECTED_CAPTURE_BUILD = "a" * 40
+
+
+def _gallery_fixture_bytes(path: str) -> bytes:
+    return (ROOT / "public" / path.removeprefix("/")).read_bytes()
+
+
+def _resized_webp_bytes(path: str, size: tuple[int, int]) -> bytes:
+    output = BytesIO()
+    with Image.open(ROOT / "public" / path.removeprefix("/")) as image:
+        image.resize(size).save(output, format="WEBP")
+    return output.getvalue()
 
 
 def _required_text(path: Path) -> str:
@@ -100,6 +115,37 @@ def test_marketing_capture_driver_and_cleanup_are_paired():
     _required_text(CLEANUP)
 
 
+def test_marketing_capture_driver_never_follows_http_redirects_automatically():
+    module = ast.parse(_required_text(DRIVER))
+    request_calls = [
+        node
+        for node in ast.walk(module)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "requests"
+        and node.func.attr in {"get", "post"}
+    ]
+
+    assert request_calls
+    for call in request_calls:
+        explicit_false = any(
+            keyword.arg == "allow_redirects"
+            and isinstance(keyword.value, ast.Constant)
+            and keyword.value.value is False
+            for keyword in call.keywords
+        )
+        guarded_request_kwargs = any(
+            keyword.arg is None
+            and isinstance(keyword.value, ast.Name)
+            and keyword.value.id == "request_kwargs"
+            for keyword in call.keywords
+        )
+        assert explicit_false or guarded_request_kwargs, (
+            f"requests.{call.func.attr} at line {call.lineno} can follow a redirect"
+        )
+
+
 def test_demo_seed_runs_the_dedicated_verified_marketing_workspace_driver():
     testbed_source = _required_text(TESTBED_CLI)
     package_source = _required_text(PACKAGE_MANIFEST)
@@ -121,45 +167,641 @@ def test_testbed_service_status_checks_process_and_http_readiness():
 
 def test_testbed_frontend_process_uses_the_same_canonical_origin_as_readiness():
     cfg = SimpleNamespace(
+        backend_port=8000,
         frontend_port=3100,
         frontend_origin="http://127.0.0.1:3100",
         frontend_cmd="npm run start -- --hostname 127.0.0.1",
+        frontend_node_env="production",
+        google_maps_api_key="",
     )
 
     command = testbed_cli.build_frontend_cmd(cfg)
 
     assert "NODE_ENV=production" in command
     assert "FRONTEND_URL=http://127.0.0.1:3100" in command
+    assert "BACKEND_SERVICE_URL=http://127.0.0.1:8000" in command
+    assert "INTERNAL_API_BASE_URL=http://127.0.0.1:8000" in command
+    assert "GOOGLE_MAPS_API_KEY=''" in command
     assert "PORT=3100" in command
 
 
-def test_marketing_capture_preflights_every_frontend_checkpoint(monkeypatch):
-    requested_urls: list[str] = []
+def test_testbed_frontend_does_not_override_optional_environment_by_default():
+    cfg = SimpleNamespace(
+        backend_port=8000,
+        frontend_port=3000,
+        frontend_origin="http://127.0.0.1:3000",
+        frontend_cmd="npm run dev",
+        frontend_node_env="",
+        google_maps_api_key=None,
+    )
 
-    def _reachable(url, **_kwargs):
-        requested_urls.append(url)
-        return SimpleNamespace(status_code=200)
+    command = testbed_cli.build_frontend_cmd(cfg)
+
+    assert "NODE_ENV=" not in command
+    assert "GOOGLE_MAPS_API_KEY=" not in command
+    assert "FRONTEND_URL=http://127.0.0.1:3000" in command
+    assert "BACKEND_SERVICE_URL=http://127.0.0.1:8000" in command
+    assert "INTERNAL_API_BASE_URL=http://127.0.0.1:8000" in command
+    assert "PORT=3000" in command
+
+
+def test_testbed_backend_uses_the_canonical_frontend_origin_for_media_redirects():
+    cfg = SimpleNamespace(
+        backend_port=8000,
+        frontend_origin="http://127.0.0.1:3100",
+        python_bin="/capture/python",
+        uvicorn_app="app.main:app",
+        uvicorn_args="",
+    )
+
+    command = testbed_cli.build_backend_cmd(cfg)
+
+    assert "FRONTEND_URL=http://127.0.0.1:3100" in command
+    assert "--port 8000" in command
+
+
+def test_marketing_capture_preflights_every_frontend_checkpoint(monkeypatch):
+    requests_made: list[tuple[str, dict]] = []
+    planner_token = "seeded-planner-jwt"
+    couple_token = "seeded-couple-jwt"
+
+    def _reachable(url, **kwargs):
+        requests_made.append((url, kwargs))
+        if "/admin/" in url and kwargs.get("cookies") != {"admin_token": planner_token}:
+            return SimpleNamespace(
+                status_code=307,
+                headers={"location": "/admin/login"},
+                text="redirect",
+            )
+        return SimpleNamespace(
+            status_code=200,
+            headers={},
+            text=(
+                '<html><head><meta name="tsw-app-build-commit" '
+                f'content="{EXPECTED_CAPTURE_BUILD}"></head></html>'
+            ),
+        )
 
     monkeypatch.setattr(marketing_capture_driver.requests, "get", _reachable)
 
-    marketing_capture_driver.verify_frontend_checkpoint_routes("http://127.0.0.1:3100")
+    marketing_capture_driver.verify_frontend_checkpoint_routes(
+        "http://127.0.0.1:3100",
+        EXPECTED_CAPTURE_BUILD,
+        planner_token=planner_token,
+        couple_token=couple_token,
+    )
 
-    assert requested_urls == [
-        f"http://127.0.0.1:3100{route}"
-        for _, route, _ in marketing_capture_driver.MARKETING_CAPTURE_E2E_CHECKPOINTS
+    scenes = marketing_capture_driver.MARKETING_CAPTURE_E2E_CHECKPOINTS
+    expected_routes = [scene["route"] for scene in scenes]
+    assert len(marketing_capture_driver.MARKETING_CAPTURE_E2E_CHECKPOINTS) == 17
+    assert [url for url, _kwargs in requests_made] == [
+        f"http://127.0.0.1:3100{route}" for route in expected_routes
     ]
+    for scene, (_url, kwargs) in zip(scenes, requests_made, strict=True):
+        assert kwargs["allow_redirects"] is False
+        assert kwargs["timeout"] == 15
+        if scene["session"] == "planner":
+            assert kwargs["cookies"] == {"admin_token": planner_token}
+            assert "headers" not in kwargs
+        elif scene["session"] == "couple":
+            assert kwargs["headers"] == {"Authorization": f"Bearer {couple_token}"}
+            assert "cookies" not in kwargs
+        else:
+            assert "cookies" not in kwargs
+            assert "headers" not in kwargs
+
+
+def test_marketing_capture_admin_checkpoint_reproduces_307_without_cookie(
+    monkeypatch,
+):
+    def _proxy_like_response(url, **kwargs):
+        if "/admin/" in url and "admin_token" not in kwargs.get("cookies", {}):
+            return SimpleNamespace(
+                status_code=307,
+                headers={"location": "/admin/login"},
+                text="redirect",
+            )
+        return SimpleNamespace(
+            status_code=200,
+            headers={},
+            text=(
+                f'<meta name="tsw-app-build-commit" content="{EXPECTED_CAPTURE_BUILD}">'  # noqa: E501
+            ),
+        )
+
+    assert (
+        _proxy_like_response(
+            "http://127.0.0.1:3100/admin/planner",
+            allow_redirects=False,
+        ).status_code
+        == 307
+    )
+    monkeypatch.setattr(
+        marketing_capture_driver.requests,
+        "get",
+        _proxy_like_response,
+    )
+    marketing_capture_driver.verify_frontend_checkpoint_routes(
+        "http://127.0.0.1:3100",
+        EXPECTED_CAPTURE_BUILD,
+        planner_token="real-seeded-planner-token",
+        couple_token="real-seeded-couple-token",
+    )
 
 
 def test_marketing_capture_frontend_preflight_rejects_a_404(monkeypatch):
     monkeypatch.setattr(
         marketing_capture_driver.requests,
         "get",
-        lambda *_args, **_kwargs: SimpleNamespace(status_code=404),
+        lambda *_args, **_kwargs: SimpleNamespace(
+            status_code=404,
+            headers={},
+            text="not found",
+        ),
     )
 
     with pytest.raises(RuntimeError, match="Frontend checkpoint returned HTTP 404"):
         marketing_capture_driver.verify_frontend_checkpoint_routes(
-            "http://127.0.0.1:3100"
+            "http://127.0.0.1:3100",
+            EXPECTED_CAPTURE_BUILD,
+            planner_token="seeded-planner-jwt",
+            couple_token="seeded-couple-jwt",
+        )
+
+
+def test_marketing_capture_frontend_preflight_rejects_redirects(monkeypatch):
+    observed_kwargs: dict = {}
+
+    def _redirect(_url, **kwargs):
+        observed_kwargs.update(kwargs)
+        return SimpleNamespace(
+            status_code=307,
+            headers={"Location": "/login"},
+            text="redirect",
+        )
+
+    monkeypatch.setattr(marketing_capture_driver.requests, "get", _redirect)
+
+    with pytest.raises(RuntimeError, match="Frontend checkpoint returned HTTP 307"):
+        marketing_capture_driver.verify_frontend_checkpoint_routes(
+            "http://127.0.0.1:3100",
+            EXPECTED_CAPTURE_BUILD,
+            planner_token="seeded-planner-jwt",
+            couple_token="seeded-couple-jwt",
+        )
+
+    assert observed_kwargs["allow_redirects"] is False
+
+
+def test_marketing_capture_frontend_preflight_rejects_location_on_200(monkeypatch):
+    monkeypatch.setattr(
+        marketing_capture_driver.requests,
+        "get",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            status_code=200,
+            headers={"location": "/login"},
+            text=(
+                f'<meta name="tsw-app-build-commit" content="{EXPECTED_CAPTURE_BUILD}">'
+            ),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="unexpectedly redirected to /login"):
+        marketing_capture_driver.verify_frontend_checkpoint_routes(
+            "http://127.0.0.1:3100",
+            EXPECTED_CAPTURE_BUILD,
+            planner_token="seeded-planner-jwt",
+            couple_token="seeded-couple-jwt",
+        )
+
+
+def test_marketing_capture_frontend_preflight_rejects_stale_build(monkeypatch):
+    stale_build = "b" * 40
+    monkeypatch.setattr(
+        marketing_capture_driver.requests,
+        "get",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            status_code=200,
+            headers={},
+            text=(f'<meta name="tsw-app-build-commit" content="{stale_build}">'),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="served the wrong app build"):
+        marketing_capture_driver.verify_frontend_checkpoint_routes(
+            "http://127.0.0.1:3100",
+            EXPECTED_CAPTURE_BUILD,
+            planner_token="seeded-planner-jwt",
+            couple_token="seeded-couple-jwt",
+        )
+
+
+@pytest.mark.parametrize(
+    ("origin", "port"),
+    [
+        ("https://127.0.0.1:3100", 3100),
+        ("http://example.com:3100", 3100),
+        ("http://localhost:3100", 3100),
+        ("http://127.0.0.2:3100", 3100),
+        ("http://[::1]:3100", 3100),
+        ("http://user:secret@127.0.0.1:3100", 3100),
+        ("http://127.0.0.1:3100/admin", 3100),
+        ("http://127.0.0.1:3100?next=evil", 3100),
+        ("http://127.0.0.1:3100#capture", 3100),
+        ("http://127.0.0.1:8000", 3100),
+        ("http://127.0.0.1:8000/api", 8000),
+    ],
+)
+def test_marketing_capture_rejects_non_exact_local_origins(origin, port):
+    with pytest.raises(RuntimeError, match=r"exact HTTP 127\.0\.0\.1 origin"):
+        marketing_capture_driver.require_local_capture_origin(
+            origin,
+            expected_port=port,
+            label="Capture service",
+        )
+
+
+def test_marketing_capture_rejects_unsafe_origins_before_any_request(monkeypatch):
+    request_attempts: list[str] = []
+
+    monkeypatch.setattr(
+        marketing_capture_driver.requests,
+        "get",
+        lambda url, **_kwargs: request_attempts.append(url),
+    )
+    monkeypatch.setattr(
+        marketing_capture_driver.requests,
+        "post",
+        lambda url, **_kwargs: request_attempts.append(url),
+    )
+
+    with pytest.raises(RuntimeError, match=r"exact HTTP 127\.0\.0\.1 origin"):
+        marketing_capture_driver.verify_frontend_checkpoint_routes(
+            "http://attacker.example:3100",
+            EXPECTED_CAPTURE_BUILD,
+            planner_token="planner-secret",
+            couple_token="couple-secret",
+        )
+    with pytest.raises(RuntimeError, match=r"exact HTTP 127\.0\.0\.1 origin"):
+        marketing_capture_driver._login(
+            "http://127.0.0.1:8000/api",
+            "/admin/token",
+            marketing_capture_driver.PLANNER_EMAIL,
+            marketing_capture_driver.PLANNER_PASSWORD,
+        )
+
+    assert request_attempts == []
+
+
+def test_marketing_capture_route_preflight_can_resolve_real_seed_tokens(
+    monkeypatch,
+):
+    login_calls: list[tuple[str, dict]] = []
+    route_calls: list[tuple[str, dict]] = []
+
+    def _post(url, **kwargs):
+        login_calls.append((url, kwargs))
+        token = "planner-token" if url.endswith("/admin/token") else "couple-token"
+        return SimpleNamespace(
+            status_code=200,
+            text="",
+            json=lambda: {"access_token": token},
+        )
+
+    def _get(url, **kwargs):
+        route_calls.append((url, kwargs))
+        return SimpleNamespace(
+            status_code=200,
+            headers={},
+            text=(
+                f'<meta name="tsw-app-build-commit" content="{EXPECTED_CAPTURE_BUILD}">'  # noqa: E501
+            ),
+        )
+
+    monkeypatch.setattr(marketing_capture_driver.requests, "post", _post)
+    monkeypatch.setattr(marketing_capture_driver.requests, "get", _get)
+
+    marketing_capture_driver.verify_frontend_checkpoint_routes(
+        "http://127.0.0.1:3100",
+        EXPECTED_CAPTURE_BUILD,
+        backend_url="http://127.0.0.1:8000",
+    )
+
+    assert [url for url, _kwargs in login_calls] == [
+        "http://127.0.0.1:8000/admin/token",
+        "http://127.0.0.1:8000/couple/login",
+    ]
+    assert all(
+        kwargs["allow_redirects"] is False and kwargs["timeout"] == 15
+        for _url, kwargs in login_calls
+    )
+    planner_request = next(
+        kwargs
+        for url, kwargs in route_calls
+        if url == "http://127.0.0.1:3100/admin/planner"
+    )
+    assert planner_request["cookies"] == {"admin_token": "planner-token"}
+    couple_request = next(
+        kwargs
+        for url, kwargs in route_calls
+        if url == "http://127.0.0.1:3100/couple/dashboard"
+    )
+    assert couple_request["headers"] == {"Authorization": "Bearer couple-token"}
+
+
+@pytest.mark.parametrize("status_code", [200, 307])
+def test_marketing_capture_login_rejects_redirects_without_forwarding_credentials(
+    monkeypatch,
+    status_code,
+):
+    observed_kwargs: dict = {}
+
+    def _redirect(_url, **kwargs):
+        observed_kwargs.update(kwargs)
+        return SimpleNamespace(
+            status_code=status_code,
+            headers={"Location": "https://attacker.example/collect"},
+            text="redirect",
+            json=lambda: {"access_token": "attacker-controlled"},
+        )
+
+    monkeypatch.setattr(marketing_capture_driver.requests, "post", _redirect)
+
+    with pytest.raises(RuntimeError, match="unexpectedly redirected"):
+        marketing_capture_driver._login(
+            "http://127.0.0.1:8000",
+            "/admin/token",
+            marketing_capture_driver.PLANNER_EMAIL,
+            marketing_capture_driver.PLANNER_PASSWORD,
+        )
+
+    assert observed_kwargs["allow_redirects"] is False
+    assert observed_kwargs["timeout"] == 15
+
+
+def test_marketing_capture_preflights_public_gallery_payload_and_assets(monkeypatch):
+    origin = "http://127.0.0.1:3100"
+    gallery_url = f"{origin}/api/proxy/gallery?wedding_slug=sofia-and-daniel&limit=12"
+    requested: list[tuple[str, dict]] = []
+
+    class FakeResponse:
+        def __init__(
+            self,
+            *,
+            status_code=200,
+            payload=None,
+            content_type=None,
+            content=b"",
+        ):
+            self.status_code = status_code
+            self._payload = payload
+            self.headers = {"content-type": content_type} if content_type else {}
+            self.content = content
+
+        def json(self):
+            return self._payload
+
+    def _get(url, **kwargs):
+        requested.append((url, kwargs))
+        if url == gallery_url:
+            return FakeResponse(
+                payload={
+                    "items": marketing_capture_driver.MARKETING_CAPTURE_GALLERY_ITEMS,
+                    "next_cursor": None,
+                    "has_more": False,
+                }
+            )
+        path = url.removeprefix(origin)
+        return FakeResponse(
+            content_type="image/webp",
+            content=_gallery_fixture_bytes(path),
+        )
+
+    monkeypatch.setattr(marketing_capture_driver.requests, "get", _get)
+
+    marketing_capture_driver.verify_frontend_gallery_assets(origin)
+
+    assert [url for url, _kwargs in requested] == [
+        gallery_url,
+        *[
+            f"{origin}{item['url']}"
+            for item in marketing_capture_driver.MARKETING_CAPTURE_GALLERY_ITEMS
+        ],
+    ]
+    assert all(
+        kwargs["allow_redirects"] is False and kwargs["timeout"] == 15
+        for _url, kwargs in requested
+    )
+
+
+def test_marketing_capture_gallery_asset_rejects_invalid_webp_bytes():
+    path = "/demo-gallery/sofia-daniel-terrace.webp"
+    response = SimpleNamespace(
+        status_code=200,
+        headers={"content-type": "image/webp"},
+        content=b"not-a-webp",
+    )
+
+    with pytest.raises(RuntimeError, match="not a decodable WebP"):
+        marketing_capture_driver._validate_gallery_asset_response(
+            response,
+            asset_url=f"http://127.0.0.1:3100{path}",
+            asset_contract=(
+                marketing_capture_driver.MARKETING_CAPTURE_GALLERY_ASSET_CONTRACT[path]
+            ),
+        )
+
+
+def test_marketing_capture_gallery_asset_rejects_wrong_dimensions():
+    path = "/demo-gallery/sofia-daniel-terrace.webp"
+    response = SimpleNamespace(
+        status_code=200,
+        headers={"content-type": "image/webp"},
+        content=_resized_webp_bytes(path, (800, 500)),
+    )
+
+    with pytest.raises(RuntimeError, match="wrong dimensions"):
+        marketing_capture_driver._validate_gallery_asset_response(
+            response,
+            asset_url=f"http://127.0.0.1:3100{path}",
+            asset_contract=(
+                marketing_capture_driver.MARKETING_CAPTURE_GALLERY_ASSET_CONTRACT[path]
+            ),
+        )
+
+
+def test_marketing_capture_gallery_asset_rejects_wrong_hash():
+    expected_path = "/demo-gallery/sofia-daniel-terrace.webp"
+    different_path = "/demo-gallery/sofia-daniel-ceremony.webp"
+    different_bytes = _gallery_fixture_bytes(different_path)
+    assert (
+        hashlib.sha256(different_bytes).hexdigest()
+        != (
+            marketing_capture_driver.MARKETING_CAPTURE_GALLERY_ASSET_CONTRACT[
+                expected_path
+            ]["sha256"]
+        )
+    )
+    response = SimpleNamespace(
+        status_code=200,
+        headers={"content-type": "image/webp"},
+        content=different_bytes,
+    )
+
+    with pytest.raises(RuntimeError, match="wrong SHA-256"):
+        marketing_capture_driver._validate_gallery_asset_response(
+            response,
+            asset_url=f"http://127.0.0.1:3100{expected_path}",
+            asset_contract=(
+                marketing_capture_driver.MARKETING_CAPTURE_GALLERY_ASSET_CONTRACT[
+                    expected_path
+                ]
+            ),
+        )
+
+
+def test_marketing_capture_preflights_authenticated_couple_memory_preview(
+    monkeypatch,
+):
+    frontend_origin = "http://127.0.0.1:3100"
+    backend_origin = "http://127.0.0.1:8000"
+    login_url = f"{backend_origin}/couple/login"
+    memories_url = (
+        f"{frontend_origin}/api/proxy/couple/portal/memories?media_type=image&limit=24"
+    )
+    preview_path = "/couple/portal/memories/memory-1/preview"
+    preview_url = f"{frontend_origin}/api/proxy{preview_path}"
+    asset_url = (
+        f"{frontend_origin}"
+        f"{marketing_capture_driver.MARKETING_CAPTURE_GALLERY_ITEMS[0]['url']}"
+    )
+    calls: list[tuple[str, str, dict]] = []
+
+    class FakeResponse:
+        def __init__(
+            self,
+            *,
+            status_code=200,
+            payload=None,
+            headers=None,
+            content=b"",
+        ):
+            self.status_code = status_code
+            self._payload = payload
+            self.headers = headers or {}
+            self.content = content
+            self.text = ""
+
+        def json(self):
+            return self._payload
+
+    def _post(url, **kwargs):
+        calls.append(("POST", url, kwargs))
+        return FakeResponse(payload={"access_token": "seeded-couple-jwt"})
+
+    def _get(url, **kwargs):
+        calls.append(("GET", url, kwargs))
+        if url == memories_url:
+            return FakeResponse(
+                payload={
+                    "items": [
+                        {
+                            "id": "memory-1",
+                            "media_type": "image",
+                            "preview_path": preview_path,
+                        }
+                    ]
+                }
+            )
+        if url == preview_url:
+            return FakeResponse(status_code=307, headers={"location": asset_url})
+        if url == asset_url:
+            asset_path = url.removeprefix(frontend_origin)
+            return FakeResponse(
+                headers={"content-type": "image/webp; charset=binary"},
+                content=_gallery_fixture_bytes(asset_path),
+            )
+        raise AssertionError(f"unexpected GET {url}")
+
+    monkeypatch.setattr(marketing_capture_driver.requests, "post", _post)
+    monkeypatch.setattr(marketing_capture_driver.requests, "get", _get)
+
+    marketing_capture_driver.verify_frontend_couple_memory_preview(
+        frontend_origin,
+        backend_origin,
+    )
+
+    assert [(method, url) for method, url, _kwargs in calls] == [
+        ("POST", login_url),
+        ("GET", memories_url),
+        ("GET", preview_url),
+        ("GET", asset_url),
+    ]
+    assert calls[0][2]["json"] == {
+        "email": marketing_capture_driver.COUPLE_EMAIL,
+        "password": marketing_capture_driver.COUPLE_PASSWORD,
+    }
+    assert calls[0][2]["allow_redirects"] is False
+    assert calls[1][2]["headers"] == {"Authorization": "Bearer seeded-couple-jwt"}
+    assert calls[1][2]["allow_redirects"] is False
+    assert calls[2][2]["headers"] == {"Authorization": "Bearer seeded-couple-jwt"}
+    assert calls[2][2]["allow_redirects"] is False
+
+
+def test_marketing_capture_couple_memory_preflight_rejects_wrong_redirect_origin(
+    monkeypatch,
+):
+    frontend_origin = "http://127.0.0.1:3100"
+    backend_origin = "http://127.0.0.1:8000"
+    preview_path = "/couple/portal/memories/memory-1/preview"
+
+    class FakeResponse:
+        text = ""
+        content = b""
+
+        def __init__(self, *, status_code=200, payload=None, headers=None):
+            self.status_code = status_code
+            self._payload = payload
+            self.headers = headers or {}
+
+        def json(self):
+            return self._payload
+
+    monkeypatch.setattr(
+        marketing_capture_driver.requests,
+        "post",
+        lambda *_args, **_kwargs: FakeResponse(
+            payload={"access_token": "seeded-couple-jwt"}
+        ),
+    )
+
+    def _get(url, **_kwargs):
+        if url.endswith("?media_type=image&limit=24"):
+            return FakeResponse(
+                payload={
+                    "items": [
+                        {
+                            "id": "memory-1",
+                            "media_type": "image",
+                            "preview_path": preview_path,
+                        }
+                    ]
+                }
+            )
+        return FakeResponse(
+            status_code=307,
+            headers={
+                "location": "http://127.0.0.1:3000/demo-gallery/"
+                "sofia-daniel-terrace.webp"
+            },
+        )
+
+    monkeypatch.setattr(marketing_capture_driver.requests, "get", _get)
+
+    with pytest.raises(RuntimeError, match="canonical frontend origin"):
+        marketing_capture_driver.verify_frontend_couple_memory_preview(
+            frontend_origin,
+            backend_origin,
         )
 
 
@@ -218,21 +860,88 @@ def test_local_media_fallbacks_accept_the_canonical_marketing_capture_seed():
     assert "allow_local_demo_gallery_fallback" in gallery_admin_source
     assert "is_exact_marketing_capture_seed" in guest_media_source
     assert "MARKETING_CAPTURE_SEED_SCOPE" in constants_source
-    assert "/demo-gallery/elegant-couple-stairs.svg" in media_source
+    assert "/demo-gallery/sofia-daniel-terrace.webp" in media_source
 
 
 def test_marketing_gallery_assets_are_repository_owned_and_present():
-    source = _required_text(SEEDER)
+    seeder = _load_seeder_module()
     asset_names = (
-        "elegant-couple-stairs.svg",
-        "elegant-ceremony-aisle.svg",
-        "elegant-reception-table.svg",
+        "sofia-daniel-terrace.webp",
+        "sofia-daniel-ceremony.webp",
+        "sofia-daniel-reception.webp",
     )
 
+    assert [
+        Path(item["url"]).name for item in seeder.MARKETING_CAPTURE_GALLERY_ASSETS
+    ] == list(asset_names)
     for name in asset_names:
-        assert f"/demo-gallery/{name}" in source
-        assert (ROOT / "public" / "demo-gallery" / name).is_file()
-    assert "/demo-gallery/elegant-couple-stairs.jpg" not in source
+        path = ROOT / "public" / "demo-gallery" / name
+        assert path.is_file()
+        with Image.open(path) as image:
+            assert image.format == "WEBP"
+            assert image.size == (1600, 1000)
+    assert all(
+        item["content_type"] == "image/webp"
+        for item in seeder.MARKETING_CAPTURE_GALLERY_ASSETS
+    )
+
+
+def test_marketing_wedding_party_does_not_reuse_venue_gallery_photos_as_portraits():
+    source = _required_text(SEEDER)
+    party_start = source.index('"wedding_party": (')
+    party_end = source.index('"registries":', party_start)
+    party_source = source[party_start:party_end]
+
+    assert "MARKETING_CAPTURE_GALLERY_ASSETS" not in party_source
+    assert party_source.count('"image_url": None') == 2
+
+
+def test_marketing_capture_clean_checkout_gate_returns_full_head(monkeypatch):
+    calls: list[tuple[list[str], dict]] = []
+
+    def _run(command, **kwargs):
+        calls.append((command, kwargs))
+        if command[1] == "status":
+            return SimpleNamespace(stdout="")
+        if command[1] == "rev-parse":
+            return SimpleNamespace(stdout=f"{EXPECTED_CAPTURE_BUILD}\n")
+        raise AssertionError(f"unexpected git command: {command}")
+
+    monkeypatch.setattr(marketing_capture_driver.subprocess, "run", _run)
+
+    assert (
+        marketing_capture_driver.require_clean_capture_checkout()
+        == EXPECTED_CAPTURE_BUILD
+    )
+    assert [command for command, _kwargs in calls] == [
+        ["git", "status", "--porcelain", "--untracked-files=normal"],
+        ["git", "rev-parse", "--verify", "HEAD"],
+    ]
+    assert all(
+        kwargs
+        == {
+            "cwd": ROOT,
+            "check": True,
+            "capture_output": True,
+            "text": True,
+        }
+        for _command, kwargs in calls
+    )
+
+
+def test_marketing_capture_clean_checkout_gate_rejects_dirty_state(monkeypatch):
+    calls: list[list[str]] = []
+
+    def _run(command, **_kwargs):
+        calls.append(command)
+        return SimpleNamespace(stdout=" M app/page.tsx\n?? capture.png\n")
+
+    monkeypatch.setattr(marketing_capture_driver.subprocess, "run", _run)
+
+    with pytest.raises(RuntimeError, match="requires a clean checkout"):
+        marketing_capture_driver.require_clean_capture_checkout()
+
+    assert calls == [["git", "status", "--porcelain", "--untracked-files=normal"]]
 
 
 def test_testbed_driver_resets_then_seeds_then_verifies_before_browser_checkpoints():
@@ -242,26 +951,58 @@ def test_testbed_driver_resets_then_seeds_then_verifies_before_browser_checkpoin
     identity_index = source.find("setup_smoke_accounts.py")
     workspace_index = source.find("seed-demo-video-workspace.py")
     verification_index = source.find("verify_seeded_workspace")
-    checkpoint_index = source.find("MARKETING_CAPTURE_E2E_CHECKPOINTS")
 
     assert -1 not in {
         reset_index,
         identity_index,
         workspace_index,
         verification_index,
-        checkpoint_index,
     }
-    assert (
-        reset_index
-        < identity_index
-        < workspace_index
-        < verification_index
-        < checkpoint_index
-    )
+    assert reset_index < identity_index < workspace_index < verification_index
     assert "TESTBED_NON_INTERACTIVE" in source
     assert "America/Chicago" in source
     assert "MARKETING_CAPTURE_FRONTEND_URL" in source
     assert '"http://127.0.0.1:3100"' in source
+
+    main_source = source.split("def main() -> int:", 1)[1]
+    initial_clean_gate_index = main_source.find(
+        "capture_build = require_clean_capture_checkout()"
+    )
+    database_open_index = main_source.find("client, database = _load_database()")
+    backend_origin_index = main_source.find(
+        "backend_url = require_local_capture_origin("
+    )
+    frontend_origin_index = main_source.find(
+        "frontend_url = require_local_capture_origin("
+    )
+    capture_clean_gate_index = main_source.find(
+        "capture_ready_build = require_clean_capture_checkout()"
+    )
+    route_preflight_index = main_source.find("verify_frontend_checkpoint_routes(")
+    assert (
+        -1
+        < backend_origin_index
+        < frontend_origin_index
+        < initial_clean_gate_index
+        < database_open_index
+    )
+    assert -1 < capture_clean_gate_index < route_preflight_index
+    gallery_preflight_index = main_source.find(
+        "verify_frontend_gallery_assets(frontend_url)"
+    )
+    memory_preflight_index = main_source.find(
+        "verify_frontend_couple_memory_preview(frontend_url, backend_url)"
+    )
+    checkpoint_output_index = main_source.find(
+        "for scene in MARKETING_CAPTURE_E2E_CHECKPOINTS"
+    )
+    assert (
+        -1
+        < route_preflight_index
+        < gallery_preflight_index
+        < memory_preflight_index
+        < checkpoint_output_index
+    )
 
 
 def test_marketing_seed_is_isolated_and_does_not_rebrand_an_arbitrary_planner():

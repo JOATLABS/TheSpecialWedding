@@ -54,6 +54,10 @@ describe('resolveMediaUrl', () => {
       resolveMediaUrl('/demo-gallery/elegant-couple-stairs.svg'),
       '/demo-gallery/elegant-couple-stairs.svg',
     );
+    assert.equal(
+      resolveMediaUrl('/demo-gallery/sofia-daniel-terrace.webp'),
+      '/demo-gallery/sofia-daniel-terrace.webp',
+    );
   });
 
   it('rejects unapproved or traversing repository demo-media paths', () => {

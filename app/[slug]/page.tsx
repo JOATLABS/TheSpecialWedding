@@ -1,5 +1,5 @@
 'use client';
-import React, { Suspense, useCallback, useContext, useEffect, useState } from 'react';
+import React, { Suspense, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { WeddingContext } from '@/contexts/WeddingContext';
 import { LandingLayout } from '@/components/landing-page/LandingLayout';
@@ -27,7 +27,10 @@ function WeddingLandingContent() {
  const [accessGranted, setAccessGranted] = useState(false);
  const [loading, setLoading] = useState(true);
  const [galleryAccess, setGalleryAccess] = useState<PublicGalleryAccess | null>(null);
+ const [galleryLoading, setGalleryLoading] = useState(true);
+ const [galleryError, setGalleryError] = useState(false);
  const [openGuestRsvpOnLoad, setOpenGuestRsvpOnLoad] = useState(false);
+ const galleryRequestRef = useRef<AbortController | null>(null);
 
  const hydrateGuestSession = useCallback(async () => {
    const data = await fetchGuestSessionAccess(slug);
@@ -125,19 +128,53 @@ function WeddingLandingContent() {
 
  const fetchGallery = useCallback(
  async () => {
-  if (!slug || !wedding) return;
+  galleryRequestRef.current?.abort();
+  galleryRequestRef.current = null;
 
+  if (!slug || !wedding) {
+    setImages([]);
+    setGalleryError(false);
+    setGalleryLoading(false);
+    return;
+  }
+
+  const controller = new AbortController();
+  galleryRequestRef.current = controller;
+
+  setImages([]);
+  setGalleryError(false);
+  setGalleryLoading(true);
   try {
     const galleryPage = await fetchPublicGalleryPage({
       slug,
       privacyMode: wedding.privacy_mode,
       access: galleryAccess,
       limit: 12,
+      signal: controller.signal,
     });
+
+    if (controller.signal.aborted || galleryRequestRef.current !== controller) {
+      return;
+    }
+
     setImages(galleryPage.items);
-  } catch (err: any) {
+  } catch (err: unknown) {
+    if (
+      controller.signal.aborted
+      || galleryRequestRef.current !== controller
+      || (err instanceof Error && err.name === 'AbortError')
+    ) {
+      return;
+    }
+
     console.warn('Gallery could not be loaded:', err);
-    setImages([]); // Continue without gallery instead of showing error
+    setImages([]);
+    setGalleryError(true);
+  } finally {
+    if (galleryRequestRef.current === controller) {
+      galleryRequestRef.current = null;
+      setGalleryLoading(false);
+    }
   }
  },
  [galleryAccess, slug, wedding]
@@ -145,9 +182,19 @@ function WeddingLandingContent() {
 
  // Fetch gallery when access is granted and we have wedding data
  useEffect(() => {
- if (accessGranted && wedding) {
- fetchGallery();
- }
+  if (!accessGranted || !wedding) {
+    return;
+  }
+
+  void fetchGallery();
+
+  return () => {
+    const activeRequest = galleryRequestRef.current;
+    activeRequest?.abort();
+    if (galleryRequestRef.current === activeRequest) {
+      galleryRequestRef.current = null;
+    }
+  };
  }, [accessGranted, fetchGallery, wedding]);
 
  if (loading) {
@@ -184,7 +231,17 @@ function WeddingLandingContent() {
  );
  }
 
- return <LandingLayout wedding={wedding} images={images} guest={guest} openGuestRsvpOnLoad={openGuestRsvpOnLoad} />;
+ return (
+  <LandingLayout
+   wedding={wedding}
+   images={images}
+   galleryLoading={galleryLoading}
+   galleryError={galleryError}
+   onGalleryRetry={() => void fetchGallery()}
+   guest={guest}
+   openGuestRsvpOnLoad={openGuestRsvpOnLoad}
+  />
+ );
 }
 
 export default function WeddingLandingPage() {

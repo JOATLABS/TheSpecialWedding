@@ -703,14 +703,13 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
   {
     id: 'contract-sign-pay-demo',
     featureId: 'book-the-client',
-    title: 'Contract Canvas -> Sign -> Pay',
-    audience: 'Planners comparing contract/payment workflows against DocuSign plus Stripe plus spreadsheets.',
-    durationSeconds: 60,
+    title: 'Vendor Contracts -> Payment Milestones',
+    audience: 'Planners who need vendor agreements, payment milestones, and wedding budget context in one workflow.',
+    durationSeconds: 50,
     priority: 'phase-one',
     status: 'scripted',
     routePlan: [
       '/admin/vendors/contracts/67c100000000000000000001',
-      '/portal/marketing-capture-contract-payment-portal-token',
       '/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel',
     ],
     captureCheckpoints: [
@@ -736,13 +735,6 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
           'Payment Milestones shows the existing schedule and status without initiating a transaction.',
       },
       {
-        label: 'Couple payment portal',
-        route: '/portal/marketing-capture-contract-payment-portal-token',
-        action: 'Open the seeded couple payment portal and inspect its signed package and payment schedule.',
-        visibleResult:
-          'The couple-facing view shows paid, scheduled, and remaining amounts without planner controls.',
-      },
-      {
         label: 'Wedding budget context',
         route: '/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel',
         action: 'Return to the wedding budget and inspect the recorded vendor spend and category totals.',
@@ -752,30 +744,30 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     ],
     seedRequirements: [
       'Vendor record with service details, populated agreement sections, status history, and payment milestones.',
-      'Signed client package with a read-only couple payment portal and populated payment schedule.',
+      'Wedding budget with the same vendor commitment represented in its category totals.',
     ],
     script: [
       {
-        timestamp: '0:00-0:15',
+        timestamp: '0:00-0:12',
         action: 'Open the existing planner contract and inspect its details and status.',
         voiceover: 'A vendor agreement starts from the record the planner already owns.',
       },
       {
-        timestamp: '0:15-0:36',
+        timestamp: '0:12-0:30',
         action: 'Open Contract Sections, then Payments, and inspect the seeded clauses and milestones.',
         voiceover: 'Scope, clauses, deliverables, and payment terms stay connected instead of splitting into another document tool.',
       },
       {
-        timestamp: '0:36-1:00',
-        action: 'Open the read-only couple payment portal, then inspect the wedding budget context.',
-        voiceover: 'The couple-facing payment schedule and the planner budget give each audience the right view of the business workflow.',
+        timestamp: '0:30-0:50',
+        action: 'Return to the wedding budget and inspect the vendor commitment in its category context.',
+        voiceover: 'The wedding budget carries that same vendor commitment into the planner\'s complete financial picture.',
       },
     ],
     recordingChecklist: [
       ...defaultChecklist,
-      'Do not open signature, payment-method, or transaction controls; this recording is status inspection only.',
+      'Do not open payment-method or transaction controls; this recording is status inspection only.',
     ],
-    captureNotes: 'Keep the planner agreement and couple payment portal distinct; do not imply they are the same contract record.',
+    captureNotes: 'Keep the story on the planner-owned vendor agreement, its payment milestones, and the connected wedding budget.',
   },
   {
     id: 'payment-autopilot-demo',

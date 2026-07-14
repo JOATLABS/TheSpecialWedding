@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 import aiohttp
 from fastapi import HTTPException
 
+from app.constants.marketing_capture_media import MARKETING_CAPTURE_GALLERY_URLS
 from app.constants.seed_sources import is_exact_marketing_capture_seed
 from app.core.database import mongo
 from app.core.settings import settings
@@ -61,9 +62,6 @@ STREAM_STATUSES = {
     "failed",
     "unconfigured",
 }
-DEMO_PREVIEW_PATH_PATTERN = re.compile(
-    r"^/demo-gallery/[A-Za-z0-9][A-Za-z0-9._-]*\.svg$"
-)
 
 
 def _safe_filename(filename: str) -> str:
@@ -370,8 +368,9 @@ class GuestMediaService:
             return None
 
         preview_path = asset.get("demo_preview_url")
-        if not isinstance(preview_path, str) or not DEMO_PREVIEW_PATH_PATTERN.fullmatch(
-            preview_path
+        if (
+            not isinstance(preview_path, str)
+            or preview_path not in MARKETING_CAPTURE_GALLERY_URLS
         ):
             return None
 

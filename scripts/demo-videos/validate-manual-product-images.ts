@@ -5,10 +5,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  MARKETING_CAPTURE_BUILD_IDENTITY_SELECTOR,
   MARKETING_CAPTURE_SAFETY_ASSERTIONS,
   MARKETING_CAPTURE_SESSIONS,
+  MARKETING_CAPTURE_RUNTIME_ORIGIN,
   MARKETING_CAPTURE_VIEWPORT,
   MARKETING_CAPTURE_MANIFEST,
+  isMarketingCaptureAssetApproved,
   type MarketingCaptureEntry,
 } from '../../app/data/marketingCaptureManifest';
 import { resolveFromRepo } from './cli';
@@ -28,7 +31,7 @@ function sha256(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-function assertCaptureBuildExists(featureId: string, build: string): void {
+export function assertCaptureBuildAncestry(featureId: string, build: string): void {
   if (VERIFIED_CAPTURE_BUILDS.has(build)) {
     return;
   }
@@ -40,6 +43,15 @@ function assertCaptureBuildExists(featureId: string, build: string): void {
     });
   } catch {
     throw new Error(`${featureId} capture build does not exist in this Git repository.`);
+  }
+
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', build, 'HEAD'], {
+      cwd: resolveFromRepo(),
+      stdio: 'ignore',
+    });
+  } catch {
+    throw new Error(`${featureId} capture build must be an ancestor of current HEAD.`);
   }
 
   VERIFIED_CAPTURE_BUILDS.add(build);
@@ -84,13 +96,93 @@ export function assertManualFullWindowContract(
   if (entry.status !== 'approved') {
     throw new Error(`${featureId} has not been approved after manual visual review.`);
   }
-  if (source.captureMethod !== 'manual-in-app-browser') {
-    throw new Error(`${featureId} must be captured manually in the in-app browser.`);
+  if (source.captureMethod !== 'manual-visible-browser') {
+    throw new Error(`${featureId} must be captured manually in a visible browser.`);
+  }
+  const receipt = source.reviewReceipt;
+  if (!receipt) {
+    throw new Error(`${featureId} requires an explicit per-image manual review receipt.`);
+  }
+  if (entry.featureId !== featureId || receipt.featureId !== featureId) {
+    throw new Error(`${featureId} receipt must identify the same capture feature.`);
+  }
+  if (receipt.schemaVersion !== 1) {
+    throw new Error(`${featureId} receipt uses an unsupported schema version.`);
   }
   if (!/^[0-9a-f]{40}$/.test(entry.build)) {
     throw new Error(`${featureId} must identify the exact captured Git build.`);
   }
-  assertCaptureBuildExists(featureId, entry.build);
+  if (receipt.appBuildCommit !== entry.build) {
+    throw new Error(`${featureId} receipt must match the exact captured Git build.`);
+  }
+  if (receipt.artifactSha256 !== source.checksum) {
+    throw new Error(`${featureId} receipt must match the captured PNG checksum.`);
+  }
+  if (!/^[0-9a-f]{64}$/.test(source.checksum)) {
+    throw new Error(`${featureId} must identify the captured PNG with a full SHA-256 checksum.`);
+  }
+  const capturedAt = Date.parse(receipt.capturedAt);
+  const reviewedAt = Date.parse(receipt.reviewedAt);
+  if (
+    !Number.isFinite(capturedAt)
+    || !Number.isFinite(reviewedAt)
+    || reviewedAt < capturedAt
+    || new Date(capturedAt).toISOString() !== receipt.capturedAt
+    || new Date(reviewedAt).toISOString() !== receipt.reviewedAt
+    || !receipt.reviewer.trim()
+  ) {
+    throw new Error(`${featureId} receipt must record a valid capture and human review.`);
+  }
+  const runtime = receipt.runtimeBuildIdentity;
+  if (!runtime) {
+    throw new Error(`${featureId} receipt must record the served runtime build identity.`);
+  }
+  if (
+    runtime.origin !== MARKETING_CAPTURE_RUNTIME_ORIGIN
+    || runtime.identitySelector !== MARKETING_CAPTURE_BUILD_IDENTITY_SELECTOR
+    || runtime.observedCommit !== entry.build
+  ) {
+    throw new Error(`${featureId} receipt runtime identity must match the isolated capture build.`);
+  }
+  const runtimeVerifiedAt = Date.parse(runtime.verifiedAt);
+  if (
+    !Number.isFinite(runtimeVerifiedAt)
+    || new Date(runtimeVerifiedAt).toISOString() !== runtime.verifiedAt
+    || runtimeVerifiedAt > capturedAt
+    || capturedAt - runtimeVerifiedAt > 24 * 60 * 60 * 1000
+  ) {
+    throw new Error(`${featureId} runtime build identity must be verified within 24 hours before capture.`);
+  }
+  if (receipt.browser !== 'Google Chrome' || !receipt.browserWasVisible) {
+    throw new Error(`${featureId} must use a visible Google Chrome window.`);
+  }
+  if (!receipt.interactionsWereManual) {
+    throw new Error(`${featureId} frontend interactions must be driven manually.`);
+  }
+  if (receipt.scriptedBrowserCaptureWasUsed) {
+    throw new Error(`${featureId} scripted browser capture must be false.`);
+  }
+  if (receipt.pageZoomPercent !== 100) {
+    throw new Error(`${featureId} browser zoom must be exactly 100%.`);
+  }
+  if (receipt.viewportMode !== 'Responsive') {
+    throw new Error(`${featureId} must use Chrome DevTools Responsive viewport mode.`);
+  }
+  if (receipt.devicePixelRatio !== 1) {
+    throw new Error(`${featureId} device pixel ratio must be 1.`);
+  }
+  if (
+    receipt.captureCommand !== 'Capture screenshot'
+    || receipt.fullSizeScreenshotWasUsed
+  ) {
+    throw new Error(`${featureId} must use the Chrome DevTools Capture screenshot command.`);
+  }
+  if (!receipt.originalPngReviewed) {
+    throw new Error(`${featureId} must require review of the original PNG.`);
+  }
+  if (receipt.postCaptureTransformsApplied) {
+    throw new Error(`${featureId} must not allow post-capture crop, resize, or stitching.`);
+  }
   if (!MARKETING_CAPTURE_SESSIONS.includes(entry.requiredSession)) {
     throw new Error(`${featureId} must declare the browser session required for capture.`);
   }
@@ -136,47 +228,87 @@ export function assertManualFullWindowContract(
       throw new Error(`${featureId}/${target} must render contained at 16:10 without zoom.`);
     }
   }
+
+  if (!isMarketingCaptureAssetApproved({
+    ...entry.source,
+    featureId: entry.featureId,
+    status: entry.status,
+    build: entry.build,
+    render: entry.renders.features,
+  })) {
+    throw new Error(`${featureId} does not satisfy the browser publication receipt gate.`);
+  }
 }
 
-export function validateManualProductImages(): ManualProductImageValidation[] {
-  const validations: ManualProductImageValidation[] = [];
-
-  for (const [featureId, entry] of Object.entries(MARKETING_CAPTURE_MANIFEST)) {
-    assertManualFullWindowContract(featureId, entry);
-
-    const artifactPath = artifactPathFromPublicUrl(entry.source.path);
-    if (!fs.existsSync(artifactPath) || !fs.statSync(artifactPath).isFile()) {
-      throw new Error(`Marketing PNG is missing for ${featureId}: ${artifactPath}`);
-    }
-
-    const bytes = fs.readFileSync(artifactPath);
-    const dimensions = readPngDimensions(bytes, artifactPath);
-    if (dimensions.width !== entry.source.width || dimensions.height !== entry.source.height) {
-      throw new Error(
-        `${featureId} PNG dimensions ${dimensions.width}x${dimensions.height} do not match manifest ${entry.source.width}x${entry.source.height}.`,
-      );
-    }
-
-    const checksum = sha256(bytes);
-    if (checksum !== entry.source.checksum) {
-      throw new Error(`${featureId} PNG checksum does not match the marketing capture manifest.`);
-    }
-
-    validations.push({
-      featureId,
-      artifactPath: path.relative(resolveFromRepo(), artifactPath),
-      width: dimensions.width,
-      height: dimensions.height,
-      checksum,
-    });
+export function validateApprovedProductImage(
+  featureId: string,
+  entry: MarketingCaptureEntry,
+  options: { verifyGitAncestry?: boolean } = {},
+): ManualProductImageValidation {
+  assertManualFullWindowContract(featureId, entry);
+  if (options.verifyGitAncestry) {
+    assertCaptureBuildAncestry(featureId, entry.build);
   }
 
-  return validations;
+  const artifactPath = artifactPathFromPublicUrl(entry.source.path);
+  if (!fs.existsSync(artifactPath) || !fs.statSync(artifactPath).isFile()) {
+    throw new Error(`Marketing PNG is missing for ${featureId}: ${artifactPath}`);
+  }
+
+  const bytes = fs.readFileSync(artifactPath);
+  const dimensions = readPngDimensions(bytes, artifactPath);
+  if (dimensions.width !== entry.source.width || dimensions.height !== entry.source.height) {
+    throw new Error(
+      `${featureId} PNG dimensions ${dimensions.width}x${dimensions.height} do not match manifest ${entry.source.width}x${entry.source.height}.`,
+    );
+  }
+
+  const checksum = sha256(bytes);
+  if (checksum !== entry.source.checksum) {
+    throw new Error(`${featureId} PNG checksum does not match the marketing capture manifest.`);
+  }
+
+  return {
+    featureId,
+    artifactPath: path.relative(resolveFromRepo(), artifactPath),
+    width: dimensions.width,
+    height: dimensions.height,
+    checksum,
+  };
+}
+
+export function validatePublishedProductImages(
+  options: { verifyGitAncestry?: boolean } = {},
+): ManualProductImageValidation[] {
+  return Object.entries(MARKETING_CAPTURE_MANIFEST)
+    .filter(([, entry]) => entry.status === 'approved')
+    .map(([featureId, entry]) => validateApprovedProductImage(featureId, entry, options));
+}
+
+export function validateManualProductImages(
+  options: { verifyGitAncestry?: boolean } = {},
+): ManualProductImageValidation[] {
+  return Object.entries(MARKETING_CAPTURE_MANIFEST)
+    .map(([featureId, entry]) => validateApprovedProductImage(featureId, entry, options));
 }
 
 function main(): void {
-  const validations = validateManualProductImages();
-  console.log(`Validated ${validations.length} manually captured full-window marketing PNGs.`);
+  const args = new Set(process.argv.slice(2));
+  const supportedArgs = new Set(['--published', '--verify-git-ancestry']);
+  const unsupportedArgs = [...args].filter((arg) => !supportedArgs.has(arg));
+  if (unsupportedArgs.length > 0) {
+    throw new Error(`Unsupported manual product-image validator argument: ${unsupportedArgs.join(', ')}`);
+  }
+
+  const publishedOnly = args.has('--published');
+  const verifyGitAncestry = args.has('--verify-git-ancestry');
+  const options = { verifyGitAncestry };
+  const validations = publishedOnly
+    ? validatePublishedProductImages(options)
+    : validateManualProductImages(options);
+  const scope = publishedOnly ? 'published' : 'manually captured full-window';
+  const ancestryScope = verifyGitAncestry ? ' with Git ancestry' : '';
+  console.log(`Validated ${validations.length} ${scope} marketing PNGs${ancestryScope}.`);
 }
 
 const isMainModule = process.argv[1]

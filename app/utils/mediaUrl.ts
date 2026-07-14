@@ -4,6 +4,9 @@ const REPOSITORY_STATIC_MEDIA_PATHS = new Set([
   '/demo-gallery/elegant-ceremony-aisle.svg',
   '/demo-gallery/elegant-couple-stairs.svg',
   '/demo-gallery/elegant-reception-table.svg',
+  '/demo-gallery/sofia-daniel-ceremony.webp',
+  '/demo-gallery/sofia-daniel-reception.webp',
+  '/demo-gallery/sofia-daniel-terrace.webp',
 ]);
 
 export function resolveMediaUrl(value?: string | null): string | undefined {

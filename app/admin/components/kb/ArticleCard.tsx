@@ -8,7 +8,6 @@ import {
   ThumbsUp,
   Star,
   CheckCircle,
-  Image as ImageIcon,
 } from 'lucide-react';
 
 interface ArticleCardProps {
@@ -71,11 +70,7 @@ export default function ArticleCard({ article, onClick }: ArticleCardProps) {
           />
           <div className="absolute inset-0 bg-gradient-to-t from-slate-900/40 to-transparent" />
         </div>
-      ) : (
-        <div className="relative h-24 bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700/50 dark:to-slate-800/50 flex items-center justify-center">
-          <ImageIcon className="w-8 h-8 text-slate-300 dark:text-slate-600" />
-        </div>
-      )}
+      ) : null}
 
       <div className="p-5">
         {/* Header */}

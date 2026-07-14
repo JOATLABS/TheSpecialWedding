@@ -26,8 +26,11 @@ pages 3-11, 14-15, 22, and 24. The product claim is:
   featured fictional wedding, with one secondary wedding used only to make the
   planner dashboard truthful.
 - The canonical public assets live under `public/marketing/product-proof/` and
-  are generated from the real frontend after the testbed driver verifies the
-  seeded backend state.
+  are manually captured from the visible frontend after the testbed driver
+  verifies the seeded backend state.
+- `app/data/marketingCaptureScenes.json` is the shared machine-readable source
+  for all 17 scene IDs, sessions, routes, stable text, and safe interactions;
+  the product manifest and Python testbed fail if they drift from it.
 - Public demo-video URLs remain unset until the corresponding media passes the
   capture receipt, safety scan, human frame review, and website playback check.
 
@@ -45,12 +48,12 @@ pages 3-11, 14-15, 22, and 24. The product claim is:
 | P8 | Planner boundaries | Unified communications, forms, reminders, and support threads demonstrate structured self-service and planner-owned boundaries without sending real email or SMS. |
 | P9 | Business workflow | Vendor directory/CRM, assignment, contract, quote, budget, payment milestone, and planner package records agree on owner, wedding, vendor, currency, and amounts. No real signature, payment, or external message is triggered. |
 | P10 | Remaining product proof | Gallery, guest memories, knowledge base, team permissions/activity, calendar/tasks, and payment surfaces are populated enough to prove their marketed behavior, not merely that a route exists. |
-| P11 | Still-image capture | Every marketed product surface has a named capture scene, required session, route, stable-state selector, optional safe interaction, viewport, output path, and safety assertions. Hero, homepage story, and feature-grid crops are composed separately when their aspect ratios differ. |
+| P11 | Still-image capture | Every marketed product surface has a named capture scene, required session, route, stable-state selector, optional safe interaction, output path, safety assertions, and its own explicit human-review receipt tied to the exact Git build and untouched PNG checksum. A human drives visible Chrome at browser zoom 100% in DevTools `Responsive` mode at 1440x900 and DPR 1, then uses `Capture screenshot` and inspects the original PNG. Scripted navigation, scripted screenshots, generated shared receipts, full-size-page capture, cropping, resizing, and stitching are forbidden. |
 | P12 | Homepage hero | The hero uses one strong populated command-center proof, preserves the existing brand system and CTA flow, and clearly says the product is built for wedding planners. It does not auto-cycle stale screenshots. |
 | P13 | Homepage stories | The feature section contains four outcome-led stories: Connection Over Tools, Disorganization Tax, Couple Experience plus Boundaries, and Built for Planners. Each story uses current product proof and describes a connected outcome rather than a feature count. |
 | P14 | Features page | The top of `/features` uses the same four outcomes. Detailed capabilities remain discoverable lower on the page. The 29-row competitor matrix no longer leads or defines the product story; comparison research remains available through `/compare`. |
 | P15 | Video capture | Recording executes explicit feature actions and verifies visible results. Generic waypoint cursor motion and engineering-review framing are removed. A 60-90 second connected web story and social derivatives may publish only after safety and playback gates pass. |
-| P16 | Frontend proof | Automated contracts pass, the testbed lifecycle passes, and the in-app browser verifies page identity, non-blank UI, no framework overlay, console health, seeded interactions, desktop, and mobile layouts. Screenshots and a capture receipt identify the exact tested build. |
+| P16 | Frontend proof | Automated contracts pass, the testbed lifecycle passes, and manually driven visible Chrome verifies page identity, non-blank UI, no framework overlay, console health, seeded interactions, desktop, and mobile layouts. Screenshots and a capture receipt identify the exact tested build. |
 
 ## Entry-point and parity inventory
 
@@ -82,9 +85,17 @@ pages 3-11, 14-15, 22, and 24. The product claim is:
 6. A screenshot is accepted only after its route is stable, relevant values are
    visible, images are loaded, the console is clean, and forbidden visible text
    is absent.
-7. The same raster is not forced into incompatible placements. Each public use
+7. Final stills and walkthrough footage are produced only through a manually
+   driven visible browser. Seed, preflight, and validation automation never
+   substitutes for the visible capture or the review of the original artifact.
+   Pending stills remain hidden from public marketing surfaces, and changing a
+   status alone cannot publish an image without its exact per-image receipt.
+8. The capture runtime deliberately disables the Google Maps embed and the
+   public wedding must render its intentional Directions fallback without a
+   provider error or console failure.
+9. The same raster is not forced into incompatible placements. Each public use
    declares its crop or has a dedicated capture.
-8. Public video status remains `recording` until approved assets exist. Missing,
+10. Public video status remains `recording` until approved assets exist. Missing,
    rejected, or stale files cannot silently re-enable a launcher.
 
 ## Verification gate
@@ -96,8 +107,8 @@ At minimum, sign-off requires:
 2. The paired testbed driver and cleanup scripts run successfully against the
    local services.
 3. CI-aligned frontend lint, type-check, unit tests, and build.
-4. In-app browser verification of the seeded planner flow, couple flow, public
-   wedding, homepage, and `/features` on desktop and mobile.
+4. Manually driven visible-Chrome verification of the seeded planner flow,
+   couple flow, public wedding, homepage, and `/features` on desktop and mobile.
 5. A hostile review covering tenant scope, stale routes, edit persistence,
    timezone round-trips, data/privacy leakage, crop behavior, copy alignment,
    and whether any claimed connection is only decorative.

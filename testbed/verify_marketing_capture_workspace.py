@@ -4,16 +4,22 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import ipaddress
+import json
 import os
 import re
 import subprocess
 import sys
+from html.parser import HTMLParser
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import requests
 from bson import ObjectId
+from PIL import Image, UnidentifiedImageError
 from pymongo.database import Database
 from pydantic import ValidationError
 
@@ -30,6 +36,10 @@ from testbed.cleanup_marketing_capture_workspace_state import (  # noqa: E402
 from app.models.vendor_contracts import (  # noqa: E402
     VendorContractActivityItem,
     VendorContractActivityType,
+)
+from app.constants.marketing_capture_media import (  # noqa: E402
+    MARKETING_CAPTURE_GALLERY_ITEMS,
+    MARKETING_CAPTURE_GALLERY_URLS,
 )
 
 SETUP_SMOKE_ACCOUNTS = ROOT / "scripts" / "setup_smoke_accounts.py"
@@ -55,6 +65,31 @@ CONTROLLED_IDENTITY_DOMAIN = "thespecialwedding.io"
 RESERVED_IDENTITY_DOMAINS = frozenset({"example.com", "example.net", "example.org"})
 RESERVED_IDENTITY_SUFFIXES = (".example", ".invalid", ".test")
 RESERVED_FICTIONAL_PHONE_PATTERN = re.compile(r"^1?[2-9]\d{2}55501\d{2}$")
+FULL_GIT_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+MARKETING_CAPTURE_SCENES_PATH = ROOT / "app" / "data" / "marketingCaptureScenes.json"
+MARKETING_CAPTURE_SESSIONS = frozenset({"planner", "couple", "public"})
+
+
+class _BuildCommitMetaParser(HTMLParser):
+    """Collect explicit runtime build identities from a rendered app shell."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.commits: list[str] = []
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        if tag.lower() != "meta":
+            return
+        attributes = {key.lower(): value for key, value in attrs}
+        if attributes.get("name") != "tsw-app-build-commit":
+            return
+        content = attributes.get("content")
+        if content:
+            self.commits.append(content)
 
 
 def assert_setup_namespace_available(database: Database) -> None:
@@ -108,6 +143,224 @@ def _run_python(
 def _require(condition: Any, message: str) -> None:
     if not condition:
         raise RuntimeError(message)
+
+
+def _response_redirect_location(response: Any) -> str | None:
+    headers = getattr(response, "headers", {}) or {}
+    if not hasattr(headers, "items"):
+        return None
+    return next(
+        (
+            str(value)
+            for key, value in headers.items()
+            if str(key).lower() == "location" and value
+        ),
+        None,
+    )
+
+
+def _require_no_redirect(response: Any, label: str) -> None:
+    redirect_location = _response_redirect_location(response)
+    _require(
+        redirect_location is None,
+        f"{label} unexpectedly redirected to {redirect_location}",
+    )
+
+
+def require_local_capture_origin(
+    value: str,
+    *,
+    expected_port: int,
+    label: str,
+) -> str:
+    """Accept only the canonical 127.0.0.1 HTTP origin before sending credentials."""
+
+    _require(isinstance(value, str) and bool(value), f"{label} origin is required")
+    parsed = urlparse(value)
+    try:
+        port = parsed.port
+        address = ipaddress.ip_address(parsed.hostname or "")
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError(
+            f"{label} must be the exact HTTP 127.0.0.1 origin on port {expected_port}"
+        ) from exc
+
+    _require(
+        parsed.scheme == "http"
+        and address == ipaddress.ip_address("127.0.0.1")
+        and port == expected_port
+        and parsed.username is None
+        and parsed.password is None
+        and parsed.path == ""
+        and parsed.params == ""
+        and parsed.query == ""
+        and parsed.fragment == "",
+        f"{label} must be the exact HTTP 127.0.0.1 origin on port {expected_port} "
+        "with no credentials, path, query, or fragment",
+    )
+    return value
+
+
+def _load_marketing_capture_contract() -> tuple[
+    tuple[dict[str, Any], ...],
+    dict[str, dict[str, Any]],
+]:
+    """Load the shared scene and immutable fixture-media capture contract."""
+
+    try:
+        payload = json.loads(MARKETING_CAPTURE_SCENES_PATH.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            "Unable to load app/data/marketingCaptureScenes.json"
+        ) from exc
+
+    _require(
+        isinstance(payload, dict) and payload.get("schemaVersion") == 1,
+        "Marketing capture scene contract must use schemaVersion 1",
+    )
+    scenes = payload.get("scenes")
+    _require(
+        isinstance(scenes, list) and len(scenes) == 17,
+        "Marketing capture scene contract must contain exactly 17 scenes",
+    )
+    required_scene_fields = {
+        "featureId",
+        "session",
+        "route",
+        "title",
+        "expectation",
+        "expectedVisibleText",
+        "safeInteraction",
+    }
+    feature_ids: set[str] = set()
+    normalized_scenes: list[dict[str, Any]] = []
+    for scene in scenes:
+        _require(
+            isinstance(scene, dict) and set(scene) == required_scene_fields,
+            "Each marketing capture scene must declare the canonical scene fields",
+        )
+        for field in (
+            "featureId",
+            "route",
+            "title",
+            "expectation",
+            "expectedVisibleText",
+        ):
+            _require(
+                isinstance(scene[field], str) and bool(scene[field].strip()),
+                f"Marketing capture scene field {field} must be non-empty",
+            )
+        _require(
+            scene["session"] in MARKETING_CAPTURE_SESSIONS,
+            f"Unknown marketing capture session: {scene['session']!r}",
+        )
+        _require(
+            scene["route"].startswith("/") and not scene["route"].startswith("//"),
+            f"Marketing capture route must be application-relative: {scene['route']!r}",
+        )
+        _require(
+            scene["safeInteraction"] is None
+            or (
+                isinstance(scene["safeInteraction"], str)
+                and bool(scene["safeInteraction"].strip())
+            ),
+            "Marketing capture safeInteraction must be null or non-empty text",
+        )
+        _require(
+            scene["featureId"] not in feature_ids,
+            f"Duplicate marketing capture featureId: {scene['featureId']}",
+        )
+        feature_ids.add(scene["featureId"])
+        normalized_scenes.append(dict(scene))
+
+    gallery_assets = payload.get("galleryAssets")
+    _require(
+        isinstance(gallery_assets, list) and bool(gallery_assets),
+        "Marketing capture contract must declare galleryAssets",
+    )
+    normalized_gallery_assets: dict[str, dict[str, Any]] = {}
+    for asset in gallery_assets:
+        _require(
+            isinstance(asset, dict)
+            and set(asset) == {"path", "sha256", "width", "height"},
+            "Each marketing capture gallery asset must declare path, hash, and size",
+        )
+        path = asset["path"]
+        _require(
+            isinstance(path, str)
+            and path.startswith("/demo-gallery/")
+            and path.endswith(".webp"),
+            f"Marketing capture gallery path is invalid: {path!r}",
+        )
+        _require(
+            isinstance(asset["sha256"], str)
+            and re.fullmatch(r"[0-9a-f]{64}", asset["sha256"]) is not None,
+            f"Marketing capture gallery hash is invalid: {path}",
+        )
+        _require(
+            asset["width"] == 1600 and asset["height"] == 1000,
+            f"Marketing capture gallery dimensions must be 1600x1000: {path}",
+        )
+        _require(
+            path not in normalized_gallery_assets,
+            f"Duplicate marketing capture gallery path: {path}",
+        )
+        normalized_gallery_assets[path] = dict(asset)
+
+    _require(
+        set(normalized_gallery_assets) == MARKETING_CAPTURE_GALLERY_URLS,
+        "Canonical gallery hashes and seeded gallery URLs have drifted",
+    )
+    return tuple(normalized_scenes), normalized_gallery_assets
+
+
+(
+    MARKETING_CAPTURE_E2E_CHECKPOINTS,
+    MARKETING_CAPTURE_GALLERY_ASSET_CONTRACT,
+) = _load_marketing_capture_contract()
+
+
+def require_clean_capture_checkout() -> str:
+    """Fail before fixture mutation or capture unless HEAD is clean and exact."""
+
+    try:
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=normal"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError(
+            "Unable to verify that the marketing-capture checkout is clean"
+        ) from exc
+
+    dirty_paths = status.stdout.strip()
+    _require(
+        not dirty_paths,
+        "Marketing capture requires a clean checkout before reset, seed, or "
+        f"capture; git reported:\n{dirty_paths}",
+    )
+
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError(
+            "Unable to resolve the marketing-capture checkout HEAD"
+        ) from exc
+
+    _require(
+        FULL_GIT_COMMIT_PATTERN.fullmatch(head) is not None,
+        f"Marketing capture requires a full 40-character git HEAD; got {head!r}",
+    )
+    return head
 
 
 def _identity_hostname_is_safe(hostname: str) -> bool:
@@ -224,22 +477,41 @@ def _validate_vendor_contract_activity_api_shape(
         ) from exc
 
 
-def _login(backend_url: str, endpoint: str, email: str, password: str) -> None:
+def _login(backend_url: str, endpoint: str, email: str, password: str) -> str:
+    backend_origin = require_local_capture_origin(
+        backend_url,
+        expected_port=8000,
+        label="Marketing capture backend",
+    )
     try:
         response = requests.post(
-            f"{backend_url}{endpoint}",
+            f"{backend_origin}{endpoint}",
             json={"email": email, "password": password},
             timeout=15,
+            allow_redirects=False,
         )
     except requests.RequestException as exc:
         raise RuntimeError(
             f"Dedicated showcase login endpoint is unreachable: {endpoint}: {exc}"
         ) from exc
+    _require_no_redirect(response, f"Dedicated showcase login for {email}")
     if response.status_code != 200:
         raise RuntimeError(
             f"Dedicated showcase login failed for {email}: "
             f"HTTP {response.status_code} {response.text[:240]}"
         )
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Dedicated showcase login returned invalid JSON for {email}"
+        ) from exc
+    access_token = payload.get("access_token") if isinstance(payload, dict) else None
+    _require(
+        isinstance(access_token, str) and bool(access_token.strip()),
+        f"Dedicated showcase login returned no access token for {email}",
+    )
+    return access_token
 
 
 def verify_seeded_workspace(
@@ -414,14 +686,27 @@ def verify_seeded_workspace(
         "Approved gallery metadata is incomplete",
     )
     for asset_name in (
-        "elegant-couple-stairs.svg",
-        "elegant-ceremony-aisle.svg",
-        "elegant-reception-table.svg",
+        Path(item["url"]).name for item in MARKETING_CAPTURE_GALLERY_ITEMS
     ):
         _require(
             (ROOT / "public" / "demo-gallery" / asset_name).is_file(),
             f"Approved repository gallery asset is missing: {asset_name}",
         )
+    guest_memory_previews = {
+        str(item.get("demo_preview_url") or "")
+        for item in database["guest_media_assets"].find(
+            {
+                "wedding_id": PRIMARY_WEDDING_ID,
+                "seed_source": SEED_SOURCE,
+                "seed_scope": SEED_SCOPE,
+            },
+            {"demo_preview_url": 1},
+        )
+    }
+    _require(
+        guest_memory_previews == MARKETING_CAPTURE_GALLERY_URLS,
+        "Guest-memory previews do not use the complete approved gallery fixture set",
+    )
     _require(
         database["guests"].count_documents(
             {
@@ -532,10 +817,13 @@ def verify_seeded_workspace(
     _login(backend_url, "/couple/login", COUPLE_EMAIL, COUPLE_PASSWORD)
     try:
         public_response = requests.get(
-            f"{backend_url}/weddings/slug/{PRIMARY_SLUG}", timeout=15
+            f"{backend_url}/weddings/slug/{PRIMARY_SLUG}",
+            timeout=15,
+            allow_redirects=False,
         )
     except requests.RequestException as exc:
         raise RuntimeError(f"Public showcase route is unreachable: {exc}") from exc
+    _require_no_redirect(public_response, "Public showcase wedding")
     _require(
         public_response.status_code == 200,
         f"Public showcase wedding returned HTTP {public_response.status_code}",
@@ -544,67 +832,335 @@ def verify_seeded_workspace(
         kb_response = requests.get(
             f"{backend_url}/public/kb/articles/slug/{DEMO_KB_ARTICLE_SLUG}",
             timeout=15,
+            allow_redirects=False,
         )
     except requests.RequestException as exc:
         raise RuntimeError(
             f"Published showcase Knowledge Base route is unreachable: {exc}"
         ) from exc
+    _require_no_redirect(kb_response, "Published showcase Knowledge Base article")
+    try:
+        kb_payload = kb_response.json()
+    except ValueError as exc:
+        raise RuntimeError(
+            "Published showcase Knowledge Base route returned invalid JSON"
+        ) from exc
     _require(
         kb_response.status_code == 200
-        and kb_response.json().get("slug") == DEMO_KB_ARTICLE_SLUG,
+        and isinstance(kb_payload, dict)
+        and kb_payload.get("slug") == DEMO_KB_ARTICLE_SLUG,
         "Published showcase Knowledge Base article is not publicly readable",
     )
     return counts
 
 
-MARKETING_CAPTURE_E2E_CHECKPOINTS = (
-    (
-        "Planner command center",
-        "/admin/planner",
-        "Amina Cole sees Marigold & Co. Weddings with two realistic weddings and populated metrics.",
-    ),
-    (
-        "Unified inbox",
-        "/admin/communications/inbox",
-        "Email, Sofia & Daniel messages, SMS help, and support threads are visibly distinct.",
-    ),
-    (
-        "Wedding workspace",
-        f"/admin/weddings/{PRIMARY_WEDDING_ID}",
-        "Story, wedding party, events, approved imagery, and planner notes are complete.",
-    ),
-    (
-        "Venue and seating",
-        f"/admin/seating?weddingId={PRIMARY_WEDDING_ID}",
-        "Approved venue floorplan, fixtures, tables, and assigned guests render without local-only labels.",
-    ),
-    (
-        "Couple portal",
-        "/couple/dashboard",
-        "Sofia & Daniel see forms, messages, meetings, payments, and guest memories.",
-    ),
-    (
-        "Public microsite",
-        f"/{PRIMARY_SLUG}",
-        "The public showcase uses approved fictional media on www.thespecialwedding.io.",
-    ),
-)
+def verify_frontend_checkpoint_routes(
+    frontend_url: str,
+    expected_build: str,
+    *,
+    backend_url: str | None = None,
+    planner_token: str | None = None,
+    couple_token: str | None = None,
+) -> None:
+    origin = require_local_capture_origin(
+        frontend_url,
+        expected_port=3100,
+        label="Marketing capture frontend",
+    )
+    backend_origin = None
+    if backend_url is not None:
+        backend_origin = require_local_capture_origin(
+            backend_url,
+            expected_port=8000,
+            label="Marketing capture backend",
+        )
+    _require(
+        FULL_GIT_COMMIT_PATTERN.fullmatch(expected_build) is not None,
+        "Frontend checkpoint preflight requires the full expected git commit",
+    )
+    if not planner_token:
+        _require(
+            backend_origin is not None,
+            "Frontend checkpoint preflight requires a planner token or local backend origin",
+        )
+        planner_token = _login(
+            backend_origin,
+            "/admin/token",
+            PLANNER_EMAIL,
+            PLANNER_PASSWORD,
+        )
+    if not couple_token:
+        _require(
+            backend_origin is not None,
+            "Frontend checkpoint preflight requires a couple token or local backend origin",
+        )
+        couple_token = _login(
+            backend_origin,
+            "/couple/login",
+            COUPLE_EMAIL,
+            COUPLE_PASSWORD,
+        )
+    _require(
+        isinstance(planner_token, str) and bool(planner_token.strip()),
+        "Frontend checkpoint preflight received an empty planner token",
+    )
+    _require(
+        isinstance(couple_token, str) and bool(couple_token.strip()),
+        "Frontend checkpoint preflight received an empty couple token",
+    )
 
-
-def verify_frontend_checkpoint_routes(frontend_url: str) -> None:
-    origin = frontend_url.rstrip("/")
-    for title, route, _expectation in MARKETING_CAPTURE_E2E_CHECKPOINTS:
+    for scene in MARKETING_CAPTURE_E2E_CHECKPOINTS:
+        title = scene["title"]
+        route = scene["route"]
         url = f"{origin}{route}"
+        request_kwargs: dict[str, Any] = {
+            "timeout": 15,
+            "allow_redirects": False,
+        }
+        if scene["session"] == "planner":
+            request_kwargs["cookies"] = {"admin_token": planner_token}
+        elif scene["session"] == "couple":
+            request_kwargs["headers"] = {"Authorization": f"Bearer {couple_token}"}
         try:
-            response = requests.get(url, timeout=15, allow_redirects=True)
+            response = requests.get(url, **request_kwargs)
         except requests.RequestException as exc:
             raise RuntimeError(
                 f"Frontend checkpoint is unreachable ({title}): {exc}"
             ) from exc
         _require(
-            200 <= response.status_code < 400,
+            response.status_code == 200,
             f"Frontend checkpoint returned HTTP {response.status_code}: {url}",
         )
+        _require_no_redirect(response, f"Frontend checkpoint {url}")
+        document = response.text.strip()
+        _require(document, f"Frontend checkpoint returned an empty app shell: {url}")
+
+        parser = _BuildCommitMetaParser()
+        parser.feed(document)
+        _require(
+            expected_build in parser.commits,
+            "Frontend checkpoint served the wrong app build: "
+            f"{url}; expected {expected_build}, observed "
+            f"{parser.commits or ['missing meta[name=tsw-app-build-commit]']}",
+        )
+
+
+def _validate_gallery_asset_response(
+    response: requests.Response,
+    *,
+    asset_url: str,
+    asset_contract: dict[str, Any],
+) -> None:
+    """Fail closed unless a response is the exact reviewed gallery WebP."""
+
+    redirect_location = _response_redirect_location(response)
+    content_type = response.headers.get("content-type", "").split(";", 1)[0]
+    _require(
+        response.status_code == 200
+        and redirect_location is None
+        and content_type == "image/webp",
+        f"Approved public gallery asset is not a direct HTTP 200 WebP: {asset_url}",
+    )
+    content = response.content
+    _require(
+        isinstance(content, bytes) and bool(content),
+        f"Approved public gallery asset returned empty bytes: {asset_url}",
+    )
+    try:
+        with Image.open(BytesIO(content)) as image:
+            image.load()
+            image_format = image.format
+            image_size = image.size
+    except (OSError, UnidentifiedImageError) as exc:
+        raise RuntimeError(
+            f"Approved public gallery asset is not a decodable WebP: {asset_url}"
+        ) from exc
+    _require(
+        image_format == "WEBP",
+        f"Approved public gallery asset decoded as {image_format}, not WebP: {asset_url}",
+    )
+    expected_size = (asset_contract["width"], asset_contract["height"])
+    _require(
+        image_size == expected_size,
+        "Approved public gallery asset has the wrong dimensions: "
+        f"{asset_url}; expected {expected_size[0]}x{expected_size[1]}, "
+        f"observed {image_size[0]}x{image_size[1]}",
+    )
+    observed_hash = hashlib.sha256(content).hexdigest()
+    _require(
+        observed_hash == asset_contract["sha256"],
+        "Approved public gallery asset has the wrong SHA-256: "
+        f"{asset_url}; expected {asset_contract['sha256']}, observed {observed_hash}",
+    )
+
+
+def verify_frontend_gallery_assets(frontend_url: str) -> None:
+    origin = require_local_capture_origin(
+        frontend_url,
+        expected_port=3100,
+        label="Marketing capture frontend",
+    )
+    gallery_url = f"{origin}/api/proxy/gallery?wedding_slug={PRIMARY_SLUG}&limit=12"
+    try:
+        gallery_response = requests.get(
+            gallery_url,
+            timeout=15,
+            allow_redirects=False,
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Public showcase gallery is unreachable: {exc}") from exc
+    _require(
+        gallery_response.status_code == 200
+        and not any(key.lower() == "location" for key in gallery_response.headers),
+        f"Public showcase gallery returned HTTP {gallery_response.status_code}",
+    )
+    try:
+        payload = gallery_response.json()
+    except ValueError as exc:
+        raise RuntimeError("Public showcase gallery returned invalid JSON") from exc
+
+    items = payload.get("items") if isinstance(payload, dict) else None
+    actual_urls = {
+        str(item.get("url") or "") for item in (items or []) if isinstance(item, dict)
+    }
+    _require(
+        actual_urls == MARKETING_CAPTURE_GALLERY_URLS,
+        "Public showcase gallery did not return the complete approved fixture set",
+    )
+
+    for item in MARKETING_CAPTURE_GALLERY_ITEMS:
+        asset_url = f"{origin}{item['url']}"
+        try:
+            asset_response = requests.get(
+                asset_url,
+                timeout=15,
+                allow_redirects=False,
+            )
+        except requests.RequestException as exc:
+            raise RuntimeError(
+                f"Approved public gallery asset is unreachable: {exc}"
+            ) from exc
+        _validate_gallery_asset_response(
+            asset_response,
+            asset_url=asset_url,
+            asset_contract=MARKETING_CAPTURE_GALLERY_ASSET_CONTRACT[item["url"]],
+        )
+
+
+def verify_frontend_couple_memory_preview(
+    frontend_url: str,
+    backend_url: str,
+) -> None:
+    """Prove the authenticated Memories path reaches canonical frontend media."""
+
+    frontend_origin = require_local_capture_origin(
+        frontend_url,
+        expected_port=3100,
+        label="Marketing capture frontend",
+    )
+    backend_origin = require_local_capture_origin(
+        backend_url,
+        expected_port=8000,
+        label="Marketing capture backend",
+    )
+    access_token = _login(
+        backend_origin,
+        "/couple/login",
+        COUPLE_EMAIL,
+        COUPLE_PASSWORD,
+    )
+    auth_headers = {"Authorization": f"Bearer {access_token}"}
+    memories_url = (
+        f"{frontend_origin}/api/proxy/couple/portal/memories?media_type=image&limit=24"
+    )
+    try:
+        memories_response = requests.get(
+            memories_url,
+            headers=auth_headers,
+            timeout=15,
+            allow_redirects=False,
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"Authenticated Couple Memories list is unreachable: {exc}"
+        ) from exc
+    _require_no_redirect(memories_response, "Authenticated Couple Memories list")
+    _require(
+        memories_response.status_code == 200,
+        "Authenticated Couple Memories list returned "
+        f"HTTP {memories_response.status_code}",
+    )
+    try:
+        memories_payload = memories_response.json()
+    except ValueError as exc:
+        raise RuntimeError(
+            "Authenticated Couple Memories list returned invalid JSON"
+        ) from exc
+
+    items = (
+        memories_payload.get("items") if isinstance(memories_payload, dict) else None
+    )
+    preview_path = next(
+        (
+            item.get("preview_path")
+            for item in (items or [])
+            if isinstance(item, dict)
+            and item.get("media_type") == "image"
+            and isinstance(item.get("preview_path"), str)
+        ),
+        None,
+    )
+    _require(
+        isinstance(preview_path, str)
+        and preview_path.startswith("/couple/portal/memories/")
+        and preview_path.endswith("/preview"),
+        "Authenticated Couple Memories list returned no image preview path",
+    )
+
+    preview_url = f"{frontend_origin}/api/proxy{preview_path}"
+    try:
+        preview_response = requests.get(
+            preview_url,
+            headers=auth_headers,
+            timeout=15,
+            allow_redirects=False,
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"Authenticated Couple Memories preview is unreachable: {exc}"
+        ) from exc
+    _require(
+        preview_response.status_code == 307,
+        "Authenticated Couple Memories preview did not preserve the backend 307; "
+        f"received HTTP {preview_response.status_code}",
+    )
+
+    redirect_url = preview_response.headers.get("location", "")
+    approved_preview_urls = {
+        f"{frontend_origin}{item['url']}" for item in MARKETING_CAPTURE_GALLERY_ITEMS
+    }
+    _require(
+        redirect_url in approved_preview_urls,
+        "Authenticated Couple Memories preview did not redirect to the exact "
+        "canonical frontend origin and approved fixture path",
+    )
+
+    try:
+        asset_response = requests.get(
+            redirect_url,
+            timeout=15,
+            allow_redirects=False,
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"Redirected Couple Memories preview asset is unreachable: {exc}"
+        ) from exc
+    asset_path = urlparse(redirect_url).path
+    _validate_gallery_asset_response(
+        asset_response,
+        asset_url=redirect_url,
+        asset_contract=MARKETING_CAPTURE_GALLERY_ASSET_CONTRACT[asset_path],
+    )
 
 
 def _non_interactive() -> bool:
@@ -673,6 +1229,19 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    backend_url = require_local_capture_origin(
+        args.backend_url,
+        expected_port=8000,
+        label="Marketing capture backend",
+    )
+    frontend_url = require_local_capture_origin(
+        args.frontend_url,
+        expected_port=3100,
+        label="Marketing capture frontend",
+    )
+    capture_build = require_clean_capture_checkout()
+    print(f"[BUILD] Clean marketing-capture checkout at {capture_build}")
+
     client, database = _load_database()
     try:
         print("[RESET] Removing the prior isolated capture workspace")
@@ -695,7 +1264,6 @@ def main() -> int:
             ],
         )
 
-        backend_url = args.backend_url.rstrip("/")
         counts = verify_seeded_workspace(
             database,
             kb_count_before=kb_count_before,
@@ -708,11 +1276,29 @@ def main() -> int:
     finally:
         client.close()
 
-    frontend_url = args.frontend_url.rstrip("/")
-    verify_frontend_checkpoint_routes(frontend_url)
-    for title, route, expectation in MARKETING_CAPTURE_E2E_CHECKPOINTS:
+    capture_ready_build = require_clean_capture_checkout()
+    _require(
+        capture_ready_build == capture_build,
+        "Marketing-capture HEAD changed while the workspace was being seeded; "
+        f"started at {capture_build}, now at {capture_ready_build}",
+    )
+
+    verify_frontend_checkpoint_routes(
+        frontend_url,
+        capture_build,
+        backend_url=backend_url,
+    )
+    verify_frontend_gallery_assets(frontend_url)
+    verify_frontend_couple_memory_preview(frontend_url, backend_url)
+    for scene in MARKETING_CAPTURE_E2E_CHECKPOINTS:
         print(
-            f"\nCHECKPOINT — {title}\n  URL: {frontend_url}{route}\n  Expect: {expectation}"
+            f"\nCHECKPOINT — {scene['title']}"
+            f"\n  Feature: {scene['featureId']}"
+            f"\n  Session: {scene['session']}"
+            f"\n  URL: {frontend_url}{scene['route']}"
+            f"\n  Expect: {scene['expectation']}"
+            f"\n  Stable text: {scene['expectedVisibleText']}"
+            f"\n  Safe interaction: {scene['safeInteraction'] or 'None'}"
         )
         if not _non_interactive():
             input("Press ENTER after verifying this checkpoint in the browser… ")

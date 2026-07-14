@@ -69,7 +69,6 @@ describe('demo video manifest', () => {
         '/admin/vendors/contracts/67c100000000000000000001',
         '/admin/vendors/contracts/67c100000000000000000001',
         '/admin/vendors/contracts/67c100000000000000000001',
-        '/portal/marketing-capture-contract-payment-portal-token',
         '/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel',
       ],
       'vendor-directory-crm-demo': [
@@ -110,6 +109,35 @@ describe('demo video manifest', () => {
     assert.doesNotMatch(
       `${vendorDemo.script.map((step) => step.action).join(' ')} ${vendorDemo.script.map((step) => step.voiceover).join(' ')}`,
       /vendor portal|vendors? can collaborate through scoped portals/i,
+    );
+
+    const vendorContractFeature = MARKETING_FEATURES.find((feature) => feature.id === 'book-the-client');
+    const vendorContractDemo = phaseOneDemos.find((demo) => demo.id === 'contract-sign-pay-demo');
+    assert.ok(vendorContractFeature);
+    assert.ok(vendorContractDemo);
+    assert.equal(vendorContractFeature.title, 'Vendor Contracts → Payment Milestones');
+    assert.equal(vendorContractDemo.title, 'Vendor Contracts -> Payment Milestones');
+    assert.doesNotMatch(vendorContractFeature.description, /couple signs|funds land|pay the vendor/i);
+    assert.equal(vendorContractDemo.routePlan.some((route) => route.startsWith('/portal/')), false);
+
+    const vendorNetworkFeature = MARKETING_FEATURES.find((feature) => feature.id === 'vendor-network');
+    assert.ok(vendorNetworkFeature);
+    const vendorWorkflowCopy = [
+      vendorContractFeature.title,
+      vendorContractFeature.tagline,
+      vendorContractFeature.description,
+      vendorContractDemo.title,
+      vendorContractDemo.audience,
+      vendorContractDemo.captureNotes,
+      ...vendorContractDemo.seedRequirements,
+      ...vendorContractDemo.script.flatMap((step) => [step.action, step.voiceover]),
+      vendorNetworkFeature.title,
+      vendorNetworkFeature.tagline,
+      vendorNetworkFeature.description,
+    ].join(' ');
+    assert.doesNotMatch(
+      vendorWorkflowCopy,
+      /couple-facing signature|couple signs|client payment portal|connected account|funds land|payouts?|stripe/i,
     );
   });
 

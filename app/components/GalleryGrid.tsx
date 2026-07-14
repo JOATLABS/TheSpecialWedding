@@ -2,11 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import Image from 'next/image';
-
-interface GalleryImage {
-  key: string;
-  url: string;
-}
+import type { GalleryImage } from '@/types/landing';
 
 interface GalleryGridProps {
   images: GalleryImage[];
@@ -40,7 +36,7 @@ const Thumbnail = memo(({
     >
       <Image
         src={img.url}
-        alt={`Thumbnail ${index + 1}`}
+        alt={img.alt ? `${img.alt} thumbnail` : `Thumbnail ${index + 1}`}
         fill
         sizes="64px"
         className="object-cover"
@@ -193,7 +189,7 @@ const GalleryGridComponent: React.FC<GalleryGridProps> = ({
           >
             <Image
               src={img.url}
-              alt={`Wedding photo ${index + 1}`}
+              alt={img.alt || `Wedding photo ${index + 1}`}
               fill
               sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
               className="object-cover group-hover:scale-105 transition-transform duration-500"
@@ -279,7 +275,7 @@ const GalleryGridComponent: React.FC<GalleryGridProps> = ({
             )}
             <Image
               src={images[selectedIndex].url}
-              alt={`Wedding photo ${selectedIndex + 1}`}
+              alt={images[selectedIndex].alt || `Wedding photo ${selectedIndex + 1}`}
               fill
               className="object-contain"
               sizes="90vw"
