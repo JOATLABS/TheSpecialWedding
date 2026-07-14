@@ -1677,7 +1677,7 @@ class UserManagementService:
                         <h3 style="margin: 0 0 15px 0; color: #1e3a5f;">What you can do now:</h3>
                         <ul>
                             <li>Create and manage wedding projects</li>
-                            <li>Invite and collaborate with vendors</li>
+                            <li>Keep vendor contacts, agreements, and payment context organized</li>
                             <li>Send beautiful RSVP invitations</li>
                             <li>Track guest responses and analytics</li>
                             <li>Manage photo galleries</li>

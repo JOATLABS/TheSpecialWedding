@@ -103,8 +103,8 @@ const DEFAULT_WORKFLOW_STEPS = [
     badge: 'Week 1',
   },
   {
-    title: 'Vendor alignment',
-    description: 'Invite vendors to collaborative timelines with guardrails so every deliverable has an owner.',
+    title: 'Planner vendor records',
+    description: 'Keep private contacts, agreements, quote context, and payment status organized with each wedding.',
     badge: 'Week 2',
   },
   {
@@ -131,9 +131,9 @@ const DEFAULT_FAQS = [
       'Yes. Every plan includes customizable wedding microsites with RSVP tracking, gallery support, and password protection.',
   },
   {
-    question: 'Can vendors access only their assigned tasks?',
+    question: 'How do planner vendor records work?',
     answer:
-      'Role-based permissions keep vendor updates scoped to their deliverables while giving you full visibility and audit logs.',
+      'Contacts, notes, agreements, quote context, and payment status stay inside the planner workspace. Vendors do not receive access to planner operations.',
   },
 ];
 
@@ -164,8 +164,8 @@ export const SaasLandingPage: React.FC = () => {
         badge: 'Week 1',
       },
       {
-        title: 'Vendor alignment',
-        description: 'Invite vendors to collaborative timelines with guardrails so every deliverable has an owner.',
+        title: 'Planner vendor records',
+        description: 'Keep private contacts, agreements, quote context, and payment status organized with each wedding.',
         badge: 'Week 2',
       },
       {
@@ -191,9 +191,9 @@ export const SaasLandingPage: React.FC = () => {
           'Yes. Every plan includes customizable wedding microsites with RSVP tracking, gallery support, and password protection.',
       },
       {
-        question: 'Can vendors access only their assigned tasks?',
+        question: 'How do planner vendor records work?',
         answer:
-          'Role-based permissions keep vendor updates scoped to their deliverables while giving you full visibility and audit logs.',
+          'Contacts, notes, agreements, quote context, and payment status stay inside the planner workspace. Vendors do not receive access to planner operations.',
       },
     ],
     statistics: [
@@ -209,8 +209,8 @@ export const SaasLandingPage: React.FC = () => {
         order: 1
       },
       {
-        title: "Vendor Collaboration",
-        description: "Give vendors access to update their portions of the wedding checklist and collaborate seamlessly.",
+        title: "Planner Vendor Management",
+        description: "Keep private vendor contacts, contracts, quote context, and payment status attached to the wedding.",
         status: "available" as const,
         order: 2
       },
@@ -285,7 +285,7 @@ export const SaasLandingPage: React.FC = () => {
         name: "Michael Chen",
         company: "Dream Day Weddings",
         role: "Wedding Coordinator",
-        content: "The vendor collaboration features are game-changing. Everyone stays on the same page effortlessly.",
+        content: "The guest, seating, and budget workspaces make it much easier to review the wedding before our next client meeting.",
         order: 2
       },
       {
@@ -394,7 +394,10 @@ export const SaasLandingPage: React.FC = () => {
   const fetchSubscriptionPlans = useCallback(async () => {
     let resolvedPlans: SubscriptionPlan[] | null = null;
     try {
-      const response = await fetchWithTimeout(resolveApiUrl('/public/subscription-plans'));
+      const response = await fetchWithTimeout(
+        resolveApiUrl('/public/subscription-plans'),
+        { cache: 'no-store' }
+      );
 
       if (response.ok) {
         const data = await response.json();

@@ -1649,25 +1649,35 @@ def test_marketing_capture_clean_checkout_gate_rejects_dirty_state(monkeypatch):
 
 def test_testbed_driver_resets_then_seeds_then_verifies_before_browser_checkpoints():
     source = _required_text(DRIVER)
+    main_source = source.split("def main() -> int:", 1)[1]
 
-    reset_index = source.find("cleanup_marketing_capture_workspace_state")
-    identity_index = source.find("setup_smoke_accounts.py")
-    workspace_index = source.find("seed-demo-video-workspace.py")
-    verification_index = source.find("verify_seeded_workspace")
+    reset_index = main_source.find(
+        "cleanup_marketing_capture_workspace_state(database)"
+    )
+    plan_index = main_source.find("_run_python(SUBSCRIPTION_PLAN_SEEDER")
+    identity_index = main_source.find("_run_python(SETUP_SMOKE_ACCOUNTS")
+    workspace_index = main_source.find(
+        "_run_python(\n            RICH_WORKSPACE_SEEDER"
+    )
+    verification_index = main_source.find("verify_seeded_workspace(")
 
     assert -1 not in {
         reset_index,
+        plan_index,
         identity_index,
         workspace_index,
         verification_index,
     }
-    assert reset_index < identity_index < workspace_index < verification_index
+    assert (
+        reset_index < plan_index < identity_index < workspace_index < verification_index
+    )
+    assert '"STRIPE_ENABLED": "false"' in source
+    assert "verify_public_subscription_plan_truth" in source
     assert "TESTBED_NON_INTERACTIVE" in source
     assert "America/Chicago" in source
     assert "MARKETING_CAPTURE_FRONTEND_URL" in source
     assert '"http://127.0.0.1:3100"' in source
 
-    main_source = source.split("def main() -> int:", 1)[1]
     initial_clean_gate_index = main_source.find(
         "capture_build = require_clean_capture_checkout()"
     )
@@ -1694,6 +1704,9 @@ def test_testbed_driver_resets_then_seeds_then_verifies_before_browser_checkpoin
         < database_open_index
     )
     assert -1 < capture_clean_gate_index < route_preflight_index
+    public_plan_preflight_index = main_source.find(
+        "verify_frontend_public_subscription_plans(frontend_url)"
+    )
     gallery_preflight_index = main_source.find(
         "verify_frontend_gallery_assets(frontend_url)"
     )
@@ -1709,11 +1722,132 @@ def test_testbed_driver_resets_then_seeds_then_verifies_before_browser_checkpoin
     assert (
         -1
         < route_preflight_index
+        < public_plan_preflight_index
         < gallery_preflight_index
         < admin_gallery_preflight_index
         < memory_preflight_index
         < checkpoint_output_index
     )
+
+
+def test_marketing_capture_plan_truth_rejects_retired_runtime_copy():
+    stale_plans = [
+        {
+            "name": "Solo",
+            "description": "stale",
+            "features": {"vendor_collaboration": False},
+            "features_list": [],
+        },
+        {
+            "name": "Boutique",
+            "description": "stale",
+            "features": {"vendor_collaboration": False},
+            "features_list": [],
+        },
+        {
+            "name": "Signature",
+            "description": "For agencies plus agency-grade reporting.",
+            "features": {"vendor_collaboration": True},
+            "features_list": [
+                "Vendor-collaboration workspaces",
+                "Cross-wedding analytics & revenue tracking",
+            ],
+        },
+        {
+            "name": "Enterprise",
+            "description": "stale",
+            "features": {"vendor_collaboration": True},
+            "features_list": [],
+        },
+    ]
+
+    with pytest.raises(RuntimeError, match="public subscription plan"):
+        marketing_capture_driver.verify_public_subscription_plan_truth(
+            stale_plans,
+            label="test plans",
+        )
+
+
+def _canonical_public_capture_plans() -> list[dict]:
+    return [
+        {
+            "name": plan_name,
+            **expected,
+            "features": {"vendor_collaboration": False},
+        }
+        for plan_name, expected in (
+            marketing_capture_driver.EXPECTED_PUBLIC_PLAN_COPY.items()
+        )
+    ]
+
+
+def test_marketing_capture_plan_truth_accepts_only_the_exact_catalog():
+    canonical = _canonical_public_capture_plans()
+    marketing_capture_driver.verify_public_subscription_plan_truth(
+        canonical,
+        label="test plans",
+    )
+
+    duplicate = [*canonical, dict(canonical[0])]
+    with pytest.raises(RuntimeError, match="duplicate or extra"):
+        marketing_capture_driver.verify_public_subscription_plan_truth(
+            duplicate,
+            label="test plans",
+        )
+
+    wrong_price = [dict(plan) for plan in canonical]
+    wrong_price[2]["price_monthly"] = 99
+    with pytest.raises(RuntimeError, match="stale price_monthly"):
+        marketing_capture_driver.verify_public_subscription_plan_truth(
+            wrong_price,
+            label="test plans",
+        )
+
+
+def test_marketing_capture_verifies_the_frontend_plan_payload_without_cache(
+    monkeypatch,
+):
+    observed: dict[str, object] = {}
+
+    def _get_json(url, **kwargs):
+        observed["url"] = url
+        observed.update(kwargs)
+        return _canonical_public_capture_plans()
+
+    monkeypatch.setattr(marketing_capture_driver, "_get_json_readiness", _get_json)
+
+    marketing_capture_driver.verify_frontend_public_subscription_plans(
+        "http://127.0.0.1:3100"
+    )
+
+    assert observed == {
+        "url": "http://127.0.0.1:3100/api/proxy/public/subscription-plans",
+        "label": "Marketing capture public subscription plans",
+        "headers": {"Cache-Control": "no-cache"},
+        "expected_cache_control": "no-cache, no-store, must-revalidate",
+    }
+
+
+def test_marketing_capture_requires_no_store_on_the_frontend_plan_response(
+    monkeypatch,
+):
+    response = SimpleNamespace(
+        status_code=200,
+        headers={"Cache-Control": "public, max-age=300"},
+        json=lambda: _canonical_public_capture_plans(),
+    )
+    monkeypatch.setattr(
+        marketing_capture_driver.requests,
+        "get",
+        lambda *_args, **_kwargs: response,
+    )
+
+    with pytest.raises(RuntimeError, match="returned Cache-Control"):
+        marketing_capture_driver._get_json_readiness(
+            "http://127.0.0.1:3100/api/proxy/public/subscription-plans",
+            label="Marketing capture public subscription plans",
+            expected_cache_control="no-cache, no-store, must-revalidate",
+        )
 
 
 def test_marketing_seed_is_isolated_and_does_not_rebrand_an_arbitrary_planner():

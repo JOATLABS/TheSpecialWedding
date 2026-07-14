@@ -14,7 +14,11 @@ from stripe import InvalidRequestError, SignatureVerificationError, StripeError
 from app.constants.billing import plan_billing_model
 from app.core.database import mongo
 from app.core.settings import settings
-from app.models.subscription import SubscriptionStatus, normalize_subscription_status
+from app.models.subscription import (
+    ACTIVE_SUBSCRIPTION_STATUSES,
+    SubscriptionStatus,
+    normalize_subscription_status,
+)
 from app.services.couple_lifecycle_service import (
     COUPLE_PORTAL_STATE_REVOKED,
     couple_lifecycle_service,
@@ -1352,7 +1356,10 @@ class StripeService:
         try:
             # Get current subscription
             subscription = await self.subscriptions_collection.find_one(
-                {"user_id": user_id, "status": {"$in": ["active", "trial"]}}
+                {
+                    "user_id": user_id,
+                    "status": {"$in": sorted(ACTIVE_SUBSCRIPTION_STATUSES)},
+                }
             )
 
             if not subscription:

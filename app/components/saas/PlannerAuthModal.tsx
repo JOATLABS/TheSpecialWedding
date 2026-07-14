@@ -127,8 +127,8 @@ export const PlannerAuthModal: React.FC<PlannerAuthModalProps> = ({
                 <span className="text-lg font-semibold">4 days</span>
               </div>
               <div className="flex items-center justify-between text-xs text-blue-100/90">
-                <span>Vendor invites</span>
-                <span>Unlimited</span>
+                <span>Planner vendor records</span>
+                <span>Included</span>
               </div>
               <div className="flex items-center justify-between text-xs text-blue-100/90">
                 <span>Client portals</span>
@@ -156,7 +156,7 @@ export const PlannerAuthModal: React.FC<PlannerAuthModalProps> = ({
                 <p className="text-sm text-slate-500">
                   {mode === 'signup'
                     ? 'Choose a signature plan, invite collaborators, and begin managing weddings today.'
-                    : 'Access your planning workspaces, vendor collaboration hub, and analytics.'}
+                    : 'Access your planning workspaces, private vendor records, and wedding operations.'}
                 </p>
               </div>
 
