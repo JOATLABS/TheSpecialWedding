@@ -46,6 +46,7 @@ export type DemoVideo = {
 export type PublicDemoVideoPublicationApproval = {
   approval: 'approved';
   captureReceiptPath: string;
+  playbackApprovalPath: string;
   appBuildCommit: string;
   appBuildLabel: string;
   recordedAt: string;
@@ -53,8 +54,8 @@ export type PublicDemoVideoPublicationApproval = {
   thumbnailUrl: string;
   captionUrl: string;
   transcriptUrl: string;
-  socialAssetUrl: string;
-  socialThumbnailUrl: string;
+  socialAssetUrl?: string;
+  socialThumbnailUrl?: string;
 };
 
 const defaultChecklist = [
@@ -73,24 +74,29 @@ export const APPROVED_PUBLIC_DEMO_VIDEO_PUBLICATIONS: Readonly<
   Partial<Record<string, PublicDemoVideoPublicationApproval>>
 > = Object.freeze({});
 
-function isCompletePublicationApproval(
+export function isCompletePublicationApproval(
   approval: PublicDemoVideoPublicationApproval | undefined,
   demoId: string,
 ): approval is PublicDemoVideoPublicationApproval {
   if (!approval || approval.approval !== 'approved') return false;
 
-  const assetUrls = [
+  const requiredAssetUrls = [
     approval.assetUrl,
     approval.thumbnailUrl,
     approval.captionUrl,
     approval.transcriptUrl,
-    approval.socialAssetUrl,
-    approval.socialThumbnailUrl,
   ];
+  const socialAssetsArePaired = Boolean(approval.socialAssetUrl) === Boolean(approval.socialThumbnailUrl);
+  const socialAssetUrls = [approval.socialAssetUrl, approval.socialThumbnailUrl].filter(
+    (url): url is string => Boolean(url),
+  );
 
   return /^[0-9a-f]{40}$/i.test(approval.appBuildCommit)
     && approval.captureReceiptPath === `output/demo-videos/receipts/${demoId}.json`
-    && assetUrls.every((url) => url.startsWith('/demo-videos/'))
+    && approval.playbackApprovalPath === `output/demo-videos/playback-approvals/${demoId}.json`
+    && requiredAssetUrls.every((url) => url.startsWith('/demo-videos/'))
+    && socialAssetsArePaired
+    && socialAssetUrls.every((url) => url.startsWith('/demo-videos/'))
     && Number.isFinite(Date.parse(approval.recordedAt))
     && approval.appBuildLabel.trim().length > 0;
 }
@@ -132,71 +138,67 @@ const HERO_DEMO_VIDEO_DRAFT: DemoVideo = {
   id: 'planner-command-center-walkthrough',
   title: 'Planner command center walkthrough',
   audience: 'Professional planners who want to see active weddings, guests, timelines, vendors, and next actions stay connected.',
-  durationSeconds: 90,
+  durationSeconds: 85,
   priority: 'hero',
   status: 'scripted',
   routePlan: [
     '/admin/planner',
-    '/admin/weddings',
-    '/admin/weddings/[id]',
-    '/[slug]',
+    '/admin/weddings/wedding_marketing_capture_sofia_daniel',
+    '/sofia-and-daniel',
     '/couple/dashboard',
     '/admin/guests',
-    '/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel',
+    '/admin/seating',
     '/admin/vendors',
-    '/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel',
   ],
   captureCheckpoints: [
     {
       label: 'Planner command center',
       route: '/admin/planner',
-      action: 'Scan both active wedding cards and their next actions.',
+      action: 'Scan both active wedding cards, then choose Manage for Sofia & Daniel.',
       visibleResult:
-        'Two active weddings show populated setup, RSVP, vendor, budget, and next-action signals.',
+        'Two active weddings show populated progress and Sofia & Daniel is the connected story to follow.',
     },
     {
-      label: 'Wedding source record',
+      label: 'Wedding event source',
       route: '/admin/weddings/wedding_marketing_capture_sofia_daniel',
-      action: "Open Sofia & Daniel's wedding source record and inspect its schedule and story state.",
-      visibleResult: 'The seeded schedule and story state are populated for Sofia & Daniel.',
+      action: 'Open Events and inspect the Traditional event venue and 4:00 PM start time.',
+      visibleResult:
+        'The planner source record shows The Glasshouse at Riverbend and the 4:00 PM event time.',
     },
     {
-      label: 'Public wedding plan',
+      label: 'Public event plan',
       route: '/sofia-and-daniel',
-      action: 'Open the public microsite for the same wedding.',
+      action: 'Manually switch to the prepared public tab and inspect the same event details.',
       visibleResult:
-        'The public schedule and story match the seeded wedding without planner-only controls.',
+        'The public schedule shows The Glasshouse at Riverbend and 4:00 PM without planner controls.',
     },
     {
-      label: 'Couple portal plan',
+      label: 'Couple timeline',
       route: '/couple/dashboard',
-      action: "Open Sofia & Daniel's couple portal and inspect the shared wedding plan.",
+      action: 'Manually switch to the prepared couple tab, open Timeline, and inspect the same event.',
       visibleResult:
-        'The couple portal shows the same seeded wedding context without planner-only operations.',
+        'The couple Timeline shows the same Glasshouse venue and 4:00 PM plan in its guided portal.',
     },
     {
-      label: 'Guest operations',
+      label: 'Guest response slice',
       route: '/admin/guests',
-      action: 'Inspect the populated guest list, RSVP, meal, household, and plus-one state.',
-      visibleResult: 'Seeded guests show varied RSVP, meal, household, and plus-one data.',
+      action: 'Return to the planner tab, open Guests, and filter the seeded table to Declined.',
+      visibleResult:
+        'The planner sees the declined guest slice alongside the same wedding guest operations context.',
     },
     {
       label: 'Seating plan',
-      route: '/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel',
-      action: "Open Sofia & Daniel's seating plan and inspect assigned guests.",
-      visibleResult: 'The seeded floor plan shows populated tables and guest assignments.',
+      route: '/admin/seating',
+      action: 'Use planner navigation to open Seating, then select Sofia & Daniel from the wedding picker.',
+      visibleResult:
+        'The selected wedding reveals its seeded venue floor plan, tables, and existing guest assignments.',
     },
     {
-      label: 'Vendor operations',
+      label: 'Vendor contract context',
       route: '/admin/vendors',
-      action: 'Inspect assigned vendors and their operational status.',
-      visibleResult: 'Seeded vendor assignments and contract/payment context are visible.',
-    },
-    {
-      label: 'Budget checkpoint',
-      route: '/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel',
-      action: 'Inspect category totals, recorded payments, and budget status.',
-      visibleResult: 'Seeded budget categories, actual payments, and totals are populated.',
+      action: 'Open Vendors, inspect the overview totals, then open Contracts without changing a record.',
+      visibleResult:
+        'The planner vendor workspace shows populated totals and existing agreement amounts and statuses.',
     },
     {
       label: 'Return to command center',
@@ -212,43 +214,54 @@ const HERO_DEMO_VIDEO_DRAFT: DemoVideo = {
   ],
   script: [
     {
-      timestamp: '0:00-0:12',
-      action: 'Open Morning View and scan the active wedding cards.',
-      voiceover: 'This is the planner command center: weddings, unread updates, payments, guests, and next actions in one place.',
+      timestamp: '0:00-0:10',
+      action: 'Scan the planner portfolio and choose Manage for Sofia & Daniel.',
+      voiceover: 'Start with one wedding in the planner command center, then follow its plan instead of touring disconnected tools.',
     },
     {
-      timestamp: '0:12-0:28',
-      action: 'Open the featured wedding setup and inspect the shared schedule and story state.',
-      voiceover: 'The wedding record is the source of truth. Timeline, couple portal, reminders, and the public site all read from the same plan.',
+      timestamp: '0:10-0:22',
+      action: 'Open Events and inspect the Glasshouse venue and 4:00 PM start time.',
+      voiceover: 'The wedding record is the source: The Glasshouse at Riverbend, four o’clock, captured once in the planner plan.',
     },
     {
-      timestamp: '0:28-0:45',
-      action: 'Open the public microsite, then the couple portal for the same plan.',
-      voiceover: 'Guests and the couple see the right view of the same plan without a second website builder or spreadsheet.',
+      timestamp: '0:22-0:34',
+      action: 'Manually switch to the public tab and inspect the matching event details.',
+      voiceover: 'The guest-facing microsite presents that same venue and time without exposing planner operations.',
     },
     {
-      timestamp: '0:45-1:01',
-      action: 'Move from Guest Management to the populated seating plan.',
-      voiceover: 'Guest data flows into RSVP tracking, meals, plus-ones, seating, and day-of exports instead of being patched in five places.',
+      timestamp: '0:34-0:46',
+      action: 'Manually switch to the couple tab, open Timeline, and inspect the matching plan.',
+      voiceover: 'The couple gets its own guided view of the same plan, so the planner is not maintaining another copy.',
     },
     {
-      timestamp: '1:01-1:17',
-      action: 'Open vendor CRM and the payment/budget checkpoint.',
-      voiceover: 'Vendors, contracts, quotes, and payments stay tied to the wedding record, so the business side does not split off into a separate tool stack.',
+      timestamp: '0:46-0:58',
+      action: 'Return to the planner, open Guests, and filter the table to Declined.',
+      voiceover: 'Guest responses remain operational data: the planner can isolate declined guests and act from the wedding context.',
     },
     {
-      timestamp: '1:17-1:30',
-      action: 'Return to the dashboard and pause on the connected wedding portfolio.',
-      voiceover: 'The activation moment is simple: start one wedding, invite the couple, and let the workspace become the operating system.',
+      timestamp: '0:58-1:08',
+      action: 'Open Seating through planner navigation and select Sofia & Daniel.',
+      voiceover: 'Select that wedding in Seating and the same guest operation becomes a populated, venue-aware floor plan.',
+    },
+    {
+      timestamp: '1:08-1:20',
+      action: 'Open Vendors, inspect the overview and Contracts, then return to the command center.',
+      voiceover: 'Vendor and agreement status stays inside the planner workspace, connected to the work rather than hidden in email.',
+    },
+    {
+      timestamp: '1:20-1:25',
+      action: 'Hold on the command center as the outro appears.',
+      voiceover: 'One planner-owned workspace. Start with one wedding.',
     },
   ],
   recordingChecklist: [
-    'Record desktop first, then a short mobile proof pass for homepage and public microsite.',
-    'Show navigation transitions, one public/couple surface, and planner-only operational surfaces without mutating the seeded workspace.',
-    'Do not trigger live payments, SMS sends, or external vendor emails during capture.',
+    'Prepare authenticated planner and couple tabs plus the public microsite before recording; switch tabs manually during capture.',
+    'Use visible planner navigation and wedding pickers so Guests, Seating, Vendors, and Contracts are reached naturally.',
+    'Do not change wedding, guest, seating, vendor, contract, payment, or communication data during capture.',
+    'End paused on the planner command center; the CTA is added by the Remotion composition.',
   ],
   captureNotes:
-    'Hero footage should be recorded locally with seeded demo data, then packaged in Remotion with captions and a CTA outro.',
+    'Record one connected 85-second story from seeded product state; the raw capture ends on the command center with no scripted browser control.',
 };
 
 export const HERO_DEMO_VIDEO: DemoVideo = applyDemoVideoPublicationApproval(HERO_DEMO_VIDEO_DRAFT);
@@ -262,7 +275,33 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     durationSeconds: 60,
     priority: 'phase-one',
     status: 'scripted',
-    routePlan: ['/admin/planner'],
+    routePlan: [
+      '/admin/planner',
+      '/admin/weddings/wedding_marketing_capture_avery_morgan',
+    ],
+    captureCheckpoints: [
+      {
+        label: 'Portfolio overview',
+        route: '/admin/planner',
+        action: 'Scan both active wedding cards and compare their setup progress.',
+        visibleResult:
+          'Sofia & Daniel and Avery & Morgan show populated status, progress, and next-action context.',
+      },
+      {
+        label: 'Attention signals',
+        route: '/admin/planner',
+        action: 'Review the RSVP, message, payment, and milestone signals across the portfolio.',
+        visibleResult:
+          'The seeded operational signals distinguish the weddings and work that need attention.',
+      },
+      {
+        label: 'Incomplete wedding guidance',
+        route: '/admin/weddings/wedding_marketing_capture_avery_morgan',
+        action: "Open Avery & Morgan's source record and inspect its incomplete setup guidance.",
+        visibleResult:
+          'The source record identifies the remaining setup work without changing wedding data.',
+      },
+    ],
     seedRequirements: [
       'Two active weddings with contrasting setup progress.',
       'Unread couple message, overdue payment, upcoming event, and RSVP velocity sample data.',
@@ -280,7 +319,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       },
       {
         timestamp: '0:36-1:00',
-        action: 'Open the next setup action for the incomplete wedding.',
+        action: "Open Avery & Morgan's source record and inspect the remaining setup guidance.",
         voiceover: 'The workflow does not end at insight. It points the planner to the next action that moves a real wedding forward.',
       },
     ],
@@ -326,23 +365,53 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     priority: 'phase-one',
     status: 'scripted',
     routePlan: ['/couple/dashboard'],
+    captureCheckpoints: [
+      {
+        label: 'Couple dashboard',
+        route: '/couple/dashboard',
+        action: 'Inspect the wedding overview, guest snapshot, countdown, and guided next steps.',
+        visibleResult:
+          'Sofia & Daniel see their wedding context and current planning state without planner-only controls.',
+      },
+      {
+        label: 'Shared timeline',
+        route: '/couple/dashboard',
+        action: 'Open Timeline and inspect the seeded rehearsal, ceremony, reception, and brunch schedule.',
+        visibleResult:
+          'The couple-facing timeline presents the seeded event plan and wedding timezone clearly.',
+      },
+      {
+        label: 'Payment schedule',
+        route: '/couple/dashboard',
+        action: 'Open Payments and inspect the package and payment schedule without using payment controls.',
+        visibleResult:
+          'The couple can see the current contract and payment context while planner operations remain private.',
+      },
+      {
+        label: 'Assigned forms',
+        route: '/couple/dashboard',
+        action: 'Open Forms and inspect the seeded questionnaire and its current completion status.',
+        visibleResult:
+          'The assigned questionnaire is visible inside the same guided wedding portal.',
+      },
+    ],
     seedRequirements: [
       'Couple account with timeline, messages, registry entries, FAQs, forms, memories, and one contract/payment checkpoint.',
     ],
     script: [
       {
         timestamp: '0:00-0:12',
-        action: 'Log in as the couple and land on the dashboard.',
+        action: 'Begin on the seeded couple dashboard and inspect the wedding overview.',
         voiceover: 'This is what the couple sees after the planner invites them: one guided portal, not another spreadsheet.',
       },
       {
         timestamp: '0:12-0:38',
-        action: 'Open timeline, messages, registry, FAQ, and meetings sections.',
-        voiceover: 'The questions couples usually text about live here, and updates stay tied to the planner record.',
+        action: 'Open Timeline, then Payments, and inspect the shared schedule and financial context.',
+        voiceover: 'The schedule and payment context couples usually ask about stay tied to the wedding record they already share with the planner.',
       },
       {
         timestamp: '0:38-1:00',
-        action: 'Open memories/forms/contracts and return to the dashboard.',
+        action: 'Open Forms, inspect the assigned questionnaire, and return to the dashboard.',
         voiceover: 'The couple can review, respond, and self-serve while planner-only operations remain private.',
       },
     ],
@@ -358,23 +427,46 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     priority: 'phase-one',
     status: 'scripted',
     routePlan: ['/admin/weddings/[id]', '/[slug]', '/[slug]/gallery'],
+    captureCheckpoints: [
+      {
+        label: 'Planner source record',
+        route: '/admin/weddings/wedding_marketing_capture_sofia_daniel',
+        action: 'Inspect the seeded story, theme, slug, and event schedule without changing any fields.',
+        visibleResult:
+          'The planner source record contains the public story, branding, and event-day content.',
+      },
+      {
+        label: 'Published wedding plan',
+        route: '/sofia-and-daniel',
+        action: 'Open the public microsite and compare its story and schedule with the planner record.',
+        visibleResult:
+          'The guest-facing microsite presents Sofia & Daniel with the same seeded story and schedule.',
+      },
+      {
+        label: 'Published gallery',
+        route: '/sofia-and-daniel/gallery',
+        action: 'Open the public gallery and inspect the approved seeded wedding images.',
+        visibleResult:
+          'The gallery shows the approved ceremony, portrait, and reception imagery without planner controls.',
+      },
+    ],
     seedRequirements: [
       'Public demo wedding with story, theme, events, gallery photos, registry, FAQ, and RSVP enabled.',
     ],
     script: [
       {
         timestamp: '0:00-0:12',
-        action: 'Open the wedding configuration page and show slug/theme/story fields.',
+        action: 'Open the wedding source record and inspect its slug, theme, story, and schedule fields.',
         voiceover: 'The public wedding website is built from the wedding record the planner already manages.',
       },
       {
         timestamp: '0:12-0:28',
-        action: 'Save a small story or schedule update.',
-        voiceover: 'A planner updates the record once, without opening Squarespace or The Knot.',
+        action: 'Open the public microsite and compare its story and schedule with the source record.',
+        voiceover: 'The public site reads from that source record, without a second website builder or another copy of the plan.',
       },
       {
         timestamp: '0:28-0:45',
-        action: 'Open the public slug and gallery.',
+        action: 'Open the public gallery and inspect the approved wedding images.',
         voiceover: 'The guest-facing microsite reflects the latest plan: story, schedule, gallery, RSVP, and memory uploads.',
       },
     ],
@@ -450,6 +542,29 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     priority: 'phase-one',
     status: 'scripted',
     routePlan: ['/admin/guests'],
+    captureCheckpoints: [
+      {
+        label: 'Guest operations summary',
+        route: '/admin/guests',
+        action: 'Inspect the seeded guest totals, invitation state, RSVP response, and plus-one metrics.',
+        visibleResult:
+          'The guest workspace shows populated invitation, response, attendance, and plus-one counts.',
+      },
+      {
+        label: 'RSVP table slice',
+        route: '/admin/guests',
+        action: 'Filter the seeded table by RSVP status and inspect meal and accessibility context.',
+        visibleResult:
+          'The table narrows to the selected RSVP state while preserving the relevant guest details.',
+      },
+      {
+        label: 'Connected guest record',
+        route: '/admin/guests',
+        action: 'Expand an existing guest row and inspect RSVP, household, plus-one, and activity context.',
+        visibleResult:
+          'One guest record connects attendance, household, plus-one, and operational history in place.',
+      },
+    ],
     seedRequirements: [
       'Guest list with confirmed, declined, pending, plus-one, meal, accessibility, and household examples.',
     ],
@@ -461,17 +576,17 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       },
       {
         timestamp: '0:14-0:36',
-        action: 'Open a guest profile and edit RSVP/meal/accessibility details.',
+        action: 'Filter by RSVP status and inspect meal and accessibility context in the table.',
         voiceover: 'Each guest record carries the details that seating, reminders, catering counts, and day-of exports need.',
       },
       {
         timestamp: '0:36-1:00',
-        action: 'Show plus-one or group context and return to the table.',
+        action: 'Expand one guest record, inspect plus-one and household context, and return to the table.',
         voiceover: 'When one guest changes, the platform updates the rest of the workflow instead of creating another manual reconciliation task.',
       },
     ],
     recordingChecklist: defaultChecklist,
-    captureNotes: 'Use demo guest names and show one visible save confirmation.',
+    captureNotes: 'Use demo guest names and keep the pass to filtering and read-only row inspection.',
   },
   {
     id: 'seating-orchestrator-demo',
@@ -482,6 +597,29 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     priority: 'phase-one',
     status: 'scripted',
     routePlan: ['/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel'],
+    captureCheckpoints: [
+      {
+        label: 'Venue-aware floor plan',
+        route: '/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel',
+        action: 'Inspect the seeded room outline, locked background, fixtures, and six positioned tables.',
+        visibleResult:
+          'The seating canvas uses the seeded venue plan instead of an empty generic grid.',
+      },
+      {
+        label: 'Existing guest assignments',
+        route: '/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel',
+        action: 'Inspect the populated tables and existing guest assignments without moving anyone.',
+        visibleResult:
+          'Seeded guests are already connected to named tables with capacity context visible.',
+      },
+      {
+        label: 'Day-of readiness checks',
+        route: '/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel',
+        action: 'Inspect the assigned totals, floor-plan status, and visible layout checks beside the canvas.',
+        visibleResult:
+          'The planner can review seating readiness and venue-layout warnings without changing the chart.',
+      },
+    ],
     seedRequirements: [
       'Venue layout with room outline, fixtures, at least six tables, and unassigned guests.',
     ],
@@ -493,17 +631,17 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       },
       {
         timestamp: '0:12-0:36',
-        action: 'Drag one guest to a table and show assignment state.',
+        action: 'Inspect the populated tables and existing guest assignments without moving anyone.',
         voiceover: 'Guest records, meal context, and household notes stay connected while the planner places people.',
       },
       {
         timestamp: '0:36-1:00',
-        action: 'Open layout checks or preview/export view.',
+        action: 'Inspect assigned totals, floor-plan status, and the visible layout checks.',
         voiceover: 'The chart becomes an export-ready day-of artifact with venue context intact.',
       },
     ],
     recordingChecklist: defaultChecklist,
-    captureNotes: 'Capture pointer movement slowly; seating demos need to feel tactile and deliberate.',
+    captureNotes: 'Pan across existing assignments slowly and do not drag guests, tables, fixtures, or floor-plan points.',
   },
   {
     id: 'guest-memories-demo',
@@ -573,32 +711,74 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     durationSeconds: 60,
     priority: 'phase-one',
     status: 'scripted',
-    routePlan: ['/admin/vendors', '/admin/vendors/contracts/new', '/vendor-contract/[id]/[token]', '/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel'],
+    routePlan: [
+      '/admin/vendors/contracts/67c100000000000000000001',
+      '/portal/marketing-capture-contract-payment-portal-token',
+      '/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel',
+    ],
+    captureCheckpoints: [
+      {
+        label: 'Planner contract record',
+        route: '/admin/vendors/contracts/67c100000000000000000001',
+        action: 'Inspect the existing agreement, vendor, amount, status, and key dates in the planner workspace.',
+        visibleResult:
+          'The seeded Photography Services Agreement shows its vendor, value, status, version, and dates.',
+      },
+      {
+        label: 'Contract canvas output',
+        route: '/admin/vendors/contracts/67c100000000000000000001',
+        action: 'Open Contract Sections and inspect the rendered scope, clauses, and terms in the read-only view.',
+        visibleResult:
+          'The read-only contract canvas presents the seeded agreement sections and legal terms.',
+      },
+      {
+        label: 'Vendor payment milestones',
+        route: '/admin/vendors/contracts/67c100000000000000000001',
+        action: 'Open Payments and inspect the seeded deposit and remaining contract milestones.',
+        visibleResult:
+          'Payment Milestones shows the existing schedule and status without initiating a transaction.',
+      },
+      {
+        label: 'Couple payment portal',
+        route: '/portal/marketing-capture-contract-payment-portal-token',
+        action: 'Open the seeded couple payment portal and inspect its signed package and payment schedule.',
+        visibleResult:
+          'The couple-facing view shows paid, scheduled, and remaining amounts without planner controls.',
+      },
+      {
+        label: 'Wedding budget context',
+        route: '/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel',
+        action: 'Return to the wedding budget and inspect the recorded vendor spend and category totals.',
+        visibleResult:
+          'The budget shows populated planned-versus-actual vendor spend for the same wedding workspace.',
+      },
+    ],
     seedRequirements: [
-      'Vendor record with service details, draft contract, public signing token, and test payment milestone.',
+      'Vendor record with service details, populated agreement sections, status history, and payment milestones.',
+      'Signed client package with a read-only couple payment portal and populated payment schedule.',
     ],
     script: [
       {
         timestamp: '0:00-0:15',
-        action: 'Open vendor record and start or preview a contract.',
+        action: 'Open the existing planner contract and inspect its details and status.',
         voiceover: 'A vendor agreement starts from the record the planner already owns.',
       },
       {
         timestamp: '0:15-0:36',
-        action: 'Show contract canvas clauses, scope, and payment milestones.',
+        action: 'Open Contract Sections, then Payments, and inspect the seeded clauses and milestones.',
         voiceover: 'Scope, clauses, deliverables, and payment terms stay connected instead of splitting into another document tool.',
       },
       {
         timestamp: '0:36-1:00',
-        action: 'Open the public signing link and return to planner payment status.',
-        voiceover: 'The signed contract and payment checkpoint flow back into the planner workspace.',
+        action: 'Open the read-only couple payment portal, then inspect the wedding budget context.',
+        voiceover: 'The couple-facing payment schedule and the planner budget give each audience the right view of the business workflow.',
       },
     ],
     recordingChecklist: [
       ...defaultChecklist,
-      'Use Stripe test mode only and stop before any irreversible external payment confirmation.',
+      'Do not open signature, payment-method, or transaction controls; this recording is status inspection only.',
     ],
-    captureNotes: 'If the public signing flow is not seeded, record the planner contract preview and label public signing as the next capture checkpoint.',
+    captureNotes: 'Keep the planner agreement and couple payment portal distinct; do not imply they are the same contract record.',
   },
   {
     id: 'payment-autopilot-demo',
@@ -671,29 +851,71 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     durationSeconds: 60,
     priority: 'phase-one',
     status: 'scripted',
-    routePlan: ['/vendors', '/admin/vendors', '/portal/[token]'],
+    routePlan: [
+      '/vendors',
+      '/vendors/67c400000000000000000001',
+      '/admin/vendors',
+    ],
+    captureCheckpoints: [
+      {
+        label: 'Public vendor directory',
+        route: '/vendors',
+        action: 'Filter the public directory by Photography and inspect the seeded matching result.',
+        visibleResult:
+          'The public directory narrows to the approved photography listing without requiring a vendor account.',
+      },
+      {
+        label: 'Public vendor profile',
+        route: '/vendors/67c400000000000000000001',
+        action: 'Open Luna & Co. Photography and inspect its services, price range, and contact details.',
+        visibleResult:
+          'The public profile presents the seeded vendor specialties and discovery information.',
+      },
+      {
+        label: 'Planner vendor overview',
+        route: '/admin/vendors',
+        action: 'Open Vendor Management and inspect vendor, contract, paid, and outstanding totals.',
+        visibleResult:
+          'The planner overview summarizes the seeded vendor book and its contract and payment status.',
+      },
+      {
+        label: 'Private vendor directory',
+        route: '/admin/vendors',
+        action: 'Open Vendor Directory and inspect the saved studio contacts and wedding counts.',
+        visibleResult:
+          'The planner-owned directory shows seeded contacts and private operational context.',
+      },
+      {
+        label: 'Planner contract context',
+        route: '/admin/vendors',
+        action: 'Open Contracts and inspect the existing agreement amounts and statuses.',
+        visibleResult:
+          'The seeded agreements remain attached to the planner vendor workspace with visible status and value.',
+      },
+    ],
     seedRequirements: [
-      'Public vendor directory with mixed categories, one saved private vendor record, one contract vendor token portal.',
+      'Public vendor directory with mixed categories and a complete approved photography profile.',
+      'Planner vendor workspace with saved contacts, contract status, and payment totals.',
     ],
     script: [
       {
         timestamp: '0:00-0:15',
-        action: 'Open the public vendor directory and filter by category.',
+        action: 'Filter the public vendor directory and open the seeded photography profile.',
         voiceover: 'Vendor discovery can start in the public directory without leaving the platform.',
       },
       {
         timestamp: '0:15-0:40',
-        action: 'Open the planner-side vendor CRM record with notes, files, and contract state.',
-        voiceover: 'Once a vendor belongs to a wedding, the private CRM record carries the notes, documents, quotes, contracts, and payout history.',
+        action: 'Open the planner Vendor Management overview, then inspect the private directory.',
+        voiceover: 'The planner workspace adds private contact, wedding, contract, and payment context to public discovery.',
       },
       {
         timestamp: '0:40-1:00',
-        action: 'Open a token vendor portal or contract workspace.',
-        voiceover: 'Vendors can collaborate through scoped portals while the planner keeps the source record.',
+        action: 'Open Contracts and inspect the existing agreement amounts and statuses.',
+        voiceover: 'Agreements and payment context stay attached to the planner-owned vendor record instead of disappearing into email.',
       },
     ],
     recordingChecklist: defaultChecklist,
-    captureNotes: 'Make directory and CRM distinction visible; this is a key competitive proof point.',
+    captureNotes: 'Make the public-directory and planner-CRM distinction visible; do not open or promote a vendor portal.',
   },
   {
     id: 'knowledge-base-demo',

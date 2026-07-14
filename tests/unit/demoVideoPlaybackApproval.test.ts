@@ -1,0 +1,390 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { after, before, describe, it } from 'node:test';
+
+import { getDemoVideoProductionRequirementById } from '../../app/data/demoVideoProduction';
+import {
+  validateDemoVideoPlaybackApproval,
+  type DemoVideoPlaybackApprovalReceipt,
+} from '../../scripts/demo-videos/validate-demo-video-playback-approval';
+
+const ROOT = process.cwd();
+const DEMO_ID = 'planner-command-center-walkthrough';
+
+type ProbedMedia = {
+  width: number;
+  height: number;
+  durationSeconds: number;
+  hasAudio: boolean;
+};
+
+function run(command: string, args: readonly string[]): string {
+  const result = spawnSync(command, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
+  assert.equal(
+    result.status,
+    0,
+    `${command} failed: ${result.stderr || result.error?.message || 'unknown error'}`,
+  );
+  return result.stdout;
+}
+
+function createVideo(filePath: string, width: number, height: number, withAudio = true): void {
+  mkdirSync(path.dirname(filePath), { recursive: true });
+  const args = [
+    '-v',
+    'error',
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    `color=c=0x1b2440:s=${width}x${height}:r=5:d=0.6`,
+  ];
+
+  if (withAudio) {
+    args.push(
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=440:sample_rate=44100:duration=0.6',
+      '-shortest',
+    );
+  }
+
+  args.push('-c:v', 'mpeg4', '-q:v', '20', '-pix_fmt', 'yuv420p');
+  if (withAudio) args.push('-c:a', 'aac', '-b:a', '48k');
+  args.push('-movflags', '+faststart', filePath);
+  run('ffmpeg', args);
+}
+
+function createThumbnail(filePath: string, width: number, height: number): void {
+  mkdirSync(path.dirname(filePath), { recursive: true });
+  run('ffmpeg', [
+    '-v',
+    'error',
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    `color=c=0x1b2440:s=${width}x${height}`,
+    '-frames:v',
+    '1',
+    '-update',
+    '1',
+    filePath,
+  ]);
+}
+
+function probe(filePath: string): ProbedMedia {
+  const output = run('ffprobe', [
+    '-v',
+    'error',
+    '-show_entries',
+    'stream=codec_type,width,height:format=duration',
+    '-of',
+    'json',
+    filePath,
+  ]);
+  const parsed = JSON.parse(output) as {
+    streams: Array<{ codec_type?: string; width?: number; height?: number }>;
+    format: { duration?: string };
+  };
+  const video = parsed.streams.find((stream) => stream.codec_type === 'video');
+  assert.ok(video);
+  return {
+    width: Number(video.width),
+    height: Number(video.height),
+    durationSeconds: Number(parsed.format.duration),
+    hasAudio: parsed.streams.some((stream) => stream.codec_type === 'audio'),
+  };
+}
+
+function artifactEvidence(rootDir: string, artifactPath: string) {
+  const absolutePath = path.join(rootDir, artifactPath);
+  const bytes = readFileSync(absolutePath);
+  return {
+    artifactPath,
+    artifactSha256: createHash('sha256').update(bytes).digest('hex'),
+    byteLength: statSync(absolutePath).size,
+  };
+}
+
+function cloneReceipt(
+  receipt: DemoVideoPlaybackApprovalReceipt,
+): DemoVideoPlaybackApprovalReceipt {
+  return JSON.parse(JSON.stringify(receipt)) as DemoVideoPlaybackApprovalReceipt;
+}
+
+describe('demo video playback approval', () => {
+  let fixtureRoot = '';
+  let canonicalReceiptPath = '';
+  let approvedReceipt: DemoVideoPlaybackApprovalReceipt;
+
+  before(() => {
+    fixtureRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-video-playback-approval-'));
+    const requirement = getDemoVideoProductionRequirementById(DEMO_ID);
+    assert.ok(requirement);
+
+    const targets = requirement.exportTargets.map((target) => {
+      const videoPath = `public/${target.assetPath.replace(/^\//, '')}`;
+      const thumbnailPath = `public/${target.thumbnailPath.replace(/^\//, '')}`;
+      const absoluteVideoPath = path.join(fixtureRoot, videoPath);
+      const absoluteThumbnailPath = path.join(fixtureRoot, thumbnailPath);
+      createVideo(absoluteVideoPath, target.width, target.height);
+      createThumbnail(absoluteThumbnailPath, target.width, target.height);
+      const media = probe(absoluteVideoPath);
+
+      return {
+        format: target.format,
+        video: {
+          ...artifactEvidence(fixtureRoot, videoPath),
+          width: media.width,
+          height: media.height,
+          durationSeconds: media.durationSeconds,
+          hasAudio: true as const,
+        },
+        thumbnail: {
+          ...artifactEvidence(fixtureRoot, thumbnailPath),
+          width: target.width,
+          height: target.height,
+        },
+        review: {
+          fullNormalSpeedPlaybackCompleted: true as const,
+          captionsApproved: true as const,
+          narrationAndAudioApproved: true as const,
+          fullUncroppedProductWindowApproved: true as const,
+          localAndDevelopmentContentExcluded: true as const,
+          privateContentExcluded: true as const,
+          publicSafetyApproved: true as const,
+        },
+      };
+    });
+
+    approvedReceipt = {
+      schemaVersion: 1,
+      demoId: DEMO_ID,
+      reviewedAt: '2026-07-13T12:00:00.000Z',
+      reviewer: 'Jordan Lee',
+      reviewMethod: 'human-normal-speed-playback',
+      targets,
+      websitePlayback: {
+        desktopApproved: true,
+        mobileApproved: true,
+      },
+    };
+    canonicalReceiptPath = path.join(fixtureRoot, requirement.playbackApprovalPath);
+    mkdirSync(path.dirname(canonicalReceiptPath), { recursive: true });
+    writeFileSync(canonicalReceiptPath, `${JSON.stringify(approvedReceipt, null, 2)}\n`);
+  });
+
+  after(() => {
+    if (fixtureRoot) rmSync(fixtureRoot, { recursive: true, force: true });
+  });
+
+  function writeReceipt(receipt: DemoVideoPlaybackApprovalReceipt): void {
+    writeFileSync(canonicalReceiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+  }
+
+  it('provides a dedicated fail-closed playback approval command', () => {
+    const validatorPath = path.join(
+      ROOT,
+      'scripts/demo-videos/validate-demo-video-playback-approval.ts',
+    );
+
+    assert.equal(existsSync(validatorPath), true, 'playback approval validator is missing');
+
+    const packageJson = readFileSync(path.join(ROOT, 'package.json'), 'utf8');
+    assert.match(
+      packageJson,
+      /"demo:validate-playback": "tsx scripts\/demo-videos\/validate-demo-video-playback-approval\.ts"/,
+    );
+  });
+
+  it('validates media metadata without launching or controlling a browser', () => {
+    const validator = readFileSync(
+      path.join(ROOT, 'scripts/demo-videos/validate-demo-video-playback-approval.ts'),
+      'utf8',
+    );
+
+    assert.match(validator, /validateDemoVideoPlaybackApproval/);
+    assert.match(validator, /ffprobe/);
+    assert.doesNotMatch(validator, /playwright|puppeteer|chromium|computer.?use/i);
+    assert.doesNotMatch(
+      validator,
+      /\.goto\s*\(|\.screenshot\s*\(|page\.(?:locator|evaluate)|browser\.(?:newContext|close)/i,
+    );
+  });
+
+  it('accepts only a complete canonical human playback approval receipt', () => {
+    writeReceipt(approvedReceipt);
+
+    const result = validateDemoVideoPlaybackApproval(DEMO_ID, { rootDir: fixtureRoot });
+    const requirement = getDemoVideoProductionRequirementById(DEMO_ID);
+    assert.ok(requirement);
+
+    assert.equal(result.demoId, DEMO_ID);
+    assert.equal(result.targetCount, requirement.exportTargets.length);
+    assert.equal(result.receiptPath, `output/demo-videos/playback-approvals/${DEMO_ID}.json`);
+    assert.deepEqual(
+      result.formats,
+      requirement.exportTargets.map((target) => target.format).sort(),
+    );
+  });
+
+  it('rejects unknown demos and placeholder reviewer attestations', () => {
+    assert.throws(
+      () => validateDemoVideoPlaybackApproval('unknown-demo', { rootDir: fixtureRoot }),
+      /Unknown demo/,
+    );
+
+    const placeholder = cloneReceipt(approvedReceipt);
+    placeholder.reviewer = 'TBD placeholder';
+    writeReceipt(placeholder);
+    assert.throws(
+      () => validateDemoVideoPlaybackApproval(DEMO_ID, { rootDir: fixtureRoot }),
+      /reviewer.*placeholder/i,
+    );
+  });
+
+  it('rejects missing, extra, or non-canonical production targets and paths', () => {
+    const requirement = getDemoVideoProductionRequirementById(DEMO_ID);
+    assert.ok(requirement);
+    const exactTargetCount = new RegExp(
+      `exactly ${requirement.exportTargets.length} production targets`,
+    );
+    const missingTarget = cloneReceipt(approvedReceipt);
+    missingTarget.targets.pop();
+    writeReceipt(missingTarget);
+    assert.throws(
+      () => validateDemoVideoPlaybackApproval(DEMO_ID, { rootDir: fixtureRoot }),
+      exactTargetCount,
+    );
+
+    const extraTarget = cloneReceipt(approvedReceipt);
+    extraTarget.targets.push(cloneReceipt(approvedReceipt).targets[0]);
+    writeReceipt(extraTarget);
+    assert.throws(
+      () => validateDemoVideoPlaybackApproval(DEMO_ID, { rootDir: fixtureRoot }),
+      exactTargetCount,
+    );
+
+    const wrongPath = cloneReceipt(approvedReceipt);
+    wrongPath.targets[0].video.artifactPath = 'public/demo-videos/exports/placeholder.mp4';
+    writeReceipt(wrongPath);
+    assert.throws(
+      () => validateDemoVideoPlaybackApproval(DEMO_ID, { rootDir: fixtureRoot }),
+      /must use the canonical production path/,
+    );
+  });
+
+  it('rejects checksum, byte-length, dimension, duration, and thumbnail evidence drift', () => {
+    const wrongHash = cloneReceipt(approvedReceipt);
+    wrongHash.targets[0].video.artifactSha256 = '0'.repeat(64);
+    writeReceipt(wrongHash);
+    assert.throws(
+      () => validateDemoVideoPlaybackApproval(DEMO_ID, { rootDir: fixtureRoot }),
+      /SHA-256 does not match/,
+    );
+
+    const zeroSize = cloneReceipt(approvedReceipt);
+    zeroSize.targets[0].thumbnail.byteLength = 0;
+    writeReceipt(zeroSize);
+    assert.throws(
+      () => validateDemoVideoPlaybackApproval(DEMO_ID, { rootDir: fixtureRoot }),
+      /byteLength must be a positive integer/,
+    );
+
+    const wrongDimensions = cloneReceipt(approvedReceipt);
+    wrongDimensions.targets[0].video.width -= 1;
+    writeReceipt(wrongDimensions);
+    assert.throws(
+      () => validateDemoVideoPlaybackApproval(DEMO_ID, { rootDir: fixtureRoot }),
+      /dimensions do not match ffprobe/,
+    );
+
+    const wrongDuration = cloneReceipt(approvedReceipt);
+    wrongDuration.targets[0].video.durationSeconds += 3;
+    writeReceipt(wrongDuration);
+    assert.throws(
+      () => validateDemoVideoPlaybackApproval(DEMO_ID, { rootDir: fixtureRoot }),
+      /duration does not match ffprobe/,
+    );
+
+    const wrongThumbnailDimensions = cloneReceipt(approvedReceipt);
+    wrongThumbnailDimensions.targets[0].thumbnail.height -= 1;
+    writeReceipt(wrongThumbnailDimensions);
+    assert.throws(
+      () => validateDemoVideoPlaybackApproval(DEMO_ID, { rootDir: fixtureRoot }),
+      /thumbnail dimensions do not match ffprobe/,
+    );
+  });
+
+  it('rejects rendered video without an ffprobe-confirmed audio stream', () => {
+    const receipt = cloneReceipt(approvedReceipt);
+    const target = receipt.targets[0];
+    const absoluteVideoPath = path.join(fixtureRoot, target.video.artifactPath);
+    const originalVideo = readFileSync(absoluteVideoPath);
+
+    try {
+      createVideo(absoluteVideoPath, target.video.width, target.video.height, false);
+      const media = probe(absoluteVideoPath);
+      target.video = {
+        ...target.video,
+        ...artifactEvidence(fixtureRoot, target.video.artifactPath),
+        durationSeconds: media.durationSeconds,
+        hasAudio: true,
+      };
+      writeReceipt(receipt);
+
+      assert.throws(
+        () => validateDemoVideoPlaybackApproval(DEMO_ID, { rootDir: fixtureRoot }),
+        /does not contain an audio stream/,
+      );
+    } finally {
+      writeFileSync(absoluteVideoPath, originalVideo);
+    }
+  });
+
+  it('requires every human review and desktop/mobile website playback assertion explicitly true', () => {
+    const targetReviewFields = [
+      'fullNormalSpeedPlaybackCompleted',
+      'captionsApproved',
+      'narrationAndAudioApproved',
+      'fullUncroppedProductWindowApproved',
+      'localAndDevelopmentContentExcluded',
+      'privateContentExcluded',
+      'publicSafetyApproved',
+    ] as const;
+
+    for (const field of targetReviewFields) {
+      const receipt = cloneReceipt(approvedReceipt);
+      receipt.targets[0].review[field] = false as never;
+      writeReceipt(receipt);
+      assert.throws(
+        () => validateDemoVideoPlaybackApproval(DEMO_ID, { rootDir: fixtureRoot }),
+        new RegExp(`${field} must be explicitly true`),
+      );
+    }
+
+    for (const field of ['desktopApproved', 'mobileApproved'] as const) {
+      const receipt = cloneReceipt(approvedReceipt);
+      receipt.websitePlayback[field] = false as never;
+      writeReceipt(receipt);
+      assert.throws(
+        () => validateDemoVideoPlaybackApproval(DEMO_ID, { rootDir: fixtureRoot }),
+        new RegExp(`${field} must be explicitly true`),
+      );
+    }
+  });
+});

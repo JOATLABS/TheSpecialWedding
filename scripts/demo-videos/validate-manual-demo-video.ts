@@ -235,6 +235,43 @@ export function validateManualCaptureCheckpoints(
   demo: DemoVideo,
 ): void {
   const required = demo.captureCheckpoints ?? [];
+  if (demo.priority === 'phase-one' && required.length < 3) {
+    throw new Error(`${demo.id} must define at least 3 exact capture checkpoints.`);
+  }
+
+  const requiredLabels = new Set<string>();
+  for (const [index, checkpoint] of required.entries()) {
+    const label = checkpoint.label.trim();
+    const action = checkpoint.action.trim();
+    const visibleResult = checkpoint.visibleResult.trim();
+    const looksGeneric = /^(?:checkpoint|generic|page|placeholder)\b/i.test(label)
+      || /^(?:open|inspect|show|view) (?:a|the) (?:application )?page[.!]?$/i.test(action)
+      || /^(?:a|the) (?:application )?page is visible[.!]?$/i.test(visibleResult);
+    if (label.length < 4 || action.length < 12 || visibleResult.length < 12 || looksGeneric) {
+      throw new Error(
+        `${demo.id} captureCheckpoints[${index}] must define a meaningful label, action, and visible result.`,
+      );
+    }
+
+    const normalizedLabel = label.toLocaleLowerCase('en-US');
+    if (requiredLabels.has(normalizedLabel)) {
+      throw new Error(`${demo.id} capture checkpoint labels must be unique: ${label}.`);
+    }
+    requiredLabels.add(normalizedLabel);
+
+    const parsedRoute = parseApplicationRoute(checkpoint.route.trim());
+    if (!parsedRoute || /\[[^\]]+\]/.test(parsedRoute.pathname)) {
+      throw new Error(
+        `${demo.id} captureCheckpoints[${index}].route must be an exact resolved application route.`,
+      );
+    }
+    if (!demo.routePlan.some((plannedRoute) => routeMatches(checkpoint.route.trim(), plannedRoute))) {
+      throw new Error(
+        `${demo.id} capture checkpoint route ${checkpoint.route} is not part of its route plan.`,
+      );
+    }
+  }
+
   const minimumCheckpoints = Math.max(demo.priority === 'hero' ? 6 : 1, required.length);
   if (checkpoints.length < minimumCheckpoints) {
     throw new Error(`${demo.id} requires at least ${minimumCheckpoints} product checkpoints.`);
@@ -328,17 +365,32 @@ function gitOutput(args: readonly string[]): string {
   return result.stdout.trim();
 }
 
-function assertExactCleanBuild(receiptCommit: string): string {
+function gitExitStatus(args: readonly string[]): number {
+  const result = spawnSync('git', args, {
+    cwd: resolveFromRepo(),
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024,
+  });
+  if (result.error || result.status === null) {
+    throw new Error('Git could not verify the recording build for the manual receipt.');
+  }
+  return result.status;
+}
+
+function assertAvailableCleanRecordingBuild(receiptCommit: string): string {
   gitOutput(['cat-file', '-e', `${receiptCommit}^{commit}`]);
   const head = gitOutput(['rev-parse', 'HEAD']);
-  if (receiptCommit !== head) {
-    throw new Error(`Manual recording commit ${receiptCommit} does not match current HEAD ${head}.`);
+  if (
+    receiptCommit !== head
+    && gitExitStatus(['merge-base', '--is-ancestor', receiptCommit, head]) !== 0
+  ) {
+    throw new Error('Manual recording commit must be an ancestor of current HEAD.');
   }
   const worktreeChanges = gitOutput(['status', '--porcelain', '--untracked-files=all']);
   if (worktreeChanges) {
     throw new Error('Manual recording validation requires a clean worktree.');
   }
-  return head;
+  return receiptCommit;
 }
 
 function assertIsoDateTime(value: string, label: string): number {
@@ -491,7 +543,7 @@ export function validateManualDemoVideo(
     throw new Error('Manual capture review must include at least one frame from every product checkpoint.');
   }
 
-  const appBuildCommit = assertExactCleanBuild(receipt.appBuildCommit);
+  const appBuildCommit = assertAvailableCleanRecordingBuild(receipt.appBuildCommit);
   const expectedArtifactPath = resolveFromRepo(requirement.rawRecordingPath);
   const artifactPath = resolveFromRepo(receipt.source.artifactPath);
   if (artifactPath !== expectedArtifactPath) {
