@@ -154,9 +154,9 @@ export const faqs: FAQ[] = [
     category: 'Features',
   },
   {
-    question: 'Can vendors collaborate in the platform?',
+    question: 'How are vendors managed in the platform?',
     answer:
-      'Yes. Invite photographers, caterers, and venues into dedicated workspaces with role-based access to timelines, contracts, and file exchanges.',
+      'Planners use a private Vendor Management workspace for contacts, notes, files, agreements, quote context, and payment status. The public vendor directory supports discovery, but vendors are not invited into the planner workspace.',
     category: 'Features',
   },
   {

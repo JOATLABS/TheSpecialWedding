@@ -22,139 +22,63 @@ export interface BlogPost {
 
 export const blogPosts = {
   'introducing-the-special-wedding': {
-    title: 'Introducing The Special Wedding: The Complete Workspace for Planners, Couples, and Vendors',
-    excerpt: 'One platform that replaces the planner CRM, the wedding website tool, the couple comms channel, the vendor directory, the ad marketplace, and the contract portal — all at once.',
+    title: 'Introducing The Special Wedding: A Connected Operating System for Wedding Planners',
+    excerpt: 'One planner-owned workspace for the wedding record, couple experience, public details, guests, seating, vendors, and business operations.',
     category: 'Industry',
     date: '2026-03-19',
-    readTime: 9,
-    ogDescription: 'The Special Wedding is the complete workspace for wedding planners, couples, and vendors. Purpose-built, AI-powered, and built to replace your entire tool stack.',
+    readTime: 6,
+    ogDescription: 'The Special Wedding is a connected operating system built specifically for professional wedding planners.',
     relatedTemplates: ['couple_intake', 'vendor_onboarding', 'order_of_events'],
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
         <p>
-          A wedding isn't one workflow. It's three, running in parallel, and every tool on the market picks one and pretends the other two don't exist.
+          Wedding planners do not need another generic project board with wedding labels. They need one reliable place to understand the wedding, guide the couple, prepare guest-facing details, and run the private operational work that clients should never have to see.
         </p>
 
         <p>
-          The planner is juggling HoneyBook for contracts, Aisle Planner for guest lists, a spreadsheet for seating, Stripe for payments, Calendly for scheduling, and Slack for vendor communication. The couple is paying Squarespace or The Knot for a wedding website, texting the planner five questions a week because the information lives nowhere, and bouncing between Zola for registry and a Google Doc for FAQs. The vendors — photographers, venues, caterers — are discovered through a different directory, signed through a different portal, and paid through a different system entirely.
+          The Special Wedding is that planner-owned workspace. It brings the wedding record, event days, guest context, seating plan, budget, forms, vendor records, gallery, couple timeline, and public wedding details into one wedding-specific operating model.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">One plan, presented for each audience</h3>
+
+        <p>
+          <strong>Planner workspace:</strong> Morning View compares active weddings using RSVP movement, recent activity, pending forms, and setup progress. Each wedding then opens into its own event details, guests, seating, budget, files, vendor records, and internal controls.
         </p>
 
         <p>
-          That's not a tool stack. That's a data diaspora. And it's why planners lose ten hours a week to tool juggling, why couples feel out of the loop, and why vendor relationships stay transactional instead of strategic.
+          <strong>Couple portal:</strong> Couples receive a guided view of their wedding overview, shared timeline, payment context, and assigned forms. Planner-only controls and internal operations stay private.
         </p>
 
         <p>
-          The Special Wedding is the complete workspace — planner side, couple side, and vendor side — for the whole wedding. Not a CRM with wedding fields. Not a project tool with event templates. A single platform where the planner's operational work, the couple's wedding website and comms hub, and the vendor marketplace all live on the same guest list, the same gallery, the same RSVP data, the same contract record.
-        </p>
-
-        <h3 className="text-xl font-semibold text-white mt-8">What "complete workspace" actually means</h3>
-
-        <p>
-          <strong>Planner side:</strong> The things generalist CRMs do (contacts, contracts, invoicing, calendar) plus the things they can't (seating orchestration, guest management, RSVP tracking, real-time couple portal, day-of timelines, inbound email threading into the right couple's record).
+          <strong>Public wedding:</strong> Guests see the approved story, event details, venue information, registry, FAQs, and gallery without seeing the planner workspace behind them.
         </p>
 
         <p>
-          <strong>Couple side:</strong> Every couple gets a branded public wedding microsite with gallery, RSVP, and QR memory uploads — so you stop paying for Squarespace or The Knot. They also get a private portal with the planner inbox, registry, FAQs the couple maintains, a meeting scheduler, payment history, and real-time push notifications. The couple-planner conversation has one home instead of leaking across texts, email, and "did you get my message?"
+          These are audience-specific views of one wedding plan—not shared access to the same controls. The planner remains the owner of the operational record and decides what belongs in the couple and public experiences.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">Built for the work planners actually do</h3>
+
+        <p>
+          Guest Management keeps invitation, RSVP, group, meal, accessibility, and plus-one context together. Seating adds the room outline, fixtures, tables, assignments, and layout checks. Event days capture the venue, time, attire, and order of events. Forms, gallery management, budget, payments, and the planner inbox stay attached to the wedding they belong to.
         </p>
 
         <p>
-          <strong>Vendor side:</strong> The public directory helps couples and planners discover vendors. The contract portal gives non-ad vendors token-based workspaces for signatures, deliverables, and payments. The advertising portal lets vendors buy CPL campaigns that surface leads directly in the planner inbox. Discovery, contracting, payment, and advertising are all in one universe instead of three.
+          Vendor work is planner-owned too. The public directory supports discovery, while private Vendor Management keeps contacts, notes, files, agreements, quote context, and payment status inside the planner workspace. Vendors are not invited into the planner workspace.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">Plans for independent planners and teams</h3>
+
+        <p>
+          Solo lets a planner try the platform with one active wedding. Boutique adds unlimited weddings and guests plus the paid planning toolkit. Signature adds five staff seats, cross-wedding analytics, higher AI and storage limits, a planner storefront, and an optional custom domain. Enterprise expands the team, AI, storage, and launch-support limits.
         </p>
 
         <p>
-          The reason these three surfaces belong in one platform is that the data belongs in one place. When a couple updates their guest count on the microsite, the planner's seating chart rebalances. When a vendor signs a contract in their portal, the planner's payment schedule updates. When the planner logs an inbound email, it threads against the right couple automatically. Tool-stack architectures can't do this — the data is already in three different databases.
-        </p>
-
-        <h3 className="text-xl font-semibold text-white mt-8">Most wedding platforms were built as generalist tools, retrofitted</h3>
-
-        <p>
-          HoneyBook started as a freelancer CRM. Aisle Planner started as a guest-list tool. Planning Pod started as an event manager. They're powerful in what they cover, but none of them own the couple's public website, the couple's comms hub, and the vendor marketplace. They leave 60% of the wedding outside their walls, and the planner pays the integration tax.
+          The product is a planner management platform. Couples participate through planner-invited experiences, guests use the public wedding and RSVP flows, and the public vendor directory remains separate from the private planner workspace.
         </p>
 
         <p>
-          The Special Wedding is purpose-built for the whole wedding. Not CRM-adjacent. Not "let's tweak project management for events." Built from the ground up because wedding planning is a fundamentally different workflow than generic project management — and because the planner, the couple, and the vendors need to share data, not sync it.
-        </p>
-
-        <h3 className="text-xl font-semibold text-white mt-8">Here's what you can do across all three sides</h3>
-
-        <p>
-          <strong>Guest management:</strong> Upload your guest list from CSV, Google Sheets, or directly. Track RSVPs in real time with automatic reminders. Manage plus-ones, dietary flags, accessibility needs, and table assignments. Filter by group, seating section, or category. Export to print or vendor.
-        </p>
-
-        <p>
-          <strong>Seating orchestration:</strong> Our seating tool respects your constraints. Table capacity, family groups, vendor placement, dietary grouping, accessibility needs. You drag names into tables and it validates constraints in real time. Or let our AI suggest an initial layout and refine from there.
-        </p>
-
-        <p>
-          <strong>Day-of execution:</strong> Timelines that run parallel (ceremony → cocktail hour → dinner → dancing). Check off tasks as you go. Get alerts for time-sensitive items. See what's happening at each venue simultaneously if you're splitting the day.
-        </p>
-
-        <p>
-          <strong>Contracts and proposals:</strong> Generate wedding-specific contracts with clauses for deposits, payment schedules, cancellation, liability, and scope. Our AI fills in wedding-specific language based on your services and pricing. Send, e-sign, and track in the platform.
-        </p>
-
-        <p>
-          <strong>Pricing and cash flow:</strong> Build tiered packages and add-ons. Our AI suggests competitive pricing based on your market and services. Track cash flow by milestone. Forecast full-year revenue if you're managing multiple weddings.
-        </p>
-
-        <p>
-          <strong>Vendor collaboration:</strong> Invite photographers, caterers, florals, venues, and day-of coordinators into dedicated workspaces. They see their assignments, timeline dependencies, and deliverables—nothing else. Role-based access keeps your data private while enabling collaboration.
-        </p>
-
-        <p>
-          <strong>Guest memories uploads:</strong> Print a sign with a QR code so guests can scan, enter their name, and upload photos or videos from their phone. They can tag the moment if they remember it, leave it as not sure if they do not, and couples review everything privately in their portal.
-        </p>
-
-        <h3 className="text-xl font-semibold text-white mt-8">Built for professional planners, powered by AI</h3>
-
-        <p>
-          Every planner on The Special Wedding has access to AI features: pricing suggestions, contract generation, cash flow forecasting, and even initial seating layouts. We're not adding AI gimmicks. We're using AI to do the tedious thinking work—research, math, copy writing—so you focus on strategy and creativity.
-        </p>
-
-        <p>
-          And you control what gets surfaced to your clients. Some planners use our proposal generator to impress clients with 48-hour turnaround. Others use AI pricing to confidently hold their rates. Some use timeline templates to onboard faster.
-        </p>
-
-        <h3 className="text-xl font-semibold text-white mt-8">For growing teams</h3>
-
-        <p>
-          Enterprise is built for larger planning teams: unlimited weddings, unlimited guests, 20 staff seats, 5,000 AI credits per month, 500GB guest memories storage, and support-assisted launch planning.
-        </p>
-
-        <h3 className="text-xl font-semibold text-white mt-8">The four plans</h3>
-
-        <p>
-          <strong>Solo (free):</strong> Try us with your first client. One active wedding at a time, branded wedding website, RSVP system, basic timeline builder, and 1GB guest memories storage. Perfect for testing whether we're a fit before committing.
-        </p>
-
-        <p>
-          <strong>Boutique ($49/month):</strong> Unlimited weddings, unlimited guests, vendor management, seating orchestration, automated reminders, calendar sync, 300 AI credits per month, and 25GB guest memories storage. Perfect for independent planners running their solo practice.
-        </p>
-
-        <p>
-          <strong>Signature ($149/month):</strong> Everything in Boutique plus 5 staff seats, vendor-collaboration workspaces, cross-wedding analytics, 1,500 AI credits per month, 100GB guest memories storage, and support-assisted onboarding by request. Perfect for agencies running a team of planners.
-        </p>
-
-        <p>
-          <strong>Enterprise ($399/month):</strong> Everything in Signature plus 20 staff seats, 5,000 AI credits per month, 500GB guest memories storage, and support-assisted launch planning. Perfect for larger agencies scaling across many planners.
-        </p>
-
-        <p>
-          Solo is free permanently. All paid plans include a 30-day free trial with no credit card required.
-        </p>
-
-        <h3 className="text-xl font-semibold text-white mt-8">Why now?</h3>
-
-        <p>
-          Generalist tools have had a decade to build wedding-specific features. They haven't, because wedding planning isn't their core business. Meanwhile, modern planners are using 8+ tools and wasting 10+ hours a week managing data between systems.
-        </p>
-
-        <p>
-          That's time you could spend on strategy: refining your packages, courting better vendors, growing your business. We built The Special Wedding to give those hours back.
-        </p>
-
-        <p>
-          If you're ready to stop jumping between tools, start a 30-day free trial today.
+          Start with the planner workspace, build one fictional or real wedding record, and decide from the visible workflow whether it fits the way your studio plans.
         </p>
       </div>
     ),
@@ -1539,83 +1463,47 @@ export const blogPosts = {
     ),
   },
   'your-vendor-network-inside-the-platform': {
-    title: 'Your Vendor Network, Inside the Platform: Discovery, Contracts, and Advertising in One Place',
-    excerpt: 'Vendors discover couples through the public directory, sign and deliver through the contract portal, and advertise through the ad marketplace — all on one platform. The planner stops being the integration layer.',
+    title: 'Your Planner-Owned Vendor Network: Discovery, Records, and Agreements in One Place',
+    excerpt: 'Use the public directory for discovery, then keep private contacts, notes, files, agreements, and payment context in the planner workspace.',
     category: 'Product',
     date: '2026-05-11',
-    readTime: 8,
-    ogDescription: 'The Special Wedding is a vendor network: public directory, contract portal, and advertising marketplace. See how the vendor side of the wedding stops being a separate universe.',
+    readTime: 5,
+    ogDescription: 'See how wedding planners can move from public vendor discovery to private, planner-owned vendor records without exposing planner operations.',
     relatedTemplates: ['vendor_onboarding', 'vendor_performance_review'],
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
         <p>
-          The vendor side of a wedding is a tool stack all its own. Couples and planners discover vendors on The Knot, WeddingWire, or Google. They sign contracts through Dotloop or DocuSign. They pay through Stripe or bank transfer. And vendors — the photographers, venues, caterers, florists — buy advertising on whichever directory happened to get them last season.
+          Vendor information often arrives through search results, referrals, PDFs, email threads, and spreadsheets. The planner then has to remember which contact belongs to which wedding, what was agreed, which file is current, and what remains unpaid.
         </p>
 
         <p>
-          None of these systems talk to each other. Not even close. The planner ends up copy-pasting vendor info, re-entering contract terms, chasing paperwork across four inboxes, and explaining to the couple for the third time why the photographer's contract is in DocuSign but the caterer's is on paper.
-        </p>
-
-        <p>
-          The Special Wedding is also a vendor marketplace. All three paths a vendor can take — discovery, contract, advertising — live on the same platform, and they feed into the planner's workspace automatically.
+          The Special Wedding separates two useful jobs: public discovery and private planner operations. The public vendor directory helps planners browse vendor profiles. Planner Vendor Management keeps the selected contacts and their wedding-specific context inside the planner workspace.
         </p>
 
         <h3 className="text-xl font-semibold text-white mt-8">The public directory: discovery</h3>
 
         <p>
-          Every vendor with a profile on The Special Wedding is discoverable in the public directory. Photographers, venues, caterers, florists, DJs, officiants — browsable by category, location, style, and price range. Couples use it to find vendors without leaving the platform where their wedding lives. Planners use it to source options for their clients without pulling up a separate browser window.
+          Browse the public directory by vendor category and open the available profile details. This is a public research surface; it does not expose the planner's private wedding records or give a vendor access to the planner workspace.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">Planner Vendor Management: private context</h3>
+
+        <p>
+          Save the vendor in the planner's own directory, attach the record to the wedding, and keep contact details, notes, files, quote context, and status in one operational view. The wedding record remains planner-owned.
         </p>
 
         <p>
-          The directory isn't ad-driven by default. It's a real searchable index of vendors who have profiles. Vendors who want premium placement can pay for it, but the baseline directory ranks by relevance and activity — not by whoever paid the most.
+          Vendor agreements add the scope, contract sections, and payment milestones the planner needs to review. The wedding budget provides the corresponding financial context. These are planner workflows; the public article does not promise vendor login, vendor delivery, or automatic payment behavior.
         </p>
 
-        <h3 className="text-xl font-semibold text-white mt-8">The contract portal: token-based vendor workspaces</h3>
+        <h3 className="text-xl font-semibold text-white mt-8">Why the boundary matters</h3>
 
         <p>
-          When a planner decides to work with a vendor, they invite the vendor into a token-based workspace scoped to the specific wedding. The vendor doesn't need an account for every platform the planner uses. They click the link, land in a workspace that shows only their assignments, and work directly with the planner from there.
-        </p>
-
-        <p>
-          Inside the contract portal, vendors can see the scope, sign contracts with e-signature, upload deliverables against a kanban board, post inline notes tied to specific clauses, and receive milestone-based payments. The planner sees everything in one vendor record: the signed contract, the deliverables, the payments, the conversation history.
+          A planner should be able to keep complete operational context without giving every outside party access to the studio's internal workspace. Public profiles stay public; planner records stay private; the planner decides what belongs in each wedding.
         </p>
 
         <p>
-          This is the piece that most directly replaces Dotloop, DocuSign, and the generic "we'll coordinate over email" workflow. Not because those tools are bad — they're fine at what they do — but because they leave the planner stitching data across three systems for no reason.
-        </p>
-
-        <h3 className="text-xl font-semibold text-white mt-8">The advertising marketplace: leads where you already work</h3>
-
-        <p>
-          Vendors who want to grow their pipeline can buy CPL (cost-per-lead) campaigns through the ad portal. Their listings get boosted placement in the directory, but more importantly, when a planner or couple expresses interest, the lead lands directly in the planner's inbox — not a separate email the vendor has to forward.
-        </p>
-
-        <p>
-          That's the difference between ad spend that creates a paper trail and ad spend that creates a workflow. A lead in the planner inbox is a record the planner can action the same way they'd action any inbound inquiry. No reformatting, no second tool to check.
-        </p>
-
-        <h3 className="text-xl font-semibold text-white mt-8">Why bundling discovery, contracts, and advertising matters</h3>
-
-        <p>
-          If you separate these three motions across three platforms, you get exactly what the industry has today: vendors who advertise in one place, sign in another, deliver in a third, and get paid through a fourth. No vendor wants that. No planner wants that either.
-        </p>
-
-        <p>
-          When all three live on the same platform, two things change. First, the data actually connects — a vendor's directory listing, their contract history with a specific planner, and their lead volume are all tied to the same record. Second, the planner stops being the integration layer. They're not moving vendor info between systems. They're working on one vendor record that spans discovery, contracting, payment, and advertising.
-        </p>
-
-        <h3 className="text-xl font-semibold text-white mt-8">What this replaces, in practice</h3>
-
-        <p>
-          For the planner: no more separate Dotloop subscription for contracts, no more copy-paste between the directory-of-the-month and the vendor CRM, no more forwarding lead emails from a vendor ad platform. Every vendor interaction — discovery, signature, delivery, payment, advertising — is in the same workspace as the wedding.
-        </p>
-
-        <p>
-          For the vendor: no more juggling multiple platforms to get discovered, signed, and paid. One workspace per engagement, one directory to maintain, one ad channel that puts leads where the planner is already working.
-        </p>
-
-        <p>
-          For the couple: vendors the planner recommends are already part of the same system their wedding lives in. Contracts, payments, and updates show up in the couple portal alongside everything else. There's no vendor shadow world running in parallel.
+          That boundary is the product today: public vendor discovery plus planner-owned vendor CRM, agreements, and payment context. It is not a vendor signup or vendor-portal promise.
         </p>
       </div>
     ),

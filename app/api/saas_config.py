@@ -199,9 +199,9 @@ def _get_default_saas_config():
                 "order": 1,
             },
             {
-                "title": "Vendor collaboration",
-                "description": "Loop photographers, caterers, and venues into dedicated timelines and file exchanges.",
-                "stat": "Reduce coordination rounds by 68% through unified updates.",
+                "title": "Planner vendor records",
+                "description": "Keep vendor contacts, notes, files, agreements, and payment context inside the planner workspace.",
+                "stat": "Planner-owned records keep vendor context attached to the wedding.",
                 "order": 2,
             },
             {

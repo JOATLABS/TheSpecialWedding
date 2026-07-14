@@ -44,7 +44,7 @@ from app.utils.mongo_dates import to_utc_datetime  # noqa: E402
 # timestamps to plan["admin_overrides"][<field>] every time an admin edits.
 # Together: bump SEED_VERSION → admin edits older than the bump are
 # superseded; admin edits newer than the bump survive future deploys.
-SEED_VERSION = "2026-07-12T00:00:00+00:00"
+SEED_VERSION = "2026-07-14T00:00:00+00:00"
 
 if os.getenv("SEED_SUBSCRIPTION_PLANS_IMPORT_CHECK_ONLY") == "1":
     print("[OK] seed subscription import contract satisfied")
@@ -776,7 +776,7 @@ plans = [
             "automated_reminders": True,
             "calendar_sync": True,
             "payment_processing": True,
-            "vendor_collaboration": True,
+            "vendor_collaboration": False,
             "advanced_analytics": True,
             "planner_storefront": True,
             "custom_domain": True,
@@ -790,7 +790,6 @@ plans = [
             "Unlimited guests",
             "Everything in Boutique",
             "Team collaboration (5 staff seats)",
-            "Vendor-collaboration workspaces",
             "Cross-wedding analytics & revenue tracking",
             "Planner storefront on a shareable platform URL",
             "Custom domain (app.yourbrand.com)",
@@ -837,7 +836,7 @@ plans = [
             "automated_reminders": True,
             "calendar_sync": True,
             "payment_processing": True,
-            "vendor_collaboration": True,
+            "vendor_collaboration": False,
             "planner_storefront": True,
             "custom_domain": True,
             "priority_support": True,
