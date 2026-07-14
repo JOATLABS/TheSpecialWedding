@@ -11,6 +11,6 @@ describe('demo video WebVTT captions', () => {
     assert.match(webVtt, /^WEBVTT\n\n/);
     assert.match(webVtt, /00:00:00\.000 --> 00:00:10\.000/);
     assert.match(webVtt, /Start with one wedding in the planner command center/);
-    assert.match(webVtt, /00:01:20\.000 --> 00:01:25\.000/);
+    assert.match(webVtt, /00:01:05\.000 --> 00:01:15\.000/);
   });
 });

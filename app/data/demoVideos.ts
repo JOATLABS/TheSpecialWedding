@@ -134,8 +134,8 @@ export function applyDemoVideoPublicationApproval(demo: DemoVideo): DemoVideo {
 const HERO_DEMO_VIDEO_DRAFT: DemoVideo = {
   id: 'planner-command-center-walkthrough',
   title: 'Planner command center walkthrough',
-  audience: 'Professional planners who want to see active weddings, guests, timelines, vendors, and next actions stay connected.',
-  durationSeconds: 85,
+  audience: 'Professional planners who want to see one wedding record stay coherent across planner, public, couple, and guest-response views.',
+  durationSeconds: 75,
   priority: 'hero',
   status: 'scripted',
   routePlan: [
@@ -144,8 +144,6 @@ const HERO_DEMO_VIDEO_DRAFT: DemoVideo = {
     '/sofia-and-daniel',
     '/couple/dashboard',
     '/admin/guests',
-    '/admin/seating',
-    '/admin/vendors',
   ],
   captureCheckpoints: [
     {
@@ -177,25 +175,11 @@ const HERO_DEMO_VIDEO_DRAFT: DemoVideo = {
         'The couple Timeline shows the same Glasshouse venue and 4:00 PM plan in its guided portal.',
     },
     {
-      label: 'Guest response slice',
+      label: 'Guest response context',
       route: '/admin/guests',
       action: 'Return to the planner tab, open Guests, and filter the seeded table to Declined.',
       visibleResult:
-        'The planner sees the declined guest slice alongside the same wedding guest operations context.',
-    },
-    {
-      label: 'Seating plan',
-      route: '/admin/seating',
-      action: 'Use planner navigation to open Seating, then select Sofia & Daniel from the wedding picker.',
-      visibleResult:
-        'The selected wedding reveals its seeded venue floor plan, tables, and existing guest assignments.',
-    },
-    {
-      label: 'Vendor contract context',
-      route: '/admin/vendors',
-      action: 'Open Vendors, inspect the overview totals, then open Contracts without changing a record.',
-      visibleResult:
-        'The planner vendor workspace shows populated totals and existing agreement amounts and statuses.',
+        'The planner sees the Declined slice as operational context for the same wedding.',
     },
     {
       label: 'Return to command center',
@@ -206,8 +190,8 @@ const HERO_DEMO_VIDEO_DRAFT: DemoVideo = {
   ],
   seedRequirements: [
     'One paid demo planner with two active weddings and one incomplete setup.',
-    'A featured wedding with events, guests, RSVP data, gallery assets, vendor records, contract/payment milestones, and couple portal access.',
-    'A couple account with registry, FAQ, memories, messages, forms, and one visible contract/payment checkpoint.',
+    'A featured wedding with matching event details across the planner record, public microsite, and couple timeline.',
+    'A couple account plus seeded guest responses visible in the planner-owned guest workspace.',
   ],
   script: [
     {
@@ -216,49 +200,39 @@ const HERO_DEMO_VIDEO_DRAFT: DemoVideo = {
       voiceover: 'Start with one wedding in the planner command center, then follow its plan instead of touring disconnected tools.',
     },
     {
-      timestamp: '0:10-0:22',
+      timestamp: '0:10-0:25',
       action: 'Open Events and inspect the Glasshouse venue and 4:00 PM start time.',
       voiceover: 'The wedding record is the source: The Glasshouse at Riverbend, four o’clock, captured once in the planner plan.',
     },
     {
-      timestamp: '0:22-0:34',
+      timestamp: '0:25-0:40',
       action: 'Manually switch to the public tab and inspect the matching event details.',
       voiceover: 'The guest-facing microsite presents that same venue and time without exposing planner operations.',
     },
     {
-      timestamp: '0:34-0:46',
+      timestamp: '0:40-0:55',
       action: 'Manually switch to the couple tab, open Timeline, and inspect the matching plan.',
-      voiceover: 'The couple gets its own guided view of the same plan, so the planner is not maintaining another copy.',
+      voiceover: 'The couple gets a guided view of the same venue and time while planner-only controls remain private.',
     },
     {
-      timestamp: '0:46-0:58',
+      timestamp: '0:55-1:05',
       action: 'Return to the planner, open Guests, and filter the table to Declined.',
-      voiceover: 'Guest responses remain operational data: the planner can isolate declined guests and act from the wedding context.',
+      voiceover: 'Back in the planner workspace, isolate the declined list as operational context without reconciling another sheet.',
     },
     {
-      timestamp: '0:58-1:08',
-      action: 'Open Seating through planner navigation and select Sofia & Daniel.',
-      voiceover: 'Select that wedding in Seating and the same guest operation becomes a populated, venue-aware floor plan.',
-    },
-    {
-      timestamp: '1:08-1:20',
-      action: 'Open Vendors, inspect the overview and Contracts, then return to the command center.',
-      voiceover: 'Vendor and agreement status stays inside the planner workspace, connected to the work rather than hidden in email.',
-    },
-    {
-      timestamp: '1:20-1:25',
-      action: 'Hold on the command center as the outro appears.',
+      timestamp: '1:05-1:15',
+      action: 'Return to the command center, then hold for the five-second outro.',
       voiceover: 'One planner-owned workspace. Start with one wedding.',
     },
   ],
   recordingChecklist: [
     'Prepare authenticated planner and couple tabs plus the public microsite before recording; switch tabs manually during capture.',
-    'Use visible planner navigation and wedding pickers so Guests, Seating, Vendors, and Contracts are reached naturally.',
-    'Do not change wedding, guest, seating, vendor, contract, payment, or communication data during capture.',
+    'Use visible planner navigation to reach Guests and return to the command center naturally.',
+    'Do not change wedding, guest, or communication data during capture.',
     'End paused on the planner command center; the CTA is added by the Remotion composition.',
   ],
   captureNotes:
-    'Record one connected 85-second story from seeded product state; the raw capture ends on the command center with no scripted browser control.',
+    'Record one connected 75-second outcome story: one planner source, two client-facing views, and one guest-response state visible in planner operations. The raw capture ends on the command center with no scripted browser control.',
 };
 
 export const HERO_DEMO_VIDEO: DemoVideo = applyDemoVideoPublicationApproval(HERO_DEMO_VIDEO_DRAFT);
@@ -287,9 +261,9 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         label: 'Attention signals',
         route: '/admin/planner',
-        action: 'Review the RSVP, message, payment, and milestone signals across the portfolio.',
+        action: 'Review the visible RSVP, recent-activity, and pending-form signals across the portfolio.',
         visibleResult:
-          'The seeded operational signals distinguish the weddings and work that need attention.',
+          'The seeded RSVP and setup signals distinguish the wedding that is moving from the one that needs attention.',
       },
       {
         label: 'Incomplete wedding guidance',
@@ -301,7 +275,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     ],
     seedRequirements: [
       'Two active weddings with contrasting setup progress.',
-      'Unread couple message, overdue payment, upcoming event, and RSVP velocity sample data.',
+      'Seeded RSVP response, recent-activity, and pending-form signals that are visible on the planner dashboard.',
     ],
     script: [
       {
@@ -311,8 +285,8 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       },
       {
         timestamp: '0:12-0:36',
-        action: 'Scroll through RSVP, payment, message, and milestone signals.',
-        voiceover: 'The dashboard pulls from guests, payments, messages, setup progress, and activity so the planner sees what changed overnight.',
+        action: 'Compare the visible RSVP, activity, and pending-form signals on the two wedding cards.',
+        voiceover: 'RSVP movement, recent activity, pending forms, and setup progress distinguish what is moving from what needs attention.',
       },
       {
         timestamp: '0:36-1:00',
@@ -321,7 +295,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       },
     ],
     recordingChecklist: defaultChecklist,
-    captureNotes: 'Keep the cursor slow enough for metric labels to be readable in the final 16:9 crop.',
+    captureNotes: 'Keep the complete 1440x900 product window visible and pause long enough for each status chip to be read without cropping.',
   },
   {
     id: 'wedding-timeline-demo',
@@ -409,7 +383,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         timestamp: '0:38-1:00',
         action: 'Open Forms, inspect the assigned questionnaire, and return to the dashboard.',
-        voiceover: 'The couple can review, respond, and self-serve while planner-only operations remain private.',
+        voiceover: 'The couple can review and self-serve while planner-only operations remain private.',
       },
     ],
     recordingChecklist: defaultChecklist,
@@ -418,12 +392,16 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
   {
     id: 'microsite-auto-publishes-demo',
     featureId: 'wedding-website',
-    title: 'Microsite Auto-Publishes',
-    audience: 'Planners deciding whether they can stop maintaining a separate wedding website.',
+    title: 'Planner Record → Public Microsite',
+    audience: 'Planners who want one coherent source for the wedding details they present to guests.',
     durationSeconds: 45,
     priority: 'phase-one',
     status: 'scripted',
-    routePlan: ['/admin/weddings/[id]', '/[slug]', '/[slug]/gallery'],
+    routePlan: [
+      '/admin/weddings/wedding_marketing_capture_sofia_daniel',
+      '/sofia-and-daniel',
+      '/sofia-and-daniel/gallery',
+    ],
     captureCheckpoints: [
       {
         label: 'Planner source record',
@@ -433,14 +411,14 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
           'The planner source record contains the public story, branding, and event-day content.',
       },
       {
-        label: 'Published wedding plan',
+        label: 'Public wedding view',
         route: '/sofia-and-daniel',
-        action: 'Open the public microsite and compare its story and schedule with the planner record.',
+        action: 'Manually switch to the prepared public microsite and compare its story and schedule with the planner record.',
         visibleResult:
           'The guest-facing microsite presents Sofia & Daniel with the same seeded story and schedule.',
       },
       {
-        label: 'Published gallery',
+        label: 'Public gallery',
         route: '/sofia-and-daniel/gallery',
         action: 'Open the public gallery and inspect the approved seeded wedding images.',
         visibleResult:
@@ -454,21 +432,24 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         timestamp: '0:00-0:12',
         action: 'Open the wedding source record and inspect its slug, theme, story, and schedule fields.',
-        voiceover: 'The public wedding website is built from the wedding record the planner already manages.',
+        voiceover: 'Begin with the planner-owned wedding record: its public story, branding, and event schedule.',
       },
       {
         timestamp: '0:12-0:28',
-        action: 'Open the public microsite and compare its story and schedule with the source record.',
-        voiceover: 'The public site reads from that source record, without a second website builder or another copy of the plan.',
+        action: 'Manually switch to the prepared public microsite and compare its story and schedule with the source record.',
+        voiceover: 'The guest view presents those same seeded details in a polished public experience without planner controls.',
       },
       {
         timestamp: '0:28-0:45',
         action: 'Open the public gallery and inspect the approved wedding images.',
-        voiceover: 'The guest-facing microsite reflects the latest plan: story, schedule, gallery, RSVP, and memory uploads.',
+        voiceover: 'The gallery completes the guest-facing view while the private planning workspace stays out of sight.',
       },
     ],
-    recordingChecklist: defaultChecklist,
-    captureNotes: 'Capture both top-of-page branding and a scroll to the event schedule.',
+    recordingChecklist: [
+      ...defaultChecklist,
+      'Prepare the authenticated planner record and public microsite in separate clean tabs, then switch tabs manually with the browser address bar hidden.',
+    ],
+    captureNotes: 'Capture top-of-page branding and the matching event details as a read-only parity story; do not imply an edit or publishing event that is not shown.',
   },
   {
     id: 'wedding-configuration-demo',
@@ -550,40 +531,43 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         label: 'RSVP table slice',
         route: '/admin/guests',
-        action: 'Filter the seeded table by RSVP status and inspect meal and accessibility context.',
+        action: 'Filter the seeded table to Declined and inspect the visible RSVP, group, and plus-one columns.',
         visibleResult:
-          'The table narrows to the selected RSVP state while preserving the relevant guest details.',
+          'The table narrows to declined guests while keeping their group and plus-one state visible.',
       },
       {
-        label: 'Connected guest record',
+        label: 'Guest card context',
         route: '/admin/guests',
-        action: 'Expand an existing guest row and inspect RSVP, household, plus-one, and activity context.',
+        action: 'Clear the RSVP filter, switch to Card View, and inspect the collapsed Priya Shah card without opening any card actions.',
         visibleResult:
-          'One guest record connects attendance, household, plus-one, and operational history in place.',
+          'Priya Shah shows Confirmed, Friends, Vegetarian, and one submitted plus-one without exposing private controls.',
       },
     ],
     seedRequirements: [
-      'Guest list with confirmed, declined, pending, plus-one, meal, accessibility, and household examples.',
+      'Guest list with confirmed, declined, and pending examples plus a Priya Shah card seeded as Friends, Vegetarian, and one submitted plus-one.',
     ],
     script: [
       {
         timestamp: '0:00-0:14',
-        action: 'Open Guest Management and filter by RSVP status.',
-        voiceover: 'This is the planner guest operating table: not a static spreadsheet.',
+        action: 'Open Guest Management and inspect invitation, response, attendance, and plus-one totals.',
+        voiceover: 'This is the planner guest operating table: invitation, response, attendance, and plus-one state in one view.',
       },
       {
         timestamp: '0:14-0:36',
-        action: 'Filter by RSVP status and inspect meal and accessibility context in the table.',
-        voiceover: 'Each guest record carries the details that seating, reminders, catering counts, and day-of exports need.',
+        action: 'Filter to Declined and inspect the RSVP, group, and plus-one columns preserved in the table.',
+        voiceover: 'The declined slice narrows the work without stripping away the visible guest context a planner still needs.',
       },
       {
         timestamp: '0:36-1:00',
-        action: 'Expand one guest record, inspect plus-one and household context, and return to the table.',
-        voiceover: 'When one guest changes, the platform updates the rest of the workflow instead of creating another manual reconciliation task.',
+        action: 'Clear the RSVP filter, switch to Card View, and inspect the collapsed Priya Shah card.',
+        voiceover: 'Priya’s card brings her confirmed response, Friends group, vegetarian meal, and submitted plus-one into one readable planner view.',
       },
     ],
-    recordingChecklist: defaultChecklist,
-    captureNotes: 'Use demo guest names and keep the pass to filtering and read-only row inspection.',
+    recordingChecklist: [
+      ...defaultChecklist,
+      'Keep every guest card collapsed; do not open Details, Edit, QR, reminder, or delete controls.',
+    ],
+    captureNotes: 'Use demo guest names and keep the pass to the summary, Declined table filter, then the unfiltered collapsed Priya Shah card only.',
   },
   {
     id: 'seating-orchestrator-demo',
@@ -598,7 +582,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         label: 'Venue-aware floor plan',
         route: '/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel',
-        action: 'Inspect the seeded room outline, locked background, fixtures, and six positioned tables.',
+        action: 'Use the in-product Zoom out control twice until it reads 70%, then inspect the seeded room outline, fixtures, and six positioned tables.',
         visibleResult:
           'The seating canvas uses the seeded venue plan instead of an empty generic grid.',
       },
@@ -623,7 +607,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     script: [
       {
         timestamp: '0:00-0:12',
-        action: 'Open seating and show the room outline with fixtures.',
+        action: 'Open Seating, use the in-product Zoom out control twice to reach 70%, and show the room outline with fixtures.',
         voiceover: 'Seating starts with the actual room, not a blank grid.',
       },
       {
@@ -637,8 +621,11 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
         voiceover: 'The chart becomes an export-ready day-of artifact with venue context intact.',
       },
     ],
-    recordingChecklist: defaultChecklist,
-    captureNotes: 'Pan across existing assignments slowly and do not drag guests, tables, fixtures, or floor-plan points.',
+    recordingChecklist: [
+      ...defaultChecklist,
+      'Use the seating canvas Zoom out control twice so its visible readout is 70%; keep browser page zoom at 100%.',
+    ],
+    captureNotes: 'Stage the in-product canvas at 70%, pan across existing assignments slowly, and do not drag guests, tables, fixtures, or floor-plan points.',
   },
   {
     id: 'guest-memories-demo',
@@ -863,7 +850,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         label: 'Planner vendor overview',
         route: '/admin/vendors',
-        action: 'Open Vendor Management and inspect vendor, contract, paid, and outstanding totals.',
+        action: 'Manually switch to the prepared planner tab and inspect vendor, contract, paid, and outstanding totals.',
         visibleResult:
           'The planner overview summarizes the seeded vendor book and its contract and payment status.',
       },
@@ -894,7 +881,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       },
       {
         timestamp: '0:15-0:40',
-        action: 'Open the planner Vendor Management overview, then inspect the private directory.',
+        action: 'Manually switch to the prepared planner tab, pause on Vendor Management, then inspect the private directory.',
         voiceover: 'The planner workspace adds private contact, wedding, contract, and payment context to public discovery.',
       },
       {
@@ -903,8 +890,12 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
         voiceover: 'Agreements and payment context stay attached to the planner-owned vendor record instead of disappearing into email.',
       },
     ],
-    recordingChecklist: defaultChecklist,
-    captureNotes: 'Make the public-directory and planner-CRM distinction visible; do not open or promote a vendor portal.',
+    recordingChecklist: [
+      'Prepare two clean tabs before recording: the public vendor directory first and the authenticated planner Vendor Management workspace second.',
+      'Enter presentation mode with the address bar hidden before recording, then manually switch to the prepared planner tab after the public profile.',
+      ...defaultChecklist,
+    ],
+    captureNotes: 'Make the public-directory and planner-CRM distinction visible through the prepared manual tab switch; do not expose a local address, open a vendor portal, or imply the vendor has planner access.',
   },
   {
     id: 'knowledge-base-demo',

@@ -93,7 +93,11 @@ export function getSideEffectGuards(
     guards.push('Use local/test messaging transport only; do not send real SMS or email.');
   }
 
-  if (routes.some((route) => route.includes('/contracts') || route.includes('/vendor-contract'))) {
+  if (routes.some((route) => route.startsWith('/admin/vendors/contracts'))) {
+    guards.push('Use a seeded planner-owned fictional contract; do not request or imply a real legal signature.');
+  }
+
+  if (routes.some((route) => route.startsWith('/contracts') || route.startsWith('/vendor-contract'))) {
     guards.push('Use demo contract tokens only; do not request a real legal signature.');
   }
 

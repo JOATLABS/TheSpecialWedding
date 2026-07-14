@@ -13,9 +13,9 @@ This runbook produces real, manually driven product stills and walkthroughs from
 - Manual recording receipt validator: `scripts/demo-videos/validate-manual-demo-video.ts`
 - Remotion entry point: `remotion/index.ts`
 
-The hero is one connected 85-second planner-OS story. The browser recording is a human-driven 1440x900 full-window take. Remotion renders that take with `contain`, adds a separately recorded narration track, and owns the final five-second activation outro. Captions ship as a WebVTT sidecar through the website video player's native caption track, so they remain accessible without permanently covering product controls in the footage.
+The hero is one connected 75-second planner-OS story. The browser recording is a human-driven 1440x900 full-window take. Remotion renders that take with `contain`, adds a separately recorded narration track, and owns the final five-second activation outro. Captions ship as a WebVTT sidecar through the website video player's native caption track, so they remain accessible without permanently covering product controls in the footage.
 
-The website walkthrough is a 16:9 deliverable. Do not turn the same 85-second desktop take into a social video by squeezing it into 9:16. Phase 1 social videos need their own 20-35 second, pillar-native storyboards and manual capture receipts for Connection Over Tools, Disorganization Tax, Couple Experience + Boundaries, and Built for Planners.
+The website walkthrough is a 16:9 deliverable. Do not turn the same 75-second desktop take into a social video by squeezing it into 9:16. Phase 1 social videos need their own 20-35 second, pillar-native storyboards and manual capture receipts for Connection Over Tools, Disorganization Tax, Couple Experience + Boundaries, and Built for Planners.
 
 Generated media and receipts are gitignored. A complete demo has:
 
@@ -120,21 +120,29 @@ Changing a scene to `approved` without its own receipt is rejected. A receipt wh
 
 The capture runtime deliberately leaves `TESTBED_GOOGLE_MAPS_API_KEY` blank. The public wedding page must therefore show its intentional Directions fallback without an embedded provider page, failed resource, or console error.
 
-For the hero walkthrough, manually connect these exact checkpoints in one 85-second story:
+For the hero walkthrough, manually connect these exact checkpoints in one 75-second story:
 
 | Time | Checkpoint | Human action and visible proof |
 | --- | --- | --- |
 | `0:00-0:10` | Planner command center | Pause on both active wedding cards, then click **Manage** for Sofia & Daniel. |
-| `0:10-0:22` | Wedding event source | Open **Events** and point to the Traditional event, The Glasshouse at Riverbend, and `4:00 PM`. |
-| `0:22-0:34` | Public event plan | Manually switch to the prepared public tab and show the same venue and time. |
-| `0:34-0:46` | Couple timeline | Manually switch to the prepared couple tab, open **Timeline**, and show the same plan. |
-| `0:46-0:58` | Guest response slice | Return to the planner tab, open **Guests**, and click the **Declined** summary/filter. |
-| `0:58-1:08` | Seating plan | Use planner navigation to open **Seating**, then select Sofia & Daniel in the wedding picker. |
-| `1:08-1:16` | Vendor contract context | Open **Vendors**, pause on overview totals, then open **Contracts**. |
-| `1:16-1:20` | Return to command center | Use planner navigation to return to the two-wedding portfolio. |
-| `1:20-1:25` | Activation outro | Hold on the command center. Remotion fades in: “One planner-owned workspace. Start with one wedding.” |
+| `0:10-0:25` | Wedding event source | Open **Events** and point to the Traditional event, The Glasshouse at Riverbend, and `4:00 PM`. |
+| `0:25-0:40` | Public event plan | Manually switch to the prepared public tab and show the same venue and time. |
+| `0:40-0:55` | Couple timeline | Manually switch to the prepared couple tab, open **Timeline**, and show the same plan. |
+| `0:55-1:05` | Guest response context | Return to the planner tab, open **Guests**, and click the **Declined** summary/filter. |
+| `1:05-1:15` | Return and activation outro | Use the first five seconds to return to the command center, then hold for Remotion's five-second fade: “One planner-owned workspace. Start with one wedding.” |
 
-The recording is read-only. Budget has its own supporting clip; it is intentionally not crammed into the hero. The Phase 1 event-edit proof belongs in the dedicated timeline clip, where the edit and its cross-surface result can be reviewed deliberately.
+The recording is read-only. Seating, vendors, contracts, and budget have their own supporting clips; they are intentionally not crammed into the hero. The hero shows one source, two audience-specific views, and one guest-response state in planner operations without pretending the recording created that response. The Phase 1 event-edit proof belongs in the dedicated timeline clip, where the edit and its cross-surface result can be reviewed deliberately.
+
+For the supporting Phase 1 clips:
+
+- Morning View shows only the RSVP, recent-activity, pending-form, and setup signals that are visibly present. Keep the full product window; never plan a later crop.
+- Couple Portal is a read-only review and self-service story; do not claim a response was submitted unless a separate reversible action contract proves it.
+- Planner Record → Public Microsite is a parity story. Comparing preseeded surfaces does not prove an edit, automatic publish event, or live propagation.
+- Guest Management shows the summary and a Declined table filter, then clears that filter before switching to Card View and inspecting the collapsed Priya Shah card. That exact seeded card visibly shows Confirmed, Friends, Vegetarian, and one submitted plus-one. Never open **Details**, **Edit**, or **QR** during capture because those controls can expose token-bearing or mutable guest state.
+- Seating uses the in-product canvas Zoom out control twice to reach a visible `70%` readout while browser page zoom remains `100%`.
+- Vendor Directory & CRM starts on a prepared public-directory tab and manually switches to a separately prepared authenticated planner tab with the address bar already hidden. Never open or promote the unfinished vendor portal.
+
+The manual recording validator accepts only a five-second tolerance on either side of each authored duration. A 60-second feature take therefore must run 55–65 seconds; the old 75-percent shortcut is not accepted.
 
 Use natural cursor movement and readable pauses. Do not trigger a payment, SMS, email, legal signature, vendor send, or upload of private media.
 
@@ -191,7 +199,7 @@ Create `output/demo-videos/receipts/planner-command-center-walkthrough.json` aft
     "byteLength": 0,
     "width": 1440,
     "height": 900,
-    "durationSeconds": 85,
+    "durationSeconds": 75,
     "captureBounds": { "x": 0, "y": 0, "width": 1440, "height": 900 }
   },
   "operatorAttestation": {
@@ -217,7 +225,7 @@ Create `output/demo-videos/receipts/planner-command-center-walkthrough.json` aft
       "route": "/admin/weddings/wedding_marketing_capture_sofia_daniel",
       "action": "Open Events and inspect the Traditional event venue and 4:00 PM start time.",
       "visibleResult": "The planner source record shows The Glasshouse at Riverbend and the 4:00 PM event time.",
-      "atSeconds": 16,
+      "atSeconds": 18,
       "frameSha256": "REPLACE_WITH_FRAME_SHA256"
     },
     {
@@ -225,7 +233,7 @@ Create `output/demo-videos/receipts/planner-command-center-walkthrough.json` aft
       "route": "/sofia-and-daniel",
       "action": "Manually switch to the prepared public tab and inspect the same event details.",
       "visibleResult": "The public schedule shows The Glasshouse at Riverbend and 4:00 PM without planner controls.",
-      "atSeconds": 28,
+      "atSeconds": 32,
       "frameSha256": "REPLACE_WITH_FRAME_SHA256"
     },
     {
@@ -233,31 +241,15 @@ Create `output/demo-videos/receipts/planner-command-center-walkthrough.json` aft
       "route": "/couple/dashboard",
       "action": "Manually switch to the prepared couple tab, open Timeline, and inspect the same event.",
       "visibleResult": "The couple Timeline shows the same Glasshouse venue and 4:00 PM plan in its guided portal.",
-      "atSeconds": 40,
+      "atSeconds": 47,
       "frameSha256": "REPLACE_WITH_FRAME_SHA256"
     },
     {
-      "label": "Guest response slice",
+      "label": "Guest response context",
       "route": "/admin/guests",
       "action": "Return to the planner tab, open Guests, and filter the seeded table to Declined.",
-      "visibleResult": "The planner sees the declined guest slice alongside the same wedding guest operations context.",
-      "atSeconds": 52,
-      "frameSha256": "REPLACE_WITH_FRAME_SHA256"
-    },
-    {
-      "label": "Seating plan",
-      "route": "/admin/seating",
-      "action": "Use planner navigation to open Seating, then select Sofia & Daniel from the wedding picker.",
-      "visibleResult": "The selected wedding reveals its seeded venue floor plan, tables, and existing guest assignments.",
-      "atSeconds": 64,
-      "frameSha256": "REPLACE_WITH_FRAME_SHA256"
-    },
-    {
-      "label": "Vendor contract context",
-      "route": "/admin/vendors",
-      "action": "Open Vendors, inspect the overview totals, then open Contracts without changing a record.",
-      "visibleResult": "The planner vendor workspace shows populated totals and existing agreement amounts and statuses.",
-      "atSeconds": 74,
+      "visibleResult": "The planner sees the Declined slice as operational context for the same wedding.",
+      "atSeconds": 60,
       "frameSha256": "REPLACE_WITH_FRAME_SHA256"
     },
     {
@@ -265,12 +257,12 @@ Create `output/demo-videos/receipts/planner-command-center-walkthrough.json` aft
       "route": "/admin/planner",
       "action": "Return to the planner command center and pause on the connected portfolio.",
       "visibleResult": "The two active weddings and their next actions remain visible.",
-      "atSeconds": 79,
+      "atSeconds": 70,
       "frameSha256": "REPLACE_WITH_FRAME_SHA256"
     }
   ],
   "review": {
-    "reviewedFrameCount": 8,
+    "reviewedFrameCount": 6,
     "rawFrameReview": "approved",
     "publicSafetyReview": "approved"
   }
@@ -284,7 +276,7 @@ npm run demo:validate-manual-video -- \
   --receipt output/demo-videos/receipts/planner-command-center-walkthrough.json
 ```
 
-The validator does not launch or control a browser. It rejects scripted-capture attestations, non-full-window bounds, placeholder, duplicate, out-of-plan, reordered, or altered checkpoints, extra or missing query parameters, a runtime marker that disagrees with the recorded clean commit, wrong raw paths, checksum/size mismatches, checkpoint timestamps that are not strictly increasing, reviewed-frame hashes that do not match frames extracted from the MP4, non-1440x900 footage, footage outside the 60-90 second hero window, insufficient frame review, and unapproved safety review. The recorded commit may later be an ancestor of a clean publication commit, so adding the approval manifest does not make the original receipt unverifiable; unrelated histories still fail closed.
+The validator does not launch or control a browser. It rejects scripted-capture attestations, non-full-window bounds, placeholder, duplicate, out-of-plan, reordered, or altered checkpoints, extra or missing query parameters, a runtime marker that disagrees with the recorded clean commit, wrong raw paths, checksum/size mismatches, checkpoint timestamps that are not strictly increasing, reviewed-frame hashes that do not match frames extracted from the MP4, non-1440x900 footage, footage outside the current 70–80 second hero window, insufficient frame review, and unapproved safety review. The recorded commit may later be an ancestor of a clean publication commit, so adding the approval manifest does not make the original receipt unverifiable; unrelated histories still fail closed.
 
 ## 6. Narration And Post-Production
 
@@ -309,7 +301,7 @@ npm run demo:render -- \
   --receipt output/demo-videos/receipts/planner-command-center-walkthrough.json
 ```
 
-The renderer fails closed when narration is missing and probes the finished MP4 to ensure it contains an audio stream. It uses the exact raw recording duration, fills the 16:9 canvas height with the 16:10 product window, preserves the complete window with `contain`, overlays compact captions, and fades to the activation CTA for the final five seconds.
+The renderer fails closed when narration is missing and probes the finished MP4 to ensure it contains an audio stream. It uses the exact raw recording duration, fills the 16:9 canvas height with the 16:10 product window, preserves the complete window with `contain`, writes accessible WebVTT captions beside the video instead of burning them over product controls, and fades to the activation CTA for the final five seconds.
 
 Do not run `--format social-9x16` for a desktop walkthrough. Social output must come from a separately defined, 20-35 second Phase 1 story with its own manual capture contract.
 
@@ -331,7 +323,7 @@ After watching the complete website export at normal speed and testing the websi
         "byteLength": 0,
         "width": 1920,
         "height": 1080,
-        "durationSeconds": 85,
+        "durationSeconds": 75,
         "hasAudio": true
       },
       "thumbnail": {

@@ -2271,6 +2271,22 @@ def test_marketing_guest_tokens_use_the_capture_scope_not_a_wedding_suffix():
     assert 'f"{MARKETING_CAPTURE_SEED_SCOPE}:{wedding_id}:token"' in source
 
 
+def test_marketing_capture_driver_pins_the_safe_guest_card_fixture():
+    source = _required_text(DRIVER)
+
+    for expected_contract in (
+        '"attending": []',
+        '"name": "Priya Shah"',
+        '"group_id": "friends"',
+        '"plus_one_allowed": True',
+        '"number_of_plus_ones_allowed": 1',
+        '"attending": ["traditional"]',
+        '"dietary": "Vegetarian"',
+        "Priya Shah card must have exactly one submitted plus-one",
+    ):
+        assert expected_contract in source
+
+
 def test_marketing_seed_does_not_reuse_legacy_string_document_ids():
     source = _required_text(SEEDER)
 
