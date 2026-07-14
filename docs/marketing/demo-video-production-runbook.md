@@ -41,6 +41,7 @@ npm run build
 
 TESTBED_SESSION_NAME=marketing-capture \
 TESTBED_FRONTEND_PORT=3100 \
+TESTBED_FRONTEND_ORIGIN=http://127.0.0.1:3100 \
 TESTBED_FRONTEND_CMD="npm run start -- --hostname 127.0.0.1" \
 TESTBED_UVICORN_ARGS="" \
 .venv.nosync/bin/python testbed/testbed.py up --with-frontend

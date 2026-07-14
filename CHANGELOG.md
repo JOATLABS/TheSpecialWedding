@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-14 — Fail-closed marketing-capture frontend startup
+
+- Bound the testbed frontend command, health check, and marketing-capture route preflight to one canonical origin so an invalid host can no longer pass readiness through a different hostname.
+- Forced the capture-only Next server to run with `NODE_ENV=production`, preventing the repository's development default from silently invalidating a production-like take.
+- Added contract coverage proving the harness injects the canonical origin and rejects unreachable or 404 frontend checkpoints before any manual visual review begins.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
