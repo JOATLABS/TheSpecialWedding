@@ -267,22 +267,22 @@ const HERO_DEMO_VIDEO_DRAFT: DemoVideo = {
       voiceover: 'Start with one wedding in the planner command center, then follow its plan instead of touring disconnected tools.',
     },
     {
-      timestamp: '0:10-0:25',
+      timestamp: '0:10-0:30',
       action: 'Open Events and inspect the Glasshouse venue and 4:00 PM start time.',
       voiceover: 'The wedding record is the source: The Glasshouse at Riverbend, four o’clock, captured once in the planner plan.',
     },
     {
-      timestamp: '0:25-0:40',
+      timestamp: '0:30-0:40',
       action: 'Manually switch to the public tab and inspect the matching event details.',
       voiceover: 'The guest-facing microsite presents that same venue and time without exposing planner operations.',
     },
     {
-      timestamp: '0:40-0:55',
+      timestamp: '0:40-0:50',
       action: 'Manually switch to the couple tab, open Timeline, and inspect the matching plan.',
       voiceover: 'The couple gets a guided view of the same venue and time while planner-only controls remain private.',
     },
     {
-      timestamp: '0:55-1:05',
+      timestamp: '0:50-1:05',
       action: 'Return to the planner, open Guests, and filter the table to Declined.',
       voiceover: 'Back in the planner workspace, isolate the declined list as operational context without reconciling another sheet.',
     },

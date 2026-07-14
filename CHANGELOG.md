@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-07-14 — Hero walkthrough timing follows the captured journey
+
+- Aligned the hero walkthrough's authored scene boundaries to the genuine manually driven full-window take: planner event proof holds through 0:30, followed by the public microsite, couple timeline, declined guest slice, command-center return, and five-second activation outro. Native WebVTT generation now follows the visible scene cadence instead of introducing the public narration before its product view appears. The local narration remains provisional until a human normal-speed playback approval is recorded; no publication approval was added.
+
 ## 2026-07-14 — Product proof stays readable without overstating video readiness
 
 - Added one shared, keyboard-accessible lightbox to approved homepage and Features product-proof images. Every thumbnail remains a complete `object-contain` full-window capture, while the visible Expand control opens the original 1440×900 frame without cropping and supports named-dialog focus, Escape dismissal, and focus restoration.
