@@ -146,6 +146,13 @@ describe('public demo video safety', () => {
   it('publishes only demos with a complete explicit approval record', () => {
     assert.deepEqual(Object.keys(APPROVED_PUBLIC_DEMO_VIDEO_PUBLICATIONS), []);
 
+    const homepageBandSource = readFileSync(
+      'app/components/saas/HomepageTemplatesBand.tsx',
+      'utf8',
+    );
+    assert.match(homepageBandSource, /successCtaLabel="Explore product stories"/);
+    assert.doesNotMatch(homepageBandSource, /successCtaLabel="Watch product demos"/);
+
     const unapprovedFutureDemo = applyDemoVideoPublicationApproval({
       ...HERO_DEMO_VIDEO,
       id: 'future-demo-added-without-review',

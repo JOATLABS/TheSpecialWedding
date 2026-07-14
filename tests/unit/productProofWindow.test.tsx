@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, afterEach, before, describe, it } from 'node:test';
 import React from 'react';
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, render, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import {
   MARKETING_CAPTURE_BUILD_IDENTITY_SELECTOR,
@@ -78,6 +79,7 @@ describe('ProductProofWindow publication gate', () => {
 
     assert.equal(view.container.querySelector('img'), null);
     assert.ok(view.getByText('Current product image is being refreshed'));
+    assert.equal(view.queryByRole('button', { name: /expand/i }), null);
   });
 
   it('renders the image only after its manifest entry is approved', () => {
@@ -94,6 +96,43 @@ describe('ProductProofWindow publication gate', () => {
 
     assert.ok(view.getByRole('img', { name: 'Planner dashboard' }));
     assert.equal(view.queryByText('Current product image is being refreshed'), null);
+  });
+
+  it('opens the complete uncropped image in a named dialog and restores focus on Escape', async () => {
+    const asset = approvedDashboardAsset();
+    const view = render(
+      <ProductProofWindow
+        asset={asset}
+        alt="Planner dashboard"
+        label="Planner workspace"
+        sizes="100vw"
+        variant="hero"
+      />,
+    );
+    const user = userEvent.setup({ document: window.document });
+    const expandButton = view.getByRole('button', {
+      name: 'Expand Planner workspace product image',
+    });
+
+    assert.equal(expandButton.getAttribute('aria-haspopup'), 'dialog');
+    await user.click(expandButton);
+
+    const dialog = await view.findByRole('dialog', {
+      name: 'Planner workspace full-size product image',
+    });
+    const expandedImage = view.getByRole('img', {
+      name: 'Planner dashboard, full-size view',
+    });
+    const closeButton = view.getByRole('button', {
+      name: 'Close full-size product image',
+    });
+    assert.ok(dialog.contains(expandedImage));
+    assert.equal(expandedImage.classList.contains('object-contain'), true);
+    await waitFor(() => assert.equal(document.activeElement, closeButton));
+
+    await user.keyboard('{Escape}');
+    await waitFor(() => assert.equal(view.queryByRole('dialog'), null));
+    await waitFor(() => assert.equal(document.activeElement, expandButton));
   });
 
   it('keeps receipt drift and non-manual captures behind the placeholder', () => {

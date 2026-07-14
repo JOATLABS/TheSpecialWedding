@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-14 — Product proof stays readable without overstating video readiness
+
+- Added one shared, keyboard-accessible lightbox to approved homepage and Features product-proof images. Every thumbnail remains a complete `object-contain` full-window capture, while the visible Expand control opens the original 1440×900 frame without cropping and supports named-dialog focus, Escape dismissal, and focus restoration.
+- Renamed the homepage template-success handoff from “Watch product demos” to “Explore product stories” while the explicit public-video publication allowlist remains empty. Pending product images remain non-interactive. Follow-up gap: none.
+
 ## 2026-07-14 — Capture seeding preserves operator plan visibility
 
 - Fixed the production-like marketing-capture seed gate so it validates the canonical commercial plan fields without reactivating plans an administrator deliberately hid or resetting featured/order choices. The frontend proxy check now derives the exact active canonical plan set from the post-seed database and still fails on stale copy, prices, entitlements, duplicates, missing plans, or extra public entries.
