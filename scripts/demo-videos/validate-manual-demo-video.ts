@@ -81,6 +81,22 @@ type VideoProbe = {
   durationSeconds: number;
 };
 
+export type ManualRecordingDurationBounds = {
+  minimumDuration: number;
+  maximumDuration: number;
+};
+
+const MANUAL_RECORDING_DURATION_TOLERANCE_SECONDS = 5;
+
+export function getManualRecordingDurationBounds(
+  demo: Pick<DemoVideo, 'durationSeconds'>,
+): ManualRecordingDurationBounds {
+  return {
+    minimumDuration: Math.max(1, demo.durationSeconds - MANUAL_RECORDING_DURATION_TOLERANCE_SECONDS),
+    maximumDuration: demo.durationSeconds + MANUAL_RECORDING_DURATION_TOLERANCE_SECONDS,
+  };
+}
+
 function assertRecord(value: unknown, label: string): asserts value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${label} must be a JSON object.`);
@@ -577,8 +593,7 @@ export function validateManualDemoVideo(
     throw new Error('Manual recording duration does not match its capture receipt.');
   }
 
-  const minimumDuration = demo.priority === 'hero' ? 60 : demo.durationSeconds * 0.75;
-  const maximumDuration = demo.priority === 'hero' ? 90 : demo.durationSeconds + 5;
+  const { minimumDuration, maximumDuration } = getManualRecordingDurationBounds(demo);
   if (probe.durationSeconds < minimumDuration || probe.durationSeconds > maximumDuration) {
     throw new Error(
       `Manual recording duration must stay within ${minimumDuration}-${maximumDuration} seconds for ${receipt.demoId}.`,

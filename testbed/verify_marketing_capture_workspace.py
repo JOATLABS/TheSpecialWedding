@@ -819,6 +819,54 @@ def verify_seeded_workspace(
         "Guest meal examples are incomplete",
     )
     _require(
+        database["rsvps"].count_documents(
+            {
+                "wedding_id": PRIMARY_WEDDING_ID,
+                "attending": [],
+            }
+        )
+        == 3,
+        "Guest Management Declined filter fixture is not the expected three guests",
+    )
+    priya_guest = database["guests"].find_one(
+        {
+            "wedding_id": PRIMARY_WEDDING_ID,
+            "name": "Priya Shah",
+            "group_id": "friends",
+            "plus_one_allowed": True,
+            "number_of_plus_ones_allowed": 1,
+        },
+        {"_id": 1},
+    )
+    _require(
+        priya_guest is not None,
+        "Guest Management Priya Shah card fixture is missing or incomplete",
+    )
+    priya_guest_id = str(priya_guest["_id"])
+    _require(
+        database["rsvps"].find_one(
+            {
+                "wedding_id": PRIMARY_WEDDING_ID,
+                "guest_id": priya_guest_id,
+                "guest_name": "Priya Shah",
+                "attending": ["traditional"],
+                "dietary": "Vegetarian",
+            }
+        )
+        is not None,
+        "Guest Management Priya Shah RSVP card fixture is missing or incomplete",
+    )
+    _require(
+        database["plus_ones"].count_documents(
+            {
+                "wedding_id": PRIMARY_WEDDING_ID,
+                "guest_id": priya_guest_id,
+            }
+        )
+        == 1,
+        "Guest Management Priya Shah card must have exactly one submitted plus-one",
+    )
+    _require(
         database["scheduled_payments"].count_documents(
             {
                 "seed_source": SEED_SOURCE,

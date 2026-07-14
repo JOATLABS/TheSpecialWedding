@@ -144,12 +144,12 @@ describe('demo capture execution', () => {
       /must be a resolved application pathname/,
     );
 
-    const seatingIndex = receiptCheckpoints.findIndex((checkpoint) => checkpoint.label === 'Seating plan');
-    assert.ok(seatingIndex >= 0);
+    const guestIndex = receiptCheckpoints.findIndex((checkpoint) => checkpoint.label === 'Guest response context');
+    assert.ok(guestIndex >= 0);
     assert.throws(
       () => validateManualCaptureCheckpoints(
-        receiptCheckpoints.map((checkpoint, index) => index === seatingIndex
-          ? { ...checkpoint, route: `${checkpoint.route}&view=compact` }
+        receiptCheckpoints.map((checkpoint, index) => index === guestIndex
+          ? { ...checkpoint, route: `${checkpoint.route}?view=compact` }
           : checkpoint),
         HERO_DEMO_VIDEO,
       ),
@@ -157,8 +157,8 @@ describe('demo capture execution', () => {
     );
     assert.throws(
       () => validateManualCaptureCheckpoints(
-        receiptCheckpoints.map((checkpoint, index) => index === seatingIndex
-          ? { ...checkpoint, route: '/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel' }
+        receiptCheckpoints.map((checkpoint, index) => index === guestIndex
+          ? { ...checkpoint, route: '/admin/guests?status=declined' }
           : checkpoint),
         HERO_DEMO_VIDEO,
       ),

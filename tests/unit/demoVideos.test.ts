@@ -139,6 +139,47 @@ describe('demo video manifest', () => {
       vendorWorkflowCopy,
       /couple-facing signature|couple signs|client payment portal|connected account|funds land|payouts?|stripe/i,
     );
+
+    const morningView = phaseOneDemos.find((demo) => demo.id === 'morning-view-demo');
+    const couplePortal = phaseOneDemos.find((demo) => demo.id === 'couple-portal-demo');
+    const microsite = phaseOneDemos.find((demo) => demo.id === 'microsite-auto-publishes-demo');
+    const guestManagement = phaseOneDemos.find((demo) => demo.id === 'guest-management-demo');
+    const seating = phaseOneDemos.find((demo) => demo.id === 'seating-orchestrator-demo');
+    assert.ok(morningView);
+    assert.ok(couplePortal);
+    assert.ok(microsite);
+    assert.ok(guestManagement);
+    assert.ok(seating);
+
+    const joinedCopy = (demo: (typeof phaseOneDemos)[number]) => [
+      demo.title,
+      demo.audience,
+      demo.captureNotes,
+      ...demo.seedRequirements,
+      ...demo.recordingChecklist,
+      ...demo.captureCheckpoints?.flatMap((checkpoint) => [
+        checkpoint.action,
+        checkpoint.visibleResult,
+      ]) ?? [],
+      ...demo.script.flatMap((step) => [step.action, step.voiceover]),
+    ].join(' ');
+
+    assert.doesNotMatch(joinedCopy(morningView), /final 16:9 crop|payment|message|milestone/i);
+    assert.match(joinedCopy(morningView), /RSVP/i);
+    assert.doesNotMatch(joinedCopy(couplePortal), /review, respond, and self-serve/i);
+    assert.equal(microsite.title, 'Planner Record → Public Microsite');
+    assert.doesNotMatch(joinedCopy(microsite), /auto-publish|latest plan|reads from|built from/i);
+    assert.doesNotMatch(joinedCopy(guestManagement), /when one guest changes|updates the rest/i);
+    assert.doesNotMatch(joinedCopy(guestManagement), /expand|household|accessibility|guest token/i);
+    assert.match(joinedCopy(guestManagement), /collapsed/i);
+    assert.match(joinedCopy(guestManagement), /Card View/i);
+    assert.match(joinedCopy(guestManagement), /clear the RSVP filter/i);
+    assert.match(joinedCopy(guestManagement), /Priya Shah/i);
+    assert.match(joinedCopy(guestManagement), /Vegetarian/i);
+    assert.match(joinedCopy(seating), /70%/i);
+    assert.match(joinedCopy(vendorDemo), /prepared planner tab/i);
+    assert.match(joinedCopy(vendorDemo), /manually switch/i);
+    assert.match(joinedCopy(vendorDemo), /address bar.*hidden|hidden.*address bar/i);
   });
 
   it('keeps scripted clips useful before final recordings are attached', () => {
@@ -167,9 +208,9 @@ describe('demo video manifest', () => {
     }
   });
 
-  it('keeps the connected hero walkthrough inside the Phase 1 60-90 second target', () => {
+  it('keeps the connected hero walkthrough outcome-led and recordable', () => {
     assert.equal(HERO_DEMO_VIDEO.id, 'planner-command-center-walkthrough');
-    assert.equal(HERO_DEMO_VIDEO.durationSeconds, 85);
+    assert.equal(HERO_DEMO_VIDEO.durationSeconds, 75);
     assert.equal(HERO_DEMO_VIDEO.priority, 'hero');
     assert.deepEqual(
       HERO_DEMO_VIDEO.captureCheckpoints?.map((checkpoint) => checkpoint.label),
@@ -178,9 +219,7 @@ describe('demo video manifest', () => {
         'Wedding event source',
         'Public event plan',
         'Couple timeline',
-        'Guest response slice',
-        'Seating plan',
-        'Vendor contract context',
+        'Guest response context',
         'Return to command center',
       ],
     );
@@ -192,8 +231,6 @@ describe('demo video manifest', () => {
         '/sofia-and-daniel',
         '/couple/dashboard',
         '/admin/guests',
-        '/admin/seating',
-        '/admin/vendors',
         '/admin/planner',
       ],
     );
@@ -207,11 +244,15 @@ describe('demo video manifest', () => {
       assert.doesNotMatch(step.action, mutationAction, `hero step ${step.timestamp} must stay read-only`);
     }
     assert.deepEqual(HERO_DEMO_VIDEO.script.at(-1), {
-      timestamp: '1:20-1:25',
-      action: 'Hold on the command center as the outro appears.',
+      timestamp: '1:05-1:15',
+      action: 'Return to the command center, then hold for the five-second outro.',
       voiceover: 'One planner-owned workspace. Start with one wedding.',
     });
+    assert.equal(HERO_DEMO_VIDEO.captureCheckpoints?.length, 6);
+    assert.equal(HERO_DEMO_VIDEO.routePlan.length, 5);
     assert.equal(HERO_DEMO_VIDEO.routePlan.some((route) => route.startsWith('/admin/budget')), false);
+    assert.equal(HERO_DEMO_VIDEO.routePlan.some((route) => route.startsWith('/admin/seating')), false);
+    assert.equal(HERO_DEMO_VIDEO.routePlan.some((route) => route.startsWith('/admin/vendors')), false);
     assert.equal(HERO_DEMO_VIDEO.routePlan.some((route) => route.includes('/portal/')), false);
   });
 });

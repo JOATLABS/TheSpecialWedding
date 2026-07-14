@@ -90,6 +90,13 @@ describe('demo video production requirements', () => {
     );
     assert.equal(contract.sideEffectGuards.some((guard) => guard.includes('Stripe test-mode')), false);
     assert.ok(contract.sideEffectGuards.some((guard) => guard.includes('seeded read-only finance')));
+    assert.ok(
+      contract.sideEffectGuards.some((guard) => guard.includes('seeded planner-owned fictional contract')),
+    );
+    assert.equal(
+      contract.sideEffectGuards.some((guard) => guard.includes('demo contract tokens')),
+      false,
+    );
   });
 
   it('builds a transcript from the approved script', () => {
