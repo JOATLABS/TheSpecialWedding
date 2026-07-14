@@ -84,17 +84,17 @@ const APPROVED_STORY_COPY = [
     pillar: 'Connection Over Tools',
     headline: 'One wedding plan, presented clearly across each audience.',
     description:
-      'Start with the planner-owned event plan, then compare the matching venue and time in the public microsite and couple timeline. Planner controls remain private.',
-    proof: 'Planner event record → public schedule → couple timeline',
-    supportingLabels: ['Couple view', 'Guest view'],
+      'Start with the planner-owned event plan, then follow the same wedding into the public guest view and the couple’s guided workspace. Each audience sees the context it needs while planner controls remain private.',
+    proof: 'Planner event plan → public guest view → guided couple workspace',
+    supportingLabels: ['Public guest view', 'Couple workspace'],
   },
   {
     id: 'disorganization-tax',
     pillar: 'Disorganization Tax',
-    headline: 'Start the morning with the weddings that need attention.',
+    headline: 'Stop paying the disorganization tax every morning.',
     description:
-      'Morning View compares active weddings using RSVP movement, recent activity, pending forms, and setup progress, then points the planner to the next wedding action.',
-    proof: 'Two active weddings · RSVP, activity, forms, and setup signals',
+      'Morning View compares RSVP movement, recent activity, pending forms, and setup progress across active weddings, so the planner can act without rebuilding context across inboxes, sheets, and point tools.',
+    proof: 'Two active weddings · one prioritized operating view',
     supportingLabels: ['Planner inbox', 'Wedding budget'],
   },
   {
@@ -109,10 +109,10 @@ const APPROVED_STORY_COPY = [
   {
     id: 'built-for-planners',
     pillar: 'Built for Planners',
-    headline: 'Review guest context and a venue-aware seating plan in wedding-specific workspaces.',
+    headline: 'Run wedding-specific work generic project tools do not understand.',
     description:
-      'Guest Management shows response, group, meal, and plus-one context. Seating shows the room outline, fixtures, tables, assignments, and layout checks. Planner Vendor Management keeps private contacts, contracts, and payment status in its own operational view.',
-    proof: 'Guest context · seating plan · planner vendor records',
+      'Guest Management keeps RSVP, group, meal, and plus-one context together. Seating models the room outline, fixtures, tables, assignments, and layout checks. Planner Vendor Management keeps private contacts, contracts, and payment status in its own operational workspace.',
+    proof: 'RSVP context · room layout · private vendor operations',
     supportingLabels: ['Guest records', 'Planner vendor records'],
   },
 ] as const;

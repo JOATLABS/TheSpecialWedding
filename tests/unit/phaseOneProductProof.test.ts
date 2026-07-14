@@ -105,6 +105,45 @@ describe('Phase 1 product-proof marketing composition', () => {
     }
   });
 
+  it('uses the event plan as Connection proof without claiming unseen timeline parity', () => {
+    const connection = PHASE_ONE_PRODUCT_STORIES.find((story) => story.id === 'connection');
+
+    assert.ok(connection);
+    assert.equal(connection.image.featureId, 'real-time');
+    assert.deepEqual(
+      connection.supportingImages.map(({ image }) => image.featureId),
+      ['wedding-website', 'couple-portal'],
+    );
+    assert.doesNotMatch(connection.description, /matching venue and time|couple timeline/i);
+    assert.match(connection.description, /public guest view/i);
+    assert.match(connection.description, /guided workspace/i);
+  });
+
+  it('maps the strategy stories to the exact full-window evidence they describe', () => {
+    const disorganizationTax = PHASE_ONE_PRODUCT_STORIES.find(
+      (story) => story.id === 'disorganization-tax',
+    );
+    const builtForPlanners = PHASE_ONE_PRODUCT_STORIES.find(
+      (story) => story.id === 'built-for-planners',
+    );
+
+    assert.ok(disorganizationTax);
+    assert.equal(disorganizationTax.image.featureId, 'dashboard');
+    assert.deepEqual(
+      disorganizationTax.supportingImages.map(({ image }) => image.featureId),
+      ['inbox', 'budget'],
+    );
+
+    assert.ok(builtForPlanners);
+    assert.equal(builtForPlanners.image.featureId, 'seating-orchestrator');
+    assert.deepEqual(
+      builtForPlanners.supportingImages.map(({ image }) => image.featureId),
+      ['guest-management', 'vendor-network'],
+    );
+    assert.doesNotMatch(builtForPlanners.description, /vendor records stay connected to the wedding/i);
+    assert.match(builtForPlanners.description, /private contacts, contracts, and payment status/i);
+  });
+
   it('uses intentional product-proof assets for every marketed capability', () => {
     const marketingFeatures = source('app/data/marketingFeatures.ts');
 

@@ -22,31 +22,31 @@ export const PHASE_ONE_PRODUCT_STORIES = [
     pillar: 'Connection Over Tools',
     headline: 'One wedding plan, presented clearly across each audience.',
     description:
-      'Start with the planner-owned event plan, then compare the matching venue and time in the public microsite and couple timeline. Planner controls remain private.',
-    proof: 'Planner event record → public schedule → couple timeline',
-    image: getMarketingCaptureAsset('wedding-configuration', 'homepage'),
-    imageAlt: 'Populated wedding configuration for Sofia and Daniel in the Marigold and Co. planner workspace',
+      'Start with the planner-owned event plan, then follow the same wedding into the public guest view and the couple’s guided workspace. Each audience sees the context it needs while planner controls remain private.',
+    proof: 'Planner event plan → public guest view → guided couple workspace',
+    image: getMarketingCaptureAsset('real-time', 'homepage'),
+    imageAlt: 'Sofia and Daniel event plan showing The Glasshouse at Riverbend at 4:00 PM in the planner workspace',
     supportingImages: [
       {
-        label: 'Couple view',
-        image: getMarketingCaptureAsset('couple-portal', 'homepage'),
-        imageAlt: 'Sofia and Daniel couple portal reflecting their shared wedding plan',
-      },
-      {
-        label: 'Guest view',
+        label: 'Public guest view',
         image: getMarketingCaptureAsset('wedding-website', 'homepage'),
         imageAlt: 'Sofia and Daniel public wedding website showing guest-facing details',
       },
+      {
+        label: 'Couple workspace',
+        image: getMarketingCaptureAsset('couple-portal', 'homepage'),
+        imageAlt: 'Sofia and Daniel couple portal reflecting their shared wedding plan',
+      },
     ],
-    featureIds: ['real-time', 'wedding-configuration', 'couple-portal', 'wedding-website'],
+    featureIds: ['real-time', 'couple-portal', 'wedding-website'],
   },
   {
     id: 'disorganization-tax',
     pillar: 'Disorganization Tax',
-    headline: 'Start the morning with the weddings that need attention.',
+    headline: 'Stop paying the disorganization tax every morning.',
     description:
-      'Morning View compares active weddings using RSVP movement, recent activity, pending forms, and setup progress, then points the planner to the next wedding action.',
-    proof: 'Two active weddings · RSVP, activity, forms, and setup signals',
+      'Morning View compares RSVP movement, recent activity, pending forms, and setup progress across active weddings, so the planner can act without rebuilding context across inboxes, sheets, and point tools.',
+    proof: 'Two active weddings · one prioritized operating view',
     image: getMarketingCaptureAsset('dashboard', 'homepage'),
     imageAlt: 'Populated Morning View showing active weddings and prioritized planner work',
     supportingImages: [
@@ -89,10 +89,10 @@ export const PHASE_ONE_PRODUCT_STORIES = [
   {
     id: 'built-for-planners',
     pillar: 'Built for Planners',
-    headline: 'Review guest context and a venue-aware seating plan in wedding-specific workspaces.',
+    headline: 'Run wedding-specific work generic project tools do not understand.',
     description:
-      'Guest Management shows response, group, meal, and plus-one context. Seating shows the room outline, fixtures, tables, assignments, and layout checks. Planner Vendor Management keeps private contacts, contracts, and payment status in its own operational view.',
-    proof: 'Guest context · seating plan · planner vendor records',
+      'Guest Management keeps RSVP, group, meal, and plus-one context together. Seating models the room outline, fixtures, tables, assignments, and layout checks. Planner Vendor Management keeps private contacts, contracts, and payment status in its own operational workspace.',
+    proof: 'RSVP context · room layout · private vendor operations',
     image: getMarketingCaptureAsset('seating-orchestrator', 'homepage'),
     imageAlt: 'Venue-aware seating plan with tables, fixtures, and assigned guests',
     supportingImages: [
