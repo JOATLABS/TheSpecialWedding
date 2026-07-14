@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "node scripts/ensure-deps.mjs && next dev --webpack",
-    "build": "node scripts/ensure-deps.mjs && npm run demo:validate-published-images && next build --webpack",
+    "build": "node scripts/ensure-deps.mjs && npm run demo:validate-published-images && npm run demo:validate-published-videos && next build --webpack",
     "start": "next start",
     "lint": "node scripts/ensure-deps.mjs && npm run repo:check-copy-artifacts && eslint .",
     "type-check": "node scripts/ensure-deps.mjs && tsc --noEmit --pretty",
@@ -33,6 +33,7 @@
     "demo:requirements": "tsx scripts/demo-videos/validate-demo-video-production.ts",
     "demo:validate-images": "tsx scripts/demo-videos/validate-manual-product-images.ts --verify-git-ancestry",
     "demo:validate-published-images": "tsx scripts/demo-videos/validate-manual-product-images.ts --published",
+    "demo:validate-published-videos": "tsx scripts/demo-videos/validate-demo-video-production.ts --published",
     "demo:validate-published-ancestry": "tsx scripts/demo-videos/validate-manual-product-images.ts --published --verify-git-ancestry",
     "demo:validate-manual-video": "tsx scripts/demo-videos/validate-manual-demo-video.ts",
     "demo:validate-playback": "tsx scripts/demo-videos/validate-demo-video-playback-approval.ts",

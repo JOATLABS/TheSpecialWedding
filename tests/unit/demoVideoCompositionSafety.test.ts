@@ -75,7 +75,10 @@ describe('demo video marketing composition safety', () => {
   });
 
   it('uses readable outro type and fully removes the product story behind the CTA', () => {
-    assert.match(source, /const storyOpacity = 1 - outroOpacity;/);
+    assert.match(source, /const storyOpacity = 1 - outroBackdropOpacity;/);
+    assert.match(source, /data-demo-outro[\s\S]*?opacity:\s*outroBackdropOpacity/);
+    assert.match(source, /data-demo-outro-content[\s\S]*?opacity:\s*outroContentOpacity/);
+    assert.doesNotMatch(source, /data-demo-outro[\s\S]*?opacity:\s*outroOpacity/);
     assert.match(source, /const outroBrandFontSize = isVertical \? 32 : 36;/);
     assert.match(source, /const outroHeadlineFontSize = isVertical \? 84 : 96;/);
     assert.match(source, /const outroSupportingFontSize = 44;/);

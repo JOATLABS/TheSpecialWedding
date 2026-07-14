@@ -21,13 +21,22 @@ export function DemoVideoComposition(props: DemoVideoRemotionProps) {
   }
 
   const outroStartFrame = Math.max(0, Math.ceil((props.durationSeconds - OUTRO_DURATION_SECONDS) * fps));
-  const outroOpacity = interpolate(
+  const outroTransitionFrames = Math.max(2, Math.round(fps * 0.4));
+  const outroContentStartFrame = outroStartFrame + Math.ceil(outroTransitionFrames / 2);
+  const outroEndFrame = outroStartFrame + outroTransitionFrames;
+  const outroBackdropOpacity = interpolate(
     frame,
-    [outroStartFrame, outroStartFrame + Math.max(1, Math.round(fps * 0.4))],
+    [outroStartFrame, outroContentStartFrame],
     [0, 1],
     { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
   );
-  const storyOpacity = 1 - outroOpacity;
+  const outroContentOpacity = interpolate(
+    frame,
+    [outroContentStartFrame, outroEndFrame],
+    [0, 1],
+    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
+  );
+  const storyOpacity = 1 - outroBackdropOpacity;
   const outroBrandFontSize = isVertical ? 32 : 36;
   const outroHeadlineFontSize = isVertical ? 84 : 96;
   const outroSupportingFontSize = 44;
@@ -193,45 +202,55 @@ export function DemoVideoComposition(props: DemoVideoRemotionProps) {
           alignItems: 'center',
           justifyContent: 'center',
           background: 'linear-gradient(135deg, rgba(2,6,23,0.98), rgba(30,41,59,0.97))',
-          opacity: outroOpacity,
+          opacity: outroBackdropOpacity,
           pointerEvents: 'none',
           textAlign: 'center',
           zIndex: 4,
         }}
       >
         <div
+          data-demo-outro-content
           style={{
-            color: '#c7d2fe',
-            fontSize: outroBrandFontSize,
-            fontWeight: 700,
-            letterSpacing: 2.4,
-            textTransform: 'uppercase',
+            alignItems: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            opacity: outroContentOpacity,
           }}
         >
-          The Special Wedding
-        </div>
-        <div
-          style={{
-            marginTop: isVertical ? 30 : 20,
-            maxWidth: isVertical ? 900 : 1380,
-            color: '#ffffff',
-            fontFamily: "Georgia, 'Times New Roman', serif",
-            fontSize: outroHeadlineFontSize,
-            fontWeight: 700,
-            lineHeight: 1.04,
-          }}
-        >
-          One planner-owned workspace.
-        </div>
-        <div
-          style={{
-            marginTop: isVertical ? 30 : 24,
-            color: '#e2e8f0',
-            fontSize: outroSupportingFontSize,
-            fontWeight: 560,
-          }}
-        >
-          Start with one wedding.
+          <div
+            style={{
+              color: '#c7d2fe',
+              fontSize: outroBrandFontSize,
+              fontWeight: 700,
+              letterSpacing: 2.4,
+              textTransform: 'uppercase',
+            }}
+          >
+            The Special Wedding
+          </div>
+          <div
+            style={{
+              marginTop: isVertical ? 30 : 20,
+              maxWidth: isVertical ? 900 : 1380,
+              color: '#ffffff',
+              fontFamily: "Georgia, 'Times New Roman', serif",
+              fontSize: outroHeadlineFontSize,
+              fontWeight: 700,
+              lineHeight: 1.04,
+            }}
+          >
+            One planner-owned workspace.
+          </div>
+          <div
+            style={{
+              marginTop: isVertical ? 30 : 24,
+              color: '#e2e8f0',
+              fontSize: outroSupportingFontSize,
+              fontWeight: 560,
+            }}
+          >
+            Start with one wedding.
+          </div>
         </div>
       </AbsoluteFill>
     </AbsoluteFill>

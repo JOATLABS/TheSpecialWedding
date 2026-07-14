@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
@@ -10,6 +10,7 @@ import {
   type DemoVideo,
 } from '../../app/data/demoVideos';
 import { withTemporaryRenderInput } from '../../scripts/demo-videos/render-demo-video';
+import { findUnexpectedPublicRenderInputs } from '../../scripts/demo-videos/render-input-safety';
 import { validateManualCaptureCheckpoints } from '../../scripts/demo-videos/validate-manual-demo-video';
 
 const ROOT = process.cwd();
@@ -256,6 +257,28 @@ describe('demo capture execution', () => {
     }
   });
 
+  it('rejects every leftover file in the deployable Remotion staging directory', () => {
+    const temporaryDirectory = mkdtempSync(path.join(os.tmpdir(), 'demo-video-public-staging-'));
+    const stagingDirectory = path.join(
+      temporaryDirectory,
+      'public',
+      'demo-videos',
+      '.render-input',
+    );
+    mkdirSync(path.join(stagingDirectory, 'nested'), { recursive: true });
+    writeFileSync(path.join(stagingDirectory, 'layout-qa.mp4'), 'stale public pixels');
+    writeFileSync(path.join(stagingDirectory, 'nested', 'narration.m4a'), 'stale public audio');
+
+    try {
+      assert.deepEqual(findUnexpectedPublicRenderInputs(temporaryDirectory), [
+        'public/demo-videos/.render-input/layout-qa.mp4',
+        'public/demo-videos/.render-input/nested/narration.m4a',
+      ]);
+    } finally {
+      rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
+  });
+
   it('validates manually captured product images without driving a browser or generating screenshots', () => {
     const capturePath = path.join(ROOT, 'scripts/demo-videos/capture-product-images.ts');
     assert.equal(existsSync(capturePath), false, 'scripted product-image capture must stay removed');
@@ -307,11 +330,15 @@ describe('demo capture execution', () => {
     );
     assert.match(
       packageJson,
+      /"demo:validate-published-videos": "tsx scripts\/demo-videos\/validate-demo-video-production\.ts --published"/,
+    );
+    assert.match(
+      packageJson,
       /"demo:validate-published-ancestry": "tsx scripts\/demo-videos\/validate-manual-product-images\.ts --published --verify-git-ancestry"/,
     );
     assert.match(
       packageJson,
-      /"build": "node scripts\/ensure-deps\.mjs && npm run demo:validate-published-images && next build --webpack"/,
+      /"build": "node scripts\/ensure-deps\.mjs && npm run demo:validate-published-images && npm run demo:validate-published-videos && next build --webpack"/,
     );
     const packageConfig = JSON.parse(packageJson) as { scripts: Record<string, string> };
     assert.doesNotMatch(packageConfig.scripts.build, /git|ancestry|--verify-git-ancestry/);

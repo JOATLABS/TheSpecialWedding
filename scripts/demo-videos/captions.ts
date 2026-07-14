@@ -2,6 +2,8 @@ import type { Caption } from '@remotion/captions';
 
 import type { DemoVideo } from '../../app/data/demoVideos';
 
+const SOCIAL_OUTRO_DURATION_SECONDS = 5;
+
 function parseClock(clock: string): number {
   const [minutesPart, secondsPart] = clock.split(':');
   const minutes = Number(minutesPart);
@@ -24,7 +26,14 @@ function parseTimestampRange(range: string): { startMs: number; endMs: number } 
 }
 
 export function buildCaptionsForDemo(demo: DemoVideo, durationSeconds = demo.durationSeconds): Caption[] {
-  const scale = durationSeconds / demo.durationSeconds;
+  const scale = demo.productionChannel === 'social'
+    ? (durationSeconds - SOCIAL_OUTRO_DURATION_SECONDS)
+      / (demo.durationSeconds - SOCIAL_OUTRO_DURATION_SECONDS)
+    : durationSeconds / demo.durationSeconds;
+
+  if (!Number.isFinite(scale) || scale <= 0) {
+    throw new Error(`Invalid caption duration ${durationSeconds} for ${demo.id}.`);
+  }
 
   return demo.script.map((step) => {
     const { startMs, endMs } = parseTimestampRange(step.timestamp);
