@@ -110,7 +110,7 @@ export default function HomepageTemplatesBand() {
         surface="dark"
         testIdPrefix="homepage-band"
         successCtaHref="/features#showcase"
-        successCtaLabel="Watch product demos"
+        successCtaLabel="Explore product stories"
       />
     </section>
   );
