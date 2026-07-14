@@ -70,6 +70,12 @@ describe('public demo video copy', () => {
     for (const pattern of DEMO_MODAL_JUNK_PATTERNS) {
       assert.equal(pattern.test(source), false, `Demo modal contains ${pattern}`);
     }
+    assert.match(source, /<track/);
+    assert.match(source, /kind="captions"/);
+    assert.match(source, /src=\{demo\.captionUrl\}/);
+    assert.match(source, /srcLang="en"/);
+    assert.match(source, /label="English"/);
+    assert.match(source, /default/);
   });
 
   it('does not import internal recording data into public client demo components', () => {

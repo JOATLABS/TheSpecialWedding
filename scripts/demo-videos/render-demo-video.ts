@@ -39,6 +39,28 @@ function assertFileExists(filePath: string, label: string): void {
   }
 }
 
+function assertRenderedAudioStream(filePath: string): void {
+  const result = spawnSync(
+    'ffprobe',
+    [
+      '-v',
+      'error',
+      '-select_streams',
+      'a:0',
+      '-show_entries',
+      'stream=codec_type',
+      '-of',
+      'default=noprint_wrappers=1:nokey=1',
+      filePath,
+    ],
+    { encoding: 'utf8', maxBuffer: 1024 * 1024 },
+  );
+
+  if (result.error || result.status !== 0 || result.stdout.trim() !== 'audio') {
+    throw new Error('Rendered walkthrough does not contain an audio stream.');
+  }
+}
+
 function writeJson(filePath: string, value: unknown): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
@@ -96,8 +118,11 @@ function main(): void {
   );
 
   const rawRecordingFile = resolveFromRepo(requirement.rawRecordingPath);
+  const narrationFile = resolveFromRepo(requirement.narrationPath);
   const stagedRecordingFile = resolveFromRepo('public', requirement.renderInputPath);
+  const stagedNarrationFile = resolveFromRepo('public', requirement.renderNarrationInputPath);
   assertFileExists(rawRecordingFile, 'Validated manual recording');
+  assertFileExists(narrationFile, 'Approved narration');
 
   const captions = buildCaptionsForDemo(demo, durationSeconds);
   const captionFile = resolveFromRepo('public', requirement.captionPath);
@@ -111,6 +136,7 @@ function main(): void {
     title: demo.title,
     audience: demo.audience,
     rawVideoPath: requirement.renderInputPath,
+    narrationPath: requirement.renderNarrationInputPath,
     captions,
     format,
     durationSeconds,
@@ -126,29 +152,32 @@ function main(): void {
   fs.rmSync(thumbnailFile, { force: true });
 
   withTemporaryRenderInput(rawRecordingFile, stagedRecordingFile, () => {
-    console.log(
-      `Rendering ${demoId} ${format} from validated ${validation.artifactPath} (${durationSeconds.toFixed(2)}s)`,
-    );
-    runRemotion([
-      'render',
-      'remotion/index.ts',
-      target.compositionId,
-      outputFile,
-      `--props=${propsFile}`,
-      `--timeout=${timeoutMs}`,
-    ]);
-    runRemotion([
-      'still',
-      'remotion/index.ts',
-      target.compositionId,
-      thumbnailFile,
-      `--props=${propsFile}`,
-      `--frame=${thumbnailFrame}`,
-      `--timeout=${timeoutMs}`,
-    ]);
+    withTemporaryRenderInput(narrationFile, stagedNarrationFile, () => {
+      console.log(
+        `Rendering ${demoId} ${format} from validated ${validation.artifactPath} (${durationSeconds.toFixed(2)}s)`,
+      );
+      runRemotion([
+        'render',
+        'remotion/index.ts',
+        target.compositionId,
+        outputFile,
+        `--props=${propsFile}`,
+        `--timeout=${timeoutMs}`,
+      ]);
+      runRemotion([
+        'still',
+        'remotion/index.ts',
+        target.compositionId,
+        thumbnailFile,
+        `--props=${propsFile}`,
+        `--frame=${thumbnailFrame}`,
+        `--timeout=${timeoutMs}`,
+      ]);
+    });
   });
 
   assertFileExists(outputFile, 'Rendered MP4');
+  assertRenderedAudioStream(outputFile);
   assertFileExists(thumbnailFile, 'Rendered thumbnail');
   assertFileExists(captionFile, 'Caption JSON');
   assertFileExists(transcriptFile, 'Transcript');

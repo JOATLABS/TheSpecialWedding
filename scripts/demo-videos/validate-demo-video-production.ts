@@ -8,6 +8,7 @@ import {
   getDemoVideoProductionRequirementById,
 } from '../../app/data/demoVideoProduction';
 import { parseCliArgs, resolveFromRepo } from './cli';
+import { validateDemoVideoPlaybackApproval } from './validate-demo-video-playback-approval';
 import { validateManualDemoVideo } from './validate-manual-demo-video';
 
 type ValidationIssue = {
@@ -53,11 +54,16 @@ function validateRequirementInventory(demoIds: readonly string[], requireAssets:
       issues.push({ demoId, message: 'At least one side-effect/session guard is required.' });
     }
 
-    for (const format of ['web-16x9', 'social-9x16'] as const) {
-      const target = getDemoVideoExportTarget(requirement, format);
-      if (!target) {
-        issues.push({ demoId, message: `Missing ${format} export target.` });
-      }
+    const websiteTarget = getDemoVideoExportTarget(requirement, 'web-16x9');
+    if (!websiteTarget) {
+      issues.push({ demoId, message: 'Missing web-16x9 export target.' });
+    }
+
+    if (getDemoVideoExportTarget(requirement, 'social-9x16')) {
+      issues.push({
+        demoId,
+        message: 'Desktop walkthrough footage cannot be reused as a social-9x16 cut.',
+      });
     }
 
     if (!requireAssets) continue;
@@ -75,10 +81,22 @@ function validateRequirementInventory(demoIds: readonly string[], requireAssets:
       issues.push({ demoId, message: `Missing raw recording at ${requirement.rawRecordingPath}.` });
     }
 
+    if (!fileExistsAndIsNonempty(resolveFromRepo(requirement.narrationPath))) {
+      issues.push({ demoId, message: `Missing narration at ${requirement.narrationPath}.` });
+    }
+
     if (fs.existsSync(resolveFromRepo('public', requirement.renderInputPath))) {
       issues.push({
         demoId,
         message: `Temporary Remotion input remains at public/${requirement.renderInputPath}; raw footage must stay outside public/.`,
+      });
+    }
+
+
+    if (fs.existsSync(resolveFromRepo('public', requirement.renderNarrationInputPath))) {
+      issues.push({
+        demoId,
+        message: `Temporary Remotion narration input remains at public/${requirement.renderNarrationInputPath}; narration source must stay outside public/.`,
       });
     }
 
@@ -98,6 +116,15 @@ function validateRequirementInventory(demoIds: readonly string[], requireAssets:
       if (!publicAssetExists(target.thumbnailPath)) {
         issues.push({ demoId, message: `Missing thumbnail at ${target.thumbnailPath}.` });
       }
+    }
+
+    try {
+      validateDemoVideoPlaybackApproval(demoId);
+    } catch (error: unknown) {
+      issues.push({
+        demoId,
+        message: `Human playback approval failed validation: ${error instanceof Error ? error.message : String(error)}`,
+      });
     }
   }
 

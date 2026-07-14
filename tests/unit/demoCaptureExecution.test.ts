@@ -4,7 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 
-import { HERO_DEMO_VIDEO, type DemoCaptureCheckpoint } from '../../app/data/demoVideos';
+import {
+  HERO_DEMO_VIDEO,
+  type DemoCaptureCheckpoint,
+  type DemoVideo,
+} from '../../app/data/demoVideos';
 import { withTemporaryRenderInput } from '../../scripts/demo-videos/render-demo-video';
 import { validateManualCaptureCheckpoints } from '../../scripts/demo-videos/validate-manual-demo-video';
 
@@ -54,6 +58,10 @@ describe('demo capture execution', () => {
     assert.match(validator, /meta\[name="tsw-app-build-commit"\]/);
     assert.match(validator, /isolated local capture server/);
     assert.match(validator, /cat-file/);
+    assert.match(validator, /merge-base/);
+    assert.match(validator, /--is-ancestor/);
+    assert.match(validator, /recording commit must be an ancestor of current HEAD/);
+    assert.doesNotMatch(validator, /does not match current HEAD/);
     assert.match(validator, /--untracked-files=all/);
     assert.doesNotMatch(validator, /--untracked-files=no/);
     assert.match(validator, /requires a clean worktree/);
@@ -74,9 +82,19 @@ describe('demo capture execution', () => {
     const renderer = source('scripts/demo-videos/render-demo-video.ts');
     assert.match(renderer, /validateManualDemoVideo\(receiptPath\)/);
     assert.match(renderer, /Manual demo renders do not accept --raw or --duration-seconds overrides/);
+    assert.match(renderer, /requirement\.narrationPath/);
+    assert.match(renderer, /requirement\.renderNarrationInputPath/);
+    assert.match(renderer, /ffprobe/);
+    assert.match(renderer, /Rendered walkthrough does not contain an audio stream/);
+    assert.match(renderer, /buildWebVttForDemo/);
+    assert.match(renderer, /\.vtt/);
+    assert.doesNotMatch(renderer, /writeJson\(captionFile/);
 
     const productionValidator = source('scripts/demo-videos/validate-demo-video-production.ts');
     assert.match(productionValidator, /raw footage must stay outside public/);
+    assert.match(productionValidator, /Missing narration/);
+    assert.match(productionValidator, /Temporary Remotion narration input remains/);
+    assert.match(productionValidator, /validateDemoVideoPlaybackApproval\(demoId\)/);
 
     const layout = source('app/layout.tsx');
     assert.match(layout, /<meta name="tsw-app-build-commit" content=\{appBuildCommit\} \/>/);
@@ -140,7 +158,7 @@ describe('demo capture execution', () => {
     assert.throws(
       () => validateManualCaptureCheckpoints(
         receiptCheckpoints.map((checkpoint, index) => index === seatingIndex
-          ? { ...checkpoint, route: '/admin/seating' }
+          ? { ...checkpoint, route: '/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel' }
           : checkpoint),
         HERO_DEMO_VIDEO,
       ),
@@ -163,6 +181,58 @@ describe('demo capture execution', () => {
         HERO_DEMO_VIDEO,
       ),
       /frameSha256 must be a full SHA-256 checksum/,
+    );
+  });
+
+  it('rejects Phase 1 demos that do not define at least three exact checkpoints', () => {
+    const phaseOneDemo: DemoVideo = {
+      ...HERO_DEMO_VIDEO,
+      id: 'phase-one-contract-test',
+      priority: 'phase-one',
+      routePlan: ['/admin/planner'],
+      captureCheckpoints: undefined,
+    };
+    const genericCheckpoint = withFrameProof([
+      {
+        label: 'Generic page',
+        route: '/admin/planner',
+        action: 'Inspect the page.',
+        visibleResult: 'The page is visible.',
+      },
+    ]);
+
+    assert.throws(
+      () => validateManualCaptureCheckpoints(genericCheckpoint, phaseOneDemo),
+      /phase-one-contract-test must define at least 3 exact capture checkpoints/,
+    );
+
+    assert.throws(
+      () => validateManualCaptureCheckpoints(genericCheckpoint, {
+        ...phaseOneDemo,
+        captureCheckpoints: [
+          {
+            label: 'Only one exact checkpoint',
+            route: '/admin/planner',
+            action: 'Inspect the planner dashboard.',
+            visibleResult: 'The planner dashboard is visible.',
+          },
+        ],
+      }),
+      /phase-one-contract-test must define at least 3 exact capture checkpoints/,
+    );
+
+    const placeholderContract = Array.from({ length: 3 }, (_, index) => ({
+      label: `Placeholder ${index + 1}`,
+      route: '/admin/planner',
+      action: 'Open a page.',
+      visibleResult: 'A page is visible.',
+    }));
+    assert.throws(
+      () => validateManualCaptureCheckpoints(
+        withFrameProof(placeholderContract),
+        { ...phaseOneDemo, captureCheckpoints: placeholderContract },
+      ),
+      /must define a meaningful label, action, and visible result/,
     );
   });
 

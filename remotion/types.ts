@@ -7,6 +7,7 @@ export type DemoVideoRemotionProps = {
   title: string;
   audience: string;
   rawVideoPath: string;
+  narrationPath: string;
   captions: Caption[];
   format: DemoVideoExportFormat;
   durationSeconds: number;

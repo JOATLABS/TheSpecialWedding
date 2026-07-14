@@ -6,6 +6,7 @@ export type DemoVideoCaptureSurface =
   | 'public-site'
   | 'public-form'
   | 'guest-token'
+  | 'client-payment-token'
   | 'vendor-token'
   | 'payment-link';
 
@@ -27,10 +28,13 @@ export type DemoVideoProductionRequirement = {
   routeParameters: readonly string[];
   sideEffectGuards: readonly string[];
   rawRecordingPath: string;
+  narrationPath: string;
   captureReceiptPath: string;
   renderInputPath: string;
+  renderNarrationInputPath: string;
   captionPath: string;
   transcriptPath: string;
+  playbackApprovalPath: string;
   exportTargets: readonly DemoVideoExportTarget[];
 };
 
@@ -44,6 +48,7 @@ const SURFACE_SESSION_COPY: Record<DemoVideoCaptureSurface, string> = {
   'public-site': 'No authenticated session required, but slug placeholders must resolve to seeded public weddings.',
   'public-form': 'No authenticated session required, but public forms must use disposable fixture submissions.',
   'guest-token': 'Requires a disposable guest upload token and prepared demo media only.',
+  'client-payment-token': 'Requires a seeded client payment portal token and read-only payment state.',
   'vendor-token': 'Requires a disposable vendor or contract token with no real counterparty data.',
   'payment-link': 'Requires Stripe test mode and must stop before any irreversible financial confirmation.',
 };
@@ -66,9 +71,10 @@ export function getCaptureSurfaces(routes: readonly string[]): DemoVideoCaptureS
     routes.map((route): DemoVideoCaptureSurface => {
       if (route.startsWith('/admin')) return 'planner-admin';
       if (route.startsWith('/couple')) return 'couple-portal';
-      if (route.startsWith('/portal') || route.startsWith('/vendor-contract') || route.startsWith('/contracts')) {
+      if (route.startsWith('/portal/ads') || route.startsWith('/vendor-contract') || route.startsWith('/contracts')) {
         return 'vendor-token';
       }
+      if (route.startsWith('/portal')) return 'client-payment-token';
       if (route.startsWith('/pay')) return 'payment-link';
       if (route.includes('/upload/')) return 'guest-token';
       if (route.startsWith('/forms/')) return 'public-form';
@@ -95,6 +101,10 @@ export function getSideEffectGuards(
     guards.push('Use fixture or Stripe test-mode payment states only.');
   }
 
+  if (surfaces.includes('client-payment-token')) {
+    guards.push('Use the seeded read-only client payment portal; do not open payment-method or transaction controls.');
+  }
+
   if (routes.some((route) => route.includes('/upload/'))) {
     guards.push('Use prepared non-private demo media; do not expose local Finder paths or personal filenames.');
   }
@@ -113,15 +123,6 @@ function buildExportTargets(demoId: string): DemoVideoExportTarget[] {
       assetPath: `${PUBLIC_DEMO_VIDEO_ROOT}/exports/${demoId}-16x9.mp4`,
       thumbnailPath: `${PUBLIC_DEMO_VIDEO_ROOT}/thumbnails/${demoId}-16x9.png`,
     },
-    {
-      format: 'social-9x16',
-      compositionId: 'DemoVideo9x16',
-      width: 1080,
-      height: 1920,
-      fps: DEFAULT_FPS,
-      assetPath: `${PUBLIC_DEMO_VIDEO_ROOT}/exports/${demoId}-9x16.mp4`,
-      thumbnailPath: `${PUBLIC_DEMO_VIDEO_ROOT}/thumbnails/${demoId}-9x16.png`,
-    },
   ];
 }
 
@@ -134,10 +135,13 @@ export function getDemoVideoProductionRequirement(demo: DemoVideo): DemoVideoPro
     routeParameters: getRouteParameters(demo.routePlan),
     sideEffectGuards: getSideEffectGuards(demo.routePlan, captureSurfaces),
     rawRecordingPath: `output/demo-videos/raw/${demo.id}.mp4`,
+    narrationPath: `output/demo-videos/narration/${demo.id}.m4a`,
     captureReceiptPath: `output/demo-videos/receipts/${demo.id}.json`,
     renderInputPath: `${STATIC_DEMO_VIDEO_ROOT}/.render-input/${demo.id}.mp4`,
+    renderNarrationInputPath: `${STATIC_DEMO_VIDEO_ROOT}/.render-input/${demo.id}.m4a`,
     captionPath: `${STATIC_DEMO_VIDEO_ROOT}/captions/${demo.id}.json`,
     transcriptPath: `${STATIC_DEMO_VIDEO_ROOT}/transcripts/${demo.id}.md`,
+    playbackApprovalPath: `output/demo-videos/playback-approvals/${demo.id}.json`,
     exportTargets: buildExportTargets(demo.id),
   };
 }

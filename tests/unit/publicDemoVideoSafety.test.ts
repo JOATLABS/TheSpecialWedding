@@ -8,6 +8,7 @@ import {
   DEMO_VIDEO_PLAYLIST,
   HERO_DEMO_VIDEO,
   applyDemoVideoPublicationApproval,
+  isCompletePublicationApproval,
   toPublicDemoVideo,
 } from '../../app/data/demoVideos';
 
@@ -61,7 +62,7 @@ const PUBLIC_DIRECT_ASSET_PATHS = RETAKE_REQUIRED_DEMO_IDS.flatMap((demoId) => [
   `public/demo-videos/exports/${demoId}-9x16.mp4`,
   `public/demo-videos/thumbnails/${demoId}-16x9.png`,
   `public/demo-videos/thumbnails/${demoId}-9x16.png`,
-  `public/demo-videos/captions/${demoId}.json`,
+  `public/demo-videos/captions/${demoId}.vtt`,
   `public/demo-videos/transcripts/${demoId}.md`,
 ] as const);
 
@@ -79,6 +80,48 @@ function trackedPublicDemoAssets(): Set<string> {
 }
 
 describe('public demo video safety', () => {
+  it('allows a fully approved website walkthrough without pretending it has a social cut', () => {
+    assert.equal(
+      isCompletePublicationApproval(
+        {
+          approval: 'approved',
+          captureReceiptPath: 'output/demo-videos/receipts/planner-command-center-walkthrough.json',
+          playbackApprovalPath: 'output/demo-videos/playback-approvals/planner-command-center-walkthrough.json',
+          appBuildCommit: 'a'.repeat(40),
+          appBuildLabel: 'Phase 1 planner workspace',
+          recordedAt: '2026-07-13T12:00:00.000Z',
+          assetUrl: '/demo-videos/exports/planner-command-center-walkthrough-16x9.mp4',
+          thumbnailUrl: '/demo-videos/thumbnails/planner-command-center-walkthrough-16x9.png',
+          captionUrl: '/demo-videos/captions/planner-command-center-walkthrough.vtt',
+          transcriptUrl: '/demo-videos/transcripts/planner-command-center-walkthrough.md',
+        },
+        'planner-command-center-walkthrough',
+      ),
+      true,
+    );
+  });
+
+  it('rejects legacy JSON captions instead of publishing a non-track sidecar', () => {
+    assert.equal(
+      isCompletePublicationApproval(
+        {
+          approval: 'approved',
+          captureReceiptPath: 'output/demo-videos/receipts/planner-command-center-walkthrough.json',
+          playbackApprovalPath: 'output/demo-videos/playback-approvals/planner-command-center-walkthrough.json',
+          appBuildCommit: 'a'.repeat(40),
+          appBuildLabel: 'Phase 1 planner workspace',
+          recordedAt: '2026-07-13T12:00:00.000Z',
+          assetUrl: '/demo-videos/exports/planner-command-center-walkthrough-16x9.mp4',
+          thumbnailUrl: '/demo-videos/thumbnails/planner-command-center-walkthrough-16x9.png',
+          captionUrl: '/demo-videos/captions/planner-command-center-walkthrough.json',
+          transcriptUrl: '/demo-videos/transcripts/planner-command-center-walkthrough.md',
+        },
+        'planner-command-center-walkthrough',
+      ),
+      false,
+    );
+  });
+
   it('publishes only demos with a complete explicit approval record', () => {
     assert.deepEqual(Object.keys(APPROVED_PUBLIC_DEMO_VIDEO_PUBLICATIONS), []);
 
