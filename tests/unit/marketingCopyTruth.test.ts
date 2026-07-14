@@ -27,10 +27,13 @@ const PUBLIC_COPY_TRUTH_SOURCES = [
   'app/resources/blog/data.tsx',
   'app/scripts/seed_blog.py',
   'app/api/saas_config.py',
+  'app/components/saas/SaasLandingPage.tsx',
+  'app/components/saas/PlannerAuthModal.tsx',
+  'app/services/user_management_service.py',
 ] as const;
 
 const RETIRED_VENDOR_ACCESS_PROMISES =
-  /vendor[- ]collaboration workspaces?|invite photographers, caterers, and venues into dedicated workspaces|token-based vendor workspaces|all three paths a vendor can take|vendors can be invited into dedicated workspaces|Planner-owned vendor CRM, contracts & milestones|dedicated vendor portal|vendor portal access|every florist, caterer, and photographer has|role-based access to the timeline|uploads deliverables to the gallery|signs off on contracts inside the platform|publish schedules for planners, vendors, and couples/i;
+  /vendor[- ]collaboration workspaces?|invite photographers, caterers, and venues into dedicated workspaces|invite vendors to collaborative timelines|invite and collaborate with vendors|give vendors access to update|vendors access only their assigned tasks|vendor updates scoped to their deliverables|vendor collaboration features are game-changing|vendor collaboration hub|vendor invites|token-based vendor workspaces|all three paths a vendor can take|vendors can be invited into dedicated workspaces|Planner-owned vendor CRM, contracts & milestones|dedicated vendor portal|vendor portal access|every florist, caterer, and photographer has|role-based access to the timeline|uploads deliverables to the gallery|signs off on contracts inside the platform|publish schedules for planners, vendors, and couples/i;
 
 const UNIMPLEMENTED_SIGNATURE_PROMISES =
   /cross-wedding analytics(?: &| and)? revenue tracking|agency-grade reporting/i;
@@ -40,6 +43,40 @@ const RETIRED_AUTOMATION_PROMISES =
 
 const RETIRED_SUPPORT_PROMISES =
   /live chat with our success team|on-call escalation for critical day-of moments|Signature and Agency plans|support infrastructure that exists when you need it at 11pm|support desk that actually responds/i;
+
+const RETIRED_PLAN_HIGHLIGHTS =
+  /Up to 50 guests|AI-powered timeline & vendor matching|QR check-in & live counts|\b(?:1|25|100|500)GB storage\b|Group onboarding session|White-label \(your brand, no Special Wedding mentions\)|API access \+ webhooks|Dedicated success manager|Custom integrations/i;
+
+const APPROVED_PLAN_HIGHLIGHTS = [
+  '1 wedding to try us out',
+  'Guest list & RSVP system',
+  'Branded wedding website',
+  'Basic timeline builder',
+  '1GB guest memories storage',
+  'Unlimited weddings',
+  'Unlimited guests',
+  'Vendor management',
+  'Seating orchestration',
+  'Automated reminders',
+  'Calendar sync (Google, Outlook)',
+  '300 AI credits/month',
+  '25GB guest memories storage',
+  'Email support',
+  'Everything in Boutique',
+  'Team collaboration (5 staff seats)',
+  'Planner storefront on a shareable platform URL',
+  'Optional custom domain (app.yourbrand.com)',
+  '1,500 AI credits/month',
+  '100GB guest memories storage',
+  'Priority support (12h response)',
+  'Support-assisted onboarding by request',
+  'Everything in Signature',
+  'Optional custom domain',
+  '20 staff seats',
+  '5,000 AI credits/month',
+  '500GB guest memories storage',
+  'Support-assisted launch planning',
+] as const;
 
 const APPROVED_STORY_COPY = [
   {
@@ -225,9 +262,13 @@ describe('public marketing copy truth contract', () => {
 
     for (const relativePath of PRICING_COPY_SOURCES) {
       const pricingSource = source(relativePath);
-      assert.ok(
-        pricingSource.includes('Team collaboration (5 staff seats)'),
-        `${relativePath} must use an implemented Signature-plan differentiator`,
+      for (const highlight of APPROVED_PLAN_HIGHLIGHTS) {
+        assert.ok(pricingSource.includes(highlight), `${relativePath} must include ${highlight}`);
+      }
+      assert.doesNotMatch(
+        pricingSource,
+        RETIRED_PLAN_HIGHLIGHTS,
+        `${relativePath} must not restore retired plan highlights`,
       );
     }
 
@@ -243,10 +284,10 @@ describe('public marketing copy truth contract', () => {
     }
 
     assert.ok(
-      source('scripts/seed_subscription_plans.py').includes(
-        'SEED_VERSION = "2026-07-14T00:00:00+00:00"',
+      source('app/utils/subscription_plan_seed_policy.py').includes(
+        'PUBLIC_PLAN_COPY_SEED_VERSION = "2026-07-14T15:30:33+00:00"',
       ),
-      'the pricing truth refresh must advance the seed strategy version so existing plan records are updated',
+      'the pricing truth refresh must advance only the public-copy field revision',
     );
   });
 });

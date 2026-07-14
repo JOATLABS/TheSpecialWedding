@@ -94,6 +94,8 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
       'Unlimited guests',
       'Everything in Boutique',
       'Team collaboration (5 staff seats)',
+      'Planner storefront on a shareable platform URL',
+      'Optional custom domain (app.yourbrand.com)',
       '1,500 AI credits/month',
       '100GB guest memories storage',
       'Priority support (12h response)',
@@ -118,6 +120,8 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
       'Unlimited weddings',
       'Unlimited guests',
       'Everything in Signature',
+      'Planner storefront on a shareable platform URL',
+      'Optional custom domain',
       '20 staff seats',
       '5,000 AI credits/month',
       '500GB guest memories storage',
@@ -233,7 +237,9 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
   useEffect(() => {
     const fetchPlans = async () => {
       try {
-        const response = await fetch(`${apiBaseUrl}/public/subscription-plans`);
+        const response = await fetch(`${apiBaseUrl}/public/subscription-plans`, {
+          cache: 'no-store',
+        });
         if (response.ok) {
           const data = await response.json();
           const activePlans = data

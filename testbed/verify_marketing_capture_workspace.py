@@ -45,6 +45,7 @@ from app.constants.marketing_capture_media import (  # noqa: E402
 )
 
 SETUP_SMOKE_ACCOUNTS = ROOT / "scripts" / "setup_smoke_accounts.py"
+SUBSCRIPTION_PLAN_SEEDER = ROOT / "scripts" / "seed_subscription_plans.py"
 RICH_WORKSPACE_SEEDER = (
     ROOT / "scripts" / "demo-videos" / "seed-demo-video-workspace.py"
 )
@@ -84,6 +85,117 @@ MARKETING_CAPTURE_API_TEXT_FEATURES = frozenset(
         "team",
     }
 )
+EXPECTED_PUBLIC_PLAN_COPY = {
+    "Solo": {
+        "_id": "plan_solo",
+        "description": "Try us with your first client. One wedding, on us.",
+        "price_monthly": 0,
+        "price_yearly": 0,
+        "trial_days": 0,
+        "billing_model": "flat_rate",
+        "is_metered": False,
+        "max_weddings": 1,
+        "max_guests_per_wedding": 50,
+        "ai_credits_monthly": 0,
+        "storage_gb": 1,
+        "staff_seats": 1,
+        "is_featured": False,
+        "is_active": True,
+        "display_order": 0,
+        "features_list": [
+            "1 wedding to try us out",
+            "Guest list & RSVP system",
+            "Branded wedding website",
+            "Basic timeline builder",
+            "1GB guest memories storage",
+        ],
+    },
+    "Boutique": {
+        "_id": "plan_boutique",
+        "description": "For independent planners running their solo practice with paid planning tools and higher limits.",
+        "price_monthly": 49,
+        "price_yearly": 490,
+        "trial_days": 30,
+        "billing_model": "flat_rate",
+        "is_metered": False,
+        "max_weddings": -1,
+        "max_guests_per_wedding": -1,
+        "ai_credits_monthly": 300,
+        "storage_gb": 25,
+        "staff_seats": 1,
+        "is_featured": False,
+        "is_active": True,
+        "display_order": 1,
+        "features_list": [
+            "Unlimited weddings",
+            "Unlimited guests",
+            "Vendor management",
+            "Seating orchestration",
+            "Automated reminders",
+            "Calendar sync (Google, Outlook)",
+            "300 AI credits/month",
+            "25GB guest memories storage",
+            "Email support",
+        ],
+    },
+    "Signature": {
+        "_id": "plan_signature",
+        "description": "For agencies running a team of planners. Everything in Boutique, plus five staff seats, higher AI and storage limits, a planner storefront, and custom-domain options.",
+        "price_monthly": 149,
+        "price_yearly": 1490,
+        "trial_days": 30,
+        "billing_model": "flat_rate",
+        "is_metered": False,
+        "max_weddings": -1,
+        "max_guests_per_wedding": -1,
+        "ai_credits_monthly": 1500,
+        "storage_gb": 100,
+        "staff_seats": 5,
+        "is_featured": True,
+        "is_active": True,
+        "display_order": 2,
+        "features_list": [
+            "Unlimited weddings",
+            "Unlimited guests",
+            "Everything in Boutique",
+            "Team collaboration (5 staff seats)",
+            "Planner storefront on a shareable platform URL",
+            "Optional custom domain (app.yourbrand.com)",
+            "1,500 AI credits/month",
+            "100GB guest memories storage",
+            "Priority support (12h response)",
+            "Support-assisted onboarding by request",
+        ],
+    },
+    "Enterprise": {
+        "_id": "plan_enterprise",
+        "description": "For larger planning teams that need more seats, higher AI usage, expanded guest memories storage, and launch support.",
+        "price_monthly": 399,
+        "price_yearly": 3990,
+        "trial_days": 30,
+        "billing_model": "flat_rate",
+        "is_metered": False,
+        "max_weddings": -1,
+        "max_guests_per_wedding": -1,
+        "ai_credits_monthly": 5000,
+        "storage_gb": 500,
+        "staff_seats": 20,
+        "is_featured": False,
+        "is_active": True,
+        "display_order": 3,
+        "features_list": [
+            "Unlimited weddings",
+            "Unlimited guests",
+            "Everything in Signature",
+            "Planner storefront on a shareable platform URL",
+            "Optional custom domain",
+            "20 staff seats",
+            "5,000 AI credits/month",
+            "500GB guest memories storage",
+            "Support-assisted launch planning",
+        ],
+    },
+}
 
 
 class _BuildCommitMetaParser(HTMLParser):
@@ -163,6 +275,80 @@ def _run_python(
     subprocess.run(command, cwd=ROOT, env=env, check=True)
 
 
+def verify_public_subscription_plan_truth(plans: Any, *, label: str) -> None:
+    """Fail closed unless the mutable catalog matches the visible plan contract."""
+
+    records = list(plans) if plans is not None else []
+    by_name = {
+        str(plan.get("name")): plan for plan in records if isinstance(plan, dict)
+    }
+    _require(
+        len(records) == len(EXPECTED_PUBLIC_PLAN_COPY),
+        f"{label} public subscription plan catalog has duplicate or extra entries",
+    )
+    _require(
+        set(by_name) == set(EXPECTED_PUBLIC_PLAN_COPY),
+        f"{label} public subscription plan names do not match the canonical catalog",
+    )
+
+    for plan_name, expected in EXPECTED_PUBLIC_PLAN_COPY.items():
+        plan = by_name[plan_name]
+        for field in (
+            "_id",
+            "price_monthly",
+            "price_yearly",
+            "trial_days",
+            "billing_model",
+            "is_metered",
+            "max_weddings",
+            "max_guests_per_wedding",
+            "ai_credits_monthly",
+            "storage_gb",
+            "staff_seats",
+            "is_featured",
+            "is_active",
+            "display_order",
+        ):
+            _require(
+                plan.get(field) == expected[field],
+                f"{label} public subscription plan {plan_name} has stale {field}",
+            )
+        _require(
+            plan.get("description") == expected["description"],
+            f"{label} public subscription plan {plan_name} has stale description copy",
+        )
+        _require(
+            plan.get("features_list") == expected["features_list"],
+            f"{label} public subscription plan {plan_name} has stale feature copy",
+        )
+        features = plan.get("features")
+        _require(
+            isinstance(features, dict)
+            and features.get("vendor_collaboration") is False,
+            f"{label} public subscription plan {plan_name} enables unfinished vendor access",
+        )
+
+
+def verify_frontend_public_subscription_plans(frontend_url: str) -> None:
+    """Verify the exact mutable plan payload consumed by the public homepage."""
+
+    origin = require_local_capture_origin(
+        frontend_url,
+        expected_port=3100,
+        label="Marketing capture frontend",
+    )
+    payload = _get_json_readiness(
+        f"{origin}/api/proxy/public/subscription-plans",
+        label="Marketing capture public subscription plans",
+        headers={"Cache-Control": "no-cache"},
+        expected_cache_control="no-cache, no-store, must-revalidate",
+    )
+    verify_public_subscription_plan_truth(
+        payload,
+        label="Frontend proxy",
+    )
+
+
 def _require(condition: Any, message: str) -> None:
     if not condition:
         raise RuntimeError(message)
@@ -197,6 +383,7 @@ def _get_json_readiness(
     headers: dict[str, str] | None = None,
     cookies: dict[str, str] | None = None,
     params: dict[str, str] | None = None,
+    expected_cache_control: str | None = None,
 ) -> Any:
     """Fetch one readiness payload without allowing redirects or HTML shells."""
 
@@ -219,6 +406,13 @@ def _get_json_readiness(
         response.status_code == 200,
         f"{label} returned HTTP {response.status_code}",
     )
+    if expected_cache_control is not None:
+        actual_cache_control = response.headers.get("Cache-Control", "")
+        _require(
+            actual_cache_control == expected_cache_control,
+            f"{label} returned Cache-Control {actual_cache_control!r}; "
+            f"expected {expected_cache_control!r}",
+        )
     try:
         return response.json()
     except ValueError as exc:
@@ -1680,6 +1874,7 @@ def _seed_environment(anchor_at: str) -> dict[str, str]:
     env.update(
         {
             "ENVIRONMENT": "development",
+            "STRIPE_ENABLED": "false",
             "MARKETING_CAPTURE_ANCHOR_AT": anchor_at,
             "MARKETING_CAPTURE_PLANNER_EMAIL": PLANNER_EMAIL,
             "MARKETING_CAPTURE_TEAM_PASSWORD": TEAM_PASSWORD,
@@ -1752,6 +1947,12 @@ def main() -> int:
         assert_setup_namespace_available(database)
 
         env = _seed_environment(args.anchor_at)
+        print("[SEED] Refreshing canonical public subscription plans")
+        _run_python(SUBSCRIPTION_PLAN_SEEDER, env=env)
+        verify_public_subscription_plan_truth(
+            database["subscription_plans"].find({"is_active": True}),
+            label="Seeded database",
+        )
         print("[SEED] Creating the dedicated planner and couple identities")
         _run_python(SETUP_SMOKE_ACCOUNTS, env=env)
         print("[SEED] Enriching the production-shaped fictional workspace")
@@ -1790,6 +1991,7 @@ def main() -> int:
         capture_build,
         backend_url=backend_url,
     )
+    verify_frontend_public_subscription_plans(frontend_url)
     verify_frontend_gallery_assets(frontend_url)
     verify_frontend_admin_gallery_prefixes(frontend_url, backend_url)
     verify_frontend_couple_memory_preview(frontend_url, backend_url)

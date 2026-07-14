@@ -3,18 +3,19 @@ public-cacheable branch again.
 
 Background (2026-05-13 admin-save-doesn't-reflect bug forensics):
 ``app/main.py::add_cache_headers`` middleware classifies every response into
-one of four buckets:
+one of six buckets:
 
   1. Next.js / static-asset paths → long max-age (immutable bundles)
   2. Image / font / css / js extensions → public, max-age=static_cache_max_age
   3. Non-GET methods → no-store (mutations)
   4. Path startswith one of [/api/, /couple-portal/, /couple/, /admin/,
-     /vendor-contract/, /subscription-plans] → no-store
-  5. Fallthrough ``else`` → ``public, max-age=300`` (5 minutes)
+     /vendor-contract/] → no-store
+  5. Mutable /subscription-plans and /public/subscription-plans → unconditional no-store
+  6. Fallthrough ``else`` → ``public, max-age=300`` (5 minutes)
 
 The ``/subscription-plans`` admin CRUD surface lives at the root path (no
 /admin/ prefix because the same router exposes /public/subscription-plans).
-Before the fix, that path didn't match any of (1)–(4) and fell into (5).
+Before the fix, that path didn't match any of (1)–(5) and fell into (6).
 That gave the browser 5 minutes of public HTTP cache on the admin plan list
 GET. After a successful PUT, ``handleSavePlan`` re-fetched the list via
 fetch with default cache mode — the browser served the pre-PUT cached body
@@ -100,6 +101,23 @@ def test_subscription_plans_path_in_no_store_branch():
         "into the public, max-age=300 fallthrough — see the docstring at "
         'the top of this file. Re-add path.startswith("/subscription-plans") '
         "to the no-store elif in app/main.py."
+    )
+
+
+def test_public_subscription_plans_path_in_no_store_branch():
+    """The mutable public catalog must not retain a pre-seed browser response."""
+    source = _load_main_source()
+    tree = ast.parse(source)
+    fn = _find_function(tree, "add_cache_headers")
+    fn_src = ast.unparse(fn)
+
+    assert (
+        'path.startswith("/public/subscription-plans")' in fn_src
+        or "path.startswith('/public/subscription-plans')" in fn_src
+    ), (
+        "GET /public/subscription-plans still falls into the public five-minute "
+        "cache, so the homepage can replace truthful fallback pricing with a "
+        "stale plan payload after a canonical seed refresh."
     )
 
 

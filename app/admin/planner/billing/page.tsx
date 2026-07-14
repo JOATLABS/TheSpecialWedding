@@ -6,10 +6,14 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
 import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import {
+  ACTIVE_SUBSCRIPTION_STATUSES,
   BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES,
   getPlannerBillingEntryState,
   normalizeSubscriptionStatus,
 } from '@/utils/subscriptionStatus';
+import {
+  normalizeOwnedPlanForBilling,
+} from '@/utils/subscriptionPlanIdentity';
 import PageHeader from '../../components/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -163,18 +167,66 @@ export default function PlannerBillingPage() {
       const baseUrl = getApiBaseUrl();
 
       if (!token || !userProfile) return;
+      const billingUserId = userProfile.id
+        || (userProfile as any)._id
+        || (userProfile as any).user_data?._id
+        || '';
 
       // Load available plans
       let fetchedPlans: SubscriptionPlan[] = [];
       const plansResponse = await fetch(
         `${baseUrl}/public/subscription-plans`,
-        { credentials: 'include' }
+        { credentials: 'include', cache: 'no-store' }
       );
 
       if (plansResponse.ok) {
         fetchedPlans = await plansResponse.json();
         setPlans(fetchedPlans);
       }
+
+      const resolvePlanDetail = async (
+        subscription: UserSubscription,
+      ): Promise<{
+        subscription: UserSubscription;
+        plan: SubscriptionPlan | null;
+      }> => {
+        // The public catalog is selection-only. Current subscription terms
+        // always come from the authenticated owner-scoped snapshot response,
+        // including active plans whose saved limits differ from the mutable
+        // catalog and retained inactive aliases.
+        try {
+          if (!billingUserId) {
+            return { subscription, plan: null };
+          }
+          const aliasResponse = await fetch(
+            `${baseUrl}/admin/users/${encodeURIComponent(billingUserId)}/subscription-plan`,
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              credentials: 'include',
+              cache: 'no-store',
+            },
+          );
+          if (aliasResponse.ok) {
+            const aliasPlan = normalizeOwnedPlanForBilling(
+              await aliasResponse.json(),
+              subscription.plan_id,
+            );
+            if (aliasPlan) {
+              return {
+                subscription,
+                plan: aliasPlan as SubscriptionPlan,
+              };
+            }
+          }
+        } catch (error) {
+          console.warn('Could not resolve current subscription plan terms:', error);
+        }
+
+        return { subscription, plan: null };
+      };
 
       // Try to load subscription with card details from the new endpoint first
       let subscriptionLoaded = false;
@@ -205,11 +257,12 @@ export default function PlannerBillingPage() {
         if (stripeSubResponse.ok) {
           const subData = normalizeSubscription(await stripeSubResponse.json());
           if (subData && subData.plan_id) {
-            setCurrentSubscription(subData);
-            const planDetail = fetchedPlans.find((p: SubscriptionPlan) => p._id === subData.plan_id);
+            const resolved = await resolvePlanDetail(subData);
+            const planDetail = resolved.plan;
+            setCurrentSubscription(resolved.subscription);
             setCurrentPlan(planDetail || null);
-            generateBillingAlerts(subData, planDetail);
-            subscriptionLoaded = true;
+            generateBillingAlerts(resolved.subscription, planDetail);
+            subscriptionLoaded = Boolean(planDetail);
           }
         }
       } catch (error) {
@@ -219,7 +272,7 @@ export default function PlannerBillingPage() {
       // Fallback to legacy endpoints if Stripe endpoint failed
       if (!subscriptionLoaded) {
         // Use user_id (MongoDB _id mapped to .id), not email — backend authorization checks _id match
-        const userId = userProfile.id || (userProfile as any)._id || (userProfile as any).user_data?._id || '';
+        const userId = billingUserId;
         if (userId) {
           const subResponse = await fetch(
             `${baseUrl}/users/${encodeURIComponent(userId)}/subscription`,
@@ -247,11 +300,12 @@ export default function PlannerBillingPage() {
           if (subResponse.ok) {
             const subData = normalizeSubscription(await subResponse.json());
             if (subData && subData.plan_id) {
-              setCurrentSubscription(subData);
-              const planDetail = fetchedPlans.find((p: SubscriptionPlan) => p._id === subData.plan_id);
+              const resolved = await resolvePlanDetail(subData);
+              const planDetail = resolved.plan;
+              setCurrentSubscription(resolved.subscription);
               setCurrentPlan(planDetail || null);
-              generateBillingAlerts(subData, planDetail);
-              subscriptionLoaded = true;
+              generateBillingAlerts(resolved.subscription, planDetail);
+              subscriptionLoaded = Boolean(planDetail);
             }
           }
         }
@@ -262,7 +316,10 @@ export default function PlannerBillingPage() {
       // updating the users collection), construct a minimal subscription object
       // so the billing page shows the management view instead of "Choose Your Plan".
       const normalizedProfileStatus = normalizeSubscriptionStatus(userProfile.subscription_status);
-      if (!subscriptionLoaded && ['active', 'trial'].includes(normalizedProfileStatus)) {
+      if (
+        !subscriptionLoaded
+        && ACTIVE_SUBSCRIPTION_STATUSES.has(normalizedProfileStatus)
+      ) {
         const profilePlanId = (userProfile as any).user_data?.plan_id || '';
         if (profilePlanId) {
           const minimalSub: any = {
@@ -271,11 +328,12 @@ export default function PlannerBillingPage() {
             billing_interval: 'monthly',
             payment_status: 'paid',
           };
-          setCurrentSubscription(minimalSub);
-          const planDetail = fetchedPlans.find((p: SubscriptionPlan) => p._id === profilePlanId);
+          const resolved = await resolvePlanDetail(minimalSub);
+          const planDetail = resolved.plan;
+          setCurrentSubscription(resolved.subscription);
           setCurrentPlan(planDetail || null);
           if (planDetail) {
-            generateBillingAlerts(minimalSub, planDetail);
+            generateBillingAlerts(resolved.subscription, planDetail);
           }
         }
       }

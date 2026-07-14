@@ -98,7 +98,9 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
   const fetchPlans = useCallback(async (attempt: number = 0): Promise<void> => {
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/public/subscription-plans`);
+      const response = await fetch(`${baseUrl}/public/subscription-plans`, {
+        cache: 'no-store',
+      });
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);

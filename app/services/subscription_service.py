@@ -13,7 +13,11 @@ from app.constants.billing import (
     plan_billing_model_migration_enabled,
 )
 from app.core.database import mongo
-from app.models.subscription import ACTIVE_SUBSCRIPTION_STATUSES
+from app.core.settings import settings
+from app.models.subscription import (
+    ACTIVE_SUBSCRIPTION_STATUSES,
+    normalize_subscription_status,
+)
 from app.services.couple_lifecycle_service import (
     COUPLE_PORTAL_STATE_REVOKED,
     couple_lifecycle_service,
@@ -24,11 +28,28 @@ from app.services.planner_access_lifecycle_service import (
 from app.services.stripe_service import stripe_service
 from app.utils.id_utils import to_object_id
 from app.utils.planner_ownership import build_wedding_owner_query, normalize_query_id
+from app.utils.subscription_plan_seed_policy import seeded_field_updates
 
 logger = logging.getLogger(__name__)
 
 
 class SubscriptionService:
+    _BILLING_PLAN_SNAPSHOT_FIELDS = frozenset(
+        {
+            "max_weddings",
+            "max_weddings_lifetime",
+            "max_guests_per_wedding",
+            "ai_credits_monthly",
+            "storage_gb",
+            "staff_seats",
+            "features",
+            "price_monthly",
+            "price_yearly",
+            "billing_model",
+            "is_metered",
+        }
+    )
+
     def __init__(self):
         self.plans_collection = mongo.db["subscription_plans"]
         self.subscriptions_collection = mongo.db["user_subscriptions"]
@@ -171,8 +192,8 @@ class SubscriptionService:
     # Fields that should record an admin-override timestamp when edited
     # via update_plan. These are the strategy fields the seed would
     # otherwise refresh on every deploy. Tracking the edit timestamp lets
-    # the seed gate refreshes on SEED_VERSION > admin_overrides[field].
-    # See scripts/seed_subscription_plans.py::SEED_VERSION for the seed side.
+    # the seed gate refreshes on the field's revision cutoff exceeding
+    # admin_overrides[field]. See subscription_plan_seed_policy.py.
     _ADMIN_OVERRIDE_TRACKED_FIELDS = frozenset(
         {
             "name",
@@ -195,17 +216,112 @@ class SubscriptionService:
         }
     )
 
+    _MANUAL_SEED_REFRESH_FIELDS = frozenset(
+        {
+            "description",
+            "features",
+            "features_list",
+        }
+    )
+
+    async def refresh_seeded_plan_fields(self, plan_id: str, seed_values: dict) -> bool:
+        """Refresh eligible canonical defaults without invoking Stripe.
+
+        The root-admin fallback uses this only for public copy and feature
+        defaults. Price, limits, activation, and ordering are deliberately
+        rejected here; commercial changes must continue through update_plan
+        and its Stripe lifecycle.
+        """
+
+        unexpected = set(seed_values) - self._MANUAL_SEED_REFRESH_FIELDS
+        if unexpected:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Manual seed refresh cannot mutate commercial fields: "
+                    f"{', '.join(sorted(unexpected))}"
+                ),
+            )
+
+        existing_plan = await self.plans_collection.find_one({"_id": plan_id})
+        if not existing_plan:
+            raise HTTPException(status_code=404, detail="Subscription plan not found")
+
+        updates = seeded_field_updates(seed_values, existing_plan)
+        if not updates:
+            return False
+
+        updates["updated_at"] = datetime.now(timezone.utc)
+        await self.plans_collection.update_one(
+            {"_id": plan_id},
+            {"$set": updates},
+        )
+        return True
+
+    async def archive_legacy_plan_alias(
+        self, legacy_plan_id: object, canonical_plan_id: str
+    ) -> bool:
+        """Hide a noncanonical duplicate while retaining historical lookups.
+
+        The document is deliberately not deleted: user and subscription
+        records created under an older plan ID must keep resolving until a
+        dedicated reference migration is performed.
+        """
+
+        if canonical_plan_id not in CANONICAL_PUBLIC_PLAN_IDS:
+            raise HTTPException(status_code=400, detail="Unknown canonical plan ID")
+        if legacy_plan_id == canonical_plan_id:
+            return False
+
+        existing_plan = await self.plans_collection.find_one({"_id": legacy_plan_id})
+        if not existing_plan:
+            return False
+        if (
+            existing_plan.get("is_active") is False
+            and existing_plan.get("canonical_plan_id") == canonical_plan_id
+            and (existing_plan.get("admin_overrides") or {}).get("is_active")
+            is not None
+        ):
+            return False
+
+        archived_at = datetime.now(timezone.utc)
+        await self.plans_collection.update_one(
+            {"_id": legacy_plan_id},
+            {
+                "$set": {
+                    "is_active": False,
+                    "canonical_plan_id": canonical_plan_id,
+                    "archived_as_duplicate_at": archived_at,
+                    "admin_overrides.is_active": archived_at,
+                    "updated_at": archived_at,
+                }
+            },
+        )
+
+        stripe_product_id = existing_plan.get("stripe_product_id")
+        if stripe_product_id and settings.stripe_enabled and settings.stripe_secret_key:
+            try:
+                stripe_service.archive_stripe_product(stripe_product_id)
+            except Exception:
+                # Mongo remains fail-closed and the override prevents a later
+                # product.updated webhook from reactivating the alias.
+                logger.exception(
+                    "Failed to archive Stripe product %s for legacy plan %s",
+                    stripe_product_id,
+                    legacy_plan_id,
+                )
+        return True
+
     async def update_plan(self, plan_id: str, update_data: dict) -> dict:
         """Update subscription plan.
 
         Records per-field timestamps in ``admin_overrides`` for every
         strategy field touched by this update. The container-boot seed
-        consults those timestamps against its ``SEED_VERSION`` constant —
-        admin edits made AFTER the current ``SEED_VERSION`` survive future
-        deploys; admin edits older than the next ``SEED_VERSION`` bump get
-        superseded by the seed's declared strategy. See
-        ``scripts/seed_subscription_plans.py::_build_effective_seed_plan``
-        for the consumer side of this contract.
+        consults those timestamps against field-scoped revision cutoffs.
+        Admin edits newer than the relevant field revision survive future
+        deploys; older values are superseded by the declared strategy. See
+        ``app/utils/subscription_plan_seed_policy.py`` for the consumer side
+        of this contract.
         """
         try:
             # Remove protected fields
@@ -311,7 +427,10 @@ class SubscriptionService:
         try:
             # Check if any users have active subscriptions to this plan
             active_subs = await self.subscriptions_collection.count_documents(
-                {"plan_id": plan_id, "status": {"$in": ["active", "trial"]}}
+                {
+                    "plan_id": plan_id,
+                    "status": {"$in": sorted(ACTIVE_SUBSCRIPTION_STATUSES)},
+                }
             )
 
             if active_subs > 0:
@@ -398,7 +517,10 @@ class SubscriptionService:
 
             # Check if user already has an active subscription
             existing_sub = await self.subscriptions_collection.find_one(
-                {"user_id": user_id, "status": {"$in": ["active", "trial"]}}
+                {
+                    "user_id": user_id,
+                    "status": {"$in": sorted(ACTIVE_SUBSCRIPTION_STATUSES)},
+                }
             )
 
             if existing_sub:
@@ -573,12 +695,97 @@ class SubscriptionService:
         """Get user's current subscription"""
         try:
             subscription = await self.subscriptions_collection.find_one(
-                {"user_id": user_id, "status": {"$in": ["active", "trial"]}}
+                {
+                    "user_id": user_id,
+                    "status": {"$in": sorted(ACTIVE_SUBSCRIPTION_STATUSES)},
+                }
             )
             return subscription
         except Exception as e:
             raise HTTPException(
                 status_code=500, detail=f"Error retrieving subscription: {str(e)}"
+            )
+
+    async def get_user_billing_plan(self, user_id: str) -> Optional[dict]:
+        """Resolve the plan owned by a user's active billing relationship.
+
+        This lookup intentionally permits an inactive plan document only when
+        it is reached through the authenticated user's own subscription or
+        active-status profile. It supports retained legacy aliases without
+        turning inactive commercial terms into a public catalog.
+        """
+
+        try:
+            subscription = await self.subscriptions_collection.find_one(
+                {
+                    "user_id": user_id,
+                    "status": {"$in": sorted(ACTIVE_SUBSCRIPTION_STATUSES)},
+                },
+                {"plan_id": 1, "plan_snapshot": 1},
+            )
+            if subscription is not None:
+                plan_id = subscription.get("plan_id")
+                if not plan_id:
+                    return None
+            else:
+                user = await self.users_collection.find_one(
+                    {"_id": normalize_query_id(user_id)},
+                    {"plan_id": 1, "subscription_status": 1},
+                )
+                user_status = normalize_subscription_status(
+                    user.get("subscription_status") if user else None
+                )
+                if user_status not in ACTIVE_SUBSCRIPTION_STATUSES:
+                    return None
+                plan_id = user.get("plan_id") if user else None
+
+            if not plan_id:
+                return None
+            plan = await self.plans_collection.find_one({"_id": plan_id})
+            if not plan:
+                return None
+
+            billing_plan = dict(plan)
+            snapshot = subscription.get("plan_snapshot") if subscription else None
+            if snapshot:
+                for field in self._BILLING_PLAN_SNAPSHOT_FIELDS:
+                    if field in snapshot:
+                        billing_plan[field] = snapshot[field]
+                if snapshot.get("plan_name"):
+                    billing_plan["name"] = snapshot["plan_name"]
+            if snapshot or plan.get("is_active") is False:
+                plan_name = billing_plan.get("name") or "legacy"
+                qualifier = "saved" if snapshot else "retained"
+                billing_plan["description"] = (
+                    f"Your {qualifier} {plan_name} subscription terms."
+                )
+                max_weddings = billing_plan.get("max_weddings", 1)
+                max_guests = billing_plan.get("max_guests_per_wedding", 100)
+                staff_seats = billing_plan.get("staff_seats", 0)
+                ai_credits = billing_plan.get("ai_credits_monthly", 0)
+                storage_gb = billing_plan.get("storage_gb", 0)
+                wedding_label = (
+                    "Unlimited weddings"
+                    if max_weddings == -1
+                    else f"{max_weddings} wedding{'s' if max_weddings != 1 else ''}"
+                )
+                if billing_plan.get("max_weddings_lifetime"):
+                    wedding_label += " (lifetime)"
+                billing_plan["features_list"] = [
+                    wedding_label,
+                    (
+                        "Unlimited guests per wedding"
+                        if max_guests == -1
+                        else f"{max_guests} guests per wedding"
+                    ),
+                    f"{staff_seats} staff seat{'s' if staff_seats != 1 else ''}",
+                    f"{ai_credits} AI credits/month",
+                    f"{storage_gb}GB guest memories storage",
+                ]
+            return billing_plan
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving billing plan: {str(e)}"
             )
 
     async def cancel_subscription(self, user_id: str, reason: str = "") -> dict:
@@ -588,7 +795,10 @@ class SubscriptionService:
 
             # Find the subscription first to get Stripe subscription ID
             subscription = await self.subscriptions_collection.find_one(
-                {"user_id": user_id, "status": {"$in": ["active", "trial"]}}
+                {
+                    "user_id": user_id,
+                    "status": {"$in": sorted(ACTIVE_SUBSCRIPTION_STATUSES)},
+                }
             )
 
             if not subscription:

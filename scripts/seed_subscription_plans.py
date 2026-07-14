@@ -23,13 +23,15 @@ from app.constants.billing import (  # noqa: E402
     PLAN_BILLING_MODEL_MIGRATION_FLAG,
     plan_billing_model_migration_enabled,
 )
-from app.utils.mongo_dates import to_utc_datetime  # noqa: E402
+from app.utils.subscription_plan_seed_policy import (  # noqa: E402
+    build_effective_seed_plan,
+    legacy_canonical_plan_aliases,
+)
 
 # ---------------------------------------------------------------------------
-# SEED_VERSION — bump this string on every strategy refresh that should win
-# over admin UI edits made BEFORE this date. The seed's per-field $set is
-# gated on (seed_version > admin_overrides[field]) — see _filter_set_for_admin_overrides
-# below. Use an ISO-8601 UTC timestamp so comparisons are unambiguous.
+# PLAN_SEED_VERSION is the baseline strategy revision. Copy-only releases use
+# PLAN_FIELD_SEED_VERSIONS so they cannot invalidate newer operator pricing,
+# limits, entitlements, or display decisions.
 #
 # When to bump:
 #   - You're changing canonical seed values (price, name, features, caps, etc.)
@@ -42,9 +44,7 @@ from app.utils.mongo_dates import to_utc_datetime  # noqa: E402
 #
 # Companion: app/services/subscription_service.update_plan writes per-field
 # timestamps to plan["admin_overrides"][<field>] every time an admin edits.
-# Together: bump SEED_VERSION → admin edits older than the bump are
-# superseded; admin edits newer than the bump survive future deploys.
-SEED_VERSION = "2026-07-14T00:00:00+00:00"
+# The pure merge policy lives in app/utils/subscription_plan_seed_policy.py.
 
 if os.getenv("SEED_SUBSCRIPTION_PLANS_IMPORT_CHECK_ONLY") == "1":
     print("[OK] seed subscription import contract satisfied")
@@ -99,57 +99,6 @@ except (ConnectionFailure, ServerSelectionTimeoutError) as e:
 db = client[db_name]
 collection = db["subscription_plans"]
 
-ADMIN_MUTABLE_PLAN_FIELDS = (
-    "name",
-    "description",
-    "price_monthly",
-    "price_yearly",
-    "trial_days",
-    "max_weddings",
-    "max_guests_per_wedding",
-    "ai_credits_monthly",
-    "storage_gb",
-    "staff_seats",
-    "features",
-    "features_list",
-    "is_active",
-    "is_featured",
-    "sort_order",
-    "display_order",
-)
-
-# ---- Deduplication cleanup ----
-# Remove duplicate plans (same name, different IDs) keeping the canonical _id.
-# This handles cases where plans were created through both seed script and API endpoints.
-canonical_ids = {"plan_boutique", "plan_signature", "plan_enterprise"}
-all_existing = list(collection.find({}))
-seen_names: dict[str, str] = {}
-duplicates_removed = 0
-
-for plan in all_existing:
-    name = plan.get("name", "").lower().strip()
-    pid = plan["_id"]
-    if name in seen_names:
-        # Keep the canonical ID, remove the other
-        existing_pid = seen_names[name]
-        if pid in canonical_ids and existing_pid not in canonical_ids:
-            # Current plan has canonical ID - remove the previous one
-            collection.delete_one({"_id": existing_pid})
-            seen_names[name] = pid
-            duplicates_removed += 1
-            print(
-                f"  [DEDUP] Removed duplicate plan '{existing_pid}' (keeping '{pid}')"
-            )
-        elif pid not in canonical_ids:
-            # Current plan doesn't have canonical ID - remove it
-            collection.delete_one({"_id": pid})
-            duplicates_removed += 1
-            print(
-                f"  [DEDUP] Removed duplicate plan '{pid}' (keeping '{existing_pid}')"
-            )
-    else:
-        seen_names[name] = pid
-
 # Also fix any legacy wrong field names from previous seed runs
 legacy_fix = collection.update_many(
     {"stripe_monthly_price_id": {"$exists": True}},
@@ -165,11 +114,6 @@ legacy_fix = collection.update_many(
 )
 if legacy_fix.modified_count > 0:
     print(f"[FIX] Migrated {legacy_fix.modified_count} plans from legacy field names")
-
-if duplicates_removed > 0:
-    print(f"[DEDUP] Removed {duplicates_removed} duplicate plans")
-else:
-    print("[OK] No duplicate plans found")
 
 # Configure Stripe if available
 stripe_secret = os.getenv("STRIPE_SECRET_KEY")
@@ -515,55 +459,14 @@ def _seed_billing_model(plan: dict | None) -> str:
 def _build_effective_seed_plan(seed_plan: dict, existing_plan: dict | None) -> dict:
     """Compute the values to write to Mongo for this plan.
 
-    Version-anchored admin-override logic (2026-05-12 refresh):
-
-    For each admin-mutable strategy field, prefer the SEED value EXCEPT when
-    the admin has edited that field AFTER ``SEED_VERSION`` — in that case
-    preserve the admin's edit. ``existing_plan["admin_overrides"]`` is a
-    dict keyed by field name with ISO-8601 timestamps, written by
-    ``subscription_service.update_plan`` on every admin edit.
-
-    Why version-anchored: a pure "always preserve admin edits" rule (the
-    pre-2026-05-12 behavior) means strategy refreshes never land. A pure
-    "always seed wins" rule clobbers admin tweaks every deploy. Anchoring
-    the comparison to ``SEED_VERSION`` (a manually-bumped constant) gives
-    operators an explicit "the strategy has changed" signal that supersedes
-    older admin edits while still letting fresh admin edits survive future
-    deploys.
+    Field-scoped revision cutoffs let the current copy refresh repair retired
+    public text without resetting newer operator-owned commercial settings.
+    Existing activation, featured, and order values always survive so a hidden
+    plan can never become sellable during Stripe synchronization.
     """
-    if not existing_plan:
-        return dict(seed_plan)
+    effective = build_effective_seed_plan(seed_plan, existing_plan, log=print)
 
-    effective = dict(seed_plan)
-    admin_overrides = existing_plan.get("admin_overrides") or {}
-
-    seed_version_dt = to_utc_datetime(SEED_VERSION)
-    if seed_version_dt is None:
-        raise RuntimeError(
-            f"SEED_VERSION ({SEED_VERSION!r}) must be a valid ISO-8601 timestamp."
-        )
-
-    for field in ADMIN_MUTABLE_PLAN_FIELDS:
-        if field not in existing_plan:
-            continue
-        admin_edit_at = admin_overrides.get(field)
-        # Accept datetime objects from Mongo plus ISO strings from JSON
-        # round-trips. Legacy Mongo values may be timezone-naive; normalize
-        # them to UTC before comparing against the aware SEED_VERSION.
-        admin_edit_at_dt = to_utc_datetime(admin_edit_at)
-
-        if admin_edit_at_dt and admin_edit_at_dt > seed_version_dt:
-            # Admin edited this field AFTER the current SEED_VERSION cutoff
-            # — preserve their edit. Operators can override this by bumping
-            # SEED_VERSION on the next deploy.
-            effective[field] = existing_plan[field]
-            print(
-                f"  [PRESERVE] {field} = {existing_plan[field]!r} (admin edit "
-                f"at {admin_edit_at_dt.isoformat()} > SEED_VERSION {SEED_VERSION})"
-            )
-        # else: seed value wins (the seed_plan default already in `effective`).
-
-    if existing_plan.get("meter_id"):
+    if existing_plan and existing_plan.get("meter_id"):
         effective["meter_id"] = existing_plan["meter_id"]
 
     # 2026-05-09: seed owns the billing-model shape — use whatever the seed
@@ -671,11 +574,10 @@ plans = [
         },
         "features_list": [
             "1 wedding to try us out",
-            "Up to 50 guests",
             "Guest list & RSVP system",
             "Branded wedding website",
             "Basic timeline builder",
-            "1GB storage",
+            "1GB guest memories storage",
         ],
         "is_active": True,
         "is_featured": False,
@@ -691,7 +593,7 @@ plans = [
     {
         "_id": "plan_boutique",
         "name": "Boutique",
-        "description": "For independent planners running their solo practice. Unlimited weddings, no caps.",
+        "description": "For independent planners running their solo practice with paid planning tools and higher limits.",
         "price_monthly": 49,
         "price_yearly": 490,  # 10x monthly
         "trial_days": 30,
@@ -729,14 +631,12 @@ plans = [
         "features_list": [
             "Unlimited weddings",
             "Unlimited guests",
-            "AI-powered timeline & vendor matching",
             "Vendor management",
             "Seating orchestration",
-            "QR check-in & live counts",
             "Automated reminders",
             "Calendar sync (Google, Outlook)",
             "300 AI credits/month",
-            "25GB storage",
+            "25GB guest memories storage",
             "Email support",
         ],
         "is_active": True,
@@ -791,11 +691,11 @@ plans = [
             "Everything in Boutique",
             "Team collaboration (5 staff seats)",
             "Planner storefront on a shareable platform URL",
-            "Custom domain (app.yourbrand.com)",
+            "Optional custom domain (app.yourbrand.com)",
             "1,500 AI credits/month",
-            "100GB storage",
+            "100GB guest memories storage",
             "Priority support (12h response)",
-            "Group onboarding session",
+            "Support-assisted onboarding by request",
         ],
         "is_active": True,
         "is_featured": True,
@@ -808,7 +708,7 @@ plans = [
     {
         "_id": "plan_enterprise",
         "name": "Enterprise",
-        "description": "For franchises and white-label partners. Your brand, our platform, dedicated success.",
+        "description": "For larger planning teams that need more seats, higher AI usage, expanded guest memories storage, and launch support.",
         "price_monthly": 399,
         "price_yearly": 3990,  # ~2 months free
         "trial_days": 30,
@@ -849,13 +749,10 @@ plans = [
             "Everything in Signature",
             "Planner storefront on a shareable platform URL",
             "Optional custom domain",
-            "White-label (your brand, no Special Wedding mentions)",
-            "API access + webhooks",
             "20 staff seats",
             "5,000 AI credits/month",
-            "500GB storage",
-            "Dedicated success manager",
-            "Custom integrations",
+            "500GB guest memories storage",
+            "Support-assisted launch planning",
         ],
         "is_active": True,
         "is_featured": False,
@@ -994,6 +891,52 @@ for plan in plans:
     else:
         print("  [SKIP] No changes needed")
         skipped += 1
+
+# ---- Canonical identity cleanup ----
+# Only archive same-name aliases after every canonical upsert succeeded. If
+# Stripe provisioning, billing guards, or Mongo writes fail above, the only
+# existing legacy plan remains selectable. Alias documents are never deleted:
+# historical users/subscriptions may still reference the old _id directly.
+duplicates_archived = 0
+all_seeded_plans = list(collection.find({}))
+for pid, canonical_id in legacy_canonical_plan_aliases(all_seeded_plans):
+    archived_at = datetime.now(timezone.utc)
+    legacy_plan = collection.find_one({"_id": pid}) or {}
+    collection.update_one(
+        {"_id": pid},
+        {
+            "$set": {
+                "is_active": False,
+                "canonical_plan_id": canonical_id,
+                "archived_as_duplicate_at": archived_at,
+                "admin_overrides.is_active": archived_at,
+                "updated_at": archived_at,
+            }
+        },
+    )
+    legacy_product_id = legacy_plan.get("stripe_product_id")
+    if STRIPE_CONFIGURED and legacy_product_id:
+        try:
+            for legacy_price in stripe.Price.list(
+                product=legacy_product_id, active=True
+            ).auto_paging_iter():
+                stripe.Price.modify(legacy_price.id, active=False)
+            stripe.Product.modify(legacy_product_id, active=False)
+            print(f"  [STRIPE] Archived legacy product '{legacy_product_id}'")
+        except StripeError as exc:
+            # The Mongo override remains authoritative and prevents a later
+            # product.updated webhook from reactivating this alias.
+            print(
+                f"  [WARN] Could not archive legacy Stripe product "
+                f"'{legacy_product_id}': {exc}"
+            )
+    duplicates_archived += 1
+    print(f"  [DEDUP] Archived legacy plan '{pid}' as an alias of '{canonical_id}'")
+
+if duplicates_archived > 0:
+    print(f"[DEDUP] Archived {duplicates_archived} legacy plan aliases")
+else:
+    print("[OK] No active legacy plan aliases found")
 
 print("\n" + "=" * 50)
 print(f"[SUMMARY] Created {created}, Updated {updated}, Skipped {skipped}")

@@ -80,7 +80,9 @@ export function PricingSignupSection({ pricing, theme }: Props) {
   useEffect(() => {
     let cancelled = false;
     const timeout = window.setTimeout(() => {
-      void fetch(`${getApiBaseUrl()}/public/subscription-plans`)
+      void fetch(`${getApiBaseUrl()}/public/subscription-plans`, {
+        cache: "no-store",
+      })
         .then((response) => (response.ok ? response.json() : Promise.reject(new Error("Failed to fetch plans"))))
         .then((plans: ApiPlan[]) => {
           if (cancelled || !Array.isArray(plans) || plans.length === 0) {

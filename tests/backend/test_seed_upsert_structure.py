@@ -89,6 +89,13 @@ def _find_seed_update_one_modifier() -> ast.Dict:
         # Need two positional args: filter dict + modifier dict
         if len(node.args) < 2:
             continue
+        if not any(
+            keyword.arg == "upsert"
+            and isinstance(keyword.value, ast.Constant)
+            and keyword.value.value is True
+            for keyword in node.keywords
+        ):
+            continue
         modifier = node.args[1]
         if not isinstance(modifier, ast.Dict):
             continue
@@ -178,71 +185,60 @@ def test_admin_toggles_live_in_set_on_insert_not_set():
     )
 
 
-def test_seed_version_is_a_valid_iso_timestamp():
-    """SEED_VERSION must be parseable as an ISO-8601 datetime.
+def test_seed_versions_are_valid_iso_timestamps():
+    """Every field-scoped seed revision must be a valid aware timestamp.
 
     The seed's per-field admin-override gating compares the value against
-    ``admin_overrides[field]`` timestamps. If SEED_VERSION isn't a valid
-    timestamp, the seed will crash at runtime — catch it here in CI.
+    ``admin_overrides[field]`` timestamps. Invalid cutoffs would crash the
+    container boot seed at runtime.
     """
-    import ast as _ast
     from datetime import datetime as _dt
 
-    seed_path = Path(PROJECT_ROOT) / "scripts" / "seed_subscription_plans.py"
-    tree = _ast.parse(seed_path.read_text())
-
-    seed_version_value = None
-    for node in tree.body:
-        if not isinstance(node, _ast.Assign):
-            continue
-        for target in node.targets:
-            if isinstance(target, _ast.Name) and target.id == "SEED_VERSION":
-                assert isinstance(node.value, _ast.Constant), (
-                    "SEED_VERSION must be a literal string constant."
-                )
-                seed_version_value = node.value.value
-                break
-
-    assert seed_version_value is not None, (
-        "SEED_VERSION constant not found in scripts/seed_subscription_plans.py. "
-        "It's required for the admin-override gating mechanism."
+    from app.utils.subscription_plan_seed_policy import (
+        PLAN_FIELD_SEED_VERSIONS,
+        PLAN_SEED_VERSION,
     )
-    try:
-        parsed = _dt.fromisoformat(seed_version_value)
-    except ValueError as exc:
-        raise AssertionError(
-            f"SEED_VERSION={seed_version_value!r} is not valid ISO-8601: {exc}"
+
+    for label, seed_version_value in {
+        "baseline": PLAN_SEED_VERSION,
+        **PLAN_FIELD_SEED_VERSIONS,
+    }.items():
+        try:
+            parsed = _dt.fromisoformat(seed_version_value)
+        except ValueError as exc:
+            raise AssertionError(
+                f"{label} seed version {seed_version_value!r} is not ISO-8601"
+            ) from exc
+        assert parsed.tzinfo is not None, (
+            f"{label} seed version {seed_version_value!r} must be timezone-aware"
         )
-    assert parsed.tzinfo is not None, (
-        f"SEED_VERSION={seed_version_value!r} must be timezone-aware "
-        "(UTC offset suffix like '+00:00') so comparisons against Mongo "
-        "datetimes are unambiguous."
-    )
 
 
 def test_admin_override_timestamps_are_normalized_before_seed_comparison():
     """Pin the production bootstrap fix for mixed naive/aware datetimes.
 
     Mongo can return historical ``admin_overrides`` timestamps as naive
-    ``datetime`` objects, while ``SEED_VERSION`` is intentionally aware UTC.
+    ``datetime`` objects, while field seed cutoffs are intentionally aware UTC.
     The seed must normalize both sides before comparing or the backend
     container exits during startup.
     """
     import ast as _ast
 
-    seed_path = Path(PROJECT_ROOT) / "scripts" / "seed_subscription_plans.py"
-    tree = _ast.parse(seed_path.read_text())
+    policy_path = (
+        Path(PROJECT_ROOT) / "app" / "utils" / "subscription_plan_seed_policy.py"
+    )
+    tree = _ast.parse(policy_path.read_text())
 
     build_func = next(
         (
             node
             for node in ast.walk(tree)
             if isinstance(node, _ast.FunctionDef)
-            and node.name == "_build_effective_seed_plan"
+            and node.name == "build_effective_seed_plan"
         ),
         None,
     )
-    assert build_func is not None, "_build_effective_seed_plan not found"
+    assert build_func is not None, "build_effective_seed_plan not found"
 
     normalized_args = set()
     for node in ast.walk(build_func):
@@ -254,7 +250,23 @@ def test_admin_override_timestamps_are_normalized_before_seed_comparison():
             continue
         normalized_args.add(node.args[0].id)
 
-    assert {"SEED_VERSION", "admin_edit_at"} <= normalized_args
+    assert "admin_edit_at" in normalized_args
+
+    cutoff_func = next(
+        (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, _ast.FunctionDef) and node.name == "_field_seed_cutoff"
+        ),
+        None,
+    )
+    assert cutoff_func is not None
+    assert any(
+        isinstance(node, _ast.Call)
+        and isinstance(node.func, _ast.Name)
+        and node.func.id == "to_utc_datetime"
+        for node in ast.walk(cutoff_func)
+    )
 
 
 def test_paid_plans_declare_unlimited_weddings_and_guests():

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.constants.billing import (
     CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
+    CANONICAL_PUBLIC_PLAN_IDS_BY_NAME,
     plan_billing_model,
 )
 from app.dependencies.auth_extended import (
@@ -15,9 +16,44 @@ from app.models.subscription import (
     UpdateSubscriptionPlanRequest,
 )
 from app.services.subscription_service import SubscriptionService
+from app.utils.subscription_plan_seed_policy import legacy_canonical_plan_aliases
 
 router = APIRouter()
 subscription_service = SubscriptionService()
+
+
+def _can_read_subscription_for_user(
+    current_user: ExtendedAuthUser, user_id: str
+) -> bool:
+    return (
+        current_user.is_root_admin or str(current_user.user_data.get("_id")) == user_id
+    )
+
+
+def _sanitized_plan_payload(plan: dict, *, id_field: str) -> dict:
+    """Return the shared public-safe plan shape with the requested ID key."""
+
+    return {
+        id_field: plan["_id"],
+        "name": plan.get("name"),
+        "description": plan.get("description"),
+        "price_monthly": plan.get("price_monthly", 0),
+        "price_yearly": plan.get("price_yearly"),
+        "billing_model": plan.get("billing_model") or plan_billing_model(plan),
+        "is_metered": bool(plan.get("is_metered", False)),
+        "max_weddings": plan.get("max_weddings", 1),
+        "max_guests_per_wedding": plan.get("max_guests_per_wedding", 100),
+        "ai_credits_monthly": plan.get("ai_credits_monthly", 10),
+        "storage_gb": plan.get("storage_gb", 1),
+        "staff_seats": plan.get("staff_seats", 0),
+        "features": plan.get("features", {}),
+        "features_list": plan.get("features_list", []),
+        "is_featured": plan.get("is_featured", False),
+        "is_active": plan.get("is_active", True),
+        "trial_days": plan.get("trial_days", 0),
+        "display_order": plan.get("display_order", plan.get("sort_order", 0)),
+    }
+
 
 # ==================== SUBSCRIPTION PLAN MANAGEMENT (ROOT_ADMIN ONLY) ====================
 
@@ -112,10 +148,7 @@ async def get_user_subscription(
 ):
     """Get user's current subscription"""
     # Users can only see their own subscription unless they're ROOT_ADMIN
-    if (
-        not current_user.is_root_admin
-        and str(current_user.user_data.get("_id")) != user_id
-    ):
+    if not _can_read_subscription_for_user(current_user, user_id):
         raise HTTPException(
             status_code=403, detail="Can only view your own subscription"
         )
@@ -125,6 +158,23 @@ async def get_user_subscription(
         raise HTTPException(status_code=404, detail="No active subscription found")
 
     return subscription
+
+
+@router.get("/admin/users/{user_id}/subscription-plan", tags=["ROOT_ADMIN", "User"])
+async def get_user_subscription_plan(
+    user_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """Return sanitized plan terms for the user's own billing relationship."""
+
+    if not _can_read_subscription_for_user(current_user, user_id):
+        raise HTTPException(
+            status_code=403, detail="Can only view your own subscription plan"
+        )
+
+    plan = await subscription_service.get_user_billing_plan(user_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="No billing plan found")
+    return _sanitized_plan_payload(plan, id_field="id")
 
 
 @router.delete("/users/{user_id}/subscription", tags=["ROOT_ADMIN"])
@@ -488,7 +538,7 @@ async def seed_default_subscription_plans(
                 "Everything in Boutique",
                 "Team collaboration (5 staff seats)",
                 "Planner storefront on a shareable platform URL",
-                "Custom domain (app.yourbrand.com)",
+                "Optional custom domain (app.yourbrand.com)",
                 "1,500 AI credits/month",
                 "100GB guest memories storage",
                 "Priority support (12h response)",
@@ -558,34 +608,65 @@ async def seed_default_subscription_plans(
     ]
 
     created_plans = []
+    updated_plans = []
     skipped_plans = []
-
-    for plan_data in default_plans:
-        # Check if plan already exists
-        existing_plans = await subscription_service.list_plans(include_inactive=True)
-        existing_plan = next(
-            (p for p in existing_plans if p["name"] == plan_data["name"]), None
+    archived_aliases = []
+    existing_plans = await subscription_service.list_plans(include_inactive=True)
+    existing_by_id = {str(plan.get("_id")): plan for plan in existing_plans}
+    legacy_aliases_by_canonical_id: dict[str, list[object]] = {}
+    for legacy_plan_id, canonical_plan_id in legacy_canonical_plan_aliases(
+        existing_plans,
+        require_canonical_present=False,
+    ):
+        legacy_aliases_by_canonical_id.setdefault(canonical_plan_id, []).append(
+            legacy_plan_id
         )
 
-        if existing_plan:
-            skipped_plans.append(plan_data["name"])
-            continue
+    for plan_data in default_plans:
+        plan_name = plan_data["name"]
+        canonical_plan_id = CANONICAL_PUBLIC_PLAN_IDS_BY_NAME[plan_name]
+        existing_plan = existing_by_id.get(canonical_plan_id)
 
-        try:
-            # Note: create_plan will internally call stripe_service.sync_plan_to_stripe
-            await subscription_service.create_plan(plan_data, current_user.email)
-            created_plans.append(
-                plan_data["name"]
-            )  # Store the plan name instead of the result
-        except Exception as e:
-            # If seeding fails (e.g. stripe config missing), we might want to log it but continue?
-            # For now, let's return error so admin knows.
-            return {"error": f"Failed to create plan '{plan_data['name']}': {str(e)}"}
+        if existing_plan:
+            refreshed = await subscription_service.refresh_seeded_plan_fields(
+                existing_plan["_id"],
+                {
+                    "description": plan_data["description"],
+                    "features": plan_data["features"],
+                    "features_list": plan_data["features_list"],
+                },
+            )
+            if refreshed:
+                updated_plans.append(plan_data["name"])
+            else:
+                skipped_plans.append(plan_data["name"])
+        else:
+            try:
+                # create_plan derives the same canonical ID from these names.
+                await subscription_service.create_plan(plan_data, current_user.email)
+                created_plans.append(plan_name)
+            except Exception as e:
+                return {"error": f"Failed to create plan '{plan_name}': {str(e)}"}
+
+        for legacy_plan_id in legacy_aliases_by_canonical_id.get(canonical_plan_id, []):
+            archived = await subscription_service.archive_legacy_plan_alias(
+                legacy_plan_id,
+                canonical_plan_id,
+            )
+            if archived:
+                archived_aliases.append(str(legacy_plan_id))
     return {
         "message": "Default subscription plans seeding completed",
         "created_plans": len(created_plans),
+        "updated_plans": len(updated_plans),
         "skipped_plans": len(skipped_plans),
-        "details": {"created": created_plans, "skipped": skipped_plans},
+        "archived_aliases": len(archived_aliases),
+        "details": {
+            "created": created_plans,
+            "updated": updated_plans,
+            "skipped": skipped_plans,
+            "archived_aliases": archived_aliases,
+        },
     }
 
 
@@ -601,58 +682,13 @@ async def get_public_subscription_plans():
     """
     plans = await subscription_service.list_plans(include_inactive=False)
 
-    # Sanitize: only return public-safe fields
-    public_plans = []
-    for plan in plans:
-        public_plans.append(
-            {
-                "_id": plan["_id"],  # Plan ID needed for selection
-                "name": plan.get("name"),
-                "description": plan.get("description"),
-                "price_monthly": plan.get("price_monthly", 0),
-                "price_yearly": plan.get("price_yearly"),
-                "billing_model": plan.get("billing_model") or plan_billing_model(plan),
-                "is_metered": bool(plan.get("is_metered", False)),
-                "max_weddings": plan.get("max_weddings", 1),
-                "max_guests_per_wedding": plan.get("max_guests_per_wedding", 100),
-                "ai_credits_monthly": plan.get("ai_credits_monthly", 10),
-                "storage_gb": plan.get("storage_gb", 1),
-                "staff_seats": plan.get("staff_seats", 0),
-                "features": plan.get("features", {}),
-                "features_list": plan.get("features_list", []),
-                "is_featured": plan.get("is_featured", False),
-                "is_active": plan.get("is_active", True),
-                "trial_days": plan.get("trial_days", 0),
-                "display_order": plan.get("display_order", plan.get("sort_order", 0)),
-                # Explicitly EXCLUDE: stripe_product_id, stripe_price_id_*, created_by, etc.
-            }
-        )
-
-    return public_plans
+    return [_sanitized_plan_payload(plan, id_field="_id") for plan in plans]
 
 
 @router.get("/public/subscription-plans/{plan_id}", tags=["Public"])
 async def get_public_subscription_plan(plan_id: str):
     """Get subscription plan details for public view"""
     plan = await subscription_service.get_plan(plan_id)
-    # Remove sensitive fields for public view
-    public_plan = {
-        "id": plan["_id"],
-        "name": plan["name"],
-        "description": plan.get("description"),
-        "price_monthly": plan["price_monthly"],
-        "price_yearly": plan.get("price_yearly"),
-        "billing_model": plan.get("billing_model") or plan_billing_model(plan),
-        "is_metered": bool(plan.get("is_metered", False)),
-        "max_weddings": plan["max_weddings"],
-        "max_guests_per_wedding": plan["max_guests_per_wedding"],
-        "ai_credits_monthly": plan["ai_credits_monthly"],
-        "storage_gb": plan["storage_gb"],
-        "staff_seats": plan["staff_seats"],
-        "features": plan.get("features", {}),
-        "features_list": plan.get("features_list", []),
-        "is_featured": plan.get("is_featured", False),
-        "trial_days": plan.get("trial_days", 0),
-        "display_order": plan.get("display_order", plan.get("sort_order", 0)),
-    }
-    return public_plan
+    if plan.get("is_active") is not True:
+        raise HTTPException(status_code=404, detail="Subscription plan not found")
+    return _sanitized_plan_payload(plan, id_field="id")

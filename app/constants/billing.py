@@ -8,9 +8,13 @@ from typing import Any, Mapping
 BILLING_MODEL_FLAT_RATE = "flat_rate"
 BILLING_MODEL_METERED = "metered"
 
-CANONICAL_PUBLIC_PLAN_IDS = frozenset(
-    {"plan_solo", "plan_boutique", "plan_signature", "plan_enterprise"}
-)
+CANONICAL_PUBLIC_PLAN_IDS_BY_NAME = {
+    "Solo": "plan_solo",
+    "Boutique": "plan_boutique",
+    "Signature": "plan_signature",
+    "Enterprise": "plan_enterprise",
+}
+CANONICAL_PUBLIC_PLAN_IDS = frozenset(CANONICAL_PUBLIC_PLAN_IDS_BY_NAME.values())
 # 2026-05-09 pricing strategy refresh: shipped plans are flat. The metering
 # hardening infrastructure (stripe_meter_helpers, ensure_stripe_meter,
 # assert_meter_config) stays available — a plan can be flipped to metered

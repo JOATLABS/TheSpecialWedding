@@ -1169,22 +1169,19 @@ async def add_cache_headers(request: Request, call_next):
         elif request.method in ("POST", "PUT", "PATCH", "DELETE"):
             # Mutations must never be cached
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        elif path.startswith("/subscription-plans") or path.startswith(
+            "/public/subscription-plans"
+        ):
+            # Both plan catalogs are mutable. The public homepage swaps this
+            # payload over its server-rendered fallback, so even the optional
+            # short private GET cache would visibly resurrect retired copy.
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         elif (
             path.startswith("/api/")
             or path.startswith("/couple-portal/")
             or path.startswith("/couple/")
             or path.startswith("/admin/")
             or path.startswith("/vendor-contract/")
-            # 2026-05-13: /subscription-plans is the ROOT_ADMIN-only admin
-            # CRUD surface for the plan catalog. The router lives at the
-            # root path (not /admin/) because the same module also exposes
-            # /public/subscription-plans; auth is gated per-route via
-            # require_root_admin. Without this branch the fall-through
-            # below assigned ``public, max-age=300``, letting the browser's
-            # HTTP cache serve a 5-minute-stale plan list right after an
-            # admin save — see app/admin/saas/page.tsx handleSavePlan
-            # post-save refetch which uses default fetch cache mode.
-            or path.startswith("/subscription-plans")
         ):
             # Dynamic API/portal endpoints.  When SAFE_GET_CACHE_ENABLED
             # is set, idempotent GET/HEAD responses get a short private
