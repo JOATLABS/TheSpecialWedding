@@ -5,6 +5,14 @@ export type DemoVideoStatus = PublicDemoVideoStatus;
 
 export type DemoVideoPriority = 'hero' | 'phase-one' | 'phase-two';
 
+export type DemoVideoProductionChannel = 'website' | 'social';
+
+export type DemoVideoDistributionChannel =
+  | 'website'
+  | 'instagram-reels'
+  | 'facebook-reels'
+  | 'tiktok';
+
 export type DemoScriptStep = {
   timestamp: string;
   action: string;
@@ -35,12 +43,23 @@ export type DemoVideo = {
   recordedAt?: string;
   appBuildLabel?: string;
   appBuildCommit?: string;
+  productionChannel?: DemoVideoProductionChannel;
+  phaseOnePillar?: string;
+  socialOutcome?: string;
+  distributionChannels?: readonly DemoVideoDistributionChannel[];
   routePlan: readonly string[];
   captureCheckpoints?: readonly DemoCaptureCheckpoint[];
   seedRequirements: readonly string[];
   script: readonly DemoScriptStep[];
   recordingChecklist: readonly string[];
   captureNotes: string;
+};
+
+export type PhaseOneSocialVideo = DemoVideo & {
+  productionChannel: 'social';
+  phaseOnePillar: string;
+  socialOutcome: string;
+  distributionChannels: readonly Exclude<DemoVideoDistributionChannel, 'website'>[];
 };
 
 export type PublicDemoVideoPublicationApproval = {
@@ -58,6 +77,20 @@ export type PublicDemoVideoPublicationApproval = {
   socialThumbnailUrl?: string;
 };
 
+export type PhaseOneSocialVideoPublicationApproval = {
+  approval: 'approved';
+  captureReceiptPath: string;
+  playbackApprovalPath: string;
+  appBuildCommit: string;
+  appBuildLabel: string;
+  recordedAt: string;
+  assetUrl: string;
+  thumbnailUrl: string;
+  captionUrl: string;
+  transcriptUrl: string;
+  distributionChannels: readonly Exclude<DemoVideoDistributionChannel, 'website'>[];
+};
+
 const defaultChecklist = [
   'Start from the product UI, not a mocked slide.',
   'Move through the flow with natural pauses and verify each visible result.',
@@ -72,6 +105,10 @@ const defaultChecklist = [
  */
 export const APPROVED_PUBLIC_DEMO_VIDEO_PUBLICATIONS: Readonly<
   Partial<Record<string, PublicDemoVideoPublicationApproval>>
+> = Object.freeze({});
+
+export const APPROVED_PHASE_ONE_SOCIAL_VIDEO_PUBLICATIONS: Readonly<
+  Partial<Record<string, PhaseOneSocialVideoPublicationApproval>>
 > = Object.freeze({});
 
 export function isCompletePublicationApproval(
@@ -125,6 +162,64 @@ export function applyDemoVideoPublicationApproval(demo: DemoVideo): DemoVideo {
     transcriptUrl: approval.transcriptUrl,
     socialAssetUrl: approval.socialAssetUrl,
     socialThumbnailUrl: approval.socialThumbnailUrl,
+    recordedAt: approval.recordedAt,
+    appBuildCommit: approval.appBuildCommit,
+    appBuildLabel: approval.appBuildLabel,
+  };
+}
+
+function arraysMatch<T>(actual: readonly T[], expected: readonly T[]): boolean {
+  return actual.length === expected.length
+    && actual.every((value, index) => value === expected[index]);
+}
+
+export function isCompletePhaseOneSocialVideoPublicationApproval(
+  approval: PhaseOneSocialVideoPublicationApproval | undefined,
+  story: PhaseOneSocialVideo,
+): approval is PhaseOneSocialVideoPublicationApproval {
+  if (!approval || approval.approval !== 'approved') return false;
+
+  return /^[0-9a-f]{40}$/i.test(approval.appBuildCommit)
+    && approval.captureReceiptPath === `output/demo-videos/receipts/${story.id}.json`
+    && approval.playbackApprovalPath === `output/demo-videos/playback-approvals/${story.id}.json`
+    && approval.assetUrl === `/demo-videos/exports/${story.id}-9x16.mp4`
+    && approval.thumbnailUrl === `/demo-videos/thumbnails/${story.id}-9x16.png`
+    && approval.captionUrl === `/demo-videos/captions/${story.id}.vtt`
+    && approval.transcriptUrl === `/demo-videos/transcripts/${story.id}.md`
+    && arraysMatch(approval.distributionChannels, story.distributionChannels)
+    && Number.isFinite(Date.parse(approval.recordedAt))
+    && approval.appBuildLabel.trim().length > 0;
+}
+
+export function applyPhaseOneSocialVideoPublicationApproval(
+  story: PhaseOneSocialVideo,
+): PhaseOneSocialVideo {
+  const approval = APPROVED_PHASE_ONE_SOCIAL_VIDEO_PUBLICATIONS[story.id];
+  if (!isCompletePhaseOneSocialVideoPublicationApproval(approval, story)) {
+    return {
+      ...story,
+      status: 'recording',
+      assetUrl: undefined,
+      thumbnailUrl: undefined,
+      captionUrl: undefined,
+      transcriptUrl: undefined,
+      socialAssetUrl: undefined,
+      socialThumbnailUrl: undefined,
+      recordedAt: undefined,
+      appBuildCommit: undefined,
+      appBuildLabel: 'Public social cut not approved',
+    };
+  }
+
+  return {
+    ...story,
+    status: 'published',
+    assetUrl: approval.assetUrl,
+    thumbnailUrl: approval.thumbnailUrl,
+    captionUrl: approval.captionUrl,
+    transcriptUrl: approval.transcriptUrl,
+    socialAssetUrl: approval.assetUrl,
+    socialThumbnailUrl: approval.thumbnailUrl,
     recordedAt: approval.recordedAt,
     appBuildCommit: approval.appBuildCommit,
     appBuildLabel: approval.appBuildLabel,
@@ -988,6 +1083,293 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     captureNotes: 'Use a demo team member name; do not expose real staff accounts.',
   },
 ];
+
+export const PHASE_ONE_SOCIAL_DISTRIBUTION_CHANNELS = [
+  'instagram-reels',
+  'facebook-reels',
+  'tiktok',
+] as const satisfies readonly Exclude<DemoVideoDistributionChannel, 'website'>[];
+
+const PHASE_ONE_SOCIAL_VIDEO_STORY_DRAFTS = [
+  {
+    id: 'connection-over-tools-social',
+    title: 'One plan. Three clear views.',
+    audience: 'Wedding planners replacing disconnected planner, couple, and guest tools.',
+    durationSeconds: 30,
+    priority: 'phase-one',
+    status: 'scripted',
+    productionChannel: 'social',
+    phaseOnePillar: 'Connection Over Tools',
+    socialOutcome:
+      'Keep planner, couple, and guest context connected without exposing planner controls.',
+    distributionChannels: PHASE_ONE_SOCIAL_DISTRIBUTION_CHANNELS,
+    routePlan: [
+      '/admin/weddings/wedding_marketing_capture_sofia_daniel',
+      '/sofia-and-daniel',
+      '/couple/dashboard',
+    ],
+    captureCheckpoints: [
+      {
+        label: 'Connection planner source',
+        route: '/admin/weddings/wedding_marketing_capture_sofia_daniel',
+        action: 'Open Events and hold on The Glasshouse at Riverbend at 4:00 PM.',
+        visibleResult:
+          'The planner-owned event record shows The Glasshouse at Riverbend and the 4:00 PM start.',
+      },
+      {
+        label: 'Connection guest view',
+        route: '/sofia-and-daniel',
+        action: 'Switch manually to the public schedule and hold on the same venue and time.',
+        visibleResult:
+          'The public wedding schedule shows the Glasshouse venue and 4:00 PM without planner controls.',
+      },
+      {
+        label: 'Connection couple view',
+        route: '/couple/dashboard',
+        action: 'Switch manually to the couple Timeline and hold on the matching event plan.',
+        visibleResult:
+          'The couple Timeline presents the same Glasshouse event inside the guided couple workspace.',
+      },
+    ],
+    seedRequirements: [
+      'The Sofia & Daniel event must match across the planner record, public schedule, and couple Timeline.',
+      'Prepared planner, public, and couple tabs must use only the isolated marketing-capture identities.',
+    ],
+    script: [
+      {
+        timestamp: '0:00-0:08',
+        action: 'Hold on the planner event source at The Glasshouse at Riverbend and 4:00 PM.',
+        voiceover: 'Connection matters more than adding another tool. Start with one planner-owned event plan.',
+      },
+      {
+        timestamp: '0:08-0:17',
+        action: 'Switch manually to the public wedding schedule with the same venue and time.',
+        voiceover: 'Guests get the details they need without seeing the work behind them.',
+      },
+      {
+        timestamp: '0:17-0:25',
+        action: 'Switch manually to the couple Timeline and hold on the matching event.',
+        voiceover: 'The couple sees the same plan in a guided workspace. One wedding, three clear views.',
+      },
+    ],
+    recordingChecklist: [
+      ...defaultChecklist,
+      'Prepare planner, public, and couple tabs before recording, then switch between them manually.',
+      'Do not edit event data or expose the local origin during the take.',
+    ],
+    captureNotes:
+      'Record a distinct 25-second product story plus the five-second social outro; do not reuse or crop the website walkthrough.',
+  },
+  {
+    id: 'disorganization-tax-social',
+    title: 'Stop rebuilding context every morning.',
+    audience: 'Wedding planners losing time across spreadsheets, inboxes, and disconnected finance tools.',
+    durationSeconds: 25,
+    priority: 'phase-one',
+    status: 'scripted',
+    productionChannel: 'social',
+    phaseOnePillar: 'Disorganization Tax',
+    socialOutcome:
+      'See what needs attention across active weddings before another sheet or inbox steals the day.',
+    distributionChannels: PHASE_ONE_SOCIAL_DISTRIBUTION_CHANNELS,
+    routePlan: [
+      '/admin/planner',
+      '/admin/communications/inbox',
+      '/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel',
+    ],
+    captureCheckpoints: [
+      {
+        label: 'Disorganization morning view',
+        route: '/admin/planner',
+        action: 'Scan the two populated wedding cards and their attention signals.',
+        visibleResult:
+          'Morning View distinguishes two active weddings through current progress and next-action context.',
+      },
+      {
+        label: 'Disorganization conversation queue',
+        route: '/admin/communications/inbox',
+        action: 'Open the seeded planner inbox and hold on the wedding-scoped conversation queue.',
+        visibleResult:
+          'Guest, couple, and support conversations appear in one planner-owned operational inbox.',
+      },
+      {
+        label: 'Disorganization budget context',
+        route: '/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel',
+        action: 'Open the Sofia & Daniel budget and hold on category spend and remaining funds.',
+        visibleResult:
+          'The populated wedding budget keeps current spend and remaining funds visible in the same workspace.',
+      },
+    ],
+    seedRequirements: [
+      'Two populated active weddings with contrasting attention signals in Morning View.',
+      'A seeded planner inbox and Sofia & Daniel budget with publicly safe fictional content.',
+    ],
+    script: [
+      {
+        timestamp: '0:00-0:07',
+        action: 'Scan Morning View and pause on the contrasting wedding signals.',
+        voiceover: 'Disorganization charges interest every morning you rebuild context from scratch.',
+      },
+      {
+        timestamp: '0:07-0:14',
+        action: 'Open the planner inbox and hold on the unified wedding conversation queue.',
+        voiceover: 'Messages stay tied to the wedding work instead of disappearing across personal inboxes.',
+      },
+      {
+        timestamp: '0:14-0:20',
+        action: 'Open the wedding budget and hold on current category spend.',
+        voiceover: 'The financial context is already there when the planner needs to act.',
+      },
+    ],
+    recordingChecklist: [
+      ...defaultChecklist,
+      'Use read-only seeded states; do not send a message or change a budget item.',
+      'Keep the full product window visible through every manual route change.',
+    ],
+    captureNotes:
+      'Record a distinct 20-second product story plus the five-second social outro; the point is recovered context, not a feature montage.',
+  },
+  {
+    id: 'couple-experience-boundaries-social',
+    title: 'A clear couple experience. Planner-owned boundaries.',
+    audience: 'Wedding planners who want clients informed without exposing internal operations.',
+    durationSeconds: 20,
+    priority: 'phase-one',
+    status: 'scripted',
+    productionChannel: 'social',
+    phaseOnePillar: 'Couple Experience + Boundaries',
+    socialOutcome:
+      'Give couples the timeline, forms, and payment context they need while operations stay private.',
+    distributionChannels: PHASE_ONE_SOCIAL_DISTRIBUTION_CHANNELS,
+    routePlan: [
+      '/admin/forms/form_marketing_capture_couple_intake/edit',
+      '/couple/dashboard',
+    ],
+    captureCheckpoints: [
+      {
+        label: 'Boundaries planner intake',
+        route: '/admin/forms/form_marketing_capture_couple_intake/edit',
+        action: 'Hold on the planner-controlled couple intake form and its structured questions.',
+        visibleResult:
+          'The planner owns the intake workflow and the information requested from the couple.',
+      },
+      {
+        label: 'Boundaries couple form',
+        route: '/couple/dashboard',
+        action: 'Switch manually to the couple portal Forms view and inspect the assigned intake.',
+        visibleResult:
+          'The couple sees its assigned questionnaire and completion context without planner editing controls.',
+      },
+      {
+        label: 'Boundaries couple payments',
+        route: '/couple/dashboard',
+        action: 'Open Payments and hold on the package and schedule without using payment controls.',
+        visibleResult:
+          'The couple sees shared payment context while planner finance operations remain private.',
+      },
+    ],
+    seedRequirements: [
+      'A planner-owned couple intake form assigned to Sofia & Daniel.',
+      'A couple portal with populated Forms and Payments views and no planner-only controls.',
+    ],
+    script: [
+      {
+        timestamp: '0:00-0:05',
+        action: 'Hold on the planner-controlled couple intake form.',
+        voiceover: 'Clear boundaries start with a workflow the planner owns.',
+      },
+      {
+        timestamp: '0:05-0:10',
+        action: 'Switch manually to the assigned form in the couple portal.',
+        voiceover: 'The couple gets a guided next step, not the planner’s internal controls.',
+      },
+      {
+        timestamp: '0:10-0:15',
+        action: 'Open the couple Payments view and hold on the shared schedule.',
+        voiceover: 'The answers clients need stay available without another midnight text.',
+      },
+    ],
+    recordingChecklist: [
+      ...defaultChecklist,
+      'Prepare the planner form and couple portal in separate tabs and switch manually.',
+      'Do not submit the form, open transaction controls, or expose planner-only details.',
+    ],
+    captureNotes:
+      'Record a distinct 15-second product story plus the five-second social outro; make the role boundary visually obvious.',
+  },
+  {
+    id: 'built-for-planners-social',
+    title: 'Wedding work deserves wedding-native systems.',
+    audience: 'Professional wedding planners comparing wedding-specific operations with generic event software.',
+    durationSeconds: 35,
+    priority: 'phase-one',
+    status: 'scripted',
+    productionChannel: 'social',
+    phaseOnePillar: 'Built for Planners',
+    socialOutcome:
+      'Run RSVP, seating, and vendor workflows generic event tools were never designed to understand.',
+    distributionChannels: PHASE_ONE_SOCIAL_DISTRIBUTION_CHANNELS,
+    routePlan: [
+      '/admin/guests',
+      '/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel',
+      '/admin/vendors',
+    ],
+    captureCheckpoints: [
+      {
+        label: 'Planner-native guest context',
+        route: '/admin/guests',
+        action: 'Filter the seeded guest table to Declined and hold on RSVP, group, and plus-one context.',
+        visibleResult:
+          'The planner sees the declined slice without losing group, meal, and plus-one context.',
+      },
+      {
+        label: 'Planner-native room plan',
+        route: '/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel',
+        action: 'Use the in-product Zoom out control to reach 70% and hold on the venue-aware room plan.',
+        visibleResult:
+          'The seating canvas shows the room outline, fixtures, tables, and existing assignments together.',
+      },
+      {
+        label: 'Planner-native vendor records',
+        route: '/admin/vendors',
+        action: 'Open Planner Vendor Management and hold on private contacts, contracts, and payment status.',
+        visibleResult:
+          'The planner vendor workspace keeps wedding-business context private and operational.',
+      },
+    ],
+    seedRequirements: [
+      'Guests with realistic RSVP, group, meal, and plus-one states.',
+      'A venue-aware seating plan plus populated private planner vendor records.',
+    ],
+    script: [
+      {
+        timestamp: '0:00-0:10',
+        action: 'Filter Guest Management to Declined and hold on the preserved guest context.',
+        voiceover: 'Generic event tools see names. Wedding planners need RSVP, household, meal, and plus-one context.',
+      },
+      {
+        timestamp: '0:10-0:20',
+        action: 'Open the venue-aware seating plan and hold on fixtures, tables, and assignments.',
+        voiceover: 'Seating starts with the actual room and the people already connected to it.',
+      },
+      {
+        timestamp: '0:20-0:30',
+        action: 'Open Planner Vendor Management and hold on the private operational record.',
+        voiceover: 'Vendor relationships, contracts, and status stay inside the planner’s operating system.',
+      },
+    ],
+    recordingChecklist: [
+      ...defaultChecklist,
+      'Keep guest cards collapsed and avoid guest actions, edits, messages, signatures, or payments.',
+      'Use only the in-product seating zoom control and do not move guests, tables, or fixtures.',
+    ],
+    captureNotes:
+      'Record a distinct 30-second product story plus the five-second social outro; show wedding-native depth without turning it into a generic feature list.',
+  },
+] as const satisfies readonly PhaseOneSocialVideo[];
+
+export const PHASE_ONE_SOCIAL_VIDEO_STORIES: readonly PhaseOneSocialVideo[] =
+  PHASE_ONE_SOCIAL_VIDEO_STORY_DRAFTS.map(applyPhaseOneSocialVideoPublicationApproval);
 
 export const DEMO_VIDEO_PLAYLIST: readonly DemoVideo[] = [
   HERO_DEMO_VIDEO,
