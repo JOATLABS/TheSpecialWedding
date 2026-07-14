@@ -23,8 +23,9 @@ Seed helpers (run via the `seed` subcommand):
 Config overlay:
 
     Repo-root `.env` is loaded first (same as the running app).
-    `testbed/.env` overrides values, so testbed-only tunables don't bleed
-    into the app config. See `testbed/.env.example` for the knobs.
+    `testbed/.env` overrides file-derived values, while explicit shell exports
+    override both files. This keeps one-off capture commands authoritative.
+    See `testbed/.env.example` for the knobs.
 
 Subcommand summary (run `testbed.py -h` for details):
 
@@ -47,6 +48,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -75,6 +77,10 @@ FRONTEND_WINDOW = "frontend"
 
 WINDOW_ORDER = [BACKEND_WINDOW, STRIPE_WINDOW, FRONTEND_WINDOW]
 
+MARKETING_CAPTURE_SESSION_NAME = "marketing-capture"
+MARKETING_CAPTURE_FRONTEND_ORIGIN = "http://127.0.0.1:3100"
+MARKETING_CAPTURE_NODE_MAJOR = 22
+
 
 # ── Output helpers ───────────────────────────────────────────────────────────
 
@@ -102,17 +108,23 @@ class Config:
     """
     Merged config from repo-root `.env` + `testbed/.env`.
 
-    The testbed overlay wins. We read env vars *after* both files have been
-    loaded, so explicit shell exports still beat both files — same order as the
-    Harness class, which is deliberate: a driver and this CLI must agree on
-    which backend/Mongo they're talking to.
+    The testbed overlay wins over repo-root file defaults, while values already
+    present in the process environment win over both files. Preserving that
+    shell layer is important for the canonical marketing-capture invocation,
+    whose production command, ports, origin, and blank Maps key must not be
+    replaced by a developer's persistent `testbed/.env`.
     """
 
     def __init__(self) -> None:
         self._load_dotenvs()
         self.session_name = os.getenv("TESTBED_SESSION_NAME", "testbed")
         self.backend_port = int(os.getenv("TESTBED_BACKEND_PORT", "8000"))
-        self.frontend_port = int(os.getenv("TESTBED_FRONTEND_PORT", "3000"))
+        default_frontend_port = (
+            "3100" if self.session_name == MARKETING_CAPTURE_SESSION_NAME else "3000"
+        )
+        self.frontend_port = int(
+            os.getenv("TESTBED_FRONTEND_PORT", default_frontend_port)
+        )
         self.frontend_origin = os.getenv(
             "TESTBED_FRONTEND_ORIGIN",
             f"http://127.0.0.1:{self.frontend_port}",
@@ -143,14 +155,20 @@ class Config:
                 "Install with `pip install python-dotenv` or run `doctor`."
             )
             return
+        # Capture the invoking shell before either dotenv file is read. The
+        # overlay may replace values sourced from the root file, but it must not
+        # replace an explicit one-off shell export from the current invocation.
+        shell_environment = dict(os.environ)
+
         # Repo-root first (source of truth for app secrets).
         root_env = REPO_ROOT / ".env"
         if root_env.exists():
             load_dotenv(root_env, override=False)
-        # Testbed overlay — only touches keys set in this file.
+        # Testbed overlay — replaces root-file defaults only.
         overlay = HERE / ".env"
         if overlay.exists():
             load_dotenv(overlay, override=True)
+        os.environ.update(shell_environment)
 
     # -- enabled windows ------------------------------------------------------
 
@@ -284,11 +302,14 @@ def pane_process_name(session: str, window: str) -> str:
     )
 
 
-def pane_process_names(session: str, window: str) -> set[str]:
-    """Return the tmux pane command and every descendant process name."""
+def _pane_descendant_processes(
+    session: str,
+    window: str,
+) -> list[tuple[int, str, str]]:
+    """Return ``(pid, process name, full command)`` for pane descendants."""
 
     if not window_exists(session, window):
-        return set()
+        return []
     pane = _tmux(
         "display-message",
         "-p",
@@ -301,26 +322,28 @@ def pane_process_names(session: str, window: str) -> set[str]:
     try:
         root_pid = int(pane.stdout.strip())
     except (TypeError, ValueError):
-        return set()
+        return []
 
     process_table = subprocess.run(
-        ["ps", "-Ao", "pid=,ppid=,comm="],
+        ["ps", "-Ao", "pid=,ppid=,args="],
         check=False,
         text=True,
         capture_output=True,
     )
-    children: dict[int, list[tuple[int, str]]] = {}
+    children: dict[int, list[tuple[int, str, str]]] = {}
     for line in process_table.stdout.splitlines():
         parts = line.strip().split(None, 2)
-        if len(parts) != 3:
+        if len(parts) < 3:
             continue
         try:
             pid, parent_pid = int(parts[0]), int(parts[1])
         except ValueError:
             continue
-        children.setdefault(parent_pid, []).append((pid, Path(parts[2]).name.lower()))
+        command = parts[2].strip().lower()
+        name = Path(command.split(None, 1)[0]).name
+        children.setdefault(parent_pid, []).append((pid, name, command))
 
-    names: set[str] = set()
+    processes: list[tuple[int, str, str]] = []
     pending = [root_pid]
     visited: set[int] = set()
     while pending:
@@ -328,13 +351,137 @@ def pane_process_names(session: str, window: str) -> set[str]:
         if parent_pid in visited:
             continue
         visited.add(parent_pid)
-        for child_pid, name in children.get(parent_pid, []):
-            names.add(name)
+        for child_pid, name, command in children.get(parent_pid, []):
+            processes.append((child_pid, name, command))
             pending.append(child_pid)
+    return processes
+
+
+def pane_process_names(session: str, window: str) -> set[str]:
+    """Return the tmux pane command and every descendant process name."""
+
+    names = {
+        name for _pid, name, _command in _pane_descendant_processes(session, window)
+    }
     current = pane_process_name(session, window)
     if current:
         names.add(current)
     return names
+
+
+def pane_process_commands(session: str, window: str) -> set[str]:
+    """Return full command lines for every descendant of a tmux pane."""
+
+    return {
+        command
+        for _pid, _name, command in _pane_descendant_processes(session, window)
+        if command
+    }
+
+
+_NEXT_START_PROCESS = re.compile(
+    r"(?:^|\s)(?:npm(?:\s+\S+)*\s+run\s+start|(?:\S*/)?next\s+start)(?=\s|$)"
+)
+_NEXT_DEV_PROCESS = re.compile(
+    r"(?:^|\s)(?:npm(?:\s+\S+)*\s+run\s+dev|(?:\S*/)?next\s+dev)(?=\s|$)"
+)
+
+
+def _is_marketing_capture_frontend(cfg: Config) -> bool:
+    session_name = str(getattr(cfg, "session_name", "") or "").strip()
+    frontend_origin = str(getattr(cfg, "frontend_origin", "") or "").rstrip("/")
+    return (
+        session_name == MARKETING_CAPTURE_SESSION_NAME
+        or frontend_origin == MARKETING_CAPTURE_FRONTEND_ORIGIN
+    )
+
+
+def _frontend_requires_production_runtime(cfg: Config) -> bool:
+    frontend_node_env = str(getattr(cfg, "frontend_node_env", "") or "").strip().lower()
+    return frontend_node_env == "production" or _is_marketing_capture_frontend(cfg)
+
+
+def _frontend_process_is_next_start(session: str) -> bool:
+    commands = pane_process_commands(session, FRONTEND_WINDOW)
+    return any(_NEXT_START_PROCESS.search(command) for command in commands) and not any(
+        _NEXT_DEV_PROCESS.search(command) for command in commands
+    )
+
+
+def _node_executable_for_process(pid: int) -> str | None:
+    """Resolve the executable backing one running process on Linux or macOS."""
+
+    proc_executable = Path(f"/proc/{pid}/exe")
+    try:
+        resolved = proc_executable.resolve(strict=True)
+        if resolved.name.lower().startswith("node"):
+            return str(resolved)
+    except OSError:
+        pass
+
+    if sys.platform != "darwin":
+        return None
+    lsof = shutil.which("lsof")
+    if lsof is None:
+        return None
+    try:
+        result = subprocess.run(
+            [lsof, "-a", "-p", str(pid), "-d", "txt", "-Fn"],
+            check=False,
+            text=True,
+            capture_output=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    for line in result.stdout.splitlines():
+        if not line.startswith("n"):
+            continue
+        executable = line[1:].strip()
+        if Path(executable).name.lower().startswith("node"):
+            return executable
+    return None
+
+
+def _node_major_version_for_process(pid: int) -> int | None:
+    executable = _node_executable_for_process(pid)
+    if executable is None:
+        return None
+    try:
+        result = subprocess.run(
+            [executable, "--version"],
+            check=False,
+            text=True,
+            capture_output=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    match = re.fullmatch(r"v(\d+)(?:\.\d+){2}\s*", result.stdout)
+    return int(match.group(1)) if result.returncode == 0 and match else None
+
+
+def _frontend_process_uses_node_22(session: str) -> bool:
+    """Prove every running npm/Next server process uses the required Node major."""
+
+    candidates = [
+        (pid, name, command)
+        for pid, name, command in _pane_descendant_processes(
+            session,
+            FRONTEND_WINDOW,
+        )
+        if (
+            (name == "npm" and bool(_NEXT_START_PROCESS.search(command)))
+            or name.startswith("next")
+            or (name == "node" and "next" in command)
+        )
+    ]
+    if not candidates:
+        return False
+    versions = [
+        _node_major_version_for_process(pid) for pid, _name, _command in candidates
+    ]
+    return all(version == MARKETING_CAPTURE_NODE_MAJOR for version in versions)
 
 
 def _service_process_is_live(session: str, window: str) -> bool:
@@ -368,6 +515,14 @@ def service_is_ready(cfg: Config, window: str) -> bool:
     if window == BACKEND_WINDOW:
         return _http_ready(f"http://127.0.0.1:{cfg.backend_port}/health/readyz")
     if window == FRONTEND_WINDOW:
+        if _frontend_requires_production_runtime(
+            cfg
+        ) and not _frontend_process_is_next_start(cfg.session_name):
+            return False
+        if _is_marketing_capture_frontend(cfg) and not _frontend_process_uses_node_22(
+            cfg.session_name
+        ):
+            return False
         return _http_ready(f"{cfg.frontend_origin}/")
     return True
 
@@ -510,7 +665,24 @@ def cmd_status(cfg: Config, args: argparse.Namespace) -> int:
             if present
             else ""
         )
-        print(f"  {mark} {window}{process_note}{log_note}")
+        runtime_note = ""
+        if (
+            present
+            and window == FRONTEND_WINDOW
+            and _frontend_requires_production_runtime(cfg)
+        ):
+            runtime_note = (
+                " runtime=next-start"
+                if _frontend_process_is_next_start(cfg.session_name)
+                else " runtime=not-next-start"
+            )
+            if _is_marketing_capture_frontend(cfg):
+                runtime_note += (
+                    " node=node-22"
+                    if _frontend_process_uses_node_22(cfg.session_name)
+                    else " node=not-node-22"
+                )
+        print(f"  {mark} {window}{process_note}{runtime_note}{log_note}")
         unhealthy = unhealthy or (window in required_windows and not healthy)
         unhealthy = unhealthy or (present and not healthy)
     return 1 if unhealthy else 0

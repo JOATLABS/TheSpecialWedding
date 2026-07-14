@@ -49,14 +49,15 @@ MARKETING_CAPTURE_GALLERY_URLS = frozenset(
     item["url"] for item in MARKETING_CAPTURE_GALLERY_ITEMS
 )
 
+MARKETING_CAPTURE_GALLERY_WEDDING_ID = "wedding_marketing_capture_sofia_daniel"
+MARKETING_CAPTURE_GALLERY_WEDDING_SLUG = "sofia-and-daniel"
 
-def allow_local_demo_gallery_fallback(wedding: Any) -> bool:
-    environment = (
-        os.getenv("ENVIRONMENT", os.getenv("NODE_ENV", "development")).strip().lower()
-    )
+
+def _is_exact_marketing_capture_gallery_wedding(wedding: Any) -> bool:
     return (
-        environment in NON_PRODUCTION_ENVIRONMENTS
-        and isinstance(wedding, dict)
+        isinstance(wedding, dict)
+        and wedding.get("_id") == MARKETING_CAPTURE_GALLERY_WEDDING_ID
+        and wedding.get("slug") == MARKETING_CAPTURE_GALLERY_WEDDING_SLUG
         and is_exact_marketing_capture_seed(
             wedding.get("seed_source"),
             wedding.get("seed_scope"),
@@ -64,10 +65,17 @@ def allow_local_demo_gallery_fallback(wedding: Any) -> bool:
     )
 
 
+def allow_local_demo_gallery_fallback(wedding: Any) -> bool:
+    environment = (
+        (os.getenv("ENVIRONMENT") or os.getenv("NODE_ENV") or "").strip().lower()
+    )
+    return (
+        environment in NON_PRODUCTION_ENVIRONMENTS
+        and _is_exact_marketing_capture_gallery_wedding(wedding)
+    )
+
+
 def gallery_fallback_items_for_wedding(wedding: Any) -> list[dict[str, str]]:
-    if isinstance(wedding, dict) and is_exact_marketing_capture_seed(
-        wedding.get("seed_source"),
-        wedding.get("seed_scope"),
-    ):
+    if allow_local_demo_gallery_fallback(wedding):
         return [dict(item) for item in MARKETING_CAPTURE_GALLERY_ITEMS]
     return []

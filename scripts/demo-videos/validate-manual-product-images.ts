@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 
 import {
   MARKETING_CAPTURE_BUILD_IDENTITY_SELECTOR,
@@ -18,6 +19,7 @@ import { resolveFromRepo } from './cli';
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const VERIFIED_CAPTURE_BUILDS = new Set<string>();
+export const MINIMUM_PUBLISHED_PRODUCT_PROOF_COUNT = 15;
 
 export type ManualProductImageValidation = {
   featureId: string;
@@ -72,7 +74,10 @@ function artifactPathFromPublicUrl(publicUrl: string): string {
   return artifactPath;
 }
 
-function readPngDimensions(bytes: Buffer, artifactPath: string): { width: number; height: number } {
+async function decodePngDimensions(
+  bytes: Buffer,
+  artifactPath: string,
+): Promise<{ width: number; height: number }> {
   if (bytes.byteLength < 24 || !bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
     throw new Error(`Marketing image is not a valid PNG file: ${artifactPath}`);
   }
@@ -82,10 +87,26 @@ function readPngDimensions(bytes: Buffer, artifactPath: string): { width: number
     throw new Error(`Marketing image does not begin with a PNG IHDR chunk: ${artifactPath}`);
   }
 
-  return {
-    width: bytes.readUInt32BE(16),
-    height: bytes.readUInt32BE(20),
-  };
+  const headerWidth = bytes.readUInt32BE(16);
+  const headerHeight = bytes.readUInt32BE(20);
+
+  try {
+    const metadata = await sharp(bytes, { failOn: 'warning' }).metadata();
+    if (metadata.format !== 'png') {
+      throw new Error('decoded format is not PNG');
+    }
+
+    const { info } = await sharp(bytes, { failOn: 'warning' })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    if (info.width !== headerWidth || info.height !== headerHeight) {
+      throw new Error('decoded dimensions do not match the PNG header');
+    }
+
+    return { width: info.width, height: info.height };
+  } catch {
+    throw new Error(`Marketing image cannot be fully decoded as PNG: ${artifactPath}`);
+  }
 }
 
 export function assertManualFullWindowContract(
@@ -240,11 +261,11 @@ export function assertManualFullWindowContract(
   }
 }
 
-export function validateApprovedProductImage(
+export async function validateApprovedProductImage(
   featureId: string,
   entry: MarketingCaptureEntry,
   options: { verifyGitAncestry?: boolean } = {},
-): ManualProductImageValidation {
+): Promise<ManualProductImageValidation> {
   assertManualFullWindowContract(featureId, entry);
   if (options.verifyGitAncestry) {
     assertCaptureBuildAncestry(featureId, entry.build);
@@ -256,7 +277,7 @@ export function validateApprovedProductImage(
   }
 
   const bytes = fs.readFileSync(artifactPath);
-  const dimensions = readPngDimensions(bytes, artifactPath);
+  const dimensions = await decodePngDimensions(bytes, artifactPath);
   if (dimensions.width !== entry.source.width || dimensions.height !== entry.source.height) {
     throw new Error(
       `${featureId} PNG dimensions ${dimensions.width}x${dimensions.height} do not match manifest ${entry.source.width}x${entry.source.height}.`,
@@ -277,22 +298,28 @@ export function validateApprovedProductImage(
   };
 }
 
-export function validatePublishedProductImages(
+export async function validatePublishedProductImages(
   options: { verifyGitAncestry?: boolean } = {},
-): ManualProductImageValidation[] {
-  return Object.entries(MARKETING_CAPTURE_MANIFEST)
-    .filter(([, entry]) => entry.status === 'approved')
-    .map(([featureId, entry]) => validateApprovedProductImage(featureId, entry, options));
+): Promise<ManualProductImageValidation[]> {
+  const approvedEntries = Object.entries(MARKETING_CAPTURE_MANIFEST)
+    .filter(([, entry]) => entry.status === 'approved');
+  if (approvedEntries.length < MINIMUM_PUBLISHED_PRODUCT_PROOF_COUNT) {
+    throw new Error(
+      `Marketing publication requires at least ${MINIMUM_PUBLISHED_PRODUCT_PROOF_COUNT} approved product proofs; found ${approvedEntries.length}.`,
+    );
+  }
+  return Promise.all(approvedEntries
+    .map(([featureId, entry]) => validateApprovedProductImage(featureId, entry, options)));
 }
 
-export function validateManualProductImages(
+export async function validateManualProductImages(
   options: { verifyGitAncestry?: boolean } = {},
-): ManualProductImageValidation[] {
-  return Object.entries(MARKETING_CAPTURE_MANIFEST)
-    .map(([featureId, entry]) => validateApprovedProductImage(featureId, entry, options));
+): Promise<ManualProductImageValidation[]> {
+  return Promise.all(Object.entries(MARKETING_CAPTURE_MANIFEST)
+    .map(([featureId, entry]) => validateApprovedProductImage(featureId, entry, options)));
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const args = new Set(process.argv.slice(2));
   const supportedArgs = new Set(['--published', '--verify-git-ancestry']);
   const unsupportedArgs = [...args].filter((arg) => !supportedArgs.has(arg));
@@ -304,8 +331,8 @@ function main(): void {
   const verifyGitAncestry = args.has('--verify-git-ancestry');
   const options = { verifyGitAncestry };
   const validations = publishedOnly
-    ? validatePublishedProductImages(options)
-    : validateManualProductImages(options);
+    ? await validatePublishedProductImages(options)
+    : await validateManualProductImages(options);
   const scope = publishedOnly ? 'published' : 'manually captured full-window';
   const ancestryScope = verifyGitAncestry ? ' with Git ancestry' : '';
   console.log(`Validated ${validations.length} ${scope} marketing PNGs${ancestryScope}.`);
@@ -316,10 +343,8 @@ const isMainModule = process.argv[1]
   : false;
 
 if (isMainModule) {
-  try {
-    main();
-  } catch (error: unknown) {
+  void main().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;
-  }
+  });
 }

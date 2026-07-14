@@ -59,6 +59,7 @@ async def get_file_url(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Get URL for a specific file - validates wedding ownership"""
+    enforce_team_permission(current_user, "manage_gallery")
     parsed_key = gallery_service.parse_wedding_storage_key(key)
     wedding_slug = parsed_key["wedding_slug"] if parsed_key else None
 
@@ -104,6 +105,7 @@ async def list_gallery_files(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """List all uploaded files (admin view) - filtered by wedding access"""
+    enforce_team_permission(current_user, "manage_gallery")
     parsed_prefix = gallery_service.parse_wedding_storage_prefix(prefix)
     if parsed_prefix:
         wedding = await get_accessible_wedding_by_slug(
@@ -117,12 +119,11 @@ async def list_gallery_files(
                 planner_scope=planner_scope,
             )
         except HTTPException as exc:
-            if (
-                exc.status_code == 503
-                and parsed_prefix["folder"] == "gallery"
-                and allow_local_demo_gallery_fallback(wedding)
-            ):
-                return gallery_fallback_items_for_wedding(wedding)
+            if exc.status_code == 503 and allow_local_demo_gallery_fallback(wedding):
+                if parsed_prefix["folder"] == "gallery":
+                    return gallery_fallback_items_for_wedding(wedding)
+                if parsed_prefix["folder"] in {"our-story", "wedding-party"}:
+                    return []
             raise
         if (
             not files

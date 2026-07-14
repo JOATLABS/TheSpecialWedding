@@ -3,7 +3,7 @@ import sys
 import types
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -58,6 +58,8 @@ from app.api import gallery_admin as gallery_admin_api  # noqa: E402
 from app.api import gallery_public as gallery_public_api  # noqa: E402
 from app.constants.marketing_capture_media import (  # noqa: E402
     MARKETING_CAPTURE_GALLERY_ITEMS,
+    allow_local_demo_gallery_fallback,
+    gallery_fallback_items_for_wedding,
 )
 from app.constants.seed_sources import (  # noqa: E402
     MARKETING_CAPTURE_SEED_SCOPE,
@@ -70,6 +72,76 @@ def _build_service() -> GalleryUploadService:
     service.bucket_name = "test-bucket"
     service.storage = object()
     return service
+
+
+def _planner_user() -> SimpleNamespace:
+    return SimpleNamespace(
+        is_root_admin=False,
+        is_wedding_planner=True,
+        is_team_member=False,
+        team_permissions={},
+    )
+
+
+def _team_member(*, manage_gallery: bool) -> SimpleNamespace:
+    return SimpleNamespace(
+        is_root_admin=False,
+        is_wedding_planner=False,
+        is_team_member=True,
+        team_permissions={"manage_gallery": manage_gallery},
+    )
+
+
+def _marketing_capture_wedding(
+    *,
+    wedding_id: str = "wedding_marketing_capture_sofia_daniel",
+    slug: str = "sofia-and-daniel",
+) -> dict[str, str]:
+    return {
+        "_id": wedding_id,
+        "slug": slug,
+        "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+        "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+    }
+
+
+def test_local_gallery_fallback_accepts_only_the_primary_capture_wedding(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "local")
+    primary = _marketing_capture_wedding()
+
+    assert allow_local_demo_gallery_fallback(primary) is True
+    assert (
+        gallery_fallback_items_for_wedding(primary) == MARKETING_CAPTURE_GALLERY_ITEMS
+    )
+
+
+@pytest.mark.parametrize(
+    ("wedding_id", "slug"),
+    [
+        ("wedding_marketing_capture_avery_morgan", "avery-and-morgan"),
+        ("wedding_marketing_capture_not_sofia_daniel", "sofia-and-daniel"),
+        ("wedding_marketing_capture_sofia_daniel", "not-sofia-and-daniel"),
+    ],
+)
+def test_local_gallery_fallback_rejects_secondary_or_mismatched_wedding_identity(
+    monkeypatch,
+    wedding_id,
+    slug,
+):
+    monkeypatch.setenv("ENVIRONMENT", "local")
+    wedding = _marketing_capture_wedding(wedding_id=wedding_id, slug=slug)
+
+    assert allow_local_demo_gallery_fallback(wedding) is False
+    assert gallery_fallback_items_for_wedding(wedding) == []
+
+
+def test_gallery_fallback_fails_closed_when_environment_is_not_declared(monkeypatch):
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("NODE_ENV", raising=False)
+    primary = _marketing_capture_wedding()
+
+    assert allow_local_demo_gallery_fallback(primary) is False
+    assert gallery_fallback_items_for_wedding(primary) == []
 
 
 def test_planner_scope_prefers_planner_id_and_avoids_email_leakage():
@@ -299,6 +371,138 @@ def test_marketing_capture_gallery_keys_look_like_real_wedding_media():
         assert "test" not in item["key"]
 
 
+def test_admin_gallery_list_rejects_team_member_without_manage_gallery(monkeypatch):
+    wedding_lookup = AsyncMock(return_value={"_id": "wedding-1", "slug": "demo"})
+    parse_prefix = Mock(
+        return_value={
+            "folder": "gallery",
+            "wedding_slug": "demo",
+        }
+    )
+    monkeypatch.setattr(
+        gallery_admin_api,
+        "get_accessible_wedding_by_slug",
+        wedding_lookup,
+    )
+    monkeypatch.setattr(
+        gallery_admin_api,
+        "gallery_service",
+        SimpleNamespace(
+            parse_wedding_storage_prefix=parse_prefix,
+            get_planner_scope_from_wedding=lambda _wedding: "planner-owner",
+            list_wedding_files=lambda **_kwargs: [],
+        ),
+    )
+
+    with pytest.raises(gallery_admin_api.HTTPException) as exc_info:
+        asyncio.run(
+            gallery_admin_api.list_gallery_files(
+                prefix="gallery/demo/",
+                current_user=_team_member(manage_gallery=False),
+            )
+        )
+
+    assert exc_info.value.status_code == 403
+    assert "manage gallery" in exc_info.value.detail
+    parse_prefix.assert_not_called()
+    wedding_lookup.assert_not_awaited()
+
+
+def test_admin_gallery_list_allows_team_member_with_manage_gallery(monkeypatch):
+    wedding = {"_id": "wedding-1", "slug": "demo"}
+    wedding_lookup = AsyncMock(return_value=wedding)
+    expected_files = [
+        {"key": "gallery/demo/photo.webp", "url": "https://media.example/photo.webp"}
+    ]
+    monkeypatch.setattr(
+        gallery_admin_api,
+        "get_accessible_wedding_by_slug",
+        wedding_lookup,
+    )
+    monkeypatch.setattr(
+        gallery_admin_api,
+        "gallery_service",
+        SimpleNamespace(
+            parse_wedding_storage_prefix=lambda _prefix: {
+                "folder": "gallery",
+                "wedding_slug": "demo",
+            },
+            get_planner_scope_from_wedding=lambda _wedding: "planner-owner",
+            list_wedding_files=lambda **_kwargs: expected_files,
+        ),
+    )
+
+    files = asyncio.run(
+        gallery_admin_api.list_gallery_files(
+            prefix="gallery/demo/",
+            current_user=_team_member(manage_gallery=True),
+        )
+    )
+
+    assert files == expected_files
+    wedding_lookup.assert_awaited_once()
+
+
+def test_admin_gallery_file_url_rejects_team_member_without_manage_gallery(monkeypatch):
+    wedding_lookup = AsyncMock(return_value={"_id": "wedding-1", "slug": "demo"})
+    parse_key = Mock(return_value={"wedding_slug": "demo"})
+    monkeypatch.setattr(
+        gallery_admin_api,
+        "get_accessible_wedding_by_slug",
+        wedding_lookup,
+    )
+    monkeypatch.setattr(
+        gallery_admin_api,
+        "gallery_service",
+        SimpleNamespace(
+            parse_wedding_storage_key=parse_key,
+            get_file_url=lambda _key: {"file_url": "https://signed.example/photo"},
+        ),
+    )
+
+    with pytest.raises(gallery_admin_api.HTTPException) as exc_info:
+        asyncio.run(
+            gallery_admin_api.get_file_url(
+                key="gallery/demo/photo.webp",
+                current_user=_team_member(manage_gallery=False),
+            )
+        )
+
+    assert exc_info.value.status_code == 403
+    assert "manage gallery" in exc_info.value.detail
+    parse_key.assert_not_called()
+    wedding_lookup.assert_not_awaited()
+
+
+def test_admin_gallery_file_url_allows_team_member_with_manage_gallery(monkeypatch):
+    wedding = {"_id": "wedding-1", "slug": "demo"}
+    wedding_lookup = AsyncMock(return_value=wedding)
+    expected = {"file_url": "https://signed.example/photo"}
+    monkeypatch.setattr(
+        gallery_admin_api,
+        "get_accessible_wedding_by_slug",
+        wedding_lookup,
+    )
+    monkeypatch.setattr(
+        gallery_admin_api,
+        "gallery_service",
+        SimpleNamespace(
+            parse_wedding_storage_key=lambda _key: {"wedding_slug": "demo"},
+            get_file_url=lambda _key: expected,
+        ),
+    )
+
+    result = asyncio.run(
+        gallery_admin_api.get_file_url(
+            key="gallery/demo/photo.webp",
+            current_user=_team_member(manage_gallery=True),
+        )
+    )
+
+    assert result == expected
+    wedding_lookup.assert_awaited_once()
+
+
 def test_marketing_capture_admin_gallery_uses_seeded_fallback_when_storage_is_empty(
     monkeypatch,
 ):
@@ -330,7 +534,7 @@ def test_marketing_capture_admin_gallery_uses_seeded_fallback_when_storage_is_em
     files = asyncio.run(
         gallery_admin_api.list_gallery_files(
             prefix="gallery/sofia-and-daniel/",
-            current_user=SimpleNamespace(is_root_admin=False),
+            current_user=_planner_user(),
         )
     )
 
@@ -370,7 +574,7 @@ def test_admin_gallery_does_not_bypass_storage_for_wrong_or_missing_seed_scope(
     files = asyncio.run(
         gallery_admin_api.list_gallery_files(
             prefix="gallery/sofia-and-daniel/",
-            current_user=SimpleNamespace(is_root_admin=False),
+            current_user=_planner_user(),
         )
     )
 
@@ -414,11 +618,156 @@ def test_marketing_capture_admin_gallery_uses_seeded_fallback_when_storage_is_do
     files = asyncio.run(
         gallery_admin_api.list_gallery_files(
             prefix="gallery/sofia-and-daniel/",
-            current_user=SimpleNamespace(is_root_admin=False),
+            current_user=_planner_user(),
         )
     )
 
     assert files == MARKETING_CAPTURE_GALLERY_ITEMS
+
+
+@pytest.mark.parametrize("folder", ["our-story", "wedding-party"])
+def test_marketing_capture_admin_optional_folders_are_empty_when_storage_is_down(
+    monkeypatch,
+    folder,
+):
+    wedding = {
+        "_id": "wedding_marketing_capture_sofia_daniel",
+        "slug": "sofia-and-daniel",
+        "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+        "seed_scope": MARKETING_CAPTURE_SEED_SCOPE,
+    }
+    monkeypatch.setenv("ENVIRONMENT", "local")
+    monkeypatch.setattr(
+        gallery_admin_api,
+        "get_accessible_wedding_by_slug",
+        AsyncMock(return_value=wedding),
+    )
+
+    def unavailable_storage(**_kwargs):
+        raise gallery_admin_api.HTTPException(
+            status_code=503, detail="storage unavailable"
+        )
+
+    monkeypatch.setattr(
+        gallery_admin_api,
+        "gallery_service",
+        SimpleNamespace(
+            parse_wedding_storage_prefix=lambda _prefix: {
+                "folder": folder,
+                "wedding_slug": "sofia-and-daniel",
+            },
+            get_planner_scope_from_wedding=lambda _wedding: "planner-capture",
+            list_wedding_files=unavailable_storage,
+        ),
+    )
+
+    files = asyncio.run(
+        gallery_admin_api.list_gallery_files(
+            prefix=f"{folder}/sofia-and-daniel/",
+            current_user=_planner_user(),
+        )
+    )
+
+    assert files == []
+
+
+@pytest.mark.parametrize(
+    ("environment", "seed_scope", "folder"),
+    [
+        ("production", MARKETING_CAPTURE_SEED_SCOPE, "our-story"),
+        ("local", "another-demo", "our-story"),
+        ("local", MARKETING_CAPTURE_SEED_SCOPE, "private-folder"),
+    ],
+)
+def test_admin_optional_folder_storage_failure_stays_fail_closed_outside_capture_scope(
+    monkeypatch,
+    environment,
+    seed_scope,
+    folder,
+):
+    wedding = {
+        "_id": "wedding_marketing_capture_sofia_daniel",
+        "slug": "sofia-and-daniel",
+        "seed_source": MARKETING_CAPTURE_SEED_SOURCE,
+        "seed_scope": seed_scope,
+    }
+    monkeypatch.setenv("ENVIRONMENT", environment)
+    monkeypatch.setattr(
+        gallery_admin_api,
+        "get_accessible_wedding_by_slug",
+        AsyncMock(return_value=wedding),
+    )
+
+    def unavailable_storage(**_kwargs):
+        raise gallery_admin_api.HTTPException(
+            status_code=503, detail="storage unavailable"
+        )
+
+    monkeypatch.setattr(
+        gallery_admin_api,
+        "gallery_service",
+        SimpleNamespace(
+            parse_wedding_storage_prefix=lambda _prefix: {
+                "folder": folder,
+                "wedding_slug": "sofia-and-daniel",
+            },
+            get_planner_scope_from_wedding=lambda _wedding: "planner-capture",
+            list_wedding_files=unavailable_storage,
+        ),
+    )
+
+    with pytest.raises(gallery_admin_api.HTTPException) as exc_info:
+        asyncio.run(
+            gallery_admin_api.list_gallery_files(
+                prefix=f"{folder}/sofia-and-daniel/",
+                current_user=_planner_user(),
+            )
+        )
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "storage unavailable"
+
+
+def test_marketing_capture_admin_gallery_fallback_never_bypasses_wedding_access(
+    monkeypatch,
+):
+    monkeypatch.setenv("ENVIRONMENT", "local")
+    monkeypatch.setattr(
+        gallery_admin_api,
+        "get_accessible_wedding_by_slug",
+        AsyncMock(
+            side_effect=gallery_admin_api.HTTPException(
+                status_code=403,
+                detail="Access denied to this wedding's gallery",
+            )
+        ),
+    )
+
+    def storage_must_not_run(**_kwargs):
+        raise AssertionError("storage must not run before wedding access succeeds")
+
+    monkeypatch.setattr(
+        gallery_admin_api,
+        "gallery_service",
+        SimpleNamespace(
+            parse_wedding_storage_prefix=lambda _prefix: {
+                "folder": "our-story",
+                "wedding_slug": "sofia-and-daniel",
+            },
+            get_planner_scope_from_wedding=lambda _wedding: "planner-capture",
+            list_wedding_files=storage_must_not_run,
+        ),
+    )
+
+    with pytest.raises(gallery_admin_api.HTTPException) as exc_info:
+        asyncio.run(
+            gallery_admin_api.list_gallery_files(
+                prefix="our-story/sofia-and-daniel/",
+                current_user=_planner_user(),
+            )
+        )
+
+    assert exc_info.value.status_code == 403
 
 
 def test_marketing_capture_admin_gallery_does_not_duplicate_fallback_across_folders(
@@ -452,7 +801,7 @@ def test_marketing_capture_admin_gallery_does_not_duplicate_fallback_across_fold
     files = asyncio.run(
         gallery_admin_api.list_gallery_files(
             prefix="our-story/sofia-and-daniel/",
-            current_user=SimpleNamespace(is_root_admin=False),
+            current_user=_planner_user(),
         )
     )
 

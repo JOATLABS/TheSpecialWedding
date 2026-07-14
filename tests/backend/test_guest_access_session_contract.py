@@ -1,10 +1,13 @@
+import asyncio
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 from starlette.routing import Match
 
+from app.api import guest_verification as guest_verification_api
 from app.api.guest_verification import router as guest_verification_router
 from app.dependencies.guest_access import (
     GUEST_ACCESS_COOKIE_NAME,
@@ -27,6 +30,132 @@ def _request_with_cookie(token: str) -> Request:
                 (b"cookie", f"{GUEST_ACCESS_COOKIE_NAME}={token}".encode("utf-8")),
             ],
         }
+    )
+
+
+def _request_without_cookie() -> Request:
+    return Request({"type": "http", "headers": []})
+
+
+def test_guest_session_lookup_returns_no_content_when_cookie_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_lookup = AsyncMock()
+    monkeypatch.setattr(
+        guest_verification_api.verification_service,
+        "get_session_access",
+        session_lookup,
+    )
+
+    response = asyncio.run(
+        guest_verification_api.get_wedding_with_session_access(
+            "maya-and-jordan",
+            _request_without_cookie(),
+        )
+    )
+
+    assert response.status_code == 204
+    assert response.body == b""
+    session_lookup.assert_not_awaited()
+
+
+def test_guest_session_lookup_rejects_an_invalid_cookie(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_lookup = AsyncMock()
+    monkeypatch.setattr(
+        guest_verification_api.verification_service,
+        "get_session_access",
+        session_lookup,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            guest_verification_api.get_wedding_with_session_access(
+                "maya-and-jordan",
+                _request_with_cookie("not-a-valid-session"),
+            )
+        )
+
+    assert exc_info.value.status_code == 401
+    session_lookup.assert_not_awaited()
+
+
+def test_guest_session_lookup_preserves_slug_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    token = create_guest_access_session_token(
+        wedding_slug="maya-and-jordan",
+        wedding_id="w_123",
+        guest_id="507f1f77bcf86cd799439011",
+        auth_method="token",
+        otp_verified=False,
+    )
+    session_lookup = AsyncMock()
+    monkeypatch.setattr(
+        guest_verification_api.verification_service,
+        "get_session_access",
+        session_lookup,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            guest_verification_api.get_wedding_with_session_access(
+                "different-wedding",
+                _request_with_cookie(token),
+            )
+        )
+
+    assert exc_info.value.status_code == 403
+    session_lookup.assert_not_awaited()
+
+
+def test_guest_session_lookup_uses_verified_cookie_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    guest_id = "507f1f77bcf86cd799439011"
+    token = create_guest_access_session_token(
+        wedding_slug="maya-and-jordan",
+        wedding_id="w_123",
+        guest_id=guest_id,
+        auth_method="token",
+        otp_verified=False,
+    )
+    session_lookup = AsyncMock(
+        return_value={
+            "wedding": {"id": "w_123", "slug": "maya-and-jordan"},
+            "guest": {"id": guest_id, "name": "Taylor Guest"},
+            "rsvp": {"has_rsvp": False},
+            "auth_method": "token",
+            "otp_verified": False,
+        }
+    )
+    monkeypatch.setattr(
+        guest_verification_api.verification_service,
+        "get_session_access",
+        session_lookup,
+    )
+
+    result = asyncio.run(
+        guest_verification_api.get_wedding_with_session_access(
+            "maya-and-jordan",
+            _request_with_cookie(token),
+        )
+    )
+
+    assert result == {
+        "wedding": {"id": "w_123", "slug": "maya-and-jordan"},
+        "guest": {"id": guest_id, "name": "Taylor Guest"},
+        "rsvp": {"has_rsvp": False},
+        "auth_method": "token",
+        "otp_verified": False,
+    }
+    session_lookup.assert_awaited_once_with(
+        slug="maya-and-jordan",
+        wedding_id="w_123",
+        guest_id=guest_id,
+        auth_method="token",
+        otp_verified=False,
     )
 
 
