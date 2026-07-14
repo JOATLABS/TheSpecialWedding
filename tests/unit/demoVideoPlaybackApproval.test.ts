@@ -18,10 +18,13 @@ import { getDemoVideoProductionRequirementById } from '../../app/data/demoVideoP
 import {
   validateDemoVideoPlaybackApproval,
   type DemoVideoPlaybackApprovalReceipt,
+  type DemoVideoSocialPlaybackApprovalReceipt,
+  type DemoVideoWebsitePlaybackApprovalReceipt,
 } from '../../scripts/demo-videos/validate-demo-video-playback-approval';
 
 const ROOT = process.cwd();
 const DEMO_ID = 'planner-command-center-walkthrough';
+const SOCIAL_DEMO_ID = 'connection-over-tools-social';
 
 type ProbedMedia = {
   width: number;
@@ -120,16 +123,14 @@ function artifactEvidence(rootDir: string, artifactPath: string) {
   };
 }
 
-function cloneReceipt(
-  receipt: DemoVideoPlaybackApprovalReceipt,
-): DemoVideoPlaybackApprovalReceipt {
-  return JSON.parse(JSON.stringify(receipt)) as DemoVideoPlaybackApprovalReceipt;
+function cloneReceipt<T extends DemoVideoPlaybackApprovalReceipt>(receipt: T): T {
+  return JSON.parse(JSON.stringify(receipt)) as T;
 }
 
 describe('demo video playback approval', () => {
   let fixtureRoot = '';
   let canonicalReceiptPath = '';
-  let approvedReceipt: DemoVideoPlaybackApprovalReceipt;
+  let approvedReceipt: DemoVideoWebsitePlaybackApprovalReceipt;
 
   before(() => {
     fixtureRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-video-playback-approval-'));
@@ -385,6 +386,213 @@ describe('demo video playback approval', () => {
         () => validateDemoVideoPlaybackApproval(DEMO_ID, { rootDir: fixtureRoot }),
         new RegExp(`${field} must be explicitly true`),
       );
+    }
+  });
+
+  it('rejects social playback attestations on a website video receipt', () => {
+    const receipt = {
+      ...cloneReceipt(approvedReceipt),
+      socialPlayback: {
+        portraitMobileApproved: true,
+        safeAreaApproved: true,
+      },
+    } as unknown as DemoVideoPlaybackApprovalReceipt;
+    writeReceipt(receipt);
+
+    assert.throws(
+      () => validateDemoVideoPlaybackApproval(DEMO_ID, { rootDir: fixtureRoot }),
+      /socialPlayback.*not allowed/i,
+    );
+  });
+});
+
+describe('Phase 1 social video playback approval', () => {
+  let fixtureRoot = '';
+  let canonicalReceiptPath = '';
+  let approvedReceipt: DemoVideoSocialPlaybackApprovalReceipt;
+
+  before(() => {
+    fixtureRoot = mkdtempSync(path.join(os.tmpdir(), 'social-video-playback-approval-'));
+    const requirement = getDemoVideoProductionRequirementById(SOCIAL_DEMO_ID);
+    assert.ok(requirement, 'social story must have a production requirement');
+    assert.equal(requirement.productionChannel, 'social');
+    assert.equal(requirement.exportTargets.length, 1);
+
+    const target = requirement.exportTargets[0];
+    assert.equal(target.format, 'social-9x16');
+    const videoPath = `public/${target.assetPath.replace(/^\//, '')}`;
+    const thumbnailPath = `public/${target.thumbnailPath.replace(/^\//, '')}`;
+    const absoluteVideoPath = path.join(fixtureRoot, videoPath);
+    const absoluteThumbnailPath = path.join(fixtureRoot, thumbnailPath);
+    createVideo(absoluteVideoPath, target.width, target.height);
+    createThumbnail(absoluteThumbnailPath, target.width, target.height);
+    const media = probe(absoluteVideoPath);
+
+    approvedReceipt = {
+      schemaVersion: 1,
+      demoId: SOCIAL_DEMO_ID,
+      reviewedAt: '2026-07-14T12:00:00.000Z',
+      reviewer: 'Jordan Lee',
+      reviewMethod: 'human-normal-speed-playback',
+      targets: [
+        {
+          format: target.format,
+          video: {
+            ...artifactEvidence(fixtureRoot, videoPath),
+            width: media.width,
+            height: media.height,
+            durationSeconds: media.durationSeconds,
+            hasAudio: true,
+          },
+          thumbnail: {
+            ...artifactEvidence(fixtureRoot, thumbnailPath),
+            width: target.width,
+            height: target.height,
+          },
+          review: {
+            fullNormalSpeedPlaybackCompleted: true,
+            captionsApproved: true,
+            narrationAndAudioApproved: true,
+            fullUncroppedProductWindowApproved: true,
+            localAndDevelopmentContentExcluded: true,
+            privateContentExcluded: true,
+            publicSafetyApproved: true,
+          },
+        },
+      ],
+      socialPlayback: {
+        portraitMobileApproved: true,
+        safeAreaApproved: true,
+      },
+    };
+
+    canonicalReceiptPath = path.join(fixtureRoot, requirement.playbackApprovalPath);
+    mkdirSync(path.dirname(canonicalReceiptPath), { recursive: true });
+    writeFileSync(canonicalReceiptPath, `${JSON.stringify(approvedReceipt, null, 2)}\n`);
+  });
+
+  after(() => {
+    if (fixtureRoot) rmSync(fixtureRoot, { recursive: true, force: true });
+  });
+
+  function writeReceipt(receipt: DemoVideoPlaybackApprovalReceipt): void {
+    writeFileSync(canonicalReceiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+  }
+
+  it('accepts one canonical 1080x1920 target with portrait-mobile and safe-area approval', () => {
+    writeReceipt(approvedReceipt);
+
+    const result = validateDemoVideoPlaybackApproval(SOCIAL_DEMO_ID, {
+      rootDir: fixtureRoot,
+    });
+
+    assert.equal(result.demoId, SOCIAL_DEMO_ID);
+    assert.equal(result.targetCount, 1);
+    assert.deepEqual(result.formats, ['social-9x16']);
+  });
+
+  it('requires social playback approval and rejects a website playback attestation', () => {
+    for (const field of ['portraitMobileApproved', 'safeAreaApproved'] as const) {
+      const receipt = cloneReceipt(approvedReceipt);
+      receipt.socialPlayback[field] = false as never;
+      writeReceipt(receipt);
+      assert.throws(
+        () => validateDemoVideoPlaybackApproval(SOCIAL_DEMO_ID, { rootDir: fixtureRoot }),
+        new RegExp(`${field} must be explicitly true`),
+      );
+    }
+
+    const { socialPlayback: _socialPlayback, ...receiptWithoutSocialPlayback } = cloneReceipt(
+      approvedReceipt,
+    );
+    const websiteReceipt: DemoVideoWebsitePlaybackApprovalReceipt = {
+      ...receiptWithoutSocialPlayback,
+      websitePlayback: {
+        desktopApproved: true,
+        mobileApproved: true,
+      },
+    };
+    writeReceipt(websiteReceipt);
+    assert.throws(
+      () => validateDemoVideoPlaybackApproval(SOCIAL_DEMO_ID, { rootDir: fixtureRoot }),
+      /websitePlayback.*not allowed/i,
+    );
+  });
+
+  it('rejects website playback attestations on a social video receipt', () => {
+    const receipt = {
+      ...cloneReceipt(approvedReceipt),
+      websitePlayback: {
+        desktopApproved: true,
+        mobileApproved: true,
+      },
+    } as unknown as DemoVideoPlaybackApprovalReceipt;
+    writeReceipt(receipt);
+
+    assert.throws(
+      () => validateDemoVideoPlaybackApproval(SOCIAL_DEMO_ID, { rootDir: fixtureRoot }),
+      /websitePlayback.*not allowed/i,
+    );
+  });
+
+  it('rejects non-canonical paths and drift in portrait dimensions, duration, or audio', () => {
+    const wrongPath = cloneReceipt(approvedReceipt);
+    wrongPath.targets[0].video.artifactPath =
+      'public/demo-videos/exports/connection-over-tools-social-16x9.mp4';
+    writeReceipt(wrongPath);
+    assert.throws(
+      () => validateDemoVideoPlaybackApproval(SOCIAL_DEMO_ID, { rootDir: fixtureRoot }),
+      /must use the canonical production path/,
+    );
+
+    const wrongDuration = cloneReceipt(approvedReceipt);
+    wrongDuration.targets[0].video.durationSeconds += 3;
+    writeReceipt(wrongDuration);
+    assert.throws(
+      () => validateDemoVideoPlaybackApproval(SOCIAL_DEMO_ID, { rootDir: fixtureRoot }),
+      /duration does not match ffprobe/,
+    );
+
+    const target = approvedReceipt.targets[0];
+    const absoluteVideoPath = path.join(fixtureRoot, target.video.artifactPath);
+    const originalVideo = readFileSync(absoluteVideoPath);
+
+    try {
+      createVideo(absoluteVideoPath, 1080, 1918);
+      const portraitDrift = cloneReceipt(approvedReceipt);
+      const media = probe(absoluteVideoPath);
+      portraitDrift.targets[0].video = {
+        ...portraitDrift.targets[0].video,
+        ...artifactEvidence(fixtureRoot, target.video.artifactPath),
+        width: media.width,
+        height: media.height,
+        durationSeconds: media.durationSeconds,
+      };
+      writeReceipt(portraitDrift);
+      assert.throws(
+        () => validateDemoVideoPlaybackApproval(SOCIAL_DEMO_ID, { rootDir: fixtureRoot }),
+        /must be 1080x1920/,
+      );
+
+      createVideo(absoluteVideoPath, 1080, 1920, false);
+      const missingAudio = cloneReceipt(approvedReceipt);
+      const silentMedia = probe(absoluteVideoPath);
+      missingAudio.targets[0].video = {
+        ...missingAudio.targets[0].video,
+        ...artifactEvidence(fixtureRoot, target.video.artifactPath),
+        width: silentMedia.width,
+        height: silentMedia.height,
+        durationSeconds: silentMedia.durationSeconds,
+        hasAudio: true,
+      };
+      writeReceipt(missingAudio);
+      assert.throws(
+        () => validateDemoVideoPlaybackApproval(SOCIAL_DEMO_ID, { rootDir: fixtureRoot }),
+        /does not contain an audio stream/,
+      );
+    } finally {
+      writeFileSync(absoluteVideoPath, originalVideo);
+      writeReceipt(approvedReceipt);
     }
   });
 });

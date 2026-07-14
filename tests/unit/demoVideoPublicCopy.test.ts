@@ -42,7 +42,7 @@ const DEMO_MODAL_JUNK_PATTERNS = [
   /Planner proof/i,
   /Length/i,
   /Format/i,
-  /Focus/i,
+  />[^<{]*\bFocus\b[^<{]*</i,
 ] as const;
 
 describe('public demo video copy', () => {

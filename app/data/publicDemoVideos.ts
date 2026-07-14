@@ -11,8 +11,6 @@ export type PublicDemoVideo = {
   thumbnailUrl?: string;
   captionUrl?: string;
   transcriptUrl?: string;
-  socialAssetUrl?: string;
-  socialThumbnailUrl?: string;
   recordedAt?: string;
 };
 

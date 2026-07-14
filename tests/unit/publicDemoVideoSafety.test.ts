@@ -49,8 +49,6 @@ const PUBLIC_ASSET_FIELDS = [
   'thumbnailUrl',
   'captionUrl',
   'transcriptUrl',
-  'socialAssetUrl',
-  'socialThumbnailUrl',
   'recordedAt',
 ] as const;
 
@@ -98,6 +96,29 @@ describe('public demo video safety', () => {
         'planner-command-center-walkthrough',
       ),
       true,
+    );
+  });
+
+  it('rejects social assets attached to a website walkthrough approval', () => {
+    assert.equal(
+      isCompletePublicationApproval(
+        {
+          approval: 'approved',
+          captureReceiptPath: 'output/demo-videos/receipts/planner-command-center-walkthrough.json',
+          playbackApprovalPath: 'output/demo-videos/playback-approvals/planner-command-center-walkthrough.json',
+          appBuildCommit: 'a'.repeat(40),
+          appBuildLabel: 'Phase 1 planner workspace',
+          recordedAt: '2026-07-13T12:00:00.000Z',
+          assetUrl: '/demo-videos/exports/planner-command-center-walkthrough-16x9.mp4',
+          thumbnailUrl: '/demo-videos/thumbnails/planner-command-center-walkthrough-16x9.png',
+          captionUrl: '/demo-videos/captions/planner-command-center-walkthrough.vtt',
+          transcriptUrl: '/demo-videos/transcripts/planner-command-center-walkthrough.md',
+          socialAssetUrl: '/demo-videos/exports/planner-command-center-walkthrough-9x16.mp4',
+          socialThumbnailUrl: '/demo-videos/thumbnails/planner-command-center-walkthrough-9x16.png',
+        },
+        'planner-command-center-walkthrough',
+      ),
+      false,
     );
   });
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react';
-import X from 'lucide-react/dist/esm/icons/x';
+import X from 'lucide-react/dist/esm/icons/x.mjs';
 import { useRef } from 'react';
 
 import type { PublicDemoVideo } from '@/data/publicDemoVideos';

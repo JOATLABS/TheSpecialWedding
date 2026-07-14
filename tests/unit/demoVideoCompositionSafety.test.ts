@@ -7,6 +7,14 @@ const source = readFileSync(
   path.join(process.cwd(), 'remotion/DemoVideoComposition.tsx'),
   'utf8',
 );
+const rendererSource = readFileSync(
+  path.join(process.cwd(), 'scripts/demo-videos/render-demo-video.ts'),
+  'utf8',
+);
+const rootSource = readFileSync(
+  path.join(process.cwd(), 'remotion/Root.tsx'),
+  'utf8',
+);
 
 describe('demo video marketing composition safety', () => {
   it('keeps production scaffolding and review labels out of rendered media', () => {
@@ -27,12 +35,51 @@ describe('demo video marketing composition safety', () => {
     assert.match(source, /<Video[\s\S]*?src=\{staticFile\(props\.rawVideoPath\)\}[\s\S]*?objectFit:\s*['"]contain['"]/);
     assert.doesNotMatch(source, /objectFit:\s*isVertical\s*\?\s*['"]contain['"]\s*:\s*['"]cover['"]/);
     assert.match(source, /data-product-window/);
-    assert.match(source, /inset:\s*isVertical\s*\?/);
+    assert.match(source, /data-web-product-window/);
+    assert.match(source, /data-web-product-window[\s\S]*?inset:\s*0/);
     assert.doesNotMatch(source, /WEB_CAPTION_BAND_HEIGHT/);
     assert.doesNotMatch(source, /data-caption-band/);
     assert.doesNotMatch(source, /activeCaption|captionSafeArea|props\.captions/);
     assert.doesNotMatch(source, /audience/);
     assert.doesNotMatch(source, /formatLabel/);
+    assert.equal(
+      source.match(/The Special Wedding/g)?.length,
+      2,
+      'branding should appear in the social story and outro, never over the website product frame',
+    );
+    assert.match(source, /data-web-product-window[\s\S]*?opacity:\s*storyOpacity/);
+  });
+
+  it('uses the portrait canvas for a pillar-native story instead of leaving a dead lower half', () => {
+    assert.match(source, /data-social-story/);
+    assert.match(source, /props\.phaseOnePillar/);
+    assert.match(source, /props\.socialOutcome/);
+    assert.match(source, /flexDirection:\s*['"]column['"]/);
+    assert.match(source, /justifyContent:\s*['"]space-between['"]/);
+    assert.match(source, /padding:\s*['"]100px 80px 140px['"]/);
+    assert.match(source, /fontSize:\s*84/);
+    assert.match(source, /minHeight:\s*400/);
+    assert.match(source, /data-social-product-window[\s\S]*?boxSizing:\s*['"]border-box['"]/);
+    assert.doesNotMatch(source, /['"]220px 0 1025px['"]/);
+    assert.match(rendererSource, /phaseOnePillar:\s*demo\.phaseOnePillar/);
+    assert.match(rendererSource, /socialOutcome:\s*demo\.socialOutcome/);
+  });
+
+  it('requires real social story copy and previews an approved social contract', () => {
+    assert.match(source, /Social video renders require phaseOnePillar and socialOutcome/);
+    assert.doesNotMatch(source, /\|\|\s*['"]Planner operating system['"]/);
+    assert.doesNotMatch(source, /\|\|\s*['"]Keep the wedding connected/);
+    assert.match(rootSource, /demoId:\s*['"]connection-over-tools-social['"]/);
+    assert.match(rootSource, /phaseOnePillar:\s*['"]Connection Over Tools['"]/);
+    assert.match(rootSource, /socialOutcome:\s*['"]Keep planner, couple, and guest context connected without exposing planner controls\.['"]/);
+  });
+
+  it('uses readable outro type and fully removes the product story behind the CTA', () => {
+    assert.match(source, /const storyOpacity = 1 - outroOpacity;/);
+    assert.match(source, /const outroBrandFontSize = isVertical \? 32 : 36;/);
+    assert.match(source, /const outroHeadlineFontSize = isVertical \? 84 : 96;/);
+    assert.match(source, /const outroSupportingFontSize = 44;/);
+    assert.doesNotMatch(source, /fontFamily:\s*['"]Inter,/);
   });
 
   it('renders an explicit narration track instead of silently discarding the approved script', () => {

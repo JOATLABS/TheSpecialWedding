@@ -3,7 +3,7 @@ import { Composition, type CalculateMetadataFunction } from 'remotion';
 import { DemoVideoComposition } from './DemoVideoComposition';
 import type { DemoVideoRemotionProps } from './types';
 
-const defaultProps: DemoVideoRemotionProps = {
+const websiteDefaultProps: DemoVideoRemotionProps = {
   demoId: 'planner-command-center-walkthrough',
   title: 'Planner command center walkthrough',
   audience: 'Professional planners evaluating a connected planner operating system.',
@@ -11,6 +11,18 @@ const defaultProps: DemoVideoRemotionProps = {
   narrationPath: '',
   format: 'web-16x9',
   durationSeconds: 90,
+};
+
+const socialDefaultProps: DemoVideoRemotionProps = {
+  demoId: 'connection-over-tools-social',
+  title: 'One plan. Three clear views.',
+  audience: 'Wedding planners replacing disconnected planner, couple, and guest tools.',
+  rawVideoPath: '',
+  narrationPath: '',
+  format: 'social-9x16',
+  durationSeconds: 30,
+  phaseOnePillar: 'Connection Over Tools',
+  socialOutcome: 'Keep planner, couple, and guest context connected without exposing planner controls.',
 };
 
 const calculateMetadata: CalculateMetadataFunction<DemoVideoRemotionProps> = ({ props }) => {
@@ -29,7 +41,7 @@ export function RemotionRoot() {
         fps={30}
         width={1920}
         height={1080}
-        defaultProps={{ ...defaultProps, format: 'web-16x9' }}
+        defaultProps={websiteDefaultProps}
         calculateMetadata={calculateMetadata}
       />
       <Composition
@@ -39,7 +51,7 @@ export function RemotionRoot() {
         fps={30}
         width={1080}
         height={1920}
-        defaultProps={{ ...defaultProps, format: 'social-9x16' }}
+        defaultProps={socialDefaultProps}
         calculateMetadata={calculateMetadata}
       />
     </>

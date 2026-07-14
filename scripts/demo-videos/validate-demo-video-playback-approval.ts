@@ -10,6 +10,7 @@ import {
   type DemoVideoExportFormat,
   type DemoVideoExportTarget,
 } from '../../app/data/demoVideoProduction';
+import type { DemoVideoProductionChannel } from '../../app/data/demoVideos';
 import { getRequiredValue, parseCliArgs, resolveFromRepo } from './cli';
 
 type PlaybackArtifactEvidence = {
@@ -40,6 +41,16 @@ type HumanPlaybackReview = {
   publicSafetyApproved: true;
 };
 
+type WebsitePlaybackReview = {
+  desktopApproved: true;
+  mobileApproved: true;
+};
+
+type SocialPlaybackReview = {
+  portraitMobileApproved: true;
+  safeAreaApproved: true;
+};
+
 export type DemoVideoPlaybackApprovalTarget = {
   format: DemoVideoExportFormat;
   video: PlaybackVideoEvidence;
@@ -47,17 +58,40 @@ export type DemoVideoPlaybackApprovalTarget = {
   review: HumanPlaybackReview;
 };
 
-export type DemoVideoPlaybackApprovalReceipt = {
+type DemoVideoPlaybackApprovalReceiptBase = {
   schemaVersion: 1;
   demoId: string;
   reviewedAt: string;
   reviewer: string;
   reviewMethod: 'human-normal-speed-playback';
   targets: DemoVideoPlaybackApprovalTarget[];
-  websitePlayback: {
-    desktopApproved: true;
-    mobileApproved: true;
+};
+
+export type DemoVideoWebsitePlaybackApprovalReceipt =
+  DemoVideoPlaybackApprovalReceiptBase & {
+    websitePlayback: WebsitePlaybackReview;
+    socialPlayback?: never;
   };
+
+export type DemoVideoSocialPlaybackApprovalReceipt =
+  DemoVideoPlaybackApprovalReceiptBase & {
+    websitePlayback?: never;
+    socialPlayback: SocialPlaybackReview;
+  };
+
+export type DemoVideoPlaybackApprovalReceipt =
+  | DemoVideoWebsitePlaybackApprovalReceipt
+  | DemoVideoSocialPlaybackApprovalReceipt;
+
+type ParsedPlaybackApprovalReceipt = {
+  schemaVersion: 1;
+  demoId: string;
+  reviewedAt: string;
+  reviewer: string;
+  reviewMethod: 'human-normal-speed-playback';
+  targets: unknown[];
+  websitePlayback?: unknown;
+  socialPlayback?: unknown;
 };
 
 export type DemoVideoPlaybackApprovalValidation = {
@@ -67,6 +101,7 @@ export type DemoVideoPlaybackApprovalValidation = {
   reviewedAt: string;
   targetCount: number;
   formats: DemoVideoExportFormat[];
+  durationSeconds: number;
 };
 
 type MediaProbe = {
@@ -92,6 +127,21 @@ const REVIEW_ASSERTIONS = [
 
 const PLACEHOLDER_REVIEWER = /(?:^|[\s_-])(?:unknown|placeholder|tbd|todo|pending|n\/a)(?:$|[\s_-])/i;
 const SHA256 = /^[0-9a-f]{64}$/;
+
+export function assertRenderedDurationMatchesManualCapture(
+  manualDurationSeconds: number,
+  renderedDurationSeconds: number,
+): void {
+  if (
+    !Number.isFinite(manualDurationSeconds)
+    || !Number.isFinite(renderedDurationSeconds)
+    || manualDurationSeconds <= 0
+    || renderedDurationSeconds <= 0
+    || Math.abs(manualDurationSeconds - renderedDurationSeconds) > 0.25
+  ) {
+    throw new Error('Rendered video duration must match the validated manual recording.');
+  }
+}
 
 function assertRecord(value: unknown, label: string): asserts value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -199,7 +249,7 @@ function readReceipt(receiptPath: string): unknown {
 function assertReceiptIdentity(
   parsed: unknown,
   demoId: string,
-): asserts parsed is DemoVideoPlaybackApprovalReceipt {
+): asserts parsed is ParsedPlaybackApprovalReceipt {
   assertRecord(parsed, 'Playback approval receipt');
   if (parsed.schemaVersion !== 1) {
     throw new Error('Playback approval receipt schemaVersion must be 1.');
@@ -227,6 +277,34 @@ function assertReceiptIdentity(
 
   if (!Array.isArray(parsed.targets)) {
     throw new Error('Playback approval targets must be an array.');
+  }
+}
+
+function assertProductionChannelPlayback(
+  parsed: ParsedPlaybackApprovalReceipt,
+  productionChannel: DemoVideoProductionChannel,
+): void {
+  if (productionChannel === 'social') {
+    if (parsed.websitePlayback !== undefined) {
+      throw new Error('websitePlayback is not allowed for social video approval.');
+    }
+    if (parsed.socialPlayback === undefined) {
+      throw new Error('socialPlayback is required for social video approval.');
+    }
+    assertRecord(parsed.socialPlayback, 'socialPlayback');
+    assertExplicitTrue(
+      parsed.socialPlayback.portraitMobileApproved,
+      'portraitMobileApproved',
+    );
+    assertExplicitTrue(parsed.socialPlayback.safeAreaApproved, 'safeAreaApproved');
+    return;
+  }
+
+  if (parsed.socialPlayback !== undefined) {
+    throw new Error('socialPlayback is not allowed for website video approval.');
+  }
+  if (parsed.websitePlayback === undefined) {
+    throw new Error('websitePlayback is required for website video approval.');
   }
   assertRecord(parsed.websitePlayback, 'websitePlayback');
   assertExplicitTrue(parsed.websitePlayback.desktopApproved, 'desktopApproved');
@@ -363,6 +441,7 @@ export function validateDemoVideoPlaybackApproval(
   const receiptPath = path.resolve(rootDir, requirement.playbackApprovalPath);
   const parsed = readReceipt(receiptPath);
   assertReceiptIdentity(parsed, demoId);
+  assertProductionChannelPlayback(parsed, requirement.productionChannel);
 
   if (parsed.targets.length !== requirement.exportTargets.length) {
     throw new Error(
@@ -399,6 +478,7 @@ export function validateDemoVideoPlaybackApproval(
     reviewedAt: parsed.reviewedAt,
     targetCount: validatedTargets.length,
     formats: validatedTargets.map((target) => target.format).sort(),
+    durationSeconds: durations[0],
   };
 }
 

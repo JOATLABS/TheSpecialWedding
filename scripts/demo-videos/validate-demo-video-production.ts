@@ -1,14 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { DEMO_VIDEO_PLAYLIST } from '../../app/data/demoVideos';
+import { DEMO_VIDEO_PRODUCTION_CATALOG } from '../../app/data/demoVideos';
 import {
   DEMO_VIDEO_PRODUCTION_REQUIREMENTS,
   getDemoVideoExportTarget,
   getDemoVideoProductionRequirementById,
 } from '../../app/data/demoVideoProduction';
 import { parseCliArgs, resolveFromRepo } from './cli';
-import { validateDemoVideoPlaybackApproval } from './validate-demo-video-playback-approval';
+import {
+  assertRenderedDurationMatchesManualCapture,
+  validateDemoVideoPlaybackApproval,
+} from './validate-demo-video-playback-approval';
 import { validateManualDemoVideo } from './validate-manual-demo-video';
 
 type ValidationIssue = {
@@ -33,11 +36,11 @@ function validateRequirementInventory(demoIds: readonly string[], requireAssets:
   const issues: ValidationIssue[] = [];
 
   for (const demoId of demoIds) {
-    const demo = DEMO_VIDEO_PLAYLIST.find((item) => item.id === demoId);
+    const demo = DEMO_VIDEO_PRODUCTION_CATALOG.find((item) => item.id === demoId);
     const requirement = getDemoVideoProductionRequirementById(demoId);
 
     if (!demo) {
-      issues.push({ demoId, message: 'Demo id does not exist in DEMO_VIDEO_PLAYLIST.' });
+      issues.push({ demoId, message: 'Demo id does not exist in DEMO_VIDEO_PRODUCTION_CATALOG.' });
       continue;
     }
 
@@ -54,26 +57,48 @@ function validateRequirementInventory(demoIds: readonly string[], requireAssets:
       issues.push({ demoId, message: 'At least one side-effect/session guard is required.' });
     }
 
-    const websiteTarget = getDemoVideoExportTarget(requirement, 'web-16x9');
-    if (!websiteTarget) {
-      issues.push({ demoId, message: 'Missing web-16x9 export target.' });
+    const expectedFormat = requirement.productionChannel === 'social'
+      ? 'social-9x16'
+      : 'web-16x9';
+    const forbiddenFormat = requirement.productionChannel === 'social'
+      ? 'web-16x9'
+      : 'social-9x16';
+
+    if (!getDemoVideoExportTarget(requirement, expectedFormat)) {
+      issues.push({ demoId, message: `Missing ${expectedFormat} export target.` });
     }
 
-    if (getDemoVideoExportTarget(requirement, 'social-9x16')) {
+    if (getDemoVideoExportTarget(requirement, forbiddenFormat)) {
       issues.push({
         demoId,
-        message: 'Desktop walkthrough footage cannot be reused as a social-9x16 cut.',
+        message: `${requirement.productionChannel} production cannot define a ${forbiddenFormat} export target.`,
       });
+    }
+
+    if (requirement.exportTargets.length !== 1) {
+      issues.push({ demoId, message: 'Exactly one channel-native export target is required.' });
     }
 
     if (!requireAssets) continue;
 
+    let manualValidation: ReturnType<typeof validateManualDemoVideo> | undefined;
     try {
-      validateManualDemoVideo(resolveFromRepo(requirement.captureReceiptPath));
+      manualValidation = validateManualDemoVideo(resolveFromRepo(requirement.captureReceiptPath));
     } catch (error: unknown) {
       issues.push({
         demoId,
         message: `Manual capture receipt/raw recording failed validation: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+
+    if (
+      manualValidation
+      && demo.status === 'published'
+      && demo.appBuildCommit !== manualValidation.appBuildCommit
+    ) {
+      issues.push({
+        demoId,
+        message: 'Publication approval appBuildCommit does not match the validated manual recording.',
       });
     }
 
@@ -118,13 +143,29 @@ function validateRequirementInventory(demoIds: readonly string[], requireAssets:
       }
     }
 
+    let playbackValidation: ReturnType<typeof validateDemoVideoPlaybackApproval> | undefined;
     try {
-      validateDemoVideoPlaybackApproval(demoId);
+      playbackValidation = validateDemoVideoPlaybackApproval(demoId);
     } catch (error: unknown) {
       issues.push({
         demoId,
         message: `Human playback approval failed validation: ${error instanceof Error ? error.message : String(error)}`,
       });
+    }
+
+
+    if (manualValidation && playbackValidation) {
+      try {
+        assertRenderedDurationMatchesManualCapture(
+          manualValidation.durationSeconds,
+          playbackValidation.durationSeconds,
+        );
+      } catch (error: unknown) {
+        issues.push({
+          demoId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 

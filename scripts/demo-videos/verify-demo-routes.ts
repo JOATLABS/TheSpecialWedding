@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { chromium } from 'playwright';
 
-import { DEMO_VIDEO_PLAYLIST } from '../../app/data/demoVideos';
+import { DEMO_VIDEO_PRODUCTION_CATALOG } from '../../app/data/demoVideos';
 import { parseCliArgs, resolveFromRepo } from './cli';
 import { assertPublicSafeStorageState } from './public-safe-storage';
 
@@ -132,8 +132,8 @@ async function main(): Promise<void> {
     assertPublicSafeStorageState(storageState);
   }
   const demos = demoFilters?.length
-    ? DEMO_VIDEO_PLAYLIST.filter((demo) => demoFilters.includes(demo.id))
-    : [...DEMO_VIDEO_PLAYLIST];
+    ? DEMO_VIDEO_PRODUCTION_CATALOG.filter((demo) => demoFilters.includes(demo.id))
+    : [...DEMO_VIDEO_PRODUCTION_CATALOG];
 
   if (demos.length === 0) {
     throw new Error(`No demos matched filters: ${demoFilters?.join(', ')}`);
