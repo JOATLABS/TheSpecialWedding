@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-07-14 — Capture seeding preserves operator plan visibility
+
+- Fixed the production-like marketing-capture seed gate so it validates the canonical commercial plan fields without reactivating plans an administrator deliberately hid or resetting featured/order choices. The frontend proxy check now derives the exact active canonical plan set from the post-seed database and still fails on stale copy, prices, entitlements, duplicates, missing plans, or extra public entries.
+
 ## 2026-07-14 — Phase 1 social videos have channel-native production gates
 
 - Added four independent, pillar-native social production stories—`connection-over-tools-social`, `disorganization-tax-social`, `couple-experience-boundaries-social`, and `built-for-planners-social`—without adding them to the website demo playlist. The combined production catalog now lets inventory and route-preflight tooling see both channels while every ID keeps its own manual 1440×900 raw take, narration, checkpoints, receipt, and canonical artifact paths.

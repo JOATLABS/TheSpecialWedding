@@ -1705,7 +1705,7 @@ def test_testbed_driver_resets_then_seeds_then_verifies_before_browser_checkpoin
     )
     assert -1 < capture_clean_gate_index < route_preflight_index
     public_plan_preflight_index = main_source.find(
-        "verify_frontend_public_subscription_plans(frontend_url)"
+        "verify_frontend_public_subscription_plans("
     )
     gallery_preflight_index = main_source.find(
         "verify_frontend_gallery_assets(frontend_url)"
@@ -1728,6 +1728,18 @@ def test_testbed_driver_resets_then_seeds_then_verifies_before_browser_checkpoin
         < memory_preflight_index
         < checkpoint_output_index
     )
+
+
+def test_testbed_driver_preserves_operator_plan_visibility_during_capture_seed():
+    source = _required_text(DRIVER)
+    main_source = source.split("def main() -> int:", 1)[1]
+
+    assert "canonical_plan_ids = [" in main_source
+    assert '"_id": {"$in": canonical_plan_ids}' in main_source
+    assert "require_active=False" in main_source
+    assert "active_public_plan_names = {" in main_source
+    assert "expected_plan_names=active_public_plan_names" in main_source
+    assert 'find({"is_active": True})' not in main_source
 
 
 def test_marketing_capture_plan_truth_rejects_retired_runtime_copy():
@@ -1802,6 +1814,27 @@ def test_marketing_capture_plan_truth_accepts_only_the_exact_catalog():
             wrong_price,
             label="test plans",
         )
+
+
+def test_marketing_capture_plan_truth_preserves_hidden_canonical_plan():
+    canonical = _canonical_public_capture_plans()
+    canonical[-1]["is_active"] = False
+
+    marketing_capture_driver.verify_public_subscription_plan_truth(
+        canonical,
+        label="seeded database",
+        require_active=False,
+    )
+
+
+def test_marketing_capture_plan_truth_accepts_exact_active_subset():
+    active_plans = _canonical_public_capture_plans()[:3]
+
+    marketing_capture_driver.verify_public_subscription_plan_truth(
+        active_plans,
+        label="frontend plans",
+        expected_plan_names={"Solo", "Boutique", "Signature"},
+    )
 
 
 def test_marketing_capture_verifies_the_frontend_plan_payload_without_cache(

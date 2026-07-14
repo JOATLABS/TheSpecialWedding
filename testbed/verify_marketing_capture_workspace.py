@@ -275,23 +275,36 @@ def _run_python(
     subprocess.run(command, cwd=ROOT, env=env, check=True)
 
 
-def verify_public_subscription_plan_truth(plans: Any, *, label: str) -> None:
-    """Fail closed unless the mutable catalog matches the visible plan contract."""
+def verify_public_subscription_plan_truth(
+    plans: Any,
+    *,
+    label: str,
+    expected_plan_names: set[str] | None = None,
+    require_active: bool = True,
+) -> None:
+    """Fail closed unless the selected catalog matches canonical plan truth.
+
+    Seed-owned commercial fields must match the current strategy. Operator-owned
+    display state (visibility, featured choice, and ordering) is intentionally
+    preserved by the canonical seeder and must not be reset for a demo capture.
+    """
 
     records = list(plans) if plans is not None else []
     by_name = {
         str(plan.get("name")): plan for plan in records if isinstance(plan, dict)
     }
+    expected_names = expected_plan_names or set(EXPECTED_PUBLIC_PLAN_COPY)
     _require(
-        len(records) == len(EXPECTED_PUBLIC_PLAN_COPY),
+        len(records) == len(by_name),
         f"{label} public subscription plan catalog has duplicate or extra entries",
     )
     _require(
-        set(by_name) == set(EXPECTED_PUBLIC_PLAN_COPY),
+        set(by_name) == expected_names,
         f"{label} public subscription plan names do not match the canonical catalog",
     )
 
-    for plan_name, expected in EXPECTED_PUBLIC_PLAN_COPY.items():
+    for plan_name in expected_names:
+        expected = EXPECTED_PUBLIC_PLAN_COPY[plan_name]
         plan = by_name[plan_name]
         for field in (
             "_id",
@@ -305,13 +318,15 @@ def verify_public_subscription_plan_truth(plans: Any, *, label: str) -> None:
             "ai_credits_monthly",
             "storage_gb",
             "staff_seats",
-            "is_featured",
-            "is_active",
-            "display_order",
         ):
             _require(
                 plan.get(field) == expected[field],
                 f"{label} public subscription plan {plan_name} has stale {field}",
+            )
+        if require_active:
+            _require(
+                plan.get("is_active") is True,
+                f"{label} public subscription plan {plan_name} is not active",
             )
         _require(
             plan.get("description") == expected["description"],
@@ -329,7 +344,11 @@ def verify_public_subscription_plan_truth(plans: Any, *, label: str) -> None:
         )
 
 
-def verify_frontend_public_subscription_plans(frontend_url: str) -> None:
+def verify_frontend_public_subscription_plans(
+    frontend_url: str,
+    *,
+    expected_plan_names: set[str] | None = None,
+) -> None:
     """Verify the exact mutable plan payload consumed by the public homepage."""
 
     origin = require_local_capture_origin(
@@ -346,6 +365,7 @@ def verify_frontend_public_subscription_plans(frontend_url: str) -> None:
     verify_public_subscription_plan_truth(
         payload,
         label="Frontend proxy",
+        expected_plan_names=expected_plan_names,
     )
 
 
@@ -1949,9 +1969,25 @@ def main() -> int:
         env = _seed_environment(args.anchor_at)
         print("[SEED] Refreshing canonical public subscription plans")
         _run_python(SUBSCRIPTION_PLAN_SEEDER, env=env)
+        canonical_plan_ids = [
+            expected["_id"] for expected in EXPECTED_PUBLIC_PLAN_COPY.values()
+        ]
+        canonical_plans = list(
+            database["subscription_plans"].find({"_id": {"$in": canonical_plan_ids}})
+        )
         verify_public_subscription_plan_truth(
-            database["subscription_plans"].find({"is_active": True}),
+            canonical_plans,
             label="Seeded database",
+            require_active=False,
+        )
+        active_public_plan_names = {
+            str(plan.get("name"))
+            for plan in canonical_plans
+            if plan.get("is_active") is True
+        }
+        _require(
+            bool(active_public_plan_names),
+            "Seeded database has no active canonical public subscription plan",
         )
         print("[SEED] Creating the dedicated planner and couple identities")
         _run_python(SETUP_SMOKE_ACCOUNTS, env=env)
@@ -1991,7 +2027,10 @@ def main() -> int:
         capture_build,
         backend_url=backend_url,
     )
-    verify_frontend_public_subscription_plans(frontend_url)
+    verify_frontend_public_subscription_plans(
+        frontend_url,
+        expected_plan_names=active_public_plan_names,
+    )
     verify_frontend_gallery_assets(frontend_url)
     verify_frontend_admin_gallery_prefixes(frontend_url, backend_url)
     verify_frontend_couple_memory_preview(frontend_url, backend_url)
