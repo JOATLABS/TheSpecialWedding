@@ -77,17 +77,20 @@ DEMO_VENDOR_CONTRACT_ID = "67c100000000000000000001"
 DEMO_VENDOR_CONTRACT_TOKEN = "marketing-capture-vendor-contract-token"
 DEMO_VENDOR_PROFILE_ID = "67c400000000000000000001"
 DEMO_VENDOR_ASSIGNMENT_ID = "67c400000000000000000101"
+DEMO_VENDOR_BUSINESS_NAME = "Luna Meridian Photography"
+DEMO_VENDOR_PUBLIC_SEARCH_TERM = "Luna Meridian"
+DEMO_VENDOR_EMAIL = "hello.luna-meridian@vendors.thespecialwedding.io"
 DEMO_VENDOR_DIRECTORY_FIXTURES = [
     {
         "profile_id": DEMO_VENDOR_PROFILE_ID,
         "assignment_id": DEMO_VENDOR_ASSIGNMENT_ID,
         "contract_id": DEMO_VENDOR_CONTRACT_ID,
         "token": DEMO_VENDOR_CONTRACT_TOKEN,
-        "business_name": "Luna & Co. Photography",
+        "business_name": DEMO_VENDOR_BUSINESS_NAME,
         "contact_name": "Elena Rivera",
-        "email": "luna.lane@vendors.thespecialwedding.io",
+        "email": DEMO_VENDOR_EMAIL,
         "phone": "(312) 555-0131",
-        "website": f"{MARKETING_CAPTURE_VENDOR_ORIGIN}/luna-and-co-photography",
+        "website": f"{MARKETING_CAPTURE_VENDOR_ORIGIN}/luna-meridian-photography",
         "service_category": "photographer",
         "service_subcategories": [
             "Wedding photography",
@@ -2267,7 +2270,7 @@ async def _seed_budget_fixture(primary_id: str) -> None:
             "_id": ObjectId("67c700000000000000000004"),
             "id": ObjectId("67c700000000000000000004"),
             "category_id": "budget_marketing_capture_photo",
-            "vendor_name": "Luna & Co. Photography",
+            "vendor_name": DEMO_VENDOR_BUSINESS_NAME,
             "amount": 1700.0,
             "payment_method": "transfer",
             "payment_date": now - timedelta(days=10),
@@ -2467,8 +2470,8 @@ async def _seed_budget_fixture(primary_id: str) -> None:
             "wedding_id": primary_id,
             "vendor_id": "67c400000000000000000002",
             "category_id": "budget_marketing_capture_photo",
-            "vendor_name": "Luna & Co. Photography",
-            "vendor_email": "luna.lane@vendors.thespecialwedding.io",
+            "vendor_name": DEMO_VENDOR_BUSINESS_NAME,
+            "vendor_email": DEMO_VENDOR_EMAIL,
             "vendor_phone": "(312) 555-0131",
             "service_category": "photography",
             "quote_amount": 6800.0,
@@ -3538,9 +3541,9 @@ async def _seed_planner_notifications_fixture(
             "wedding_id": primary_id,
             "type": "contract_signed",
             "title": "Photography contract signed",
-            "message": "Luna & Co. Photography signed the updated services agreement.",
+            "message": f"{DEMO_VENDOR_BUSINESS_NAME} signed the updated services agreement.",
             "metadata": {
-                "vendor": "Luna & Co. Photography",
+                "vendor": DEMO_VENDOR_BUSINESS_NAME,
                 "contract_status": "signed",
             },
             "priority": "medium",

@@ -93,8 +93,11 @@ output/
 test-results/
 playwright-report/
 
-# Generated demo video captures and Remotion renders. Publish final assets via CDN
-# or intentionally unignore specific files when they are small enough to commit.
+# Generated demo-video evidence and renders stay ignored until a named human
+# playback approval exists. The current repo-static publication handoff is
+# documented in docs/marketing/demo-video-production-runbook.md; force-track
+# only the approved canonical files for an allowlisted ID. CDN URLs are not yet
+# accepted by the publication contract.
 public/demo-videos/raw/
 public/demo-videos/.render-input/
 public/demo-videos/exports/

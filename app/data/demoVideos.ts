@@ -903,14 +903,14 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         label: 'Public vendor directory',
         route: '/vendors',
-        action: 'Filter the public directory by Photography and inspect the seeded matching result.',
+        action: 'Search the public directory for Luna Meridian and inspect the single seeded matching result.',
         visibleResult:
-          'The public directory narrows to the approved photography listing without requiring a vendor account.',
+          'The public directory shows one approved Luna Meridian Photography listing without requiring a vendor account.',
       },
       {
         label: 'Public vendor profile',
         route: '/vendors/67c400000000000000000001',
-        action: 'Open Luna & Co. Photography and inspect its services, price range, and contact details.',
+        action: 'Open Luna Meridian Photography and inspect its services, price range, and contact details.',
         visibleResult:
           'The public profile presents the seeded vendor specialties and discovery information.',
       },
@@ -937,7 +937,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       },
     ],
     seedRequirements: [
-      'Public vendor directory with mixed categories and a complete approved photography profile.',
+      'Public vendor directory with mixed categories and one uniquely searchable Luna Meridian Photography profile.',
       'Planner vendor workspace with saved contacts, contract status, and payment totals.',
     ],
     script: [

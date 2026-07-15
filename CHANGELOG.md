@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-14 — Vendor walkthrough search is isolated from shared local data
+
+- Renamed the canonical synthetic photography studio to Luna Meridian Photography and made the Phase 1 vendor walkthrough search that exact studio instead of the generic Photography category. The capture verifier now fails unless the public query returns only the seed-owned `67c4...001` profile, preventing unrelated local vendor records from entering a marketing take without deleting data the capture seed does not own.
+
+## 2026-07-14 — Approved walkthrough media has an explicit deployment handoff
+
+- Documented the existing repo-static publication path so a named human approval is followed by force-tracking only that demo's canonical evidence and public assets. Generated media remains ignored and unpublished before approval; CDN URLs remain unsupported until the allowlist and validators explicitly implement them.
+
 ## 2026-07-14 — Walkthrough contracts match the captured frontend
 
 - Aligned the Couple Portal walkthrough with the visible Traditional Ceremony and its three-item run of show instead of claiming four events the seeded portal does not display.
