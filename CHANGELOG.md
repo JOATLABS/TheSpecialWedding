@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-07-14 — Guest Memories proof keeps upload credentials out of frame
+
+- Replaced the Guest Memories product proof with a manually driven 1440×900 Chrome viewport capture centered on the populated review queue and fictional media cards. The complete couple-portal shell remains visible, while the private upload URL and token stay outside the frame; the build-bound checksum and manual review receipt now reference the corrected original PNG.
+
 ## 2026-07-14 — Marketing proof copy stays inside the captured evidence
 
 - Narrowed the Couple + Boundaries story and the Budget, Forms, and Team feature copy to the controls, totals, records, and role boundaries that the reviewed full-window product images actually show. Regression guards reject the removed payment, timeline, write-back, quote-analysis, and audit-log claims.
