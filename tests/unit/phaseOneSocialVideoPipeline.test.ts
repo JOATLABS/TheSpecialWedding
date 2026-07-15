@@ -202,10 +202,16 @@ describe('Phase 1 social video pipeline', () => {
 
     const render = spawnSync(
       tsx,
-      ['scripts/demo-videos/render-demo-video.ts', '--demo', demoId],
+      [
+        'scripts/demo-videos/render-demo-video.ts',
+        '--demo',
+        demoId,
+        '--receipt',
+        'output/demo-videos/receipts/intentionally-missing-social-test.json',
+      ],
       { cwd: process.cwd(), encoding: 'utf8', env },
     );
-    assert.equal(render.status, 1, 'an unrecorded social story must fail closed');
+    assert.equal(render.status, 1, 'a social story without its requested receipt must fail closed');
     assert.match(
       render.stderr,
       /Manual capture receipt does not exist: .*output\/demo-videos\/receipts\//,

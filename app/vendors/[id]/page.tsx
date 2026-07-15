@@ -315,7 +315,7 @@ export default async function VendorProfilePage({
       <div className="bg-gray-50 border-t border-gray-200 mt-12">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <p className="text-center text-gray-600 text-sm">
-            © 2024 The Special Wedding. All rights reserved.
+            © {new Date().getFullYear()} The Special Wedding. All rights reserved.
           </p>
         </div>
       </div>

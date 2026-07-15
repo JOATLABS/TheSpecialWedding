@@ -166,12 +166,13 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
   {
     id: 'budget',
     icon: '💰',
-    title: 'Budget & Quote Negotiation',
+    title: 'Budget Management',
     category: 'Business Engine',
     image: featureCapture('budget'),
-    tagline: "Category budgets that warn you before overruns, with AI that pressure-tests every vendor quote.",
+    tagline:
+      'See planned versus spent totals, remaining funds, category status, vendor-quote counts, and payment history in one wedding budget.',
     description:
-      "Three quotes from three florists, three PDFs, and no easy way to compare whether $14,000 for centerpieces is market or a rip-off. Budget here isn't a spreadsheet — it's a quote-negotiation workflow. Apply a budget template to a wedding or let AI generate one from event type and guest count. Log vendor quotes against the right category; the `quotes/compare` endpoint pressure-tests them against historical data and flags the outlier. Planned-vs-actual spend reads from the same record as the contracts and payments it references, so overrun alerts fire before a line item ships — not after.",
+      'Budget Management gives planners a populated view of total budget, actual spend, remaining funds, category progress, available quote counts, and payment history for the selected wedding. The same view presents AI Insights, PDF export, and Excel export controls.',
     ai: true,
   },
   {
@@ -202,20 +203,22 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     title: 'Forms Canvas',
     category: 'Planner Intake',
     image: featureCapture('forms'),
-    tagline: 'Send wedding checklists, onboarding questionnaires, vendor intake, and approval forms that write back to the record.',
+    tagline:
+      'Review a populated Couple Intake Questionnaire beside the field palette and visible Preview and Save Form controls.',
     description:
-      "Forms are not just contact forms. A planner can build a wedding checklist, onboarding questionnaire, design-preference form, vendor intake, final-approval checklist, or post-event follow-up and send it to the couple, a vendor, or anyone who needs to provide information. The form canvas works like the contract canvas: drag fields, group sections, reuse templates, and collect structured answers directly on the wedding record. No Typeform bill, no Jotform export, no stale copies.",
+      'The Forms Canvas shows a populated Couple Intake Questionnaire alongside available text, email, phone, number, date, text-area, dropdown, radio, checkbox, rating, and scale fields. Builder, Preview, and Save Form controls appear together in the planner workspace.',
     ai: true,
   },
   {
     id: 'team',
     icon: '🧑‍🤝‍🧑',
-    title: 'Team, Permissions & Audit',
+    title: 'Team Management',
     category: 'Operations',
     image: featureCapture('team'),
-    tagline: 'Invite teammates, scope them to specific weddings, and trace every action in the audit log.',
+    tagline:
+      'Review team seats, member roles and status, assigned-wedding counts, and last activity from one studio view.',
     description:
-      "Your assistant joins in March and needs to run point on three weddings while staying out of the other eight. In HoneyBook that's a shared login and crossed fingers. Here you invite her, assign her to those three weddings, and set her permissions granularly across twelve+ areas: guests, budget, gallery, vendors, contracts, forms, memories, and more. Every action she takes — an edit, a send, a delete — writes to the activity audit log alongside your own. Your team scales without the nightmare of screenshots pasted into Slack.",
+      'The populated Team Management view keeps seat capacity and the visible roster together, including each member’s role, status, assigned-wedding count, and last active time.',
     ai: false,
   },
 ];

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-14 — Marketing proof copy stays inside the captured evidence
+
+- Narrowed the Couple + Boundaries story and the Budget, Forms, and Team feature copy to the controls, totals, records, and role boundaries that the reviewed full-window product images actually show. Regression guards reject the removed payment, timeline, write-back, quote-analysis, and audit-log claims.
+- Made the public vendor-profile copyright year follow the runtime clock so a current walkthrough cannot expose a stale hardcoded year. The social pipeline's fail-closed test now requests an intentionally absent receipt instead of assuming genuine capture evidence will never exist.
+
 ## 2026-07-14 — Vendor walkthrough search is isolated from shared local data
 
 - Renamed the canonical synthetic photography studio to Luna Meridian Photography and made the Phase 1 vendor walkthrough search that exact studio instead of the generic Photography category. The capture verifier now fails unless the public query returns only the seed-owned `67c4...001` profile, preventing unrelated local vendor records from entering a marketing take without deleting data the capture seed does not own.

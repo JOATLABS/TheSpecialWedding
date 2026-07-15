@@ -102,9 +102,9 @@ const APPROVED_STORY_COPY = [
     pillar: 'Couple Experience + Boundaries',
     headline: 'Give couples a clear view without exposing planner operations.',
     description:
-      'The couple portal brings the wedding overview, shared timeline, payment context, and assigned forms into one guided experience. Planner-only controls remain private.',
-    proof: 'One guided portal, planner-owned boundaries',
-    supportingLabels: ['Planner-controlled intake', 'Shared couple experience'],
+      'The couple dashboard gives Sofia and Daniel a focused wedding overview and RSVP progress. A separate planner workspace presents the Couple Intake Questionnaire, while the couple portal presents Guest Memories link, review, and export controls.',
+    proof: 'Couple overview · planner intake · couple memories controls',
+    supportingLabels: ['Planner-controlled intake', 'Couple Guest Memories'],
   },
   {
     id: 'built-for-planners',
@@ -166,6 +166,27 @@ const APPROVED_FEATURE_COPY = {
       'Review invitation, RSVP, group, meal, and plus-one context from one planner page.',
     description:
       'Guest Management combines populated totals with filterable table and card views, so planners can inspect response and guest context without rebuilding a spreadsheet.',
+  },
+  budget: {
+    title: 'Budget Management',
+    tagline:
+      'See planned versus spent totals, remaining funds, category status, vendor-quote counts, and payment history in one wedding budget.',
+    description:
+      'Budget Management gives planners a populated view of total budget, actual spend, remaining funds, category progress, available quote counts, and payment history for the selected wedding. The same view presents AI Insights, PDF export, and Excel export controls.',
+  },
+  forms: {
+    title: 'Forms Canvas',
+    tagline:
+      'Review a populated Couple Intake Questionnaire beside the field palette and visible Preview and Save Form controls.',
+    description:
+      'The Forms Canvas shows a populated Couple Intake Questionnaire alongside available text, email, phone, number, date, text-area, dropdown, radio, checkbox, rating, and scale fields. Builder, Preview, and Save Form controls appear together in the planner workspace.',
+  },
+  team: {
+    title: 'Team Management',
+    tagline:
+      'Review team seats, member roles and status, assigned-wedding counts, and last activity from one studio view.',
+    description:
+      'The populated Team Management view keeps seat capacity and the visible roster together, including each member’s role, status, assigned-wedding count, and last active time.',
   },
 } as const;
 
@@ -234,6 +255,46 @@ describe('public marketing copy truth contract', () => {
       humanFacingCopy,
       /auto[- ]?publish|never out of date|every surface stays aligned|the couple sees what you see|what changed overnight|vendor[- ]collaboration workspaces?|vendor portal|vendor delivery|can never drift|every surface writes|save once|guest-list-to-slug publishing|same media library feeds|read the same source/i,
     );
+  });
+
+  it('keeps the current Couple, Budget, Forms, and Team proof free of unseen outcomes', () => {
+    const coupleBoundaries = PHASE_ONE_PRODUCT_STORIES.find(
+      (story) => story.id === 'couple-boundaries',
+    );
+    assert.ok(coupleBoundaries);
+    assert.deepEqual(
+      [
+        coupleBoundaries.image.featureId,
+        ...coupleBoundaries.supportingImages.map(({ image }) => image.featureId),
+      ],
+      ['couple-portal', 'forms', 'guest-memories'],
+    );
+    assert.doesNotMatch(
+      coupleBoundaries.description,
+      /shared timeline|payment context|assigned forms/i,
+    );
+    assert.match(coupleBoundaries.description, /wedding overview and RSVP progress/i);
+    assert.match(coupleBoundaries.description, /Guest Memories/i);
+    assert.equal(
+      coupleBoundaries.imageAlt,
+      'Sofia and Daniel couple dashboard showing the wedding date and RSVP progress',
+    );
+    assert.equal(
+      coupleBoundaries.supportingImages[1]?.imageAlt,
+      'Sofia and Daniel Guest Memories page showing upload, review, and export controls',
+    );
+
+    const proofBoundFeatureCopy = Object.fromEntries(
+      ['budget', 'forms', 'team'].map((featureId) => {
+        const feature = MARKETING_FEATURES.find((candidate) => candidate.id === featureId);
+        assert.ok(feature, `missing marketing feature: ${featureId}`);
+        return [featureId, `${feature.title} ${feature.tagline} ${feature.description}`];
+      }),
+    );
+
+    assert.doesNotMatch(proofBoundFeatureCopy.budget, /pressure-tests every|warn you before overruns/i);
+    assert.doesNotMatch(proofBoundFeatureCopy.forms, /send wedding checklists|write back to the record/i);
+    assert.doesNotMatch(proofBoundFeatureCopy.team, /trace every action|audit log/i);
   });
 
   it('keeps every public source free of unfinished vendor-access promises', () => {
