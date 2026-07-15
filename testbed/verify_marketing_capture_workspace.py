@@ -66,6 +66,9 @@ SECONDARY_WEDDING_ID = "wedding_marketing_capture_avery_morgan"
 SECONDARY_SLUG = "avery-and-morgan"
 DEMO_KB_ARTICLE_ID = ObjectId("67c900000000000000000001")
 DEMO_KB_ARTICLE_SLUG = "planner-command-center-first-steps"
+DEMO_VENDOR_PROFILE_ID = "67c400000000000000000001"
+DEMO_VENDOR_BUSINESS_NAME = "Luna Meridian Photography"
+DEMO_VENDOR_PUBLIC_SEARCH_TERM = "Luna Meridian"
 CONTROLLED_IDENTITY_DOMAIN = "thespecialwedding.io"
 RESERVED_IDENTITY_DOMAINS = frozenset({"example.com", "example.net", "example.org"})
 RESERVED_IDENTITY_SUFFIXES = (".example", ".invalid", ".test")
@@ -437,6 +440,20 @@ def _get_json_readiness(
         return response.json()
     except ValueError as exc:
         raise RuntimeError(f"{label} returned invalid JSON") from exc
+
+
+def verify_public_vendor_capture_result(payload: Any) -> None:
+    """Require the public search used on camera to resolve one owned fixture."""
+
+    vendors = payload.get("vendors") if isinstance(payload, dict) else None
+    _require(
+        isinstance(vendors, list)
+        and payload.get("total") == 1
+        and len(vendors) == 1
+        and str(vendors[0].get("_id") or "") == DEMO_VENDOR_PROFILE_ID
+        and vendors[0].get("business_name") == DEMO_VENDOR_BUSINESS_NAME,
+        "Public vendor search must return the single Luna Meridian capture profile",
+    )
 
 
 def require_local_capture_origin(
@@ -1177,6 +1194,12 @@ def verify_seeded_workspace(
         and public_venue_name == "The Glasshouse at Riverbend",
         "Public showcase wedding returned the wrong seeded visible state",
     )
+    public_vendor_payload = _get_json_readiness(
+        f"{backend_url}/api/v1/vendors/directory",
+        label="Public Luna Meridian vendor search",
+        params={"search": DEMO_VENDOR_PUBLIC_SEARCH_TERM},
+    )
+    verify_public_vendor_capture_result(public_vendor_payload)
     kb_payload = _get_json_readiness(
         f"{backend_url}/public/kb/articles/slug/{DEMO_KB_ARTICLE_SLUG}",
         label="Published showcase Knowledge Base article",

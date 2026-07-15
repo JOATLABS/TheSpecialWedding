@@ -1960,7 +1960,7 @@ def test_marketing_contract_activity_validator_accepts_canonical_seed_shape():
             "root_contract_id": "67c100000000000000000001",
             "activity_type": "contract_sent",
             "title": "Contract sent",
-            "description": "Sent to Luna & Co. Photography for review.",
+            "description": "Sent to Luna Meridian Photography for review.",
             "actor": {
                 "type": "planner",
                 "identifier": "amina@studio.thespecialwedding.io",
@@ -2436,6 +2436,73 @@ def test_marketing_vendor_seed_does_not_render_websites_as_portfolio_images():
     source = _required_text(SEEDER)
 
     assert '"portfolio_urls": [fixture["website"]]' not in source
+
+
+def test_marketing_capture_public_vendor_search_is_fixture_specific():
+    seeder = _load_seeder_module()
+    search_term = seeder.DEMO_VENDOR_PUBLIC_SEARCH_TERM
+    primary_fixture = next(
+        fixture
+        for fixture in seeder.DEMO_VENDOR_DIRECTORY_FIXTURES
+        if fixture["profile_id"] == seeder.DEMO_VENDOR_PROFILE_ID
+    )
+
+    assert search_term == "Luna Meridian"
+    assert primary_fixture["business_name"] == "Luna Meridian Photography"
+    assert search_term.casefold() in primary_fixture["business_name"].casefold()
+    assert search_term.casefold() not in {"photography", "photographer"}
+
+    matching_fixture_ids = [
+        fixture["profile_id"]
+        for fixture in seeder.DEMO_VENDOR_DIRECTORY_FIXTURES
+        if any(
+            search_term.casefold() in str(value).casefold()
+            for value in (
+                fixture["business_name"],
+                fixture["service_description"],
+                fixture["service_category"],
+            )
+        )
+    ]
+    assert matching_fixture_ids == [seeder.DEMO_VENDOR_PROFILE_ID]
+
+
+def test_workspace_verifier_requires_one_exact_public_vendor_result():
+    verifier = getattr(
+        marketing_capture_driver,
+        "verify_public_vendor_capture_result",
+        None,
+    )
+    assert verifier is not None
+
+    verifier(
+        {
+            "total": 1,
+            "vendors": [
+                {
+                    "_id": "67c400000000000000000001",
+                    "business_name": "Luna Meridian Photography",
+                }
+            ],
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="single Luna Meridian"):
+        verifier(
+            {
+                "total": 2,
+                "vendors": [
+                    {
+                        "_id": "67c400000000000000000001",
+                        "business_name": "Luna Meridian Photography",
+                    },
+                    {
+                        "_id": "64f400000000000000000001",
+                        "business_name": "Unrelated local record",
+                    },
+                ],
+            }
+        )
 
 
 def test_marketing_guest_tokens_use_the_capture_scope_not_a_wedding_suffix():

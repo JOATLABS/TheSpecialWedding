@@ -616,5 +616,24 @@ Before changing a demo to `published` or attaching CDN URLs:
 8. Confirm the raw footage came from that exact story's manually driven browser take. A route preflight, scripted browser pass, website recording, or another social story cannot serve as its final capture evidence.
 9. Record the human playback approval separately from the raw-capture receipt and make `npm run demo:validate-playback` plus `npm run demo:requirements -- --require-assets` pass for that exact ID.
 10. Add the publication only to its channel's explicit allowlist: `APPROVED_PUBLIC_DEMO_VIDEO_PUBLICATIONS` for website or `APPROVED_PHASE_ONE_SOCIAL_VIDEO_PUBLICATIONS` for social.
+11. Persist the approved evidence and deployable media explicitly. The current publication contract uses repo-static `/demo-videos/...` URLs; because generated media is ignored by default, a normal `git add` is intentionally insufficient. For each approved ID, force-track only its canonical raw, narration, capture receipt, playback receipt, export, thumbnail, captions, and transcript together with the allowlist change:
+
+```bash
+demo_id=REPLACE_WITH_APPROVED_DEMO_ID
+format=16x9 # use 9x16 for a social story
+
+git add -f \
+  "output/demo-videos/raw/${demo_id}.mp4" \
+  "output/demo-videos/narration/${demo_id}.m4a" \
+  "output/demo-videos/receipts/${demo_id}.json" \
+  "output/demo-videos/playback-approvals/${demo_id}.json" \
+  "public/demo-videos/exports/${demo_id}-${format}.mp4" \
+  "public/demo-videos/thumbnails/${demo_id}-${format}.png" \
+  "public/demo-videos/captions/${demo_id}.vtt" \
+  "public/demo-videos/transcripts/${demo_id}.md"
+git add app/data/demoVideos.ts
+```
+
+Do not force-track Remotion props or either `.render-input` staging file. Re-run the exact demo's playback and asset validators from the staged tree, then prove the same commands in a fresh checkout before deployment. The raw and narration evidence remain outside the deployable `public/` tree but must be retained so the publication validator can reproduce the receipt checks. CDN publication is not a documentation-only substitution: the current allowlist intentionally accepts only canonical same-origin paths, so CDN support requires an explicit code and validator change before any URL is attached.
 
 If any item fails, keep the public manifest in its retake-safe `recording` state.

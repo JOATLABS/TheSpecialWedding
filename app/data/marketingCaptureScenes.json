@@ -96,7 +96,7 @@
       "session": "planner",
       "route": "/admin/vendors/contracts/67c100000000000000000001",
       "title": "Vendor contract",
-      "expectation": "Payment Milestones are visible for the seeded Luna & Co. Photography contract.",
+      "expectation": "Payment Milestones are visible for the seeded Luna Meridian Photography contract.",
       "expectedVisibleText": "Payment Milestones",
       "safeInteraction": "Open Payments and wait for Payment Milestones without changing the contract."
     },

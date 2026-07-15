@@ -110,6 +110,17 @@ describe('demo video manifest', () => {
       `${vendorDemo.script.map((step) => step.action).join(' ')} ${vendorDemo.script.map((step) => step.voiceover).join(' ')}`,
       /vendor portal|vendors? can collaborate through scoped portals/i,
     );
+    const publicVendorCheckpoint = vendorDemo.captureCheckpoints?.find(
+      (checkpoint) => checkpoint.label === 'Public vendor directory',
+    );
+    const publicVendorProfileCheckpoint = vendorDemo.captureCheckpoints?.find(
+      (checkpoint) => checkpoint.label === 'Public vendor profile',
+    );
+    assert.ok(publicVendorCheckpoint);
+    assert.ok(publicVendorProfileCheckpoint);
+    assert.match(publicVendorCheckpoint.action, /Luna Meridian/);
+    assert.doesNotMatch(publicVendorCheckpoint.action, /by Photography/i);
+    assert.match(publicVendorProfileCheckpoint.action, /Luna Meridian Photography/);
 
     const vendorContractFeature = MARKETING_FEATURES.find((feature) => feature.id === 'book-the-client');
     const vendorContractDemo = phaseOneDemos.find((demo) => demo.id === 'contract-sign-pay-demo');
