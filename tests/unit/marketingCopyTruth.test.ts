@@ -102,7 +102,7 @@ const APPROVED_STORY_COPY = [
     pillar: 'Couple Experience + Boundaries',
     headline: 'Give couples a clear view without exposing planner operations.',
     description:
-      'The couple dashboard gives Sofia and Daniel a focused wedding overview and RSVP progress. A separate planner workspace presents the Couple Intake Questionnaire, while the couple portal presents Guest Memories link, review, and export controls.',
+      'The couple dashboard gives Sofia and Daniel a focused wedding overview and RSVP progress. A separate planner workspace presents the Couple Intake Questionnaire, while the couple portal’s Guest Memories review queue shows status filters, keep/reject decisions, and individual downloads.',
     proof: 'Couple overview · planner intake · couple memories controls',
     supportingLabels: ['Planner-controlled intake', 'Couple Guest Memories'],
   },
@@ -281,7 +281,7 @@ describe('public marketing copy truth contract', () => {
     );
     assert.equal(
       coupleBoundaries.supportingImages[1]?.imageAlt,
-      'Sofia and Daniel Guest Memories page showing upload, review, and export controls',
+      'Sofia and Daniel Guest Memories review queue showing status filters, keep and reject decisions, and individual download controls',
     );
 
     const proofBoundFeatureCopy = Object.fromEntries(

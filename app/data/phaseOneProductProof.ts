@@ -68,7 +68,7 @@ export const PHASE_ONE_PRODUCT_STORIES = [
     pillar: 'Couple Experience + Boundaries',
     headline: 'Give couples a clear view without exposing planner operations.',
     description:
-      'The couple dashboard gives Sofia and Daniel a focused wedding overview and RSVP progress. A separate planner workspace presents the Couple Intake Questionnaire, while the couple portal presents Guest Memories link, review, and export controls.',
+      'The couple dashboard gives Sofia and Daniel a focused wedding overview and RSVP progress. A separate planner workspace presents the Couple Intake Questionnaire, while the couple portal’s Guest Memories review queue shows status filters, keep/reject decisions, and individual downloads.',
     proof: 'Couple overview · planner intake · couple memories controls',
     image: getMarketingCaptureAsset('couple-portal', 'homepage'),
     imageAlt: 'Sofia and Daniel couple dashboard showing the wedding date and RSVP progress',
@@ -81,7 +81,7 @@ export const PHASE_ONE_PRODUCT_STORIES = [
       {
         label: 'Couple Guest Memories',
         image: getMarketingCaptureAsset('guest-memories', 'homepage'),
-        imageAlt: 'Sofia and Daniel Guest Memories page showing upload, review, and export controls',
+        imageAlt: 'Sofia and Daniel Guest Memories review queue showing status filters, keep and reject decisions, and individual download controls',
       },
     ],
     featureIds: ['couple-portal', 'forms', 'guest-memories', 'inbox'],
