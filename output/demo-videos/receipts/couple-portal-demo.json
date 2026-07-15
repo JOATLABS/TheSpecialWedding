@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 2,
+  "demoId": "couple-portal-demo",
+  "captureMethod": "manual-visible-browser",
+  "recordedAt": "2026-07-15T01:03:37Z",
+  "appBuildCommit": "6c561739be8a7b7a21dc57701a2ca89731400885",
+  "runtimeBuildIdentity": {
+    "origin": "http://127.0.0.1:3100",
+    "identitySelector": "meta[name=\"tsw-app-build-commit\"]",
+    "observedCommit": "6c561739be8a7b7a21dc57701a2ca89731400885",
+    "verifiedAt": "2026-07-15T01:03:37Z"
+  },
+  "source": {
+    "artifactPath": "output/demo-videos/raw/couple-portal-demo.mp4",
+    "artifactSha256": "39792483101996086aedbd1b18dba2f35e7cc2e2a68842df383d961c3f0e86a9",
+    "byteLength": 637169,
+    "width": 1440,
+    "height": 900,
+    "durationSeconds": 60,
+    "captureBounds": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "operatorAttestation": {
+    "browserWasVisible": true,
+    "interactionsWereManual": true,
+    "scriptedBrowserCaptureWasUsed": false,
+    "fullWindowWasVisible": true,
+    "browserAddressBarWasHidden": true,
+    "realCustomerDataWasExcluded": true,
+    "sideEffectsWereTriggered": false
+  },
+  "checkpoints": [
+    {
+      "label": "Couple dashboard",
+      "route": "/couple/dashboard",
+      "action": "Inspect the wedding overview, guest snapshot, countdown, and guided next steps.",
+      "visibleResult": "Sofia & Daniel see their wedding context and current planning state without planner-only controls.",
+      "atSeconds": 5,
+      "frameSha256": "8095e47f91f16ccdaad59c85b1aa276c541652923dd04fbdc81437f43549fecd"
+    },
+    {
+      "label": "Shared timeline",
+      "route": "/couple/dashboard",
+      "action": "Open Timeline, expand Traditional Ceremony, and inspect its three-item run of show.",
+      "visibleResult": "The couple-facing timeline shows the ceremony time, venue, and seeded processional, cocktail-hour, and reception-door cues.",
+      "atSeconds": 24,
+      "frameSha256": "bbaaf9f420ebfa7ee40c1425bb9623d56beea31a0f2da6f29c972dd88af35345"
+    },
+    {
+      "label": "Payment schedule",
+      "route": "/couple/dashboard",
+      "action": "Open Payments and inspect the package and payment schedule without using payment controls.",
+      "visibleResult": "The couple can see the current contract and payment context while planner operations remain private.",
+      "atSeconds": 38,
+      "frameSha256": "a4e2788e46c3a3476013834a77623e1b19b14164361f2232477ef7afa68b4a8d"
+    },
+    {
+      "label": "Assigned forms",
+      "route": "/couple/dashboard",
+      "action": "Open Forms and inspect the seeded questionnaire and its current completion status.",
+      "visibleResult": "The assigned questionnaire is visible inside the same guided wedding portal.",
+      "atSeconds": 49,
+      "frameSha256": "1c4fff15d867f5b54a0ce70faec2262caa483def38fe7550b9a5d932fb58abcc"
+    }
+  ],
+  "review": {
+    "reviewedFrameCount": 4,
+    "rawFrameReview": "approved",
+    "publicSafetyReview": "approved"
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 2,
+  "demoId": "morning-view-demo",
+  "captureMethod": "manual-visible-browser",
+  "recordedAt": "2026-07-14T23:55:29Z",
+  "appBuildCommit": "1c7f7dbdb90ff74f41f8bf46b7a9f9114df3b10f",
+  "runtimeBuildIdentity": {
+    "origin": "http://127.0.0.1:3100",
+    "identitySelector": "meta[name=\"tsw-app-build-commit\"]",
+    "observedCommit": "1c7f7dbdb90ff74f41f8bf46b7a9f9114df3b10f",
+    "verifiedAt": "2026-07-14T23:55:29Z"
+  },
+  "source": {
+    "artifactPath": "output/demo-videos/raw/morning-view-demo.mp4",
+    "artifactSha256": "ac0718cff93177ff902da1cb9b066dc38b704b6a940a74da383ee300503dd050",
+    "byteLength": 849667,
+    "width": 1440,
+    "height": 900,
+    "durationSeconds": 60,
+    "captureBounds": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "operatorAttestation": {
+    "browserWasVisible": true,
+    "interactionsWereManual": true,
+    "scriptedBrowserCaptureWasUsed": false,
+    "fullWindowWasVisible": true,
+    "browserAddressBarWasHidden": true,
+    "realCustomerDataWasExcluded": true,
+    "sideEffectsWereTriggered": false
+  },
+  "checkpoints": [
+    {
+      "label": "Portfolio overview",
+      "route": "/admin/planner",
+      "action": "Scan both active wedding cards and compare their setup progress.",
+      "visibleResult": "Sofia & Daniel and Avery & Morgan show populated status, progress, and next-action context.",
+      "atSeconds": 6,
+      "frameSha256": "be1c4fac53d37c01681a200a8333c35e195c4eef5d9cc888c4a6c675eb2ceaff"
+    },
+    {
+      "label": "Attention signals",
+      "route": "/admin/planner",
+      "action": "Review the visible RSVP, recent-activity, and pending-form signals across the portfolio.",
+      "visibleResult": "The seeded RSVP and setup signals distinguish the wedding that is moving from the one that needs attention.",
+      "atSeconds": 24,
+      "frameSha256": "99a5db36f101424fd23f42ad00b430cadcd01d62375551126f4cfdb51d3587e1"
+    },
+    {
+      "label": "Incomplete wedding guidance",
+      "route": "/admin/weddings/wedding_marketing_capture_avery_morgan",
+      "action": "Open Avery & Morgan's source record and inspect its incomplete setup guidance.",
+      "visibleResult": "The source record identifies the remaining setup work without changing wedding data.",
+      "atSeconds": 48,
+      "frameSha256": "d8b3f7cb06550682e42c908ded4c6d2eef1a2747e3e1c0d7ac8808c3a0d3feee"
+    }
+  ],
+  "review": {
+    "reviewedFrameCount": 4,
+    "rawFrameReview": "approved",
+    "publicSafetyReview": "approved"
+  }
+}

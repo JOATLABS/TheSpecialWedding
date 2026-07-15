@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 2,
+  "demoId": "microsite-auto-publishes-demo",
+  "captureMethod": "manual-visible-browser",
+  "recordedAt": "2026-07-15T00:54:15Z",
+  "appBuildCommit": "1c7f7dbdb90ff74f41f8bf46b7a9f9114df3b10f",
+  "runtimeBuildIdentity": {
+    "origin": "http://127.0.0.1:3100",
+    "identitySelector": "meta[name=\"tsw-app-build-commit\"]",
+    "observedCommit": "1c7f7dbdb90ff74f41f8bf46b7a9f9114df3b10f",
+    "verifiedAt": "2026-07-15T00:54:15Z"
+  },
+  "source": {
+    "artifactPath": "output/demo-videos/raw/microsite-auto-publishes-demo.mp4",
+    "artifactSha256": "40e4ae13317e4bacfe3d06c04e3809de3cb954eb727ea7f1a8ea8f57f11308e2",
+    "byteLength": 832143,
+    "width": 1440,
+    "height": 900,
+    "durationSeconds": 45,
+    "captureBounds": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "operatorAttestation": {
+    "browserWasVisible": true,
+    "interactionsWereManual": true,
+    "scriptedBrowserCaptureWasUsed": false,
+    "fullWindowWasVisible": true,
+    "browserAddressBarWasHidden": true,
+    "realCustomerDataWasExcluded": true,
+    "sideEffectsWereTriggered": false
+  },
+  "checkpoints": [
+    {
+      "label": "Planner source record",
+      "route": "/admin/weddings/wedding_marketing_capture_sofia_daniel",
+      "action": "Inspect the seeded story, theme, and privacy settings without changing any fields.",
+      "visibleResult": "The planner source record contains the public story, branding, and guest-access configuration.",
+      "atSeconds": 6,
+      "frameSha256": "27730fd560795a3860be238d23fd2fc7f23785f6c51f31c527cc33a4157d1274"
+    },
+    {
+      "label": "Public wedding view",
+      "route": "/sofia-and-daniel",
+      "action": "Manually switch to the prepared public microsite and inspect its story, venue, and event-day presentation.",
+      "visibleResult": "The guest-facing microsite presents Sofia & Daniel with the seeded story, approved venue, and event-day details.",
+      "atSeconds": 20,
+      "frameSha256": "14f795af6ee1917c482624255166275148fee27851a7a9da883ea0324175ebca"
+    },
+    {
+      "label": "Public gallery",
+      "route": "/sofia-and-daniel/gallery",
+      "action": "Open the public gallery and inspect the approved seeded wedding images.",
+      "visibleResult": "The gallery shows the approved ceremony, portrait, and reception imagery without planner controls.",
+      "atSeconds": 36,
+      "frameSha256": "8de5756c8e9c7cbd09cd680c9846d9a5f7709657a7634ed4664b22b315384d0d"
+    }
+  ],
+  "review": {
+    "reviewedFrameCount": 3,
+    "rawFrameReview": "approved",
+    "publicSafetyReview": "approved"
+  }
+}

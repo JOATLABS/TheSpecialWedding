@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "demoId": "disorganization-tax-social",
+  "reviewedAt": "2026-07-15T09:36:41.208Z",
+  "reviewer": "Emmanuel Akinwale",
+  "reviewMethod": "human-normal-speed-playback",
+  "sidecars": {
+    "captions": {
+      "artifactPath": "public/demo-videos/captions/disorganization-tax-social.vtt",
+      "artifactSha256": "6d539e647c66a09fd3d6b9a90e34bb265b17f7b7bfa0906141450e597ff4c3b9",
+      "byteLength": 345
+    },
+    "transcript": {
+      "artifactPath": "public/demo-videos/transcripts/disorganization-tax-social.md",
+      "artifactSha256": "87c0f815aeb186e50222a0c7b85ea735dbd987958797c924c0946aa1beca715b",
+      "byteLength": 695
+    }
+  },
+  "targets": [
+    {
+      "format": "social-9x16",
+      "video": {
+        "artifactPath": "public/demo-videos/exports/disorganization-tax-social-9x16.mp4",
+        "artifactSha256": "5372d1f8e423ae7ea2e888437950bb2345c05d61b0bcf1705d9221a930c3df3b",
+        "byteLength": 1835873,
+        "width": 1080,
+        "height": 1920,
+        "durationSeconds": 25.045333,
+        "hasAudio": true
+      },
+      "thumbnail": {
+        "artifactPath": "public/demo-videos/thumbnails/disorganization-tax-social-9x16.png",
+        "artifactSha256": "5f158d823f44a5c37ea818b52497c636028790d0b53e1688ffcb96e71a548e68",
+        "byteLength": 919227,
+        "width": 1080,
+        "height": 1920
+      },
+      "review": {
+        "fullNormalSpeedPlaybackCompleted": true,
+        "captionsApproved": true,
+        "narrationAndAudioApproved": true,
+        "fullUncroppedProductWindowApproved": true,
+        "localAndDevelopmentContentExcluded": true,
+        "privateContentExcluded": true,
+        "publicSafetyApproved": true
+      }
+    }
+  ],
+  "socialPlayback": {
+    "portraitMobileApproved": true,
+    "safeAreaApproved": true
+  }
+}

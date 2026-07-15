@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "demoId": "vendor-directory-crm-demo",
+  "reviewedAt": "2026-07-15T09:36:41.208Z",
+  "reviewer": "Emmanuel Akinwale",
+  "reviewMethod": "human-normal-speed-playback",
+  "sidecars": {
+    "captions": {
+      "artifactPath": "public/demo-videos/captions/vendor-directory-crm-demo.vtt",
+      "artifactSha256": "27bb707ba3b6dc5037ff1b089b79e64145420d5a2bb9acf46dfee3ae3f9f126b",
+      "byteLength": 407
+    },
+    "transcript": {
+      "artifactPath": "public/demo-videos/transcripts/vendor-directory-crm-demo.md",
+      "artifactSha256": "6ffe86ba3af4a9df8d50478edc52eaf10c589d3b1c304801ceba3bbfa256ec9d",
+      "byteLength": 797
+    }
+  },
+  "targets": [
+    {
+      "format": "web-16x9",
+      "video": {
+        "artifactPath": "public/demo-videos/exports/vendor-directory-crm-demo-16x9.mp4",
+        "artifactSha256": "4e7757cefa83856b09ea180cd18bb213fcb420902925e9a6d5226e9e2332f630",
+        "byteLength": 3578046,
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 60.053333,
+        "hasAudio": true
+      },
+      "thumbnail": {
+        "artifactPath": "public/demo-videos/thumbnails/vendor-directory-crm-demo-16x9.png",
+        "artifactSha256": "dbc34d4fbacf7d9508860acb959b5819f4951ecc932dfa3bde48ebec9d334459",
+        "byteLength": 414679,
+        "width": 1920,
+        "height": 1080
+      },
+      "review": {
+        "fullNormalSpeedPlaybackCompleted": true,
+        "captionsApproved": true,
+        "narrationAndAudioApproved": true,
+        "fullUncroppedProductWindowApproved": true,
+        "localAndDevelopmentContentExcluded": true,
+        "privateContentExcluded": true,
+        "publicSafetyApproved": true
+      }
+    }
+  ],
+  "websitePlayback": {
+    "desktopApproved": true,
+    "mobileApproved": true
+  }
+}

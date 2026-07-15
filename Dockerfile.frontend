@@ -6,6 +6,10 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Published-video validation probes the retained raw takes and deployable
+# exports during the build. ffmpeg stays in the disposable builder stage.
+RUN apk add --no-cache ffmpeg
+
 # Copy package files for layer caching
 COPY package.json package-lock.json* .npmrc ./
 RUN npm ci

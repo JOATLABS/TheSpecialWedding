@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 2,
+  "demoId": "seating-orchestrator-demo",
+  "captureMethod": "manual-visible-browser",
+  "recordedAt": "2026-07-15T01:28:21Z",
+  "appBuildCommit": "952dfcdfc60e72cd249a5a776c67fe85a5d58a01",
+  "runtimeBuildIdentity": {
+    "origin": "http://127.0.0.1:3100",
+    "identitySelector": "meta[name=\"tsw-app-build-commit\"]",
+    "observedCommit": "952dfcdfc60e72cd249a5a776c67fe85a5d58a01",
+    "verifiedAt": "2026-07-15T01:28:21Z"
+  },
+  "source": {
+    "artifactPath": "output/demo-videos/raw/seating-orchestrator-demo.mp4",
+    "artifactSha256": "b5f44801bbc791ebab5ccdb6f6ba7236540e690f7c7b4ec97a989c03827ccb17",
+    "byteLength": 996347,
+    "width": 1440,
+    "height": 900,
+    "durationSeconds": 60,
+    "captureBounds": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "operatorAttestation": {
+    "browserWasVisible": true,
+    "interactionsWereManual": true,
+    "scriptedBrowserCaptureWasUsed": false,
+    "fullWindowWasVisible": true,
+    "browserAddressBarWasHidden": true,
+    "realCustomerDataWasExcluded": true,
+    "sideEffectsWereTriggered": false
+  },
+  "checkpoints": [
+    {
+      "label": "Venue-aware floor plan",
+      "route": "/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel",
+      "action": "Use the in-product Zoom out control twice until it reads 70%, then inspect the seeded room outline, fixtures, and six positioned tables.",
+      "visibleResult": "The seating canvas uses the seeded venue plan instead of an empty generic grid.",
+      "atSeconds": 30,
+      "frameSha256": "a1ede1f6311c38fe785c93275636a3887cd892d3e385b7da853e68f324765cf9"
+    },
+    {
+      "label": "Existing guest assignments",
+      "route": "/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel",
+      "action": "Inspect the populated tables and existing guest assignments without moving anyone.",
+      "visibleResult": "Seeded guests are already connected to named tables with capacity context visible.",
+      "atSeconds": 45,
+      "frameSha256": "b200ef318fcd081e2b9355f29a3cfd3efdddfb5c59eb435b8ee1c20dd5340be1"
+    },
+    {
+      "label": "Day-of readiness checks",
+      "route": "/admin/seating?weddingId=wedding_marketing_capture_sofia_daniel",
+      "action": "Inspect the assigned totals, floor-plan status, and visible layout checks beside the canvas.",
+      "visibleResult": "The planner can review seating readiness and venue-layout warnings without changing the chart.",
+      "atSeconds": 55,
+      "frameSha256": "a6a2d56beb8aafbabd4d44ffcf43c4d2591477e18b43fec87a235ce05b28e791"
+    }
+  ],
+  "review": {
+    "reviewedFrameCount": 5,
+    "rawFrameReview": "approved",
+    "publicSafetyReview": "approved"
+  }
+}

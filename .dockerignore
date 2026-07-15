@@ -49,6 +49,7 @@ Thumbs.db
 # ---- docs / misc ----
 docs/
 *.md
+!public/demo-videos/transcripts/*.md
 
 # ---- optional: exclude local tooling ----
 docker-compose*.yml

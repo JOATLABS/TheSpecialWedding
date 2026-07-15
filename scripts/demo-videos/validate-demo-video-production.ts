@@ -33,7 +33,11 @@ function fileExistsAndIsNonempty(filePath: string): boolean {
   return fs.existsSync(filePath) && fs.statSync(filePath).isFile() && fs.statSync(filePath).size > 0;
 }
 
-function validateRequirementInventory(demoIds: readonly string[], requireAssets: boolean): ValidationIssue[] {
+function validateRequirementInventory(
+  demoIds: readonly string[],
+  requireAssets: boolean,
+  verifyGitAncestry: boolean,
+): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
   if (requireAssets) {
@@ -93,7 +97,13 @@ function validateRequirementInventory(demoIds: readonly string[], requireAssets:
 
     let manualValidation: ReturnType<typeof validateManualDemoVideo> | undefined;
     try {
-      manualValidation = validateManualDemoVideo(resolveFromRepo(requirement.captureReceiptPath));
+      manualValidation = validateManualDemoVideo(
+        resolveFromRepo(requirement.captureReceiptPath),
+        {
+          allowStagedPublicationChanges: demo.status === 'published',
+          verifyGitAncestry,
+        },
+      );
     } catch (error: unknown) {
       issues.push({
         demoId,
@@ -205,6 +215,7 @@ function main(): void {
   const demoFilter = args.values.get('demo');
   const publishedOnly = args.flags.has('published');
   const requireAssets = args.flags.has('require-assets') || publishedOnly;
+  const verifyGitAncestry = args.flags.has('verify-git-ancestry') || !publishedOnly;
   const publishedDemoIds = DEMO_VIDEO_PRODUCTION_CATALOG
     .filter((demo) => demo.status === 'published')
     .map((demo) => demo.id);
@@ -213,7 +224,7 @@ function main(): void {
     : publishedOnly
       ? publishedDemoIds
       : DEMO_VIDEO_PRODUCTION_REQUIREMENTS.map((item) => item.demoId);
-  const issues = validateRequirementInventory(demoIds, requireAssets);
+  const issues = validateRequirementInventory(demoIds, requireAssets, verifyGitAncestry);
 
   summarize(demoIds, requireAssets);
 

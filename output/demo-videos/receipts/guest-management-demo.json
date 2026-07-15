@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 2,
+  "demoId": "guest-management-demo",
+  "captureMethod": "manual-visible-browser",
+  "recordedAt": "2026-07-15T00:58:58Z",
+  "appBuildCommit": "1c7f7dbdb90ff74f41f8bf46b7a9f9114df3b10f",
+  "runtimeBuildIdentity": {
+    "origin": "http://127.0.0.1:3100",
+    "identitySelector": "meta[name=\"tsw-app-build-commit\"]",
+    "observedCommit": "1c7f7dbdb90ff74f41f8bf46b7a9f9114df3b10f",
+    "verifiedAt": "2026-07-15T00:58:58Z"
+  },
+  "source": {
+    "artifactPath": "output/demo-videos/raw/guest-management-demo.mp4",
+    "artifactSha256": "7ec724812b665be675fcf876fa77ccbcdabcc3ed2024feba3ec5cc98435b23e8",
+    "byteLength": 945194,
+    "width": 1440,
+    "height": 900,
+    "durationSeconds": 60,
+    "captureBounds": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "operatorAttestation": {
+    "browserWasVisible": true,
+    "interactionsWereManual": true,
+    "scriptedBrowserCaptureWasUsed": false,
+    "fullWindowWasVisible": true,
+    "browserAddressBarWasHidden": true,
+    "realCustomerDataWasExcluded": true,
+    "sideEffectsWereTriggered": false
+  },
+  "checkpoints": [
+    {
+      "label": "Guest operations summary",
+      "route": "/admin/guests",
+      "action": "Inspect the seeded guest totals, invitation state, RSVP response, and plus-one metrics.",
+      "visibleResult": "The guest workspace shows populated invitation, response, attendance, and plus-one counts.",
+      "atSeconds": 7,
+      "frameSha256": "b4ebe555a692fb655e25b0d3d15166921cc7130de3f5ea24bec361f39394796f"
+    },
+    {
+      "label": "RSVP table slice",
+      "route": "/admin/guests",
+      "action": "Filter the seeded table to Declined and inspect the visible RSVP, group, and plus-one columns.",
+      "visibleResult": "The table narrows to declined guests while keeping their group and plus-one state visible.",
+      "atSeconds": 24,
+      "frameSha256": "3e242b235c9636cca9d0d039db4cfee4e894ee5042cb41b4aeab7d46c7671c51"
+    },
+    {
+      "label": "Guest card context",
+      "route": "/admin/guests",
+      "action": "Clear the RSVP filter, switch to Card View, and inspect the collapsed Priya Shah card without opening any card actions.",
+      "visibleResult": "Priya Shah shows Confirmed, Friends, Vegetarian, and one submitted plus-one without exposing private controls.",
+      "atSeconds": 54,
+      "frameSha256": "4cfa99f3a3fc40e1acda21af0c32db5e2951085265ff82bce9912592f8a791ea"
+    }
+  ],
+  "review": {
+    "reviewedFrameCount": 3,
+    "rawFrameReview": "approved",
+    "publicSafetyReview": "approved"
+  }
+}

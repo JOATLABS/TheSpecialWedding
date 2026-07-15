@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "demoId": "couple-portal-demo",
+  "reviewedAt": "2026-07-15T09:36:41.208Z",
+  "reviewer": "Emmanuel Akinwale",
+  "reviewMethod": "human-normal-speed-playback",
+  "sidecars": {
+    "captions": {
+      "artifactPath": "public/demo-videos/captions/couple-portal-demo.vtt",
+      "artifactSha256": "873e27c262f9bf5e7094dab4c4d226341e368ab3984a371172c486b239fd0d79",
+      "byteLength": 422
+    },
+    "transcript": {
+      "artifactPath": "public/demo-videos/transcripts/couple-portal-demo.md",
+      "artifactSha256": "f5436e5ae47fef167c9ecec645d631609e202c9909f9aa358733419b63ec539d",
+      "byteLength": 777
+    }
+  },
+  "targets": [
+    {
+      "format": "web-16x9",
+      "video": {
+        "artifactPath": "public/demo-videos/exports/couple-portal-demo-16x9.mp4",
+        "artifactSha256": "39e13606ee8c99ef9219ce0878eb598e80fd5bc3586bfd55d6f0a292edbb7688",
+        "byteLength": 3401551,
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 60.053333,
+        "hasAudio": true
+      },
+      "thumbnail": {
+        "artifactPath": "public/demo-videos/thumbnails/couple-portal-demo-16x9.png",
+        "artifactSha256": "c89ed73a5eee876dca7c0042fae73737af717f1666924b960b2c787f9758b65b",
+        "byteLength": 251061,
+        "width": 1920,
+        "height": 1080
+      },
+      "review": {
+        "fullNormalSpeedPlaybackCompleted": true,
+        "captionsApproved": true,
+        "narrationAndAudioApproved": true,
+        "fullUncroppedProductWindowApproved": true,
+        "localAndDevelopmentContentExcluded": true,
+        "privateContentExcluded": true,
+        "publicSafetyApproved": true
+      }
+    }
+  ],
+  "websitePlayback": {
+    "desktopApproved": true,
+    "mobileApproved": true
+  }
+}

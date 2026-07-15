@@ -76,6 +76,11 @@ export type ManualDemoVideoValidation = {
   appBuildCommit: string;
 };
 
+export type ManualDemoVideoValidationOptions = {
+  allowStagedPublicationChanges?: boolean;
+  verifyGitAncestry?: boolean;
+};
+
 type VideoProbe = {
   width: number;
   height: number;
@@ -419,7 +424,10 @@ function gitExitStatus(args: readonly string[]): number {
   return result.status;
 }
 
-function assertAvailableCleanRecordingBuild(receiptCommit: string): string {
+function assertAvailableCleanRecordingBuild(
+  receiptCommit: string,
+  options: ManualDemoVideoValidationOptions,
+): string {
   gitOutput(['cat-file', '-e', `${receiptCommit}^{commit}`]);
   const head = gitOutput(['rev-parse', 'HEAD']);
   if (
@@ -428,9 +436,19 @@ function assertAvailableCleanRecordingBuild(receiptCommit: string): string {
   ) {
     throw new Error('Manual recording commit must be an ancestor of current HEAD.');
   }
-  const worktreeChanges = gitOutput(['status', '--porcelain', '--untracked-files=all']);
-  if (worktreeChanges) {
-    throw new Error('Manual recording validation requires a clean worktree.');
+  if (options.allowStagedPublicationChanges) {
+    const unstagedChanges = gitOutput(['diff', '--name-only']);
+    const untrackedChanges = gitOutput(['ls-files', '--others', '--exclude-standard']);
+    if (unstagedChanges || untrackedChanges) {
+      throw new Error(
+        'Staged publication validation rejects unstaged or untracked changes.',
+      );
+    }
+  } else {
+    const worktreeChanges = gitOutput(['status', '--porcelain', '--untracked-files=all']);
+    if (worktreeChanges) {
+      throw new Error('Manual recording validation requires a clean worktree.');
+    }
   }
   return receiptCommit;
 }
@@ -571,6 +589,7 @@ export function validateManualDemoVideo(
     'receipts',
     'planner-command-center-walkthrough.json',
   ),
+  options: ManualDemoVideoValidationOptions = {},
 ): ManualDemoVideoValidation {
   const receipt = readReceipt(receiptPath);
   assertReceiptContract(receipt);
@@ -586,7 +605,9 @@ export function validateManualDemoVideo(
     throw new Error('Manual capture review must include at least one frame from every product checkpoint.');
   }
 
-  const appBuildCommit = assertAvailableCleanRecordingBuild(receipt.appBuildCommit);
+  const appBuildCommit = options.verifyGitAncestry === false
+    ? receipt.appBuildCommit
+    : assertAvailableCleanRecordingBuild(receipt.appBuildCommit, options);
   const expectedArtifactPath = resolveFromRepo(requirement.rawRecordingPath);
   const artifactPath = resolveFromRepo(receipt.source.artifactPath);
   if (artifactPath !== expectedArtifactPath) {

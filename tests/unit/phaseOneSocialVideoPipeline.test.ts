@@ -84,11 +84,11 @@ describe('Phase 1 social video pipeline', () => {
       assert.ok(story.durationSeconds >= 20 && story.durationSeconds <= 35);
       assert.ok(story.socialOutcome.length >= 40);
       assert.equal(story.priority, 'phase-one');
-      assert.equal(story.status, 'recording');
-      assert.equal(story.assetUrl, undefined);
-      assert.equal(story.thumbnailUrl, undefined);
-      assert.equal(story.captionUrl, undefined);
-      assert.equal(story.transcriptUrl, undefined);
+      assert.equal(story.status, 'published');
+      assert.equal(story.assetUrl, `/demo-videos/exports/${story.id}-9x16.mp4`);
+      assert.equal(story.thumbnailUrl, `/demo-videos/thumbnails/${story.id}-9x16.png`);
+      assert.equal(story.captionUrl, `/demo-videos/captions/${story.id}.vtt`);
+      assert.equal(story.transcriptUrl, `/demo-videos/transcripts/${story.id}.md`);
     }
 
     const coupleBoundaries = stories.find(
@@ -254,7 +254,7 @@ describe('Phase 1 social video pipeline', () => {
     assert.doesNotMatch(stateCreator, /await login\(context[\s\S]*?admin\/token[\s\S]*?couple\/login/);
   });
 
-  it('keeps social publication on its own empty, canonical allowlist', () => {
+  it('keeps approved social publication on its own canonical allowlist', () => {
     const stories = getSocialStories();
     const publicationApi = demoVideos as unknown as {
       APPROVED_PHASE_ONE_SOCIAL_VIDEO_PUBLICATIONS?: Readonly<Record<string, unknown>>;
@@ -267,7 +267,7 @@ describe('Phase 1 social video pipeline', () => {
 
     assert.deepEqual(
       Object.keys(publicationApi.APPROVED_PHASE_ONE_SOCIAL_VIDEO_PUBLICATIONS ?? {}),
-      [],
+      SOCIAL_STORIES.map(({ id }) => id),
     );
     assert.equal(
       typeof publicationApi.isCompletePhaseOneSocialVideoPublicationApproval,
@@ -305,6 +305,7 @@ describe('Phase 1 social video pipeline', () => {
 
     const unpublished = publicationApi.applyPhaseOneSocialVideoPublicationApproval?.({
       ...story,
+      id: 'future-social-story',
       status: 'published',
       assetUrl: approval.assetUrl,
       thumbnailUrl: approval.thumbnailUrl,
