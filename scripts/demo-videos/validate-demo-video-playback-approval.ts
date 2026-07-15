@@ -133,6 +133,7 @@ const REVIEW_ASSERTIONS = [
 
 const PLACEHOLDER_REVIEWER = /(?:^|[\s_-])(?:unknown|placeholder|tbd|todo|pending|n\/a)(?:$|[\s_-])/i;
 const SHA256 = /^[0-9a-f]{64}$/;
+const MEDIA_DURATION_BOUNDARY_TOLERANCE_SECONDS = 0.05;
 
 export function assertRenderedDurationMatchesManualCapture(
   manualDurationSeconds: number,
@@ -514,7 +515,10 @@ export function validateDemoVideoPlaybackApproval(
   const durations = validatedTargets.map((target) => target.durationSeconds);
   const { minimumDuration, maximumDuration } = getManualRecordingDurationBounds(demo);
   for (const durationSeconds of durations) {
-    if (durationSeconds < minimumDuration || durationSeconds > maximumDuration) {
+    if (
+      durationSeconds < minimumDuration - MEDIA_DURATION_BOUNDARY_TOLERANCE_SECONDS
+      || durationSeconds > maximumDuration + MEDIA_DURATION_BOUNDARY_TOLERANCE_SECONDS
+    ) {
       throw new Error(
         `Rendered video duration must stay within ${minimumDuration}-${maximumDuration} seconds for ${demoId}.`,
       );

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-07-15 — Phase 1 walkthroughs are approved for publication
+
+- Recorded Emmanuel Akinwale's named normal-speed playback approval for the eight Phase 1 website walkthroughs and four independent social stories, binding every receipt to the exact export, thumbnail, WebVTT captions, transcript, dimensions, duration, audio stream, byte length, and checksum.
+- Published only those 12 approved IDs through their separate website and social allowlists while leaving every Phase 2 walkthrough fail-closed in `recording` state. The canonical raw takes, narration masters, capture receipts, approval receipts, deployable exports, thumbnails, captions, and transcripts are retained together for reproducible validation.
+- Allowed at most 50 milliseconds of container/frame-boundary timing drift when checking authored export bounds, so the unchanged approved 35-second Built for Planners cut at 35.008 seconds passes without weakening rejection of materially short or overlong media.
+- Kept the deploy-time artifact gate Git-independent for Docker while preserving full capture ancestry checks in CI, retained transcript sidecars in the Docker build context, and installed `ffmpeg` only in the disposable frontend builder so the production image can validate the exact approved media.
+
 ## 2026-07-14 — Phase 1 copy stays inside the final reviewed frames
 
 - Narrowed the Couple + Boundaries social outcome to the guided form and payment context its manual take actually proves, removing the unsupported timeline claim before human playback approval.

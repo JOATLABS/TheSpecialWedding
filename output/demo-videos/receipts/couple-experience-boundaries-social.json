@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 2,
+  "demoId": "couple-experience-boundaries-social",
+  "captureMethod": "manual-visible-browser",
+  "recordedAt": "2026-07-15T04:09:06Z",
+  "appBuildCommit": "a494898bfadaf066356a8da7934bc3c110eaac0b",
+  "runtimeBuildIdentity": {
+    "origin": "http://127.0.0.1:3100",
+    "identitySelector": "meta[name=\"tsw-app-build-commit\"]",
+    "observedCommit": "a494898bfadaf066356a8da7934bc3c110eaac0b",
+    "verifiedAt": "2026-07-15T04:09:06Z"
+  },
+  "source": {
+    "artifactPath": "output/demo-videos/raw/couple-experience-boundaries-social.mp4",
+    "artifactSha256": "338b540fb05ecd540c83376bfd138af1fd2bdd89600aa933aa010cb218fb0b6a",
+    "byteLength": 173091,
+    "width": 1440,
+    "height": 900,
+    "durationSeconds": 20,
+    "captureBounds": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "operatorAttestation": {
+    "browserWasVisible": true,
+    "interactionsWereManual": true,
+    "scriptedBrowserCaptureWasUsed": false,
+    "dedicatedChannelTake": true,
+    "fullWindowWasVisible": true,
+    "browserAddressBarWasHidden": true,
+    "realCustomerDataWasExcluded": true,
+    "sideEffectsWereTriggered": false
+  },
+  "checkpoints": [
+    {
+      "label": "Boundaries planner intake",
+      "route": "/admin/forms/form_marketing_capture_couple_intake/edit",
+      "action": "Hold on the planner-controlled couple intake form and its structured questions.",
+      "visibleResult": "The planner owns the intake workflow and the information requested from the couple.",
+      "atSeconds": 2,
+      "frameSha256": "76c27bdcb579ea1641363edc5d680471b3704ac0aecf2211c21679eaad50e797"
+    },
+    {
+      "label": "Boundaries couple form",
+      "route": "/couple/dashboard",
+      "action": "Switch manually to the couple portal Forms view and inspect the assigned intake.",
+      "visibleResult": "The couple sees its assigned questionnaire and completion context without planner editing controls.",
+      "atSeconds": 7,
+      "frameSha256": "1f1b2003757c36b7e1f6ef822121e49da79aad7328d680d3101eca588debc885"
+    },
+    {
+      "label": "Boundaries couple payments",
+      "route": "/couple/dashboard",
+      "action": "Open Payments and hold on the package and schedule without using payment controls.",
+      "visibleResult": "The couple sees shared payment context while planner finance operations remain private.",
+      "atSeconds": 13,
+      "frameSha256": "d8dbbf7e3fab44e1341099484d292fbee7236040201c5a2c8656469baf39a7b9"
+    }
+  ],
+  "review": {
+    "reviewedFrameCount": 3,
+    "rawFrameReview": "approved",
+    "publicSafetyReview": "approved"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "demoId": "guest-management-demo",
+  "reviewedAt": "2026-07-15T09:36:41.208Z",
+  "reviewer": "Emmanuel Akinwale",
+  "reviewMethod": "human-normal-speed-playback",
+  "sidecars": {
+    "captions": {
+      "artifactPath": "public/demo-videos/captions/guest-management-demo.vtt",
+      "artifactSha256": "a644dc0fb770eb162b5b1f9097c4e04ac4d45e0c3ddd229378f414cf6edbb8b1",
+      "byteLength": 456
+    },
+    "transcript": {
+      "artifactPath": "public/demo-videos/transcripts/guest-management-demo.md",
+      "artifactSha256": "4c66ca6a658f28570e4074a621dc5eac42659264c6b58e8e186212a0a8f94acf",
+      "byteLength": 814
+    }
+  },
+  "targets": [
+    {
+      "format": "web-16x9",
+      "video": {
+        "artifactPath": "public/demo-videos/exports/guest-management-demo-16x9.mp4",
+        "artifactSha256": "24ac07c6c757255d4210d0d78bbaff2178bbe84bee346e483d77794b4176bcb9",
+        "byteLength": 3853064,
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 60.053333,
+        "hasAudio": true
+      },
+      "thumbnail": {
+        "artifactPath": "public/demo-videos/thumbnails/guest-management-demo-16x9.png",
+        "artifactSha256": "e11cd14430e83ccf82d81cc2c2ec97318fdb563c2af6ac43bcaf33ce21a19ff6",
+        "byteLength": 400429,
+        "width": 1920,
+        "height": 1080
+      },
+      "review": {
+        "fullNormalSpeedPlaybackCompleted": true,
+        "captionsApproved": true,
+        "narrationAndAudioApproved": true,
+        "fullUncroppedProductWindowApproved": true,
+        "localAndDevelopmentContentExcluded": true,
+        "privateContentExcluded": true,
+        "publicSafetyApproved": true
+      }
+    }
+  ],
+  "websitePlayback": {
+    "desktopApproved": true,
+    "mobileApproved": true
+  }
+}

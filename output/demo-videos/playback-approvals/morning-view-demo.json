@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "demoId": "morning-view-demo",
+  "reviewedAt": "2026-07-15T09:36:41.208Z",
+  "reviewer": "Emmanuel Akinwale",
+  "reviewMethod": "human-normal-speed-playback",
+  "sidecars": {
+    "captions": {
+      "artifactPath": "public/demo-videos/captions/morning-view-demo.vtt",
+      "artifactSha256": "c6e320c8802f22bbade9b126314ec15bb90582e8d7a9c3e6a5218cfe50db1748",
+      "byteLength": 429
+    },
+    "transcript": {
+      "artifactPath": "public/demo-videos/transcripts/morning-view-demo.md",
+      "artifactSha256": "9e59477d16c6d663ed9440a8e88144c457c5ad2cd05828bfd0e36d2ba6544d73",
+      "byteLength": 772
+    }
+  },
+  "targets": [
+    {
+      "format": "web-16x9",
+      "video": {
+        "artifactPath": "public/demo-videos/exports/morning-view-demo-16x9.mp4",
+        "artifactSha256": "f193d57aa2a17e89a0607c12f548d9c5a631a311b82625502d2eb1000d3b13c5",
+        "byteLength": 3669156,
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 60.053333,
+        "hasAudio": true
+      },
+      "thumbnail": {
+        "artifactPath": "public/demo-videos/thumbnails/morning-view-demo-16x9.png",
+        "artifactSha256": "8d022ac02d66794f9a35533a85d5a8e61186857d678b0f90c7346c3c9e7f0657",
+        "byteLength": 449882,
+        "width": 1920,
+        "height": 1080
+      },
+      "review": {
+        "fullNormalSpeedPlaybackCompleted": true,
+        "captionsApproved": true,
+        "narrationAndAudioApproved": true,
+        "fullUncroppedProductWindowApproved": true,
+        "localAndDevelopmentContentExcluded": true,
+        "privateContentExcluded": true,
+        "publicSafetyApproved": true
+      }
+    }
+  ],
+  "websitePlayback": {
+    "desktopApproved": true,
+    "mobileApproved": true
+  }
+}

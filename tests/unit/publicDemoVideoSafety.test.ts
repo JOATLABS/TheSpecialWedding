@@ -33,6 +33,22 @@ const RETAKE_REQUIRED_DEMO_IDS = [
   'team-permissions-audit-demo',
 ] as const;
 
+const APPROVED_PHASE_ONE_WEBSITE_DEMO_IDS = [
+  'planner-command-center-walkthrough',
+  'morning-view-demo',
+  'couple-portal-demo',
+  'microsite-auto-publishes-demo',
+  'guest-management-demo',
+  'seating-orchestrator-demo',
+  'contract-sign-pay-demo',
+  'vendor-directory-crm-demo',
+] as const;
+
+const approvedPhaseOneWebsiteIds = new Set<string>(APPROVED_PHASE_ONE_WEBSITE_DEMO_IDS);
+const unapprovedWebsiteDemoIds = RETAKE_REQUIRED_DEMO_IDS.filter(
+  (demoId) => !approvedPhaseOneWebsiteIds.has(demoId),
+);
+
 const PUBLIC_FIXTURE_LEAK_PATTERNS = [
   /Development/i,
   /Smoke/i,
@@ -52,7 +68,7 @@ const PUBLIC_ASSET_FIELDS = [
   'recordedAt',
 ] as const;
 
-const PUBLIC_DIRECT_ASSET_PATHS = RETAKE_REQUIRED_DEMO_IDS.flatMap((demoId) => [
+const UNAPPROVED_PUBLIC_DIRECT_ASSET_PATHS = unapprovedWebsiteDemoIds.flatMap((demoId) => [
   `public/demo-videos/raw/${demoId}.webm`,
   `public/demo-videos/raw/${demoId}.mp4`,
   `public/demo-videos/.render-input/${demoId}.mp4`,
@@ -62,6 +78,21 @@ const PUBLIC_DIRECT_ASSET_PATHS = RETAKE_REQUIRED_DEMO_IDS.flatMap((demoId) => [
   `public/demo-videos/thumbnails/${demoId}-9x16.png`,
   `public/demo-videos/captions/${demoId}.vtt`,
   `public/demo-videos/transcripts/${demoId}.md`,
+] as const);
+
+const APPROVED_PUBLIC_ASSET_PATHS = APPROVED_PHASE_ONE_WEBSITE_DEMO_IDS.flatMap((demoId) => [
+  `public/demo-videos/exports/${demoId}-16x9.mp4`,
+  `public/demo-videos/thumbnails/${demoId}-16x9.png`,
+  `public/demo-videos/captions/${demoId}.vtt`,
+  `public/demo-videos/transcripts/${demoId}.md`,
+] as const);
+
+const FORBIDDEN_APPROVED_PUBLIC_ASSET_PATHS = APPROVED_PHASE_ONE_WEBSITE_DEMO_IDS.flatMap((demoId) => [
+  `public/demo-videos/raw/${demoId}.webm`,
+  `public/demo-videos/raw/${demoId}.mp4`,
+  `public/demo-videos/.render-input/${demoId}.mp4`,
+  `public/demo-videos/exports/${demoId}-9x16.mp4`,
+  `public/demo-videos/thumbnails/${demoId}-9x16.png`,
 ] as const);
 
 function trackedPublicDemoAssets(): Set<string> {
@@ -144,7 +175,10 @@ describe('public demo video safety', () => {
   });
 
   it('publishes only demos with a complete explicit approval record', () => {
-    assert.deepEqual(Object.keys(APPROVED_PUBLIC_DEMO_VIDEO_PUBLICATIONS), []);
+    assert.deepEqual(
+      Object.keys(APPROVED_PUBLIC_DEMO_VIDEO_PUBLICATIONS),
+      [...APPROVED_PHASE_ONE_WEBSITE_DEMO_IDS],
+    );
 
     const homepageBandSource = readFileSync(
       'app/components/saas/HomepageTemplatesBand.tsx',
@@ -168,16 +202,22 @@ describe('public demo video safety', () => {
     assert.doesNotMatch(manifestSource, /IDS_REQUIRING_PUBLIC_RETAKE|attachPublishedDemoAssets/);
   });
 
-  it('does not expose unapproved walkthrough recordings through public demo props', () => {
+  it('exposes only explicitly approved walkthrough recordings through public demo props', () => {
     for (const demoId of RETAKE_REQUIRED_DEMO_IDS) {
       const demo = DEMO_VIDEO_PLAYLIST.find((candidate) => candidate.id === demoId);
       assert.ok(demo, `missing demo ${demoId}`);
 
       const publicDemo = toPublicDemoVideo(demo);
-      assert.equal(publicDemo.status, 'recording', `${demoId} should be marked for public retake`);
-
-      for (const field of PUBLIC_ASSET_FIELDS) {
-        assert.equal(publicDemo[field], undefined, `${demoId} leaked ${field}`);
+      if (approvedPhaseOneWebsiteIds.has(demoId)) {
+        assert.equal(publicDemo.status, 'published', `${demoId} should be published`);
+        for (const field of PUBLIC_ASSET_FIELDS) {
+          assert.ok(publicDemo[field], `${demoId} is missing ${field}`);
+        }
+      } else {
+        assert.equal(publicDemo.status, 'recording', `${demoId} should remain marked for public retake`);
+        for (const field of PUBLIC_ASSET_FIELDS) {
+          assert.equal(publicDemo[field], undefined, `${demoId} leaked ${field}`);
+        }
       }
     }
   });
@@ -193,19 +233,31 @@ describe('public demo video safety', () => {
     }
   });
 
-  it('keeps the homepage hero walkthrough in a retake-safe state until clean footage exists', () => {
+  it('publishes the approved homepage hero walkthrough with its canonical assets', () => {
     const publicHero = toPublicDemoVideo(HERO_DEMO_VIDEO);
 
-    assert.equal(publicHero.status, 'recording');
-    assert.equal(publicHero.assetUrl, undefined);
-    assert.equal(publicHero.thumbnailUrl, undefined);
+    assert.equal(publicHero.status, 'published');
+    assert.equal(
+      publicHero.assetUrl,
+      '/demo-videos/exports/planner-command-center-walkthrough-16x9.mp4',
+    );
+    assert.equal(
+      publicHero.thumbnailUrl,
+      '/demo-videos/thumbnails/planner-command-center-walkthrough-16x9.png',
+    );
     assert.equal(publicHero.title, 'Planner command center walkthrough');
   });
 
-  it('keeps retake-required demo files out of the deployable public asset tree', () => {
+  it('tracks only approved canonical assets in the deployable public tree', () => {
     const trackedAssets = trackedPublicDemoAssets();
-    for (const assetPath of PUBLIC_DIRECT_ASSET_PATHS) {
+    for (const assetPath of APPROVED_PUBLIC_ASSET_PATHS) {
+      assert.equal(trackedAssets.has(assetPath), true, `${assetPath} should be deployable`);
+    }
+    for (const assetPath of UNAPPROVED_PUBLIC_DIRECT_ASSET_PATHS) {
       assert.equal(trackedAssets.has(assetPath), false, `${assetPath} should not be deployable`);
+    }
+    for (const assetPath of FORBIDDEN_APPROVED_PUBLIC_ASSET_PATHS) {
+      assert.equal(trackedAssets.has(assetPath), false, `${assetPath} should stay out of public/`);
     }
   });
 });

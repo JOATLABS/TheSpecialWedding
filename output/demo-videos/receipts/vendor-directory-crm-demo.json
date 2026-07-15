@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 2,
+  "demoId": "vendor-directory-crm-demo",
+  "captureMethod": "manual-visible-browser",
+  "recordedAt": "2026-07-15T04:42:09Z",
+  "appBuildCommit": "2e2033e8e2fb3bfe7a06bfa4ea9f4f78e0533ab3",
+  "runtimeBuildIdentity": {
+    "origin": "http://127.0.0.1:3100",
+    "identitySelector": "meta[name=\"tsw-app-build-commit\"]",
+    "observedCommit": "2e2033e8e2fb3bfe7a06bfa4ea9f4f78e0533ab3",
+    "verifiedAt": "2026-07-15T04:26:00Z"
+  },
+  "source": {
+    "artifactPath": "output/demo-videos/raw/vendor-directory-crm-demo.mp4",
+    "artifactSha256": "3a0f6dee24aed2a7bb077d88e6055cc24c840c74639189c95e504e6bbf72df2a",
+    "byteLength": 702877,
+    "width": 1440,
+    "height": 900,
+    "durationSeconds": 60,
+    "captureBounds": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "operatorAttestation": {
+    "browserWasVisible": true,
+    "interactionsWereManual": true,
+    "scriptedBrowserCaptureWasUsed": false,
+    "fullWindowWasVisible": true,
+    "browserAddressBarWasHidden": true,
+    "realCustomerDataWasExcluded": true,
+    "sideEffectsWereTriggered": false
+  },
+  "checkpoints": [
+    {
+      "label": "Public vendor directory",
+      "route": "/vendors",
+      "action": "Search the public directory for Luna Meridian and inspect the single seeded matching result.",
+      "visibleResult": "The public directory shows one approved Luna Meridian Photography listing without requiring a vendor account.",
+      "atSeconds": 4,
+      "frameSha256": "065669265c415815c32a03c66ba9df3064934e86eff489f2c03757fd74613170"
+    },
+    {
+      "label": "Public vendor profile",
+      "route": "/vendors/67c400000000000000000001",
+      "action": "Open Luna Meridian Photography and inspect its services, price range, and contact details.",
+      "visibleResult": "The public profile presents the seeded vendor specialties and discovery information.",
+      "atSeconds": 11,
+      "frameSha256": "52e2248c5af1795996895a7840732aa1506958cfb760666cbc8270a8fb7fa92a"
+    },
+    {
+      "label": "Planner vendor overview",
+      "route": "/admin/vendors",
+      "action": "Manually switch to the prepared planner tab and inspect vendor, contract, paid, and outstanding totals.",
+      "visibleResult": "The planner overview summarizes the seeded vendor book and its contract and payment status.",
+      "atSeconds": 20,
+      "frameSha256": "7cbcac4757ecf2a9dea0f2aa3327a8010abe8528b7ecd49e7679868bf6b74282"
+    },
+    {
+      "label": "Private vendor directory",
+      "route": "/admin/vendors",
+      "action": "Open Vendor Directory and inspect the saved studio contacts and wedding counts.",
+      "visibleResult": "The planner-owned directory shows seeded contacts and private operational context.",
+      "atSeconds": 33,
+      "frameSha256": "c3d2e8f34538eb90653a9e7a63fcba3a080517e165ea20d6b94670415632a58e"
+    },
+    {
+      "label": "Planner contract context",
+      "route": "/admin/vendors",
+      "action": "Open Contracts and inspect the existing agreement amounts and statuses.",
+      "visibleResult": "The seeded agreements remain attached to the planner vendor workspace with visible status and value.",
+      "atSeconds": 50,
+      "frameSha256": "27515a8d316a4270e9ddcefe7be20e2f529dea810c22a0e6ba5b00c7e69e0172"
+    }
+  ],
+  "review": {
+    "reviewedFrameCount": 5,
+    "rawFrameReview": "approved",
+    "publicSafetyReview": "approved"
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 2,
+  "demoId": "connection-over-tools-social",
+  "captureMethod": "manual-visible-browser",
+  "recordedAt": "2026-07-15T03:51:56Z",
+  "appBuildCommit": "a494898bfadaf066356a8da7934bc3c110eaac0b",
+  "runtimeBuildIdentity": {
+    "origin": "http://127.0.0.1:3100",
+    "identitySelector": "meta[name=\"tsw-app-build-commit\"]",
+    "observedCommit": "a494898bfadaf066356a8da7934bc3c110eaac0b",
+    "verifiedAt": "2026-07-15T03:51:56Z"
+  },
+  "source": {
+    "artifactPath": "output/demo-videos/raw/connection-over-tools-social.mp4",
+    "artifactSha256": "6792ef20dde9695b6cd015d9e7c52b781dbc11bd8397fe46e0d56880a031deac",
+    "byteLength": 531003,
+    "width": 1440,
+    "height": 900,
+    "durationSeconds": 30,
+    "captureBounds": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "operatorAttestation": {
+    "browserWasVisible": true,
+    "interactionsWereManual": true,
+    "scriptedBrowserCaptureWasUsed": false,
+    "dedicatedChannelTake": true,
+    "fullWindowWasVisible": true,
+    "browserAddressBarWasHidden": true,
+    "realCustomerDataWasExcluded": true,
+    "sideEffectsWereTriggered": false
+  },
+  "checkpoints": [
+    {
+      "label": "Connection planner source",
+      "route": "/admin/weddings/wedding_marketing_capture_sofia_daniel",
+      "action": "Open Events and hold on The Glasshouse at Riverbend at 4:00 PM.",
+      "visibleResult": "The planner-owned event record shows The Glasshouse at Riverbend and the 4:00 PM start.",
+      "atSeconds": 4,
+      "frameSha256": "9c935ce75b6c3f5e5bef2639b0e8d8f9d5adebb9376fa851f094bd24db745a08"
+    },
+    {
+      "label": "Connection guest view",
+      "route": "/sofia-and-daniel",
+      "action": "Switch manually to the public schedule and hold on the same venue and time.",
+      "visibleResult": "The public wedding schedule shows the Glasshouse venue and 4:00 PM without planner controls.",
+      "atSeconds": 12,
+      "frameSha256": "344d172e0af520ab38466e6c22aae6c0c97d7f255fad57bd6e262706198db779"
+    },
+    {
+      "label": "Connection couple view",
+      "route": "/couple/dashboard",
+      "action": "Switch manually to the couple Timeline and hold on the matching event plan.",
+      "visibleResult": "The couple Timeline presents the same Glasshouse event inside the guided couple workspace.",
+      "atSeconds": 22,
+      "frameSha256": "27fe59cf66a27307117a33495e7b69d260c4526a4b6507e56a4f308d53c03d12"
+    }
+  ],
+  "review": {
+    "reviewedFrameCount": 3,
+    "rawFrameReview": "approved",
+    "publicSafetyReview": "approved"
+  }
+}

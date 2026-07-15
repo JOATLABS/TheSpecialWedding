@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "demoId": "seating-orchestrator-demo",
+  "reviewedAt": "2026-07-15T09:36:41.208Z",
+  "reviewer": "Emmanuel Akinwale",
+  "reviewMethod": "human-normal-speed-playback",
+  "sidecars": {
+    "captions": {
+      "artifactPath": "public/demo-videos/captions/seating-orchestrator-demo.vtt",
+      "artifactSha256": "5573cd1586c3ede905a62d8e17adda00182e6752f71c22f578036a3f3b14cb8d",
+      "byteLength": 335
+    },
+    "transcript": {
+      "artifactPath": "public/demo-videos/transcripts/seating-orchestrator-demo.md",
+      "artifactSha256": "a6d9c23657c3f9c11310290a0a00d7ef2f2289fe7687965b40ddbe047fb338c2",
+      "byteLength": 718
+    }
+  },
+  "targets": [
+    {
+      "format": "web-16x9",
+      "video": {
+        "artifactPath": "public/demo-videos/exports/seating-orchestrator-demo-16x9.mp4",
+        "artifactSha256": "7cf3ee780f865915698faceacc2ac8a0f5a7b889b1394d8455570d4fe92633bd",
+        "byteLength": 4150981,
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 60.053333,
+        "hasAudio": true
+      },
+      "thumbnail": {
+        "artifactPath": "public/demo-videos/thumbnails/seating-orchestrator-demo-16x9.png",
+        "artifactSha256": "4f7dacc2bc5fcee0f2f362df8d9b69bd286d4d1a33245ebaa01db410d487880e",
+        "byteLength": 599781,
+        "width": 1920,
+        "height": 1080
+      },
+      "review": {
+        "fullNormalSpeedPlaybackCompleted": true,
+        "captionsApproved": true,
+        "narrationAndAudioApproved": true,
+        "fullUncroppedProductWindowApproved": true,
+        "localAndDevelopmentContentExcluded": true,
+        "privateContentExcluded": true,
+        "publicSafetyApproved": true
+      }
+    }
+  ],
+  "websitePlayback": {
+    "desktopApproved": true,
+    "mobileApproved": true
+  }
+}

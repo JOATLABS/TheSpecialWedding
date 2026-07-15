@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "demoId": "contract-sign-pay-demo",
+  "reviewedAt": "2026-07-15T09:36:41.208Z",
+  "reviewer": "Emmanuel Akinwale",
+  "reviewMethod": "human-normal-speed-playback",
+  "sidecars": {
+    "captions": {
+      "artifactPath": "public/demo-videos/captions/contract-sign-pay-demo.vtt",
+      "artifactSha256": "32616e11ee60adb6f6a018c3c3af51f8182f545a7c6648faf9aa22272860766c",
+      "byteLength": 388
+    },
+    "transcript": {
+      "artifactPath": "public/demo-videos/transcripts/contract-sign-pay-demo.md",
+      "artifactSha256": "306352ceea48aec904bacfe0328d540ba4c50790febc7b0a99e2be0a6fe983d4",
+      "byteLength": 794
+    }
+  },
+  "targets": [
+    {
+      "format": "web-16x9",
+      "video": {
+        "artifactPath": "public/demo-videos/exports/contract-sign-pay-demo-16x9.mp4",
+        "artifactSha256": "561069603db906d071a5419224ee4e0deaa7d8bfb92fd813c3bf508fd9ed5ef5",
+        "byteLength": 3087285,
+        "width": 1920,
+        "height": 1080,
+        "durationSeconds": 50.048,
+        "hasAudio": true
+      },
+      "thumbnail": {
+        "artifactPath": "public/demo-videos/thumbnails/contract-sign-pay-demo-16x9.png",
+        "artifactSha256": "6b7d320f1e655d11058ca7c72c0f83e1fb08f29507b99a22d06d265f23324e35",
+        "byteLength": 270830,
+        "width": 1920,
+        "height": 1080
+      },
+      "review": {
+        "fullNormalSpeedPlaybackCompleted": true,
+        "captionsApproved": true,
+        "narrationAndAudioApproved": true,
+        "fullUncroppedProductWindowApproved": true,
+        "localAndDevelopmentContentExcluded": true,
+        "privateContentExcluded": true,
+        "publicSafetyApproved": true
+      }
+    }
+  ],
+  "websitePlayback": {
+    "desktopApproved": true,
+    "mobileApproved": true
+  }
+}

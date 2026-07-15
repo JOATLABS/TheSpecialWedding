@@ -534,6 +534,13 @@ describe('Phase 1 social video playback approval', () => {
     assert.deepEqual(result.formats, ['social-9x16']);
   });
 
+  it('accepts sub-frame container timing drift on the approved 35-second social cut', () => {
+    assert.doesNotThrow(() => validateDemoVideoPlaybackApproval(
+      'built-for-planners-social',
+      { rootDir: ROOT },
+    ));
+  });
+
   it('requires social playback approval and rejects a website playback attestation', () => {
     for (const field of ['portraitMobileApproved', 'safeAreaApproved'] as const) {
       const receipt = cloneReceipt(approvedReceipt);

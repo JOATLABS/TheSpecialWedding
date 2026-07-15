@@ -115,7 +115,9 @@ jobs:
         run: npm run type-check
 
       - name: Verify published capture ancestry
-        run: npm run demo:validate-published-ancestry
+        run: |
+          npm run demo:validate-published-ancestry
+          npm run demo:validate-published-video-ancestry
 
       - name: Frontend build
         run: npm run build

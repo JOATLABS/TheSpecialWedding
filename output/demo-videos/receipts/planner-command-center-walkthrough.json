@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 2,
+  "demoId": "planner-command-center-walkthrough",
+  "captureMethod": "manual-visible-browser",
+  "recordedAt": "2026-07-14T22:11:04Z",
+  "appBuildCommit": "93e8a1c2ff217876004df948eb44f77fc9f7d189",
+  "runtimeBuildIdentity": {
+    "origin": "http://127.0.0.1:3100",
+    "identitySelector": "meta[name=\"tsw-app-build-commit\"]",
+    "observedCommit": "93e8a1c2ff217876004df948eb44f77fc9f7d189",
+    "verifiedAt": "2026-07-14T22:11:04Z"
+  },
+  "source": {
+    "artifactPath": "output/demo-videos/raw/planner-command-center-walkthrough.mp4",
+    "artifactSha256": "06f39c5e8803a077e25f0da0efec951ead12984aa06b2456682e0020d79a4d20",
+    "byteLength": 15118167,
+    "width": 1440,
+    "height": 900,
+    "durationSeconds": 73.966667,
+    "captureBounds": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "operatorAttestation": {
+    "browserWasVisible": true,
+    "interactionsWereManual": true,
+    "scriptedBrowserCaptureWasUsed": false,
+    "fullWindowWasVisible": true,
+    "browserAddressBarWasHidden": true,
+    "realCustomerDataWasExcluded": true,
+    "sideEffectsWereTriggered": false
+  },
+  "checkpoints": [
+    {
+      "label": "Planner command center",
+      "route": "/admin/planner",
+      "action": "Scan both active wedding cards, then choose Manage for Sofia & Daniel.",
+      "visibleResult": "Two active weddings show populated progress and Sofia & Daniel is the connected story to follow.",
+      "atSeconds": 3,
+      "frameSha256": "045e9d22bdad9c68e8ed6b0e2e1b1dc1b5721721517623a28d78cac5f6d1897d"
+    },
+    {
+      "label": "Wedding event source",
+      "route": "/admin/weddings/wedding_marketing_capture_sofia_daniel",
+      "action": "Open Events and inspect the Traditional event venue and 4:00 PM start time.",
+      "visibleResult": "The planner source record shows The Glasshouse at Riverbend and the 4:00 PM event time.",
+      "atSeconds": 15,
+      "frameSha256": "b97763252379c33f69216144171f88099d9a3a28d03e718a30beca1ed57d2c76"
+    },
+    {
+      "label": "Public event plan",
+      "route": "/sofia-and-daniel",
+      "action": "Manually switch to the prepared public tab and inspect the same event details.",
+      "visibleResult": "The public schedule shows The Glasshouse at Riverbend and 4:00 PM without planner controls.",
+      "atSeconds": 35,
+      "frameSha256": "5bb2c8cc65443ce28ff383c6de76d63a165b0d26a42eeb5fc63db164e1bb3995"
+    },
+    {
+      "label": "Couple timeline",
+      "route": "/couple/dashboard",
+      "action": "Manually switch to the prepared couple tab, open Timeline, and inspect the same event.",
+      "visibleResult": "The couple Timeline shows the same Glasshouse venue and 4:00 PM plan in its guided portal.",
+      "atSeconds": 45,
+      "frameSha256": "baef219dc06f4e8d3559e33f1b7d252f52cd6357c53616c2d5d5bf4a7bbdef30"
+    },
+    {
+      "label": "Guest response context",
+      "route": "/admin/guests",
+      "action": "Return to the planner tab, open Guests, and filter the seeded table to Declined.",
+      "visibleResult": "The planner sees the Declined slice as operational context for the same wedding.",
+      "atSeconds": 55,
+      "frameSha256": "b17043f43949e2ce7ce26812cda8e6d9cc6889619439ffb377bdc83895f813b9"
+    },
+    {
+      "label": "Return to command center",
+      "route": "/admin/planner",
+      "action": "Return to the planner command center and pause on the connected portfolio.",
+      "visibleResult": "The two active weddings and their next actions remain visible.",
+      "atSeconds": 69,
+      "frameSha256": "417ebc9ce95ebd838344d1ee824b8d25aa8467d5636c7d5f2c09d505029b7290"
+    }
+  ],
+  "review": {
+    "reviewedFrameCount": 6,
+    "rawFrameReview": "approved",
+    "publicSafetyReview": "approved"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "demoId": "connection-over-tools-social",
+  "reviewedAt": "2026-07-15T09:36:41.208Z",
+  "reviewer": "Emmanuel Akinwale",
+  "reviewMethod": "human-normal-speed-playback",
+  "sidecars": {
+    "captions": {
+      "artifactPath": "public/demo-videos/captions/connection-over-tools-social.vtt",
+      "artifactSha256": "4ad2f78c1cd3eee1e60da8717fb547fb17e2ef33148fc4d3f77503dcbbb3507f",
+      "byteLength": 352
+    },
+    "transcript": {
+      "artifactPath": "public/demo-videos/transcripts/connection-over-tools-social.md",
+      "artifactSha256": "c9954e4c7c3ac910a87e5ba53c1185ea7fb4158a61bc9835635ba47ce9b7513d",
+      "byteLength": 701
+    }
+  },
+  "targets": [
+    {
+      "format": "social-9x16",
+      "video": {
+        "artifactPath": "public/demo-videos/exports/connection-over-tools-social-9x16.mp4",
+        "artifactSha256": "eccc9d93f10d51a1d55615f670db9731137e7705b984cba93247dec8c3240931",
+        "byteLength": 2080951,
+        "width": 1080,
+        "height": 1920,
+        "durationSeconds": 30,
+        "hasAudio": true
+      },
+      "thumbnail": {
+        "artifactPath": "public/demo-videos/thumbnails/connection-over-tools-social-9x16.png",
+        "artifactSha256": "9f6e9b7ba1bdf955d9b8c7ceae02182674c6397a80e57db69986058c2280c71c",
+        "byteLength": 722883,
+        "width": 1080,
+        "height": 1920
+      },
+      "review": {
+        "fullNormalSpeedPlaybackCompleted": true,
+        "captionsApproved": true,
+        "narrationAndAudioApproved": true,
+        "fullUncroppedProductWindowApproved": true,
+        "localAndDevelopmentContentExcluded": true,
+        "privateContentExcluded": true,
+        "publicSafetyApproved": true
+      }
+    }
+  ],
+  "socialPlayback": {
+    "portraitMobileApproved": true,
+    "safeAreaApproved": true
+  }
+}

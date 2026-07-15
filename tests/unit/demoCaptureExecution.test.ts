@@ -11,7 +11,10 @@ import {
 } from '../../app/data/demoVideos';
 import { withTemporaryRenderInput } from '../../scripts/demo-videos/render-demo-video';
 import { findUnexpectedPublicRenderInputs } from '../../scripts/demo-videos/render-input-safety';
-import { validateManualCaptureCheckpoints } from '../../scripts/demo-videos/validate-manual-demo-video';
+import {
+  validateManualCaptureCheckpoints,
+  validateManualDemoVideo,
+} from '../../scripts/demo-videos/validate-manual-demo-video';
 
 const ROOT = process.cwd();
 
@@ -66,6 +69,9 @@ describe('demo capture execution', () => {
     assert.match(validator, /--untracked-files=all/);
     assert.doesNotMatch(validator, /--untracked-files=no/);
     assert.match(validator, /requires a clean worktree/);
+    assert.match(validator, /allowStagedPublicationChanges/);
+    assert.match(validator, /--exclude-standard/);
+    assert.match(validator, /unstaged or untracked changes/);
     assert.match(validator, /artifactSha256/);
     assert.match(validator, /capture bounds must preserve the entire product window/);
     assert.doesNotMatch(validator, /playwright|puppeteer|chromium/i);
@@ -96,12 +102,77 @@ describe('demo capture execution', () => {
     assert.match(productionValidator, /Missing narration/);
     assert.match(productionValidator, /Temporary Remotion narration input remains/);
     assert.match(productionValidator, /validateDemoVideoPlaybackApproval\(demoId\)/);
+    assert.match(
+      productionValidator,
+      /allowStagedPublicationChanges:\s*demo\.status === 'published'/,
+    );
 
     const layout = source('app/layout.tsx');
     assert.match(layout, /<meta name="tsw-app-build-commit" content=\{appBuildCommit\} \/>/);
     const nextConfig = source('next.config.js');
     assert.match(nextConfig, /git', \['rev-parse', 'HEAD'\]/);
     assert.match(nextConfig, /NEXT_PUBLIC_APP_BUILD_COMMIT:\s*appBuildCommit/);
+  });
+
+  it('keeps the published artifact gate Docker-safe while CI retains Git ancestry proof', () => {
+    const temporaryDirectory = mkdtempSync(path.join(os.tmpdir(), 'demo-video-gitless-'));
+    const receiptPath = path.join(
+      ROOT,
+      'output/demo-videos/receipts/contract-sign-pay-demo.json',
+    );
+    const receipt = JSON.parse(source(
+      'output/demo-videos/receipts/contract-sign-pay-demo.json',
+    )) as {
+      appBuildCommit: string;
+      runtimeBuildIdentity: { observedCommit: string };
+    };
+    const unknownBuild = '0'.repeat(40);
+    receipt.appBuildCommit = unknownBuild;
+    receipt.runtimeBuildIdentity.observedCommit = unknownBuild;
+    const gitlessReceiptPath = path.join(temporaryDirectory, 'contract-sign-pay-demo.json');
+    writeFileSync(gitlessReceiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+
+    try {
+      assert.doesNotThrow(
+        () => validateManualDemoVideo(
+          gitlessReceiptPath,
+          { verifyGitAncestry: false },
+        ),
+        'the Docker-safe artifact validator must not invoke Git',
+      );
+      assert.throws(
+        () => validateManualDemoVideo(
+          gitlessReceiptPath,
+          { verifyGitAncestry: true },
+        ),
+        /Git could not verify the recording build/,
+      );
+    } finally {
+      rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
+
+    assert.equal(existsSync(receiptPath), true);
+
+    const packageConfig = JSON.parse(source('package.json')) as {
+      scripts: Record<string, string>;
+    };
+    assert.equal(
+      packageConfig.scripts['demo:validate-published-video-ancestry'],
+      'tsx scripts/demo-videos/validate-demo-video-production.ts --published --verify-git-ancestry',
+    );
+    assert.doesNotMatch(
+      packageConfig.scripts.build,
+      /--verify-git-ancestry|validate-published-video-ancestry/,
+    );
+
+    const ci = source('.github/workflows/ci.yml');
+    assert.match(ci, /npm run demo:validate-published-video-ancestry/);
+
+    const dockerfile = source('Dockerfile.frontend');
+    assert.match(dockerfile, /RUN apk add --no-cache ffmpeg/);
+
+    const dockerignore = source('.dockerignore');
+    assert.match(dockerignore, /!public\/demo-videos\/transcripts\/\*\.md/);
   });
 
   it('requires the ordered hero journey instead of accepting duplicate placeholder checkpoints', () => {

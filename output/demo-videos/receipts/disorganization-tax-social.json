@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 2,
+  "demoId": "disorganization-tax-social",
+  "captureMethod": "manual-visible-browser",
+  "recordedAt": "2026-07-15T04:01:06Z",
+  "appBuildCommit": "a494898bfadaf066356a8da7934bc3c110eaac0b",
+  "runtimeBuildIdentity": {
+    "origin": "http://127.0.0.1:3100",
+    "identitySelector": "meta[name=\"tsw-app-build-commit\"]",
+    "observedCommit": "a494898bfadaf066356a8da7934bc3c110eaac0b",
+    "verifiedAt": "2026-07-15T04:01:06Z"
+  },
+  "source": {
+    "artifactPath": "output/demo-videos/raw/disorganization-tax-social.mp4",
+    "artifactSha256": "ed8e6105c9e9b73f7c963abda3de3d766ac30ae834a8e198c8f362cf821d84f7",
+    "byteLength": 444421,
+    "width": 1440,
+    "height": 900,
+    "durationSeconds": 25,
+    "captureBounds": { "x": 0, "y": 0, "width": 1440, "height": 900 }
+  },
+  "operatorAttestation": {
+    "browserWasVisible": true,
+    "interactionsWereManual": true,
+    "scriptedBrowserCaptureWasUsed": false,
+    "dedicatedChannelTake": true,
+    "fullWindowWasVisible": true,
+    "browserAddressBarWasHidden": true,
+    "realCustomerDataWasExcluded": true,
+    "sideEffectsWereTriggered": false
+  },
+  "checkpoints": [
+    {
+      "label": "Disorganization morning view",
+      "route": "/admin/planner",
+      "action": "Scan the two populated wedding cards and their attention signals.",
+      "visibleResult": "Morning View distinguishes two active weddings through current progress and next-action context.",
+      "atSeconds": 3,
+      "frameSha256": "58d9651871ca54da4f3fffc22fc1b9bf67a7956bd56d3ddbdb73d481c7430d2c"
+    },
+    {
+      "label": "Disorganization conversation queue",
+      "route": "/admin/communications/inbox",
+      "action": "Open the seeded planner inbox and hold on the wedding-scoped conversation queue.",
+      "visibleResult": "Guest, couple, and support conversations appear in one planner-owned operational inbox.",
+      "atSeconds": 10,
+      "frameSha256": "645af14ed6ea4dc867538781634f39c2ee7f51efa14c4ea6e05f13a4240b8de0"
+    },
+    {
+      "label": "Disorganization budget context",
+      "route": "/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel",
+      "action": "Open the Sofia & Daniel budget and hold on category spend and remaining funds.",
+      "visibleResult": "The populated wedding budget keeps current spend and remaining funds visible in the same workspace.",
+      "atSeconds": 18,
+      "frameSha256": "0d8aacd4e980b8b990709e0e6ffee534887373685c4b922d12a439a31ae1142d"
+    }
+  ],
+  "review": {
+    "reviewedFrameCount": 3,
+    "rawFrameReview": "approved",
+    "publicSafetyReview": "approved"
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 2,
+  "demoId": "contract-sign-pay-demo",
+  "captureMethod": "manual-visible-browser",
+  "recordedAt": "2026-07-15T00:54:15Z",
+  "appBuildCommit": "1c7f7dbdb90ff74f41f8bf46b7a9f9114df3b10f",
+  "runtimeBuildIdentity": {
+    "origin": "http://127.0.0.1:3100",
+    "identitySelector": "meta[name=\"tsw-app-build-commit\"]",
+    "observedCommit": "1c7f7dbdb90ff74f41f8bf46b7a9f9114df3b10f",
+    "verifiedAt": "2026-07-15T00:54:15Z"
+  },
+  "source": {
+    "artifactPath": "output/demo-videos/raw/contract-sign-pay-demo.mp4",
+    "artifactSha256": "71e8df56fc11b042fe3e35ed6e3cd3d3d85403ad38d60fd012e56c7e7218f267",
+    "byteLength": 598609,
+    "width": 1440,
+    "height": 900,
+    "durationSeconds": 50,
+    "captureBounds": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "operatorAttestation": {
+    "browserWasVisible": true,
+    "interactionsWereManual": true,
+    "scriptedBrowserCaptureWasUsed": false,
+    "fullWindowWasVisible": true,
+    "browserAddressBarWasHidden": true,
+    "realCustomerDataWasExcluded": true,
+    "sideEffectsWereTriggered": false
+  },
+  "checkpoints": [
+    {
+      "label": "Planner contract record",
+      "route": "/admin/vendors/contracts/67c100000000000000000001",
+      "action": "Inspect the existing agreement, vendor, amount, status, and key dates in the planner workspace.",
+      "visibleResult": "The seeded Photography Services Agreement shows its vendor, value, status, version, and dates.",
+      "atSeconds": 5,
+      "frameSha256": "dcd08da76c96aa6eb894178099bdb6337d4b151c520f1cf83988715f2e0b5a93"
+    },
+    {
+      "label": "Contract canvas output",
+      "route": "/admin/vendors/contracts/67c100000000000000000001",
+      "action": "Open Contract Sections and inspect the rendered scope, clauses, and terms in the read-only view.",
+      "visibleResult": "The read-only contract canvas presents the seeded agreement sections and legal terms.",
+      "atSeconds": 17,
+      "frameSha256": "18c6f57ff1406f408b9cf63929c33125e4f2482777107e916513a9b190d027f0"
+    },
+    {
+      "label": "Vendor payment milestones",
+      "route": "/admin/vendors/contracts/67c100000000000000000001",
+      "action": "Open Payments and inspect the seeded deposit and remaining contract milestones.",
+      "visibleResult": "Payment Milestones shows the existing schedule and status without initiating a transaction.",
+      "atSeconds": 29,
+      "frameSha256": "12f798973672a150c5024e1ea991dfe491562fab00c3749e599f80f2857abbd6"
+    },
+    {
+      "label": "Wedding budget context",
+      "route": "/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel",
+      "action": "Return to the wedding budget and inspect the recorded vendor spend and category totals.",
+      "visibleResult": "The budget shows populated planned-versus-actual vendor spend for the same wedding workspace.",
+      "atSeconds": 42,
+      "frameSha256": "6ac91dbe1c1dbf2a83b3a73a1fa3117b123ba8b0607f6a0686b672a30dc9462b"
+    }
+  ],
+  "review": {
+    "reviewedFrameCount": 4,
+    "rawFrameReview": "approved",
+    "publicSafetyReview": "approved"
+  }
+}
