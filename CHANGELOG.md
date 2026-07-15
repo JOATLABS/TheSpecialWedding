@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-14 — Couple portal payments use the canonical contract schedule
+
+- Fixed both couple-portal contract summaries to read the contract's canonical `scheduled_payments` rows and signed package snapshot instead of the unused embedded `contract.payments` field. The read-only portal now shows the seeded package name, $12,800 total, $3,200 paid, $9,600 remaining, and the current milestone statuses consistently on the dashboard and contract detail path.
+- Added focused regression coverage for dashboard/detail parity. This closes a walkthrough-blocking false-zero state without adding payment controls or changing planner-only operations.
+
 ## 2026-07-14 — Hero walkthrough timing follows the captured journey
 
 - Aligned the hero walkthrough's authored scene boundaries to the genuine manually driven full-window take: planner event proof holds through 0:30, followed by the public microsite, couple timeline, declined guest slice, command-center return, and five-second activation outro. Native WebVTT generation now follows the visible scene cadence instead of introducing the public narration before its product view appears. The local narration remains provisional until a human normal-speed playback approval is recorded; no publication approval was added.

@@ -301,6 +301,41 @@ class CouplePortalService:
             logger.error(f"Error getting budget summary for wedding {wedding_id}: {e}")
             return {"total_budget": 0, "total_spent": 0, "remaining": 0}
 
+    async def _get_contract_payments(self, contract: Dict[str, Any]) -> List[Dict]:
+        """Read the canonical scheduled-payment rows for a client contract."""
+        contract_id = str(contract["_id"])
+        cursor = (
+            mongo.db["scheduled_payments"]
+            .find({"contract_id": contract_id})
+            .sort("due_date", 1)
+        )
+        scheduled_payments = await cursor.to_list(length=None)
+        source_payments = scheduled_payments or contract.get("payments") or []
+
+        return [
+            {
+                "id": str(payment.get("id") or payment.get("_id")),
+                "name": payment.get("name"),
+                "amount": float(payment.get("amount", 0) or 0),
+                "currency": payment.get("currency", "usd"),
+                "due_date": payment.get("due_date"),
+                "status": payment.get("status"),
+                "paid_at": payment.get("paid_at"),
+            }
+            for payment in source_payments
+        ]
+
+    @staticmethod
+    def _contract_total_amount(contract: Dict[str, Any], payments: List[Dict]) -> float:
+        """Prefer the signed package total, with legacy fallbacks."""
+        package_snapshot = contract.get("package_snapshot") or {}
+        total_amount = package_snapshot.get("total_amount")
+        if total_amount is None:
+            total_amount = contract.get("total_amount")
+        if total_amount is None:
+            total_amount = sum(payment.get("amount", 0) or 0 for payment in payments)
+        return float(total_amount or 0)
+
     async def _get_contract_info(
         self, wedding_id: str, couple_email: str
     ) -> Optional[Dict]:
@@ -311,6 +346,8 @@ class CouplePortalService:
                 {
                     "status": 1,
                     "package_name": 1,
+                    "package_snapshot": 1,
+                    "total_amount": 1,
                     "signed_at": 1,
                     "payments": 1,
                 },
@@ -323,6 +360,8 @@ class CouplePortalService:
                     {
                         "status": 1,
                         "package_name": 1,
+                        "package_snapshot": 1,
+                        "total_amount": 1,
                         "signed_at": 1,
                         "payments": 1,
                     },
@@ -331,30 +370,20 @@ class CouplePortalService:
             if not contract:
                 return None
 
-            # Get payments
-            payments = []
-            for p in contract.get("payments", []):
-                payments.append(
-                    {
-                        "id": p.get("id"),
-                        "name": p.get("name"),
-                        "amount": p.get("amount"),
-                        "currency": p.get("currency", "usd"),
-                        "due_date": p.get("due_date"),
-                        "status": p.get("status"),
-                        "paid_at": p.get("paid_at"),
-                    }
-                )
-
-            total_amount = sum(p.get("amount", 0) for p in payments)
+            payments = await self._get_contract_payments(contract)
+            total_amount = self._contract_total_amount(contract, payments)
             paid_amount = sum(
-                p.get("amount", 0) for p in payments if p.get("status") == "succeeded"
+                (p.get("amount", 0) or 0)
+                for p in payments
+                if p.get("status") == "succeeded"
             )
+            package_snapshot = contract.get("package_snapshot") or {}
 
             return {
                 "id": str(contract["_id"]),
                 "status": contract.get("status"),
-                "package_name": contract.get("package_name"),
+                "package_name": contract.get("package_name")
+                or package_snapshot.get("name"),
                 "signed_at": (
                     contract.get("signed_at").isoformat()
                     if contract.get("signed_at")
@@ -510,25 +539,14 @@ class CouplePortalService:
             if not contract:
                 return None
 
-            # Build payments summary
-            payments = []
-            for p in contract.get("payments", []):
-                payments.append(
-                    {
-                        "id": p.get("id"),
-                        "name": p.get("name"),
-                        "amount": p.get("amount"),
-                        "currency": p.get("currency", "usd"),
-                        "due_date": p.get("due_date"),
-                        "status": p.get("status"),
-                        "paid_at": p.get("paid_at"),
-                    }
-                )
-
-            total_amount = sum(p.get("amount", 0) for p in payments)
+            payments = await self._get_contract_payments(contract)
+            total_amount = self._contract_total_amount(contract, payments)
             paid_amount = sum(
-                p.get("amount", 0) for p in payments if p.get("status") == "succeeded"
+                (p.get("amount", 0) or 0)
+                for p in payments
+                if p.get("status") == "succeeded"
             )
+            package_snapshot = contract.get("package_snapshot") or {}
 
             # Extract sections (terms, scope, etc.) — safe for couple to read
             sections = []
@@ -543,7 +561,8 @@ class CouplePortalService:
             return {
                 "id": str(contract["_id"]),
                 "status": contract.get("status"),
-                "package_name": contract.get("package_name"),
+                "package_name": contract.get("package_name")
+                or package_snapshot.get("name"),
                 "couple_name": contract.get("couple", {}).get("name"),
                 "couple_email": contract.get("couple", {}).get("email"),
                 "signed_at": (
