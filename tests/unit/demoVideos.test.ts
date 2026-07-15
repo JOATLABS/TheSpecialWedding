@@ -167,8 +167,13 @@ describe('demo video manifest', () => {
     assert.doesNotMatch(joinedCopy(morningView), /final 16:9 crop|payment|message|milestone/i);
     assert.match(joinedCopy(morningView), /RSVP/i);
     assert.doesNotMatch(joinedCopy(couplePortal), /review, respond, and self-serve/i);
+    assert.doesNotMatch(joinedCopy(couplePortal), /rehearsal|brunch/i);
+    assert.match(joinedCopy(couplePortal), /Traditional Ceremony/i);
+    assert.match(joinedCopy(couplePortal), /run of show/i);
     assert.equal(microsite.title, 'Planner Record → Public Microsite');
     assert.doesNotMatch(joinedCopy(microsite), /auto-publish|latest plan|reads from|built from/i);
+    assert.doesNotMatch(joinedCopy(microsite), /story, theme, slug|same seeded story and schedule/i);
+    assert.match(joinedCopy(microsite), /privacy/i);
     assert.doesNotMatch(joinedCopy(guestManagement), /when one guest changes|updates the rest/i);
     assert.doesNotMatch(joinedCopy(guestManagement), /expand|household|accessibility|guest token/i);
     assert.match(joinedCopy(guestManagement), /collapsed/i);

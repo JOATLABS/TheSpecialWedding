@@ -2961,7 +2961,7 @@ async def _seed_vendor_directory_fixture(
             "notes": "Preferred for polished communication, clear scope, and reliable event-week follow-through.",
             "internal_notes": "Confirmed scope, contact preferences, and event-week follow-through.",
             "internal_rating": 5 if index in {0, 1, 3} else 4,
-            "portfolio_urls": [fixture["website"]],
+            "portfolio_urls": [],
             "weddings_count": 3 if index < 4 else 1,
             "total_revenue": float(
                 fixture.get("contracted_amount") or fixture["quoted_amount"]

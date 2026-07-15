@@ -414,9 +414,9 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         label: 'Shared timeline',
         route: '/couple/dashboard',
-        action: 'Open Timeline and inspect the seeded rehearsal, ceremony, reception, and brunch schedule.',
+        action: 'Open Timeline, expand Traditional Ceremony, and inspect its three-item run of show.',
         visibleResult:
-          'The couple-facing timeline presents the seeded event plan and wedding timezone clearly.',
+          'The couple-facing timeline shows the ceremony time, venue, and seeded processional, cocktail-hour, and reception-door cues.',
       },
       {
         label: 'Payment schedule',
@@ -444,7 +444,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       },
       {
         timestamp: '0:12-0:38',
-        action: 'Open Timeline, then Payments, and inspect the shared schedule and financial context.',
+        action: 'Open Timeline, expand Traditional Ceremony, then open Payments and inspect the shared financial context.',
         voiceover: 'The schedule and payment context couples usually ask about stay tied to the wedding record they already share with the planner.',
       },
       {
@@ -473,16 +473,16 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         label: 'Planner source record',
         route: '/admin/weddings/wedding_marketing_capture_sofia_daniel',
-        action: 'Inspect the seeded story, theme, slug, and event schedule without changing any fields.',
+        action: 'Inspect the seeded story, theme, and privacy settings without changing any fields.',
         visibleResult:
-          'The planner source record contains the public story, branding, and event-day content.',
+          'The planner source record contains the public story, branding, and guest-access configuration.',
       },
       {
         label: 'Public wedding view',
         route: '/sofia-and-daniel',
-        action: 'Manually switch to the prepared public microsite and compare its story and schedule with the planner record.',
+        action: 'Manually switch to the prepared public microsite and inspect its story, venue, and event-day presentation.',
         visibleResult:
-          'The guest-facing microsite presents Sofia & Daniel with the same seeded story and schedule.',
+          'The guest-facing microsite presents Sofia & Daniel with the seeded story, approved venue, and event-day details.',
       },
       {
         label: 'Public gallery',
@@ -498,13 +498,13 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     script: [
       {
         timestamp: '0:00-0:12',
-        action: 'Open the wedding source record and inspect its slug, theme, story, and schedule fields.',
-        voiceover: 'Begin with the planner-owned wedding record: its public story, branding, and event schedule.',
+        action: 'Open the wedding source record and inspect its theme, story, and privacy settings.',
+        voiceover: 'Begin with the planner-owned wedding record: its public story, branding, and guest-access settings.',
       },
       {
         timestamp: '0:12-0:28',
-        action: 'Manually switch to the prepared public microsite and compare its story and schedule with the source record.',
-        voiceover: 'The guest view presents those same seeded details in a polished public experience without planner controls.',
+        action: 'Manually switch to the prepared public microsite and inspect its story, venue, and event-day presentation.',
+        voiceover: 'The guest view presents the seeded public content in a polished experience without planner controls.',
       },
       {
         timestamp: '0:28-0:45',
@@ -516,7 +516,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       ...defaultChecklist,
       'Prepare the authenticated planner record and public microsite in separate clean tabs, then switch tabs manually with the browser address bar hidden.',
     ],
-    captureNotes: 'Capture top-of-page branding and the matching event details as a read-only parity story; do not imply an edit or publishing event that is not shown.',
+    captureNotes: 'Capture the planner story, theme, and privacy settings before the public story, venue, event details, and gallery; do not imply an edit or publishing event that is not shown.',
   },
   {
     id: 'wedding-configuration-demo',
