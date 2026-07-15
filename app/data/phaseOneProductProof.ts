@@ -68,10 +68,10 @@ export const PHASE_ONE_PRODUCT_STORIES = [
     pillar: 'Couple Experience + Boundaries',
     headline: 'Give couples a clear view without exposing planner operations.',
     description:
-      'The couple portal brings the wedding overview, shared timeline, payment context, and assigned forms into one guided experience. Planner-only controls remain private.',
-    proof: 'One guided portal, planner-owned boundaries',
+      'The couple dashboard gives Sofia and Daniel a focused wedding overview and RSVP progress. A separate planner workspace presents the Couple Intake Questionnaire, while the couple portal presents Guest Memories link, review, and export controls.',
+    proof: 'Couple overview · planner intake · couple memories controls',
     image: getMarketingCaptureAsset('couple-portal', 'homepage'),
-    imageAlt: 'Sofia and Daniel couple portal with their shared wedding plan and next actions',
+    imageAlt: 'Sofia and Daniel couple dashboard showing the wedding date and RSVP progress',
     supportingImages: [
       {
         label: 'Planner-controlled intake',
@@ -79,9 +79,9 @@ export const PHASE_ONE_PRODUCT_STORIES = [
         imageAlt: 'Planner form workspace with the couple intake questionnaire',
       },
       {
-        label: 'Shared couple experience',
+        label: 'Couple Guest Memories',
         image: getMarketingCaptureAsset('guest-memories', 'homepage'),
-        imageAlt: 'Couple portal Guest Memories experience for Sofia and Daniel',
+        imageAlt: 'Sofia and Daniel Guest Memories page showing upload, review, and export controls',
       },
     ],
     featureIds: ['couple-portal', 'forms', 'guest-memories', 'inbox'],
