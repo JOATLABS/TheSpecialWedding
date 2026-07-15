@@ -80,8 +80,7 @@ export function canAccessWeddings(userProfile?: UserProfile | null): boolean {
 export function canMessageCouples(userProfile?: UserProfile | null): boolean {
   if (!userProfile) return false;
   return Boolean(
-    userProfile.is_root_admin ||
-      userProfile.is_wedding_planner ||
+    userProfile.is_wedding_planner ||
       userProfile.team_permissions?.message_couples
   );
 }
@@ -89,8 +88,7 @@ export function canMessageCouples(userProfile?: UserProfile | null): boolean {
 export function canSendRsvp(userProfile?: UserProfile | null): boolean {
   if (!userProfile) return false;
   return Boolean(
-    userProfile.is_root_admin ||
-      userProfile.is_wedding_planner ||
+    userProfile.is_wedding_planner ||
       userProfile.team_permissions?.send_rsvp
   );
 }
@@ -98,8 +96,7 @@ export function canSendRsvp(userProfile?: UserProfile | null): boolean {
 export function canSendReminders(userProfile?: UserProfile | null): boolean {
   if (!userProfile) return false;
   return Boolean(
-    userProfile.is_root_admin ||
-      userProfile.is_wedding_planner ||
+    userProfile.is_wedding_planner ||
       userProfile.team_permissions?.send_reminders
   );
 }

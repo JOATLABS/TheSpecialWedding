@@ -3,19 +3,14 @@
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
-import {
-  canAccessAnyCommunicationsInbox,
-  canMessageCouples,
-  canSendReminders,
-  canSendRsvp,
-} from '@/admin/utils/teamAccess';
+import { getVisibleCommunicationsTabs } from '@/admin/utils/communicationsAccess';
 
 const COMMUNICATION_TABS = [
-  { href: '/admin/communications/inbox', label: 'Inbox', permission: 'inbox' },
-  { href: '/admin/communications/invites', label: 'Invites', permission: 'invites' },
-  { href: '/admin/communications/reminders', label: 'Reminders', permission: 'reminders' },
-  { href: '/admin/communications/individual', label: 'Individual', permission: 'individual' },
-  { href: '/admin/communications/history', label: 'History', permission: 'history' },
+  { href: '/admin/communications/inbox', label: 'Inbox', id: 'inbox' },
+  { href: '/admin/communications/invites', label: 'Invites', id: 'invites' },
+  { href: '/admin/communications/reminders', label: 'Reminders', id: 'reminders' },
+  { href: '/admin/communications/individual', label: 'Individual', id: 'individual' },
+  { href: '/admin/communications/history', label: 'History', id: 'history' },
 ] as const;
 
 export default function CommunicationsTabs() {
@@ -23,26 +18,8 @@ export default function CommunicationsTabs() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const weddingId = searchParams.get('wedding_id');
-  const hasInboxAccess = canAccessAnyCommunicationsInbox(userProfile);
-  const canAccessInvites = canSendRsvp(userProfile);
-  const canAccessReminders = canSendReminders(userProfile);
-  const canAccessHistory = canAccessInvites || canAccessReminders;
-
-  const visibleTabs = COMMUNICATION_TABS.filter((tab) => {
-    switch (tab.permission) {
-      case 'inbox':
-        return hasInboxAccess;
-      case 'invites':
-        return canAccessInvites;
-      case 'reminders':
-      case 'individual':
-        return canAccessReminders;
-      case 'history':
-        return canAccessHistory;
-      default:
-        return false;
-    }
-  });
+  const visibleTabIds = getVisibleCommunicationsTabs(userProfile);
+  const visibleTabs = COMMUNICATION_TABS.filter((tab) => visibleTabIds.includes(tab.id));
 
   if (!visibleTabs.length) {
     return null;

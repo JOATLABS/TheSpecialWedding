@@ -130,7 +130,9 @@ async def test_public_guest_help_request_creates_planner_scoped_sms_ticket_and_a
     assert ticket["is_read"] is False
     assert ticket["acknowledgment_sms"]["status"] == "sent"
     assert ticket_collection.updated[0][0] == {
-        "_id": ObjectId("65f000000000000000000001")
+        "_id": ObjectId("65f000000000000000000001"),
+        "conversation_kind": "guest_sms",
+        "source": "sms",
     }
     assert sms.sent == [
         (

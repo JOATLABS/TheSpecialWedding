@@ -25,6 +25,10 @@ import {
 } from 'lucide-react';
 import KnowledgeBase from '../components/kb/KnowledgeBase';
 import BlogManager from '../components/blog/BlogManager';
+import {
+  getSupportCreatePrefill,
+  type SupportCreatePrefill,
+} from './supportRouteState';
 
 interface SupportTicket {
   _id: string;
@@ -64,16 +68,6 @@ interface TicketCountResponse {
   total?: number;
 }
 
-interface SmsSupportSummary {
-  total?: number;
-  urgent_count?: number;
-  by_status?: {
-    new?: number;
-    in_progress?: number;
-    resolved?: number;
-  };
-}
-
 type SupportTab = 'tickets' | 'metrics' | 'knowledge_base' | 'blog';
 
 function normalizeSupportTab(tab: string | null, isRootAdmin: boolean): SupportTab {
@@ -96,11 +90,11 @@ export default function SupportPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [newTicket, setNewTicket] = useState({
+  const [newTicket, setNewTicket] = useState<SupportCreatePrefill>({
     subject: '',
     description: '',
-    category: 'general' as const,
-    priority: 'medium' as const
+    category: 'general',
+    priority: 'medium'
   });
 
   const pagination = usePagination({ initialItemsPerPage: 50 });
@@ -117,6 +111,19 @@ export default function SupportPage() {
     const requestedTab = params.get('tab') ?? (params.get('article') ? 'knowledge_base' : null);
     setActiveTab(normalizeSupportTab(requestedTab, Boolean(isRootAdmin)));
   }, [isRootAdmin, searchParamsText]);
+
+  useEffect(() => {
+    if (!userProfile) return;
+
+    const prefill = getSupportCreatePrefill(
+      new URLSearchParams(searchParamsText),
+      Boolean(isRootAdmin),
+    );
+    if (!prefill) return;
+
+    setNewTicket(prefill);
+    setShowCreateModal(true);
+  }, [isRootAdmin, searchParamsText, userProfile]);
 
   const handleTabChange = useCallback((tab: SupportTab) => {
     const params = new URLSearchParams(searchParamsText);
@@ -180,20 +187,19 @@ export default function SupportPage() {
         } catch (error) {
           console.warn('Support metrics endpoint not available');
           try {
-            const [openResponse, inProgressResponse, urgentResponse, smsSummary] = await Promise.all([
+            const [openResponse, inProgressResponse, urgentResponse] = await Promise.all([
               apiRequest<TicketCountResponse>('/admin/tickets?status=open&page=1&limit=1', 'GET'),
               apiRequest<TicketCountResponse>('/admin/tickets?status=in_progress&page=1&limit=1', 'GET'),
               apiRequest<TicketCountResponse>('/admin/tickets?priority=urgent&page=1&limit=1', 'GET'),
-              apiRequest<SmsSupportSummary>('/admin/sms-tickets/stats/summary', 'GET'),
             ]);
 
             setMetrics({
-              total_tickets: fetchedTicketTotal + (smsSummary?.total ?? 0),
-              open_tickets: (openResponse?.total ?? 0) + (smsSummary?.by_status?.new ?? 0),
-              in_progress_tickets: (inProgressResponse?.total ?? 0) + (smsSummary?.by_status?.in_progress ?? 0),
+              total_tickets: fetchedTicketTotal,
+              open_tickets: openResponse?.total ?? 0,
+              in_progress_tickets: inProgressResponse?.total ?? 0,
               resolved_today: 0,
               avg_resolution_time_hours: 0,
-              urgent_tickets: (urgentResponse?.total ?? 0) + (smsSummary?.urgent_count ?? 0),
+              urgent_tickets: urgentResponse?.total ?? 0,
             });
           } catch (fallbackError) {
             console.warn('Support metrics fallback counts not available', fallbackError);
@@ -239,11 +245,11 @@ export default function SupportPage() {
       conversation: 'support_ticket',
       ticket_id: ticket._id,
     });
-    if (ticket.wedding_id) {
+    if (ticket.wedding_id && !isRootAdmin) {
       params.set('wedding_id', ticket.wedding_id);
     }
     router.push(`/admin/communications/inbox?${params.toString()}`);
-  }, [router]);
+  }, [isRootAdmin, router]);
 
   const createTicket = async () => {
     if (!newTicket.subject.trim() || !newTicket.description.trim()) {

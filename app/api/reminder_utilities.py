@@ -9,11 +9,12 @@ from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     check_wedding_access,
     enforce_team_permission,
-    require_admin_or_planner,
+    require_communication_capability,
 )
 from app.services.reminder_utilities import RSVPReminderHelper
 from app.services.sse_manager import sse_manager
 from app.services.wedding_service import WeddingService
+from app.utils.communication_access import CommunicationCapability
 
 router = APIRouter()
 
@@ -37,7 +38,9 @@ class SlugModel(BaseModel):
 @router.post("/reminders/send-personalized-links", tags=["Admin"])
 async def send_invite_links(
     payload: SlugModel,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.RSVP_INVITES)
+    ),
 ):
     enforce_team_permission(current_user, "send_rsvp")
     wedding = await wedding_service.get_wedding_by_slug(payload.slug)
@@ -61,12 +64,13 @@ async def send_invite_links(
     return result
 
 
-@router.post(
-    "/reminders/simulate-rsvp",
-    tags=["Admin"],
-    dependencies=[Depends(require_admin_or_planner)],
-)
-async def simulate_rsvp(payload: RSVPRequestModel):
+@router.post("/reminders/simulate-rsvp", tags=["Admin"])
+async def simulate_rsvp(
+    payload: RSVPRequestModel,
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.RSVP_INVITES)
+    ),
+):
     return await reminder_helper.simulate_rsvp_for_guest(
         token=payload.token,
         attending=payload.attending,

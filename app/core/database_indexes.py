@@ -144,6 +144,39 @@ async def create_support_ticket_indexes():
         )
         logger.info("Created index: idx_message_text (full-text search)")
 
+        # 10. Canonical platform-support vs guest-SMS discriminator.
+        await collection.create_index(
+            [
+                ("conversation_kind", ASCENDING),
+                ("status", ASCENDING),
+                ("updated_at", DESCENDING),
+            ],
+            name="idx_conversation_kind_status_updated",
+        )
+        logger.info("Created index: idx_conversation_kind_status_updated")
+
+        # 11. Stable support-ticket ownership for planner and team identities.
+        await collection.create_index(
+            [
+                ("creator_user_id", ASCENDING),
+                ("conversation_kind", ASCENDING),
+                ("updated_at", DESCENDING),
+            ],
+            name="idx_creator_support_kind_updated",
+        )
+        logger.info("Created index: idx_creator_support_kind_updated")
+
+        read_states = mongo.db["support_ticket_read_states"]
+        await read_states.create_index(
+            [("ticket_id", ASCENDING), ("actor_key", ASCENDING)],
+            name="idx_support_read_ticket_actor",
+            unique=True,
+        )
+        await read_states.create_index(
+            [("actor_key", ASCENDING), ("last_read_at", DESCENDING)],
+            name="idx_support_read_actor_last_read",
+        )
+
         logger.info("All support ticket indexes created successfully")
         return True
 

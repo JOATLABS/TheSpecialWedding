@@ -111,39 +111,24 @@ The `send_notification` function in `/app/services/notification_service.py` (lin
 
 ### 3. Support System Endpoints
 
-**Current Status**: Support page attempts to call these endpoints but they don't exist:
+**Current Status**: Implemented in `app/api/support_management.py`. Platform support
+and guest SMS share the physical `support_tickets` collection but are separated by
+the mandatory `conversation_kind` discriminator. The root Communications inbox is
+limited to `platform_support`; planner SMS threads remain planner-scoped.
 
 ```python
-# /app/api/support_management.py (NEW FILE NEEDED)
+GET  /admin/tickets
+POST /admin/tickets
+GET  /admin/tickets/{ticket_id}
+PUT  /admin/tickets/{ticket_id}
+GET  /admin/tickets/{ticket_id}/comments
+POST /admin/tickets/{ticket_id}/comments
+GET  /admin/my-tickets
 
-@router.get("/admin/support/tickets", tags=["ROOT_ADMIN"])
-def list_support_tickets(
-    status: Optional[str] = None,
-    priority: Optional[str] = None,
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
-):
-    """List all support tickets with filtering"""
-
-@router.get("/admin/support/tickets/{ticket_id}", tags=["ROOT_ADMIN"])
-def get_support_ticket(ticket_id: str, ...):
-    """Get support ticket details"""
-
-@router.patch("/admin/support/tickets/{ticket_id}/status", tags=["ROOT_ADMIN"])
-def update_ticket_status(ticket_id: str, status_data: {"status": str}, ...):
-    """Update support ticket status"""
-
-@router.post("/admin/support/tickets/{ticket_id}/respond", tags=["ROOT_ADMIN"])
-def respond_to_ticket(ticket_id: str, response_data: {"message": str}, ...):
-    """Send response to support ticket"""
-
-@router.get("/admin/support/metrics", tags=["ROOT_ADMIN"])
-def get_support_metrics(...):
-    """Get support performance metrics"""
-
-# Public endpoint for users to create support tickets
-@router.post("/support/tickets", tags=["Support"])
-def create_support_ticket(ticket_data: SupportTicketModel, ...):
-    """Create a new support ticket (authenticated users)"""
+# Planner-owned guest SMS routes; root admin is denied by the communication capability gate.
+GET  /admin/sms-tickets
+GET  /admin/sms-tickets/{ticket_id}
+POST /admin/sms-tickets/{ticket_id}/respond
 ```
 
 ## 📊 **Data Models Needed**
@@ -167,21 +152,10 @@ class NotificationHistoryModel(BaseModel):
 ```
 
 ### Support Models
-```python
-class SupportTicketModel(BaseModel):
-    user_id: str
-    subject: str
-    message: str
-    category: Literal['technical', 'billing', 'feature_request', 'bug_report', 'general']
-    priority: Literal['low', 'medium', 'high', 'urgent'] = 'medium'
-    status: Literal['open', 'in_progress', 'resolved', 'closed'] = 'open'
 
-class SupportResponseModel(BaseModel):
-    ticket_id: str
-    message: str
-    responder_id: str
-    is_internal: bool = False
-```
+Support request schemas are canonical beside their route handlers in
+`app/api/support_management.py`. The removed `app/models/support_ticket.py`
+module was an unused, conflicting model family.
 
 ## 🗄️ **Database Collections Needed**
 
@@ -189,7 +163,7 @@ class SupportResponseModel(BaseModel):
 1. **notification_templates** - Store reusable notification templates
 2. **notification_history** - Track sent notifications and delivery metrics
 3. **support_tickets** - Store support tickets and responses
-4. **support_responses** - Store responses to support tickets
+4. **support_ticket_read_states** - Participant-specific read state keyed by ticket and actor
 5. **platform_analytics** - Store aggregated metrics data (optional, for performance)
 
 ## 🔧 **Integration Points**

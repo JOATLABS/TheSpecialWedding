@@ -33,6 +33,7 @@ from app.dependencies.auth_extended import (
     check_wedding_access,
     enforce_team_permission,
     get_accessible_wedding_ids,
+    require_communication_capability,
     require_team_or_planner,
 )
 from app.dependencies.couple_auth import require_couple_auth
@@ -71,6 +72,7 @@ from app.utils.couple_identity import (
     list_couple_identity_keys,
 )
 from app.utils.couple_realtime import couple_sse_channel
+from app.utils.communication_access import CommunicationCapability
 from app.utils.id_utils import to_str_id
 from app.utils.messaging_roles import (
     SENDER_ROLE_COUPLE,
@@ -1609,7 +1611,9 @@ async def couple_unread_count(couple: dict = Depends(require_couple_auth)):
 @router.post("/couple-portal/messages", tags=["Couple Portal - Messages"])
 async def planner_send_message(
     data: PlannerSendMessageRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.COUPLE_MESSAGES)
+    ),
 ):
     """Planner sends a message to the couple for a specific wedding."""
     _enforce_message_couples(current_user)
@@ -1701,7 +1705,9 @@ async def planner_get_messages(
     before: Optional[str] = Query(
         None, description="Cursor: message ID to load older messages before"
     ),
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.COUPLE_MESSAGES)
+    ),
 ):
     """Planner gets message history for a specific wedding's couple conversation."""
     _enforce_message_couples(current_user)
@@ -1753,7 +1759,9 @@ async def planner_get_messages(
 @router.post("/couple-portal/messages/read", tags=["Couple Portal - Messages"])
 async def planner_mark_messages_read(
     data: PlannerMarkMessagesReadRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.COUPLE_MESSAGES)
+    ),
 ):
     """Mark couple messages as read for a planner-accessible wedding conversation."""
     _enforce_message_couples(current_user)
@@ -1793,7 +1801,9 @@ async def planner_mark_messages_read(
 @router.get("/couple-portal/messages/unread-count", tags=["Couple Portal - Messages"])
 async def planner_unread_count(
     wedding_id: str = Query(...),
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.COUPLE_MESSAGES)
+    ),
 ):
     """Get count of unread messages from the couple for a specific wedding."""
     _enforce_message_couples(current_user)
@@ -1816,7 +1826,9 @@ async def planner_unread_count(
 @router.get("/couple-portal/conversations", tags=["Couple Portal - Messages"])
 async def planner_list_conversations(
     wedding_id: Optional[str] = Query(None),
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.COUPLE_MESSAGES)
+    ),
 ):
     """List couple conversation summaries for weddings the current user can access."""
     _enforce_message_couples(current_user)
@@ -1965,7 +1977,9 @@ async def planner_list_conversations(
 @router.post("/couple-portal/send-digest", tags=["Couple Portal - Digest"])
 async def trigger_couple_digest(
     wedding_id: str = Query(...),
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.COUPLE_MESSAGES)
+    ),
 ):
     """
     Planner triggers a digest email to the couple summarizing unread messages,

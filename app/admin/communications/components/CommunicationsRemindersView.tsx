@@ -27,8 +27,7 @@ import { buildEventReminderEmailPayload } from './reminderPayloads';
 export type CommunicationsTab = 'invites' | 'reminders' | 'individual' | 'history';
 
 interface CommunicationsRemindersViewProps {
- initialTab?: CommunicationsTab;
- forcedTab?: CommunicationsTab;
+ forcedTab: CommunicationsTab;
 }
 
 interface Wedding {
@@ -98,7 +97,6 @@ interface MessageLog {
 }
 
 export default function CommunicationsRemindersView({
- initialTab = 'invites',
  forcedTab,
 }: CommunicationsRemindersViewProps) {
  const { token, userProfile } = useAdmin();
@@ -114,7 +112,6 @@ export default function CommunicationsRemindersView({
  const [loading, setLoading] = useState(false);
  const [error, setError] = useState<string>('');
  const [success, setSuccess] = useState<string>('');
- const [legacyActiveTab, setLegacyActiveTab] = useState<CommunicationsTab>(forcedTab ?? initialTab);
  const [channel, setChannel] = useState<'sms' | 'email' | 'both'>('sms');
  const [emailSubject, setEmailSubject] = useState<string>('');
  const [emailHtml, setEmailHtml] = useState<string>('');
@@ -141,7 +138,7 @@ export default function CommunicationsRemindersView({
  () => weddings.find((w) => (w.id || w._id) === selectedWedding),
  [selectedWedding, weddings]
  );
- const activeTab = forcedTab ?? legacyActiveTab;
+ const activeTab = forcedTab;
  const canAccessInvites = canSendRsvp(userProfile);
  const canAccessReminderTabs = canSendReminders(userProfile);
  const canAccessHistory = canAccessInvites || canAccessReminderTabs;
@@ -358,12 +355,6 @@ export default function CommunicationsRemindersView({
  setEventType(ALL_WEDDING_EVENTS);
  }
  }, [eventType, reminderEventOptions]);
-
- useEffect(() => {
- if (!forcedTab) {
- setLegacyActiveTab(initialTab);
- }
- }, [forcedTab, initialTab]);
 
  useEffect(() => {
  if (!requestedChannel) return;
@@ -1096,51 +1087,6 @@ export default function CommunicationsRemindersView({
  {success && (
  <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
  <p className="text-green-700 dark:text-green-300 dark:text-green-300">{success}</p>
- </div>
- )}
-
- {!forcedTab && (
- <div className="flex gap-4 mb-8">
- <button
- onClick={() => setLegacyActiveTab('invites')}
- className={`px-6 py-3 rounded-lg font-medium transition-colors ${
- activeTab === 'invites'
- ? 'bg-wedding-navy text-white'
- : 'bg-white text-wedding-navy dark:text-gray-100 hover:bg-gray-100 dark:bg-transparent'
- }`}
- >
- Send Invites
- </button>
- <button
- onClick={() => setLegacyActiveTab('reminders')}
- className={`px-6 py-3 rounded-lg font-medium transition-colors ${
- activeTab === 'reminders'
- ? 'bg-wedding-navy text-white'
- : 'bg-white text-wedding-navy dark:text-gray-100 hover:bg-gray-100 dark:bg-transparent'
- }`}
- >
- Event Reminders
- </button>
- <button
- onClick={() => setLegacyActiveTab('individual')}
- className={`px-6 py-3 rounded-lg font-medium transition-colors ${
- activeTab === 'individual'
- ? 'bg-wedding-navy text-white'
- : 'bg-white text-wedding-navy dark:text-gray-100 hover:bg-gray-100 dark:bg-transparent'
- }`}
- >
- Individual Messages
- </button>
- <button
- onClick={() => setLegacyActiveTab('history')}
- className={`px-6 py-3 rounded-lg font-medium transition-colors ${
- activeTab === 'history'
- ? 'bg-wedding-navy text-white'
- : 'bg-white text-wedding-navy dark:text-gray-100 hover:bg-gray-100 dark:bg-transparent'
- }`}
- >
- Message History ({messageHistory.length})
- </button>
  </div>
  )}
 

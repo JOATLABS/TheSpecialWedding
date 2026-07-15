@@ -14,8 +14,7 @@ from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     check_wedding_access,
     enforce_team_permission,
-    require_root_admin,
-    require_team_or_planner,
+    require_communication_capability,
 )
 from app.services.activity_log_service import activity_log_service
 from app.services.reminder_service_twilio import (
@@ -29,6 +28,7 @@ from app.services.reminder_service_twilio import (
 from app.services.sse_manager import sse_manager
 from app.services.wedding_service import WeddingService
 from app.utils.contact_sanitizer import normalize_phone_e164
+from app.utils.communication_access import CommunicationCapability
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -86,7 +86,9 @@ async def send_reminder_twilio(
     target_group: str = Query(
         ..., description="Target group: guests, plus-ones, or all"
     ),
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.REMINDERS)
+    ),
 ):
     """Send SMS reminders using Twilio"""
     enforce_team_permission(current_user, "send_reminders")
@@ -107,7 +109,9 @@ async def send_reminder_twilio(
 @router.post("/reminders/twilio/send-invites", tags=["Admin"])
 async def send_invites_twilio(
     payload: SlugModel,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.RSVP_INVITES)
+    ),
 ):
     """Send RSVP invite links using Twilio"""
     enforce_team_permission(current_user, "send_rsvp")
@@ -146,7 +150,9 @@ async def send_invites_twilio(
 @router.post("/reminders/send-to-guests", tags=["Admin"])
 async def send_individual_reminders(
     payload: IndividualReminderRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.REMINDERS)
+    ),
 ):
     """
     Send SMS reminders to specific guests by their tokens.
@@ -353,7 +359,9 @@ async def send_individual_reminders(
 @router.post("/reminders/send-to-plus-ones", tags=["Admin"])
 async def send_plus_one_reminders(
     payload: IndividualPlusOneReminderRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.REMINDERS)
+    ),
 ):
     """
     Send SMS reminders to specific plus-ones by their IDs.
@@ -601,20 +609,11 @@ async def _create_bulk_send_summary(
         logger.warning(f"Failed to create bulk send summary notification: {str(e)}")
 
 
-@router.get(
-    "/reminders/twilio/logs", tags=["Admin"], dependencies=[Depends(require_root_admin)]
-)
-async def get_twilio_logs():
-    """Get SMS logs for messages sent via Twilio (Root Admin only)"""
-    if not twilio_configured or not twilio_reminder_service:
-        raise HTTPException(status_code=503, detail="Twilio service not configured")
-
-    return await twilio_reminder_service.get_logs()
-
-
 @router.get("/reminders/logs", tags=["Admin"])
 async def get_all_logs(
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.HISTORY)
+    ),
 ):
     """Get SMS logs - filtered by wedding for planners"""
     if not twilio_configured or not twilio_reminder_service:

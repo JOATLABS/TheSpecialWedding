@@ -9,11 +9,12 @@ from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     check_wedding_access,
     enforce_team_permission,
-    require_wedding_planner_only,
+    require_communication_capability,
 )
 from app.services.reminder_service_telnyx import TelnyxReminderService
 from app.services.reminder_utilities_telnyx import TelnyxRSVPReminderHelper
 from app.services.wedding_service import WeddingService
+from app.utils.communication_access import CommunicationCapability
 
 router = APIRouter()
 wedding_service = WeddingService()
@@ -58,7 +59,9 @@ def get_telnyx_status():
 @router.post("/reminders/telnyx/send", tags=["Admin"])
 async def send_reminder_telnyx(
     payload: TelnyxReminderModel,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.REMINDERS)
+    ),
 ):
     """Send SMS reminders using Telnyx"""
     enforce_team_permission(current_user, "send_reminders")
@@ -81,7 +84,9 @@ async def send_reminder_telnyx(
 @router.post("/reminders/telnyx/send-invites", tags=["Admin"])
 async def send_invites_telnyx(
     payload: SlugModel,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.RSVP_INVITES)
+    ),
 ):
     """Send RSVP invite links using Telnyx"""
     enforce_team_permission(current_user, "send_rsvp")
@@ -103,7 +108,9 @@ async def send_invites_telnyx(
 
 @router.get("/reminders/telnyx/logs", tags=["Admin"])
 async def get_telnyx_logs(
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.HISTORY)
+    ),
     wedding_slug: Optional[str] = Query(None),
 ):
     """Get SMS logs for messages sent via Telnyx"""

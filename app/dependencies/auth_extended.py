@@ -19,6 +19,10 @@ from app.models.subscription import (
 )
 from app.models.team_member import resolve_team_permissions
 from app.utils.auth_utils import verify_token
+from app.utils.communication_access import (
+    CommunicationCapability,
+    enforce_communication_capability,
+)
 from app.utils.planner_ownership import (
     normalize_planner_email,
     normalize_planner_id,
@@ -908,6 +912,18 @@ async def require_team_or_planner(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Planner or team member access required",
     )
+
+
+def require_communication_capability(capability: CommunicationCapability):
+    """Build a dependency that enforces one canonical communication domain."""
+
+    async def _check_communication_capability(
+        current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+    ) -> ExtendedAuthUser:
+        enforce_communication_capability(current_user, capability)
+        return current_user
+
+    return _check_communication_capability
 
 
 def require_team_permission(permission_name: str):

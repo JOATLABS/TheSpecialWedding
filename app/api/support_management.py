@@ -6,12 +6,19 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field, validator
 
 from app.core.database import mongo
+from app.constants.support_conversations import (
+    guest_sms_ticket_scope,
+    support_ticket_owner_scope,
+)
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
+    check_wedding_access,
     require_admin_or_planner,
+    require_communication_capability,
     require_root_admin,
 )
 from app.services.support_service import SupportService
+from app.utils.communication_access import CommunicationCapability
 from app.utils.contact_sanitizer import sanitize_phone
 from app.utils.query_validation import validated_status_filter, validated_string_filter
 from app.utils.serializers import serialize_mongo_doc
@@ -115,8 +122,16 @@ async def create_ticket(
     logger.info(
         f"Creating support ticket for user: {current_user.email}, subject: {ticket_data.subject}"
     )
+    if ticket_data.wedding_id and not await check_wedding_access(
+        current_user, ticket_data.wedding_id
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Access to this wedding denied",
+        )
+
     result = await support_service.create_ticket(
-        ticket_data.dict(), created_by=current_user.email
+        ticket_data.dict(), current_user=current_user
     )
     logger.info(
         f"Support ticket created successfully: {result.get('ticket_number', 'unknown')}"
@@ -173,15 +188,18 @@ async def get_tickets(
         filters["wedding_id"] = wedding_id
 
     # Non-admin users can only see their own tickets
-    if current_user.role != "ROOT_ADMIN":
-        filters["created_by"] = current_user.email
+    is_root_admin = bool(current_user.is_root_admin)
+    if not is_root_admin:
+        filters.update(support_ticket_owner_scope(current_user))
 
     return await support_service.get_tickets(
         page=page,
         limit=limit,
         filters=filters,
-        exclude_sms=True,
+        platform_support_only=True,
         active_statuses=["open", "in_progress"] if active_only else None,
+        current_user=current_user,
+        include_internal_comments=is_root_admin,
     )
 
 
@@ -317,7 +335,7 @@ async def get_my_tickets(
             detail="status cannot be combined with active_only",
         )
 
-    filters = {"created_by": current_user.email}
+    filters = support_ticket_owner_scope(current_user)
     if status:
         filters["status"] = status
 
@@ -325,8 +343,10 @@ async def get_my_tickets(
         page=page,
         limit=limit,
         filters=filters,
-        exclude_sms=True,
+        platform_support_only=True,
         active_statuses=["open", "in_progress"] if active_only else None,
+        current_user=current_user,
+        include_internal_comments=False,
     )
 
 
@@ -459,7 +479,11 @@ async def _resolve_guest_for_sms_ticket(
             if guest:
                 return guest
 
-    return await guest_collection.find_one(phone_query, projection)
+        return None
+
+    # An SMS ticket without wedding scope cannot safely select among guests
+    # who may share a phone number across separate planner tenants.
+    return None
 
 
 async def _enrich_sms_ticket_guest_context(ticket: Dict[str, Any]) -> Dict[str, Any]:
@@ -485,7 +509,7 @@ async def _enrich_sms_ticket_guest_context(ticket: Dict[str, Any]) -> Dict[str, 
 
     if updates and ticket.get("_id"):
         await mongo.db["support_tickets"].update_one(
-            {"_id": ticket["_id"]},
+            guest_sms_ticket_scope({"_id": ticket["_id"]}),
             {"$set": updates},
         )
 
@@ -502,12 +526,14 @@ async def get_sms_tickets(
     active_only: bool = Query(
         False, description="Show only active ticket statuses for inbox surfaces"
     ),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.GUEST_SMS)
+    ),
 ):
     """
     Get SMS support tickets
     - Wedding planners see only tickets for their assigned weddings
-    - ROOT_ADMIN sees all tickets
+    - Root administrators are denied by the guest-SMS capability gate
     """
     if active_only and status:
         raise HTTPException(
@@ -516,16 +542,15 @@ async def get_sms_tickets(
         )
 
     # Build query
-    query: Dict[str, Any] = {"source": "sms"}
+    query: Dict[str, Any] = guest_sms_ticket_scope()
 
     if status:
         query["status"] = status
     elif active_only:
         query["status"] = {"$in": ["new", "in_progress"]}
 
-    # Filter by assigned planner (multi-tenant security)
-    if not current_user.is_root_admin:
-        query["assigned_to"] = current_user.email
+    # The capability gate excludes root; every remaining actor is owner-scoped.
+    query["assigned_to"] = current_user.email
 
     # Pagination
     skip = (page - 1) * limit
@@ -563,7 +588,10 @@ async def get_sms_tickets(
 
 @router.get("/sms-tickets/{ticket_id}", tags=["SMS Support"])
 async def get_sms_ticket(
-    ticket_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    ticket_id: str,
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.GUEST_SMS)
+    ),
 ):
     """Get specific SMS ticket with full details and response history"""
     from bson import ObjectId
@@ -574,11 +602,7 @@ async def get_sms_ticket(
         logger.error(f"Invalid ObjectId provided for ticket: {ticket_id}, error: {e}")
         raise HTTPException(status_code=400, detail="Invalid ticket ID format")
 
-    # Multi-tenant security: combine access check into query for non-root-admin users
-    if current_user.is_root_admin:
-        query = {"_id": obj_id, "source": "sms"}
-    else:
-        query = {"_id": obj_id, "assigned_to": current_user.email, "source": "sms"}
+    query = guest_sms_ticket_scope({"_id": obj_id, "assigned_to": current_user.email})
 
     ticket = await mongo.db["support_tickets"].find_one(query)
 
@@ -587,7 +611,7 @@ async def get_sms_ticket(
 
     if not ticket.get("is_read"):
         await mongo.db["support_tickets"].update_one(
-            {"_id": obj_id},
+            query,
             {
                 "$set": {
                     "is_read": True,
@@ -613,7 +637,9 @@ async def get_sms_ticket(
 async def respond_to_sms_ticket(
     ticket_id: str,
     response_data: SMSResponseModel,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.GUEST_SMS)
+    ),
 ):
     """
     Send SMS response to guest
@@ -634,11 +660,7 @@ async def respond_to_sms_ticket(
         logger.error(f"Invalid ObjectId provided for ticket: {ticket_id}, error: {e}")
         raise HTTPException(status_code=400, detail="Invalid ticket ID format")
 
-    # Multi-tenant security: combine access check into query for non-root-admin users
-    if current_user.is_root_admin:
-        query = {"_id": obj_id, "source": "sms"}
-    else:
-        query = {"_id": obj_id, "assigned_to": current_user.email, "source": "sms"}
+    query = guest_sms_ticket_scope({"_id": obj_id, "assigned_to": current_user.email})
 
     ticket = await mongo.db["support_tickets"].find_one(query)
 
@@ -704,7 +726,7 @@ async def respond_to_sms_ticket(
         update["$set"]["status"] = "in_progress"
 
     # Update ticket
-    await mongo.db["support_tickets"].update_one({"_id": ObjectId(ticket_id)}, update)
+    await mongo.db["support_tickets"].update_one(query, update)
 
     next_status = update["$set"].get("status", ticket.get("status"))
 
@@ -725,7 +747,9 @@ async def update_sms_ticket_status(
     status: str = Query(
         ..., description="New status: new, in_progress, resolved, closed"
     ),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.GUEST_SMS)
+    ),
 ):
     """Update SMS ticket status without sending a response"""
     from datetime import datetime, timezone
@@ -744,11 +768,7 @@ async def update_sms_ticket_status(
         logger.error(f"Invalid ObjectId provided for ticket: {ticket_id}, error: {e}")
         raise HTTPException(status_code=400, detail="Invalid ticket ID format")
 
-    # Multi-tenant security: combine access check into query for non-root-admin users
-    if current_user.is_root_admin:
-        query = {"_id": obj_id, "source": "sms"}
-    else:
-        query = {"_id": obj_id, "assigned_to": current_user.email, "source": "sms"}
+    query = guest_sms_ticket_scope({"_id": obj_id, "assigned_to": current_user.email})
 
     ticket = await mongo.db["support_tickets"].find_one(query)
 
@@ -765,9 +785,7 @@ async def update_sms_ticket_status(
     if status == "resolved" and not ticket.get("resolved_at"):
         update["resolved_at"] = datetime.now(timezone.utc)
 
-    await mongo.db["support_tickets"].update_one(
-        {"_id": ObjectId(ticket_id)}, {"$set": update}
-    )
+    await mongo.db["support_tickets"].update_one(query, {"$set": update})
 
     logger.info(
         f"Ticket {ticket_id} status updated to {status} by {current_user.email}"
@@ -783,15 +801,15 @@ async def update_sms_ticket_status(
 
 @router.get("/sms-tickets/stats/summary", tags=["SMS Support"])
 async def get_sms_ticket_stats(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.GUEST_SMS)
+    ),
 ):
     """Get summary statistics for SMS support tickets"""
     from app.core.database import mongo
 
     # Build base query for user's tickets
-    base_query = {"source": "sms"}
-    if not current_user.is_root_admin:
-        base_query["assigned_to"] = current_user.email
+    base_query = guest_sms_ticket_scope({"assigned_to": current_user.email})
 
     # Get counts by status
     new_count = await mongo.db["support_tickets"].count_documents(

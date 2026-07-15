@@ -11,8 +11,21 @@ from bson import ObjectId
 from fastapi import HTTPException, UploadFile
 
 from app.core.database import mongo
+from app.constants.support_conversations import (
+    CONVERSATION_KIND_FIELD,
+    PLATFORM_SUPPORT_KIND,
+    actor_owns_support_ticket,
+    is_platform_support_ticket,
+    platform_support_ticket_scope,
+    support_actor_key,
+    support_ticket_owner_scope,
+)
+from app.constants.roles import ROLE_ROOT_ADMIN
 from app.utils.serializers import serialize_mongo_doc
-from app.utils.support_inbox_links import build_support_inbox_url
+from app.utils.support_inbox_links import (
+    build_support_inbox_path,
+    build_support_inbox_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +37,7 @@ ROOT_ADMIN_EMAIL = os.getenv("ROOT_ADMIN_EMAIL", "admin@thespecialwedding.io")
 class SupportService:
     def __init__(self):
         self.tickets_collection = mongo.db["support_tickets"]
+        self.read_states_collection = mongo.db["support_ticket_read_states"]
         self.users_collection = mongo.get_users_collection()
 
     def generate_ticket_number(self) -> str:
@@ -33,9 +47,64 @@ class SupportService:
         random_suffix = "".join(secrets.choice(string.digits) for _ in range(4))
         return f"{prefix}-{timestamp}-{random_suffix}"
 
-    async def create_ticket(self, ticket_data: dict, created_by: str) -> dict:
+    async def _mark_ticket_read(self, ticket_id: str, current_user) -> None:
+        try:
+            actor_key = support_actor_key(current_user)
+            now = datetime.now(timezone.utc)
+            await self.read_states_collection.update_one(
+                {"ticket_id": ticket_id, "actor_key": actor_key},
+                {
+                    "$set": {
+                        "ticket_id": ticket_id,
+                        "actor_key": actor_key,
+                        "last_read_at": now,
+                        "updated_at": now,
+                    }
+                },
+                upsert=True,
+            )
+        except Exception as error:
+            logger.warning(
+                "Failed to mark support ticket %s read: %s", ticket_id, error
+            )
+
+    async def _is_ticket_read(self, ticket: dict, current_user) -> bool:
+        try:
+            state = await self.read_states_collection.find_one(
+                {
+                    "ticket_id": str(ticket["_id"]),
+                    "actor_key": support_actor_key(current_user),
+                }
+            )
+        except Exception as error:
+            logger.warning("Failed to read support ticket state: %s", error)
+            return False
+        if not state or not state.get("last_read_at"):
+            return False
+
+        activity_at = ticket.get("updated_at") or ticket.get("created_at")
+        if not activity_at:
+            return True
+        last_read_at = state["last_read_at"]
+        if last_read_at.tzinfo is None:
+            last_read_at = last_read_at.replace(tzinfo=timezone.utc)
+        if activity_at.tzinfo is None:
+            activity_at = activity_at.replace(tzinfo=timezone.utc)
+        return last_read_at >= activity_at
+
+    async def create_ticket(self, ticket_data: dict, current_user) -> dict:
         """Create a new support ticket"""
         try:
+            created_by = current_user.email
+            creator_user_id = str(current_user.user_data.get("_id") or "") or None
+            owner_planner_id = None
+            if bool(getattr(current_user, "is_wedding_planner", False)):
+                owner_planner_id = creator_user_id
+            elif bool(getattr(current_user, "is_team_member", False)):
+                owner_planner_id = (
+                    str(getattr(current_user, "parent_planner_id", "") or "") or None
+                )
+
             # Generate unique ticket number
             ticket_number = self.generate_ticket_number()
 
@@ -49,12 +118,16 @@ class SupportService:
             ticket = {
                 "_id": ObjectId(),
                 "ticket_number": ticket_number,
+                CONVERSATION_KIND_FIELD: PLATFORM_SUPPORT_KIND,
                 "subject": ticket_data["subject"],
                 "description": ticket_data["description"],
                 "priority": ticket_data["priority"],
                 "category": ticket_data["category"],
                 "status": "open",
                 "created_by": created_by,
+                "creator_user_id": creator_user_id,
+                "creator_role": current_user.role,
+                "owner_planner_id": owner_planner_id,
                 "assigned_to": None,
                 "wedding_id": ticket_data.get("wedding_id"),
                 "attachments": ticket_data.get("attachments", []),
@@ -71,6 +144,8 @@ class SupportService:
 
             if not result.inserted_id:
                 raise HTTPException(status_code=500, detail="Failed to create ticket")
+
+            await self._mark_ticket_read(str(result.inserted_id), current_user)
 
             logger.info(
                 f"Support ticket {ticket_number} created successfully by {created_by}"
@@ -113,6 +188,10 @@ class SupportService:
                         "message": f"Ticket #{ticket_number} from {created_by} - Priority: {ticket['priority'].upper()}",
                         "type": "support_ticket",
                         "target_audience": "root_admin",
+                        "action_url": build_support_inbox_path(
+                            "support_ticket",
+                            ticket_id=str(result.inserted_id),
+                        ),
                         "is_dismissible": True,
                         "priority": (
                             "high"
@@ -161,8 +240,10 @@ class SupportService:
         limit: int = 20,
         filters: Optional[Dict[str, Any]] = None,
         *,
-        exclude_sms: bool = False,
+        platform_support_only: bool = False,
         active_statuses: Optional[list[str]] = None,
+        current_user=None,
+        include_internal_comments: bool = False,
     ) -> dict:
         """Get tickets with filtering and pagination"""
         try:
@@ -172,11 +253,8 @@ class SupportService:
                 for key, value in filters.items():
                     if value is not None:
                         query[key] = value
-            if exclude_sms:
-                query["$or"] = [
-                    {"source": {"$exists": False}},
-                    {"source": {"$ne": "sms"}},
-                ]
+            if platform_support_only:
+                query = platform_support_ticket_scope(query)
             if active_statuses:
                 query["status"] = {"$in": active_statuses}
 
@@ -204,9 +282,17 @@ class SupportService:
             )
 
             tickets = []
+            unread_count = 0
             async for ticket in cursor:
                 ticket["id"] = str(ticket["_id"])
                 ticket["_id"] = str(ticket["_id"])
+
+                if not include_internal_comments:
+                    ticket["comments"] = [
+                        comment
+                        for comment in ticket.get("comments", [])
+                        if not comment.get("is_internal", False)
+                    ]
 
                 # Add computed fields
                 ticket["comment_count"] = len(ticket.get("comments", []))
@@ -226,10 +312,21 @@ class SupportService:
                     else {"first_name": "Unknown", "last_name": "User"}
                 )
 
+                if current_user is not None:
+                    ticket["is_read"] = await self._is_ticket_read(ticket, current_user)
+                    if not ticket["is_read"]:
+                        unread_count += 1
+
                 tickets.append(ticket)
 
             return serialize_mongo_doc(
-                {"tickets": tickets, "total": total, "page": page, "pages": pages}
+                {
+                    "tickets": tickets,
+                    "total": total,
+                    "page": page,
+                    "pages": pages,
+                    "unread_count": unread_count,
+                }
             )
 
         except Exception as e:
@@ -247,20 +344,17 @@ class SupportService:
             except Exception:
                 raise HTTPException(status_code=400, detail="Invalid ticket ID")
 
-            ticket = await self.tickets_collection.find_one({"_id": obj_id})
+            ticket = await self.tickets_collection.find_one(
+                platform_support_ticket_scope({"_id": obj_id})
+            )
             if not ticket:
                 raise HTTPException(status_code=404, detail="Ticket not found")
+            if not is_platform_support_ticket(ticket):
+                raise HTTPException(status_code=404, detail="Ticket not found")
 
-            if ticket.get("source") == "sms":
-                raise HTTPException(
-                    status_code=404,
-                    detail="Ticket not found",
-                )
-
-            # Check permissions - users can only see their own tickets unless they're ROOT_ADMIN
-            if (
-                current_user.role != "ROOT_ADMIN"
-                and ticket["created_by"] != current_user.email
+            is_root_admin = bool(getattr(current_user, "is_root_admin", False))
+            if not is_root_admin and not actor_owns_support_ticket(
+                ticket, current_user
             ):
                 raise HTTPException(status_code=403, detail="Access denied")
 
@@ -289,12 +383,15 @@ class SupportService:
                 ticket["assignee_info"] = assignee
 
             # Filter internal comments for non-admin users
-            if current_user.role != "ROOT_ADMIN":
+            if not is_root_admin:
                 ticket["comments"] = [
                     comment
                     for comment in ticket.get("comments", [])
                     if not comment.get("is_internal", False)
                 ]
+
+            await self._mark_ticket_read(ticket_id, current_user)
+            ticket["is_read"] = True
 
             return serialize_mongo_doc(ticket)
 
@@ -318,22 +415,25 @@ class SupportService:
                 raise HTTPException(status_code=400, detail="Invalid ticket ID")
 
             # Check if ticket exists
-            existing = await self.tickets_collection.find_one({"_id": obj_id})
+            existing = await self.tickets_collection.find_one(
+                platform_support_ticket_scope({"_id": obj_id})
+            )
             if not existing:
                 raise HTTPException(status_code=404, detail="Ticket not found")
-
-            if existing.get("source") == "sms":
+            if not is_platform_support_ticket(existing):
                 raise HTTPException(
                     status_code=400,
                     detail="SMS support tickets must be updated via SMS support endpoints",
                 )
 
-            # Check permissions
-            if (
-                current_user.role != "ROOT_ADMIN"
-                and existing["created_by"] != current_user.email
-            ):
-                # Non-admin users can only update certain fields of their own tickets
+            # Keep platform-support ownership and operational controls separate.
+            # Non-root users may edit only the content of tickets they created;
+            # status, priority, and assignment remain root-operated fields.
+            is_root_admin = bool(getattr(current_user, "is_root_admin", False))
+            if not is_root_admin:
+                if not actor_owns_support_ticket(existing, current_user):
+                    raise HTTPException(status_code=403, detail="Access denied")
+
                 allowed_fields = {"subject", "description"}
                 if not all(field in allowed_fields for field in update_data.keys()):
                     raise HTTPException(status_code=403, detail="Access denied")
@@ -354,8 +454,14 @@ class SupportService:
                     update_data["resolved_at"] = None
 
             # Update ticket
+            update_query: dict[str, Any] = platform_support_ticket_scope(
+                {"_id": obj_id}
+            )
+            if not is_root_admin:
+                update_query.update(support_ticket_owner_scope(current_user))
+
             result = await self.tickets_collection.update_one(
-                {"_id": obj_id}, {"$set": update_data}
+                update_query, {"$set": update_data}
             )
 
             if result.modified_count == 0:
@@ -386,25 +492,25 @@ class SupportService:
                 raise HTTPException(status_code=400, detail="Invalid ticket ID")
 
             # Check if ticket exists and user has permission
-            ticket = await self.tickets_collection.find_one({"_id": obj_id})
+            ticket = await self.tickets_collection.find_one(
+                platform_support_ticket_scope({"_id": obj_id})
+            )
             if not ticket:
                 raise HTTPException(status_code=404, detail="Ticket not found")
-
-            # Check permissions
-            if (
-                current_user.role != "ROOT_ADMIN"
-                and ticket["created_by"] != current_user.email
-            ):
-                raise HTTPException(status_code=403, detail="Access denied")
-
-            if ticket.get("source") == "sms":
+            if not is_platform_support_ticket(ticket):
                 raise HTTPException(
                     status_code=400,
                     detail="SMS support tickets must be replied to via SMS support endpoints",
                 )
 
+            is_root_admin = bool(getattr(current_user, "is_root_admin", False))
+            if not is_root_admin and not actor_owns_support_ticket(
+                ticket, current_user
+            ):
+                raise HTTPException(status_code=403, detail="Access denied")
+
             # Only ROOT_ADMIN can create internal comments
-            if comment_data.get("is_internal") and current_user.role != "ROOT_ADMIN":
+            if comment_data.get("is_internal") and not is_root_admin:
                 comment_data["is_internal"] = False
 
             # Prepare comment
@@ -423,21 +529,24 @@ class SupportService:
                 "$set": {"updated_at": now},
             }
             if (
-                current_user.role == "ROOT_ADMIN"
+                is_root_admin
                 and not comment_data.get("is_internal", False)
                 and ticket.get("status") == "open"
             ):
                 update["$set"]["status"] = "in_progress"
 
-            result = await self.tickets_collection.update_one({"_id": obj_id}, update)
+            update_query = platform_support_ticket_scope({"_id": obj_id})
+            if not is_root_admin:
+                update_query.update(support_ticket_owner_scope(current_user))
+            result = await self.tickets_collection.update_one(update_query, update)
 
             if result.modified_count == 0:
                 raise HTTPException(status_code=400, detail="Failed to add comment")
 
             # Notify planner when ROOT_ADMIN responds (not internal comments)
-            if current_user.role == "ROOT_ADMIN" and not comment_data.get(
-                "is_internal", False
-            ):
+            await self._mark_ticket_read(ticket_id, current_user)
+
+            if is_root_admin and not comment_data.get("is_internal", False):
                 # Only notify if the planner is not the commenter
                 if ticket["created_by"] != current_user.email:
                     try:
@@ -499,7 +608,10 @@ class SupportService:
             comments = ticket.get("comments", [])
 
             # Filter internal comments for non-admin users
-            if current_user.role != "ROOT_ADMIN" or not include_internal:
+            if (
+                not bool(getattr(current_user, "is_root_admin", False))
+                or not include_internal
+            ):
                 comments = [
                     comment
                     for comment in comments
@@ -542,11 +654,13 @@ class SupportService:
             if not agent:
                 raise HTTPException(status_code=404, detail="Agent not found")
 
-            ticket = await self.tickets_collection.find_one({"_id": obj_id})
+            ticket = await self.tickets_collection.find_one(
+                platform_support_ticket_scope({"_id": obj_id})
+            )
             if not ticket:
                 raise HTTPException(status_code=404, detail="Ticket not found")
 
-            if ticket.get("source") == "sms":
+            if not is_platform_support_ticket(ticket):
                 raise HTTPException(
                     status_code=400,
                     detail="SMS support tickets cannot be assigned via support ticket endpoints",
@@ -560,7 +674,7 @@ class SupportService:
 
             # Update ticket
             result = await self.tickets_collection.update_one(
-                {"_id": obj_id},
+                platform_support_ticket_scope({"_id": obj_id}),
                 {
                     "$set": {
                         "assigned_to": agent_email,
@@ -601,7 +715,11 @@ class SupportService:
                 start_date = now - timedelta(days=30)
 
             pipeline = [
-                {"$match": {"created_at": {"$gte": start_date}}},
+                {
+                    "$match": platform_support_ticket_scope(
+                        {"created_at": {"$gte": start_date}}
+                    )
+                },
                 {
                     "$group": {
                         "_id": {
@@ -673,7 +791,7 @@ class SupportService:
         try:
             agents = []
             cursor = self.users_collection.find(
-                {"role": {"$in": ["ROOT_ADMIN"]}, "is_active": True},
+                {"role": {"$in": [ROLE_ROOT_ADMIN]}, "is_active": True},
                 {"email": 1, "first_name": 1, "last_name": 1, "role": 1},
             )
             async for agent in cursor:
@@ -681,10 +799,12 @@ class SupportService:
                 agent[
                     "assigned_tickets"
                 ] = await self.tickets_collection.count_documents(
-                    {
-                        "assigned_to": agent["email"],
-                        "status": {"$in": ["open", "in_progress"]},
-                    }
+                    platform_support_ticket_scope(
+                        {
+                            "assigned_to": agent["email"],
+                            "status": {"$in": ["open", "in_progress"]},
+                        }
+                    )
                 )
                 agents.append(agent)
 
@@ -705,19 +825,26 @@ class SupportService:
 
             metrics: Dict[str, Any] = {
                 "open_tickets": await self.tickets_collection.count_documents(
-                    {"status": "open"}
+                    platform_support_ticket_scope({"status": "open"})
                 ),
                 "in_progress_tickets": await self.tickets_collection.count_documents(
-                    {"status": "in_progress"}
+                    platform_support_ticket_scope({"status": "in_progress"})
                 ),
                 "resolved_today": await self.tickets_collection.count_documents(
-                    {"status": "resolved", "resolved_at": {"$gte": today}}
+                    platform_support_ticket_scope(
+                        {"status": "resolved", "resolved_at": {"$gte": today}}
+                    )
                 ),
                 "new_tickets_today": await self.tickets_collection.count_documents(
-                    {"created_at": {"$gte": today}}
+                    platform_support_ticket_scope({"created_at": {"$gte": today}})
                 ),
                 "urgent_tickets": await self.tickets_collection.count_documents(
-                    {"priority": "urgent", "status": {"$in": ["open", "in_progress"]}}
+                    platform_support_ticket_scope(
+                        {
+                            "priority": "urgent",
+                            "status": {"$in": ["open", "in_progress"]},
+                        }
+                    )
                 ),
                 "overdue_tickets": 0,
             }
@@ -727,7 +854,9 @@ class SupportService:
                 day_start = today - timedelta(days=i)
                 day_end = day_start + timedelta(days=1)
                 daily_count = await self.tickets_collection.count_documents(
-                    {"created_at": {"$gte": day_start, "$lt": day_end}}
+                    platform_support_ticket_scope(
+                        {"created_at": {"$gte": day_start, "$lt": day_end}}
+                    )
                 )
                 weekly_trend.append(
                     {"date": day_start.strftime("%Y-%m-%d"), "tickets": daily_count}
@@ -792,8 +921,11 @@ class SupportService:
             )
             file_url = f"{file_url_prefix}/{stored_filename}"
 
+            update_query = platform_support_ticket_scope({"_id": obj_id})
+            if not bool(getattr(current_user, "is_root_admin", False)):
+                update_query.update(support_ticket_owner_scope(current_user))
             result = await self.tickets_collection.update_one(
-                {"_id": obj_id},
+                update_query,
                 {
                     "$push": {
                         "attachments": {

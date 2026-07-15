@@ -1,5 +1,5 @@
-import CommunicationsInboxView from '../components/CommunicationsInboxView';
+import RoleScopedCommunicationsInboxView from '../components/RoleScopedCommunicationsInboxView';
 
 export default function CommunicationsInboxPage() {
-  return <CommunicationsInboxView />;
+  return <RoleScopedCommunicationsInboxView />;
 }

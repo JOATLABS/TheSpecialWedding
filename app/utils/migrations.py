@@ -16,6 +16,12 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from app.core.database import mongo
+from app.constants.support_conversations import (
+    CONVERSATION_KIND_FIELD,
+    GUEST_SMS_KIND,
+    PLATFORM_SUPPORT_KIND,
+    UNKNOWN_SUPPORT_KIND,
+)
 from app.utils.planner_billing_scope import planner_billing_unset_fields
 
 logger = logging.getLogger(__name__)
@@ -377,6 +383,71 @@ async def migration_008_strip_non_planner_billing_fields(db):
     logger.info(
         "Removed planner billing fields from %s non-planner users",
         result.modified_count,
+    )
+
+
+@migration_registry.register(
+    "009",
+    "Classify support conversations",
+    "Separates platform support tickets, guest SMS threads, and ambiguous legacy records",
+)
+async def migration_009_classify_support_conversations(db):
+    """Backfill an exact discriminator and quarantine ambiguous legacy records."""
+    tickets = db["support_tickets"]
+
+    sms_result = await tickets.update_many(
+        {
+            CONVERSATION_KIND_FIELD: {"$exists": False},
+            "source": "sms",
+        },
+        {"$set": {CONVERSATION_KIND_FIELD: GUEST_SMS_KIND}},
+    )
+    support_result = await tickets.update_many(
+        {
+            CONVERSATION_KIND_FIELD: {"$exists": False},
+            "ticket_number": {"$exists": True, "$nin": [None, ""]},
+            "created_by": {"$exists": True, "$nin": [None, ""]},
+            "$or": [
+                {"source": {"$exists": False}},
+                {"source": {"$ne": "sms"}},
+            ],
+        },
+        {"$set": {CONVERSATION_KIND_FIELD: PLATFORM_SUPPORT_KIND}},
+    )
+    unknown_result = await tickets.update_many(
+        {CONVERSATION_KIND_FIELD: {"$exists": False}},
+        {"$set": {CONVERSATION_KIND_FIELD: UNKNOWN_SUPPORT_KIND}},
+    )
+
+    await _safe_create_index(tickets, CONVERSATION_KIND_FIELD)
+    await _safe_create_index(
+        tickets,
+        [(CONVERSATION_KIND_FIELD, 1), ("status", 1), ("updated_at", -1)],
+    )
+    logger.info(
+        "Classified support conversations: %s guest SMS, %s platform support, %s unknown",
+        sms_result.modified_count,
+        support_result.modified_count,
+        unknown_result.modified_count,
+    )
+
+
+@migration_registry.register(
+    "010",
+    "Index participant support read states",
+    "Creates per-participant read-state indexes for platform support conversations",
+)
+async def migration_010_support_ticket_read_states(db):
+    """Keep unread state isolated between planners and root administrators."""
+    read_states = db["support_ticket_read_states"]
+    await _safe_create_index(
+        read_states,
+        [("ticket_id", 1), ("actor_key", 1)],
+        unique=True,
+    )
+    await _safe_create_index(
+        read_states,
+        [("actor_key", 1), ("last_read_at", -1)],
     )
 
 

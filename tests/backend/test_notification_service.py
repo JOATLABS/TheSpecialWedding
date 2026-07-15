@@ -6,6 +6,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
+from unittest.mock import AsyncMock
 
 import mongomock
 import pytest
@@ -141,6 +142,31 @@ def notification_service(monkeypatch):
     dummy_email = DummyEmailService()
     service.email_service = dummy_email
     return service, database, dummy_email
+
+
+def test_create_notification_persists_action_url(notification_service):
+    service, database, _ = notification_service
+    service._send_push_to_admin = AsyncMock()
+
+    create_result = asyncio.run(
+        service.create_notification(
+            {
+                "title": "New Support Ticket",
+                "message": "A planner needs help.",
+                "type": "support_ticket",
+                "target_audience": "root_admin",
+                "is_dismissible": True,
+                "priority": "high",
+                "action_url": "/admin/communications/inbox?conversation=support_ticket&ticket_id=ticket-1",
+            },
+            created_by="system",
+        )
+    )
+
+    stored = database["notifications"].find_one({"_id": ObjectId(create_result["id"])})
+    assert stored["action_url"] == (
+        "/admin/communications/inbox?conversation=support_ticket&ticket_id=ticket-1"
+    )
 
 
 def test_send_notification_dispatches_and_updates_delivery_summary(

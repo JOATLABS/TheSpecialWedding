@@ -8,6 +8,8 @@ from app.dependencies.auth_extended import ExtendedAuthUser
 from app.utils.migrations import (
     Migration003,
     migration_008_strip_non_planner_billing_fields,
+    migration_009_classify_support_conversations,
+    migration_010_support_ticket_read_states,
 )
 from app.utils.planner_billing_scope import (
     PLANNER_BILLING_USER_FIELDS,
@@ -108,6 +110,10 @@ class _FakeCollection:
         self.calls.append((query, update))
         return SimpleNamespace(modified_count=0)
 
+    async def create_index(self, keys, **kwargs):
+        self.calls.append(("create_index", keys, kwargs))
+        return "index"
+
 
 class _FakeDb(dict):
     def __getitem__(self, key):
@@ -143,3 +149,62 @@ async def test_migration_008_strips_billing_fields_from_non_planners():
     assert query["role"] == {"$ne": "wedding_planner"}
     assert len(query["$or"]) == len(PLANNER_BILLING_USER_FIELDS)
     assert update == {"$unset": planner_billing_unset_fields()}
+
+
+@pytest.mark.asyncio
+async def test_migration_009_classifies_support_and_sms_conversations_fail_closed():
+    tickets = _FakeCollection()
+    db = _FakeDb(support_tickets=tickets)
+
+    await migration_009_classify_support_conversations(db)
+
+    updates = [call for call in tickets.calls if call[0] != "create_index"]
+    assert updates == [
+        (
+            {
+                "conversation_kind": {"$exists": False},
+                "source": "sms",
+            },
+            {"$set": {"conversation_kind": "guest_sms"}},
+        ),
+        (
+            {
+                "conversation_kind": {"$exists": False},
+                "ticket_number": {"$exists": True, "$nin": [None, ""]},
+                "created_by": {"$exists": True, "$nin": [None, ""]},
+                "$or": [
+                    {"source": {"$exists": False}},
+                    {"source": {"$ne": "sms"}},
+                ],
+            },
+            {"$set": {"conversation_kind": "platform_support"}},
+        ),
+        (
+            {"conversation_kind": {"$exists": False}},
+            {"$set": {"conversation_kind": "unknown"}},
+        ),
+    ]
+    index_calls = [call for call in tickets.calls if call[0] == "create_index"]
+    assert any(call[1] == "conversation_kind" for call in index_calls)
+    assert any(
+        call[1] == [("conversation_kind", 1), ("status", 1), ("updated_at", -1)]
+        for call in index_calls
+    )
+
+
+@pytest.mark.asyncio
+async def test_migration_010_indexes_participant_specific_support_read_states():
+    read_states = _FakeCollection()
+    db = _FakeDb(support_ticket_read_states=read_states)
+
+    await migration_010_support_ticket_read_states(db)
+
+    index_calls = [call for call in read_states.calls if call[0] == "create_index"]
+    assert (
+        "create_index",
+        [("ticket_id", 1), ("actor_key", 1)],
+        {"unique": True},
+    ) in index_calls
+    assert any(
+        call[1] == [("actor_key", 1), ("last_read_at", -1)] for call in index_calls
+    )

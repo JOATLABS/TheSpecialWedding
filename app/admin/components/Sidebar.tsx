@@ -62,6 +62,7 @@ const adminNavItems: NavItem[] = [
   { name: 'Billing', href: '/admin/billing', icon: CreditCard },
   { name: 'Ad Platform', href: '/admin/ads', icon: Megaphone },
   { name: 'Notifications', href: '/admin/notifications', icon: Bell },
+  { name: 'Communications', href: '/admin/communications/inbox', icon: Mail },
   { name: 'Support', href: '/admin/support', icon: HelpCircle },
   // Shortcuts: quick access for ad platform workflows (after all main nav items)
   { name: 'Create Vendor', href: '/portal/ads/campaigns/new', icon: PlusCircle, shortcut: true },

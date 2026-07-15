@@ -11,6 +11,11 @@ from fastapi import HTTPException
 
 from app.core.cache import CacheKeys, cache
 from app.core.database import mongo
+from app.constants.support_conversations import (
+    CONVERSATION_KIND_FIELD,
+    GUEST_SMS_KIND,
+    guest_sms_ticket_scope,
+)
 from app.services.sms_service import SMSService
 from app.utils.contact_sanitizer import sanitize_phone
 from app.utils.support_inbox_links import build_support_inbox_path
@@ -221,6 +226,7 @@ class GuestHelpRequestService:
             "created_at": now,
             "updated_at": now,
             "source": "sms",
+            CONVERSATION_KIND_FIELD: GUEST_SMS_KIND,
             "origin": "public_help_form",
             "provider": provider if provider in {"twilio", "telnyx"} else "twilio",
             "message_sid": None,
@@ -255,7 +261,7 @@ class GuestHelpRequestService:
             }
 
         await self.support_tickets_collection.update_one(
-            {"_id": ticket_id},
+            guest_sms_ticket_scope({"_id": ticket_id}),
             {
                 "$set": {
                     "acknowledgment_sms": ack_status,
