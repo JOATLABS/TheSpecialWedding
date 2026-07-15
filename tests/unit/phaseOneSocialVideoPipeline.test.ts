@@ -90,6 +90,16 @@ describe('Phase 1 social video pipeline', () => {
       assert.equal(story.captionUrl, undefined);
       assert.equal(story.transcriptUrl, undefined);
     }
+
+    const coupleBoundaries = stories.find(
+      (story) => story.id === 'couple-experience-boundaries-social',
+    );
+    assert.ok(coupleBoundaries);
+    assert.equal(
+      coupleBoundaries.socialOutcome,
+      'Give couples guided forms and the payment context they need while planner operations stay private.',
+    );
+    assert.doesNotMatch(coupleBoundaries.socialOutcome, /timeline/i);
   });
 
   it('keeps every social take separate from website IDs, checkpoints, routes, and receipts', () => {

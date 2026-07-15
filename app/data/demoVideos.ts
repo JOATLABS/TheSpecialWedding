@@ -1203,7 +1203,7 @@ const PHASE_ONE_SOCIAL_VIDEO_STORY_DRAFTS = [
     productionChannel: 'social',
     phaseOnePillar: 'Couple Experience + Boundaries',
     socialOutcome:
-      'Give couples the timeline, forms, and payment context they need while operations stay private.',
+      'Give couples guided forms and the payment context they need while planner operations stay private.',
     routePlan: [
       '/admin/forms/form_marketing_capture_couple_intake/edit',
       '/couple/dashboard',

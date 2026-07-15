@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-14 — Phase 1 copy stays inside the final reviewed frames
+
+- Narrowed the Couple + Boundaries social outcome to the guided form and payment context its manual take actually proves, removing the unsupported timeline claim before human playback approval.
+- Narrowed the Guest Memories story and alt text to the visible review queue, filters, keep/reject decisions, and individual downloads in the credential-safe replacement frame.
+
 ## 2026-07-14 — Guest Memories proof keeps upload credentials out of frame
 
 - Replaced the Guest Memories product proof with a manually driven 1440×900 Chrome viewport capture centered on the populated review queue and fictional media cards. The complete couple-portal shell remains visible, while the private upload URL and token stay outside the frame; the build-bound checksum and manual review receipt now reference the corrected original PNG.
