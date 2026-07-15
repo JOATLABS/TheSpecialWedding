@@ -40,6 +40,7 @@ class NotificationService:
                 "target_audience": notification_data["target_audience"],
                 "wedding_id": notification_data.get("wedding_id"),
                 "user_id": notification_data.get("user_id"),
+                "action_url": notification_data.get("action_url"),
                 "created_by": created_by,
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),

@@ -13,12 +13,12 @@ from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     check_wedding_access,
     enforce_team_permission,
-    require_admin_or_planner,
-    require_wedding_planner_only,
+    require_communication_capability,
 )
 from app.services.email_service_resend import ResendEmailService
 from app.services.sse_manager import sse_manager
 from app.services.wedding_service import WeddingService
+from app.utils.communication_access import CommunicationCapability
 from app.utils.rsvp_links import build_guest_otp_url
 from app.utils.response import dict_response
 
@@ -71,7 +71,9 @@ def get_email_status():
 @router.post("/email/send-invites", tags=["Admin"])
 async def send_email_invites(
     payload: EmailInviteModel,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.RSVP_INVITES)
+    ),
 ):
     """Send RSVP invitation emails (JSON endpoint)"""
     enforce_team_permission(current_user, "send_rsvp")
@@ -110,7 +112,9 @@ async def send_email_invites_with_attachment(
     custom_subject: Optional[str] = Form(None),
     custom_html: Optional[str] = Form(None),
     attachment: UploadFile = File(...),
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.RSVP_INVITES)
+    ),
 ):
     """Send RSVP invitation emails with attachment (multipart/form-data endpoint)"""
     enforce_team_permission(current_user, "send_rsvp")
@@ -161,7 +165,9 @@ async def send_email_invites_with_attachment(
 @router.post("/email/send-reminders", tags=["Admin"])
 async def send_email_reminders(
     payload: EmailReminderModel,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.REMINDERS)
+    ),
 ):
     """Send event reminder emails"""
     enforce_team_permission(current_user, "send_reminders")
@@ -273,7 +279,9 @@ def build_individual_email_reminder_content(
 @router.post("/email/send-reminder-individual", tags=["Admin"])
 async def send_individual_email_reminder(
     payload: IndividualEmailReminderModel,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.REMINDERS)
+    ),
 ):
     """Send an email reminder to a specific guest (used for guests without phone numbers)."""
     enforce_team_permission(current_user, "send_reminders")
@@ -356,7 +364,9 @@ async def send_individual_email_reminder(
 
 @router.get("/email/logs", tags=["Admin"])
 async def get_email_logs(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.HISTORY)
+    ),
     wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
     limit: int = Query(100, description="Number of logs to return"),
 ):
@@ -404,7 +414,9 @@ async def get_email_logs(
 
 @router.get("/email/preview-invitation", tags=["Admin"])
 def preview_invitation_email(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.RSVP_INVITES)
+    ),
     guest_name: str = Query("John Doe", description="Guest name for preview"),
     couple_names: str = Query("Jane & John", description="Couple names"),
     wedding_date: str = Query("2024-12-25", description="Wedding date"),
@@ -430,7 +442,9 @@ def preview_invitation_email(
 
 @router.get("/email/preview-reminder", tags=["Admin"])
 def preview_reminder_email(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.REMINDERS)
+    ),
     guest_name: str = Query("John Doe", description="Guest name for preview"),
     event_type: str = Query("white_wedding", description="Event type"),
     event_date: str = Query("2024-12-25", description="Event date"),

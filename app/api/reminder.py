@@ -6,10 +6,11 @@ from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     check_wedding_access,
     enforce_team_permission,
-    require_team_or_planner,
+    require_communication_capability,
 )
 from app.services.reminder_service import ReminderService
 from app.services.wedding_service import WeddingService
+from app.utils.communication_access import CommunicationCapability
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -33,7 +34,9 @@ async def send_reminder(
     event_type: str,
     message: str,
     target_group: str,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.REMINDERS)
+    ),
     reminder_service: ReminderService = Depends(get_reminder_service),
 ):
     enforce_team_permission(current_user, "send_reminders")
@@ -49,7 +52,9 @@ async def send_reminder(
 
 @router.get("/reminders/logs", tags=["Admin"])
 async def get_logs(
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.HISTORY)
+    ),
     reminder_service: ReminderService = Depends(get_reminder_service),
 ):
     return await reminder_service.get_logs()

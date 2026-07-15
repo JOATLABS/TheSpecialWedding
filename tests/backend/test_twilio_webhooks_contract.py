@@ -10,8 +10,8 @@ import pytest
 from bson import ObjectId
 from starlette.datastructures import FormData, UploadFile
 
+from app.api import support_management, twilio_webhooks
 from app.api.support_management import SMSResponseModel
-from app.api import twilio_webhooks
 
 
 class FakeRequest:
@@ -46,6 +46,9 @@ class FakeGuestCollection:
 
     async def find_one(self, _query: dict[str, object]) -> dict | None:
         return self.find_one_result
+
+    def find(self, _query: dict[str, object]) -> "FakeCursor":
+        return FakeCursor([self.find_one_result] if self.find_one_result else [])
 
     async def update_many(
         self, query: dict[str, object], payload: dict[str, object]
@@ -181,6 +184,41 @@ def test_sms_response_does_not_mark_resolved_by_default() -> None:
     response = SMSResponseModel(message="Did you receive the RSVP link?")
 
     assert response.mark_resolved is False
+
+
+@pytest.mark.asyncio
+async def test_inbound_sms_append_keeps_the_mutation_in_guest_sms_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ticket = {
+        "_id": ObjectId("65f000000000000000000105"),
+        "conversation_kind": "guest_sms",
+        "source": "sms",
+        "phone": "+15551234567",
+        "guest_messages": [],
+        "status": "new",
+        "created_at": datetime.now(timezone.utc),
+    }
+    tickets = FakeCollection([ticket])
+    monkeypatch.setattr(
+        twilio_webhooks,
+        "mongo",
+        SimpleNamespace(db={"support_tickets": tickets}),
+    )
+
+    await twilio_webhooks._append_inbound_sms_to_ticket(
+        ticket,
+        from_number="+15551234567",
+        body_text="I still need help",
+        message_sid="SM-scoped-append",
+    )
+
+    assert tickets.updated[0][0] == {
+        "_id": ticket["_id"],
+        "conversation_kind": "guest_sms",
+        "source": "sms",
+        "guest_messages.message_sid": {"$ne": "SM-scoped-append"},
+    }
 
 
 def test_normalize_twilio_form_data_ignores_upload_files(
@@ -400,6 +438,76 @@ async def test_incoming_webhook_uses_normalized_string_fields(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("body", "message_sid"),
+    [
+        ("I need help with my RSVP", "SM-unroutable-1"),
+        ("HELP", "SM-unroutable-help-1"),
+    ],
+)
+async def test_unroutable_inbound_sms_does_not_create_orphan_ticket(
+    monkeypatch: pytest.MonkeyPatch,
+    body: str,
+    message_sid: str,
+) -> None:
+    guest_collection = FakeGuestCollection()
+    support_tickets = FakeCollection()
+    sent_messages: list[tuple[str, str]] = []
+
+    class FakeSMSService:
+        def send_sms(self, to_number: str, message: str) -> dict[str, bool]:
+            sent_messages.append((to_number, message))
+            return {"success": True}
+
+    monkeypatch.setattr(
+        twilio_webhooks, "_validate_twilio_signature", lambda *_args, **_kwargs: True
+    )
+    monkeypatch.setattr(
+        twilio_webhooks,
+        "mongo",
+        SimpleNamespace(
+            get_guest_collection=lambda: guest_collection,
+            db={
+                "weddings": FakeCollection(),
+                "support_tickets": support_tickets,
+            },
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "app.services.sms_service",
+        SimpleNamespace(SMSService=FakeSMSService),
+    )
+
+    request = FakeRequest(
+        FormData(
+            {
+                "From": "+15551234567",
+                "Body": body,
+                "MessageSid": message_sid,
+            }
+        ),
+        "/webhook/twilio/incoming",
+    )
+
+    result = await twilio_webhooks.handle_twilio_incoming_message(request, None)
+
+    assert result == {
+        "status": "ignored",
+        "action": "unroutable",
+        "reason": "No unambiguous planner-owned conversation",
+    }
+    assert support_tickets.inserted == []
+    assert sent_messages == [
+        (
+            "+15551234567",
+            "We couldn't match this number to a wedding. Please contact your "
+            "wedding planner directly for help.",
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_incoming_guest_reply_appends_to_existing_public_help_ticket_without_auto_ack(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -415,6 +523,7 @@ async def test_incoming_guest_reply_appends_to_existing_public_help_ticket_witho
         "assigned_to": "planner-a@example.com",
         "status": "new",
         "source": "sms",
+        "conversation_kind": "guest_sms",
         "origin": "public_help_form",
         "created_at": now,
         "updated_at": now,
@@ -497,6 +606,7 @@ async def test_incoming_guest_reply_duplicate_message_sid_is_idempotent(
         "assigned_to": "planner-a@example.com",
         "status": "new",
         "source": "sms",
+        "conversation_kind": "guest_sms",
         "origin": "public_help_form",
         "created_at": now,
         "updated_at": now,
@@ -572,6 +682,7 @@ async def test_help_keyword_appends_to_existing_public_help_ticket(
         "assigned_to": "planner-a@example.com",
         "status": "new",
         "source": "sms",
+        "conversation_kind": "guest_sms",
         "origin": "public_help_form",
         "created_at": now,
         "updated_at": now,
@@ -649,6 +760,7 @@ async def test_incoming_guest_reply_reopens_resolved_sms_ticket(
         "assigned_to": "planner-b@example.com",
         "status": "resolved",
         "source": "sms",
+        "conversation_kind": "guest_sms",
         "created_at": now,
         "updated_at": now,
         "resolved_at": now,
@@ -723,6 +835,7 @@ async def test_inbound_sms_thread_lookup_rejects_ambiguous_cross_planner_phone(
                 "assigned_to": "planner-a@example.com",
                 "status": "new",
                 "source": "sms",
+                "conversation_kind": "guest_sms",
                 "updated_at": now,
                 "created_at": now,
             },
@@ -733,6 +846,7 @@ async def test_inbound_sms_thread_lookup_rejects_ambiguous_cross_planner_phone(
                 "assigned_to": "planner-b@example.com",
                 "status": "new",
                 "source": "sms",
+                "conversation_kind": "guest_sms",
                 "updated_at": now,
                 "created_at": now,
             },
@@ -747,3 +861,54 @@ async def test_inbound_sms_thread_lookup_rejects_ambiguous_cross_planner_phone(
     ticket = await twilio_webhooks._find_existing_sms_ticket_for_inbound("+15558675309")
 
     assert ticket is None
+
+
+@pytest.mark.asyncio
+async def test_inbound_sms_guest_lookup_rejects_duplicate_phone_across_weddings() -> (
+    None
+):
+    guests = FakeCollection(
+        [
+            {"_id": ObjectId(), "phone": "+15558675309", "wedding_id": "wedding-a"},
+            {"_id": ObjectId(), "phone": "+15558675309", "wedding_id": "wedding-b"},
+        ]
+    )
+
+    guest = await twilio_webhooks._find_unambiguous_guest_by_phone(
+        guests,
+        ["+15558675309", "5558675309"],
+    )
+
+    assert guest is None
+
+
+@pytest.mark.asyncio
+async def test_sms_ticket_enrichment_never_falls_back_outside_wedding_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ScopedGuestCollection:
+        def __init__(self) -> None:
+            self.queries: list[dict] = []
+
+        async def find_one(self, query: dict, _projection: dict) -> dict | None:
+            self.queries.append(query)
+            if "wedding_id" not in query:
+                return {"_id": ObjectId(), "name": "Wrong wedding guest"}
+            return None
+
+    guests = ScopedGuestCollection()
+    monkeypatch.setattr(
+        support_management,
+        "mongo",
+        SimpleNamespace(get_guest_collection=lambda: guests),
+    )
+
+    guest = await support_management._resolve_guest_for_sms_ticket(
+        {
+            "phone": "+15558675309",
+            "wedding_id": "wedding-a",
+        }
+    )
+
+    assert guest is None
+    assert all("wedding_id" in query for query in guests.queries)

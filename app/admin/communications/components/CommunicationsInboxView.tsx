@@ -182,6 +182,7 @@ interface PlannerSupportTicket {
   };
   comments?: SupportComment[];
   source?: string;
+  is_read?: boolean;
 }
 
 interface SupportTicketsResponse {
@@ -588,6 +589,9 @@ export default function CommunicationsInboxView() {
         return null;
       }
       setSelectedSupportTicketDetail(ticket);
+      setSupportTickets((prev) =>
+        prev.map((existing) => existing._id === ticketId ? { ...existing, is_read: true } : existing)
+      );
       return ticket;
     } catch (error) {
       console.error('Failed to fetch support thread:', error);
@@ -755,7 +759,7 @@ export default function CommunicationsInboxView() {
         type: 'support_ticket',
         name: ticket.subject || ticket.ticket_number || 'Support ticket',
         preview: getSupportTicketPreview(ticket),
-        is_read: true,
+        is_read: ticket.is_read ?? true,
         created_at: getSupportTicketActivity(ticket),
         wedding_id: ticket.wedding_id || undefined,
         wedding_label: getWeddingLabel(ticket.wedding_id),
@@ -787,7 +791,11 @@ export default function CommunicationsInboxView() {
     (count, ticket) => count + (!ticket.is_read ? 1 : 0),
     0
   );
-  const totalUnread = unreadCount + smsUnreadCount + coupleConversations.reduce(
+  const supportTicketUnreadCount = supportTickets.reduce(
+    (count, ticket) => count + (!ticket.is_read ? 1 : 0),
+    0
+  );
+  const totalUnread = unreadCount + smsUnreadCount + supportTicketUnreadCount + coupleConversations.reduce(
     (count, conversation) => count + (conversation.unread_count || 0),
     0
   );
@@ -917,7 +925,7 @@ export default function CommunicationsInboxView() {
         type: 'support_ticket',
         name: ticket.subject || ticket.ticket_number || 'Support ticket',
         preview: getSupportTicketPreview(ticket),
-        is_read: true,
+        is_read: ticket.is_read ?? true,
         created_at: getSupportTicketActivity(ticket),
         wedding_id: ticket.wedding_id || undefined,
         wedding_label: getWeddingLabel(ticket.wedding_id),

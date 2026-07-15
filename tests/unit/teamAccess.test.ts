@@ -3,8 +3,12 @@ import test from 'node:test';
 
 import type { UserProfile } from '../../app/contexts/AdminContext';
 import {
+  canAccessSupportInbox,
   canAccessWeddings,
   canManageGallery,
+  canMessageCouples,
+  canSendReminders,
+  canSendRsvp,
   getPlannerScopedUserId,
 } from '../../app/admin/utils/teamAccess';
 
@@ -98,4 +102,34 @@ test('canManageGallery follows the independent team permission exactly', () => {
     true,
   );
   assert.equal(canManageGallery(null), false);
+});
+
+test('root admin keeps support inbox access without planner communication capabilities', () => {
+  const rootAdmin: UserProfile = {
+    email: 'root@example.com',
+    role: 'root_admin',
+    is_root_admin: true,
+    is_wedding_planner: false,
+    is_vendor: false,
+  };
+
+  assert.equal(canAccessSupportInbox(rootAdmin), true);
+  assert.equal(canMessageCouples(rootAdmin), false);
+  assert.equal(canSendRsvp(rootAdmin), false);
+  assert.equal(canSendReminders(rootAdmin), false);
+});
+
+test('wedding planner retains support inbox and planner communication capabilities', () => {
+  const planner: UserProfile = {
+    email: 'planner@example.com',
+    role: 'wedding_planner',
+    is_root_admin: false,
+    is_wedding_planner: true,
+    is_vendor: false,
+  };
+
+  assert.equal(canAccessSupportInbox(planner), true);
+  assert.equal(canMessageCouples(planner), true);
+  assert.equal(canSendRsvp(planner), true);
+  assert.equal(canSendReminders(planner), true);
 });

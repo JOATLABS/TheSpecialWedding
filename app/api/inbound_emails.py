@@ -14,11 +14,22 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from app.dependencies.auth_extended import ExtendedAuthUser, require_admin_or_planner
+from app.dependencies.auth_extended import (
+    ExtendedAuthUser,
+    get_accessible_wedding_ids,
+    require_communication_capability,
+)
 from app.services.inbound_email_service import inbound_email_service
+from app.utils.communication_access import CommunicationCapability
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _inbox_owner_email(current_user: ExtendedAuthUser) -> str:
+    if current_user.is_team_member and current_user.team_owner_email:
+        return current_user.team_owner_email
+    return current_user.email
 
 
 class ReplyRequest(BaseModel):
@@ -41,7 +52,9 @@ async def get_inbox(
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
     wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
     unread_only: bool = Query(False, description="Show only unread emails"),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.INBOUND_EMAIL)
+    ),
 ):
     """
     Get planner's inbox with pagination.
@@ -50,20 +63,26 @@ async def get_inbox(
     with unread count for badge display.
     """
     return await inbound_email_service.get_inbox(
-        planner_id=current_user.email,
+        planner_id=_inbox_owner_email(current_user),
         wedding_id=wedding_id,
         page=page,
         limit=limit,
         unread_only=unread_only,
+        accessible_wedding_ids=get_accessible_wedding_ids(current_user),
     )
 
 
 @router.get("/inbound-emails/unread-count", tags=["Inbound Emails"])
 async def get_unread_count(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.INBOUND_EMAIL)
+    ),
 ):
     """Get unread email count for badge/notification display"""
-    return await inbound_email_service.get_unread_count(current_user.email)
+    return await inbound_email_service.get_unread_count(
+        _inbox_owner_email(current_user),
+        accessible_wedding_ids=get_accessible_wedding_ids(current_user),
+    )
 
 
 # ==================== SINGLE EMAIL ENDPOINTS ====================
@@ -71,19 +90,29 @@ async def get_unread_count(
 
 @router.get("/inbound-emails/{email_id}", tags=["Inbound Emails"])
 async def get_email(
-    email_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    email_id: str,
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.INBOUND_EMAIL)
+    ),
 ):
     """
     Get a single inbound email with full content.
 
     Automatically marks the email as read.
     """
-    return await inbound_email_service.get_email(email_id, current_user.email)
+    return await inbound_email_service.get_email(
+        email_id,
+        _inbox_owner_email(current_user),
+        accessible_wedding_ids=get_accessible_wedding_ids(current_user),
+    )
 
 
 @router.get("/inbound-emails/threads/{thread_id}", tags=["Inbound Emails"])
 async def get_thread(
-    thread_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    thread_id: str,
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.INBOUND_EMAIL)
+    ),
 ):
     """
     Get full email thread — both inbound and outbound messages.
@@ -91,7 +120,11 @@ async def get_thread(
     Merges inbound emails with outbound emails from email_logs,
     sorted chronologically to show the full conversation.
     """
-    return await inbound_email_service.get_thread(thread_id, current_user.email)
+    return await inbound_email_service.get_thread(
+        thread_id,
+        _inbox_owner_email(current_user),
+        accessible_wedding_ids=get_accessible_wedding_ids(current_user),
+    )
 
 
 # ==================== ACTION ENDPOINTS ====================
@@ -99,25 +132,39 @@ async def get_thread(
 
 @router.put("/inbound-emails/{email_id}/read", tags=["Inbound Emails"])
 async def mark_as_read(
-    email_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    email_id: str,
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.INBOUND_EMAIL)
+    ),
 ):
     """Mark a single email as read"""
-    return await inbound_email_service.mark_as_read(email_id, current_user.email)
+    return await inbound_email_service.mark_as_read(
+        email_id,
+        _inbox_owner_email(current_user),
+        accessible_wedding_ids=get_accessible_wedding_ids(current_user),
+    )
 
 
 @router.put("/inbound-emails/read-all", tags=["Inbound Emails"])
 async def mark_all_as_read(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.INBOUND_EMAIL)
+    ),
 ):
     """Mark all unread emails as read"""
-    return await inbound_email_service.mark_all_as_read(current_user.email)
+    return await inbound_email_service.mark_all_as_read(
+        _inbox_owner_email(current_user),
+        accessible_wedding_ids=get_accessible_wedding_ids(current_user),
+    )
 
 
 @router.post("/inbound-emails/{email_id}/reply", tags=["Inbound Emails"])
 async def send_reply(
     email_id: str,
     reply: ReplyRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_communication_capability(CommunicationCapability.INBOUND_EMAIL)
+    ),
 ):
     """
     Send a reply to an inbound email.
@@ -127,7 +174,8 @@ async def send_reply(
     """
     return await inbound_email_service.send_reply(
         email_id=email_id,
-        planner_id=current_user.email,
+        planner_id=_inbox_owner_email(current_user),
         reply_html=reply.html_content,
         reply_text=reply.text_content,
+        accessible_wedding_ids=get_accessible_wedding_ids(current_user),
     )

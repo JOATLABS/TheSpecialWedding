@@ -19,6 +19,11 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from starlette.datastructures import FormData, UploadFile
 
 from app.core.database import mongo
+from app.constants.support_conversations import (
+    CONVERSATION_KIND_FIELD,
+    GUEST_SMS_KIND,
+    guest_sms_ticket_scope,
+)
 from app.utils.contact_sanitizer import sanitize_phone
 from app.utils.support_inbox_links import (
     build_support_inbox_path,
@@ -114,6 +119,27 @@ def _wedding_lookup_variants(wedding_id: Any) -> list[Any]:
     return variants
 
 
+async def _find_unambiguous_guest_by_phone(
+    guest_collection,
+    phone_variants: list[str],
+) -> Optional[dict]:
+    """Resolve a phone only when it identifies one guest document."""
+    if not phone_variants:
+        return None
+    cursor = guest_collection.find(
+        {"$or": [{"phone": variant} for variant in phone_variants]}
+    ).limit(2)
+    guests = await cursor.to_list(length=2)
+    if len(guests) != 1:
+        if guests:
+            logger.warning(
+                "Ambiguous inbound SMS guest lookup across %s wedding records",
+                len(guests),
+            )
+        return None
+    return guests[0]
+
+
 async def _find_existing_sms_ticket_for_inbound(
     from_number: str,
     wedding_id: Any = None,
@@ -124,11 +150,12 @@ async def _find_existing_sms_ticket_for_inbound(
     if not phone_variants:
         return None
 
-    base_query: dict[str, Any] = {
-        "source": "sms",
-        "phone": {"$in": phone_variants},
-        "assigned_to": {"$nin": [None, ""]},
-    }
+    base_query: dict[str, Any] = guest_sms_ticket_scope(
+        {
+            "phone": {"$in": phone_variants},
+            "assigned_to": {"$nin": [None, ""]},
+        }
+    )
     wedding_variants = _wedding_lookup_variants(wedding_id)
     if wedding_variants:
         base_query["wedding_id"] = {"$in": wedding_variants}
@@ -165,6 +192,25 @@ async def _find_existing_sms_ticket_for_inbound(
 
         return tickets[0]
     return None
+
+
+def _reject_unroutable_inbound_sms(sms_service, from_number: str) -> dict[str, str]:
+    """Acknowledge an SMS without creating a conversation nobody can own."""
+    logger.warning(
+        "Ignoring unroutable inbound SMS from %s: no unambiguous "
+        "planner-owned conversation",
+        from_number,
+    )
+    sms_service.send_sms(
+        from_number,
+        "We couldn't match this number to a wedding. Please contact your "
+        "wedding planner directly for help.",
+    )
+    return {
+        "status": "ignored",
+        "action": "unroutable",
+        "reason": "No unambiguous planner-owned conversation",
+    }
 
 
 async def _create_sms_guest_message_notification(
@@ -286,7 +332,7 @@ async def _append_inbound_sms_to_ticket(
     if message_sid:
         update["$set"]["message_sid"] = message_sid
 
-    update_query: dict[str, Any] = {"_id": ticket["_id"]}
+    update_query: dict[str, Any] = guest_sms_ticket_scope({"_id": ticket["_id"]})
     if message_sid:
         update_query["guest_messages.message_sid"] = {"$ne": message_sid}
 
@@ -1176,8 +1222,9 @@ async def handle_twilio_incoming_message(
         normalized_number = from_number.replace("+1", "").replace("+", "")
 
         # Find guest by phone number
-        guest = await guest_collection.find_one(
-            {"$or": [{"phone": variant} for variant in phone_variants]}
+        guest = await _find_unambiguous_guest_by_phone(
+            guest_collection,
+            phone_variants,
         )
 
         # Get wedding name if guest found
@@ -1279,14 +1326,13 @@ async def handle_twilio_incoming_message(
                 "here and the planner will respond by text. Reply STOP to "
                 "unsubscribe. Msg&data rates may apply."
             )
-            sms_service.send_sms(from_number, help_msg)
-
             existing_ticket = await _find_existing_sms_ticket_for_inbound(
                 from_number,
                 wedding_id=wedding_id,
                 assigned_to=assigned_planner_email,
             )
             if existing_ticket:
+                sms_service.send_sms(from_number, help_msg)
                 updated_ticket = await _append_inbound_sms_to_ticket(
                     existing_ticket,
                     from_number=from_number,
@@ -1304,35 +1350,37 @@ async def handle_twilio_incoming_message(
                     "ticket_id": str(updated_ticket.get("_id")),
                 }
 
+            if not assigned_planner_email:
+                return _reject_unroutable_inbound_sms(sms_service, from_number)
+
             # Create help ticket for planner
-            if assigned_planner_email:
-                help_ticket = {
-                    "phone": from_number,
-                    "message": "HELP request - Guest requested assistance",
-                    "guest_id": str(guest["_id"]) if guest else None,
-                    "guest_name": guest.get("name") if guest else None,
-                    "wedding_id": str(wedding_id) if wedding_id else None,
-                    "wedding_name": wedding_name,
-                    "assigned_to": assigned_planner_email,
-                    "status": "new",
-                    "created_at": datetime.now(timezone.utc),
-                    "source": "sms",
-                    "provider": "twilio",
-                    "message_sid": message_sid,
-                    "is_read": False,
-                    "priority": "high",
-                    "type": "help_request",
-                }
-                insert_result = await mongo.db["support_tickets"].insert_one(
-                    help_ticket
-                )
-                help_ticket["_id"] = insert_result.inserted_id
-                await _notify_planner_help_request(
-                    help_ticket, assigned_planner_email, wedding_name
-                )
-                logger.info(
-                    f"HELP request from {from_number} - planner {assigned_planner_email} notified"
-                )
+            sms_service.send_sms(from_number, help_msg)
+            help_ticket = {
+                "phone": from_number,
+                "message": "HELP request - Guest requested assistance",
+                "guest_id": str(guest["_id"]) if guest else None,
+                "guest_name": guest.get("name") if guest else None,
+                "wedding_id": str(wedding_id) if wedding_id else None,
+                "wedding_name": wedding_name,
+                "assigned_to": assigned_planner_email,
+                "status": "new",
+                "created_at": datetime.now(timezone.utc),
+                "source": "sms",
+                CONVERSATION_KIND_FIELD: GUEST_SMS_KIND,
+                "provider": "twilio",
+                "message_sid": message_sid,
+                "is_read": False,
+                "priority": "high",
+                "type": "help_request",
+            }
+            insert_result = await mongo.db["support_tickets"].insert_one(help_ticket)
+            help_ticket["_id"] = insert_result.inserted_id
+            await _notify_planner_help_request(
+                help_ticket, assigned_planner_email, wedding_name
+            )
+            logger.info(
+                f"HELP request from {from_number} - planner {assigned_planner_email} notified"
+            )
 
             return {"status": "ok", "action": "help"}
 
@@ -1361,6 +1409,9 @@ async def handle_twilio_incoming_message(
                     "ticket_id": str(updated_ticket.get("_id")),
                 }
 
+            if not assigned_planner_email:
+                return _reject_unroutable_inbound_sms(sms_service, from_number)
+
             # Create support ticket routed to wedding planner
             support_ticket = {
                 "phone": from_number,
@@ -1387,6 +1438,7 @@ async def handle_twilio_incoming_message(
                 "last_message_preview": body_text[:160],
                 "last_message_direction": "inbound",
                 "source": "sms",
+                CONVERSATION_KIND_FIELD: GUEST_SMS_KIND,
                 "provider": "twilio",
                 "message_sid": message_sid,
                 "is_read": False,
@@ -1409,13 +1461,8 @@ async def handle_twilio_incoming_message(
             sms_service.send_sms(from_number, support_msg)
 
             # Notify wedding planner
-            if assigned_planner_email:
-                await _create_sms_guest_message_notification(support_ticket, body_text)
-                await _notify_planner_support_ticket(
-                    support_ticket, assigned_planner_email
-                )
-            else:
-                await _notify_root_admin_support_ticket(support_ticket)
+            await _create_sms_guest_message_notification(support_ticket, body_text)
+            await _notify_planner_support_ticket(support_ticket, assigned_planner_email)
 
             return {"status": "ok", "action": "support_ticket"}
 
@@ -1433,7 +1480,13 @@ async def handle_twilio_incoming_message(
 # ==================== HELPER FUNCTIONS ====================
 
 
-async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
+async def _notify_planner_support_ticket(
+    ticket: dict,
+    planner_email: str,
+    *,
+    action_path: Optional[str] = None,
+    action_label: str = "Open in Inbox",
+):
     """Send email notification to wedding planner about new support ticket"""
     try:
         from app.core.config import settings
@@ -1442,12 +1495,15 @@ async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
         email_service = ResendEmailService()
 
         frontend_url = settings.get_required_url("FRONTEND_URL")
-        inbox_url = build_support_inbox_url(
-            frontend_url=frontend_url,
-            conversation="sms_support",
-            ticket_id=str(ticket["_id"]),
-            wedding_id=ticket.get("wedding_id"),
-        )
+        if action_path:
+            inbox_url = f"{frontend_url.rstrip('/')}{action_path}"
+        else:
+            inbox_url = build_support_inbox_url(
+                frontend_url=frontend_url,
+                conversation="sms_support",
+                ticket_id=str(ticket["_id"]),
+                wedding_id=ticket.get("wedding_id"),
+            )
         subject = f"New Guest Message: {ticket['wedding_name']}"
 
         safe_wedding_name = html.escape(str(ticket.get("wedding_name", "")), quote=True)
@@ -1477,7 +1533,7 @@ async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
             <div style="margin: 30px 0;">
                 <a href="{safe_inbox_url}"
                    style="background-color: #2c3e50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
-                    Open in Inbox
+                    {html.escape(action_label)}
                 </a>
             </div>
 
@@ -1499,42 +1555,6 @@ async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
         logger.info(f"Email notification sent to planner {planner_email}")
     except Exception as e:
         logger.error(f"Failed to send email notification to planner: {str(e)}")
-
-
-async def _notify_root_admin_support_ticket(ticket: dict):
-    """
-    Send notification to ROOT_ADMIN for tickets without assigned planner.
-    Logs to errors collection so it appears in the platform monitoring dashboard.
-    """
-    try:
-        root_admin_email = os.getenv(
-            "ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io"
-        )
-
-        # Log to errors collection for dashboard visibility
-        error_record = {
-            "error_id": f"unassigned_ticket_{ticket.get('message_sid', datetime.now(timezone.utc).timestamp())}",
-            "error_type": "UnassignedSupportTicket",
-            "message": f"SMS from {ticket['phone']} has no assigned planner - wedding: {ticket.get('wedding_name', 'Unknown')}",
-            "severity": "warning",
-            "timestamp": datetime.now(timezone.utc),
-            "acknowledged": False,
-            "context": {
-                "phone": ticket["phone"],
-                "wedding_name": ticket.get("wedding_name"),
-                "wedding_id": ticket.get("wedding_id"),
-                "sms_message": ticket["message"],
-                "source": "twilio_incoming_sms",
-            },
-        }
-        await mongo.db["errors"].insert_one(error_record)
-        logger.info("Unassigned ticket logged to errors collection")
-
-        # Send email to ROOT_ADMIN
-        await _notify_planner_support_ticket(ticket, root_admin_email)
-
-    except Exception as e:
-        logger.error(f"Failed to send ROOT_ADMIN notification: {str(e)}")
 
 
 async def _notify_planner_help_request(

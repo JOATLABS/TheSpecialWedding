@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-07-15 — Root support inbox is isolated from planner communications
+
+- Added a role-scoped Communications inbox: root administrators receive the existing Inbox route with only canonical platform-support tickets, while planner and team-member tabs, wedding selection, couple messages, inbound email, guest SMS, reminders, and history retain their existing role/permission gates.
+- Added an exact `conversation_kind` discriminator, stable ticket creator/owner identity, wedding ownership validation, participant-specific read state, internal-comment filtering, and scoped support metrics. Legacy rows are classified by migrations; ambiguous records are quarantined instead of entering either inbox.
+- Removed the unused support-ticket model family, the hidden legacy communications tab interface, and the unconsumed root-only global Twilio message-log route. Legacy `/admin/inbox` and `/admin/reminders` URLs remain query-preserving redirects. Inbound SMS that cannot be matched to one planner-owned conversation now receives a safe contact-your-planner response without creating an orphan ticket or notifying root about a conversation root cannot open.
+- Hardened adjacent planner communication boundaries: duplicate phone matches fail closed, SMS enrichment cannot cross wedding scope, assigned-weddings-only team members cannot read or mutate the planner owner's other inbound-email threads, inbound email uses canonical planner ownership, and outbound thread history is returned only after an owned inbound thread establishes wedding scope.
+
 ## 2026-07-15 — Phase 1 walkthroughs are approved for publication
 
 - Recorded Emmanuel Akinwale's named normal-speed playback approval for the eight Phase 1 website walkthroughs and four independent social stories, binding every receipt to the exact export, thumbnail, WebVTT captions, transcript, dimensions, duration, audio stream, byte length, and checksum.

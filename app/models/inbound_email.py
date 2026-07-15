@@ -43,7 +43,12 @@ class InboundEmailThreadContext(BaseModel):
 
     wedding_id: Optional[str] = Field(None, description="ObjectId of wedding")
     wedding_slug: Optional[str] = Field(None, description="Wedding URL slug")
-    planner_id: Optional[str] = Field(None, description="Planner email/ID")
+    assigned_planner_id: Optional[str] = Field(
+        None, description="Canonical planner user ID"
+    )
+    assigned_planner_email: Optional[str] = Field(
+        None, description="Canonical planner email snapshot"
+    )
     thread_id: Optional[str] = Field(
         None, description="Thread identifier: wedding-{slug}"
     )

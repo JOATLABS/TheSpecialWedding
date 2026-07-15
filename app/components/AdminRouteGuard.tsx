@@ -3,9 +3,13 @@
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import { getRootCommunicationsRedirect } from '@/admin/utils/communicationsAccess';
 import { applyBillingBlockTarget } from '@/utils/adminApiAuthGuard';
 
 function getRootAdminRedirect(path: string): string | null {
+  const communicationsRedirect = getRootCommunicationsRedirect(path);
+  if (communicationsRedirect) return communicationsRedirect;
+
   if (path === '/admin/planner' || path.startsWith('/admin/planner/')) {
     return '/admin';
   }

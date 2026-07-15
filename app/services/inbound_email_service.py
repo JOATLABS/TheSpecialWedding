@@ -17,7 +17,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 import aiohttp
 import bleach
@@ -172,11 +172,11 @@ class InboundEmailService:
             )
 
             # Async: notify planner
-            planner_id = thread_context.get("planner_id")
-            if planner_id:
+            planner_email = thread_context.get("assigned_planner_email")
+            if planner_email:
                 asyncio.create_task(
                     self._notify_planner(
-                        planner_id=planner_id,
+                        planner_id=planner_email,
                         wedding_id=thread_context.get("wedding_id"),
                         guest_name=thread_context.get("guest_name")
                         or from_name
@@ -343,7 +343,8 @@ class InboundEmailService:
             "thread_id": decoded.get("thread_id"),
             "guest_id": decoded.get("guest_id"),
             "wedding_id": None,
-            "planner_id": None,
+            "assigned_planner_id": None,
+            "assigned_planner_email": None,
             "guest_name": None,
         }
 
@@ -355,14 +356,24 @@ class InboundEmailService:
             # Resolve wedding
             wedding = await self.weddings_collection.find_one(
                 {"slug": wedding_slug},
-                {"_id": 1, "planner_id": 1, "planner_email": 1, "couple_names": 1},
+                {
+                    "_id": 1,
+                    "assigned_planner_id": 1,
+                    "assigned_planner_email": 1,
+                    "planner_id": 1,
+                    "planner_email": 1,
+                    "couple_names": 1,
+                },
             )
 
             if wedding:
                 context["wedding_id"] = str(wedding["_id"])
-                context["planner_id"] = wedding.get("planner_email") or wedding.get(
-                    "planner_id"
-                )
+                context["assigned_planner_id"] = wedding.get(
+                    "assigned_planner_id"
+                ) or wedding.get("planner_id")
+                context["assigned_planner_email"] = wedding.get(
+                    "assigned_planner_email"
+                ) or wedding.get("planner_email")
 
             # Resolve guest
             guest_id = decoded.get("guest_id")
@@ -422,6 +433,37 @@ class InboundEmailService:
 
     # ==================== INBOX READ OPERATIONS ====================
 
+    @staticmethod
+    def _planner_scope(
+        planner_email: str,
+        accessible_wedding_ids: Optional[Sequence[str]] = None,
+    ) -> dict[str, Any]:
+        """Scope inbox rows to their planner owner and optional team assignments."""
+        owner_scope: dict[str, Any] = {
+            "$or": [
+                {"thread_context.assigned_planner_email": planner_email},
+                {
+                    "thread_context.assigned_planner_email": {"$exists": False},
+                    "thread_context.planner_id": planner_email,
+                },
+            ]
+        }
+        if accessible_wedding_ids is None:
+            return owner_scope
+
+        return {
+            "$and": [
+                owner_scope,
+                {
+                    "thread_context.wedding_id": {
+                        "$in": [
+                            str(wedding_id) for wedding_id in accessible_wedding_ids
+                        ]
+                    }
+                },
+            ]
+        }
+
     async def get_inbox(
         self,
         planner_id: str,
@@ -429,9 +471,10 @@ class InboundEmailService:
         page: int = 1,
         limit: int = 20,
         unread_only: bool = False,
+        accessible_wedding_ids: Optional[Sequence[str]] = None,
     ) -> dict:
         """Get paginated inbox for a planner"""
-        query: Dict[str, Any] = {"thread_context.planner_id": planner_id}
+        query: Dict[str, Any] = self._planner_scope(planner_id, accessible_wedding_ids)
         if wedding_id:
             query["thread_context.wedding_id"] = wedding_id
         if unread_only:
@@ -449,7 +492,10 @@ class InboundEmailService:
             emails.append(self._format_list_response(doc))
 
         unread_count = await self.collection.count_documents(
-            {"thread_context.planner_id": planner_id, "is_read": False}
+            {
+                **self._planner_scope(planner_id, accessible_wedding_ids),
+                "is_read": False,
+            }
         )
 
         return {
@@ -460,17 +506,32 @@ class InboundEmailService:
             "unread_count": unread_count,
         }
 
-    async def get_unread_count(self, planner_id: str) -> dict:
+    async def get_unread_count(
+        self,
+        planner_id: str,
+        accessible_wedding_ids: Optional[Sequence[str]] = None,
+    ) -> dict:
         """Get unread email count for badge display"""
         count = await self.collection.count_documents(
-            {"thread_context.planner_id": planner_id, "is_read": False}
+            {
+                **self._planner_scope(planner_id, accessible_wedding_ids),
+                "is_read": False,
+            }
         )
         return {"unread_count": count}
 
-    async def get_email(self, email_id: str, planner_id: str) -> dict:
+    async def get_email(
+        self,
+        email_id: str,
+        planner_id: str,
+        accessible_wedding_ids: Optional[Sequence[str]] = None,
+    ) -> dict:
         """Get single email with full content, auto-marks as read"""
         doc = await self.collection.find_one(
-            {"_id": ObjectId(email_id), "thread_context.planner_id": planner_id}
+            {
+                "_id": ObjectId(email_id),
+                **self._planner_scope(planner_id, accessible_wedding_ids),
+            }
         )
 
         if not doc:
@@ -479,7 +540,10 @@ class InboundEmailService:
         # Auto-mark as read
         if not doc.get("is_read"):
             await self.collection.update_one(
-                {"_id": ObjectId(email_id)},
+                {
+                    "_id": ObjectId(email_id),
+                    **self._planner_scope(planner_id, accessible_wedding_ids),
+                },
                 {
                     "$set": {
                         "is_read": True,
@@ -491,7 +555,12 @@ class InboundEmailService:
 
         return self._format_detail_response(doc)
 
-    async def get_thread(self, thread_id: str, planner_id: str) -> dict:
+    async def get_thread(
+        self,
+        thread_id: str,
+        planner_id: str,
+        accessible_wedding_ids: Optional[Sequence[str]] = None,
+    ) -> dict:
         """
         Get full conversation thread — both inbound and outbound emails.
 
@@ -502,19 +571,36 @@ class InboundEmailService:
         inbound_cursor = self.collection.find(
             {
                 "thread_context.thread_id": thread_id,
-                "thread_context.planner_id": planner_id,
+                **self._planner_scope(planner_id, accessible_wedding_ids),
             }
         ).sort("created_at", 1)
 
         thread_emails = []
+        wedding_ids: set[str] = set()
         async for doc in inbound_cursor:
+            wedding_id = (doc.get("thread_context") or {}).get("wedding_id")
+            if wedding_id:
+                wedding_ids.add(str(wedding_id))
             email_data = self._format_detail_response(doc)
             email_data["direction"] = "inbound"
             thread_emails.append(email_data)
 
-        # Outbound emails (from email_logs)
+        if not wedding_ids:
+            return {"thread_id": thread_id, "emails": [], "total": 0}
+
+        wedding_id_variants: list[Any] = list(wedding_ids)
+        wedding_id_variants.extend(
+            ObjectId(wedding_id)
+            for wedding_id in wedding_ids
+            if ObjectId.is_valid(wedding_id)
+        )
+
+        # Outbound emails (from email_logs), constrained to the already-owned wedding.
         outbound_cursor = self.email_logs_collection.find(
-            {"thread_id": thread_id}
+            {
+                "thread_id": thread_id,
+                "wedding_id": {"$in": wedding_id_variants},
+            }
         ).sort("sent_at", 1)
 
         async for doc in outbound_cursor:
@@ -548,10 +634,18 @@ class InboundEmailService:
 
     # ==================== INBOX WRITE OPERATIONS ====================
 
-    async def mark_as_read(self, email_id: str, planner_id: str) -> dict:
+    async def mark_as_read(
+        self,
+        email_id: str,
+        planner_id: str,
+        accessible_wedding_ids: Optional[Sequence[str]] = None,
+    ) -> dict:
         """Mark a single email as read"""
         result = await self.collection.update_one(
-            {"_id": ObjectId(email_id), "thread_context.planner_id": planner_id},
+            {
+                "_id": ObjectId(email_id),
+                **self._planner_scope(planner_id, accessible_wedding_ids),
+            },
             {
                 "$set": {
                     "is_read": True,
@@ -564,11 +658,18 @@ class InboundEmailService:
             raise HTTPException(status_code=404, detail="Email not found")
         return {"message": "Marked as read"}
 
-    async def mark_all_as_read(self, planner_id: str) -> dict:
+    async def mark_all_as_read(
+        self,
+        planner_id: str,
+        accessible_wedding_ids: Optional[Sequence[str]] = None,
+    ) -> dict:
         """Mark all emails as read for a planner"""
         now = datetime.now(timezone.utc)
         result = await self.collection.update_many(
-            {"thread_context.planner_id": planner_id, "is_read": False},
+            {
+                **self._planner_scope(planner_id, accessible_wedding_ids),
+                "is_read": False,
+            },
             {"$set": {"is_read": True, "read_at": now, "updated_at": now}},
         )
         return {"marked_count": result.modified_count}
@@ -579,11 +680,15 @@ class InboundEmailService:
         planner_id: str,
         reply_html: str,
         reply_text: Optional[str] = None,
+        accessible_wedding_ids: Optional[Sequence[str]] = None,
     ) -> dict:
         """Send a reply to an inbound email via Resend"""
         # Get original email
         original = await self.collection.find_one(
-            {"_id": ObjectId(email_id), "thread_context.planner_id": planner_id}
+            {
+                "_id": ObjectId(email_id),
+                **self._planner_scope(planner_id, accessible_wedding_ids),
+            }
         )
 
         if not original:
@@ -641,7 +746,10 @@ class InboundEmailService:
 
         # Mark original as replied
         await self.collection.update_one(
-            {"_id": ObjectId(email_id)},
+            {
+                "_id": ObjectId(email_id),
+                **self._planner_scope(planner_id, accessible_wedding_ids),
+            },
             {
                 "$set": {
                     "planner_response_sent": True,
