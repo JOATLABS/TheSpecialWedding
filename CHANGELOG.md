@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-14 — Walkthrough contracts match the captured frontend
+
+- Aligned the Couple Portal walkthrough with the visible Traditional Ceremony and its three-item run of show instead of claiming four events the seeded portal does not display.
+- Aligned the microsite walkthrough with the planner story, theme, and privacy screens plus the public story, venue, event-day, and gallery screens that the manual take actually shows. Regression coverage now rejects the removed rehearsal/brunch and slug/schedule-parity claims.
+- Stopped the capture seeder from treating a vendor website URL as portfolio-image media, removing the broken-image tile from the public Luna profile while preserving its real website contact link.
+
 ## 2026-07-14 — Couple portal payments use the canonical contract schedule
 
 - Fixed both couple-portal contract summaries to read the contract's canonical `scheduled_payments` rows and signed package snapshot instead of the unused embedded `contract.payments` field. The read-only portal now shows the seeded package name, $12,800 total, $3,200 paid, $9,600 remaining, and the current milestone statuses consistently on the dashboard and contract detail path.

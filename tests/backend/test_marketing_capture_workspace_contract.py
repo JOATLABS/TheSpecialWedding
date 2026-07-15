@@ -2432,6 +2432,12 @@ def test_marketing_seed_uses_a_distinct_deterministic_id_namespace():
     assert '"64f' not in source
 
 
+def test_marketing_vendor_seed_does_not_render_websites_as_portfolio_images():
+    source = _required_text(SEEDER)
+
+    assert '"portfolio_urls": [fixture["website"]]' not in source
+
+
 def test_marketing_guest_tokens_use_the_capture_scope_not_a_wedding_suffix():
     source = _required_text(SEEDER)
 
