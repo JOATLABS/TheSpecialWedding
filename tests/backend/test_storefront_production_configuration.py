@@ -194,6 +194,34 @@ def test_env_compose_and_testbed_expose_the_same_storefront_runtime_contract():
         assert f"- {variable}=${{{variable}" in compose
 
 
+def test_storefront_r2_examples_pin_the_real_non_secret_bucket_bindings():
+    root_env = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    testbed_env = (REPO_ROOT / "testbed" / ".env.example").read_text(
+        encoding="utf-8"
+    )
+    guide = (
+        REPO_ROOT / "docs" / "guides" / "STOREFRONT_INFRASTRUCTURE_SETUP.md"
+    ).read_text(encoding="utf-8")
+
+    expected = {
+        "S3_STOREFRONT_STAGING_BUCKET_NAME": (
+            "the-special-wedding-storefront-staging"
+        ),
+        "S3_BLOG_BUCKET_NAME": "knowledgeable-saas-blogs",
+        "BLOG_MEDIA_DOMAIN": "blogs.thespecialwedding.io",
+    }
+    for variable, value in expected.items():
+        assignment = f"{variable}={value}"
+        assert assignment in root_env
+        assert assignment in testbed_env
+        assert assignment in guide
+
+    assert "Object Read & Write" in guide
+    assert "https://developers.cloudflare.com/r2/api/s3/presigned-urls/" in guide
+    assert "https://developers.cloudflare.com/r2/buckets/cors/" in guide
+    assert "normal Cloudflare bearer token" in guide
+
+
 def test_storefront_probe_ingress_secret_rejects_weak_values():
     with pytest.raises(ValueError, match="STOREFRONT_PROBE_INGRESS_SECRET"):
         Settings.model_validate(

@@ -39,6 +39,10 @@ from app.services.storefront_entitlement_service import (
     StorefrontEntitlementService,
     storefront_entitlement_service,
 )
+from app.services.storefront_domain_service import (
+    require_storefront_domain_mutation_allowed,
+    storefront_domain_mutation_cas_filter,
+)
 from app.services.storefront_domain_rollout import StorefrontDomainRolloutPolicy
 from app.utils.planner_ownership import normalize_planner_id
 
@@ -808,12 +812,34 @@ class StorefrontDomainConnectService:
         record = await domains.find_one(
             {"planner_id": owner_id, "claim_attempt_id": attempt_id}
         )
-        if not record or record.get("provider_hostname_id"):
+        if not record:
             raise self._error(
                 status.HTTP_404_NOT_FOUND,
                 "domain_claim_not_found",
                 "The current custom-domain claim could not be found.",
                 "Restart domain setup and use its current attempt.",
+            )
+        require_storefront_domain_mutation_allowed(record, self._error)
+        if record.get("provider_hostname_id"):
+            raise self._error(
+                status.HTTP_404_NOT_FOUND,
+                "domain_claim_not_found",
+                "The current custom-domain claim could not be found.",
+                "Restart domain setup and use its current attempt.",
+            )
+        if record.get("setup_method") != "automatic":
+            raise self._error(
+                status.HTTP_409_CONFLICT,
+                "automatic_setup_not_selected",
+                "Automatic setup was not selected for this domain attempt.",
+                "Return to domain setup and choose automatic setup first.",
+            )
+        if record.get("domain_connect_authorized_at"):
+            raise self._error(
+                status.HTTP_409_CONFLICT,
+                "domain_connect_already_authorized",
+                "This DNS provider authorization has already been completed.",
+                "Review the connection progress instead of starting authorization again.",
             )
         claim_expires_at = self._aware(record.get("claim_expires_at"))
         if not claim_expires_at or claim_expires_at <= self._now():
@@ -884,12 +910,8 @@ class StorefrontDomainConnectService:
         revision = int(record.get("revision") or 0)
         phase_update = await domains.update_one(
             {
-                "_id": record["_id"],
-                "planner_id": owner_id,
-                "claim_attempt_id": attempt_id,
-                "revision": record.get("revision"),
+                **storefront_domain_mutation_cas_filter(record, owner_id),
                 "provider_hostname_id": None,
-                "deletion_status": record.get("deletion_status"),
             },
             {
                 "$set": {
@@ -1184,6 +1206,7 @@ class StorefrontDomainConnectService:
                 "$set": {
                     "application_status": DNS_SETUP_PENDING,
                     "action": "processing",
+                    "domain_connect_authorized_at": self._now(),
                     "retry_due_at": self._now(),
                     "last_error": None,
                     "updated_at": self._now(),

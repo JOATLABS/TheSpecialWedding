@@ -277,6 +277,14 @@ class SupportedDomainConnectDiscovery:
         }
 
 
+class UnsupportedDomainConnectDiscovery:
+    async def discover(self, _zone: str) -> dict:
+        return {
+            "supported": False,
+            "reason_code": "exact_template_not_supported",
+        }
+
+
 def _owner(owner_id: str = OWNER_ID) -> dict:
     return {"_id": ObjectId(owner_id), "role": "wedding_planner"}
 
@@ -538,6 +546,7 @@ async def test_preflight_routes_cloudflare_o2o_migration_to_assisted_flow(
     )
     assert tombstone["hostname"] == HOSTNAME
     assert tombstone["provider_hostname_id"] is None
+    assert tombstone["removal_kind"] == "setup_cancelled"
     assert {record["type"] for record in tombstone["cleanup_records"]} == {"TXT"}
     operation = mongo.raw.storefront_domain_operations.find_one(
         {"operation_id": tombstone["provider_delete_operation_id"]}
@@ -656,6 +665,110 @@ async def test_claim_stores_only_encrypted_256_bit_token_and_never_calls_cloudfl
     claim_expires_at = _aware(stored["claim_expires_at"])
     assert before + timedelta(days=6, hours=23) < claim_expires_at
     assert claim_expires_at < before + timedelta(days=7, minutes=1)
+    assert cloudflare.created == []
+    assert cloudflare.listed == []
+
+
+@pytest.mark.asyncio
+async def test_claim_persists_resumable_setup_method_without_provider_mutation(
+    claim_setup,
+):
+    service, mongo, _, _, cloudflare = claim_setup
+    service._domain_connect_discovery = SupportedDomainConnectDiscovery()
+
+    automatic = await service.claim(
+        _owner(), HOSTNAME, intent="new", setup_method="automatic"
+    )
+
+    assert automatic["setup_method"] == "automatic"
+    assert automatic["domain_connect_authorized"] is False
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["setup_method"] == "automatic"
+    assert stored.get("domain_connect_authorized_at") is None
+    assert cloudflare.created == []
+    assert cloudflare.listed == []
+
+    manual = await service.claim(
+        _owner(), HOSTNAME, intent="new", setup_method="manual"
+    )
+
+    assert manual["attempt_id"] == automatic["attempt_id"]
+    assert manual["setup_method"] == "manual"
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["setup_method"] == "manual"
+    assert stored.get("domain_connect_authorized_at") is None
+    StorefrontDomainResponse.model_validate(manual)
+
+
+@pytest.mark.asyncio
+async def test_claim_rejects_automatic_mode_without_exact_live_template_support(
+    claim_setup,
+):
+    service, mongo, _, _, cloudflare = claim_setup
+    service._domain_connect_discovery = UnsupportedDomainConnectDiscovery()
+
+    with pytest.raises(HTTPException) as blocked:
+        await service.claim(_owner(), HOSTNAME, intent="new", setup_method="automatic")
+
+    assert blocked.value.status_code == 409
+    assert blocked.value.detail["code"] == "automatic_domain_setup_unavailable"
+    assert mongo.raw.storefront_domains.count_documents({}) == 0
+    assert cloudflare.created == []
+    assert cloudflare.listed == []
+
+
+@pytest.mark.asyncio
+async def test_worker_activation_of_authorized_automatic_claim_rechecks_dns_and_entitlement(
+    claim_setup,
+):
+    service, mongo, _, dns, cloudflare = claim_setup
+    service._domain_connect_discovery = SupportedDomainConnectDiscovery()
+    claim = await service.claim(
+        _owner(), HOSTNAME, intent="new", setup_method="automatic"
+    )
+    authorized_at = datetime.now(timezone.utc)
+    mongo.raw.storefront_domains.update_one(
+        {"planner_id": OWNER_ID},
+        {"$set": {"domain_connect_authorized_at": authorized_at}},
+    )
+    _set_current_dns(dns, claim)
+
+    result = await service.verify_authorized_automatic_for_owner_id(
+        OWNER_ID, claim["attempt_id"]
+    )
+
+    assert result["provider_hostname_id"] == "cf-hostname-1"
+    assert result["ownership_status"] == "verified"
+    assert result["routing_dns_status"] == "verified"
+    assert cloudflare.created == [HOSTNAME]
+    assert cloudflare.listed == [HOSTNAME]
+
+
+@pytest.mark.asyncio
+async def test_worker_automatic_activation_fails_closed_after_entitlement_loss(
+    claim_setup,
+):
+    service, mongo, entitlements, dns, cloudflare = claim_setup
+    service._domain_connect_discovery = SupportedDomainConnectDiscovery()
+    claim = await service.claim(
+        _owner(), HOSTNAME, intent="new", setup_method="automatic"
+    )
+    authorized_at = datetime.now(timezone.utc)
+    mongo.raw.storefront_domains.update_one(
+        {"planner_id": OWNER_ID},
+        {"$set": {"domain_connect_authorized_at": authorized_at}},
+    )
+    _set_current_dns(dns, claim)
+    entitlements.enabled_by_owner[OWNER_ID] = False
+
+    result = await service.verify_authorized_automatic_for_owner_id(
+        OWNER_ID, claim["attempt_id"]
+    )
+
+    assert result["application_status"] == "dns_setup_pending"
+    assert result["action"] == "action_required"
+    assert result["provider_hostname_id"] is None
+    assert result["last_error"]["code"] == "custom_domain_entitlement_required"
     assert cloudflare.created == []
     assert cloudflare.listed == []
 
@@ -1349,6 +1462,183 @@ async def test_provider_mutation_readiness_blocks_verified_claim_before_cloudfla
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("application_status", "deletion_status"),
+    [
+        ("disconnecting", "provider_delete_pending"),
+        ("disconnect_failed", "retry_pending"),
+        ("disconnected", "local_cleanup_pending"),
+    ],
+)
+async def test_dns_verification_rejects_every_deletion_intent_stage(
+    claim_setup,
+    application_status,
+    deletion_status,
+):
+    service, mongo, _, dns, cloudflare = claim_setup
+    claim = await service.claim(_owner(), HOSTNAME, intent="new")
+    dns_queries_before = list(dns.authoritative_queries)
+    mongo.raw.storefront_domains.update_one(
+        {"planner_id": OWNER_ID},
+        {
+            "$set": {
+                "application_status": application_status,
+                "status": "deleting",
+                "deletion_status": deletion_status,
+            }
+        },
+    )
+
+    with pytest.raises(HTTPException) as blocked:
+        await service.verify(_owner(), claim["attempt_id"])
+
+    assert blocked.value.status_code == 409
+    assert blocked.value.detail["code"] == "domain_deletion_in_progress"
+    assert dns.authoritative_queries == dns_queries_before
+    assert cloudflare.listed == []
+    assert cloudflare.created == []
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["application_status"] == application_status
+    assert stored["deletion_status"] == deletion_status
+
+
+@pytest.mark.asyncio
+async def test_dns_verification_provider_reservation_loses_to_disconnect(
+    claim_setup,
+    monkeypatch,
+):
+    service, mongo, _, dns, cloudflare = claim_setup
+    claim = await service.claim(_owner(), HOSTNAME, intent="new")
+    _set_current_dns(dns, claim)
+
+    async def disconnect_during_provider_snapshot(hostname: str) -> list[dict]:
+        cloudflare.listed.append(hostname)
+        mongo.raw.storefront_domains.update_one(
+            {"planner_id": OWNER_ID},
+            {
+                "$set": {
+                    "application_status": "disconnecting",
+                    "status": "deleting",
+                    "deletion_status": "provider_delete_pending",
+                }
+            },
+        )
+        return []
+
+    monkeypatch.setattr(
+        cloudflare,
+        "list_custom_hostnames",
+        disconnect_during_provider_snapshot,
+    )
+
+    result = await service.verify(_owner(), claim["attempt_id"])
+
+    assert result["application_status"] == "disconnecting"
+    assert result["deletion_status"] == "provider_delete_pending"
+    assert cloudflare.listed == [HOSTNAME]
+    assert cloudflare.created == []
+    operation = mongo.raw.storefront_domain_operations.find_one(
+        {"kind": "provider_create"}
+    )
+    assert operation["state"] == "cancelled"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("application_status", "deletion_status"),
+    [
+        ("disconnecting", "provider_delete_pending"),
+        ("disconnect_failed", "retry_pending"),
+        ("disconnected", "local_cleanup_pending"),
+    ],
+)
+async def test_instruction_send_rejects_every_deletion_intent_stage(
+    claim_setup,
+    application_status,
+    deletion_status,
+):
+    service, mongo, _, _, _ = claim_setup
+    email = FakeInstructionEmail()
+    service._instruction_email_service = email
+    claim = await service.claim(_owner(), HOSTNAME, intent="new")
+    mongo.raw.storefront_domains.update_one(
+        {"planner_id": OWNER_ID},
+        {
+            "$set": {
+                "application_status": application_status,
+                "status": "deleting",
+                "deletion_status": deletion_status,
+            }
+        },
+    )
+
+    with pytest.raises(HTTPException) as blocked:
+        await service.send_instructions(
+            _owner(),
+            claim["attempt_id"],
+            email="dns-admin@example.com",
+        )
+
+    assert blocked.value.status_code == 409
+    assert blocked.value.detail["code"] == "domain_deletion_in_progress"
+    assert email.calls == []
+    assert mongo.raw.storefront_domain_instruction_links.count_documents({}) == 0
+    assert mongo.raw.storefront_domain_operations.count_documents({}) == 0
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["application_status"] == application_status
+    assert stored["deletion_status"] == deletion_status
+
+
+@pytest.mark.asyncio
+async def test_instruction_send_cas_loses_to_concurrent_disconnect(
+    claim_setup,
+    monkeypatch,
+):
+    service, mongo, _, _, _ = claim_setup
+    email = FakeInstructionEmail()
+    service._instruction_email_service = email
+    claim = await service.claim(_owner(), HOSTNAME, intent="new")
+    domains = mongo.db["storefront_domains"]
+    original_update = domains.update_one
+
+    async def disconnect_before_instruction_reservation(query, update, *args, **kwargs):
+        if "instruction_delivery_requested_at" in update.get("$set", {}):
+            mongo.raw.storefront_domains.update_one(
+                {"planner_id": OWNER_ID},
+                {
+                    "$set": {
+                        "application_status": "disconnecting",
+                        "status": "deleting",
+                        "deletion_status": "provider_delete_pending",
+                    }
+                },
+            )
+        return await original_update(query, update, *args, **kwargs)
+
+    monkeypatch.setattr(
+        domains,
+        "update_one",
+        disconnect_before_instruction_reservation,
+    )
+
+    with pytest.raises(HTTPException) as changed:
+        await service.send_instructions(
+            _owner(),
+            claim["attempt_id"],
+            email="dns-admin@example.com",
+        )
+
+    assert changed.value.status_code == 409
+    assert changed.value.detail["code"] == "domain_instructions_changed"
+    assert email.calls == []
+    assert mongo.raw.storefront_domain_instruction_links.count_documents({}) == 0
+    assert mongo.raw.storefront_domain_operations.count_documents({}) == 0
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["application_status"] == "disconnecting"
+    assert stored["deletion_status"] == "provider_delete_pending"
+
+
+@pytest.mark.asyncio
 async def test_dns_instructions_are_owner_scoped_exact_escaped_and_receipted(
     claim_setup,
 ):
@@ -1910,6 +2200,9 @@ async def test_local_status_and_disconnect_survive_entitlement_loss_with_tombsto
     )
     assert tombstone["hostname"] == HOSTNAME
     assert tombstone["provider_hostname_id"] == "cf-hostname-1"
+    # Provider activation alone is not a customer-visible connection: the
+    # lifecycle still lacks the independent HTTPS storefront proof.
+    assert tombstone["removal_kind"] == "setup_cancelled"
     assert tombstone["deletion_receipt_id"]
     operation = mongo.raw.storefront_domain_operations.find_one(
         {"operation_id": tombstone["provider_delete_operation_id"]}
@@ -1946,6 +2239,7 @@ async def test_local_status_and_disconnect_survive_entitlement_loss_with_tombsto
     ]
     disconnected = await service.get_status(_owner())
     assert disconnected["application_status"] == "disconnected"
+    assert disconnected["removal_kind"] == "setup_cancelled"
     assert disconnected["cleanup_records"] == tombstone["cleanup_records"]
     assert disconnected["expected_records"] == []
 

@@ -19,6 +19,14 @@ type StorefrontRunManifest = {
   frontend_url: string;
   artifact_dir: string;
   provider_mode: "deterministic" | "live";
+  media_mode: "disabled" | "live";
+  media_configuration: null | {
+    account_id: string;
+    staging_bucket: string;
+    public_bucket: string;
+    public_domain: string;
+    upload_origin: string;
+  };
   acceptance: Record<string, AcceptanceStatus>;
   fixtures: {
     root_admin_email: string;
@@ -112,7 +120,12 @@ const rootAdminPassword = process.env.STOREFRONT_TESTBED_ROOT_ADMIN_PASSWORD;
 const providerRunId = process.env.STOREFRONT_PROVIDER_HARNESS_RUN_ID;
 const providerControlToken = process.env.STOREFRONT_PROVIDER_HARNESS_TOKEN;
 
-if (!signaturePassword || !soloPassword || !foreignPassword || !rootAdminPassword) {
+if (
+  !signaturePassword ||
+  !soloPassword ||
+  !foreignPassword ||
+  !rootAdminPassword
+) {
   throw new Error("Storefront testbed browser credentials were not provided");
 }
 if (
@@ -135,6 +148,14 @@ function loopbackOrigin(value: string): string {
 const allowedOrigins = new Set([
   loopbackOrigin(manifest.frontend_url),
   loopbackOrigin(manifest.backend_url),
+  ...(manifest.media_mode === "live" && manifest.media_configuration
+    ? [
+        new URL(manifest.media_configuration.upload_origin).origin,
+        new URL(
+          `https://${manifest.media_configuration.public_domain}`,
+        ).origin,
+      ]
+    : []),
 ]);
 const diagnosticsByContext = new WeakMap<BrowserContext, BrowserDiagnostics>();
 const instrumentedPages = new WeakSet<Page>();
@@ -397,7 +418,7 @@ async function attachCheckpoint(
         ? "button:has(svg.lucide-settings)"
         : route === "/admin/saas"
           ? '[aria-label$="storefront access"]'
-        : "body");
+          : "body");
   const accessibility = await new AxeBuilder({ page })
     .include(accessibilityScope)
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
@@ -541,9 +562,16 @@ async function login(page: Page, email: string, password: string) {
       url.pathname.startsWith("/admin") && url.pathname !== "/admin/login",
   );
   await expect(page.getByRole("button", { name: "User menu" })).toBeVisible();
-  await page.waitForLoadState("networkidle");
-  resetDiagnostics(page.context());
+  const accessResponsePromise = page.waitForResponse((response) => {
+    const request = response.request();
+    return (
+      request.method() === "GET" &&
+      new URL(response.url()).pathname.endsWith("/admin/storefront/access")
+    );
+  });
   await page.goto("/admin/packages");
+  const accessResponse = await accessResponsePromise;
+  expect(accessResponse.status(), "storefront access page load").toBe(200);
   await expect(
     page.getByRole("heading", { name: "Marketing & Packages" }),
   ).toBeVisible();
@@ -554,6 +582,7 @@ async function login(page: Page, email: string, password: string) {
   await expect(
     page.getByRole("heading", { name: "Something went wrong" }),
   ).toHaveCount(0);
+  resetDiagnostics(page.context());
 }
 
 async function loginRootAdmin(page: Page) {
@@ -568,15 +597,24 @@ async function loginRootAdmin(page: Page) {
       url.pathname.startsWith("/admin") && url.pathname !== "/admin/login",
   );
   await expect(page.getByRole("button", { name: "User menu" })).toBeVisible();
-  await page.waitForLoadState("networkidle");
-  resetDiagnostics(page.context());
+  const plansResponsePromise = page.waitForResponse((response) => {
+    const request = response.request();
+    return (
+      request.method() === "GET" &&
+      new URL(response.url()).pathname.endsWith("/subscription-plans")
+    );
+  });
   await page.goto("/admin/saas?tab=plans");
+  const plansResponse = await plansResponsePromise;
+  expect(plansResponse.status(), "root subscription-plan page load").toBe(200);
   await expect(
     page.getByRole("heading", { name: "SaaS Management" }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Subscription Plans" }),
   ).toBeVisible();
+  await expect(page.getByLabel("Solo storefront access")).toBeVisible();
+  resetDiagnostics(page.context());
 }
 
 async function providerControl<T extends Record<string, unknown>>(
@@ -654,6 +692,22 @@ async function authenticatedBackendRequest(
   });
 }
 
+async function restoreSoloStorefrontCapability(page: Page) {
+  await loginRootAdmin(page);
+  const response = await authenticatedBackendRequest(
+    page,
+    "PUT",
+    "/subscription-plans/plan_solo",
+    {
+      features: {
+        planner_storefront: false,
+        custom_domain: false,
+      },
+    },
+  );
+  expect(response.status(), "restore Solo storefront capability").toBe(200);
+}
+
 type ImmutableStorefrontAccountSnapshot = {
   account: {
     id: string | null;
@@ -674,11 +728,13 @@ type ImmutableStorefrontAccountSnapshot = {
 async function immutableStorefrontAccountSnapshot(
   page: Page,
 ): Promise<ImmutableStorefrontAccountSnapshot> {
-  const [profileResponse, accessResponse, settingsResponse] = await Promise.all([
-    authenticatedBackendRequest(page, "GET", "/admin/profile"),
-    authenticatedBackendRequest(page, "GET", "/admin/storefront/access"),
-    authenticatedBackendRequest(page, "GET", "/admin/storefront/settings"),
-  ]);
+  const [profileResponse, accessResponse, settingsResponse] = await Promise.all(
+    [
+      authenticatedBackendRequest(page, "GET", "/admin/profile"),
+      authenticatedBackendRequest(page, "GET", "/admin/storefront/access"),
+      authenticatedBackendRequest(page, "GET", "/admin/storefront/settings"),
+    ],
+  );
   expect(profileResponse.status()).toBe(200);
   expect(accessResponse.status()).toBe(200);
   expect(settingsResponse.status()).toBe(200);
@@ -775,7 +831,7 @@ async function disconnectDomain(page: Page) {
 }
 
 async function prepareNewDomainInput(page: Page) {
-  const input = page.getByLabel("Storefront domain");
+  const input = page.getByLabel("Custom web address");
   const reset = page.getByRole("button", { name: "Set up another domain" });
   await expect(input.or(reset)).toBeVisible();
   if (await reset.isVisible()) {
@@ -811,196 +867,394 @@ test.describe("storefront production testbed", () => {
       "one serial plan-capability mutation owner",
     );
 
-    await loginRootAdmin(page);
+    let soloCapabilityNeedsRestore = false;
+    try {
+      await loginRootAdmin(page);
 
-    await page.getByRole("button", { name: "Create New Plan" }).click();
-    const createDialog = page.getByRole("dialog", { name: "Create New Plan" });
-    const createStorefront = createDialog.getByRole("checkbox", {
-      name: /Planner storefront/,
-    });
-    const createCustomDomain = createDialog.getByRole("checkbox", {
-      name: /Custom domain/,
-    });
-    await expect(createStorefront).not.toBeChecked();
-    await expect(createCustomDomain).not.toBeChecked();
-    await expect(createCustomDomain).toBeDisabled();
-    await createDialog.getByRole("button", { name: "Cancel" }).click();
+      await page.getByRole("button", { name: "Create New Plan" }).click();
+      const createDialog = page.getByRole("dialog", {
+        name: "Create New Plan",
+      });
+      const createStorefront = createDialog.getByRole("checkbox", {
+        name: /Planner storefront/,
+      });
+      const createCustomDomain = createDialog.getByRole("checkbox", {
+        name: /Custom domain/,
+      });
+      await expect(createStorefront).not.toBeChecked();
+      await expect(createCustomDomain).not.toBeChecked();
+      await expect(createCustomDomain).toBeDisabled();
+      await createDialog.getByRole("button", { name: "Cancel" }).click();
 
-    const soloAccess = page.getByLabel("Solo storefront access");
-    await expect(soloAccess).toContainText("Planner storefront");
-    await expect(soloAccess).toContainText("Custom domain");
-    await expect(soloAccess).toContainText("Not included");
-    const soloCard = soloAccess.locator("..");
-    await soloCard.getByRole("button", { name: "Edit Plan" }).click();
+      const soloAccess = page.getByLabel("Solo storefront access");
+      await expect(soloAccess).toContainText("Planner storefront");
+      await expect(soloAccess).toContainText("Custom domain");
+      await expect(soloAccess).toContainText("Not included");
+      const soloCard = soloAccess.locator("..");
+      await soloCard.getByRole("button", { name: "Edit Plan" }).click();
 
-    let planDialog = page.getByRole("dialog", { name: "Edit Plan" });
-    let storefrontControl = planDialog.getByRole("checkbox", {
-      name: /Planner storefront/,
-    });
-    let domainControl = planDialog.getByRole("checkbox", {
-      name: /Custom domain/,
-    });
-    await expect(storefrontControl).not.toBeChecked();
-    await expect(domainControl).not.toBeChecked();
-    await expect(domainControl).toBeDisabled();
-    await storefrontControl.check();
-    await expect(domainControl).toBeEnabled();
+      let planDialog = page.getByRole("dialog", { name: "Edit Plan" });
+      let storefrontControl = planDialog.getByRole("checkbox", {
+        name: /Planner storefront/,
+      });
+      let domainControl = planDialog.getByRole("checkbox", {
+        name: /Custom domain/,
+      });
+      await expect(storefrontControl).not.toBeChecked();
+      await expect(domainControl).not.toBeChecked();
+      await expect(domainControl).toBeDisabled();
+      await storefrontControl.check();
+      await expect(domainControl).toBeEnabled();
 
-    const enableResponsePromise = page.waitForResponse((response) => {
-      const request = response.request();
-      return (
-        request.method() === "PUT" &&
-        new URL(response.url()).pathname.endsWith(
-          "/subscription-plans/plan_solo",
-        )
+      const enableResponsePromise = page.waitForResponse((response) => {
+        const request = response.request();
+        return (
+          request.method() === "PUT" &&
+          new URL(response.url()).pathname.endsWith(
+            "/subscription-plans/plan_solo",
+          )
+        );
+      });
+      page.once("dialog", (dialog) => void dialog.accept());
+      soloCapabilityNeedsRestore = true;
+      await planDialog.getByRole("button", { name: "Update Plan" }).click();
+      const enableResponse = await enableResponsePromise;
+      expect(enableResponse.status()).toBe(200);
+      await expect(page.getByLabel("Solo storefront access")).toContainText(
+        "Included",
       );
-    });
-    page.once("dialog", (dialog) => void dialog.accept());
-    await planDialog.getByRole("button", { name: "Update Plan" }).click();
-    const enableResponse = await enableResponsePromise;
-    expect(enableResponse.status()).toBe(200);
-    await expect(page.getByLabel("Solo storefront access")).toContainText(
-      "Included",
-    );
 
-    const enabledPlanResponse = await authenticatedBackendRequest(
-      page,
-      "GET",
-      "/subscription-plans/plan_solo",
-    );
-    expect(enabledPlanResponse.status()).toBe(200);
-    const enabledPlan = (await enabledPlanResponse.json()) as {
-      features: Record<string, boolean>;
-      admin_overrides?: Record<string, unknown>;
-    };
-    expect(enabledPlan.features.planner_storefront).toBe(true);
-    expect(enabledPlan.features.custom_domain).toBe(false);
-    expect(enabledPlan.admin_overrides?.features).toBeTruthy();
-    const rootEnabledAttachments = await attachCheckpoint(
-      page,
-      testInfo,
-      "root-plan-storefront-enabled",
-      '[aria-label="Solo storefront access"]',
-    );
-
-    await login(page, manifest.fixtures.solo_email, soloPassword!);
-    const enabledAccessResponse = await authenticatedBackendRequest(
-      page,
-      "GET",
-      "/admin/storefront/access",
-    );
-    expect(enabledAccessResponse.status()).toBe(200);
-    const enabledAccess = (await enabledAccessResponse.json()) as {
-      plan_id: string;
-      storefront_enabled: boolean;
-      custom_domain_enabled: boolean;
-    };
-    expect(enabledAccess.plan_id).toBe("plan_solo");
-    expect(enabledAccess.storefront_enabled).toBe(true);
-    expect(enabledAccess.custom_domain_enabled).toBe(false);
-    const { dialog: enabledStorefrontDialog } = await openStorefrontDialog(page);
-    await expect(enabledStorefrontDialog.getByRole("tab", { name: "Domain" })).toBeVisible();
-    const plannerEnabledAttachments = await attachCheckpoint(
-      page,
-      testInfo,
-      "solo-storefront-enabled-by-plan",
-    );
-    await page.keyboard.press("Escape");
-    await expect(enabledStorefrontDialog).toBeHidden();
-
-    await loginRootAdmin(page);
-    const enabledSoloAccess = page.getByLabel("Solo storefront access");
-    await expect(enabledSoloAccess).toContainText("Included");
-    await enabledSoloAccess.locator("..").getByRole("button", { name: "Edit Plan" }).click();
-    planDialog = page.getByRole("dialog", { name: "Edit Plan" });
-    storefrontControl = planDialog.getByRole("checkbox", {
-      name: /Planner storefront/,
-    });
-    domainControl = planDialog.getByRole("checkbox", { name: /Custom domain/ });
-    await expect(storefrontControl).toBeChecked();
-    await expect(domainControl).not.toBeChecked();
-    await storefrontControl.uncheck();
-
-    const disableResponsePromise = page.waitForResponse((response) => {
-      const request = response.request();
-      return (
-        request.method() === "PUT" &&
-        new URL(response.url()).pathname.endsWith(
-          "/subscription-plans/plan_solo",
-        )
+      const enabledPlanResponse = await authenticatedBackendRequest(
+        page,
+        "GET",
+        "/subscription-plans/plan_solo",
       );
-    });
-    page.once("dialog", (dialog) => void dialog.accept());
-    await planDialog.getByRole("button", { name: "Update Plan" }).click();
-    const disableResponse = await disableResponsePromise;
-    expect(disableResponse.status()).toBe(200);
-    await expect(page.getByLabel("Solo storefront access")).toContainText(
-      "Not included",
-    );
-    const rootRestoredAttachments = await attachCheckpoint(
-      page,
-      testInfo,
-      "root-plan-storefront-restored",
-      '[aria-label="Solo storefront access"]',
-    );
+      expect(enabledPlanResponse.status()).toBe(200);
+      const enabledPlan = (await enabledPlanResponse.json()) as {
+        features: Record<string, boolean>;
+        admin_overrides?: Record<string, unknown>;
+      };
+      expect(enabledPlan.features.planner_storefront).toBe(true);
+      expect(enabledPlan.features.custom_domain).toBe(false);
+      expect(enabledPlan.admin_overrides?.features).toBeTruthy();
+      const rootEnabledAttachments = await attachCheckpoint(
+        page,
+        testInfo,
+        "root-plan-storefront-enabled",
+        '[aria-label="Solo storefront access"]',
+      );
 
-    const settingsRequests: string[] = [];
-    page.on("request", (request) => {
-      if (
-        new URL(request.url()).pathname.includes("/admin/storefront/settings")
-      ) {
-        settingsRequests.push(request.url());
+      await login(page, manifest.fixtures.solo_email, soloPassword!);
+      const enabledAccessResponse = await authenticatedBackendRequest(
+        page,
+        "GET",
+        "/admin/storefront/access",
+      );
+      expect(enabledAccessResponse.status()).toBe(200);
+      const enabledAccess = (await enabledAccessResponse.json()) as {
+        plan_id: string;
+        storefront_enabled: boolean;
+        custom_domain_enabled: boolean;
+      };
+      expect(enabledAccess.plan_id).toBe("plan_solo");
+      expect(enabledAccess.storefront_enabled).toBe(true);
+      expect(enabledAccess.custom_domain_enabled).toBe(false);
+      const { dialog: enabledStorefrontDialog } =
+        await openStorefrontDialog(page);
+      await expect(
+        enabledStorefrontDialog.getByRole("tab", { name: "Domain" }),
+      ).toBeVisible();
+      await selectTab(page, "Domain");
+      await expect(
+        enabledStorefrontDialog.getByText("Upgrade to add a custom domain"),
+      ).toBeVisible();
+      const plannerEnabledAttachments = await attachCheckpoint(
+        page,
+        testInfo,
+        "solo-storefront-enabled-custom-domain-disabled",
+      );
+      await page.keyboard.press("Escape");
+      await expect(enabledStorefrontDialog).toBeHidden();
+
+      await loginRootAdmin(page);
+      const enabledSoloAccess = page.getByLabel("Solo storefront access");
+      await expect(enabledSoloAccess).toContainText("Included");
+      await enabledSoloAccess
+        .locator("..")
+        .getByRole("button", { name: "Edit Plan" })
+        .click();
+      planDialog = page.getByRole("dialog", { name: "Edit Plan" });
+      storefrontControl = planDialog.getByRole("checkbox", {
+        name: /Planner storefront/,
+      });
+      domainControl = planDialog.getByRole("checkbox", {
+        name: /Custom domain/,
+      });
+      await expect(storefrontControl).toBeChecked();
+      await expect(domainControl).not.toBeChecked();
+      await domainControl.check();
+
+      const enableDomainResponsePromise = page.waitForResponse((response) => {
+        const request = response.request();
+        return (
+          request.method() === "PUT" &&
+          new URL(response.url()).pathname.endsWith(
+            "/subscription-plans/plan_solo",
+          )
+        );
+      });
+      page.once("dialog", (dialog) => void dialog.accept());
+      await planDialog.getByRole("button", { name: "Update Plan" }).click();
+      const enableDomainResponse = await enableDomainResponsePromise;
+      expect(enableDomainResponse.status()).toBe(200);
+      const rootDomainEnabledAccess = page.getByLabel("Solo storefront access");
+      const rootDomainEnabledRow = rootDomainEnabledAccess
+        .getByText("Custom domain")
+        .locator("..");
+      await expect(rootDomainEnabledRow).toContainText("Included");
+      const domainEnabledPlanResponse = await authenticatedBackendRequest(
+        page,
+        "GET",
+        "/subscription-plans/plan_solo",
+      );
+      expect(domainEnabledPlanResponse.status()).toBe(200);
+      const domainEnabledPlan = (await domainEnabledPlanResponse.json()) as {
+        features: Record<string, boolean>;
+      };
+      expect(domainEnabledPlan.features.planner_storefront).toBe(true);
+      expect(domainEnabledPlan.features.custom_domain).toBe(true);
+      const rootDomainEnabledAttachments = await attachCheckpoint(
+        page,
+        testInfo,
+        "root-plan-custom-domain-enabled",
+        '[aria-label="Solo storefront access"]',
+      );
+
+      await login(page, manifest.fixtures.solo_email, soloPassword!);
+      const domainEnabledAccessResponse = await authenticatedBackendRequest(
+        page,
+        "GET",
+        "/admin/storefront/access",
+      );
+      expect(domainEnabledAccessResponse.status()).toBe(200);
+      const domainEnabledAccess = (await domainEnabledAccessResponse.json()) as {
+        plan_id: string;
+        storefront_enabled: boolean;
+        custom_domain_enabled: boolean;
+      };
+      expect(domainEnabledAccess.plan_id).toBe("plan_solo");
+      expect(domainEnabledAccess.storefront_enabled).toBe(true);
+      expect(domainEnabledAccess.custom_domain_enabled).toBe(true);
+      const { dialog: domainEnabledStorefrontDialog } =
+        await openStorefrontDialog(page);
+      await selectTab(page, "Domain");
+      await expect(
+        domainEnabledStorefrontDialog.getByLabel("Custom web address"),
+      ).toBeVisible();
+      await expect(
+        domainEnabledStorefrontDialog.getByText(
+          "Upgrade to add a custom domain",
+        ),
+      ).toHaveCount(0);
+      const plannerDomainEnabledAttachments = await attachCheckpoint(
+        page,
+        testInfo,
+        "solo-custom-domain-enabled-by-plan",
+      );
+      await page.keyboard.press("Escape");
+      await expect(domainEnabledStorefrontDialog).toBeHidden();
+
+      await loginRootAdmin(page);
+      const domainEnabledSoloAccess = page.getByLabel(
+        "Solo storefront access",
+      );
+      await domainEnabledSoloAccess
+        .locator("..")
+        .getByRole("button", { name: "Edit Plan" })
+        .click();
+      planDialog = page.getByRole("dialog", { name: "Edit Plan" });
+      storefrontControl = planDialog.getByRole("checkbox", {
+        name: /Planner storefront/,
+      });
+      domainControl = planDialog.getByRole("checkbox", {
+        name: /Custom domain/,
+      });
+      await expect(storefrontControl).toBeChecked();
+      await expect(domainControl).toBeChecked();
+      await domainControl.uncheck();
+      const disableDomainResponsePromise = page.waitForResponse((response) => {
+        const request = response.request();
+        return (
+          request.method() === "PUT" &&
+          new URL(response.url()).pathname.endsWith(
+            "/subscription-plans/plan_solo",
+          )
+        );
+      });
+      page.once("dialog", (dialog) => void dialog.accept());
+      await planDialog.getByRole("button", { name: "Update Plan" }).click();
+      const disableDomainResponse = await disableDomainResponsePromise;
+      expect(disableDomainResponse.status()).toBe(200);
+      const domainDisabledPlanResponse = await authenticatedBackendRequest(
+        page,
+        "GET",
+        "/subscription-plans/plan_solo",
+      );
+      expect(domainDisabledPlanResponse.status()).toBe(200);
+      const domainDisabledPlan = (await domainDisabledPlanResponse.json()) as {
+        features: Record<string, boolean>;
+      };
+      expect(domainDisabledPlan.features.planner_storefront).toBe(true);
+      expect(domainDisabledPlan.features.custom_domain).toBe(false);
+
+      await login(page, manifest.fixtures.solo_email, soloPassword!);
+      const domainDisabledAccessResponse = await authenticatedBackendRequest(
+        page,
+        "GET",
+        "/admin/storefront/access",
+      );
+      expect(domainDisabledAccessResponse.status()).toBe(200);
+      const domainDisabledAccess = (await domainDisabledAccessResponse.json()) as {
+        storefront_enabled: boolean;
+        custom_domain_enabled: boolean;
+      };
+      expect(domainDisabledAccess.storefront_enabled).toBe(true);
+      expect(domainDisabledAccess.custom_domain_enabled).toBe(false);
+      const { dialog: domainDisabledStorefrontDialog } =
+        await openStorefrontDialog(page);
+      await selectTab(page, "Domain");
+      await expect(
+        domainDisabledStorefrontDialog.getByText(
+          "Upgrade to add a custom domain",
+        ),
+      ).toBeVisible();
+      const plannerDomainDisabledAttachments = await attachCheckpoint(
+        page,
+        testInfo,
+        "solo-custom-domain-disabled-storefront-preserved",
+      );
+      await page.keyboard.press("Escape");
+      await expect(domainDisabledStorefrontDialog).toBeHidden();
+
+      await loginRootAdmin(page);
+      const restoredSoloAccess = page.getByLabel("Solo storefront access");
+      await restoredSoloAccess
+        .locator("..")
+        .getByRole("button", { name: "Edit Plan" })
+        .click();
+      planDialog = page.getByRole("dialog", { name: "Edit Plan" });
+      storefrontControl = planDialog.getByRole("checkbox", {
+        name: /Planner storefront/,
+      });
+      domainControl = planDialog.getByRole("checkbox", {
+        name: /Custom domain/,
+      });
+      await expect(storefrontControl).toBeChecked();
+      await expect(domainControl).not.toBeChecked();
+      await storefrontControl.uncheck();
+      await expect(domainControl).toBeDisabled();
+      const disableStorefrontResponsePromise = page.waitForResponse(
+        (response) => {
+          const request = response.request();
+          return (
+            request.method() === "PUT" &&
+            new URL(response.url()).pathname.endsWith(
+              "/subscription-plans/plan_solo",
+            )
+          );
+        },
+      );
+      page.once("dialog", (dialog) => void dialog.accept());
+      await planDialog.getByRole("button", { name: "Update Plan" }).click();
+      const disableStorefrontResponse = await disableStorefrontResponsePromise;
+      expect(disableStorefrontResponse.status()).toBe(200);
+      soloCapabilityNeedsRestore = false;
+      await expect(page.getByLabel("Solo storefront access")).toContainText(
+        "Not included",
+      );
+      const rootRestoredAttachments = await attachCheckpoint(
+        page,
+        testInfo,
+        "root-plan-storefront-restored",
+        '[aria-label="Solo storefront access"]',
+      );
+
+      const settingsRequests: string[] = [];
+      page.on("request", (request) => {
+        if (
+          new URL(request.url()).pathname.includes("/admin/storefront/settings")
+        ) {
+          settingsRequests.push(request.url());
+        }
+      });
+      await login(page, manifest.fixtures.solo_email, soloPassword!);
+      const disabledAccessResponse = await authenticatedBackendRequest(
+        page,
+        "GET",
+        "/admin/storefront/access",
+      );
+      expect(disabledAccessResponse.status()).toBe(200);
+      const disabledAccess = (await disabledAccessResponse.json()) as {
+        plan_id: string;
+        storefront_enabled: boolean;
+        custom_domain_enabled: boolean;
+      };
+      expect(disabledAccess.plan_id).toBe("plan_solo");
+      expect(disabledAccess.storefront_enabled).toBe(false);
+      expect(disabledAccess.custom_domain_enabled).toBe(false);
+      settingsRequests.length = 0;
+      await page.getByRole("button", { name: "Configure Storefront" }).click();
+      const restoredUpgradeDialog = page.getByRole("dialog", {
+        name: "Unlock Your Planner Storefront",
+      });
+      await expect(restoredUpgradeDialog).toHaveAttribute("aria-modal", "true");
+      await expect(
+        restoredUpgradeDialog.getByRole("heading", {
+          name: "Unlock Your Planner Storefront",
+        }),
+      ).toBeVisible();
+      await expect(restoredUpgradeDialog).not.toHaveClass(/scale-95/);
+      expect(settingsRequests).toEqual([]);
+      const plannerRestoredAttachments = await attachCheckpoint(
+        page,
+        testInfo,
+        "solo-storefront-gate-restored",
+      );
+
+      await recordScenarioEvidence(
+        testInfo,
+        "21_root_admin_plan_capability_round_trip",
+        "root-plan-to-planner-gate",
+        ["/admin/saas?tab=plans", "/admin/packages"],
+        {
+          createDefaultsOff: true,
+          planCardStatusVisible: true,
+          rootPutPersisted: true,
+          livePlannerCapabilityEnabled: true,
+          customDomainDefaultedOff: true,
+          rootCustomDomainEnablePersisted: true,
+          livePlannerCustomDomainEnabled: true,
+          rootCustomDomainDisablePersisted: true,
+          livePlannerCustomDomainDisabledWhileStorefrontRemainedEnabled: true,
+          rootRestoredOriginalCapability: true,
+          livePlannerGateRestored: true,
+          noSettingsRequestWhenRestricted: settingsRequests.length === 0,
+        },
+        [
+          ...rootEnabledAttachments,
+          ...plannerEnabledAttachments,
+          ...rootDomainEnabledAttachments,
+          ...plannerDomainEnabledAttachments,
+          ...plannerDomainDisabledAttachments,
+          ...rootRestoredAttachments,
+          ...plannerRestoredAttachments,
+        ],
+      );
+    } finally {
+      if (soloCapabilityNeedsRestore) {
+        await restoreSoloStorefrontCapability(page);
       }
-    });
-    await login(page, manifest.fixtures.solo_email, soloPassword!);
-    const disabledAccessResponse = await authenticatedBackendRequest(
-      page,
-      "GET",
-      "/admin/storefront/access",
-    );
-    expect(disabledAccessResponse.status()).toBe(200);
-    const disabledAccess = (await disabledAccessResponse.json()) as {
-      plan_id: string;
-      storefront_enabled: boolean;
-      custom_domain_enabled: boolean;
-    };
-    expect(disabledAccess.plan_id).toBe("plan_solo");
-    expect(disabledAccess.storefront_enabled).toBe(false);
-    expect(disabledAccess.custom_domain_enabled).toBe(false);
-    settingsRequests.length = 0;
-    await page.getByRole("button", { name: "Configure Storefront" }).click();
-    await expect(
-      page.getByRole("dialog", { name: "Unlock Your Planner Storefront" }),
-    ).toBeVisible();
-    expect(settingsRequests).toEqual([]);
-    const plannerRestoredAttachments = await attachCheckpoint(
-      page,
-      testInfo,
-      "solo-storefront-gate-restored",
-    );
-
-    await recordScenarioEvidence(
-      testInfo,
-      "21_root_admin_plan_capability_round_trip",
-      "root-plan-to-planner-gate",
-      ["/admin/saas?tab=plans", "/admin/packages"],
-      {
-        createDefaultsOff: true,
-        planCardStatusVisible: true,
-        rootPutPersisted: true,
-        livePlannerCapabilityEnabled: true,
-        customDomainRemainedIndependent: true,
-        rootRestoredOriginalCapability: true,
-        livePlannerGateRestored: true,
-        noSettingsRequestWhenRestricted: settingsRequests.length === 0,
-      },
-      [
-        ...rootEnabledAttachments,
-        ...plannerEnabledAttachments,
-        ...rootRestoredAttachments,
-        ...plannerRestoredAttachments,
-      ],
-    );
+    }
   });
 
   test("gates Solo and completes the real Signature slug, publication, content, and inquiry lifecycle", async ({
@@ -1032,9 +1286,7 @@ test.describe("storefront production testbed", () => {
         name: "Unlock Your Planner Storefront",
       }),
     ).toBeVisible();
-    await expect(upgradeDialog.locator("[data-transition]").last()).toHaveClass(
-      /opacity-100/,
-    );
+    await expect(upgradeDialog).not.toHaveClass(/scale-95/);
     expect(settingsRequests).toEqual([]);
     const gateAttachments = await attachCheckpoint(
       page,
@@ -1093,6 +1345,8 @@ test.describe("storefront production testbed", () => {
     await page.getByLabel("Storefront URL").fill(manifest.fixtures.slug);
     await page.getByLabel("Storefront title").fill(manifest.fixtures.title);
     await page.getByLabel("Description").fill(manifest.fixtures.description);
+    const selectedThemeColor = "#264653";
+    await page.getByLabel("Theme color hex value").fill(selectedThemeColor);
 
     const selectedImageBytes = fs.readFileSync(manifest.fixtures.image_path);
     const selectedImageReceipt = {
@@ -1109,19 +1363,54 @@ test.describe("storefront production testbed", () => {
       contentType: "application/json",
     });
 
+    const liveMedia = manifest.media_mode === "live";
     let releaseUploadRequest: () => void = () => undefined;
+    let markUploadRequestHandled: () => void = () => undefined;
     let uploadRequestObserved = false;
     const uploadRequestGate = new Promise<void>((resolve) => {
       releaseUploadRequest = resolve;
     });
-    const uploadReservationRoute =
-      "**/api/proxy/admin/storefront/upload-url?*";
+    const uploadRequestHandled = new Promise<void>((resolve) => {
+      markUploadRequestHandled = resolve;
+    });
+    const uploadReservationRoute = "**/api/proxy/admin/storefront/upload-url?*";
     await page.route(uploadReservationRoute, async (route) => {
       uploadRequestObserved = true;
       await uploadRequestGate;
-      await route.continue();
+      try {
+        await route.continue();
+      } finally {
+        markUploadRequestHandled();
+      }
     });
-    allowHttpFailure(context, "GET", 503, "/admin/storefront/upload-url");
+    if (!liveMedia) {
+      allowHttpFailure(context, "GET", 503, "/admin/storefront/upload-url");
+    }
+    const mediaResponses: Array<{
+      method: string;
+      pathname: string;
+      status: number;
+    }> = [];
+    const captureMediaResponse = (response: {
+      request(): { method(): string };
+      url(): string;
+      status(): number;
+    }) => {
+      const parsed = new URL(response.url());
+      if (
+        parsed.pathname.includes("/admin/storefront/upload-url") ||
+        parsed.pathname.includes("/admin/storefront/upload-complete") ||
+        (manifest.media_configuration &&
+          parsed.origin === manifest.media_configuration.upload_origin)
+      ) {
+        mediaResponses.push({
+          method: response.request().method(),
+          pathname: parsed.pathname,
+          status: response.status(),
+        });
+      }
+    };
+    page.on("response", captureMediaResponse);
     await page
       .getByLabel("Hero image")
       .setInputFiles(manifest.fixtures.image_path);
@@ -1147,14 +1436,51 @@ test.describe("storefront production testbed", () => {
     const mediaSelectionAttachments = await attachCheckpoint(
       page,
       testInfo,
-      "real-media-bytes-selected-before-provider-fence",
+      liveMedia
+        ? "real-media-bytes-selected-during-live-r2-upload"
+        : "real-media-bytes-selected-before-provider-fence",
     );
     releaseUploadRequest();
-    await expect(storefrontDialog.getByRole("alert")).toContainText(
-      /temporarily unavailable|not configured/i,
-    );
-    await expect(localHeroPreview).toHaveCount(0);
+    await uploadRequestHandled;
     await page.unroute(uploadReservationRoute);
+    if (liveMedia) {
+      await expect(storefrontDialog.getByRole("status")).toContainText(
+        "Hero image ready to save.",
+      );
+      await expect
+        .poll(() =>
+          mediaResponses.some(
+            (response) =>
+              response.method === "GET" &&
+              response.pathname.includes("/admin/storefront/upload-url") &&
+              response.status === 200,
+          ),
+        )
+        .toBe(true);
+      await expect
+        .poll(() =>
+          mediaResponses.some(
+            (response) =>
+              response.method === "PUT" && response.status >= 200 && response.status < 300,
+          ),
+        )
+        .toBe(true);
+      await expect
+        .poll(() =>
+          mediaResponses.some(
+            (response) =>
+              response.method === "POST" &&
+              response.pathname.includes("/admin/storefront/upload-complete") &&
+              response.status === 200,
+          ),
+        )
+        .toBe(true);
+    } else {
+      await expect(storefrontDialog.getByRole("alert")).toContainText(
+        /temporarily unavailable|not configured/i,
+      );
+      await expect(localHeroPreview).toHaveCount(0);
+    }
     await assertNoRawJson(page);
 
     await selectTab(page, "Content & publish");
@@ -1173,7 +1499,52 @@ test.describe("storefront production testbed", () => {
     await expect(
       livePreview.getByText(manifest.fixtures.package_name),
     ).toBeVisible();
+    await expect(
+      livePreview.getByRole("link", { name: "Book consultation" }),
+    ).toHaveCSS("background-color", "rgb(38, 70, 83)");
     await page.getByRole("button", { name: "Save for preview" }).click();
+    let persistedHeroUrl: string | null = null;
+    if (liveMedia) {
+      const livePreviewHero = livePreview.locator("section img").first();
+      await expect
+        .poll(async () => livePreviewHero.getAttribute("src"))
+        .toMatch(
+          new RegExp(
+            `^https://${manifest.media_configuration?.public_domain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`,
+          ),
+        );
+      await expect
+        .poll(() =>
+          livePreviewHero.evaluate((image) => {
+            const element = image as HTMLImageElement;
+            return (
+              element.complete &&
+              element.naturalWidth === 64 &&
+              element.naturalHeight === 40
+            );
+          }),
+        )
+        .toBe(true);
+      persistedHeroUrl = await livePreviewHero.getAttribute("src");
+      expect(persistedHeroUrl).toBeTruthy();
+      await testInfo.attach("live-r2-media-lifecycle", {
+        body: Buffer.from(
+          JSON.stringify(
+            {
+              run_id: manifest.run_id,
+              public_domain: manifest.media_configuration?.public_domain,
+              public_url_sha256: createHash("sha256")
+                .update(persistedHeroUrl ?? "")
+                .digest("hex"),
+              responses: mediaResponses,
+            },
+            null,
+            2,
+          ),
+        ),
+        contentType: "application/json",
+      });
+    }
     const headerPreview = page.getByRole("link", {
       name: /Preview storefront/,
     });
@@ -1194,6 +1565,9 @@ test.describe("storefront production testbed", () => {
       preview.getByText(manifest.fixtures.package_name),
     ).toBeVisible();
     await expect(
+      preview.getByRole("link", { name: "Book consultation" }),
+    ).toHaveCSS("background-color", "rgb(38, 70, 83)");
+    await expect(
       preview.getByText(manifest.fixtures.inactive_package_name),
     ).toHaveCount(0);
     await expect(
@@ -1211,6 +1585,22 @@ test.describe("storefront production testbed", () => {
     await expect(
       preview.getByText(manifest.fixtures.foreign_review_text),
     ).toHaveCount(0);
+    if (liveMedia && persistedHeroUrl) {
+      const savedHero = preview.locator(`img[src="${persistedHeroUrl}"]`);
+      await expect(savedHero).toHaveCount(1);
+      await expect
+        .poll(() =>
+          savedHero.evaluate((image) => {
+            const element = image as HTMLImageElement;
+            return (
+              element.complete &&
+              element.naturalWidth === 64 &&
+              element.naturalHeight === 40
+            );
+          }),
+        )
+        .toBe(true);
+    }
     const internalPreviewAttachments = await attachCheckpoint(
       preview,
       testInfo,
@@ -1231,14 +1621,21 @@ test.describe("storefront production testbed", () => {
         realPngSignatureVerified:
           selectedImageReceipt.png_signature_hex === "89504e470d0a1a0a",
         localBytesDecodedByBrowser: realBytesDecoded,
-        providerDisabledFailureWasFriendly: true,
+        ...(liveMedia
+          ? {
+              liveR2UploadFinalized: true,
+              liveR2PublicImageRendered: Boolean(persistedHeroUrl),
+            }
+          : { providerDisabledFailureWasFriendly: true }),
         rawProviderErrorHidden: true,
         savedDesignRoundTripped: true,
+        savedThemeColorRoundTripped: true,
         internalSlugPreviewOpenedWithoutDns: true,
         runMarkerVisibleInSavedPreview: true,
       },
       [
         "selected-real-media-bytes",
+        ...(liveMedia ? ["live-r2-media-lifecycle"] : []),
         ...mediaSelectionAttachments,
         ...internalPreviewAttachments,
       ],
@@ -1262,7 +1659,9 @@ test.describe("storefront production testbed", () => {
     if ((await publish.getAttribute("aria-checked")) !== "true")
       await publish.click();
     await page.getByRole("button", { name: "Save settings" }).click();
-    await expect(page.getByRole("status")).toContainText(/published/i);
+    await expect(
+      page.getByRole("status").filter({ hasText: /published/i }).first(),
+    ).toBeVisible();
 
     const publicPage = await context.newPage();
     expect(
@@ -1403,9 +1802,12 @@ test.describe("storefront production testbed", () => {
       contentType: "application/json",
     });
     await publicPage.getByRole("button", { name: "Try again" }).click();
-    await expect(publicPage.getByRole("status")).toContainText(
-      /inquiry was received/i,
-    );
+    await expect(
+      publicPage
+        .getByRole("status")
+        .filter({ hasText: /inquiry was received/i })
+        .first(),
+    ).toBeVisible();
     await publicPage.unroute(inquiryRoute);
     expect(inquiryReceipts).toHaveLength(2);
     expect(inquiryReceipts[0].response.success).toBe(true);
@@ -1433,9 +1835,12 @@ test.describe("storefront production testbed", () => {
       await publicPage
         .getByRole("button", { name: "Send updated inquiry" })
         .click();
-      await expect(publicPage.getByRole("status")).toContainText(
-        /inquiry was received/i,
-      );
+      await expect(
+        publicPage
+          .getByRole("status")
+          .filter({ hasText: /inquiry was received/i })
+          .first(),
+      ).toBeVisible();
     }
     await publicPage
       .getByLabel("How can we help?")
@@ -1511,7 +1916,9 @@ test.describe("storefront production testbed", () => {
     if ((await publish.getAttribute("aria-checked")) !== "true")
       await publish.click();
     await page.getByRole("button", { name: "Save settings" }).click();
-    await expect(page.getByRole("status")).toContainText(/published/i);
+    await expect(
+      page.getByRole("status").filter({ hasText: /published/i }).first(),
+    ).toBeVisible();
     const publicationAttachments = await attachCheckpoint(
       page,
       testInfo,
@@ -1651,7 +2058,9 @@ test.describe("storefront production testbed", () => {
         await platformBefore.goto(`/storefront/${manifest.fixtures.slug}`)
       )?.status(),
     ).toBe(200);
-    await expect(platformBefore.getByText(manifest.run_id).first()).toBeVisible();
+    await expect(
+      platformBefore.getByText(manifest.run_id).first(),
+    ).toBeVisible();
     const platformBeforeAttachments = await attachCheckpoint(
       platformBefore,
       testInfo,
@@ -1661,7 +2070,7 @@ test.describe("storefront production testbed", () => {
     await openStorefrontDialog(page);
     await selectTab(page, "Domain");
     const domainRegion = page.getByRole("region", { name: "Custom domain" });
-    const domainInput = page.getByLabel("Storefront domain");
+    const domainInput = page.getByLabel("Custom web address");
     const providerBeforeMigrationPreflight = await providerControl<{
       cloudflare_call_count: number;
       provider_records: number;
@@ -1671,10 +2080,7 @@ test.describe("storefront production testbed", () => {
       A: string[];
       AAAA: string[];
       CNAME: string[];
-    }>(
-      page,
-      `routing-snapshot?hostname=${encodeURIComponent(mainHostname)}`,
-    );
+    }>(page, `routing-snapshot?hostname=${encodeURIComponent(mainHostname)}`);
     expect(routingBeforeMigrationOwnership).toMatchObject({
       hostname: mainHostname,
       A: [],
@@ -1682,17 +2088,11 @@ test.describe("storefront production testbed", () => {
       CNAME: [`wrong-target.${mainHostname.split(".").slice(1).join(".")}`],
     });
 
-    await domainInput.fill("https://events.customer.test/path");
-    allowHttpFailure(
-      context,
-      "POST",
-      422,
-      "/admin/storefront/custom-domain/preflight",
-    );
+    await domainInput.fill(`https://${mainHostname}/path`);
     await page.getByRole("button", { name: "Check domain" }).click();
-    await expect(domainRegion.getByRole("alert")).toContainText(
-      /hostname|URL|path/i,
-    );
+    await expect(domainInput).toHaveValue(mainHostname);
+    await expect(page.getByText("Cloudflare detected")).toBeVisible();
+    await expect(domainRegion.getByRole("alert")).toHaveCount(0);
 
     await domainInput.fill("customer.test");
     allowHttpFailure(
@@ -1719,7 +2119,9 @@ test.describe("storefront production testbed", () => {
     );
 
     await domainInput.fill(mainHostname);
-    await page.getByLabel("Move an existing domain").check();
+    await page
+      .getByRole("radio", { name: /Yes, it is already in use/i })
+      .check();
     await page.getByRole("button", { name: "Check domain" }).click();
     await expect(
       page.getByText("Assisted migration recommended"),
@@ -1740,7 +2142,9 @@ test.describe("storefront production testbed", () => {
       .getByRole("button", { name: "Start assisted migration" })
       .click();
     await expect(
-      page.getByText(`_tsw-storefront.${mainHostname}`, { exact: true }),
+      page
+        .getByText(`_tsw-storefront.${mainHostname}`, { exact: true })
+        .first(),
     ).toBeVisible();
     const migrationOwnership = await providerControl<{
       published: boolean;
@@ -1776,10 +2180,7 @@ test.describe("storefront production testbed", () => {
       A: string[];
       AAAA: string[];
       CNAME: string[];
-    }>(
-      page,
-      `routing-snapshot?hostname=${encodeURIComponent(mainHostname)}`,
-    );
+    }>(page, `routing-snapshot?hostname=${encodeURIComponent(mainHostname)}`);
     expect(providerAfterMigrationPreflight.cloudflare_call_count).toBe(
       providerBeforeMigrationPreflight.cloudflare_call_count,
     );
@@ -1836,18 +2237,21 @@ test.describe("storefront production testbed", () => {
           providerAfterMigrationPreflight.provider_records ===
           providerBeforeMigrationPreflight.provider_records,
       },
-      ["migration-preflight-provider-mutation-snapshot", ...migrationAttachments],
+      [
+        "migration-preflight-provider-mutation-snapshot",
+        ...migrationAttachments,
+      ],
     );
 
-    await page.getByRole("button", { name: "Disconnect domain" }).click();
+    await page.getByRole("button", { name: "Cancel setup" }).click();
     const assistedDisconnect = page.getByRole("dialog", {
-      name: `Disconnect ${mainHostname}?`,
+      name: `Cancel setup for ${mainHostname}?`,
     });
     await assistedDisconnect
-      .getByRole("button", { name: "Disconnect domain" })
+      .getByRole("button", { name: "Cancel setup" })
       .click();
     await expect(
-      page.getByText("Connection removed from The Special Wedding"),
+      page.getByText("Setup cancelled", { exact: true }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Set up another domain" }).click();
     await expect(domainInput).toBeVisible();
@@ -1856,12 +2260,12 @@ test.describe("storefront production testbed", () => {
       hostname: mainHostname,
       dns_mode: "missing",
     });
-    await page.getByLabel("Set up a new domain").check();
+    await page.getByRole("radio", { name: /No, it is new/i }).check();
     await domainInput.fill(mainHostname);
     await page.getByRole("button", { name: "Check domain" }).click();
     await expect(page.getByText("Cloudflare detected")).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /Connect automatically with/i }),
+      page.getByRole("button", { name: /Continue with/i }),
     ).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Set up manually" }),
@@ -1880,7 +2284,7 @@ test.describe("storefront production testbed", () => {
         "/admin/storefront/custom-domain/preflight",
       ],
       {
-        urlInputRejected: true,
+        pastedUrlAcceptedAndNormalized: true,
         apexRejected: true,
         platformDomainRejected: true,
         providerDetected: true,
@@ -1897,14 +2301,13 @@ test.describe("storefront production testbed", () => {
     await login(page, manifest.fixtures.foreign_email, foreignPassword);
     await openStorefrontDialog(page);
     await selectTab(page, "Domain");
-    await page.getByLabel("Storefront domain").fill(claimedHostname);
+    await page.getByLabel("Custom web address").fill(claimedHostname);
     await page.getByRole("button", { name: "Check domain" }).click();
-    await page
-      .getByRole("button", { name: /Connect automatically with/i })
-      .click();
+    await page.getByRole("button", { name: /Continue with/i }).click();
     await expect(
-      page.getByRole("heading", { name: "Review the exact DNS changes" }),
+      page.getByRole("heading", { name: /will connect your address/i }),
     ).toBeVisible();
+    await page.getByText("View exact DNS changes").click();
     await expect(
       page.getByText(`_tsw-storefront.${claimedHostname}`, { exact: true }),
     ).toBeVisible();
@@ -1921,7 +2324,7 @@ test.describe("storefront production testbed", () => {
     );
     expect(cancelledAttemptId).toMatch(/^[A-Za-z0-9_-]+$/);
     await page
-      .getByRole("button", { name: /Continue to Cloudflare Testbed DNS/i })
+      .getByRole("button", { name: /Sign in to Cloudflare Testbed DNS/i })
       .click();
     await expect(
       page.getByRole("heading", { name: /Authorize DNS changes for/i }),
@@ -1959,7 +2362,9 @@ test.describe("storefront production testbed", () => {
     await expect(cancellationAlert).toContainText(
       "Automatic DNS authorization was cancelled.",
     );
-    await expect(cancellationAlert).not.toContainText(/already completed|consumed/i);
+    await expect(cancellationAlert).not.toContainText(
+      /already completed|consumed/i,
+    );
     await expect(page.getByText("Custom domain is live")).toHaveCount(0);
     const cancelledResumeAttachments = await attachCheckpoint(
       page,
@@ -2056,14 +2461,22 @@ test.describe("storefront production testbed", () => {
     await conflictCancel
       .getByRole("button", { name: "Cancel ownership review" })
       .click();
-    await expect(page.getByText("Ownership review cancelled")).toBeVisible();
+    await expect(
+      page.getByText("Ownership review cancelled", { exact: true }),
+    ).toBeVisible();
 
     await login(page, manifest.fixtures.foreign_email, foreignPassword);
     await openStorefrontDialog(page);
     await selectTab(page, "Domain");
-    await disconnectDomain(page);
+    await page.getByRole("button", { name: "Cancel setup" }).click();
+    const foreignSetupCancel = page.getByRole("dialog", {
+      name: `Cancel setup for ${claimedHostname}?`,
+    });
+    await foreignSetupCancel
+      .getByRole("button", { name: "Cancel setup" })
+      .click();
     await expect(
-      page.getByText("Connection removed from The Special Wedding"),
+      page.getByText("Setup cancelled", { exact: true }),
     ).toBeVisible();
 
     await providerControl(page, "configure", {
@@ -2076,24 +2489,25 @@ test.describe("storefront production testbed", () => {
     await selectTab(page, "Domain");
     await (await prepareNewDomainInput(page)).fill(mainHostname);
     await page.getByRole("button", { name: "Check domain" }).click();
-    await page
-      .getByRole("button", { name: /Connect automatically with/i })
-      .click();
+    await page.getByRole("button", { name: /Continue with/i }).click();
     await expect(
-      page.getByRole("heading", { name: "Review the exact DNS changes" }),
+      page.getByRole("heading", { name: /will connect your address/i }),
     ).toBeVisible();
+    await page.getByText("View exact DNS changes").click();
     await expect(
-      page.getByText(`_tsw-storefront.${mainHostname}`, { exact: true }),
+      page
+        .getByText(`_tsw-storefront.${mainHostname}`, { exact: true })
+        .first(),
     ).toBeVisible();
-    const copyAll = page.getByRole("button", { name: /Copy all records/i });
+    const copyValue = page.getByRole("button", { name: "Copy Value" }).first();
     await context.grantPermissions(["clipboard-read", "clipboard-write"], {
       origin: manifest.frontend_url,
     });
-    await copyAll.focus();
+    await copyValue.focus();
     await page.keyboard.press("Enter");
-    await expect(page.getByRole("status")).toContainText(
-      "Copied all DNS records.",
-    );
+    await expect(
+      page.getByRole("status").filter({ hasText: "Copied Value." }).first(),
+    ).toBeVisible();
     const copyAttachments = await attachCheckpoint(
       page,
       testInfo,
@@ -2115,12 +2529,12 @@ test.describe("storefront production testbed", () => {
       "GET",
       "/admin/storefront/custom-domain/status",
     );
-    const resumedAutomaticAttemptId = String(
+    const callbackWithoutDnsAttemptId = String(
       (await resumableStatusResponse.json()).attempt_id ?? "",
     );
-    expect(resumedAutomaticAttemptId).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(callbackWithoutDnsAttemptId).toMatch(/^[A-Za-z0-9_-]+$/);
     await page
-      .getByRole("button", { name: /Continue to Cloudflare Testbed DNS/i })
+      .getByRole("button", { name: /Sign in to Cloudflare Testbed DNS/i })
       .click();
     await expect(
       page.getByRole("heading", { name: /Authorize DNS changes for/i }),
@@ -2144,6 +2558,7 @@ test.describe("storefront production testbed", () => {
       "true",
     );
     expect(new URL(page.url()).searchParams.has("attempt")).toBe(false);
+    await page.getByText("View technical details").click();
     const missingOwnershipObservation = page
       .getByRole("listitem")
       .filter({ hasText: "Ownership" });
@@ -2217,6 +2632,159 @@ test.describe("storefront production testbed", () => {
       ],
     );
 
+    await page.getByRole("button", { name: "Cancel setup" }).click();
+    const callbackWithoutDnsCancel = page.getByRole("dialog", {
+      name: `Cancel setup for ${mainHostname}?`,
+    });
+    await callbackWithoutDnsCancel
+      .getByRole("button", { name: "Cancel setup" })
+      .click();
+    await expect(
+      page.getByText("Setup cancelled", { exact: true }),
+    ).toBeVisible();
+    await providerControl(page, "configure", {
+      hostname: mainHostname,
+      domain_connect_supported: true,
+      provider_mutations_enabled: true,
+    });
+    const automaticPrimaryInput = await prepareNewDomainInput(page);
+    await automaticPrimaryInput.fill(mainHostname);
+    await page.getByRole("button", { name: "Check domain" }).click();
+    await page.getByRole("button", { name: /Continue with/i }).click();
+    await expect(
+      page.getByRole("heading", { name: /will connect your address/i }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: /Sign in to Cloudflare Testbed DNS/i })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: /Authorize DNS changes for/i }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Authorize DNS changes" }).click();
+    await page.waitForURL(
+      (url) =>
+        url.origin === manifest.frontend_url &&
+        url.searchParams.get("storefront") === "domain" &&
+        !url.searchParams.has("attempt"),
+    );
+    await expect(
+      page.getByRole("heading", {
+        name: /Connecting your custom web address/i,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/You can close this window and return later/i),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Sign in to Cloudflare Testbed DNS/i }),
+    ).toHaveCount(0);
+    const authorizedAutomaticStatus = await authenticatedBackendRequest(
+      page,
+      "GET",
+      "/admin/storefront/custom-domain/status",
+    );
+    expect(await authorizedAutomaticStatus.json()).toMatchObject({
+      hostname: mainHostname,
+      setup_method: "automatic",
+      domain_connect_authorized: true,
+      application_status: "dns_setup_pending",
+    });
+    await providerControl(page, "advance", {
+      hostname: mainHostname,
+      provider_status: "active",
+      ssl_status: "active",
+      https_ok: true,
+    });
+    await requestDomainObservation(page);
+    await providerControl(page, "advance", {
+      hostname: mainHostname,
+      reconcile_passes: 3,
+    });
+    await expect(page.getByText("Custom domain is live")).toBeVisible({
+      timeout: 30_000,
+    });
+    const automaticPrimaryProviderReceipt =
+      await providerControl<DeterministicProviderProbeStatus>(
+        page,
+        "probe-route",
+        { hostname: mainHostname, mode: "current" },
+      );
+    expect(automaticPrimaryProviderReceipt.external_provider_live).toBe(false);
+    expect(automaticPrimaryProviderReceipt.provider_records).toBeGreaterThan(0);
+    expect(automaticPrimaryProviderReceipt.probe).toMatchObject({
+      hostname: mainHostname,
+      status_code: 200,
+      verified: true,
+    });
+    await testInfo.attach("deterministic-automatic-primary-provider-receipt", {
+      body: Buffer.from(
+        JSON.stringify(automaticPrimaryProviderReceipt, null, 2),
+      ),
+      contentType: "application/json",
+    });
+    const automaticPrimaryAttachments = await attachCheckpoint(
+      page,
+      testInfo,
+      "automatic-provider-consent-to-connected",
+    );
+    await recordScenarioEvidence(
+      testInfo,
+      "08_domain_connect_resume_without_dns",
+      "automatic-primary-happy-path",
+      [
+        "/admin/packages?storefront=domain",
+        "/admin/storefront/custom-domain/claim",
+        "/admin/storefront/custom-domain/domain-connect/authorize",
+        "/admin/storefront/custom-domain/domain-connect/callback",
+        "/admin/storefront/custom-domain/domain-connect/complete",
+        "/admin/storefront/custom-domain/observe",
+        "/admin/storefront/custom-domain/status",
+      ],
+      {
+        dominantProviderSignInUsed: true,
+        providerConsentPublishedExactDns: true,
+        callbackReturnedToSimpleProgress: true,
+        setupMethodResumedAsAutomatic: true,
+        authorizationPersisted: true,
+        lowLevelChecksHiddenByDefault: true,
+        allFiveChecksRequiredBeforeConnected: true,
+        deterministicProviderNotExternal:
+          automaticPrimaryProviderReceipt.external_provider_live === false,
+      },
+      [
+        "deterministic-automatic-primary-provider-receipt",
+        ...automaticPrimaryAttachments,
+      ],
+    );
+    await disconnectDomain(page);
+    await expect(
+      page.getByText("Connection removed from The Special Wedding"),
+    ).toBeVisible();
+
+    await providerControl(page, "configure", {
+      hostname: mainHostname,
+      domain_connect_supported: false,
+      provider_mutations_enabled: true,
+    });
+    await providerControl(page, "advance", {
+      hostname: mainHostname,
+      dns_mode: "missing",
+    });
+    const manualDomainInput = await prepareNewDomainInput(page);
+    await manualDomainInput.fill(mainHostname);
+    await page.getByRole("button", { name: "Check domain" }).click();
+    await page.getByRole("button", { name: "Set up manually" }).click();
+    await expect(page.getByText("Add these records")).toBeVisible();
+    const manualStatusResponse = await authenticatedBackendRequest(
+      page,
+      "GET",
+      "/admin/storefront/custom-domain/status",
+    );
+    const manualAttemptId = String(
+      (await manualStatusResponse.json()).attempt_id ?? "",
+    );
+    expect(manualAttemptId).toMatch(/^[A-Za-z0-9_-]+$/);
+
     const dnsContact = `dns-contact+${manifest.run_id}@example.com`;
     await page.getByLabel("Email DNS instructions").fill("not-an-email");
     await page.getByRole("button", { name: "Send instructions" }).click();
@@ -2228,16 +2796,19 @@ test.describe("storefront production testbed", () => {
       .getByLabel("Optional note")
       .fill("Use only these exact records.");
     await page.getByRole("button", { name: "Send instructions" }).click();
-    await expect(page.getByRole("status")).toContainText(
-      `DNS instructions sent to ${dnsContact}.`,
-    );
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: `DNS instructions sent to ${dnsContact}.` })
+        .first(),
+    ).toBeVisible();
 
     const repeatedInstructions = await authenticatedBackendRequest(
       page,
       "POST",
       "/admin/storefront/custom-domain/instructions",
       {
-        attempt_id: resumedAutomaticAttemptId,
+        attempt_id: manualAttemptId,
         email: dnsContact,
         note: "Use only these exact records.",
       },
@@ -2279,7 +2850,11 @@ test.describe("storefront production testbed", () => {
     await expect(
       instructionPage.getByText("Secure read-only link"),
     ).toBeVisible();
-    await expect(instructionPage.getByText(/cannot publish, activate, transfer, or disconnect/i)).toBeVisible();
+    await expect(
+      instructionPage.getByText(
+        /cannot publish, activate, transfer, or disconnect/i,
+      ),
+    ).toBeVisible();
     const readOnlyInstructionAttachments = await attachCheckpoint(
       instructionPage,
       testInfo,
@@ -2312,9 +2887,12 @@ test.describe("storefront production testbed", () => {
     );
     await revokeInstructionButton.click();
     await expect(page.getByText("Instruction link revoked")).toBeVisible();
-    await expect(page.getByRole("status")).toContainText(
-      "The DNS instruction link was revoked.",
-    );
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "The DNS instruction link was revoked." })
+        .first(),
+    ).toBeVisible();
     const revokedInstructionAttachments = await attachCheckpoint(
       page,
       testInfo,
@@ -2683,6 +3261,12 @@ test.describe("storefront production testbed", () => {
       testInfo,
       "deterministic-provider-five-proofs-active",
     );
+    const deleteCallsBeforeRetriedDisconnect =
+      activeHarnessStatus.cloudflare_calls.filter(
+        (call) =>
+          call.operation === "delete_custom_hostname" &&
+          call.hostname === mainHostname,
+      ).length;
 
     await providerControl(page, "advance", {
       hostname: mainHostname,
@@ -2714,13 +3298,27 @@ test.describe("storefront production testbed", () => {
     const disconnected = await disconnectedStatus.json();
     expect(disconnected.application_status).toBe("disconnected");
     expect(disconnected.deletion_status).toBe("completed");
-    await page.getByRole("button", { name: "Disconnect domain" }).click();
-    const reconciledConfirmation = page.getByRole("dialog", {
-      name: `Disconnect ${mainHostname}?`,
+    allowHttpFailure(
+      context,
+      "POST",
+      404,
+      "/admin/storefront/custom-domain/observe",
+    );
+    const staleObservationResponsePromise = page.waitForResponse((response) => {
+      const request = response.request();
+      return (
+        request.method() === "POST" &&
+        new URL(response.url()).pathname.endsWith(
+          "/admin/storefront/custom-domain/observe",
+        )
+      );
     });
-    await reconciledConfirmation
-      .getByRole("button", { name: "Disconnect domain" })
-      .click();
+    await page.getByRole("button", { name: "Check again" }).click();
+    const staleObservationResponse = await staleObservationResponsePromise;
+    expect(staleObservationResponse.status()).toBe(404);
+    expect(await staleObservationResponse.json()).toMatchObject({
+      error: { code: "domain_attempt_not_found" },
+    });
     await expect(
       page.getByText("Connection removed from The Special Wedding"),
     ).toBeVisible();
@@ -2730,9 +3328,13 @@ test.describe("storefront production testbed", () => {
       ),
     ).toBeVisible();
     await expect(
-      page.getByText(`_tsw-storefront.${mainHostname}`, { exact: true }),
+      page
+        .getByText(`_tsw-storefront.${mainHostname}`, { exact: true })
+        .first(),
     ).toBeVisible();
-    await expect(page.getByText(mainHostname, { exact: true }).first()).toBeVisible();
+    await expect(
+      page.getByText(mainHostname, { exact: true }).first(),
+    ).toBeVisible();
     const immutableStateAfterDisconnect =
       await immutableStorefrontAccountSnapshot(page);
     expect(immutableStateAfterDisconnect).toEqual(
@@ -2798,7 +3400,9 @@ test.describe("storefront production testbed", () => {
         call.operation === "delete_custom_hostname" &&
         call.hostname === mainHostname,
     );
-    expect(deleteCalls).toHaveLength(2);
+    const retriedDisconnectDeleteCalls =
+      deleteCalls.length - deleteCallsBeforeRetriedDisconnect;
+    expect(retriedDisconnectDeleteCalls).toBe(2);
     await testInfo.attach("deterministic-disconnect-provider-receipt", {
       body: Buffer.from(JSON.stringify(harnessStatus, null, 2)),
       contentType: "application/json",
@@ -2872,7 +3476,8 @@ test.describe("storefront production testbed", () => {
         backgroundRetryReconciled: disconnected.deletion_status === "completed",
         applicationReachedDisconnected:
           disconnected.application_status === "disconnected",
-        deterministicDeleteAttemptAndRetryObserved: deleteCalls.length === 2,
+        deterministicDeleteAttemptAndRetryObserved:
+          retriedDisconnectDeleteCalls === 2,
         providerRecordRemoved: harnessStatus.provider_records === 0,
         customRouteUnavailableAfterDisconnect:
           harnessStatus.probe.status_code === 404 &&
@@ -2895,7 +3500,10 @@ test.describe("storefront production testbed", () => {
       testInfo,
       "19_platform_slug_survives_domain_lifecycle",
       "slug-continuity",
-      [`/storefront/${manifest.fixtures.slug}`, "/admin/packages?storefront=domain"],
+      [
+        `/storefront/${manifest.fixtures.slug}`,
+        "/admin/packages?storefront=domain",
+      ],
       {
         slugReachableBeforeDomainSetup: true,
         slugReachableWhileCustomDomainActive: true,

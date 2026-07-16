@@ -1277,6 +1277,50 @@ async def test_delete_failure_preserves_mapping_with_retry_state(domain_setup):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "delete_result",
+    [
+        {"id": "cf-hostname-other"},
+        {"id": "cf-hostname-1", "hostname": "other.example"},
+    ],
+)
+async def test_delete_response_identity_mismatch_requires_operator_review(
+    domain_setup,
+    delete_result,
+):
+    service, mongo, _, cloudflare = domain_setup
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
+    cloudflare.delete_result = delete_result
+
+    with pytest.raises(HTTPException) as blocked:
+        await service.disconnect(_owner())
+
+    assert blocked.value.status_code == 409
+    assert blocked.value.detail["code"] == "provider_delete_identity_mismatch"
+    assert blocked.value.detail["retryable"] is False
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["provider_hostname_id"] == "cf-hostname-1"
+    assert stored["application_status"] == "operator_review"
+    assert stored["action"] == "operator_review"
+    assert stored["deletion_status"] == "operator_review"
+    assert stored["custom_route_enabled"] is False
+    assert stored["last_error"]["code"] == "provider_delete_identity_mismatch"
+    assert mongo.raw.storefront_domain_tombstones.count_documents({}) == 0
+    operation = mongo.raw.storefront_domain_operations.find_one(
+        {"kind": "provider_delete"}
+    )
+    assert operation["state"] == "operator_review"
+    assert operation["provider_receipt"]["outcome"] == "identity_mismatch"
+    assert cloudflare.deleted == ["cf-hostname-1"]
+
+    with pytest.raises(HTTPException) as support_required:
+        await service.disconnect(_owner())
+    assert support_required.value.status_code == 409
+    assert support_required.value.detail["code"] == "provider_delete_support_required"
+    assert cloudflare.deleted == ["cf-hostname-1"]
+
+
+@pytest.mark.asyncio
 async def test_delete_failure_refresh_preserves_intent_and_retry_can_finish(
     domain_setup,
 ):
@@ -1603,6 +1647,9 @@ async def test_entitlement_loss_preserves_proven_route_status_and_disconnect(
         {"planner_id": OWNER_ID}
     )
     assert tombstone["hostname"] == "events.example"
+    assert tombstone["removal_kind"] == "domain_disconnected"
+    disconnected = await service.get_status(_owner())
+    assert disconnected["removal_kind"] == "domain_disconnected"
 
 
 @pytest.mark.asyncio
@@ -1653,6 +1700,127 @@ async def test_retry_uses_owner_scoped_attempt_original_ssl_and_throttles(domain
     assert throttled.value.status_code == 429
     assert throttled.value.detail["code"] == "custom_domain_retry_throttled"
     assert cloudflare.retried == [("cf-hostname-1", "txt", "dv")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("application_status", "deletion_status"),
+    [
+        ("disconnecting", "provider_delete_pending"),
+        ("disconnect_failed", "retry_pending"),
+        ("disconnected", "local_cleanup_pending"),
+    ],
+)
+async def test_provider_retry_rejects_every_deletion_intent_stage(
+    domain_setup,
+    application_status,
+    deletion_status,
+):
+    service, mongo, _, cloudflare = domain_setup
+    now = datetime(2026, 7, 15, 20, 0, tzinfo=timezone.utc)
+    mongo.raw.storefront_domains.insert_one(
+        {
+            "_id": ObjectId(),
+            "planner_id": OWNER_ID,
+            "hostname": "events.example",
+            "claim_attempt_id": "attempt-deleting",
+            "revision": 7,
+            "application_status": application_status,
+            "status": "deleting",
+            "provider_hostname_id": "cf-hostname-1",
+            "provider_ssl_method": "txt",
+            "provider_ssl_type": "dv",
+            "provider_status": "active",
+            "provider_hostname_status": "active",
+            "ssl_status": "pending_validation",
+            "ownership_status": "verified",
+            "routing_dns_status": "verified",
+            "https_status": "pending",
+            "action": "processing",
+            "deletion_status": deletion_status,
+            "updated_at": now,
+        }
+    )
+
+    with pytest.raises(HTTPException) as blocked:
+        await service.retry_provider(_owner(), "attempt-deleting")
+
+    assert blocked.value.status_code == 409
+    assert blocked.value.detail["code"] == "domain_deletion_in_progress"
+    assert cloudflare.retried == []
+    assert mongo.raw.storefront_domain_operations.count_documents({}) == 0
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["application_status"] == application_status
+    assert stored["deletion_status"] == deletion_status
+
+
+@pytest.mark.asyncio
+async def test_provider_retry_cas_loses_to_concurrent_disconnect(
+    domain_setup,
+    monkeypatch,
+):
+    service, mongo, _, cloudflare = domain_setup
+    now = datetime(2026, 7, 15, 20, 0, tzinfo=timezone.utc)
+    domain_id = ObjectId()
+    mongo.raw.storefront_domains.insert_one(
+        {
+            "_id": domain_id,
+            "planner_id": OWNER_ID,
+            "hostname": "events.example",
+            "claim_attempt_id": "attempt-race",
+            "revision": 7,
+            "application_status": "certificate_validation",
+            "status": "pending",
+            "provider_hostname_id": "cf-hostname-1",
+            "provider_ssl_method": "txt",
+            "provider_ssl_type": "dv",
+            "provider_status": "active",
+            "provider_hostname_status": "active",
+            "ssl_status": "pending_validation",
+            "ownership_status": "verified",
+            "routing_dns_status": "verified",
+            "https_status": "pending",
+            "action": "action_required",
+            "deletion_status": None,
+            "updated_at": now,
+        }
+    )
+    operations = mongo.db["storefront_domain_operations"]
+    original_insert = operations.insert_one
+
+    async def disconnect_after_operation_is_prepared(operation, *args, **kwargs):
+        result = await original_insert(operation, *args, **kwargs)
+        mongo.raw.storefront_domains.update_one(
+            {"_id": domain_id},
+            {
+                "$set": {
+                    "application_status": "disconnecting",
+                    "status": "deleting",
+                    "deletion_status": "provider_delete_pending",
+                }
+            },
+        )
+        return result
+
+    monkeypatch.setattr(
+        operations,
+        "insert_one",
+        disconnect_after_operation_is_prepared,
+    )
+
+    with pytest.raises(HTTPException) as changed:
+        await service.retry_provider(_owner(), "attempt-race")
+
+    assert changed.value.status_code == 409
+    assert changed.value.detail["code"] == "custom_domain_retry_changed"
+    assert cloudflare.retried == []
+    operation = mongo.raw.storefront_domain_operations.find_one(
+        {"kind": "provider_retry"}
+    )
+    assert operation["state"] == "cancelled"
+    stored = mongo.raw.storefront_domains.find_one({"_id": domain_id})
+    assert stored["application_status"] == "disconnecting"
+    assert stored["deletion_status"] == "provider_delete_pending"
 
 
 @pytest.mark.asyncio

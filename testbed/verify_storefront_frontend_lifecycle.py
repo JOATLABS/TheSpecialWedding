@@ -48,6 +48,8 @@ try:
     )
     from testbed.storefront_testbed_safety import (
         PROVIDER_DISABLED_ENVIRONMENT_KEYS,
+        STOREFRONT_MEDIA_LIVE_ENVIRONMENT_KEYS,
+        assert_live_storefront_media_environment,
         assert_safe_storefront_target,
         parse_exact_hostname_allowlist,
     )
@@ -58,6 +60,8 @@ except ModuleNotFoundError:  # Direct ``python testbed/<driver>.py`` execution.
     )
     from storefront_testbed_safety import (  # type: ignore[no-redef]
         PROVIDER_DISABLED_ENVIRONMENT_KEYS,
+        STOREFRONT_MEDIA_LIVE_ENVIRONMENT_KEYS,
+        assert_live_storefront_media_environment,
         assert_safe_storefront_target,
         parse_exact_hostname_allowlist,
     )
@@ -92,6 +96,9 @@ EXTERNAL_MODE = (
 )
 INQUIRY_DELIVERY_MODE = (
     os.getenv("TESTBED_STOREFRONT_INQUIRY_DELIVERY_MODE", "disabled").strip().lower()
+)
+MEDIA_MODE = (
+    os.getenv("TESTBED_STOREFRONT_MEDIA_MODE", "disabled").strip().lower()
 )
 ARTIFACT_ROOT = Path(
     os.getenv(
@@ -272,6 +279,8 @@ class IsolatedStorefrontRuntime:
         control_token: str,
         artifact_dir: Path,
         runtime_revision: str,
+        media_mode: str = "disabled",
+        browser_origin: str | None = None,
     ) -> None:
         self.run_id = run_id
         self.root_admin_email = root_admin_email
@@ -281,6 +290,8 @@ class IsolatedStorefrontRuntime:
         ).hexdigest()
         self.artifact_dir = artifact_dir
         self.runtime_revision = runtime_revision
+        self.media_mode = media_mode
+        self.browser_origin = browser_origin.rstrip("/") if browser_origin else None
         self.certificate_path, self.private_key_path, self.certificate_sha256 = (
             _write_loopback_certificate(artifact_dir)
         )
@@ -342,6 +353,22 @@ class IsolatedStorefrontRuntime:
         _require_free_port(BACKEND_URL, "backend")
         _require_free_port(FRONTEND_URL, "frontend")
         _require_free_port(FRONTEND_UPSTREAM_URL, "private Next upstream")
+        if self.browser_origin:
+            parsed_browser = urlparse(self.browser_origin)
+            if (
+                parsed_browser.scheme != "http"
+                or parsed_browser.hostname not in {"127.0.0.1", "localhost", "::1"}
+                or parsed_browser.username is not None
+                or parsed_browser.password is not None
+                or parsed_browser.path not in {"", "/"}
+                or parsed_browser.query
+                or parsed_browser.fragment
+            ):
+                raise RuntimeError(
+                    "The visible storefront browser facade must use a credential-free "
+                    "loopback HTTP origin"
+                )
+            _require_free_port(self.browser_origin, "visible browser facade")
         mongo_host, mongo_port = self._mongo_coordinates()
         _require_free_port(f"http://{mongo_host}:{mongo_port}", "Mongo")
 
@@ -385,7 +412,10 @@ class IsolatedStorefrontRuntime:
             raise RuntimeError(
                 ".venv.nosync Python is required for the storefront harness"
             )
-        backend_environment = _disabled_provider_child_environment(os.environ)
+        backend_environment = _provider_child_environment(
+            media_mode=self.media_mode,
+            source=os.environ,
+        )
         backend_environment.update(
             {
                 "TESTBED_NON_INTERACTIVE": "1",
@@ -394,6 +424,9 @@ class IsolatedStorefrontRuntime:
                 "STOREFRONT_PROVIDER_HARNESS_CUSTOMER_ZONE": PROVIDER_CUSTOMER_ZONE,
                 "STOREFRONT_PROVIDER_HARNESS_FRONTEND_CA_CERT": str(
                     self.certificate_path
+                ),
+                "STOREFRONT_PROVIDER_HARNESS_BROWSER_ORIGIN": (
+                    self.browser_origin or ""
                 ),
                 "BACKEND_URL": BACKEND_URL,
                 "FRONTEND_URL": FRONTEND_URL,
@@ -409,6 +442,11 @@ class IsolatedStorefrontRuntime:
                 "REDIS_ENABLED": "false",
                 "AUDIT_LOG_TO_DB": "false",
                 "RESEND_API_KEY": "",
+                "STOREFRONT_PROVIDER_HARNESS_MEDIA_MODE": self.media_mode,
+                "STOREFRONT_CUSTOM_DOMAINS_ENABLED": "false",
+                "STOREFRONT_DOMAIN_CONNECT_AUTHORIZATION_ENABLED": "false",
+                "STOREFRONT_CLOUDFLARE_MUTATIONS_ENABLED": "false",
+                "STOREFRONT_CLOUDFLARE_CLEANUP_ENABLED": "false",
                 "ROOT_ADMIN_EMAIL": self.root_admin_email,
                 "STRIPE_ENABLED": "false",
                 "STRIPE_SECRET_KEY": "",
@@ -416,7 +454,7 @@ class IsolatedStorefrontRuntime:
                 "STOREFRONT_PROBE_INGRESS_SECRET": self.probe_ingress_secret,
             }
         )
-        _assert_disabled_provider_fence(backend_environment)
+        _assert_provider_fence(backend_environment, media_mode=self.media_mode)
         backend_process = self._spawn(
             "backend",
             [
@@ -509,17 +547,48 @@ class IsolatedStorefrontRuntime:
                 f"Isolated production frontend returned {frontend_login.status_code}"
             )
 
+        browser_process: subprocess.Popen[str] | None = None
+        if self.browser_origin:
+            browser_environment = dict(os.environ)
+            browser_environment.update(
+                {
+                    "STOREFRONT_BROWSER_FACADE_HOST": _host(self.browser_origin),
+                    "STOREFRONT_BROWSER_FACADE_PORT": str(_port(self.browser_origin)),
+                    "STOREFRONT_BROWSER_FACADE_BACKEND": BACKEND_URL,
+                    "STOREFRONT_BROWSER_FACADE_FRONTEND": FRONTEND_UPSTREAM_URL,
+                    "STOREFRONT_BROWSER_FACADE_HTTPS_FRONTEND": FRONTEND_URL,
+                    "STOREFRONT_BROWSER_FACADE_CA": str(self.certificate_path),
+                }
+            )
+            browser_process = self._spawn(
+                "browser-facade",
+                [node, str(REPO_ROOT / "testbed" / "storefront_browser_facade.mjs")],
+                environment=browser_environment,
+            )
+            browser_login = _wait_for_http(
+                f"{self.browser_origin}/admin/login",
+                process=browser_process,
+                verify=False,
+            )
+            if browser_login.status_code != 200:
+                raise RuntimeError(
+                    "Visible browser facade returned "
+                    f"{browser_login.status_code} for the production frontend"
+                )
+
         return {
             "status": "RUNNING",
             "started_at": self.started_at.isoformat(),
             "backend_pid": backend_process.pid,
             "frontend_pid": proxy_process.pid,
             "frontend_next_pid": next_process.pid,
+            "browser_facade_pid": browser_process.pid if browser_process else None,
             "mongo_pid": mongo_process.pid,
             "backend_app": "testbed.storefront_provider_harness:app",
             "backend_url": BACKEND_URL,
             "frontend_url": FRONTEND_URL,
             "frontend_upstream_url": FRONTEND_UPSTREAM_URL,
+            "browser_origin": self.browser_origin,
             "mongo_uri_sha256": hashlib.sha256(str(MONGO_URI).encode()).hexdigest(),
             "database": MONGO_DB,
             "certificate": str(self.certificate_path),
@@ -529,7 +598,15 @@ class IsolatedStorefrontRuntime:
             ).hexdigest(),
             "provider_disabled_environment": {
                 "status": "PASSED",
-                "blank_keys": list(PROVIDER_DISABLED_ENVIRONMENT_KEYS),
+                "blank_keys": sorted(
+                    set(PROVIDER_DISABLED_ENVIRONMENT_KEYS)
+                    - (
+                        set(STOREFRONT_MEDIA_LIVE_ENVIRONMENT_KEYS)
+                        if self.media_mode == "live"
+                        else set()
+                    )
+                ),
+                "media_mode": self.media_mode,
             },
             "logs": {
                 label: str(self.artifact_dir / f"runtime-{label}.log")
@@ -1155,13 +1232,35 @@ def _disabled_provider_child_environment(
     return environment
 
 
-def _assert_disabled_provider_fence(
+def _provider_child_environment(
+    *,
+    media_mode: str,
+    source: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    original = source if source is not None else os.environ
+    environment = _disabled_provider_child_environment(original)
+    if media_mode == "live":
+        for name in STOREFRONT_MEDIA_LIVE_ENVIRONMENT_KEYS:
+            environment[name] = str(original.get(name, ""))
+    environment["STOREFRONT_PROVIDER_HARNESS_MEDIA_MODE"] = media_mode
+    return environment
+
+
+def _assert_provider_fence(
     environment: Mapping[str, str] | None = None,
+    *,
+    media_mode: str = "disabled",
 ) -> None:
     values = environment if environment is not None else os.environ
+    allowed = (
+        STOREFRONT_MEDIA_LIVE_ENVIRONMENT_KEYS
+        if media_mode == "live"
+        else frozenset()
+    )
     configured = {
         name: str(values.get(name, "")).strip()
         for name in PROVIDER_DISABLED_ENVIRONMENT_KEYS
+        if name not in allowed
         if str(values.get(name, "")).strip()
     }
     if configured:
@@ -1397,6 +1496,12 @@ _DETERMINISTIC_SCENARIO_RECEIPTS = (
     {
         "scenario_id": "08_domain_connect_resume_without_dns",
         "component": "authorization-resume",
+        "test_title": _DETERMINISTIC_PROVIDER_TEST_TITLE,
+        "project": "chromium-desktop-dark",
+    },
+    {
+        "scenario_id": "08_domain_connect_resume_without_dns",
+        "component": "automatic-primary-happy-path",
         "test_title": _DETERMINISTIC_PROVIDER_TEST_TITLE,
         "project": "chromium-desktop-dark",
     },
@@ -2558,6 +2663,11 @@ def _base_manifest(
     fixtures: Fixtures,
     workspace: dict[str, Any],
 ) -> dict[str, Any]:
+    media_configuration = (
+        assert_live_storefront_media_environment(os.environ)
+        if MEDIA_MODE == "live"
+        else None
+    )
     return {
         "schema_version": 1,
         "driver": "verify_storefront_frontend_lifecycle",
@@ -2575,6 +2685,8 @@ def _base_manifest(
         },
         "database": MONGO_DB,
         "provider_mode": "live" if EXTERNAL_MODE == "live" else "deterministic",
+        "media_mode": MEDIA_MODE,
+        "media_configuration": media_configuration,
         "inquiry_delivery_mode": INQUIRY_DELIVERY_MODE,
         "workspace": workspace,
         "expected_backend_revision": workspace["runtime_revision"],
@@ -2726,6 +2838,10 @@ def main() -> int:
         raise RuntimeError(
             "TESTBED_STOREFRONT_INQUIRY_DELIVERY_MODE must be disabled or required"
         )
+    if MEDIA_MODE not in {"disabled", "live"}:
+        raise RuntimeError(
+            "TESTBED_STOREFRONT_MEDIA_MODE must be disabled or live"
+        )
 
     run_id = secrets.token_hex(6)
     provider_control_token = secrets.token_urlsafe(48)
@@ -2767,6 +2883,7 @@ def main() -> int:
             control_token=provider_control_token,
             artifact_dir=artifact_dir,
             runtime_revision=workspace["runtime_revision"],
+            media_mode=MEDIA_MODE,
         )
         manifest["isolated_runtime"] = runtime.start()
         os.environ["REQUESTS_CA_BUNDLE"] = str(runtime.certificate_path)
@@ -2858,7 +2975,11 @@ def main() -> int:
             provider_mode=manifest["provider_mode"],
         )
         manifest["acceptance"]["deterministic_provider_control_plane"] = "PASSED"
-        manifest["acceptance"]["media_provider_disabled"] = "PASSED"
+        manifest["acceptance"]["media_provider_disabled"] = (
+            "PASSED" if MEDIA_MODE == "disabled" else "NOT RUN"
+        )
+        if MEDIA_MODE == "live":
+            manifest["acceptance"]["media_live_lifecycle"] = "PASSED"
         manifest["persistence"] = _assert_persistence(
             db, fixtures, signature_token, account_state_before
         )
@@ -2900,18 +3021,37 @@ def main() -> int:
                 "PASSED",
                 evidence=evidence,
             )
-        _record_browser_scenario(
-            manifest,
-            "04_design_media_internal_preview",
-            "BLOCKED",
-            blocker=(
-                "Run-bound browser evidence proves real PNG selection, browser decoding, "
-                "friendly disabled-provider handling, saved design state, and internal-slug "
-                "preview. It does not prove that media bytes were uploaded, finalized, "
-                "persisted, and rendered from configured object storage; reporting this row "
-                "as passed would be a false positive."
-            ),
+        media_evidence = _scenario_evidence_from_playwright(
+            playwright,
+            scenario="04_design_media_internal_preview",
+            run_id=run_id,
+            provider_mode=manifest["provider_mode"],
         )
+        if media_evidence is None:
+            raise AssertionError(
+                "Playwright omitted the complete receipt set for scenario "
+                "04_design_media_internal_preview"
+            )
+        if MEDIA_MODE == "live":
+            _record_browser_scenario(
+                manifest,
+                "04_design_media_internal_preview",
+                "PASSED",
+                evidence=media_evidence,
+            )
+        else:
+            _record_browser_scenario(
+                manifest,
+                "04_design_media_internal_preview",
+                "BLOCKED",
+                blocker=(
+                    "Run-bound browser evidence proves real PNG selection, browser decoding, "
+                    "friendly disabled-provider handling, saved design state, and internal-slug "
+                    "preview. It does not prove that media bytes were uploaded, finalized, "
+                    "persisted, and rendered from configured object storage; reporting this row "
+                    "as passed would be a false positive."
+                ),
+            )
         manifest["acceptance"]["deterministic_disconnect_cleanup"] = "PASSED"
         manifest["acceptance"]["persistence"] = "PASSED"
         manifest["acceptance"]["account_and_subscription_immutability"] = "PASSED"

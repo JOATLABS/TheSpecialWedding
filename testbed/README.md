@@ -92,7 +92,27 @@ python testbed/cleanup_team_member_gate_verify_state.py
 python testbed/build_storefront_frontend.py
 TESTBED_NON_INTERACTIVE=1 \
 TESTBED_STOREFRONT_EXTERNAL_MODE=deterministic \
+TESTBED_STOREFRONT_MEDIA_MODE=disabled \
 TESTBED_STOREFRONT_INQUIRY_DELIVERY_MODE=disabled \
+npm run test:e2e:storefront
+```
+
+To prove the real storefront image lifecycle without authorizing customer DNS
+or Cloudflare-for-SaaS mutations, keep the external provider deterministic and
+opt into the separately fenced media lane. The staging bucket, sanitized public
+bucket, Cloudflare account, and public media hostname must each appear in their
+exact testbed allowlist. The run performs the browser PUT, backend finalize,
+settings round-trip, CDN render, and authenticated cleanup; the real custom URL
+row remains `BLOCKED`.
+
+```bash
+TESTBED_NON_INTERACTIVE=1 \
+TESTBED_STOREFRONT_EXTERNAL_MODE=deterministic \
+TESTBED_STOREFRONT_MEDIA_MODE=live \
+TESTBED_STOREFRONT_ALLOWED_CLOUDFLARE_ACCOUNT_IDS="$CLOUDFLARE_ACCOUNT_ID" \
+TESTBED_STOREFRONT_ALLOWED_STAGING_BUCKETS="$S3_STOREFRONT_STAGING_BUCKET_NAME" \
+TESTBED_STOREFRONT_ALLOWED_PUBLIC_BUCKETS="$S3_BLOG_BUCKET_NAME" \
+TESTBED_STOREFRONT_ALLOWED_PUBLIC_MEDIA_DOMAINS="$BLOG_MEDIA_DOMAIN" \
 npm run test:e2e:storefront
 ```
 
@@ -160,10 +180,12 @@ TESTBED_STOREFRONT_INQUIRY_DELIVERY_MODE=disabled \
 .venv.nosync/bin/python testbed/serve_storefront_visible_playback.py
 ```
 
-Wait for `STOREFRONT_VISIBLE_PLAYBACK_READY`, then use the printed HTTPS login,
-packages, Domain-tab, and internal-preview URLs and generated credentials in the
-user-selected browser. The local certificate may require a one-time browser
-exception. Stop with Ctrl-C so the runner authenticates the exact fixtures,
+Wait for `STOREFRONT_VISIBLE_PLAYBACK_READY`, then use the printed loopback HTTP
+login, packages, Domain-tab, and internal-preview URLs and generated credentials
+in the user-selected browser. A testbed-only facade sends product routes to the
+same production Next build and forwards only deterministic provider consent and
+callback paths to the CA-verified HTTPS backend; no browser certificate bypass
+or system trust change is required. Stop with Ctrl-C so the runner authenticates the exact fixtures,
 reconciles any deterministic domain/media state, removes only the run-owned
 records, stops all owned processes, and seals its receipt. The `.customer.test`
 hostname is deterministic evidence and cannot satisfy the real custom-URL row.

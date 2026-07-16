@@ -98,7 +98,7 @@ class StorefrontDomainPreflightRequest(BaseModel):
 
 
 class StorefrontDomainClaimRequest(StorefrontDomainPreflightRequest):
-    pass
+    setup_method: Literal["automatic", "manual"] = "manual"
 
 
 class StorefrontDomainVerifyRequest(BaseModel):
@@ -307,6 +307,8 @@ class StorefrontDomainResponse(BaseModel):
     revision: int = Field(default=0, ge=0)
     claim_expires_at: datetime | None = None
     intent: Literal["new", "migration"] = "new"
+    setup_method: Literal["automatic", "manual"] = "manual"
+    domain_connect_authorized: bool = False
     authoritative_dns: StorefrontAuthoritativeDnsEvidence | None = None
     observed_records: list[StorefrontDnsRecord] = Field(default_factory=list)
     conflicts: list[StorefrontDnsConflict] = Field(default_factory=list)
@@ -328,6 +330,14 @@ class StorefrontDomainResponse(BaseModel):
     ssl_validation_errors: list[str] = Field(default_factory=list)
     cname_target: str | None = None
     deletion_status: str | None = None
+    removal_kind: (
+        Literal[
+            "setup_cancelled",
+            "domain_disconnected",
+            "ownership_review_cancelled",
+        ]
+        | None
+    ) = None
     last_error: StorefrontDomainErrorDetail | str | None = None
 
 

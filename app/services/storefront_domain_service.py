@@ -28,6 +28,8 @@ from pymongo.errors import DuplicateKeyError
 from app.constants.roles import is_wedding_planner_role
 from app.constants.storefront_domain import (
     ACTIVE,
+    ACTION_REQUIRED,
+    AUTHORIZATION_CANCELLED,
     CERTIFICATE_VALIDATION,
     CLAIM_PENDING,
     CUTOVER_READY,
@@ -35,15 +37,19 @@ from app.constants.storefront_domain import (
     DISCONNECTED,
     DISCONNECT_FAILED,
     DISCONNECTING,
+    DOMAIN_DISCONNECTED,
     DNS_SETUP_PENDING,
     EXPIRED,
     HOSTNAME_VALIDATION,
     MIGRATION_PREVALIDATION,
     OPERATOR_REVIEW,
+    OWNERSHIP_REVIEW_CANCELLED,
     PROVIDER_PROVISIONING,
     PROVIDER_CREATE_REQUEST_WINDOW_SECONDS,
     STOREFRONT_DOMAIN_INSTRUCTIONS_EMAIL_TYPE,
     STOREFRONT_DOMAIN_APPLICATION_STATUSES,
+    STOREFRONT_DOMAIN_REMOVAL_KINDS,
+    SETUP_CANCELLED,
 )
 from app.core.database import mongo
 from app.core.settings import settings
@@ -70,6 +76,7 @@ _DEFAULT_PLATFORM_DOMAINS = frozenset({"thespecialwedding.io", "thespecialweddin
 _PROVIDER_DELETE_PENDING = "provider_delete_pending"
 _PROVIDER_DELETE_RETRY_PENDING = "retry_pending"
 _LOCAL_CLEANUP_PENDING = "local_cleanup_pending"
+_PROVIDER_DELETE_OPERATOR_REVIEW = "operator_review"
 _PROVISIONING = "provisioning"
 _PROVISIONING_UNKNOWN = "provisioning_unknown"
 _PROVISIONING_ABSENCE_CONFIRMATIONS = 2
@@ -111,6 +118,49 @@ _DNS_PROVIDER_DETAILS = {
     ),
     "namesilo": ("NameSilo", "https://www.namesilo.com/account_domains.php"),
 }
+
+
+def storefront_domain_has_deletion_intent(record: dict) -> bool:
+    """Return whether a monotonic disconnect/cancel lifecycle owns this row."""
+
+    deletion_status = record.get("deletion_status")
+    return (
+        isinstance(deletion_status, str) and bool(deletion_status.strip())
+    ) or StorefrontDomainService._status(record.get("status")) in (
+        _NON_ROUTABLE_DOMAIN_STATUSES
+    )
+
+
+def require_storefront_domain_mutation_allowed(
+    record: dict,
+    error_factory: Callable[..., HTTPException],
+) -> None:
+    """Fail every non-deletion mutation after disconnect intent is durable."""
+
+    if not storefront_domain_has_deletion_intent(record):
+        return
+    raise error_factory(
+        status.HTTP_409_CONFLICT,
+        "domain_deletion_in_progress",
+        "This custom domain is already being disconnected.",
+        "Wait for disconnect cleanup to finish before starting another domain action.",
+        retryable=True,
+    )
+
+
+def storefront_domain_mutation_cas_filter(
+    record: dict,
+    owner_id: str,
+) -> dict[str, Any]:
+    """Fence a customer mutation to one exact, non-deleting domain revision."""
+
+    return {
+        "_id": record["_id"],
+        "planner_id": owner_id,
+        "claim_attempt_id": record.get("claim_attempt_id"),
+        "revision": record.get("revision"),
+        "deletion_status": None,
+    }
 
 
 def _mask_instruction_recipient(email: str) -> str:
@@ -1127,6 +1177,8 @@ class StorefrontDomainService:
             "revision": max(int(record.get("revision") or 0), 0),
             "claim_expires_at": record.get("claim_expires_at"),
             "intent": record.get("intent") or "new",
+            "setup_method": "manual",
+            "domain_connect_authorized": False,
             "authoritative_dns": authority,
             "observed_records": observed_records,
             "conflicts": [],
@@ -1145,6 +1197,7 @@ class StorefrontDomainService:
             "ssl_validation_records": [],
             "cname_target": None,
             "deletion_status": None,
+            "removal_kind": record.get("removal_kind"),
             "last_error": record.get("last_error"),
         }
 
@@ -1251,9 +1304,14 @@ class StorefrontDomainService:
         }
 
     async def claim(
-        self, owner: Any, raw_hostname: str, *, intent: str = "new"
+        self,
+        owner: Any,
+        raw_hostname: str,
+        *,
+        intent: str = "new",
+        setup_method: str = "manual",
     ) -> dict:
-        """Create or resume an expiring manual ownership claim."""
+        """Create or resume an expiring ownership claim with an explicit UX mode."""
 
         owner_id = self._owner_id(owner)
         await self._require_custom_domain(owner)
@@ -1264,6 +1322,22 @@ class StorefrontDomainService:
                 "Domain intent must be new or migration.",
                 "Choose whether this is a new hostname or a live-site migration.",
                 field="intent",
+            )
+        if setup_method not in {"automatic", "manual"}:
+            raise self._domain_http_error(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "invalid_domain_setup_method",
+                "Domain setup must be automatic or manual.",
+                "Choose automatic setup or manual setup.",
+                field="setup_method",
+            )
+        if setup_method == "automatic" and intent != "new":
+            raise self._domain_http_error(
+                status.HTTP_409_CONFLICT,
+                "automatic_domain_setup_unavailable",
+                "Automatic setup is not available for a live-site migration.",
+                "Use assisted migration so current traffic is not changed unexpectedly.",
+                field="setup_method",
             )
         try:
             hostname = normalize_custom_hostname(
@@ -1319,6 +1393,16 @@ class StorefrontDomainService:
             )
 
         preflight = await self.preflight(owner, raw_hostname, intent=intent)
+        if setup_method == "automatic" and not preflight.get(
+            "domain_connect_supported"
+        ):
+            raise self._domain_http_error(
+                status.HTTP_409_CONFLICT,
+                "automatic_domain_setup_unavailable",
+                "This domain provider does not currently support the approved automatic setup.",
+                "Use manual setup or try automatic setup again after the provider is supported.",
+                field="setup_method",
+            )
         fields, _token = self._new_claim_fields(hostname, revision=1, intent=intent)
         now = self._now()
         record = {
@@ -1327,6 +1411,8 @@ class StorefrontDomainService:
             "provider": "cloudflare",
             "cname_target": self._cname_target,
             "intent": intent,
+            "setup_method": setup_method,
+            "domain_connect_authorized_at": None,
             "authoritative_dns": preflight["authoritative_dns"],
             "observed_records": preflight["observed_records"],
             "dns_conflicts": preflight["conflicts"],
@@ -1372,7 +1458,63 @@ class StorefrontDomainService:
             expires_at = self._aware(existing.get("claim_expires_at"))
             active_claim = expires_at and expires_at > self._now()
             if existing.get("provider_hostname_id") or active_claim:
-                return self._serialize(existing)
+                current_method = existing.get("setup_method") or "manual"
+                if current_method == setup_method:
+                    return self._serialize(existing)
+                selectable_statuses = {
+                    CLAIM_PENDING,
+                    DNS_SETUP_PENDING,
+                    AUTHORIZATION_CANCELLED,
+                    ACTION_REQUIRED,
+                }
+                if (
+                    existing.get("provider_hostname_id")
+                    or existing.get("domain_connect_authorized_at")
+                    or self._status(existing.get("application_status"))
+                    not in selectable_statuses
+                    or existing.get("deletion_status")
+                ):
+                    raise self._domain_http_error(
+                        status.HTTP_409_CONFLICT,
+                        "domain_setup_method_locked",
+                        "The setup method cannot be changed after domain authorization or provisioning has started.",
+                        "Reload the connection status or disconnect before starting a different setup method.",
+                        field="setup_method",
+                    )
+                switched = await collection.update_one(
+                    {
+                        "_id": existing["_id"],
+                        "planner_id": owner_id,
+                        "hostname": hostname,
+                        "revision": existing.get("revision"),
+                        "provider_hostname_id": None,
+                        "domain_connect_authorized_at": None,
+                        "deletion_status": None,
+                    },
+                    {
+                        "$set": {
+                            "setup_method": setup_method,
+                            "application_status": DNS_SETUP_PENDING,
+                            "action": "action_required",
+                            "last_error": None,
+                            "retry_due_at": None,
+                            "updated_at": self._now(),
+                        },
+                        "$inc": {"revision": 1},
+                    },
+                )
+                if not getattr(switched, "matched_count", 0):
+                    raise self._domain_http_error(
+                        status.HTTP_409_CONFLICT,
+                        "claim_changed",
+                        "The domain claim changed while its setup method was being updated.",
+                        "Reload the domain status before retrying.",
+                        retryable=True,
+                    )
+                saved = await collection.find_one(
+                    {"_id": existing["_id"], "planner_id": owner_id}
+                )
+                return self._serialize(saved)
             revision = int(existing.get("revision") or 0) + 1
             rotated, _token = self._new_claim_fields(
                 hostname, revision=revision, intent=intent
@@ -1389,6 +1531,8 @@ class StorefrontDomainService:
                     "$set": {
                         **rotated,
                         "intent": intent,
+                        "setup_method": setup_method,
+                        "domain_connect_authorized_at": None,
                         "authoritative_dns": preflight["authoritative_dns"],
                         "observed_records": preflight["observed_records"],
                         "dns_conflicts": preflight["conflicts"],
@@ -1487,6 +1631,7 @@ class StorefrontDomainService:
                 "planner_id": owner_id,
                 "provider_create_attempt_id": attempt_id,
                 "provider_hostname_id": None,
+                "deletion_status": None,
             },
             {
                 "$set": {
@@ -1734,6 +1879,7 @@ class StorefrontDomainService:
                 if attempt_id
                 else "Start custom-domain setup before verifying DNS.",
             )
+        require_storefront_domain_mutation_allowed(record, self._domain_http_error)
         if record.get("provider_hostname_id"):
             return self._serialize(record)
 
@@ -1945,6 +2091,7 @@ class StorefrontDomainService:
                     "planner_id": owner_id,
                     "revision": record.get("revision"),
                     "claim_attempt_id": record.get("claim_attempt_id"),
+                    "deletion_status": None,
                 },
                 {
                     "$set": {
@@ -2001,6 +2148,7 @@ class StorefrontDomainService:
                     "revision": record.get("revision"),
                     "claim_attempt_id": record.get("claim_attempt_id"),
                     "provider_hostname_id": None,
+                    "deletion_status": None,
                 },
                 {
                     "$set": {
@@ -2125,6 +2273,7 @@ class StorefrontDomainService:
                 "revision": record.get("revision"),
                 "claim_attempt_id": record.get("claim_attempt_id"),
                 "provider_hostname_id": None,
+                "deletion_status": None,
                 "ownership_status": "verified",
                 **(
                     {
@@ -2205,6 +2354,7 @@ class StorefrontDomainService:
                         "_id": record["_id"],
                         "planner_id": owner_id,
                         "provider_create_attempt_id": attempt_id,
+                        "deletion_status": None,
                     },
                     {
                         "$set": {
@@ -2322,6 +2472,7 @@ class StorefrontDomainService:
                 "planner_id": owner_id,
                 "provider_create_attempt_id": attempt_id,
                 "provider_hostname_id": None,
+                "deletion_status": None,
             },
             {
                 "$set": {
@@ -2408,6 +2559,102 @@ class StorefrontDomainService:
             _allow_provider_mutations=False,
         )
 
+    async def verify_authorized_automatic_for_owner_id(
+        self, planner_id: str, attempt_id: str | None = None
+    ) -> dict:
+        """Advance one provider-authorized automatic claim from the worker.
+
+        Domain Connect authorization is consent to publish the disclosed DNS
+        records; it is not evidence that those records exist and it is not a
+        substitute for a current subscription capability. This entry point is
+        intentionally unavailable to manual attempts, re-resolves the current
+        plan from canonical backend data, and delegates to ``verify`` so the
+        same authoritative-DNS and provider-creation fences protect both flows.
+        """
+
+        owner_id = normalize_planner_id(planner_id)
+        if not owner_id:
+            raise self._domain_http_error(
+                status.HTTP_400_BAD_REQUEST,
+                "invalid_storefront_owner",
+                "The custom-domain owner could not be identified.",
+                "Contact support with the current domain support ID.",
+                retryable=False,
+            )
+
+        collection = self._mongo.db["storefront_domains"]
+        query: dict[str, Any] = {"planner_id": owner_id}
+        if attempt_id:
+            query["claim_attempt_id"] = attempt_id
+        record = await collection.find_one(query)
+        if not record:
+            raise self._domain_http_error(
+                status.HTTP_404_NOT_FOUND,
+                "domain_attempt_not_found",
+                "The automatic custom-domain attempt could not be found.",
+                "Reload custom-domain status before trying again.",
+            )
+        if (
+            record.get("setup_method") != "automatic"
+            or record.get("domain_connect_authorized_at") is None
+            or self._has_deletion_intent(record)
+            or record.get("provider_hostname_id")
+        ):
+            return self._serialize(record)
+
+        try:
+            entitlements = await self._entitlements.resolve_for_planner_id(owner_id)
+        except StorefrontEntitlementResolutionError:
+            error = self._error_detail(
+                "custom_domain_entitlement_unavailable",
+                "Custom-domain eligibility could not be confirmed right now.",
+                "Keep using the platform storefront URL; setup will retry automatically.",
+                retryable=True,
+            )
+        else:
+            if entitlements.storefront_enabled and entitlements.custom_domain_enabled:
+                return await self.verify(
+                    {"_id": owner_id, "role": "wedding_planner"},
+                    attempt_id,
+                    _require_entitlement=False,
+                    _allow_provider_mutations=True,
+                )
+            error = self._error_detail(
+                "custom_domain_entitlement_required",
+                "The current plan does not include new custom-domain setup.",
+                "Upgrade the plan to continue setup; the platform storefront URL remains available.",
+                retryable=False,
+            )
+
+        now = self._now()
+        await collection.update_one(
+            {
+                "_id": record["_id"],
+                "planner_id": owner_id,
+                "claim_attempt_id": record.get("claim_attempt_id"),
+                "revision": record.get("revision"),
+                "setup_method": "automatic",
+                "domain_connect_authorized_at": record.get(
+                    "domain_connect_authorized_at"
+                ),
+                "provider_hostname_id": None,
+                "deletion_status": None,
+            },
+            {
+                "$set": {
+                    "application_status": DNS_SETUP_PENDING,
+                    "action": "action_required",
+                    "last_error": error,
+                    "retry_due_at": now + timedelta(minutes=5),
+                    "updated_at": now,
+                }
+            },
+        )
+        saved = await collection.find_one(
+            {"_id": record["_id"], "planner_id": owner_id}
+        )
+        return self._serialize(saved or record)
+
     async def get_status(
         self, owner: Any, attempt_id: str | None = None
     ) -> dict | None:
@@ -2492,6 +2739,7 @@ class StorefrontDomainService:
             "ssl_validation_records": [],
             "cname_target": tombstone.get("cname_target") or self._cname_target,
             "deletion_status": "completed",
+            "removal_kind": tombstone.get("removal_kind"),
             "last_error": None,
         }
 
@@ -2580,6 +2828,7 @@ class StorefrontDomainService:
                 "The current custom-domain attempt could not be found.",
                 "Reload domain status before retrying.",
             )
+        require_storefront_domain_mutation_allowed(record, self._domain_http_error)
         self._require_provider_mutations(owner_id, record["hostname"])
 
         provider_id = record.get("provider_hostname_id")
@@ -2654,6 +2903,7 @@ class StorefrontDomainService:
                 "provider_retry_requested_at": record.get(
                     "provider_retry_requested_at"
                 ),
+                "deletion_status": None,
             },
             {
                 "$set": {
@@ -2718,6 +2968,7 @@ class StorefrontDomainService:
                     "_id": record["_id"],
                     "planner_id": owner_id,
                     "provider_retry_operation_id": operation_id,
+                    "deletion_status": None,
                 },
                 {
                     "$set": {
@@ -2745,6 +2996,7 @@ class StorefrontDomainService:
                 "_id": record["_id"],
                 "planner_id": owner_id,
                 "provider_retry_operation_id": operation_id,
+                "deletion_status": None,
             },
             {
                 "$set": {
@@ -2918,7 +3170,8 @@ class StorefrontDomainService:
 
         owner_id = self._owner_id(owner)
         await self._require_custom_domain(owner)
-        record = await self._mongo.db["storefront_domains"].find_one(
+        domains = self._mongo.db["storefront_domains"]
+        record = await domains.find_one(
             {"planner_id": owner_id, "claim_attempt_id": attempt_id}
         )
         if not record:
@@ -2928,6 +3181,7 @@ class StorefrontDomainService:
                 "The current custom-domain attempt could not be found.",
                 "Reload domain status before sending instructions.",
             )
+        require_storefront_domain_mutation_allowed(record, self._domain_http_error)
         serialized = self._serialize(record)
         expected_records = [
             item
@@ -2949,6 +3203,25 @@ class StorefrontDomainService:
         # first-party read-only link origin is not configured safely.
         self._instruction_link_url("x" * 43)
 
+        now = self._now()
+        reserved = await domains.update_one(
+            storefront_domain_mutation_cas_filter(record, owner_id),
+            {
+                "$set": {
+                    "instruction_delivery_requested_at": now,
+                    "updated_at": now,
+                }
+            },
+        )
+        if not getattr(reserved, "matched_count", 0):
+            raise self._domain_http_error(
+                status.HTTP_409_CONFLICT,
+                "domain_instructions_changed",
+                "The custom-domain state changed while preparing instructions.",
+                "Reload domain status before sending instructions again.",
+                retryable=True,
+            )
+
         normalized_email = email.strip().casefold()
         recipient_hash = hashlib.sha256(normalized_email.encode()).hexdigest()
         recipient_hint = _mask_instruction_recipient(normalized_email)
@@ -2960,7 +3233,6 @@ class StorefrontDomainService:
             "recipient_hash": recipient_hash,
         }
         existing_link = await links.find_one(link_filter)
-        now = self._now()
         existing_expiry = (
             self._aware(existing_link.get("expires_at")) if existing_link else None
         )
@@ -3807,6 +4079,12 @@ class StorefrontDomainService:
             "revision": max(int(record.get("revision") or 0), 0),
             "claim_expires_at": record.get("claim_expires_at"),
             "intent": record.get("intent") or "new",
+            "setup_method": (
+                "automatic" if record.get("setup_method") == "automatic" else "manual"
+            ),
+            "domain_connect_authorized": bool(
+                record.get("domain_connect_authorized_at")
+            ),
             "authoritative_dns": authoritative_dns,
             "observed_records": observed_records,
             "conflicts": list(record.get("dns_conflicts") or []),
@@ -3829,6 +4107,7 @@ class StorefrontDomainService:
             "ssl_validation_errors": list(record.get("ssl_validation_errors") or []),
             "cname_target": record.get("cname_target") or self._cname_target,
             "deletion_status": record.get("deletion_status"),
+            "removal_kind": record.get("removal_kind"),
             "last_error": record.get("last_error"),
         }
 
@@ -3840,6 +4119,20 @@ class StorefrontDomainService:
         ) or StorefrontDomainService._status(record.get("status")) in (
             _NON_ROUTABLE_DOMAIN_STATUSES
         )
+
+    @staticmethod
+    def _removal_kind(record: dict) -> str:
+        """Preserve whether removal cancels setup or disconnects a live domain."""
+
+        existing = record.get("removal_kind")
+        if existing in STOREFRONT_DOMAIN_REMOVAL_KINDS:
+            return existing
+        if record.get("application_status") == ACTIVE or (
+            not record.get("application_status")
+            and StorefrontDomainService._status(record.get("status")) == "active"
+        ):
+            return DOMAIN_DISCONNECTED
+        return SETUP_CANCELLED
 
     @staticmethod
     def _refresh_write_filter(record: dict, owner_id: str) -> dict:
@@ -3944,6 +4237,35 @@ class StorefrontDomainService:
             if response_hostname:
                 receipt["response_hostname"] = response_hostname
         return receipt
+
+    @classmethod
+    def _provider_delete_identity_matches(
+        cls,
+        provider_result: object,
+        *,
+        provider_id: str,
+        hostname: str,
+    ) -> bool:
+        """Accept omitted delete fields, but never conflicting provider identity."""
+
+        if not isinstance(provider_result, dict):
+            return True
+        response_id = cls._bounded_provider_value(provider_result.get("id"))
+        if response_id and response_id != provider_id:
+            return False
+        response_hostname = cls._bounded_provider_value(
+            provider_result.get("hostname"), limit=253
+        )
+        if not response_hostname:
+            return True
+        try:
+            normalized_hostname = normalize_custom_hostname(
+                response_hostname,
+                platform_domains=(),
+            )
+        except (TypeError, ValueError):
+            return False
+        return normalized_hostname == hostname
 
     @staticmethod
     def _provider_delete_operation_id(deletion_attempt_id: str) -> str:
@@ -4157,6 +4479,75 @@ class StorefrontDomainService:
                     )
                     raise
             else:
+                if not self._provider_delete_identity_matches(
+                    provider_result,
+                    provider_id=provider_id,
+                    hostname=str(record.get("hostname") or ""),
+                ):
+                    receipt = self._provider_delete_receipt(
+                        outcome="identity_mismatch",
+                        provider_id=provider_id,
+                        provider_result=provider_result,
+                    )
+                    mismatch_error = self._error_detail(
+                        "provider_delete_identity_mismatch",
+                        "The provider returned a deletion result for a different hostname mapping.",
+                        "Keep DNS unchanged and contact support before retrying this disconnect.",
+                        retryable=False,
+                        provider={
+                            "name": "cloudflare",
+                            "operation": "delete_custom_hostname",
+                            "kind": "identity_mismatch",
+                        },
+                    )
+                    reviewed_at = self._now()
+                    await operations.update_one(
+                        {
+                            "operation_id": operation_id,
+                            "planner_id": owner_id,
+                            "domain_id": str(record["_id"]),
+                            "kind": "provider_delete",
+                            "state": "requesting",
+                        },
+                        {
+                            "$set": {
+                                "state": "operator_review",
+                                "provider_receipt": receipt,
+                                "last_error": mismatch_error,
+                                "updated_at": reviewed_at,
+                            }
+                        },
+                    )
+                    await self._mongo.db["storefront_domains"].update_one(
+                        {
+                            "_id": record["_id"],
+                            "planner_id": owner_id,
+                            "deletion_status": _PROVIDER_DELETE_PENDING,
+                            "deletion_attempt_id": deletion_attempt_id,
+                            "provider_delete_operation_id": operation_id,
+                        },
+                        {
+                            "$set": {
+                                "status": "delete_failed",
+                                "application_status": OPERATOR_REVIEW,
+                                "custom_route_enabled": False,
+                                "action": "operator_review",
+                                "deletion_status": (_PROVIDER_DELETE_OPERATOR_REVIEW),
+                                "last_error": mismatch_error,
+                                "updated_at": reviewed_at,
+                            },
+                            "$unset": {
+                                "retry_due_at": "",
+                                "lease_token": "",
+                                "lease_expires_at": "",
+                                "reconciliation_started_at": "",
+                            },
+                        },
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=mismatch_error,
+                    )
                 receipt = self._provider_delete_receipt(
                     outcome="deleted",
                     provider_id=provider_id,
@@ -5029,6 +5420,14 @@ class StorefrontDomainService:
     async def _disconnect_claim_record(
         self, collection: Any, record: dict, owner_id: str
     ) -> None:
+        if record.get("deletion_status") == _PROVIDER_DELETE_OPERATOR_REVIEW:
+            raise self._domain_http_error(
+                status.HTTP_409_CONFLICT,
+                "provider_delete_support_required",
+                "This disconnect is paused for provider identity review.",
+                "Keep DNS unchanged and contact support before retrying this disconnect.",
+                retryable=False,
+            )
         if (
             record.get("application_status") == PROVIDER_PROVISIONING
             and record.get("provider_create_attempt_id")
@@ -5053,6 +5452,7 @@ class StorefrontDomainService:
             )
 
         receipt_id = record.get("deletion_receipt_id") or uuid4().hex
+        removal_kind = self._removal_kind(record)
         if record.get("deletion_status") == _LOCAL_CLEANUP_PENDING:
             await self._finish_local_cleanup(collection, record, owner_id)
             return
@@ -5081,6 +5481,7 @@ class StorefrontDomainService:
                         "deletion_status": _PROVIDER_DELETE_PENDING,
                         "deletion_attempt_id": deletion_attempt_id,
                         "deletion_receipt_id": receipt_id,
+                        "removal_kind": removal_kind,
                         "provider_delete_operation_id": (provider_delete_operation_id),
                         "deletion_requested_at": record.get("deletion_requested_at")
                         or self._now(),
@@ -5252,6 +5653,7 @@ class StorefrontDomainService:
                     "action": "none",
                     "last_error": None,
                     "cancelled_at": now,
+                    "removal_kind": OWNERSHIP_REVIEW_CANCELLED,
                     "purge_at": now + _LIFECYCLE_RECEIPT_TTL,
                     "updated_at": now,
                 },
@@ -5370,6 +5772,7 @@ class StorefrontDomainService:
         # call. The compare-and-set prevents two requests that read the same
         # state from both acting on the provider mapping.
         deletion_attempt_id = uuid4().hex
+        removal_kind = self._removal_kind(record)
         provider_delete_operation_id = self._provider_delete_operation_id(
             deletion_attempt_id
         )
@@ -5391,6 +5794,7 @@ class StorefrontDomainService:
                         "custom_route_enabled": False,
                         "deletion_status": _PROVIDER_DELETE_PENDING,
                         "deletion_attempt_id": deletion_attempt_id,
+                        "removal_kind": removal_kind,
                         "provider_delete_operation_id": (provider_delete_operation_id),
                         "deletion_requested_at": record.get("deletion_requested_at")
                         or self._now(),
@@ -5615,6 +6019,7 @@ class StorefrontDomainService:
             "provider_deleted_at": record.get("provider_deleted_at") or now,
             "deleted_at": now,
             "deletion_requested_at": record.get("deletion_requested_at"),
+            "removal_kind": self._removal_kind(record),
             "expires_at": now + _LIFECYCLE_RECEIPT_TTL,
         }
         tombstones = self._mongo.db["storefront_domain_tombstones"]
