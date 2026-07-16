@@ -458,6 +458,85 @@ async def test_root_admin_can_edit_existing_metered_plan_price_features_and_visi
 
 
 @pytest.mark.asyncio
+async def test_storefront_capability_only_edit_persists_without_stripe_or_subscription_mutation():
+    service = _service(
+        plans=[
+            {
+                "_id": "plan_solo",
+                "name": "Solo",
+                "price_monthly": 0,
+                "is_metered": False,
+                "billing_model": "flat_rate",
+                "features": {
+                    "guest_management": True,
+                    "planner_storefront": False,
+                    "custom_domain": False,
+                },
+            }
+        ],
+        subscriptions=[
+            {
+                "_id": "sub_live",
+                "plan_id": "plan_solo",
+                "status": "active",
+                "stripe_subscription_id": "sub_unchanged",
+            }
+        ],
+    )
+    subscription_before = deepcopy(service.subscriptions_collection.docs)
+
+    with patch(
+        "app.services.subscription_service.stripe_service.sync_plan_to_stripe"
+    ) as sync_plan:
+        result = await service.update_plan(
+            "plan_solo",
+            {
+                "features": {
+                    "guest_management": True,
+                    "planner_storefront": True,
+                    "custom_domain": True,
+                }
+            },
+        )
+
+    assert result == {"message": "Subscription plan updated successfully"}
+    sync_plan.assert_not_called()
+    assert service.subscriptions_collection.docs == subscription_before
+    update = service.plans_collection.updated[0][1]["$set"]
+    assert update["features"]["planner_storefront"] is True
+    assert update["features"]["custom_domain"] is True
+    assert "admin_overrides.features" in update
+
+
+@pytest.mark.asyncio
+async def test_empty_plan_update_still_forces_explicit_stripe_reconciliation():
+    service = _service(
+        plans=[
+            {
+                "_id": "plan_signature",
+                "name": "Signature",
+                "price_monthly": 79,
+                "price_yearly": 790,
+                "is_metered": False,
+                "billing_model": "flat_rate",
+                "is_active": True,
+            }
+        ]
+    )
+
+    with patch(
+        "app.services.subscription_service.stripe_service.sync_plan_to_stripe",
+        return_value={"stripe_product_id": "prod_reconciled"},
+    ) as sync_plan:
+        await service.update_plan("plan_signature", {})
+
+    sync_plan.assert_called_once()
+    assert sync_plan.call_args.args[0]["_id"] == "plan_signature"
+    update = service.plans_collection.updated[0][1]["$set"]
+    assert update["stripe_product_id"] == "prod_reconciled"
+
+
+@pytest.mark.asyncio
 async def test_delete_canonical_plan_soft_archives_so_admin_removal_survives_seed():
     """Deleting a canonical plan must soft-archive so the next container
     boot's seed doesn't resurrect it. Behavior is independent of billing

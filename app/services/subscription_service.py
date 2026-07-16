@@ -224,6 +224,24 @@ class SubscriptionService:
         }
     )
 
+    # Only fields projected into Stripe should perform provider I/O. Plan
+    # capabilities and limits are application-owned catalog data; requiring a
+    # healthy Stripe connection to toggle them makes entitlement management
+    # fragile and can create unrelated Product/Price churn.
+    _STRIPE_SYNC_FIELDS = frozenset(
+        {
+            "name",
+            "description",
+            "price_monthly",
+            "price_yearly",
+            "billing_model",
+            "is_metered",
+            "meter_event_name",
+            "meter_id",
+            "is_active",
+        }
+    )
+
     async def refresh_seeded_plan_fields(self, plan_id: str, seed_values: dict) -> bool:
         """Refresh eligible canonical defaults without invoking Stripe.
 
@@ -324,6 +342,11 @@ class SubscriptionService:
         of this contract.
         """
         try:
+            # ``/system/sync-plans-to-stripe`` deliberately calls this method
+            # with an empty patch as a provider reconciliation command. Preserve
+            # that explicit contract while allowing application-only feature
+            # edits to avoid unrelated Stripe I/O.
+            force_stripe_sync = not update_data
             # Remove protected fields
             protected_fields = ["_id", "created_at", "created_by"]
             for field in protected_fields:
@@ -374,16 +397,22 @@ class SubscriptionService:
                 if "meter_id" in update_data or merged_plan["is_metered"]:
                     update_data["meter_id"] = merged_plan.get("meter_id")
 
-            # Sync to Stripe
-            try:
-                stripe_data = stripe_service.sync_plan_to_stripe(merged_plan)
-                update_data.update(stripe_data)
-            except HTTPException:
-                raise
-            except Exception as e:
-                raise HTTPException(
-                    status_code=500, detail=f"Failed to sync plan to Stripe: {str(e)}"
-                )
+            stripe_sync_required = any(
+                field in update_data
+                and existing_plan.get(field) != merged_plan.get(field)
+                for field in self._STRIPE_SYNC_FIELDS
+            )
+            if force_stripe_sync or stripe_sync_required:
+                try:
+                    stripe_data = stripe_service.sync_plan_to_stripe(merged_plan)
+                    update_data.update(stripe_data)
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to sync plan to Stripe: {str(e)}",
+                    )
 
             # Build dot-notation admin_overrides writes. MongoDB interprets
             # "admin_overrides.<field>" as a nested $set, leaving other keys

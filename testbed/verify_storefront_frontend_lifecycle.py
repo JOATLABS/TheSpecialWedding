@@ -268,11 +268,13 @@ class IsolatedStorefrontRuntime:
         self,
         *,
         run_id: str,
+        root_admin_email: str,
         control_token: str,
         artifact_dir: Path,
         runtime_revision: str,
     ) -> None:
         self.run_id = run_id
+        self.root_admin_email = root_admin_email
         self.control_token = control_token
         self.probe_ingress_secret = hashlib.sha256(
             f"{control_token}\nstorefront-probe-ingress-v1".encode("utf-8")
@@ -317,6 +319,11 @@ class IsolatedStorefrontRuntime:
             text=True,
             stdout=log_file,
             stderr=subprocess.STDOUT,
+            # Keep runtime children out of the parent's terminal process group.
+            # The visible playback contract uses Ctrl-C to ask the parent to
+            # perform authenticated fixture cleanup first; propagating SIGINT
+            # directly to Mongo would tear down the database before cleanup.
+            start_new_session=True,
         )
         self.processes.append((label, process, log_file))
         return process
@@ -402,6 +409,9 @@ class IsolatedStorefrontRuntime:
                 "REDIS_ENABLED": "false",
                 "AUDIT_LOG_TO_DB": "false",
                 "RESEND_API_KEY": "",
+                "ROOT_ADMIN_EMAIL": self.root_admin_email,
+                "STRIPE_ENABLED": "false",
+                "STRIPE_SECRET_KEY": "",
                 "STOREFRONT_RUNTIME_REVISION": self.runtime_revision,
                 "STOREFRONT_PROBE_INGRESS_SECRET": self.probe_ingress_secret,
             }
@@ -551,6 +561,9 @@ class IsolatedStorefrontRuntime:
 @dataclass(frozen=True)
 class Fixtures:
     run_id: str
+    root_admin_id: str
+    root_admin_email: str
+    root_admin_password: str
     signature_id: str
     signature_email: str
     signature_password: str
@@ -605,6 +618,9 @@ class Fixtures:
         )
         return cls(
             run_id=run_id,
+            root_admin_id=f"user_testbed_storefront_root_{run_id}",
+            root_admin_email=f"test_root+storefront_{run_id}@thespecialwedding.io",
+            root_admin_password=f"StorefrontRoot-{run_id}!",
             signature_id=f"user_testbed_storefront_signature_{run_id}",
             signature_email=(
                 f"test_planner+storefront_signature_{run_id}@thespecialwedding.io"
@@ -649,6 +665,8 @@ class Fixtures:
 
     def manifest_dict(self) -> dict[str, str]:
         return {
+            "root_admin_id": self.root_admin_id,
+            "root_admin_email": self.root_admin_email,
             "signature_id": self.signature_id,
             "signature_email": self.signature_email,
             "signature_subscription_id": self.signature_subscription_id,
@@ -852,8 +870,26 @@ def _seed_canonical_plans(db: Any, run_id: str) -> None:
             {
                 "_id": plan_id,
                 "name": name,
+                "description": "",
+                "price_monthly": 0,
+                "price_yearly": 0,
+                "billing_model": "flat_rate",
+                "is_metered": False,
+                "meter_event_name": None,
+                "meter_id": None,
+                "max_weddings": 1,
+                "max_guests_per_wedding": 100,
+                "ai_credits_monthly": 10,
+                "storage_gb": 1,
+                "staff_seats": 0,
                 "features": features,
+                "features_list": [],
+                "is_featured": False,
                 "is_active": True,
+                "display_order": 0,
+                "sort_order": 0,
+                "trial_days": 0,
+                "created_by": "testbed",
                 "seed_source": SEED_SOURCE,
                 "testbed_run_id": run_id,
                 "created_at": now,
@@ -870,6 +906,23 @@ def _seed(db: Any, fixtures: Fixtures) -> None:
         db, "plan_solo", {"planner_storefront": False, "custom_domain": False}
     )
     now = _now()
+    db["users"].insert_one(
+        {
+            "_id": fixtures.root_admin_id,
+            "email": fixtures.root_admin_email,
+            "password_hash": _password_hash(fixtures.root_admin_password),
+            "role": "ROOT_ADMIN",
+            "first_name": "Storefront",
+            "last_name": "Root Testbed",
+            "is_active": True,
+            "email_verified": True,
+            "registration_source": "testbed",
+            "seed_source": SEED_SOURCE,
+            "testbed_run_id": fixtures.run_id,
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
     users = (
         (
             fixtures.signature_id,
@@ -1207,6 +1260,9 @@ _LIFECYCLE_TEST_TITLE = (
     "gates Solo and completes the real Signature slug, publication, content, and "
     "inquiry lifecycle"
 )
+_PLAN_CAPABILITY_TEST_TITLE = (
+    "lets root admin configure storefront plan access and proves the planner gate"
+)
 _MODAL_TEST_TITLE = (
     "keeps every modal tab readable, bounded, accessible, and keyboard-operable"
 )
@@ -1233,6 +1289,10 @@ _PLAYWRIGHT_BASE_REQUIRED_RESULTS = {
         _LIFECYCLE_TEST_TITLE,
         "chromium-desktop-light",
     ): "expected",
+    (
+        _PLAN_CAPABILITY_TEST_TITLE,
+        "chromium-desktop-light",
+    ): "expected",
 }
 _PLAYWRIGHT_BASE_REQUIRED_RESULTS.update(
     {(_MODAL_TEST_TITLE, project): "expected" for project in _MODAL_PROJECTS}
@@ -1251,6 +1311,12 @@ _PLAYWRIGHT_LIVE_FENCE_RESULTS = {
 }
 
 _BASE_SCENARIO_RECEIPTS = (
+    {
+        "scenario_id": "21_root_admin_plan_capability_round_trip",
+        "component": "root-plan-to-planner-gate",
+        "test_title": _PLAN_CAPABILITY_TEST_TITLE,
+        "project": "chromium-desktop-light",
+    },
     {
         "scenario_id": "01_restricted_upgrade_gate",
         "component": "gate",
@@ -1671,6 +1737,7 @@ def _run_playwright(
             "STOREFRONT_TESTBED_SIGNATURE_PASSWORD": fixtures.signature_password,
             "STOREFRONT_TESTBED_SOLO_PASSWORD": fixtures.solo_password,
             "STOREFRONT_TESTBED_FOREIGN_PASSWORD": fixtures.foreign_password,
+            "STOREFRONT_TESTBED_ROOT_ADMIN_PASSWORD": fixtures.root_admin_password,
             "STOREFRONT_PROVIDER_HARNESS_RUN_ID": fixtures.run_id,
             "STOREFRONT_PROVIDER_HARNESS_TOKEN": provider_control_token,
         }
@@ -1931,6 +1998,7 @@ def _account_state_fingerprint(db: Any, fixtures: Fixtures) -> str:
                         fixtures.signature_id,
                         fixtures.solo_id,
                         fixtures.foreign_owner_id,
+                        fixtures.root_admin_id,
                     ]
                 }
             }
@@ -2032,7 +2100,7 @@ def _assert_persistence(
             {"testbed_run_id": fixtures.run_id}
         ),
     }
-    if seeded_counts != {"users": 3, "subscriptions": 3, "packages": 4, "reviews": 3}:
+    if seeded_counts != {"users": 4, "subscriptions": 3, "packages": 4, "reviews": 3}:
         raise AssertionError(f"Run-scoped fixture identity drifted: {seeded_counts}")
     account_state_after = _account_state_fingerprint(db, fixtures)
     if account_state_after != account_state_before:
@@ -2553,6 +2621,7 @@ def _base_manifest(
             "18_disconnect_retry_receipt": "NOT RUN",
             "19_platform_slug_survives_domain_lifecycle": "NOT RUN",
             "20_negative_content_filtering": "NOT RUN",
+            "21_root_admin_plan_capability_round_trip": "NOT RUN",
         },
         "browser_scenario_evidence": {},
         "browser_scenario_blockers": {
@@ -2694,6 +2763,7 @@ def main() -> int:
 
         runtime = IsolatedStorefrontRuntime(
             run_id=run_id,
+            root_admin_email=fixtures.root_admin_email,
             control_token=provider_control_token,
             artifact_dir=artifact_dir,
             runtime_revision=workspace["runtime_revision"],
@@ -2812,6 +2882,7 @@ def main() -> int:
             "18_disconnect_retry_receipt",
             "19_platform_slug_survives_domain_lifecycle",
             "20_negative_content_filtering",
+            "21_root_admin_plan_capability_round_trip",
         ):
             evidence = _scenario_evidence_from_playwright(
                 playwright,

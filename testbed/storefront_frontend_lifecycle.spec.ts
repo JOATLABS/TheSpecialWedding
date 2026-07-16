@@ -21,6 +21,7 @@ type StorefrontRunManifest = {
   provider_mode: "deterministic" | "live";
   acceptance: Record<string, AcceptanceStatus>;
   fixtures: {
+    root_admin_email: string;
     signature_email: string;
     solo_email: string;
     foreign_email: string;
@@ -107,10 +108,11 @@ const PROVIDER_CONTROL_PREFIX = "/__testbed/storefront-provider";
 const signaturePassword = process.env.STOREFRONT_TESTBED_SIGNATURE_PASSWORD;
 const soloPassword = process.env.STOREFRONT_TESTBED_SOLO_PASSWORD;
 const foreignPassword = process.env.STOREFRONT_TESTBED_FOREIGN_PASSWORD;
+const rootAdminPassword = process.env.STOREFRONT_TESTBED_ROOT_ADMIN_PASSWORD;
 const providerRunId = process.env.STOREFRONT_PROVIDER_HARNESS_RUN_ID;
 const providerControlToken = process.env.STOREFRONT_PROVIDER_HARNESS_TOKEN;
 
-if (!signaturePassword || !soloPassword || !foreignPassword) {
+if (!signaturePassword || !soloPassword || !foreignPassword || !rootAdminPassword) {
   throw new Error("Storefront testbed browser credentials were not provided");
 }
 if (
@@ -346,6 +348,7 @@ async function attachCheckpoint(
   page: Page,
   testInfo: TestInfo,
   name: string,
+  accessibilityScopeOverride?: string,
 ): Promise<string[]> {
   const safe = name
     .replace(/[^a-z0-9]+/gi, "-")
@@ -387,11 +390,14 @@ async function attachCheckpoint(
   // unrelated package-management controls have their own test surface.
   const route = new URL(page.url()).pathname;
   const accessibilityScope =
-    (await page.locator(dialogSelector).count()) > 0
+    accessibilityScopeOverride ??
+    ((await page.locator(dialogSelector).count()) > 0
       ? dialogSelector
       : route === "/admin/packages"
         ? "button:has(svg.lucide-settings)"
-        : "body";
+        : route === "/admin/saas"
+          ? '[aria-label$="storefront access"]'
+        : "body");
   const accessibility = await new AxeBuilder({ page })
     .include(accessibilityScope)
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
@@ -535,6 +541,7 @@ async function login(page: Page, email: string, password: string) {
       url.pathname.startsWith("/admin") && url.pathname !== "/admin/login",
   );
   await expect(page.getByRole("button", { name: "User menu" })).toBeVisible();
+  await page.waitForLoadState("networkidle");
   resetDiagnostics(page.context());
   await page.goto("/admin/packages");
   await expect(
@@ -547,6 +554,29 @@ async function login(page: Page, email: string, password: string) {
   await expect(
     page.getByRole("heading", { name: "Something went wrong" }),
   ).toHaveCount(0);
+}
+
+async function loginRootAdmin(page: Page) {
+  const diagnostics = diagnosticsByContext.get(page.context());
+  if (diagnostics) expectCleanBrowser(diagnostics);
+  await clearSession(page);
+  await page.getByLabel("Work email").fill(manifest.fixtures.root_admin_email);
+  await page.getByLabel("Password").fill(rootAdminPassword!);
+  await page.getByRole("button", { name: /log in|sign in/i }).click();
+  await page.waitForURL(
+    (url) =>
+      url.pathname.startsWith("/admin") && url.pathname !== "/admin/login",
+  );
+  await expect(page.getByRole("button", { name: "User menu" })).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  resetDiagnostics(page.context());
+  await page.goto("/admin/saas?tab=plans");
+  await expect(
+    page.getByRole("heading", { name: "SaaS Management" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Subscription Plans" }),
+  ).toBeVisible();
 }
 
 async function providerControl<T extends Record<string, unknown>>(
@@ -771,6 +801,206 @@ test.describe("storefront production testbed", () => {
       await attachDiagnostics(testInfo, diagnostics);
       expectCleanBrowser(diagnostics);
     }
+  });
+
+  test("lets root admin configure storefront plan access and proves the planner gate", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "chromium-desktop-light",
+      "one serial plan-capability mutation owner",
+    );
+
+    await loginRootAdmin(page);
+
+    await page.getByRole("button", { name: "Create New Plan" }).click();
+    const createDialog = page.getByRole("dialog", { name: "Create New Plan" });
+    const createStorefront = createDialog.getByRole("checkbox", {
+      name: /Planner storefront/,
+    });
+    const createCustomDomain = createDialog.getByRole("checkbox", {
+      name: /Custom domain/,
+    });
+    await expect(createStorefront).not.toBeChecked();
+    await expect(createCustomDomain).not.toBeChecked();
+    await expect(createCustomDomain).toBeDisabled();
+    await createDialog.getByRole("button", { name: "Cancel" }).click();
+
+    const soloAccess = page.getByLabel("Solo storefront access");
+    await expect(soloAccess).toContainText("Planner storefront");
+    await expect(soloAccess).toContainText("Custom domain");
+    await expect(soloAccess).toContainText("Not included");
+    const soloCard = soloAccess.locator("..");
+    await soloCard.getByRole("button", { name: "Edit Plan" }).click();
+
+    let planDialog = page.getByRole("dialog", { name: "Edit Plan" });
+    let storefrontControl = planDialog.getByRole("checkbox", {
+      name: /Planner storefront/,
+    });
+    let domainControl = planDialog.getByRole("checkbox", {
+      name: /Custom domain/,
+    });
+    await expect(storefrontControl).not.toBeChecked();
+    await expect(domainControl).not.toBeChecked();
+    await expect(domainControl).toBeDisabled();
+    await storefrontControl.check();
+    await expect(domainControl).toBeEnabled();
+
+    const enableResponsePromise = page.waitForResponse((response) => {
+      const request = response.request();
+      return (
+        request.method() === "PUT" &&
+        new URL(response.url()).pathname.endsWith(
+          "/subscription-plans/plan_solo",
+        )
+      );
+    });
+    page.once("dialog", (dialog) => void dialog.accept());
+    await planDialog.getByRole("button", { name: "Update Plan" }).click();
+    const enableResponse = await enableResponsePromise;
+    expect(enableResponse.status()).toBe(200);
+    await expect(page.getByLabel("Solo storefront access")).toContainText(
+      "Included",
+    );
+
+    const enabledPlanResponse = await authenticatedBackendRequest(
+      page,
+      "GET",
+      "/subscription-plans/plan_solo",
+    );
+    expect(enabledPlanResponse.status()).toBe(200);
+    const enabledPlan = (await enabledPlanResponse.json()) as {
+      features: Record<string, boolean>;
+      admin_overrides?: Record<string, unknown>;
+    };
+    expect(enabledPlan.features.planner_storefront).toBe(true);
+    expect(enabledPlan.features.custom_domain).toBe(false);
+    expect(enabledPlan.admin_overrides?.features).toBeTruthy();
+    const rootEnabledAttachments = await attachCheckpoint(
+      page,
+      testInfo,
+      "root-plan-storefront-enabled",
+      '[aria-label="Solo storefront access"]',
+    );
+
+    await login(page, manifest.fixtures.solo_email, soloPassword!);
+    const enabledAccessResponse = await authenticatedBackendRequest(
+      page,
+      "GET",
+      "/admin/storefront/access",
+    );
+    expect(enabledAccessResponse.status()).toBe(200);
+    const enabledAccess = (await enabledAccessResponse.json()) as {
+      plan_id: string;
+      storefront_enabled: boolean;
+      custom_domain_enabled: boolean;
+    };
+    expect(enabledAccess.plan_id).toBe("plan_solo");
+    expect(enabledAccess.storefront_enabled).toBe(true);
+    expect(enabledAccess.custom_domain_enabled).toBe(false);
+    const { dialog: enabledStorefrontDialog } = await openStorefrontDialog(page);
+    await expect(enabledStorefrontDialog.getByRole("tab", { name: "Domain" })).toBeVisible();
+    const plannerEnabledAttachments = await attachCheckpoint(
+      page,
+      testInfo,
+      "solo-storefront-enabled-by-plan",
+    );
+    await page.keyboard.press("Escape");
+    await expect(enabledStorefrontDialog).toBeHidden();
+
+    await loginRootAdmin(page);
+    const enabledSoloAccess = page.getByLabel("Solo storefront access");
+    await expect(enabledSoloAccess).toContainText("Included");
+    await enabledSoloAccess.locator("..").getByRole("button", { name: "Edit Plan" }).click();
+    planDialog = page.getByRole("dialog", { name: "Edit Plan" });
+    storefrontControl = planDialog.getByRole("checkbox", {
+      name: /Planner storefront/,
+    });
+    domainControl = planDialog.getByRole("checkbox", { name: /Custom domain/ });
+    await expect(storefrontControl).toBeChecked();
+    await expect(domainControl).not.toBeChecked();
+    await storefrontControl.uncheck();
+
+    const disableResponsePromise = page.waitForResponse((response) => {
+      const request = response.request();
+      return (
+        request.method() === "PUT" &&
+        new URL(response.url()).pathname.endsWith(
+          "/subscription-plans/plan_solo",
+        )
+      );
+    });
+    page.once("dialog", (dialog) => void dialog.accept());
+    await planDialog.getByRole("button", { name: "Update Plan" }).click();
+    const disableResponse = await disableResponsePromise;
+    expect(disableResponse.status()).toBe(200);
+    await expect(page.getByLabel("Solo storefront access")).toContainText(
+      "Not included",
+    );
+    const rootRestoredAttachments = await attachCheckpoint(
+      page,
+      testInfo,
+      "root-plan-storefront-restored",
+      '[aria-label="Solo storefront access"]',
+    );
+
+    const settingsRequests: string[] = [];
+    page.on("request", (request) => {
+      if (
+        new URL(request.url()).pathname.includes("/admin/storefront/settings")
+      ) {
+        settingsRequests.push(request.url());
+      }
+    });
+    await login(page, manifest.fixtures.solo_email, soloPassword!);
+    const disabledAccessResponse = await authenticatedBackendRequest(
+      page,
+      "GET",
+      "/admin/storefront/access",
+    );
+    expect(disabledAccessResponse.status()).toBe(200);
+    const disabledAccess = (await disabledAccessResponse.json()) as {
+      plan_id: string;
+      storefront_enabled: boolean;
+      custom_domain_enabled: boolean;
+    };
+    expect(disabledAccess.plan_id).toBe("plan_solo");
+    expect(disabledAccess.storefront_enabled).toBe(false);
+    expect(disabledAccess.custom_domain_enabled).toBe(false);
+    settingsRequests.length = 0;
+    await page.getByRole("button", { name: "Configure Storefront" }).click();
+    await expect(
+      page.getByRole("dialog", { name: "Unlock Your Planner Storefront" }),
+    ).toBeVisible();
+    expect(settingsRequests).toEqual([]);
+    const plannerRestoredAttachments = await attachCheckpoint(
+      page,
+      testInfo,
+      "solo-storefront-gate-restored",
+    );
+
+    await recordScenarioEvidence(
+      testInfo,
+      "21_root_admin_plan_capability_round_trip",
+      "root-plan-to-planner-gate",
+      ["/admin/saas?tab=plans", "/admin/packages"],
+      {
+        createDefaultsOff: true,
+        planCardStatusVisible: true,
+        rootPutPersisted: true,
+        livePlannerCapabilityEnabled: true,
+        customDomainRemainedIndependent: true,
+        rootRestoredOriginalCapability: true,
+        livePlannerGateRestored: true,
+        noSettingsRequestWhenRestricted: settingsRequests.length === 0,
+      },
+      [
+        ...rootEnabledAttachments,
+        ...plannerEnabledAttachments,
+        ...rootRestoredAttachments,
+        ...plannerRestoredAttachments,
+      ],
+    );
   });
 
   test("gates Solo and completes the real Signature slug, publication, content, and inquiry lifecycle", async ({
