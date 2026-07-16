@@ -23,10 +23,11 @@ import {
 import {
   buildPlanFeatureState,
   formatFeatureListInput,
-  getPlanFeatureEntries,
+  getGeneralPlanFeatureEntries,
   getPlanFeatureLabel,
   parseFeatureListInput,
 } from './planFeatureConfig';
+import { StorefrontPlanCapabilities } from './StorefrontPlanCapabilities';
 
 interface SubscriptionPlan {
  _id: string;
@@ -1354,6 +1355,24 @@ const SaasAdminDashboard = () => {
  {plan.price_monthly === 0 ? 'Free' : `$${plan.price_monthly}/month`}
  </div>
 
+ <div
+ aria-label={`${plan.name} storefront access`}
+ className="mb-4 space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-700 dark:bg-slate-900/50"
+ >
+ <div className="flex items-center justify-between gap-3">
+ <span className="font-medium text-gray-800 dark:text-gray-200">Planner storefront</span>
+ <span className={plan.features?.planner_storefront === true ? 'font-semibold text-emerald-700 dark:text-emerald-300' : 'font-medium text-gray-500 dark:text-gray-400'}>
+ {plan.features?.planner_storefront === true ? 'Included' : 'Not included'}
+ </span>
+ </div>
+ <div className="flex items-center justify-between gap-3">
+ <span className="font-medium text-gray-800 dark:text-gray-200">Custom domain</span>
+ <span className={plan.features?.custom_domain === true ? 'font-semibold text-emerald-700 dark:text-emerald-300' : 'font-medium text-gray-500 dark:text-gray-400'}>
+ {plan.features?.custom_domain === true ? 'Included' : 'Not included'}
+ </span>
+ </div>
+ </div>
+
  <ul className="space-y-2 mb-6">
  {featuresArray.slice(0, 4).map((feature, idx) => (
  <li key={idx} className="text-sm text-gray-600 dark:text-gray-400 flex items-center">
@@ -1462,7 +1481,7 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  features_list_text: formatFeatureListInput(plan?.features_list),
  });
  const featureEntries = useMemo(
- () => getPlanFeatureEntries(formData.features),
+ () => getGeneralPlanFeatureEntries(formData.features),
  [formData.features],
  );
 
@@ -1481,8 +1500,13 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
 
  return (
  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
- <div className="bg-white dark:bg-slate-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
- <h2 className="text-2xl font-bold mb-4">
+ <div
+ role="dialog"
+ aria-modal="true"
+ aria-labelledby="subscription-plan-dialog-title"
+ className="bg-white dark:bg-slate-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+ >
+ <h2 id="subscription-plan-dialog-title" className="text-2xl font-bold mb-4">
  {isEditing ? 'Edit Plan' : 'Create New Plan'}
  </h2>
  <div className="mb-4 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100">
@@ -1666,8 +1690,20 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  </div>
  </div>
 
+ <StorefrontPlanCapabilities
+ features={formData.features}
+ onChange={(key, enabled) => setFormData(prev => ({
+ ...prev,
+ features: {
+ ...prev.features,
+ [key]: enabled,
+ ...(key === 'planner_storefront' && !enabled ? { custom_domain: false } : {}),
+ },
+ }))}
+ />
+
  <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Features</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Other features</label>
  <div className="grid grid-cols-2 gap-2">
  {featureEntries.map(({ key, label }) => (
  <label key={key} className="flex items-center space-x-2">

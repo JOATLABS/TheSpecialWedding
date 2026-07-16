@@ -3,9 +3,25 @@ export type PlanFeatureState = Record<string, boolean>;
 export interface PlanFeatureOption {
   key: string;
   label: string;
+  description?: string;
 }
 
-export const PLAN_FEATURE_OPTIONS: PlanFeatureOption[] = [
+export const STOREFRONT_PLAN_FEATURE_OPTIONS = [
+  {
+    key: 'planner_storefront',
+    label: 'Planner storefront',
+    description:
+      'Allows planners on this plan to design, preview, publish, and share a storefront on the platform URL.',
+  },
+  {
+    key: 'custom_domain',
+    label: 'Custom domain',
+    description:
+      'Allows planners on this plan to start or replace custom-domain setup; existing-domain management remains separately protected.',
+  },
+] as const satisfies readonly PlanFeatureOption[];
+
+export const GENERAL_PLAN_FEATURE_OPTIONS: PlanFeatureOption[] = [
   { key: 'guest_management', label: 'Guest management' },
   { key: 'email_invitations', label: 'Email invitations' },
   { key: 'wedding_website', label: 'Wedding website' },
@@ -29,6 +45,15 @@ export const PLAN_FEATURE_OPTIONS: PlanFeatureOption[] = [
   { key: 'basic_website_builder', label: 'Basic website builder' },
   { key: 'rsvp_system', label: 'RSVP system' },
 ];
+
+export const PLAN_FEATURE_OPTIONS: PlanFeatureOption[] = [
+  ...STOREFRONT_PLAN_FEATURE_OPTIONS,
+  ...GENERAL_PLAN_FEATURE_OPTIONS,
+];
+
+const STOREFRONT_PLAN_FEATURE_KEYS = new Set<string>(
+  STOREFRONT_PLAN_FEATURE_OPTIONS.map((option) => option.key),
+);
 
 const PLAN_FEATURE_LABELS = new Map(
   PLAN_FEATURE_OPTIONS.map((option) => [option.key, option.label]),
@@ -67,6 +92,14 @@ export function getPlanFeatureEntries(features: PlanFeatureState): PlanFeatureOp
     .map((key) => ({ key, label: getPlanFeatureLabel(key) }));
 
   return [...knownEntries, ...extraEntries];
+}
+
+export function getGeneralPlanFeatureEntries(
+  features: PlanFeatureState,
+): PlanFeatureOption[] {
+  return getPlanFeatureEntries(features).filter(
+    (entry) => !STOREFRONT_PLAN_FEATURE_KEYS.has(entry.key),
+  );
 }
 
 export function formatFeatureListInput(featuresList?: string[] | null): string {

@@ -2,11 +2,12 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.constants.billing import (
     BILLING_MODEL_METERED,
 )
+from app.constants.storefront import CUSTOM_DOMAIN_FEATURE, STOREFRONT_FEATURE
 
 
 class SubscriptionStatus(str, Enum):
@@ -381,6 +382,15 @@ class UsageTrackingModel(BaseModel):
 
 
 # Request/Response models for API
+def _validate_storefront_plan_features(features: Optional[Dict[str, bool]]) -> None:
+    if (
+        features
+        and features.get(CUSTOM_DOMAIN_FEATURE) is True
+        and features.get(STOREFRONT_FEATURE) is not True
+    ):
+        raise ValueError("Custom domain requires planner storefront on the same plan")
+
+
 class CreateSubscriptionPlanRequest(BaseModel):
     """Request model for creating subscription plans"""
 
@@ -405,6 +415,11 @@ class CreateSubscriptionPlanRequest(BaseModel):
     sort_order: int = 0
     display_order: Optional[int] = None
     trial_days: int = Field(default=0, ge=0, description="Trial days (0 = no trial)")
+
+    @model_validator(mode="after")
+    def validate_storefront_capabilities(self):
+        _validate_storefront_plan_features(self.features)
+        return self
 
 
 class UpdateSubscriptionPlanRequest(BaseModel):
@@ -432,6 +447,11 @@ class UpdateSubscriptionPlanRequest(BaseModel):
     trial_days: Optional[int] = Field(
         default=None, ge=0, description="Trial days (0 = no trial)"
     )
+
+    @model_validator(mode="after")
+    def validate_storefront_capabilities(self):
+        _validate_storefront_plan_features(self.features)
+        return self
 
 
 class AssignSubscriptionRequest(BaseModel):

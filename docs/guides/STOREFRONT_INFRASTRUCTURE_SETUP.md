@@ -829,12 +829,12 @@ These evidence classes are deliberately separate:
 ### Deterministic application lifecycle — `PASSED` for application-only scope
 
 The real frontend/FastAPI/Mongo lifecycle can run against deterministic
-DNS/Cloudflare/HTTPS/email adapters. Source-bound run `2c2262cbb4d6` passed the
+DNS/Cloudflare/HTTPS/email adapters. Source-bound run `f14e71003557` passed the
 ten exact required Playwright test/project pairs with zero unexpected/flaky
 results, 18 of 20 browser scenarios, persistence, protected account and
 subscription hashing, deterministic provider control-plane checks, cleanup, and
 post-shutdown artifact sealing. Its manifest is
-`testbed/.testbed/artifacts/storefront/runs/2c2262cbb4d6/run-manifest.json`.
+`testbed/.testbed/artifacts/storefront/runs/f14e71003557/run-manifest.json`.
 
 The command exited nonzero by design because the evidence gate kept scenario 4
 blocked without configured object-storage upload/finalize/persist/render proof
@@ -842,11 +842,17 @@ and scenario 14 blocked without an independently authoritative customer zone
 and scoped Cloudflare for SaaS credentials. This receipt proves application
 behavior only; it is not an external-provider completion receipt.
 
-### Visible in-app Chrome — `NOT RUN`
+### Visible in-app Chrome — `RECORDED; PARTIAL ACCEPTANCE COVERAGE`
 
-No current-source visible playback receipt exists in the user-selected in-app
-Chrome browser. Playwright video and screenshots are supporting artifacts, not
-this receipt.
+Current-source visible playback run `e19f7bcca1a7` is recorded at
+`testbed/.testbed/artifacts/storefront/visible-playback/runs/e19f7bcca1a7/run-manifest.json`.
+The user-selected browser visibly reviewed restricted gating, eligible
+configuration, saved design state, provider detection, manual DNS records,
+expected-versus-observed values, and connection-progress rows. The runner's
+authenticated cleanup and final artifact seal both passed, and its browser
+console had no warning/error entries. This receipt is local deterministic
+playback only; it does not replace the blocked R2 upload round-trip or the
+independently authoritative customer-provider journey.
 
 ### Independently authoritative provider — `BLOCKED`
 

@@ -57,6 +57,9 @@ describe("storefront frontend lifecycle testbed contract", () => {
     assert.match(driver, /_account_state_fingerprint/);
     assert.match(driver, /account_and_subscription_immutability/);
     assert.match(driver, /01_restricted_upgrade_gate/);
+    assert.match(driver, /21_root_admin_plan_capability_round_trip/);
+    assert.match(driver, /root_admin_email/);
+    assert.match(driver, /STOREFRONT_TESTBED_ROOT_ADMIN_PASSWORD/);
     assert.match(driver, /14_real_custom_url/);
     assert.match(driver, /20_negative_content_filtering/);
     assert.match(driver, /browser_scenario_blockers/);
@@ -253,6 +256,10 @@ describe("storefront frontend lifecycle testbed contract", () => {
       /attachCheckpoint\(page, testInfo, 'final-state'\)\.catch/,
     );
     assert.match(spec, /Storefront URL/);
+    assert.match(spec, /Planner storefront/);
+    assert.match(spec, /Custom domain/);
+    assert.match(spec, /21_root_admin_plan_capability_round_trip/);
+    assert.match(spec, /\/admin\/saas\?tab=plans/);
     assert.match(spec, /Save for preview/);
     assert.match(spec, /Publish storefront/);
     assert.match(spec, /Send inquiry/);

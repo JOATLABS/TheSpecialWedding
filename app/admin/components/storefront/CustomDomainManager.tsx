@@ -555,6 +555,7 @@ export function CustomDomainPanel({
   const errorNoticeRef = useRef<HTMLDivElement | null>(null);
   const instructionAttemptRef = useRef<string | null>(null);
   const observationPollRef = useRef(0);
+  const errorFocusTimerRef = useRef<number | null>(null);
 
   const setCaughtError = useCallback((caught: unknown, fallback: string) => {
     setError(normalizeStorefrontError(caught, fallback));
@@ -645,6 +646,10 @@ export function CustomDomainPanel({
   useEffect(
     () => () => {
       observationPollRef.current += 1;
+      if (errorFocusTimerRef.current !== null) {
+        window.clearTimeout(errorFocusTimerRef.current);
+        errorFocusTimerRef.current = null;
+      }
     },
     [],
   );
@@ -953,7 +958,10 @@ export function CustomDomainPanel({
         // Preserve the actionable disconnect error. The explicit retry affordance
         // remains available for both status and instruction-link observation.
       }
-      window.setTimeout(() => errorNoticeRef.current?.focus(), 0);
+      errorFocusTimerRef.current = window.setTimeout(() => {
+        errorFocusTimerRef.current = null;
+        errorNoticeRef.current?.focus();
+      }, 0);
     } finally {
       setSubmitting(false);
     }

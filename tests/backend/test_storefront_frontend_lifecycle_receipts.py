@@ -107,12 +107,20 @@ def test_domain_connect_receipt_rejects_transient_or_incomplete_callback_evidenc
 def test_account_fingerprint_ignores_only_expected_login_telemetry():
     db = mongomock.MongoClient()["storefront_receipt_test"]
     fixtures = SimpleNamespace(
+        root_admin_id="root-admin",
         signature_id="signature-owner",
         solo_id="solo-owner",
         foreign_owner_id="foreign-owner",
         signature_subscription_id="signature-subscription",
         solo_subscription_id="solo-subscription",
         foreign_subscription_id="foreign-subscription",
+    )
+    db["users"].insert_one(
+        {
+            "_id": fixtures.root_admin_id,
+            "email": "root-admin@example.test",
+            "role": "ROOT_ADMIN",
+        }
     )
     for owner_id, plan_id in (
         (fixtures.signature_id, "plan_signature"),

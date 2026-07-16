@@ -2,11 +2,51 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  PLAN_FEATURE_OPTIONS,
+  STOREFRONT_PLAN_FEATURE_OPTIONS,
   buildPlanFeatureState,
   formatFeatureListInput,
+  getGeneralPlanFeatureEntries,
   getPlanFeatureEntries,
   parseFeatureListInput,
 } from '../../app/admin/saas/planFeatureConfig';
+
+test('storefront entitlements are first-class independent root-admin plan controls', () => {
+  assert.deepEqual(
+    STOREFRONT_PLAN_FEATURE_OPTIONS.map(({ key, label }) => ({ key, label })),
+    [
+      { key: 'planner_storefront', label: 'Planner storefront' },
+      { key: 'custom_domain', label: 'Custom domain' },
+    ],
+  );
+
+  for (const capability of STOREFRONT_PLAN_FEATURE_OPTIONS) {
+    assert.equal(
+      PLAN_FEATURE_OPTIONS.some((option) => option.key === capability.key),
+      true,
+    );
+    assert.match(capability.description, /plan/i);
+  }
+
+  const state = buildPlanFeatureState();
+  assert.equal(state.planner_storefront, false);
+  assert.equal(state.custom_domain, false);
+});
+
+test('general plan feature entries do not duplicate storefront capability controls', () => {
+  const entries = getGeneralPlanFeatureEntries({
+    planner_storefront: true,
+    custom_domain: true,
+    guest_management: true,
+    future_seeded_flag: true,
+  });
+  const keys = entries.map((entry) => entry.key);
+
+  assert.equal(keys.includes('planner_storefront'), false);
+  assert.equal(keys.includes('custom_domain'), false);
+  assert.equal(keys.includes('guest_management'), true);
+  assert.equal(keys.includes('future_seeded_flag'), true);
+});
 
 test('buildPlanFeatureState preserves seeded and unknown feature flags', () => {
   const state = buildPlanFeatureState({
