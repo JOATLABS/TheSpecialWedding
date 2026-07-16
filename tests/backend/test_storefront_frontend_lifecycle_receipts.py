@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import base64
+from datetime import datetime, timezone
 import json
+from types import SimpleNamespace
 from typing import Callable
 
+import mongomock
 import pytest
 
 import testbed.verify_storefront_frontend_lifecycle as lifecycle_driver
 from testbed.verify_storefront_frontend_lifecycle import (
     _PLAYWRIGHT_REQUIRED_RESULTS,
+    _assert_domain_connect_flow_receipts,
     _enforce_browser_scenario_truth,
     _parse_playwright_results,
     _record_browser_scenario,
@@ -23,12 +27,142 @@ from testbed.verify_storefront_frontend_lifecycle import (
 RUN_ID = "a1b2c3d4e5f6"
 
 
+def test_domain_connect_receipt_requires_consumed_cancelled_and_authorized_outcomes():
+    completed_at = datetime.now(timezone.utc)
+    receipt = _assert_domain_connect_flow_receipts(
+        [
+            {
+                "state": "consumed",
+                "completion_outcome": "cancelled",
+                "consumed_at": completed_at,
+                "callback_recorded_at": completed_at,
+                "provider_callback_error": "access_denied",
+                "last_error": {
+                    "code": "domain_connect_authorization_cancelled"
+                },
+            },
+            {
+                "state": "consumed",
+                "completion_outcome": "authorized",
+                "consumed_at": completed_at,
+                "callback_recorded_at": completed_at,
+                "last_error": None,
+            },
+        ]
+    )
+
+    assert receipt == {
+        "flow_count": 2,
+        "flow_states": ["consumed"],
+        "completion_outcomes": ["authorized", "cancelled"],
+    }
+
+
+@pytest.mark.parametrize(
+    ("flows", "missing_outcome"),
+    [
+        ([{"state": "consumed", "completion_outcome": "authorized"}], "cancelled"),
+        ([{"state": "consumed", "completion_outcome": "cancelled"}], "authorized"),
+        ([{"state": "cancelled", "completion_outcome": ""}], "cancelled"),
+    ],
+)
+def test_domain_connect_receipt_fails_closed_without_consumed_completion_outcomes(
+    flows,
+    missing_outcome,
+):
+    with pytest.raises(
+        AssertionError,
+        match=rf"consumed Domain Connect {missing_outcome} completion",
+    ):
+        _assert_domain_connect_flow_receipts(flows)
+
+
+def test_domain_connect_receipt_rejects_transient_or_incomplete_callback_evidence():
+    completed_at = datetime.now(timezone.utc)
+    flows = [
+        {
+            "state": "consumed",
+            "completion_outcome": "cancelled",
+            "consumed_at": completed_at,
+            "callback_recorded_at": completed_at,
+            "provider_callback_error": "access_denied",
+            "last_error": {"code": "domain_connect_authorization_cancelled"},
+        },
+        {
+            "state": "consumed",
+            "completion_outcome": "authorized",
+            "consumed_at": completed_at,
+            "callback_recorded_at": None,
+            "last_error": None,
+        },
+    ]
+
+    with pytest.raises(
+        AssertionError,
+        match="authorized completion is missing durable callback metadata",
+    ):
+        _assert_domain_connect_flow_receipts(flows)
+
+
+def test_account_fingerprint_ignores_only_expected_login_telemetry():
+    db = mongomock.MongoClient()["storefront_receipt_test"]
+    fixtures = SimpleNamespace(
+        signature_id="signature-owner",
+        solo_id="solo-owner",
+        foreign_owner_id="foreign-owner",
+        signature_subscription_id="signature-subscription",
+        solo_subscription_id="solo-subscription",
+        foreign_subscription_id="foreign-subscription",
+    )
+    for owner_id, plan_id in (
+        (fixtures.signature_id, "plan_signature"),
+        (fixtures.solo_id, "plan_solo"),
+        (fixtures.foreign_owner_id, "plan_signature"),
+    ):
+        db["users"].insert_one(
+            {
+                "_id": owner_id,
+                "email": f"{owner_id}@example.test",
+                "plan_id": plan_id,
+                "subscription_status": "active",
+            }
+        )
+    for subscription_id, owner_id, plan_id in (
+        (
+            fixtures.signature_subscription_id,
+            fixtures.signature_id,
+            "plan_signature",
+        ),
+        (fixtures.solo_subscription_id, fixtures.solo_id, "plan_solo"),
+        (
+            fixtures.foreign_subscription_id,
+            fixtures.foreign_owner_id,
+            "plan_signature",
+        ),
+    ):
+        db["user_subscriptions"].insert_one(
+            {
+                "_id": subscription_id,
+                "user_id": owner_id,
+                "plan_id": plan_id,
+                "status": "active",
+            }
+        )
+
+    baseline = lifecycle_driver._account_state_fingerprint(db, fixtures)
+    db["users"].update_many({}, {"$set": {"last_login": datetime.now(timezone.utc)}})
+    assert lifecycle_driver._account_state_fingerprint(db, fixtures) == baseline
+
+    db["users"].update_one(
+        {"_id": fixtures.signature_id}, {"$set": {"plan_id": "plan_solo"}}
+    )
+    assert lifecycle_driver._account_state_fingerprint(db, fixtures) != baseline
+
+
 def test_runtime_manifest_state_recovers_when_start_failed_before_returning_receipt():
     manifest = {"isolated_runtime": None}
 
-    lifecycle_driver._record_isolated_runtime_shutdown(
-        manifest, {"status": "STOPPED"}
-    )
+    lifecycle_driver._record_isolated_runtime_shutdown(manifest, {"status": "STOPPED"})
 
     assert manifest["isolated_runtime"] == {
         "status": "STOPPED",

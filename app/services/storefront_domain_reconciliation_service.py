@@ -948,7 +948,7 @@ class StorefrontDomainReconciliationService:
                 "reconciliation_started_at": "",
             },
         }
-        await collection.update_one(
+        persisted = await collection.update_one(
             {
                 "_id": record["_id"],
                 "lease_token": record.get("lease_token"),
@@ -958,6 +958,8 @@ class StorefrontDomainReconciliationService:
             },
             update,
         )
+        if not getattr(persisted, "matched_count", 0):
+            await self._discard_stale_lease(record)
 
     async def _reconcile_authorization_flow(self, record: dict) -> None:
         collection = self._mongo.db["storefront_domains"]
@@ -1072,6 +1074,33 @@ class StorefrontDomainReconciliationService:
                 },
             },
         )
+
+    async def _discard_stale_lease(self, record: dict) -> None:
+        """Release only this worker's lease after a lifecycle CAS loses.
+
+        A concurrent observe, retry, or disconnect owns the newer state and
+        retry schedule. The stale worker must not persist its provider result,
+        but it also must not strand its unique lease until TTL expiry.
+        """
+
+        released = await self._mongo.db["storefront_domains"].update_one(
+            {
+                "_id": record["_id"],
+                "lease_token": record.get("lease_token"),
+            },
+            {
+                "$unset": {
+                    "lease_token": "",
+                    "lease_expires_at": "",
+                    "reconciliation_started_at": "",
+                }
+            },
+        )
+        if getattr(released, "matched_count", 0):
+            logger.info(
+                "Discarded stale storefront-domain reconciliation lease domain_id=%s",
+                str(record.get("_id")),
+            )
 
     async def _reconcile_ambiguous_create(self, record: dict) -> dict | None:
         operations = self._mongo.db["storefront_domain_operations"]

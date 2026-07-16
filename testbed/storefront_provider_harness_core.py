@@ -103,6 +103,7 @@ class DeterministicProviderState:
         self._email_receipts: list[dict[str, str]] = []
         self._authoritative_queries: list[dict[str, Any]] = []
         self._https_probe_receipts: list[dict[str, Any]] = []
+        self._explicit_https_probe_receipts: list[dict[str, Any]] = []
         self._cloudflare_calls: list[dict[str, str]] = []
         self._lock = RLock()
 
@@ -434,16 +435,19 @@ class DeterministicProviderState:
         hostname: str,
         status_code: int | None,
         verified: bool,
-    ) -> None:
+        explicit: bool = False,
+    ) -> dict[str, Any]:
         with self._lock:
-            self._https_probe_receipts.append(
-                {
-                    "hostname": hostname,
-                    "path": PROBE_PATH,
-                    "status_code": status_code,
-                    "verified": verified,
-                }
-            )
+            receipt = {
+                "hostname": hostname,
+                "path": PROBE_PATH,
+                "status_code": status_code,
+                "verified": verified,
+            }
+            self._https_probe_receipts.append(receipt)
+            if explicit:
+                self._explicit_https_probe_receipts.append(receipt)
+            return dict(receipt)
 
     def status(self) -> dict[str, Any]:
         with self._lock:
@@ -465,11 +469,17 @@ class DeterministicProviderState:
                 "instruction_receipts": len(self._email_receipts),
                 "authoritative_query_count": len(self._authoritative_queries),
                 "https_probe_count": len(self._https_probe_receipts),
+                "explicit_https_probe_count": len(self._explicit_https_probe_receipts),
                 "cloudflare_call_count": len(self._cloudflare_calls),
                 "cloudflare_calls": [dict(call) for call in self._cloudflare_calls],
                 "latest_https_probe": (
                     dict(self._https_probe_receipts[-1])
                     if self._https_probe_receipts
+                    else None
+                ),
+                "latest_explicit_https_probe": (
+                    dict(self._explicit_https_probe_receipts[-1])
+                    if self._explicit_https_probe_receipts
                     else None
                 ),
             }
@@ -735,36 +745,36 @@ class NextRouteStorefrontHttpsVerifier:
         frontend_origin: str,
         ca_certificate: str,
         secret_key: str,
+        ssl_context: ssl.SSLContext | None = None,
+        http_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._state = state
         self._frontend_origin = frontend_origin.rstrip("/")
         self._secret_key = secret_key
-        self._ssl_context = ssl.create_default_context(cafile=ca_certificate)
+        self._ssl_context = ssl_context or ssl.create_default_context(
+            cafile=ca_certificate
+        )
+        self._http_transport = http_transport
+        self._verified_probe_snapshots: dict[str, tuple[dict[str, Any], str]] = {}
+        self._snapshot_lock = RLock()
 
-    async def verify(self, record: Mapping[str, Any]) -> bool:
+    async def _request_probe(
+        self,
+        record: Mapping[str, Any],
+        challenge: str,
+        *,
+        explicit: bool,
+    ) -> tuple[bool, dict[str, Any] | None]:
         hostname = str(record.get("hostname") or "")
         status_code: int | None = None
         verified = False
         try:
-            state = self._state.require_host(hostname)
-            provider = state.provider_result or {}
-            ssl_projection = (
-                provider.get("ssl") if isinstance(provider.get("ssl"), dict) else {}
-            )
-            if not (
-                state.https_ok
-                and provider.get("id") == record.get("provider_hostname_id")
-                and provider.get("hostname") == hostname
-                and provider.get("status") == "active"
-                and ssl_projection.get("status") == "active"
-            ):
-                return False
-            challenge = build_probe_challenge(record, self._secret_key)
             async with httpx.AsyncClient(
                 verify=self._ssl_context,
                 follow_redirects=False,
                 timeout=5.0,
                 trust_env=False,
+                transport=self._http_transport,
             ) as client:
                 response = await client.get(
                     f"{self._frontend_origin}{PROBE_PATH}",
@@ -783,24 +793,100 @@ class NextRouteStorefrontHttpsVerifier:
                 or not response.content
                 or len(response.content) > MAX_PROBE_RESPONSE_BYTES
             ):
-                return False
-            payload = json.loads(response.content)
-            verified = verify_probe_attestation(
-                record, challenge, payload, self._secret_key
-            )
-            return verified
-        except (httpx.HTTPError, json.JSONDecodeError, KeyError, TypeError, ValueError):
-            return False
-        finally:
-            # A receipt is written only when the deterministic routing control
-            # allowed a real edge probe attempt; intermediate https_ok=false
-            # states intentionally remain observation-free.
-            if status_code is not None:
-                self._state.record_https_probe(
-                    hostname=hostname,
-                    status_code=status_code,
-                    verified=verified,
+                verified = False
+            else:
+                payload = json.loads(response.content)
+                verified = verify_probe_attestation(
+                    record, challenge, payload, self._secret_key
                 )
+        except (httpx.HTTPError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            verified = False
+
+        # Reconciliation receipts remain response-bound, while an explicit
+        # acceptance replay also records a network failure (`status_code=None`)
+        # so the evidence cannot silently disappear.
+        receipt = None
+        if status_code is not None or explicit:
+            receipt = self._state.record_https_probe(
+                hostname=hostname,
+                status_code=status_code,
+                verified=verified,
+                explicit=explicit,
+            )
+        return verified, receipt
+
+    async def _probe_current(
+        self,
+        record: Mapping[str, Any],
+        *,
+        explicit: bool,
+    ) -> tuple[bool, dict[str, Any] | None]:
+        hostname = str(record.get("hostname") or "")
+        try:
+            state = self._state.require_host(hostname)
+            provider = state.provider_result or {}
+            ssl_projection = (
+                provider.get("ssl") if isinstance(provider.get("ssl"), dict) else {}
+            )
+            if not (
+                state.https_ok
+                and provider.get("id") == record.get("provider_hostname_id")
+                and provider.get("hostname") == hostname
+                and provider.get("status") == "active"
+                and ssl_projection.get("status") == "active"
+            ):
+                return False, None
+            challenge = build_probe_challenge(record, self._secret_key)
+        except (KeyError, TypeError, ValueError):
+            return False, None
+
+        verified, _receipt = await self._request_probe(
+            record,
+            challenge,
+            explicit=explicit,
+        )
+        if verified:
+            with self._snapshot_lock:
+                self._verified_probe_snapshots[hostname] = (
+                    deepcopy(dict(record)),
+                    challenge,
+                )
+        return verified, _receipt
+
+    async def verify(self, record: Mapping[str, Any]) -> bool:
+        verified, _receipt = await self._probe_current(record, explicit=False)
+        return verified
+
+    async def probe_current(self, record: Mapping[str, Any]) -> dict[str, Any]:
+        """Probe the current canonical row and retain only an accepted snapshot."""
+
+        _verified, receipt = await self._probe_current(record, explicit=True)
+        if receipt is None:
+            raise RuntimeError("Explicit HTTPS probe receipt was not recorded")
+        return receipt
+
+    async def replay_last_verified(self, hostname: str) -> dict[str, Any]:
+        """Replay the last accepted challenge through the real Next edge.
+
+        The snapshot is server-owned and captured only after a signed 200.
+        Replaying it after disconnect proves the public attestation route has
+        stopped resolving without accepting record identity from the browser.
+        """
+
+        normalized = self._state.normalize_customer_hostname(hostname)
+        with self._snapshot_lock:
+            snapshot = self._verified_probe_snapshots.get(normalized)
+        if snapshot is None:
+            raise KeyError("No verified HTTPS probe snapshot exists")
+        record, challenge = snapshot
+        _verified, receipt = await self._request_probe(
+            record,
+            challenge,
+            explicit=True,
+        )
+        if receipt is None:
+            raise RuntimeError("Explicit HTTPS probe receipt was not recorded")
+        return receipt
 
 
 class DeterministicInstructionEmail:
@@ -849,6 +935,10 @@ class HostnameRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     hostname: str = Field(min_length=1, max_length=253)
+
+
+class ProbeRouteRequest(HostnameRequest):
+    mode: Literal["current", "saved"]
 
 
 class PublishClaimRequest(HostnameRequest):
@@ -1306,16 +1396,11 @@ def create_storefront_provider_harness(
         processed = 0
         for _ in range(payload.reconcile_passes):
             now = datetime.now(timezone.utc)
+            # The production scheduler is running in this harness. Mark the
+            # row due, but never steal an unexpired lease from that worker.
             await mongo_client.db["storefront_domains"].update_one(
                 {"hostname": advanced.hostname},
-                {
-                    "$set": {"retry_due_at": now},
-                    "$unset": {
-                        "lease_token": "",
-                        "lease_expires_at": "",
-                        "reconciliation_started_at": "",
-                    },
-                },
+                {"$set": {"retry_due_at": now}},
             )
             processed += await reconciliation_service.sweep_due(batch_size=1)
         return {
@@ -1328,6 +1413,40 @@ def create_storefront_provider_harness(
     async def control_status(request: Request):
         require_control(request)
         return state.status()
+
+    @control_app.post(f"{CONTROL_PREFIX}/probe-route")
+    async def probe_route(request: Request, payload: ProbeRouteRequest):
+        """Replay a server-captured signed challenge through the real Next edge."""
+
+        require_control(request)
+        if not isinstance(https, NextRouteStorefrontHttpsVerifier):
+            raise HTTPException(
+                status_code=409,
+                detail="The signed Next-edge probe is unavailable in this harness",
+            )
+        try:
+            hostname = state.normalize_customer_hostname(payload.hostname)
+            if payload.mode == "current":
+                record = await mongo_client.db["storefront_domains"].find_one(
+                    {
+                        "hostname": hostname,
+                        "application_status": "active",
+                        "custom_route_enabled": True,
+                        "ownership_status": "verified",
+                        "deletion_status": None,
+                    }
+                )
+                if not record:
+                    raise KeyError("No active canonical domain row exists")
+                receipt = await https.probe_current(record)
+            else:
+                receipt = await https.replay_last_verified(hostname)
+        except (KeyError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="No current verified signed probe snapshot is available",
+            ) from exc
+        return {**state.status(), "probe": receipt}
 
     @control_app.post(f"{CONTROL_PREFIX}/inquiry-retry-due")
     async def make_inquiry_retry_due(

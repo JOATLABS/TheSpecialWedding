@@ -431,6 +431,42 @@ async def test_disconnect_or_revision_change_during_https_probe_cannot_reenable_
 
 
 @pytest.mark.asyncio
+async def test_stale_probe_writer_releases_only_its_lease_after_revision_change(
+    setup_worker,
+):
+    worker, mongo, _, _, _, _, now = setup_worker
+    domain = _record(now)
+    mongo.raw.storefront_domains.insert_one(domain)
+
+    class ObservationChangedDuringProbe:
+        async def verify(self, leased: dict) -> bool:
+            mongo.raw.storefront_domains.update_one(
+                {"_id": leased["_id"]},
+                {
+                    "$set": {
+                        "revision": leased["revision"] + 1,
+                        "observation_requested_at": now,
+                        "retry_due_at": now,
+                    }
+                },
+            )
+            return False
+
+    worker._https = ObservationChangedDuringProbe()
+
+    await worker.sweep_due(batch_size=1)
+
+    saved = mongo.raw.storefront_domains.find_one({"_id": domain["_id"]})
+    assert saved["revision"] == 2
+    assert saved["application_status"] == "certificate_validation"
+    assert saved["https_status"] == "pending"
+    assert saved["retry_due_at"].replace(tzinfo=timezone.utc) == now
+    assert "lease_token" not in saved
+    assert "lease_expires_at" not in saved
+    assert "reconciliation_started_at" not in saved
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("stale_writer", ["defer", "release", "authorization"])
 async def test_every_leased_followup_write_loses_to_disconnect_revision(
     setup_worker, stale_writer

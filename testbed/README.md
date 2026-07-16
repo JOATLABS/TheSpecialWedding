@@ -55,6 +55,7 @@ not be deleted by cleanup — that's what lets the seed phase stay cheap.
 | Driver | Purpose | Cleanup |
 | --- | --- | --- |
 | `verify_storefront_frontend_lifecycle.py` | Storefront-only Playwright proof against the production frontend build, real FastAPI routes, isolated Mongo, and deterministic provider adapters. It validates entitlement boundaries, slug draft/preview/publication/content/inquiries, the resumable DNS/customer-domain lifecycle, failure states, provider-delete receipt, accessibility, overflow, console/page/request cleanliness, and nonce/build/revision binding. Live external-provider mode is a configuration fence only and cannot produce a pass. | `cleanup_storefront_frontend_lifecycle_state.py` |
+| `serve_storefront_visible_playback.py` | Starts the same source-bound production frontend, HTTPS FastAPI harness, isolated Mongo, credential-disabled deterministic provider, and run-scoped fixtures without invoking Playwright, then holds the stack for review in the user-selected in-app Chrome. It prints generated local credentials and routes to the terminal, records no external-provider pass, and runs exact authenticated cleanup on Ctrl-C/SIGTERM. | `cleanup_storefront_frontend_lifecycle_state.py` |
 | `verify_marketing_capture_workspace.py` | Refreshes the canonical public plan catalog locally with Stripe disabled, resets and seeds the isolated fictional Phase 1 planner workspace, verifies the exact plan payload and `no-store` response through the frontend proxy plus planner/team/couple authentication and exact gallery bytes, and preflights the canonical 17 session-aware scene routes against the exact clean served build before the separate manually driven Chrome review. It accepts only the documented 127.0.0.1 capture origins. | `cleanup_marketing_capture_workspace_state.py` |
 | `verify_team_member_gate_via_test_clock.py` | PR1 / task #20 — team-member login and stale sessions are blocked when the planner's subscription is `past_due` / `unpaid`, planner feature routes 402, and Chrome checkpoints validate the shared `billingBlockTarget` targets before recovery clears the gate. Reuses the legacy clock id when present, otherwise a named `team-member-gate` clock. Template for phase-gated runners. | `cleanup_team_member_gate_verify_state.py` |
 | `verify_metrics_snapshot_no_body.py` | Metrics cron contract - proves `POST /metrics/snapshot` works with auth headers and no request body, then confirms latest/history reads expose the inserted snapshot. | `cleanup_metrics_snapshot_no_body_state.py` |
@@ -148,6 +149,24 @@ routes. Page errors, unexpected console/network failures, raw JSON customer
 errors, accessibility violations, missing markers, or horizontal overflow fail
 the run. These artifacts support—but do not replace—the separate visible
 playback in the user-selected in-app Chrome browser.
+
+After the source-bound automated run, start the isolated visible-review surface
+without reusing shared Mongo, Stripe, development frontend, or provider secrets:
+
+```bash
+TESTBED_NON_INTERACTIVE=1 \
+TESTBED_STOREFRONT_EXTERNAL_MODE=deterministic \
+TESTBED_STOREFRONT_INQUIRY_DELIVERY_MODE=disabled \
+.venv.nosync/bin/python testbed/serve_storefront_visible_playback.py
+```
+
+Wait for `STOREFRONT_VISIBLE_PLAYBACK_READY`, then use the printed HTTPS login,
+packages, Domain-tab, and internal-preview URLs and generated credentials in the
+user-selected browser. The local certificate may require a one-time browser
+exception. Stop with Ctrl-C so the runner authenticates the exact fixtures,
+reconciles any deterministic domain/media state, removes only the run-owned
+records, stops all owned processes, and seals its receipt. The `.customer.test`
+hostname is deterministic evidence and cannot satisfy the real custom-URL row.
 
 Each driver expects the same `.env` the app uses (`STRIPE_SECRET_KEY`,
 `MONGO_URI`, etc.). Drivers write *real* rows to the real Mongo and *real*

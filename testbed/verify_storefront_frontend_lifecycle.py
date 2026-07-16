@@ -105,6 +105,7 @@ INQUIRY_RESPONSE_MESSAGE = "Thanks — your inquiry was received by the wedding 
 PROVIDER_CONTROL_PREFIX = "/__testbed/storefront-provider"
 PROVIDER_CUSTOMER_ZONE = "customer.test"
 
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -273,6 +274,9 @@ class IsolatedStorefrontRuntime:
     ) -> None:
         self.run_id = run_id
         self.control_token = control_token
+        self.probe_ingress_secret = hashlib.sha256(
+            f"{control_token}\nstorefront-probe-ingress-v1".encode("utf-8")
+        ).hexdigest()
         self.artifact_dir = artifact_dir
         self.runtime_revision = runtime_revision
         self.certificate_path, self.private_key_path, self.certificate_sha256 = (
@@ -399,6 +403,7 @@ class IsolatedStorefrontRuntime:
                 "AUDIT_LOG_TO_DB": "false",
                 "RESEND_API_KEY": "",
                 "STOREFRONT_RUNTIME_REVISION": self.runtime_revision,
+                "STOREFRONT_PROBE_INGRESS_SECRET": self.probe_ingress_secret,
             }
         )
         _assert_disabled_provider_fence(backend_environment)
@@ -448,6 +453,7 @@ class IsolatedStorefrontRuntime:
                 "STOREFRONT_PLATFORM_DOMAINS": json.dumps(
                     ["thespecialwedding.io", "thespecialwedding.com"]
                 ),
+                "STOREFRONT_PROBE_INGRESS_SECRET": self.probe_ingress_secret,
             }
         )
         next_process = self._spawn(
@@ -508,6 +514,9 @@ class IsolatedStorefrontRuntime:
             "database": MONGO_DB,
             "certificate": str(self.certificate_path),
             "certificate_sha256": self.certificate_sha256,
+            "probe_ingress_secret_sha256": hashlib.sha256(
+                self.probe_ingress_secret.encode("utf-8")
+            ).hexdigest(),
             "provider_disabled_environment": {
                 "status": "PASSED",
                 "blank_keys": list(PROVIDER_DISABLED_ENVIRONMENT_KEYS),
@@ -1906,24 +1915,36 @@ def _assert_authenticated_settings(fixtures: Fixtures, token: str) -> dict[str, 
 
 
 def _account_state_fingerprint(db: Any, fixtures: Fixtures) -> str:
-    """Bind acceptance to unchanged account and subscription documents."""
+    """Bind acceptance to unchanged account/subscription business state.
+
+    Authentication itself updates ``users.last_login``. That single telemetry
+    field is excluded explicitly; every other user field and the complete
+    subscription documents remain protected by the hash.
+    """
+
+    users = list(
+        db["users"]
+        .find(
+            {
+                "_id": {
+                    "$in": [
+                        fixtures.signature_id,
+                        fixtures.solo_id,
+                        fixtures.foreign_owner_id,
+                    ]
+                }
+            }
+        )
+        .sort("_id", 1)
+    )
+    protected_users = []
+    for user in users:
+        protected = dict(user)
+        protected.pop("last_login", None)
+        protected_users.append(protected)
 
     payload = {
-        "users": list(
-            db["users"]
-            .find(
-                {
-                    "_id": {
-                        "$in": [
-                            fixtures.signature_id,
-                            fixtures.solo_id,
-                            fixtures.foreign_owner_id,
-                        ]
-                    }
-                }
-            )
-            .sort("_id", 1)
-        ),
+        "users": protected_users,
         "subscriptions": list(
             db["user_subscriptions"]
             .find(
@@ -2016,7 +2037,7 @@ def _assert_persistence(
     account_state_after = _account_state_fingerprint(db, fixtures)
     if account_state_after != account_state_before:
         raise AssertionError(
-            "Storefront browser actions mutated account or subscription documents"
+            "Storefront browser actions mutated protected account or subscription fields"
         )
     return {
         "status": "PASSED",
@@ -2028,6 +2049,88 @@ def _assert_persistence(
         "seeded_counts": seeded_counts,
         "account_state_sha256_before": account_state_before,
         "account_state_sha256_after": account_state_after,
+        "excluded_auth_telemetry_fields": ["last_login"],
+        "authenticated_fixture_count": db["users"].count_documents(
+            {
+                "_id": {
+                    "$in": [
+                        fixtures.signature_id,
+                        fixtures.solo_id,
+                        fixtures.foreign_owner_id,
+                    ]
+                },
+                "last_login": {"$type": "date"},
+            }
+        ),
+    }
+
+
+def _assert_domain_connect_flow_receipts(
+    flows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Prove callback outcomes survived the required one-time flow consumption.
+
+    The authenticated completion POST consumes every Domain Connect flow.  The
+    durable cancellation/authorization evidence therefore lives in
+    ``completion_outcome``; retaining a raw ``cancelled`` callback state would
+    instead mean the one-time completion step never finished.
+    """
+
+    flow_states = {str(row.get("state")) for row in flows}
+    consumed_outcomes = {
+        str(row.get("completion_outcome"))
+        for row in flows
+        if row.get("state") == "consumed" and row.get("completion_outcome")
+    }
+    for required_outcome in ("cancelled", "authorized"):
+        if required_outcome not in consumed_outcomes:
+            raise AssertionError(
+                "No consumed Domain Connect "
+                f"{required_outcome} completion was retained: "
+                f"states={sorted(flow_states)}, "
+                f"outcomes={sorted(consumed_outcomes)}"
+            )
+
+    cancelled_flows = [
+        row
+        for row in flows
+        if row.get("state") == "consumed"
+        and row.get("completion_outcome") == "cancelled"
+    ]
+    if not any(
+        row.get("consumed_at")
+        and row.get("callback_recorded_at")
+        and row.get("provider_callback_error") == "access_denied"
+        and isinstance(row.get("last_error"), Mapping)
+        and row["last_error"].get("code") == "domain_connect_authorization_cancelled"
+        for row in cancelled_flows
+    ):
+        raise AssertionError(
+            "The consumed Domain Connect cancelled completion is missing durable "
+            "callback metadata"
+        )
+
+    authorized_flows = [
+        row
+        for row in flows
+        if row.get("state") == "consumed"
+        and row.get("completion_outcome") == "authorized"
+    ]
+    if not any(
+        row.get("consumed_at")
+        and row.get("callback_recorded_at")
+        and row.get("last_error") is None
+        for row in authorized_flows
+    ):
+        raise AssertionError(
+            "The consumed Domain Connect authorized completion is missing durable "
+            "callback metadata"
+        )
+
+    return {
+        "flow_count": len(flows),
+        "flow_states": sorted(flow_states),
+        "completion_outcomes": sorted(consumed_outcomes),
     }
 
 
@@ -2045,17 +2148,7 @@ def _assert_domain_control_plane(db: Any, fixtures: Fixtures) -> dict[str, Any]:
     flows = list(
         db["storefront_domain_flows"].find({"planner_id": {"$in": planner_ids}})
     )
-    flow_states = {str(row.get("state")) for row in flows}
-    if not (
-        {"cancelled", "authorization_cancelled", "callback_cancelled"} & flow_states
-    ):
-        raise AssertionError(
-            f"No cancelled Domain Connect flow was retained: {flow_states}"
-        )
-    if "consumed" not in flow_states:
-        raise AssertionError(
-            f"No consumed Domain Connect flow was retained: {flow_states}"
-        )
+    flow_receipt = _assert_domain_connect_flow_receipts(flows)
 
     operations = list(
         db["storefront_domain_operations"].find({"planner_id": fixtures.signature_id})
@@ -2152,8 +2245,7 @@ def _assert_domain_control_plane(db: Any, fixtures: Fixtures) -> dict[str, Any]:
 
     return {
         "status": "PASSED",
-        "flow_count": len(flows),
-        "flow_states": sorted(flow_states),
+        **flow_receipt,
         "operation_count": len(operations),
         "operation_kinds": sorted(operation_kinds),
         "provider_delete_operation_ids": sorted(provider_delete_operations),
@@ -2673,19 +2765,19 @@ def main() -> int:
             allow_redirects=False,
         )
         final_provider_receipt = final_control_status.json()
-        latest_probe = final_provider_receipt.get("latest_https_probe")
+        latest_probe = final_provider_receipt.get("latest_explicit_https_probe")
         if (
             final_control_status.status_code != 200
             or final_provider_receipt.get("external_provider_live") is not False
-            or int(final_provider_receipt.get("https_probe_count") or 0) < 1
+            or int(final_provider_receipt.get("explicit_https_probe_count") or 0) < 2
             or not isinstance(latest_probe, dict)
             or latest_probe.get("hostname") != fixtures.custom_domain
             or latest_probe.get("path") != "/.well-known/tsw-storefront-verification"
-            or latest_probe.get("status_code") != 200
-            or latest_probe.get("verified") is not True
+            or latest_probe.get("status_code") != 404
+            or latest_probe.get("verified") is not False
         ):
             raise AssertionError(
-                "The active deterministic domain lacks a signed probe receipt through the HTTPS Next edge"
+                "The disconnected deterministic domain lacks the expected HTTPS route-removal receipt"
             )
         manifest["provider_harness"]["final_status"] = final_provider_receipt
         manifest["playwright_artifacts"] = _retain_playwright_artifact_manifest(

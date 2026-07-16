@@ -56,6 +56,7 @@ from app.services.storefront_domain_service import storefront_domain_service
 from app.services.storefront_domain_https_probe import (
     PROBE_HEADER,
     PROBE_HOST_HEADER,
+    PROBE_INGRESS_HEADER,
     storefront_domain_https_probe_service,
 )
 from app.services.storefront_domain_connect_service import (
@@ -503,6 +504,7 @@ async def verify_storefront_domain_origin(request: Request, response: Response):
     return await storefront_domain_https_probe_service.attest(
         request.headers.get(PROBE_HOST_HEADER, ""),
         request.headers.get(PROBE_HEADER, ""),
+        request.headers.get(PROBE_INGRESS_HEADER, ""),
     )
 
 

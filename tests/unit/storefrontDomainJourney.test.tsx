@@ -398,6 +398,132 @@ describe('storefront production custom-domain journey', () => {
     );
   });
 
+  it('withholds storefront routing during migration prevalidation without treating a certificate CNAME as routing', async () => {
+    assert.ok(DomainPanel);
+    const transport: StorefrontApiTransport = async <T,>() =>
+      domainStatus({
+        intent: 'migration',
+        application_status: 'migration_prevalidation',
+        expected_records: [
+          domainStatus().expected_records[0],
+          {
+            type: 'CNAME',
+            name: '_acme-challenge.events.customer.example',
+            relative_host: '_acme-challenge.events',
+            value: 'certificate-validation.cloudflare.example',
+            ttl: 300,
+            purpose: 'certificate_validation',
+            proxy: 'dns_only',
+          },
+        ],
+      }) as T;
+    const view = render(
+      React.createElement(DomainPanel, {
+        transport,
+        canActivate: true,
+        platformUrl: '/storefront/luxe-events',
+        isPublished: true,
+      }),
+    );
+
+    await waitFor(() =>
+      view.getByText(/storefront routing is withheld during prevalidation/i),
+    );
+    view.getByText(/keep the current website route unchanged/i);
+    const routingCheck = view.getByText('DNS routing').closest('li');
+    assert.ok(routingCheck);
+    assert.match(
+      routingCheck.textContent ?? '',
+      /withheld until ownership and provider prevalidation are complete/i,
+    );
+    assert.match(routingCheck.textContent ?? '', /current website routing remains unchanged/i);
+    assert.doesNotMatch(
+      routingCheck.textContent ?? '',
+      /certificate-validation\.cloudflare\.example/i,
+    );
+  });
+
+  it('selects only the exact storefront routing record when provider validation also uses CNAME', async () => {
+    assert.ok(DomainPanel);
+    const certificateRecord = {
+      type: 'CNAME',
+      name: '_acme-challenge.events.customer.example',
+      relative_host: '_acme-challenge.events',
+      value: 'certificate-validation.cloudflare.example',
+      ttl: 300,
+      purpose: 'certificate_validation',
+      proxy: 'dns_only',
+    };
+    const routingRecord = domainStatus().expected_records[1];
+    const transport: StorefrontApiTransport = async <T,>() =>
+      domainStatus({
+        expected_records: [certificateRecord, domainStatus().expected_records[0], routingRecord],
+      }) as T;
+    const view = render(
+      React.createElement(DomainPanel, {
+        transport,
+        canActivate: true,
+        platformUrl: '/storefront/luxe-events',
+        isPublished: true,
+      }),
+    );
+
+    await waitFor(() => view.getByText(/add these records/i));
+    const routingCheck = view.getByText('DNS routing').closest('li');
+    assert.ok(routingCheck);
+    assert.match(
+      routingCheck.textContent ?? '',
+      /CNAME events\.customer\.example → domains\.thespecialwedding\.com/i,
+    );
+    assert.doesNotMatch(
+      routingCheck.textContent ?? '',
+      /certificate-validation\.cloudflare\.example/i,
+    );
+  });
+
+  it('labels migration cutover readiness while keeping certificate and storefront routing semantics separate', async () => {
+    assert.ok(DomainPanel);
+    const transport: StorefrontApiTransport = async <T,>() =>
+      domainStatus({
+        intent: 'migration',
+        application_status: 'cutover_ready',
+        ownership_status: 'verified',
+        expected_records: [
+          {
+            type: 'CNAME',
+            name: '_acme-challenge.events.customer.example',
+            relative_host: '_acme-challenge.events',
+            value: 'certificate-validation.cloudflare.example',
+            ttl: 300,
+            purpose: 'certificate_validation',
+            proxy: 'dns_only',
+          },
+          ...domainStatus().expected_records,
+        ],
+      }) as T;
+    const view = render(
+      React.createElement(DomainPanel, {
+        transport,
+        canActivate: true,
+        platformUrl: '/storefront/luxe-events',
+        isPublished: true,
+      }),
+    );
+
+    await waitFor(() => view.getByText(/storefront routing is ready for cutover/i));
+    view.getByText(/shown separately from provider certificate records/i);
+    const routingCheck = view.getByText('DNS routing').closest('li');
+    assert.ok(routingCheck);
+    assert.match(
+      routingCheck.textContent ?? '',
+      /CNAME events\.customer\.example → domains\.thespecialwedding\.com/i,
+    );
+    assert.doesNotMatch(
+      routingCheck.textContent ?? '',
+      /certificate-validation\.cloudflare\.example/i,
+    );
+  });
+
   it('uses a fresh private conflict proof without exposing or reassigning the existing owner', async () => {
     assert.ok(DomainPanel);
     const calls: Array<{ path: string; method: string; body?: unknown }> = [];

@@ -302,6 +302,11 @@ def _collect_storefront_configuration_recommendations() -> List[str]:
                 "STOREFRONT_CNAME_TARGET: Custom domains are configured but the "
                 "customer CNAME target is missing."
             )
+        if not getattr(settings, "storefront_probe_ingress_secret", None):
+            recommendations.append(
+                "STOREFRONT_PROBE_INGRESS_SECRET: Custom domains are configured but "
+                "the server-only Next-to-FastAPI verification credential is missing."
+            )
         if mutations_enabled and not custom_domains_enabled:
             recommendations.append(
                 "STOREFRONT_CUSTOM_DOMAINS_ENABLED: Cloudflare hostname mutations "
@@ -550,6 +555,9 @@ def get_storefront_domain_readiness() -> dict[str, object]:
         "CLOUDFLARE_ZONE_ID": settings.cloudflare_zone_id,
         "STOREFRONT_FALLBACK_ORIGIN": settings.storefront_fallback_origin,
         "STOREFRONT_CNAME_TARGET": settings.storefront_cname_target,
+        "STOREFRONT_PROBE_INGRESS_SECRET": getattr(
+            settings, "storefront_probe_ingress_secret", None
+        ),
     }
     missing = [name for name, value in required.items() if not str(value or "").strip()]
     if missing:

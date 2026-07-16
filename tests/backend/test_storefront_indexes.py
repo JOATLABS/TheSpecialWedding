@@ -65,8 +65,14 @@ async def test_storefront_indexes_are_unique_named_and_slug_is_legacy_safe(
     domain_hostname = by_name["idx_storefront_domains_hostname_unique"]
     assert domain_planner[0] == [("planner_id", 1)]
     assert domain_planner[1]["unique"] is True
+    assert domain_planner[1]["partialFilterExpression"] == {
+        "planner_id": {"$type": "string"}
+    }
     assert domain_hostname[0] == [("hostname", 1)]
     assert domain_hostname[1]["unique"] is True
+    assert domain_hostname[1]["partialFilterExpression"] == {
+        "hostname": {"$type": "string"}
+    }
     assert by_name["idx_storefront_domains_lifecycle_retry_lease"][0] == [
         ("application_status", 1),
         ("retry_due_at", 1),
