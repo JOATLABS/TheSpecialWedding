@@ -40,6 +40,33 @@ def _safe_environment() -> dict[str, str]:
     }
 
 
+def _safe_live_media_environment() -> dict[str, str]:
+    account_id = "a" * 32
+    environment = _safe_environment()
+    environment.update(
+        {
+            "STOREFRONT_PROVIDER_HARNESS_MEDIA_MODE": "live",
+            "STOREFRONT_CUSTOM_DOMAINS_ENABLED": "false",
+            "STOREFRONT_DOMAIN_CONNECT_AUTHORIZATION_ENABLED": "false",
+            "STOREFRONT_CLOUDFLARE_MUTATIONS_ENABLED": "false",
+            "STOREFRONT_CLOUDFLARE_CLEANUP_ENABLED": "false",
+            "S3_ACCESS_KEY_ID": "test-r2-access-key",
+            "S3_SECRET_ACCESS_KEY": "test-r2-secret-key",
+            "S3_ENDPOINT_URL": f"https://{account_id}.r2.cloudflarestorage.com",
+            "S3_STOREFRONT_STAGING_BUCKET_NAME": "storefront-test-staging",
+            "S3_BLOG_BUCKET_NAME": "storefront-test-public",
+            "BLOG_MEDIA_DOMAIN": "media.test.invalid",
+            "CLOUDFLARE_ACCOUNT_ID": account_id,
+            "CLOUDFLARE_API_TOKEN": "test-r2-control-token",
+            "TESTBED_STOREFRONT_ALLOWED_CLOUDFLARE_ACCOUNT_IDS": account_id,
+            "TESTBED_STOREFRONT_ALLOWED_STAGING_BUCKETS": "storefront-test-staging",
+            "TESTBED_STOREFRONT_ALLOWED_PUBLIC_BUCKETS": "storefront-test-public",
+            "TESTBED_STOREFRONT_ALLOWED_PUBLIC_MEDIA_DOMAINS": "media.test.invalid",
+        }
+    )
+    return environment
+
+
 def test_provider_harness_safety_requires_explicit_unattended_loopback_contract():
     validator = getattr(
         storefront_safety, "assert_storefront_provider_harness_environment", None
@@ -52,6 +79,30 @@ def test_provider_harness_safety_requires_explicit_unattended_loopback_contract(
     assert safe.customer_zone == "customer.test"
     assert safe.backend_origin == "http://127.0.0.1:8112"
     assert safe.frontend_origin == "https://127.0.0.1:3112"
+    assert safe.browser_origin is None
+
+
+def test_provider_harness_accepts_only_a_loopback_visible_browser_origin():
+    validator = storefront_safety.assert_storefront_provider_harness_environment
+    environment = _safe_environment()
+    environment["STOREFRONT_PROVIDER_HARNESS_BROWSER_ORIGIN"] = (
+        "http://127.0.0.1:3124"
+    )
+
+    safe = validator(environment)
+
+    assert safe.browser_origin == "http://127.0.0.1:3124"
+
+    for unsafe_origin in (
+        "https://example.com",
+        "http://user:password@127.0.0.1:3124",
+        "http://127.0.0.1:3124/path",
+        "http://127.0.0.1:3124?query=1",
+    ):
+        candidate = _safe_environment()
+        candidate["STOREFRONT_PROVIDER_HARNESS_BROWSER_ORIGIN"] = unsafe_origin
+        with pytest.raises(RuntimeError):
+            validator(candidate)
 
 
 def test_provider_harness_safety_rejects_missing_mode_weak_token_and_real_zone():
@@ -75,6 +126,37 @@ def test_provider_harness_safety_rejects_missing_mode_weak_token_and_real_zone()
         except RuntimeError:
             continue
         raise AssertionError("unsafe provider harness environment was accepted")
+
+
+def test_provider_harness_live_media_mode_preserves_only_exact_r2_targets():
+    safe = storefront_safety.assert_storefront_provider_harness_environment(
+        _safe_live_media_environment()
+    )
+
+    assert safe.media_mode == "live"
+    assert safe.media_staging_bucket == "storefront-test-staging"
+    assert safe.media_public_bucket == "storefront-test-public"
+    assert safe.media_public_domain == "media.test.invalid"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("TESTBED_STOREFRONT_ALLOWED_STAGING_BUCKETS", "another-bucket"),
+        ("TESTBED_STOREFRONT_ALLOWED_PUBLIC_BUCKETS", "another-bucket"),
+        ("TESTBED_STOREFRONT_ALLOWED_PUBLIC_MEDIA_DOMAINS", "other.invalid"),
+        ("STOREFRONT_CLOUDFLARE_MUTATIONS_ENABLED", "true"),
+        ("CLOUDFLARE_SAAS_API_TOKEN", "must-never-reach-media-proof"),
+    ],
+)
+def test_provider_harness_live_media_mode_rejects_unfenced_or_domain_mutating_state(
+    field: str, value: str
+):
+    environment = _safe_live_media_environment()
+    environment[field] = value
+
+    with pytest.raises(RuntimeError):
+        storefront_safety.assert_storefront_provider_harness_environment(environment)
 
 
 def test_provider_harness_core_is_a_testbed_only_module():
@@ -405,7 +487,11 @@ async def test_harness_control_is_token_bound_and_real_routes_drive_state_machin
 
             claim = await client.post(
                 "/admin/storefront/custom-domain/claim",
-                json={"domain": HOSTNAME, "intent": "new"},
+                json={
+                    "domain": HOSTNAME,
+                    "intent": "new",
+                    "setup_method": "manual",
+                },
             )
             assert claim.status_code == 201, claim.text
             attempt_id = claim.json()["attempt_id"]
@@ -782,7 +868,11 @@ async def test_automatic_provider_consent_uses_signed_real_callback_and_dns_proo
             )
             claim = await client.post(
                 "/admin/storefront/custom-domain/claim",
-                json={"domain": HOSTNAME, "intent": "new"},
+                json={
+                    "domain": HOSTNAME,
+                    "intent": "new",
+                    "setup_method": "automatic",
+                },
             )
             attempt_id = claim.json()["attempt_id"]
             authorize = await client.post(
@@ -872,7 +962,11 @@ async def test_provider_callback_without_dns_never_marks_the_hostname_connected(
             )
             claim = await client.post(
                 "/admin/storefront/custom-domain/claim",
-                json={"domain": HOSTNAME, "intent": "new"},
+                json={
+                    "domain": HOSTNAME,
+                    "intent": "new",
+                    "setup_method": "automatic",
+                },
             )
             attempt_id = claim.json()["attempt_id"]
             authorize = await client.post(
@@ -1018,7 +1112,11 @@ async def test_stale_provider_consent_cannot_publish_a_rotated_claim():
             )
             first_claim = await client.post(
                 "/admin/storefront/custom-domain/claim",
-                json={"domain": HOSTNAME, "intent": "new"},
+                json={
+                    "domain": HOSTNAME,
+                    "intent": "new",
+                    "setup_method": "automatic",
+                },
             )
             authorization = await client.post(
                 "/admin/storefront/custom-domain/domain-connect/authorize",

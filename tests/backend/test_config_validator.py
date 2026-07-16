@@ -108,6 +108,8 @@ def test_partial_custom_domain_configuration_reports_missing_settings(monkeypatc
         "Cloudflare for SaaS fallback origin is missing.",
         "STOREFRONT_CNAME_TARGET: Custom domains are configured but the customer "
         "CNAME target is missing.",
+        "STOREFRONT_PROBE_INGRESS_SECRET: Custom domains are configured but the "
+        "server-only Next-to-FastAPI verification credential is missing.",
     ]
 
 
@@ -138,6 +140,11 @@ def test_storefront_configuration_uses_settings_loaded_values_not_os_environ(
         "storefronts.example.com",
     )
     monkeypatch.setattr(
+        config_validator.settings,
+        "storefront_probe_ingress_secret",
+        "test-probe-secret-with-at-least-32-bytes",
+    )
+    monkeypatch.setattr(
         config_validator.settings, "s3_storefront_staging_bucket_name", None
     )
 
@@ -157,6 +164,11 @@ def test_storefront_configuration_warns_when_rollout_can_strand_cleanup(monkeypa
         config_validator.settings,
         "storefront_fallback_origin",
         "storefront-origin.example.com",
+    )
+    monkeypatch.setattr(
+        config_validator.settings,
+        "storefront_probe_ingress_secret",
+        "test-probe-secret-with-at-least-32-bytes",
     )
     monkeypatch.setattr(
         config_validator.settings,
@@ -278,6 +290,11 @@ def test_invalid_storefront_cname_is_reported_without_a_provider_call(monkeypatc
         config_validator.settings,
         "storefront_fallback_origin",
         "storefront-origin.example.com",
+    )
+    monkeypatch.setattr(
+        config_validator.settings,
+        "storefront_probe_ingress_secret",
+        "test-probe-secret-with-at-least-32-bytes",
     )
     monkeypatch.setattr(
         config_validator.settings, "s3_storefront_staging_bucket_name", None

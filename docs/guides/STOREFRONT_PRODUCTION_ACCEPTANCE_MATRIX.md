@@ -23,24 +23,29 @@ only when its automated checks and visible-browser evidence both exist.
 
 ## Current evidence snapshot
 
-The current source-bound deterministic receipt is run `f14e71003557` at
-`testbed/.testbed/artifacts/storefront/runs/f14e71003557/run-manifest.json`.
+The current source-bound deterministic receipt is run `6173f737b79e` at
+`testbed/.testbed/artifacts/storefront/runs/6173f737b79e/run-manifest.json`.
 It records `automated_chromium=PASSED`, `persistence=PASSED`,
 `account_and_subscription_immutability=PASSED`,
 `deterministic_provider_control_plane=PASSED`, and `cleanup=PASSED`.
-Playwright ran the ten exact required test/project pairs with zero unexpected or
-flaky results, retained 27 run-bound scenario receipts, and sealed the artifacts
+Playwright ran the eleven exact required test/project pairs with zero unexpected
+or flaky results, retained all 29 required run-bound scenario receipts, and sealed the artifacts
 after the isolated runtime stopped.
 
 The command intentionally exited nonzero with `EvidenceCoverageIncomplete`
 because scenario 4 still lacks a configured object-storage upload/finalize/render
 receipt and scenario 14 lacks an independently authoritative customer zone plus
-scoped Cloudflare for SaaS credentials. Current-source visible in-app playback
-was recorded in run `e19f7bcca1a7` at
-`testbed/.testbed/artifacts/storefront/visible-playback/runs/e19f7bcca1a7/run-manifest.json`;
-its authenticated cleanup and artifact seal passed. It visibly covered
-restricted gating, eligible configuration, saved design state, provider
-detection, manual DNS records, and connection-progress rows. The deterministic receipt proves the application/browser state
+scoped Cloudflare for SaaS credentials. Those two rows are staging-validation
+pending and do not hold the repository implementation open. Current-source
+visible in-app playback was recorded in run `fa9d4ae85206` at
+`testbed/.testbed/artifacts/storefront/visible-playback/runs/fa9d4ae85206/run-manifest.json`;
+its authenticated cleanup and artifact seal passed. The visible review covered
+root plan capability controls, the restricted upgrade gate, eligible provider
+detection, provider-hosted authorization, resumable connection progress,
+light/dark presentation, 320/375 px layouts without horizontal overflow, and a
+clean browser console. The runner intentionally leaves the subjective review
+outcome unrecorded, so this remains supporting evidence rather than a
+self-authored acceptance receipt. The deterministic receipt proves the application/browser state
 machine; it is not live R2, Resend, Cloudflare, Domain Connect onboarding, public
 certificate, or independent DNS-provider evidence.
 
@@ -64,30 +69,30 @@ evidence, rows without complete scenario-specific visible coverage remain
 
 | Area | Required behavior | Automated evidence required | Visible-browser evidence required | Current status | Current receipt or blocker |
 | --- | --- | --- | --- | --- | --- |
-| Access | Backend returns independent storefront/domain capabilities; restricted planners receive upgrade UX without loading settings | Backend entitlement/API tests and frontend transport contract | Restricted and eligible planner flows | `PASSED` | Runs `f14e71003557` and `e19f7bcca1a7` visibly confirmed the restricted upgrade dialog and eligible settings access |
-| Preview | Save-for-preview and Preview use the internal slug without DNS | API/unit tests | Saved draft opens at `/storefront/{slug}?preview=1` | `NOT RUN` | Run `f14e71003557` saved and reopened the internal-slug preview; separate playback pending |
-| Publication | Draft is not public; publish/unpublish changes only storefront visibility | Backend service/API tests | Draft 404, publish visible, unpublish 404 | `NOT RUN` | Run `f14e71003557` passed the complete publication lifecycle; separate playback pending |
-| Public content | Only active non-template packages and published reviews render | Backend service tests with positive and negative fixtures | Storefront package/review inspection | `NOT RUN` | Run `f14e71003557` passed positive and same-owner/foreign negative fixtures; separate playback pending |
+| Access | Backend returns independent storefront/domain capabilities; restricted planners receive upgrade UX without loading settings | Backend entitlement/API tests and frontend transport contract | Restricted and eligible planner flows | `PASSED` | Runs `6173f737b79e` and `fa9d4ae85206` confirmed root-admin capability control, the restricted upgrade dialog, and eligible settings access |
+| Preview | Save-for-preview and Preview use the internal slug without DNS | API/unit tests | Saved draft opens at `/storefront/{slug}?preview=1` | `NOT RUN` | Run `6173f737b79e` saved and reopened the internal-slug preview; separate playback pending |
+| Publication | Draft is not public; publish/unpublish changes only storefront visibility | Backend service/API tests | Draft 404, publish visible, unpublish 404 | `NOT RUN` | Run `6173f737b79e` passed the complete publication lifecycle; separate playback pending |
+| Public content | Only active non-template packages and published reviews render | Backend service tests with positive and negative fixtures | Storefront package/review inspection | `NOT RUN` | Run `6173f737b79e` passed positive and same-owner/foreign negative fixtures; separate playback pending |
 | Media | Presigned upload, validation, finalize, replacement, cancellation, and recovery are owner-scoped | Backend/media and frontend lifecycle tests | Hero/about upload and preview | `BLOCKED` | Browser selection/decoding and slug preview passed; configured R2 upload/finalize/persist/render receipt is absent |
 | Inquiry | Validation, persistence, idempotency/rate limits, notification, and recovery are honest | Backend inquiry tests | Public form success and failure states | `NOT RUN` | Deterministic browser and durable retry receipt passed; live Resend remains externally blocked and playback is pending |
-| Domain preflight | Normalize IDNA, reject platform/apex hosts, discover authoritative DNS provider, inspect conflicts, and report auto/manual capability | DNS/preflight service and API tests | Invalid, apex, detected, and unknown-provider states | `NOT RUN` | Automated evidence passed; visible run `e19f7bcca1a7` covered detected-provider/manual capability only; invalid/apex/unknown-provider visible replay remains open |
+| Domain preflight | Normalize IDNA, reject platform/apex hosts, discover authoritative DNS provider, inspect conflicts, and report auto/manual capability | DNS/preflight service and API tests | Invalid, apex, detected, and unknown-provider states | `NOT RUN` | Automated evidence passed; visible run `fa9d4ae85206` covered detected-provider automatic/manual capability; invalid/apex/unknown-provider visible replay remains open |
 | Domain claim | Every attempt uses a fresh expiring TXT challenge; stale DNS cannot transfer ownership | Claim/state-machine tests | Manual record instructions and conflict state | `NOT RUN` | Fresh private claim and non-transfer receipt passed; separate playback pending |
 | Domain Connect | Signed provider authorization is capability-gated; callback never activates; the one-time completion POST rejects ambient-cookie-only requests and replay; DNS is rechecked | Signing, discovery, Bearer/CSRF boundary, callback, replay, and API tests | Supported, unsupported, cancelled, and resumed flows | `NOT RUN` | Consumed `authorized` and `cancelled` outcomes passed deterministically; real provider authorization remains `BLOCKED` and playback is pending |
 | Cloudflare lifecycle | Create occurs only after claim proof; raw hostname/SSL states remain separate; ambiguous creates reconcile safely | Cloudflare/state-machine/recovery tests | Pending hostname, pending SSL, active, and operator-review states | `NOT RUN` | Deterministic adapter lifecycle passed; live Cloudflare remains `BLOCKED` and playback is pending |
 | Migration | Existing routing is not overwritten before prevalidation/cutover readiness | Migration state tests | Assisted-migration warning and cutover step | `NOT RUN` | Deterministic provider-mutation snapshot passed; external migration and separate playback remain open |
-| Disconnect | Deletion intent, exact provider deletion, receipt/tombstone, retry, and DNS cleanup instructions; slug/publication unchanged | Lifecycle/recovery tests | Confirmation, failure/retry, and cleanup instructions | `NOT RUN` | Run `f14e71003557` passed retry, provider deletion, tombstone, slug/publication continuity, and cleanup; playback pending |
+| Disconnect | Deletion intent, exact provider deletion, receipt/tombstone, retry, and DNS cleanup instructions; slug/publication unchanged | Lifecycle/recovery tests | Confirmation, failure/retry, and cleanup instructions | `NOT RUN` | Run `6173f737b79e` passed retry, provider deletion, tombstone, slug/publication continuity, and cleanup; playback pending |
 | Existing-owner diagnostics | Entitlement loss blocks new activation but preserves owner-scoped status, authoritative DNS observation, and disconnect without provider creation | Entitlement-loss/worker regressions | Existing-domain diagnostics with setup controls hidden | `NOT RUN` | Deterministic lifecycle passed; separate playback pending |
 | Rollout and rollback | Exact owner/hostname allowlists fence claim, provider create/retry, and Domain Connect; rollback stops onboarding while cleanup remains enabled | Policy/config/provider-client tests | Pilot-unavailable state keeps the platform URL usable | `NOT RUN` | Focused checks are supporting evidence only; browser proof pending |
 | Operator resolution | Root-admin-only, revision-fenced, audited decisions resolve assisted cutover, verified conflict denial/cancel, and demonstrably new ambiguous provider IDs without force-transfer | Operator authorization/CAS/replay tests | Customer remains in honest support-required state until resolution | `NOT RUN` | Operator runbook and visible customer state review pending |
 | Operations | Durable deduplicated incidents and bounded backlog/provider metrics cover review, disconnect/certificate failure, provider 429/5xx, and worker backlog | Operational-monitor and worker tests | Support ID shown without raw provider payload | `NOT RUN` | Current-source integrated receipt pending |
-| UI/accessibility | Existing design language, readable light/dark text, single scroll region, responsive tabs, focus/keyboard/status semantics | Frontend unit plus axe/browser assertions | Desktop dark/light, 320/375 px, keyboard flow | `NOT RUN` | Run `f14e71003557` passed light/dark desktop plus 320/375/390 px and keyboard/axe/overflow guards; separate playback pending |
+| UI/accessibility | Existing design language, readable light/dark text, single scroll region, responsive tabs, focus/keyboard/status semantics | Frontend unit plus axe/browser assertions | Desktop dark/light, 320/375 px, keyboard flow | `NOT RUN` | Run `6173f737b79e` passed light/dark desktop plus 320/375/390 px and keyboard/axe/overflow guards; visible run `fa9d4ae85206` confirmed the rebuilt dark 375 px presentation without horizontal overflow or console errors, supplementing the preceding source review of light/dark 320/375 px presentation |
 | Configuration | Runtime, `.env.example`, Compose, testbed, and operator guide agree and fail closed only for the unavailable capability | Settings/deployment contract tests and storefront-specific doctor | Friendly configuration-unavailable state | `NOT RUN` | Browser fail-closed copy passed; final configuration doctor and separate playback remain pending |
 | External provider | Real authorization, DNS, Cloudflare activation, HTTPS request, disconnect, and cleanup against an independently authoritative disposable zone | Live testbed artifact manifest | Visible live-provider playback | `BLOCKED` | No authorized independent zone lifecycle, Cloudflare receipt, or visible playback |
 | Same-zone infrastructure canary | Exact platform-owned fallback, CNAME target, hostname/SSL, HTTPS edge route, and cleanup | Run-bound `storefront_same_zone_canary.py` receipt | Operator inspection only; not a customer flow | `BLOCKED` | Driver implemented; credentials and explicit live authorization are absent |
 
 ## Required browser scenarios
 
-These are the exact browser rows in source-bound run `f14e71003557`. Provider
+These are the exact browser rows in source-bound run `6173f737b79e`. Provider
 adapters prove the application state machine but never change an external note
 from `BLOCKED`. Scenario 4 is deliberately blocked as a whole even though its
 design, real-file selection/decoding, friendly failure, save, and internal-slug
@@ -116,6 +121,7 @@ still absent.
 | 18 | Disconnect failure/retry/provider receipt/customer DNS cleanup | `PASSED` | Deterministic deletion/tombstone receipt passed; live provider deletion is `BLOCKED` |
 | 19 | Platform slug remains reachable throughout setup and disconnect | `PASSED` | Deterministic receipt passed; separate visible playback remains pending |
 | 20 | Same-owner negative package/review fixtures prove filtering | `PASSED` | Not provider-dependent |
+| 21 | Root admin plan capability changes round-trip through API and planner access without changing subscription, slug, or publication | `PASSED` | Not provider-dependent |
 
 ## Entry Points And Lifecycle
 

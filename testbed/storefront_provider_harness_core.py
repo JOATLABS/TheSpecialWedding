@@ -1122,10 +1122,11 @@ def _local_callback_url(
                 ("error_description", "user_cancel_testbed"),
             ]
         )
+    callback_origin = environment.browser_origin or environment.backend_origin
     return urlunsplit(
         (
-            urlsplit(environment.backend_origin).scheme,
-            urlsplit(environment.backend_origin).netloc,
+            urlsplit(callback_origin).scheme,
+            urlsplit(callback_origin).netloc,
             parsed.path,
             urlencode(query),
             "",
@@ -1198,8 +1199,9 @@ def create_storefront_provider_harness(
     )
     instruction_email = DeterministicInstructionEmail(state)
     provider_path_token = secrets.token_urlsafe(32)
+    provider_browser_origin = environment.browser_origin or environment.backend_origin
     provider_base = (
-        f"{environment.backend_origin}{CONTROL_PREFIX}/provider/"
+        f"{provider_browser_origin}{CONTROL_PREFIX}/provider/"
         f"{environment.run_id}/{provider_path_token}"
     )
     discovery = DeterministicDomainConnectDiscovery(state, provider_base)

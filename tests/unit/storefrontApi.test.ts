@@ -169,7 +169,7 @@ describe('storefrontApi', () => {
       { status: 'revoked' },
     ]);
 
-    await api.claimCustomDomain('events.customer.example', 'new', transport);
+    await api.claimCustomDomain('events.customer.example', 'new', 'automatic', transport);
     const verified = await api.verifyCustomDomain(transport, 'attempt_1');
     await api.getCustomDomainStatus(transport);
     await api.observeCustomDomain('attempt_1', transport);
@@ -211,7 +211,11 @@ describe('storefrontApi', () => {
       {
         path: '/admin/storefront/custom-domain/claim',
         method: 'POST',
-        body: { domain: 'events.customer.example', intent: 'new' },
+        body: {
+          domain: 'events.customer.example',
+          intent: 'new',
+          setup_method: 'automatic',
+        },
       },
       {
         path: '/admin/storefront/custom-domain/verify',
@@ -264,6 +268,35 @@ describe('storefrontApi', () => {
         body: undefined,
       },
     ]);
+  });
+
+  it('accepts HTTP provider authorization only on loopback testbed origins', async () => {
+    const api = storefrontApiModule as unknown as Record<string, (...args: any[]) => any>;
+    const loopback = recordingTransport([
+      {
+        authorization_url: 'http://127.0.0.1:3124/provider/authorize',
+        attempt_id: 'attempt_loopback',
+      },
+    ]);
+    const remote = recordingTransport([
+      {
+        authorization_url: 'http://dns.example/provider/authorize',
+        attempt_id: 'attempt_remote',
+      },
+    ]);
+
+    const accepted = await api.startCustomDomainConnect(
+      'attempt_loopback',
+      loopback.transport,
+    );
+    assert.equal(
+      accepted.authorizationUrl,
+      'http://127.0.0.1:3124/provider/authorize',
+    );
+    await assert.rejects(
+      () => api.startCustomDomainConnect('attempt_remote', remote.transport),
+      /unreadable authorization response/i,
+    );
   });
 
   it('normalizes typed and legacy FastAPI errors into customer-safe messages', () => {

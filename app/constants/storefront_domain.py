@@ -12,6 +12,13 @@ from typing import Final
 PROVIDER_CREATE_REQUEST_WINDOW_SECONDS: Final = 120
 STOREFRONT_DOMAIN_INSTRUCTIONS_EMAIL_TYPE: Final = "storefront_domain_instructions"
 
+SETUP_CANCELLED: Final = "setup_cancelled"
+DOMAIN_DISCONNECTED: Final = "domain_disconnected"
+OWNERSHIP_REVIEW_CANCELLED: Final = "ownership_review_cancelled"
+STOREFRONT_DOMAIN_REMOVAL_KINDS: Final[frozenset[str]] = frozenset(
+    {SETUP_CANCELLED, DOMAIN_DISCONNECTED, OWNERSHIP_REVIEW_CANCELLED}
+)
+
 CLAIM_PENDING: Final = "claim_pending"
 AUTHORIZATION_PENDING: Final = "authorization_pending"
 AUTHORIZATION_CANCELLED: Final = "authorization_cancelled"

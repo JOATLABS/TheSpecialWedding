@@ -47,6 +47,27 @@ PROVIDER_DISABLED_ENVIRONMENT_KEYS = (
     "STOREFRONT_FALLBACK_ORIGIN",
 )
 
+# The deterministic domain-provider harness may opt into real object storage
+# without gaining any Cloudflare-for-SaaS, DNS, Domain Connect, or email
+# capability.  Keep this list deliberately narrower than
+# ``PROVIDER_DISABLED_ENVIRONMENT_KEYS``: these values can only upload to the
+# two exact R2 buckets admitted by the live-media safety contract below.
+STOREFRONT_MEDIA_LIVE_ENVIRONMENT_KEYS = frozenset(
+    {
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "BLOG_MEDIA_DOMAIN",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_API_TOKEN",
+        "S3_ACCESS_KEY_ID",
+        "S3_BLOG_BUCKET_NAME",
+        "S3_ENDPOINT_URL",
+        "S3_SECRET_ACCESS_KEY",
+        "S3_STOREFRONT_STAGING_BUCKET_NAME",
+    }
+)
+
 
 @dataclass(frozen=True)
 class SafeStorefrontTarget:
@@ -66,9 +87,111 @@ class SafeStorefrontProviderHarness:
     customer_zone: str
     backend_origin: str
     frontend_origin: str
+    browser_origin: str | None
     frontend_ca_certificate: str | None
     mongo_hosts: tuple[str, ...]
     mongo_db: str
+    media_mode: str = "disabled"
+    media_staging_bucket: str | None = None
+    media_public_bucket: str | None = None
+    media_public_domain: str | None = None
+
+
+def _exact_values(value: str | None) -> set[str]:
+    return {item.strip() for item in (value or "").split(",") if item.strip()}
+
+
+def assert_live_storefront_media_environment(
+    environment: Mapping[str, str],
+) -> dict[str, str]:
+    """Authorize only two exact R2 buckets for a loopback browser run.
+
+    This contract intentionally does not accept the Cloudflare for SaaS token,
+    zone ID, Domain Connect key, CNAME target, or email credentials.  The
+    account API token is retained only because the media service uses it for
+    read-only staging privacy/lifecycle/CORS checks.
+    """
+
+    required = (
+        "S3_ACCESS_KEY_ID",
+        "S3_SECRET_ACCESS_KEY",
+        "S3_ENDPOINT_URL",
+        "S3_STOREFRONT_STAGING_BUCKET_NAME",
+        "S3_BLOG_BUCKET_NAME",
+        "BLOG_MEDIA_DOMAIN",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_API_TOKEN",
+    )
+    values = {name: str(environment.get(name, "")).strip() for name in required}
+    missing = sorted(name for name, value in values.items() if not value)
+    if missing:
+        raise RuntimeError(
+            f"Live storefront media proof is missing required configuration: {missing}"
+        )
+
+    for flag in (
+        "STOREFRONT_CUSTOM_DOMAINS_ENABLED",
+        "STOREFRONT_DOMAIN_CONNECT_AUTHORIZATION_ENABLED",
+        "STOREFRONT_CLOUDFLARE_MUTATIONS_ENABLED",
+        "STOREFRONT_CLOUDFLARE_CLEANUP_ENABLED",
+    ):
+        if str(environment.get(flag, "")).strip().lower() != "false":
+            raise RuntimeError(
+                f"Live media proof requires {flag}=false so customer-domain state cannot mutate"
+            )
+
+    account_id = values["CLOUDFLARE_ACCOUNT_ID"].lower()
+    if re.fullmatch(r"[0-9a-f]{32}", account_id) is None:
+        raise RuntimeError("Live media proof requires an exact Cloudflare account ID")
+    if account_id not in _exact_values(
+        environment.get("TESTBED_STOREFRONT_ALLOWED_CLOUDFLARE_ACCOUNT_IDS")
+    ):
+        raise RuntimeError("Live media Cloudflare account is not in its exact allowlist")
+
+    endpoint = urlparse(values["S3_ENDPOINT_URL"])
+    endpoint_host = (endpoint.hostname or "").lower()
+    expected_endpoint_host = f"{account_id}.r2.cloudflarestorage.com"
+    if (
+        endpoint.scheme != "https"
+        or endpoint_host != expected_endpoint_host
+        or endpoint.username is not None
+        or endpoint.password is not None
+        or endpoint.path not in {"", "/"}
+        or endpoint.params
+        or endpoint.query
+        or endpoint.fragment
+    ):
+        raise RuntimeError(
+            "Live media S3 endpoint must be the credential-free HTTPS R2 endpoint "
+            "for the exact allowlisted account"
+        )
+
+    staging_bucket = values["S3_STOREFRONT_STAGING_BUCKET_NAME"]
+    public_bucket = values["S3_BLOG_BUCKET_NAME"]
+    if staging_bucket == public_bucket:
+        raise RuntimeError("Live media staging and public buckets must be distinct")
+    if staging_bucket not in _exact_values(
+        environment.get("TESTBED_STOREFRONT_ALLOWED_STAGING_BUCKETS")
+    ):
+        raise RuntimeError("Live media staging bucket is not in its exact allowlist")
+    if public_bucket not in _exact_values(
+        environment.get("TESTBED_STOREFRONT_ALLOWED_PUBLIC_BUCKETS")
+    ):
+        raise RuntimeError("Live media public bucket is not in its exact allowlist")
+
+    public_domain = values["BLOG_MEDIA_DOMAIN"].lower().rstrip(".")
+    if public_domain not in parse_exact_hostname_allowlist(
+        environment.get("TESTBED_STOREFRONT_ALLOWED_PUBLIC_MEDIA_DOMAINS")
+    ):
+        raise RuntimeError("Live media public domain is not in its exact allowlist")
+
+    return {
+        "account_id": account_id,
+        "staging_bucket": staging_bucket,
+        "public_bucket": public_bucket,
+        "public_domain": public_domain,
+        "upload_origin": f"https://{endpoint_host}",
+    }
 
 
 def _origin(value: str) -> str:
@@ -195,10 +318,21 @@ def assert_storefront_provider_harness_environment(
             "Storefront provider harness requires TESTBED_NON_INTERACTIVE=1"
         )
 
+    media_mode = str(
+        environment.get("STOREFRONT_PROVIDER_HARNESS_MEDIA_MODE", "disabled")
+    ).strip().lower()
+    if media_mode not in {"disabled", "live"}:
+        raise RuntimeError(
+            "STOREFRONT_PROVIDER_HARNESS_MEDIA_MODE must be disabled or live"
+        )
+    allowed_provider_keys = (
+        STOREFRONT_MEDIA_LIVE_ENVIRONMENT_KEYS if media_mode == "live" else frozenset()
+    )
     configured_provider_values = sorted(
         name
         for name in PROVIDER_DISABLED_ENVIRONMENT_KEYS
-        if str(environment.get(name, "")).strip()
+        if name not in allowed_provider_keys
+        and str(environment.get(name, "")).strip()
     )
     if configured_provider_values:
         raise RuntimeError(
@@ -253,9 +387,42 @@ def assert_storefront_provider_harness_environment(
         mongo_uri=mongo_uri,
         mongo_db=mongo_db,
     )
+    browser_origin_raw = environment.get(
+        "STOREFRONT_PROVIDER_HARNESS_BROWSER_ORIGIN", ""
+    ).strip()
+    browser_origin: str | None = None
+    if browser_origin_raw:
+        parsed_browser = urlparse(browser_origin_raw)
+        browser_host = parsed_browser.hostname or ""
+        try:
+            parsed_browser.port
+        except ValueError as exc:
+            raise RuntimeError(
+                "Visible storefront browser origin has an invalid port"
+            ) from exc
+        if (
+            parsed_browser.scheme not in {"http", "https"}
+            or not _is_loopback(browser_host)
+            or parsed_browser.username is not None
+            or parsed_browser.password is not None
+            or parsed_browser.path not in {"", "/"}
+            or parsed_browser.params
+            or parsed_browser.query
+            or parsed_browser.fragment
+        ):
+            raise RuntimeError(
+                "Visible storefront browser origin must be a credential-free "
+                "loopback HTTP(S) origin without a path, query, or fragment"
+            )
+        browser_origin = _origin(browser_origin_raw)
     frontend_ca_certificate = (
         environment.get("STOREFRONT_PROVIDER_HARNESS_FRONTEND_CA_CERT", "").strip()
         or None
+    )
+    media_fence = (
+        assert_live_storefront_media_environment(environment)
+        if media_mode == "live"
+        else {}
     )
     return SafeStorefrontProviderHarness(
         run_id=run_id,
@@ -263,9 +430,14 @@ def assert_storefront_provider_harness_environment(
         customer_zone=customer_zone,
         backend_origin=target.backend_origin,
         frontend_origin=target.frontend_origin,
+        browser_origin=browser_origin,
         frontend_ca_certificate=frontend_ca_certificate,
         mongo_hosts=target.mongo_hosts,
         mongo_db=target.mongo_db,
+        media_mode=media_mode,
+        media_staging_bucket=media_fence.get("staging_bucket"),
+        media_public_bucket=media_fence.get("public_bucket"),
+        media_public_domain=media_fence.get("public_domain"),
     )
 
 

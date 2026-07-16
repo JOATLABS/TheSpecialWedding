@@ -611,6 +611,12 @@ class StorefrontDomainReconciliationService:
     async def _process_leased(self, record: dict) -> None:
         collection = self._mongo.db["storefront_domains"]
         owner_id = str(record.get("planner_id") or "")
+        if record.get("deletion_status") == "operator_review":
+            # A conflicting provider delete response requires the existing
+            # root-admin review path. Never turn that support hold into an
+            # automatic second DELETE request.
+            await self._release_if_still_leased(record, timedelta(days=1))
+            return
         if record.get("deletion_status") in {
             "provider_delete_pending",
             "retry_pending",
@@ -629,15 +635,32 @@ class StorefrontDomainReconciliationService:
                 DNS_SETUP_PENDING,
                 MIGRATION_PREVALIDATION,
             }:
-                await self._domains.observe_pending_for_owner_id(owner_id)
+                if (
+                    record.get("application_status") == DNS_SETUP_PENDING
+                    and record.get("setup_method") == "automatic"
+                    and record.get("domain_connect_authorized_at") is not None
+                ):
+                    # A provider-approved automatic flow must be able to finish
+                    # without asking a nontechnical planner to perform the
+                    # manual "I've added these records" activation step. The
+                    # domain service re-resolves current plan capabilities and
+                    # independently proves authoritative DNS before it permits
+                    # any Cloudflare mutation.
+                    await self._domains.verify_authorized_automatic_for_owner_id(
+                        owner_id, record.get("claim_attempt_id")
+                    )
+                else:
+                    await self._domains.observe_pending_for_owner_id(owner_id)
                 await self._release_if_still_leased(record, timedelta(seconds=30))
                 return
             if record.get("application_status") == OPERATOR_REVIEW:
-                adopted = await self._reconcile_ambiguous_create(record)
-                if not adopted:
-                    await self._release_if_still_leased(record, timedelta(minutes=5))
-                    return
-                record = adopted
+                # An unknown provider-create outcome is an ownership decision,
+                # not a polling decision.  Only the root-admin operator API may
+                # bind a Cloudflare row, using its revision-fenced review
+                # receipt.  Background reconciliation must never auto-adopt a
+                # candidate even when one row appears demonstrably new.
+                await self._release_if_still_leased(record, timedelta(minutes=5))
+                return
             else:
                 await self._release_if_still_leased(record, timedelta(minutes=5))
                 return
@@ -1101,79 +1124,6 @@ class StorefrontDomainReconciliationService:
                 "Discarded stale storefront-domain reconciliation lease domain_id=%s",
                 str(record.get("_id")),
             )
-
-    async def _reconcile_ambiguous_create(self, record: dict) -> dict | None:
-        operations = self._mongo.db["storefront_domain_operations"]
-        operation = await operations.find_one(
-            {
-                "domain_id": str(record["_id"]),
-                "kind": "provider_create",
-                "state": "operator_review",
-            }
-        )
-        if not operation:
-            return None
-        rows = await self._cloudflare.list_custom_hostnames(record["hostname"])
-        before = set(operation.get("provider_ids_before") or [])
-        candidates = [
-            row
-            for row in rows
-            if isinstance(row.get("id"), str)
-            and row.get("id") not in before
-            and normalize_custom_hostname(row.get("hostname"), platform_domains=())
-            == record["hostname"]
-            and StorefrontDomainService._provider_row_created_within(
-                row,
-                started_at=operation.get("created_at"),
-                observed_at=self._now(),
-            )
-        ]
-        if len(candidates) != 1:
-            return None
-        provider = candidates[0]
-        projection = StorefrontDomainService._provider_projection(provider)
-        now = self._now()
-        adopted = await self._mongo.db["storefront_domains"].update_one(
-            {
-                "_id": record["_id"],
-                "lease_token": record.get("lease_token"),
-                "revision": record.get("revision"),
-                "deletion_status": None,
-            },
-            {
-                "$set": {
-                    "provider_hostname_id": provider["id"],
-                    "provider_ssl_method": "txt",
-                    "provider_ssl_type": "dv",
-                    **projection,
-                    "provider_hostname_status": projection["provider_status"],
-                    "application_status": (
-                        CERTIFICATE_VALIDATION
-                        if projection["provider_status"] == "active"
-                        else HOSTNAME_VALIDATION
-                    ),
-                    "provider_reconciliation_required": False,
-                    "last_error": None,
-                    "updated_at": now,
-                }
-            },
-        )
-        if not getattr(adopted, "matched_count", 0):
-            return None
-        await operations.update_one(
-            {"_id": operation["_id"], "state": "operator_review"},
-            {
-                "$set": {
-                    "state": "completed",
-                    "provider_hostname_id": provider["id"],
-                    "reconciled_at": now,
-                    "updated_at": now,
-                }
-            },
-        )
-        return await self._mongo.db["storefront_domains"].find_one(
-            {"_id": record["_id"]}
-        )
 
 
 system_storefront_https_verifier = SystemStorefrontHttpsVerifier()

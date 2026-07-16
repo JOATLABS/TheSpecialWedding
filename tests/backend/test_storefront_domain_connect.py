@@ -391,6 +391,8 @@ def flow_setup():
             "revision": 4,
             "authoritative_dns": {"zone": ZONE},
             "application_status": "dns_setup_pending",
+            "setup_method": "automatic",
+            "domain_connect_authorized_at": None,
             "ownership_status": "pending",
             "routing_dns_status": "pending",
             "provider_hostname_status": "not_created",
@@ -453,6 +455,61 @@ async def test_automatic_authorization_is_hidden_behind_exact_rollout_gate(flow_
     record = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
     assert record["application_status"] == "dns_setup_pending"
     assert record["revision"] == 4
+
+
+@pytest.mark.asyncio
+async def test_automatic_authorization_requires_an_explicit_automatic_claim(flow_setup):
+    service, mongo, _, discovery, _, _ = flow_setup
+    mongo.raw.storefront_domains.update_one(
+        {"planner_id": OWNER_ID},
+        {"$set": {"setup_method": "manual"}},
+    )
+
+    with pytest.raises(HTTPException) as blocked:
+        await service.start(_owner(), ATTEMPT_ID)
+
+    assert blocked.value.status_code == 409
+    assert blocked.value.detail["code"] == "automatic_setup_not_selected"
+    assert discovery.calls == []
+    assert mongo.raw.storefront_domain_flows.count_documents({}) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("application_status", "deletion_status"),
+    [
+        ("disconnecting", "provider_delete_pending"),
+        ("disconnect_failed", "retry_pending"),
+        ("disconnected", "local_cleanup_pending"),
+    ],
+)
+async def test_automatic_authorization_rejects_every_deletion_intent_stage(
+    flow_setup,
+    application_status,
+    deletion_status,
+):
+    service, mongo, _, discovery, _, _ = flow_setup
+    mongo.raw.storefront_domains.update_one(
+        {"planner_id": OWNER_ID},
+        {
+            "$set": {
+                "application_status": application_status,
+                "deletion_status": deletion_status,
+                "status": "deleting",
+            }
+        },
+    )
+
+    with pytest.raises(HTTPException) as blocked:
+        await service.start(_owner(), ATTEMPT_ID)
+
+    assert blocked.value.status_code == 409
+    assert blocked.value.detail["code"] == "domain_deletion_in_progress"
+    assert discovery.calls == []
+    assert mongo.raw.storefront_domain_flows.count_documents({}) == 0
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["application_status"] == application_status
+    assert stored["deletion_status"] == deletion_status
 
 
 @pytest.mark.asyncio
@@ -546,7 +603,10 @@ async def test_callback_never_proves_dns_and_completion_is_owner_scoped_one_time
     completed = await service.complete(_owner(), ATTEMPT_ID)
     assert completed["application_status"] == "dns_setup_pending"
     assert completed["ownership_status"] == "pending"
+    assert completed["setup_method"] == "automatic"
+    assert completed["domain_connect_authorized"] is True
     stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["domain_connect_authorized_at"].replace(tzinfo=timezone.utc) == now
     assert stored["retry_due_at"].replace(tzinfo=timezone.utc) == now
     assert "planner_id" not in completed
     assert "claim_token_digest" not in completed
@@ -556,6 +616,11 @@ async def test_callback_never_proves_dns_and_completion_is_owner_scoped_one_time
         await service.complete(_owner(), ATTEMPT_ID)
     assert replay.value.status_code == 409
     assert replay.value.detail["code"] == "domain_connect_flow_consumed"
+
+    with pytest.raises(HTTPException) as restart:
+        await service.start(_owner(), ATTEMPT_ID)
+    assert restart.value.status_code == 409
+    assert restart.value.detail["code"] == "domain_connect_already_authorized"
 
 
 @pytest.mark.asyncio

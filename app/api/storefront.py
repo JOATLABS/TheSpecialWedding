@@ -242,7 +242,10 @@ async def claim_storefront_custom_domain(
     _entitlements: StorefrontEntitlements = Depends(require_custom_domain),
 ):
     return await storefront_domain_service.claim(
-        current_user, payload.domain, intent=payload.intent
+        current_user,
+        payload.domain,
+        intent=payload.intent,
+        setup_method=payload.setup_method,
     )
 
 

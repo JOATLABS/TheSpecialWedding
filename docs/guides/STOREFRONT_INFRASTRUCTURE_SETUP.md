@@ -296,10 +296,10 @@ it separately from every other Cloudflare credential.
 | `CLOUDFLARE_API_TOKEN` | R2 safety checks | Dedicated R2 control-plane read token. It verifies managed-domain, custom-domain, CORS, and lifecycle state. It must never silently enable custom hostnames. |
 | `S3_ENDPOINT_URL` | R2 uploads | Official account-scoped R2 S3 endpoint, without bucket path, query, port, or credentials. |
 | `S3_REGION` | R2 uploads | `auto`. |
-| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | R2 uploads | S3-compatible data credentials scoped to the staging and published buckets only. |
-| `S3_STOREFRONT_STAGING_BUCKET_NAME` | Browser upload | Dedicated private temporary bucket; never the public media bucket. |
-| `S3_BLOG_BUCKET_NAME` | Published media | Bucket that receives verified, decoded, metadata-stripped, re-encoded images. |
-| `BLOG_MEDIA_DOMAIN` | Published media | Production CDN/custom domain for sanitized public assets. |
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | R2 uploads | S3-compatible R2 Object Read & Write credentials scoped to the staging and published buckets only. |
+| `S3_STOREFRONT_STAGING_BUCKET_NAME` | Browser upload | `the-special-wedding-storefront-staging`; dedicated private temporary bucket, never the public media bucket. |
+| `S3_BLOG_BUCKET_NAME` | Published media | `knowledgeable-saas-blogs`; receives verified, decoded, metadata-stripped, re-encoded storefront images beneath `storefront/`. |
+| `BLOG_MEDIA_DOMAIN` | Published media | `blogs.thespecialwedding.io`; production custom domain for sanitized public assets. |
 | `STOREFRONT_STAGING_LIFECYCLE_MAX_AGE_DAYS` | Browser upload | `1` by default; no more than `7`. |
 | `STOREFRONT_IMAGE_DECODE_CONCURRENCY` | Browser upload | `1` unless process memory has been measured. |
 
@@ -310,6 +310,37 @@ The SaaS token and R2 control token are deliberately separate:
 - `CLOUDFLARE_API_TOKEN` can read only the R2 controls required by the privacy
   doctor.
 - S3 access keys can perform only required object operations on named buckets.
+
+The current non-secret staging deployment bindings are:
+
+```dotenv
+S3_STOREFRONT_STAGING_BUCKET_NAME=the-special-wedding-storefront-staging
+S3_BLOG_BUCKET_NAME=knowledgeable-saas-blogs
+BLOG_MEDIA_DOMAIN=blogs.thespecialwedding.io
+```
+
+These names describe two different trust levels, not interchangeable aliases.
+The browser uploads untrusted bytes only to the private staging bucket. After
+the backend validates the declared length and MIME type, decodes the image,
+rejects unsafe dimensions or animation, strips metadata through re-encoding,
+and verifies the resulting object, it publishes the sanitized bytes beneath
+`storefront/` in `knowledgeable-saas-blogs`. The planner storefront never
+renders a staging-bucket URL.
+
+This v1 deliberately reuses the existing sanitized public-media bucket. The
+new planner-storefront bucket to provision and validate is
+`the-special-wedding-storefront-staging`. If separate public-bucket billing,
+retention, or blast-radius isolation becomes necessary, introduce a dedicated
+public storefront bucket and media domain as an explicit migration; do not
+silently repoint `S3_BLOG_BUCKET_NAME` or `BLOG_MEDIA_DOMAIN`.
+
+Cloudflare's [R2 S3 setup guide](https://developers.cloudflare.com/r2/get-started/s3/)
+requires an Access Key ID, Secret Access Key, and the account-scoped endpoint.
+Create the data credential using **Object Read & Write** and **Apply to specific
+buckets only**, selecting exactly the two buckets above. Cloudflare documents
+that permission and the one-time secret display in its [R2 authentication
+guide](https://developers.cloudflare.com/r2/api/tokens/). Do not substitute a
+normal Cloudflare bearer token for the S3-compatible access key and secret.
 
 Rotate one credential at a time in staging, verify, deploy the new secret,
 restart application instances, verify again, then revoke the old credential.
@@ -618,19 +649,37 @@ Use a private staging bucket and a separate public sanitized-asset bucket.
 1. Disable the staging bucket's `r2.dev` URL and remove every staging custom
    domain.
 2. Configure exact-origin CORS for `PUT` and `Content-Type`; do not use `*` in
-   production. Cloudflare's [R2 CORS API](https://developers.cloudflare.com/api/resources/r2/subresources/buckets/subresources/cors/)
-   is the provider contract.
+   production. Cloudflare's [R2 CORS guide](https://developers.cloudflare.com/r2/buckets/cors/)
+   requires the request origin, method, and headers to match the bucket policy,
+   and its [R2 CORS API](https://developers.cloudflare.com/api/resources/r2/subresources/buckets/subresources/cors/)
+   defines the response shape consumed by the storefront readiness check.
 3. Add an enabled lifecycle deletion rule for the `storefront/` prefix with age
    no greater than `STOREFRONT_STAGING_LIFECYCLE_MAX_AGE_DAYS`. See [R2 object
    lifecycle rules](https://developers.cloudflare.com/r2/buckets/object-lifecycles/).
-4. Reserve a presigned upload, then let the backend verify, decode, strip
-   metadata, re-encode, and copy only sanitized output to the public bucket.
+4. Reserve a five-minute presigned `PUT` on the account-scoped S3 endpoint,
+   signed for the declared `Content-Type` and byte length. The browser must send
+   the same `Content-Type`; Cloudflare documents that changing a signed header
+   produces `403 SignatureDoesNotMatch`. See [R2 presigned URLs](https://developers.cloudflare.com/r2/api/s3/presigned-urls/).
+   Then let the backend verify, decode, strip metadata, re-encode, and upload
+   only sanitized output to the public bucket.
 5. Serve published output from `BLOG_MEDIA_DOMAIN`, never the staging bucket or
    an `r2.dev` URL. Cloudflare says `r2.dev` is for development and buckets are
    private by default in its [public bucket
    guide](https://developers.cloudflare.com/r2/buckets/public-buckets/).
 
-Example staging CORS policy:
+Generate the S3-compatible access key and secret from the same Cloudflare
+account named by `CLOUDFLARE_ACCOUNT_ID`, with object read/write/delete access
+limited to the two storefront buckets. A valid Cloudflare bearer token or a
+successful bucket-list API call is not an S3 data credential and must not be
+substituted for these values. Before enabling uploads, use a read-only
+`HeadBucket` against both exact bucket names. `403`, `AccessDenied`, or
+`SignatureDoesNotMatch` keeps live media acceptance `BLOCKED`; rotate the data
+credential, restart every API instance, and repeat the full browser lifecycle.
+Never weaken bucket privacy or widen the application credential to make the
+test pass.
+
+Example staging CORS policy for the Cloudflare dashboard or S3-compatible CORS
+configuration:
 
 ```json
 [
@@ -643,6 +692,13 @@ Example staging CORS policy:
   }
 ]
 ```
+
+The Cloudflare REST API represents the same rule with a `rules` array and a
+nested `allowed` object (`origins`, `methods`, and `headers`). Do not paste the
+dashboard/S3 shape directly into the REST endpoint. The application reads the
+official REST response shape and verifies the exact deployed origin before it
+reports browser uploads ready. CORS changes can take up to 30 seconds to
+propagate according to Cloudflare's CORS guide.
 
 ## Operator checks and deployment acceptance
 

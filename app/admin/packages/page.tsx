@@ -83,6 +83,15 @@ function getPackageStatusConfig(status: string) {
 
 export default function PackagesPage() {
   const { token, apiRequest } = useAdmin();
+  const apiRequestRef = useRef(apiRequest);
+  useEffect(() => {
+    apiRequestRef.current = apiRequest;
+  }, [apiRequest]);
+  const storefrontTransport = useCallback(
+    <T,>(path: string, method = 'GET', body?: unknown) =>
+      apiRequestRef.current<T>(path, method, body),
+    [],
+  );
   const [packages, setPackages] = useState<PackageData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
@@ -146,7 +155,7 @@ export default function PackagesPage() {
     }
     let cancelled = false;
     setStorefrontAccessLoading(true);
-    getStorefrontAccess(apiRequest)
+    getStorefrontAccess(storefrontTransport)
       .then((access) => {
         if (!cancelled) {
           setStorefrontAccess(access);
@@ -177,7 +186,7 @@ export default function PackagesPage() {
     return () => {
       cancelled = true;
     };
-  }, [apiRequest, token]);
+  }, [storefrontTransport, token]);
 
   useEffect(() => {
     if (storefrontAccessLoading || !storefrontAccess) return;

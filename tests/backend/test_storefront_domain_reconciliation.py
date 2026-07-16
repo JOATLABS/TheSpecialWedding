@@ -196,6 +196,7 @@ class FakeHttps:
 class FakeDomainLifecycle:
     def __init__(self):
         self.verify_calls: list[str] = []
+        self.verify_automatic_calls: list[tuple[str, str | None]] = []
         self.observe_pending_calls: list[str] = []
         self.disconnect_calls: list[str] = []
 
@@ -205,6 +206,12 @@ class FakeDomainLifecycle:
 
     async def observe_pending_for_owner_id(self, owner_id: str) -> dict:
         self.observe_pending_calls.append(owner_id)
+        return {}
+
+    async def verify_authorized_automatic_for_owner_id(
+        self, owner_id: str, attempt_id: str | None = None
+    ) -> dict:
+        self.verify_automatic_calls.append((owner_id, attempt_id))
         return {}
 
     async def _disconnect_claim_record(self, _collection, _record, owner_id: str):
@@ -229,6 +236,32 @@ async def test_worker_observes_pending_dns_without_calling_activation_verify(
     await worker.sweep_due(batch_size=1)
 
     assert lifecycle.observe_pending_calls == [OWNER_ID]
+    assert lifecycle.verify_calls == []
+    assert cloudflare.read == []
+    assert cloudflare.listed == []
+
+
+@pytest.mark.asyncio
+async def test_worker_advances_only_authorized_automatic_dns_to_activation_verify(
+    setup_worker,
+):
+    worker, mongo, cloudflare, _, _, lifecycle, now = setup_worker
+    domain = _record(
+        now,
+        application_status="dns_setup_pending",
+        setup_method="automatic",
+        domain_connect_authorized_at=now,
+        provider_hostname_id=None,
+        provider_status="not_created",
+        provider_hostname_status="not_created",
+        ssl_status="not_started",
+    )
+    mongo.raw.storefront_domains.insert_one(domain)
+
+    await worker.sweep_due(batch_size=1)
+
+    assert lifecycle.verify_automatic_calls == [(OWNER_ID, "attempt-1")]
+    assert lifecycle.observe_pending_calls == []
     assert lifecycle.verify_calls == []
     assert cloudflare.read == []
     assert cloudflare.listed == []
@@ -928,7 +961,9 @@ async def test_terminal_ssl_statuses_have_actionable_fail_closed_state(
 
 
 @pytest.mark.asyncio
-async def test_worker_reconciles_one_demonstrably_new_ambiguous_create(setup_worker):
+async def test_worker_leaves_demonstrably_new_ambiguous_create_for_operator_decision(
+    setup_worker,
+):
     worker, mongo, cloudflare, _, _, _, now = setup_worker
     domain = _record(
         now,
@@ -956,13 +991,14 @@ async def test_worker_reconciles_one_demonstrably_new_ambiguous_create(setup_wor
     await worker.sweep_due(batch_size=1)
 
     saved = mongo.raw.storefront_domains.find_one({"_id": domain["_id"]})
-    assert saved["provider_hostname_id"] == "cf-hostname-1"
-    assert saved["application_status"] == "active"
+    assert saved["provider_hostname_id"] is None
+    assert saved["application_status"] == "operator_review"
+    assert saved["provider_reconciliation_required"] is True
     receipt = mongo.raw.storefront_domain_operations.find_one(
         {"operation_id": "create-1"}
     )
-    assert receipt["state"] == "completed"
-    assert cloudflare.listed == [HOSTNAME]
+    assert receipt["state"] == "operator_review"
+    assert cloudflare.listed == []
 
 
 @pytest.mark.asyncio
@@ -1002,8 +1038,8 @@ async def test_worker_rejects_provider_row_created_before_ambiguous_attempt(
 
 
 @pytest.mark.asyncio
-async def test_ambiguous_provider_adoption_loses_to_concurrent_disconnect(
-    setup_worker, monkeypatch
+async def test_worker_never_competes_with_operator_ambiguous_create_adoption(
+    setup_worker,
 ):
     worker, mongo, cloudflare, _, _, _, now = setup_worker
     domain = _record(
@@ -1028,38 +1064,17 @@ async def test_ambiguous_provider_adoption_loses_to_concurrent_disconnect(
             "created_at": now,
         }
     )
-    original_list = cloudflare.list_custom_hostnames
-
-    async def disconnect_before_list_returns(hostname: str) -> list[dict]:
-        result = await original_list(hostname)
-        current = mongo.raw.storefront_domains.find_one({"_id": domain["_id"]})
-        mongo.raw.storefront_domains.update_one(
-            {"_id": domain["_id"]},
-            {
-                "$set": {
-                    "revision": current["revision"] + 1,
-                    "application_status": "disconnecting",
-                    "status": "deleting",
-                    "deletion_status": "provider_delete_pending",
-                    "custom_route_enabled": False,
-                }
-            },
-        )
-        return result
-
-    monkeypatch.setattr(
-        cloudflare, "list_custom_hostnames", disconnect_before_list_returns
-    )
-
     await worker.sweep_due(batch_size=1)
 
     saved = mongo.raw.storefront_domains.find_one({"_id": domain["_id"]})
     assert saved["provider_hostname_id"] is None
-    assert saved["application_status"] == "disconnecting"
+    assert saved["application_status"] == "operator_review"
+    assert saved["provider_reconciliation_required"] is True
     receipt = mongo.raw.storefront_domain_operations.find_one(
         {"operation_id": "create-race"}
     )
     assert receipt["state"] == "operator_review"
+    assert cloudflare.listed == []
 
 
 @pytest.mark.asyncio
@@ -1197,6 +1212,33 @@ async def test_worker_leases_cleanup_retry_without_cross_owner_mutation(setup_wo
     saved = mongo.raw.storefront_domains.find_one({"_id": domain["_id"]})
     assert "lease_token" not in saved
     assert "lease_expires_at" not in saved
+
+
+@pytest.mark.asyncio
+async def test_worker_never_retries_provider_delete_identity_operator_review(
+    setup_worker,
+):
+    worker, mongo, cloudflare, _, _, lifecycle, now = setup_worker
+    domain = _record(
+        now,
+        application_status="operator_review",
+        deletion_status="operator_review",
+    )
+    domain["last_error"] = {
+        "code": "provider_delete_identity_mismatch",
+        "support_id": "sfd_delete_identity_review",
+    }
+    mongo.raw.storefront_domains.insert_one(domain)
+
+    await worker.sweep_due(batch_size=1)
+
+    assert lifecycle.disconnect_calls == []
+    assert cloudflare.deleted == []
+    assert cloudflare.read == []
+    saved = mongo.raw.storefront_domains.find_one({"_id": domain["_id"]})
+    assert saved["application_status"] == "operator_review"
+    assert saved["deletion_status"] == "operator_review"
+    assert saved["retry_due_at"].replace(tzinfo=timezone.utc) == now + timedelta(days=1)
 
 
 @pytest.mark.asyncio

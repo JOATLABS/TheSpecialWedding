@@ -9,6 +9,8 @@ const playwrightSpecPath = "testbed/storefront_frontend_lifecycle.spec.ts";
 const buildDriverPath = "testbed/build_storefront_frontend.py";
 const httpsProxyPath = "testbed/storefront_https_proxy.mjs";
 const providerHarnessCorePath = "testbed/storefront_provider_harness_core.py";
+const visiblePlaybackDriverPath = "testbed/serve_storefront_visible_playback.py";
+const visibleBrowserFacadePath = "testbed/storefront_browser_facade.mjs";
 const storefrontRoutePath = "app/storefront/[domain]/page.tsx";
 
 describe("storefront frontend lifecycle testbed contract", () => {
@@ -64,6 +66,7 @@ describe("storefront frontend lifecycle testbed contract", () => {
     assert.match(driver, /20_negative_content_filtering/);
     assert.match(driver, /browser_scenario_blockers/);
     assert.match(driver, /TESTBED_STOREFRONT_EXTERNAL_MODE/);
+    assert.match(driver, /TESTBED_STOREFRONT_MEDIA_MODE/);
     assert.match(driver, /TESTBED_STOREFRONT_INQUIRY_DELIVERY_MODE/);
     assert.match(driver, /CLOUDFLARE_SAAS_API_TOKEN/);
     assert.match(driver, /TESTBED_STOREFRONT_ALLOWED_CLOUDFLARE_ACCOUNT_IDS/);
@@ -97,6 +100,11 @@ describe("storefront frontend lifecycle testbed contract", () => {
     assert.match(httpsProxy, /https\.createServer/);
     assert.match(httpsProxy, /request\.headers/);
     assert.match(httpsProxy, /STOREFRONT_HTTPS_PROXY_UPSTREAM/);
+    assert.match(httpsProxy, /HOP_BY_HOP_HEADERS/);
+    assert.match(httpsProxy, /new http\.Agent\(\{/);
+    assert.match(httpsProxy, /keepAlive: true/);
+    assert.match(httpsProxy, /forwardedHeaders\(upstreamResponse\.headers\)/);
+    assert.doesNotMatch(httpsProxy, /connection:\s*["']close["']/);
 
     assert.match(cleanup, /STOREFRONT_TESTBED_RUN_MANIFEST/);
     assert.match(cleanup, /testbed_run_id/);
@@ -129,6 +137,7 @@ describe("storefront frontend lifecycle testbed contract", () => {
     assert.match(envExample, /TESTBED_STOREFRONT_IMAGE_PATH/);
     assert.match(envExample, /TESTBED_STOREFRONT_CUSTOM_DOMAIN/);
     assert.match(envExample, /TESTBED_STOREFRONT_EXTERNAL_MODE/);
+    assert.match(envExample, /TESTBED_STOREFRONT_MEDIA_MODE/);
     assert.match(envExample, /TESTBED_STOREFRONT_INQUIRY_DELIVERY_MODE/);
     assert.match(envExample, /TESTBED_STOREFRONT_ARTIFACT_DIR/);
     assert.match(envExample, /TESTBED_STOREFRONT_EXTERNAL_MODE=deterministic/);
@@ -169,6 +178,43 @@ describe("storefront frontend lifecycle testbed contract", () => {
       );
     }
     assert.match(gitignore, /^testbed\/\.testbed\/$/m);
+  });
+
+  it("keeps visible playback aligned with the root-admin plan fixture", () => {
+    assert.equal(
+      existsSync(visiblePlaybackDriverPath),
+      true,
+      `${visiblePlaybackDriverPath} must exist`,
+    );
+    assert.equal(
+      existsSync(visibleBrowserFacadePath),
+      true,
+      `${visibleBrowserFacadePath} must exist`,
+    );
+    const visiblePlayback = readFileSync(visiblePlaybackDriverPath, "utf8");
+
+    assert.match(
+      visiblePlayback,
+      /root_admin_email=fixtures\.root_admin_email/,
+    );
+    assert.match(visiblePlayback, /"root_admin"/);
+    assert.match(visiblePlayback, /fixtures\.root_admin_password/);
+    assert.match(visiblePlayback, /\/admin\/saas\?tab=plans/);
+    assert.match(
+      visiblePlayback,
+      /"domain_connect_supported": True/,
+      "visible playback must expose the planner-first automatic provider path",
+    );
+    assert.doesNotMatch(visiblePlayback, /_configure_manual_provider/);
+    assert.match(visiblePlayback, /browser_origin=VISIBLE_BROWSER_URL/);
+    assert.match(visiblePlayback, /"provider_status": "active"/);
+    assert.match(visiblePlayback, /"ssl_status": "active"/);
+    assert.match(visiblePlayback, /"https_ok": True/);
+
+    const visibleFacade = readFileSync(visibleBrowserFacadePath, "utf8");
+    assert.match(visibleFacade, /STOREFRONT_BROWSER_FACADE_BACKEND/);
+    assert.match(visibleFacade, /STOREFRONT_BROWSER_FACADE_FRONTEND/);
+    assert.match(visibleFacade, /location/i);
   });
 
   it("uses run-scoped Playwright evidence instead of self-attested browser files", () => {
@@ -260,6 +306,9 @@ describe("storefront frontend lifecycle testbed contract", () => {
     assert.match(spec, /Custom domain/);
     assert.match(spec, /21_root_admin_plan_capability_round_trip/);
     assert.match(spec, /\/admin\/saas\?tab=plans/);
+    assert.match(spec, /let soloCapabilityNeedsRestore = false/);
+    assert.match(spec, /restoreSoloStorefrontCapability/);
+    assert.match(spec, /finally\s*\{/);
     assert.match(spec, /Save for preview/);
     assert.match(spec, /Publish storefront/);
     assert.match(spec, /Send inquiry/);
@@ -270,7 +319,7 @@ describe("storefront frontend lifecycle testbed contract", () => {
       /drives deterministic provider state through real FastAPI Mongo routes without external-provider claims/,
     );
     assert.match(spec, /x-storefront-testbed-control-token/);
-    assert.match(spec, /Continue to Cloudflare Testbed DNS/);
+    assert.match(spec, /Sign in to Cloudflare Testbed DNS/);
     assert.match(spec, /external_provider_live/);
     for (const scenario of [
       "04_design_media_internal_preview",
@@ -289,14 +338,19 @@ describe("storefront frontend lifecycle testbed contract", () => {
     }
     assert.match(spec, /selected-real-media-bytes/);
     assert.match(spec, /png_signature_hex/);
+    assert.match(spec, /liveR2UploadFinalized/);
+    assert.match(spec, /liveR2PublicImageRendered/);
+    assert.match(driver, /MEDIA_MODE == "live"/);
+    assert.match(driver, /"04_design_media_internal_preview",\s*"PASSED"/);
     assert.match(driver, /as passed would be a false positive/);
-    assert.match(
-      driver,
-      /"04_design_media_internal_preview",\s*"BLOCKED"/,
-    );
     assert.match(spec, /ownership_only:\s*true/);
     assert.match(spec, /domain-lifecycle-immutability-receipt/);
     assert.match(providerHarnessCore, /authorize_without_dns/);
+    assert.match(providerHarnessCore, /Authorize DNS changes/);
+    assert.match(spec, /automatic-primary-happy-path/);
+    assert.match(driver, /automatic-primary-happy-path/);
+    assert.match(spec, /domain_connect_authorized:\s*true/);
+    assert.match(spec, /deterministic-automatic-primary-provider-receipt/);
     assert.match(providerHarnessCore, /include_routing=not payload\.ownership_only/);
     assert.match(providerHarnessCore, /routing-snapshot/);
     assert.doesNotMatch(productionStorefrontApi, /authorize_without_dns/);

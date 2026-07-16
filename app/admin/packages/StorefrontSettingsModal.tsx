@@ -785,6 +785,9 @@ export function StorefrontSettingsDialog({
   const platformPath = draft.slug
     ? `/storefront/${encodeURIComponent(draft.slug)}`
     : '/storefront/your-storefront-slug';
+  const savedPlatformPath = savedSettings?.slug
+    ? `/storefront/${encodeURIComponent(savedSettings.slug)}`
+    : '/storefront/your-storefront-slug';
   const platformPreviewPath = draft.slug ? getStorefrontPreviewUrl(draft.slug) : null;
   const savedStorefrontPreviewPath = savedSettings?.slug
     ? getStorefrontPreviewUrl(savedSettings.slug)
@@ -855,7 +858,7 @@ export function StorefrontSettingsDialog({
           </div>
 
           <div
-            className="mt-4 flex max-w-full gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-700 dark:bg-slate-900"
+            className="mt-4 grid max-w-full grid-cols-3 gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-700 dark:bg-slate-900"
             role="tablist"
             aria-label="Storefront settings sections"
           >
@@ -881,7 +884,7 @@ export function StorefrontSettingsDialog({
                     setShowLivePreview(false);
                   }}
                   onKeyDown={(event) => handleTabKeyDown(event, index)}
-                  className={`min-h-11 shrink-0 rounded-lg px-4 text-base font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-100 ${
+                  className={`min-h-11 min-w-0 rounded-lg px-2 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-100 sm:px-4 sm:text-base ${
                     selected
                       ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-800 dark:text-slate-100'
                       : 'text-slate-600 hover:bg-white/70 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
@@ -1072,8 +1075,8 @@ export function StorefrontSettingsDialog({
                     transport={transport}
                     canActivate={access.custom_domain_enabled}
                     canManageExisting={access.can_manage_existing_domain}
-                    platformUrl={platformPath}
-                    isPublished={draft.is_published}
+                    platformUrl={savedPlatformPath}
+                    isPublished={savedSettings?.is_published === true}
                     attemptId={domainAttemptId}
                     onResumeHandled={onDomainResumeHandled}
                   />
@@ -1110,7 +1113,7 @@ export function StorefrontSettingsDialog({
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
                 Save settings
               </button>
-              <button type="button" onClick={() => void handleSave(true)} disabled={busy || loadState !== 'ready'} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary-800 px-4 text-base font-semibold text-white transition hover:bg-primary-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-700 disabled:hover:bg-slate-200 dark:disabled:bg-slate-800 dark:disabled:text-slate-200 dark:disabled:hover:bg-slate-800">
+              <button type="button" onClick={() => void handleSave(true)} disabled={busy || loadState !== 'ready'} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary-800 px-4 text-base font-semibold text-white transition-shadow hover:bg-primary-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-700 disabled:hover:bg-slate-200 dark:disabled:bg-slate-800 dark:disabled:text-slate-200 dark:disabled:hover:bg-slate-800">
                 <ExternalLink className="h-4 w-4" aria-hidden="true" />
                 Save for preview
               </button>

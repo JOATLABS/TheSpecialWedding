@@ -27,6 +27,11 @@ except ModuleNotFoundError:  # Direct ``python testbed/<runner>.py`` execution.
     import verify_storefront_frontend_lifecycle as lifecycle  # type: ignore[no-redef]
 
 
+VISIBLE_BROWSER_URL = os.getenv(
+    "TESTBED_STOREFRONT_VISIBLE_BROWSER_URL", "http://127.0.0.1:3124"
+).strip().rstrip("/")
+
+
 def _build_manifest(
     run_id: str,
     artifact_dir: Path,
@@ -47,6 +52,7 @@ def _build_manifest(
         "artifact_dir": str(artifact_dir),
         "backend_url": lifecycle.BACKEND_URL,
         "frontend_url": lifecycle.FRONTEND_URL,
+        "visible_browser_url": VISIBLE_BROWSER_URL,
         "database": lifecycle.MONGO_DB,
         "provider_mode": "deterministic",
         "external_provider_live": False,
@@ -82,6 +88,10 @@ def _ready_payload(
         ),
         "external_provider_live": False,
         "manifest": str(manifest_path),
+        "root_admin": {
+            "email": fixtures.root_admin_email,
+            "password": fixtures.root_admin_password,
+        },
         "eligible_planner": {
             "email": fixtures.signature_email,
             "password": fixtures.signature_password,
@@ -95,13 +105,14 @@ def _ready_payload(
             "password": fixtures.foreign_password,
         },
         "urls": {
-            "login": f"{lifecycle.FRONTEND_URL}/admin/login",
-            "packages": f"{lifecycle.FRONTEND_URL}/admin/packages",
+            "login": f"{VISIBLE_BROWSER_URL}/admin/login",
+            "root_pricing": f"{VISIBLE_BROWSER_URL}/admin/saas?tab=plans",
+            "packages": f"{VISIBLE_BROWSER_URL}/admin/packages",
             "domain": (
-                f"{lifecycle.FRONTEND_URL}/admin/packages?storefront=domain"
+                f"{VISIBLE_BROWSER_URL}/admin/packages?storefront=domain"
             ),
             "preview": (
-                f"{lifecycle.FRONTEND_URL}/storefront/{fixtures.slug}?preview=1"
+                f"{VISIBLE_BROWSER_URL}/storefront/{fixtures.slug}?preview=1"
             ),
         },
         "deterministic_hostname": fixtures.custom_domain,
@@ -116,7 +127,7 @@ def _provider_headers(run_id: str, control_token: str) -> dict[str, str]:
     }
 
 
-def _configure_manual_provider(
+def _configure_automatic_provider(
     fixtures: lifecycle.Fixtures, control_token: str
 ) -> dict[str, Any]:
     response = requests.post(
@@ -124,7 +135,7 @@ def _configure_manual_provider(
         headers=_provider_headers(fixtures.run_id, control_token),
         json={
             "hostname": fixtures.custom_domain,
-            "domain_connect_supported": False,
+            "domain_connect_supported": True,
             "provider_configuration_ready": True,
             "provider_mutations_enabled": True,
         },
@@ -133,7 +144,7 @@ def _configure_manual_provider(
     )
     if response.status_code != 200:
         raise RuntimeError(
-            "Deterministic manual-provider setup failed: "
+            "Deterministic automatic-provider setup failed: "
             f"HTTP {response.status_code}"
         )
     receipt = response.json()
@@ -143,7 +154,24 @@ def _configure_manual_provider(
         or receipt.get("provider_mode") != "deterministic_testbed"
     ):
         raise RuntimeError("Deterministic provider identity did not match this run")
-    return receipt
+    advance = requests.post(
+        f"{lifecycle.BACKEND_URL}{lifecycle.PROVIDER_CONTROL_PREFIX}/advance",
+        headers=_provider_headers(fixtures.run_id, control_token),
+        json={
+            "hostname": fixtures.custom_domain,
+            "provider_status": "active",
+            "ssl_status": "active",
+            "https_ok": True,
+        },
+        timeout=lifecycle.REQUEST_TIMEOUT,
+        allow_redirects=False,
+    )
+    if advance.status_code != 200:
+        raise RuntimeError(
+            "Deterministic provider readiness setup failed: "
+            f"HTTP {advance.status_code}"
+        )
+    return {**receipt, "ready_state": advance.json()}
 
 
 def _wait_for_stop(stop_event: Event, runtime: lifecycle.IsolatedStorefrontRuntime) -> None:
@@ -173,7 +201,7 @@ def main() -> int:
     # The parent process is fenced too, so cleanup and diagnostic requests cannot
     # inherit Cloudflare, R2, Resend, or Domain Connect credentials from .env.
     os.environ.update(lifecycle._disabled_provider_child_environment(os.environ))
-    lifecycle._assert_disabled_provider_fence(os.environ)
+    lifecycle._assert_provider_fence(os.environ, media_mode="disabled")
 
     run_id = secrets.token_hex(6)
     control_token = secrets.token_urlsafe(48)
@@ -204,9 +232,11 @@ def main() -> int:
     try:
         runtime = lifecycle.IsolatedStorefrontRuntime(
             run_id=run_id,
+            root_admin_email=fixtures.root_admin_email,
             control_token=control_token,
             artifact_dir=artifact_dir,
             runtime_revision=workspace["runtime_revision"],
+            browser_origin=VISIBLE_BROWSER_URL,
         )
         manifest["isolated_runtime"] = runtime.start()
         os.environ["REQUESTS_CA_BUNDLE"] = str(runtime.certificate_path)
@@ -227,7 +257,7 @@ def main() -> int:
         manifest["backend_runtime"] = lifecycle._attest_backend(
             signature_token, workspace["runtime_revision"]
         )
-        provider_receipt = _configure_manual_provider(fixtures, control_token)
+        provider_receipt = _configure_automatic_provider(fixtures, control_token)
         manifest["provider_harness"] = {
             "run_id": provider_receipt["run_id"],
             "provider_mode": provider_receipt["provider_mode"],
@@ -238,6 +268,7 @@ def main() -> int:
             "provider_mutations_enabled": provider_receipt.get(
                 "provider_mutations_enabled"
             ),
+            "domain_connect_supported": True,
             "control_token_sha256": hashlib.sha256(
                 control_token.encode()
             ).hexdigest(),
