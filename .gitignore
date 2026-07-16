@@ -93,6 +93,9 @@ output/
 test-results/
 playwright-report/
 
+# Local storefront/testbed receipts, screenshots, DOM snapshots, and logs.
+testbed/.testbed/
+
 # Generated demo-video evidence and renders stay ignored until a named human
 # playback approval exists. The current repo-static publication handoff is
 # documented in docs/marketing/demo-video-production-runbook.md; force-track

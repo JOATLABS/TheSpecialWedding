@@ -44,7 +44,8 @@ function getFocusableElements(container: HTMLElement): HTMLElement[] {
     // browser won't focus them anyway, and including them would let
     // Tab "land" on something invisible inside the trap.
     if (el.hasAttribute('disabled')) return false;
-    if (el.getAttribute('aria-hidden') === 'true') return false;
+    if (el.tabIndex < 0) return false;
+    if (el.closest('[hidden], [aria-hidden="true"]')) return false;
     const rect = el.getBoundingClientRect();
     if (rect.width === 0 && rect.height === 0) return false;
     return true;

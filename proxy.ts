@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { isNonWeddingSlug } from '@/utils/slug-constants';
+import { STOREFRONT_DOMAIN_PROBE_PATH } from '@/utils/storefrontDomainVerification';
 import { resolveCustomStorefrontHost } from '@/utils/storefrontHost';
 
 export function proxy(request: NextRequest) {
@@ -8,7 +9,8 @@ export function proxy(request: NextRequest) {
 
   // ---------- Request authority / active custom storefront host ----------
   // This is routing only. The public storefront API remains authoritative and
-  // returns 404 unless this exact hostname is active, published, and entitled.
+  // returns 404 unless this exact hostname is active and published. Entitlement
+  // loss blocks new setup but must not silently disable an existing mapping.
   // Host is the request authority boundary. A client-controlled forwarded host
   // must never override it and select another tenant's storefront. Authority is
   // resolved before auth redirects so custom or malformed hosts cannot expose
@@ -27,6 +29,12 @@ export function proxy(request: NextRequest) {
     const rewriteUrl = request.nextUrl.clone();
     rewriteUrl.pathname = `/storefront/${encodeURIComponent(storefrontAuthority.hostname)}`;
     return NextResponse.rewrite(rewriteUrl);
+  }
+  if (
+    storefrontAuthority.kind === 'custom' &&
+    pathname === STOREFRONT_DOMAIN_PROBE_PATH
+  ) {
+    return NextResponse.next();
   }
   if (storefrontAuthority.kind !== 'platform') {
     return new NextResponse('Not Found', { status: 404 });

@@ -115,7 +115,7 @@ export function StorefrontView({
                 className="h-full w-full object-cover"
               />
             ) : (
-              <div className="flex h-full items-center justify-center px-8 text-center text-sm text-slate-400">
+              <div className="flex h-full items-center justify-center px-8 text-center text-sm text-slate-600">
                 Add an about image to introduce the planner.
               </div>
             )}
@@ -195,7 +195,11 @@ export function StorefrontView({
                 const rating = Math.max(0, Math.min(5, Math.round(review.rating ?? 0)));
                 return (
                   <article key={review._id} className="rounded-2xl bg-slate-50 p-7">
-                    <div className="flex gap-1" aria-label={`${rating} out of 5 stars`}>
+                    <div
+                      className="flex gap-1"
+                      role="img"
+                      aria-label={`${rating} out of 5 stars`}
+                    >
                       {Array.from({ length: 5 }, (_, index) => (
                         <Star
                           key={index}

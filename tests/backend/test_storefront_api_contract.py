@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 from fastapi import FastAPI, HTTPException
 import httpx
@@ -48,16 +48,30 @@ def test_admin_and_public_route_families_are_explicit_and_non_overlapping():
 
     assert admin_routes == {
         "/storefront/access": {"GET"},
+        "/storefront/provider-readiness": {"GET"},
         "/storefront/settings": {"GET", "POST"},
         "/storefront/preview-data": {"GET"},
         "/storefront/preview/{slug}": {"GET"},
         "/storefront/custom-domain": {"POST", "DELETE"},
+        "/storefront/custom-domain/preflight": {"POST"},
+        "/storefront/custom-domain/claim": {"POST"},
+        "/storefront/custom-domain/verify": {"POST"},
+        "/storefront/custom-domain/domain-connect/authorize": {"POST"},
+        "/storefront/custom-domain/domain-connect/start": {"POST"},
+        "/storefront/custom-domain/domain-connect/callback": {"GET"},
+        "/storefront/custom-domain/domain-connect/complete": {"POST"},
+        "/storefront/custom-domain/retry": {"POST"},
+        "/storefront/custom-domain/observe": {"POST"},
+        "/storefront/custom-domain/instructions": {"GET", "POST"},
+        "/storefront/custom-domain/instructions/{link_id}": {"DELETE"},
         "/storefront/custom-domain/status": {"GET"},
         "/storefront/upload-url": {"GET"},
         "/storefront/upload-complete": {"POST"},
         "/storefront/upload": {"DELETE"},
     }
     assert public_routes == {
+        "/storefront/domain-instructions/{token}": {"GET"},
+        "/storefront/domain-verification-probe": {"GET"},
         "/storefront/{identifier}": {"GET"},
         "/storefront/{identifier}/inquiries": {"POST"},
     }
@@ -94,15 +108,42 @@ def test_main_mounts_exact_full_route_prefixes():
 
     route_methods = _app_route_methods(app)
     assert route_methods["/admin/storefront/access"] == {"GET"}
+    assert route_methods["/admin/storefront/provider-readiness"] == {"GET"}
     assert route_methods["/admin/storefront/settings"] == {"GET", "POST"}
     assert route_methods["/admin/storefront/preview-data"] == {"GET"}
     assert route_methods["/admin/storefront/preview/{slug}"] == {"GET"}
     assert route_methods["/admin/storefront/custom-domain"] == {"POST", "DELETE"}
+    assert route_methods["/admin/storefront/custom-domain/preflight"] == {"POST"}
+    assert route_methods["/admin/storefront/custom-domain/claim"] == {"POST"}
+    assert route_methods["/admin/storefront/custom-domain/verify"] == {"POST"}
+    assert route_methods[
+        "/admin/storefront/custom-domain/domain-connect/authorize"
+    ] == {"POST"}
+    assert route_methods["/admin/storefront/custom-domain/domain-connect/start"] == {
+        "POST"
+    }
+    assert route_methods["/admin/storefront/custom-domain/domain-connect/callback"] == {
+        "GET"
+    }
+    assert route_methods["/admin/storefront/custom-domain/domain-connect/complete"] == {
+        "POST"
+    }
+    assert route_methods["/admin/storefront/custom-domain/retry"] == {"POST"}
+    assert route_methods["/admin/storefront/custom-domain/observe"] == {"POST"}
+    assert route_methods["/admin/storefront/custom-domain/instructions"] == {
+        "GET",
+        "POST",
+    }
+    assert route_methods["/admin/storefront/custom-domain/instructions/{link_id}"] == {
+        "DELETE"
+    }
     assert route_methods["/admin/storefront/custom-domain/status"] == {"GET"}
     assert route_methods["/admin/storefront/upload-url"] == {"GET"}
     assert route_methods["/admin/storefront/upload-complete"] == {"POST"}
     assert route_methods["/admin/storefront/upload"] == {"DELETE"}
     assert route_methods["/api/storefront/{identifier}"] == {"GET"}
+    assert route_methods["/api/storefront/domain-instructions/{token}"] == {"GET"}
+    assert route_methods["/api/storefront/domain-verification-probe"] == {"GET"}
     assert route_methods["/api/storefront/{identifier}/inquiries"] == {"POST"}
     assert "/api/storefront/preview/{slug}" not in route_methods
 
@@ -144,6 +185,134 @@ def _owner(role: str = "wedding_planner") -> ExtendedAuthUser:
         role=role,
         user_data={"_id": "507f1f77bcf86cd799439011", "role": role},
     )
+
+
+@pytest.mark.asyncio
+async def test_provider_readiness_attests_booleans_without_exposing_configuration(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        storefront_api,
+        "storefront_media_service",
+        SimpleNamespace(provider_operational_readiness=AsyncMock(return_value=False)),
+    )
+    monkeypatch.setattr(
+        storefront_api,
+        "storefront_domain_service",
+        SimpleNamespace(provider_configuration_present=True),
+    )
+    app = _test_app()
+    app.dependency_overrides[storefront_api.require_storefront_owner] = lambda: _owner()
+    app.dependency_overrides[storefront_api.require_planner_storefront] = lambda: (
+        StorefrontEntitlements(
+            owner_id="507f1f77bcf86cd799439011",
+            plan_id="plan_signature",
+            storefront_enabled=True,
+            custom_domain_enabled=True,
+        )
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.get("/admin/storefront/provider-readiness")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "image_uploads_configured": False,
+        "custom_domains_configured": True,
+        "runtime_revision": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_provider_readiness_hides_custom_domain_configuration_from_ineligible_plan(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        storefront_api,
+        "storefront_media_service",
+        SimpleNamespace(provider_operational_readiness=AsyncMock(return_value=True)),
+    )
+    monkeypatch.setattr(
+        storefront_api,
+        "storefront_domain_service",
+        SimpleNamespace(provider_configuration_present=True),
+    )
+    monkeypatch.setattr(storefront_api.settings, "storefront_runtime_revision", None)
+    app = _test_app()
+    app.dependency_overrides[storefront_api.require_storefront_owner] = lambda: _owner()
+    app.dependency_overrides[storefront_api.require_planner_storefront] = lambda: (
+        StorefrontEntitlements(
+            owner_id="507f1f77bcf86cd799439011",
+            plan_id="plan_boutique",
+            storefront_enabled=True,
+            custom_domain_enabled=False,
+        )
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.get("/admin/storefront/provider-readiness")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "image_uploads_configured": True,
+        "custom_domains_configured": False,
+        "runtime_revision": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_provider_readiness_requires_an_authenticated_storefront_owner():
+    app = _test_app()
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.get("/admin/storefront/provider-readiness")
+
+    assert response.status_code in {401, 403}
+
+
+@pytest.mark.asyncio
+async def test_owner_can_read_settings_for_existing_domain_management_without_feature_gate(
+    monkeypatch,
+):
+    settings = {
+        "slug": "retained-storefront",
+        "title": "Retained storefront",
+        "description": None,
+        "contact_email": None,
+        "contact_phone": None,
+        "hero_asset_id": None,
+        "about_asset_id": None,
+        "theme_color": "#0f172a",
+        "packages_enabled": True,
+        "reviews_enabled": True,
+        "is_published": True,
+        "published_at": None,
+        "created_at": None,
+        "updated_at": None,
+        "revision": 3,
+        "slug_editable": False,
+        "slug_persisted": True,
+    }
+    fake_service = SimpleNamespace(get_settings=AsyncMock(return_value=settings))
+    monkeypatch.setattr(storefront_api, "storefront_service", fake_service)
+    app = _test_app()
+    owner = _owner()
+    app.dependency_overrides[get_current_user_extended] = lambda: owner
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.get("/admin/storefront/settings")
+
+    assert response.status_code == 200
+    assert response.json()["settings"]["slug"] == "retained-storefront"
+    fake_service.get_settings.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -268,7 +437,7 @@ async def test_public_inquiry_route_uses_server_request_metadata_and_forbids_own
             return_value={
                 "success": True,
                 "inquiry_id": "inquiry-1",
-                "message": "Thanks — your inquiry was sent to the wedding planner.",
+                "message": "Thanks — your inquiry was received by the wedding planner.",
             }
         )
     )
@@ -323,7 +492,7 @@ async def test_public_inquiry_route_accepts_legacy_payload_without_idempotency_k
             return_value={
                 "success": True,
                 "inquiry_id": "legacy-inquiry-1",
-                "message": "Thanks — your inquiry was sent to the wedding planner.",
+                "message": "Thanks — your inquiry was received by the wedding planner.",
             }
         )
     )
@@ -402,6 +571,331 @@ async def test_domain_routes_use_separate_capability_and_never_accept_team_membe
         )
     assert allowed.status_code == 201
     fake_domains.connect.assert_awaited_once_with(owner, "events.example.com")
+
+
+@pytest.mark.asyncio
+async def test_domain_status_and_disconnect_remain_owner_accessible_without_capability(
+    monkeypatch,
+):
+    fake_domains = SimpleNamespace(
+        get_status=AsyncMock(return_value=None),
+        observe=AsyncMock(return_value=None),
+        disconnect=AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(storefront_api, "storefront_domain_service", fake_domains)
+    owner = _owner()
+    app = _test_app()
+    app.dependency_overrides[storefront_api.require_storefront_owner] = lambda: owner
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        status_response = await client.get("/admin/storefront/custom-domain/status")
+        attempt_status_response = await client.get(
+            "/admin/storefront/custom-domain/status",
+            params={"attempt_id": "attempt-1"},
+        )
+        observe_response = await client.post(
+            "/admin/storefront/custom-domain/observe",
+            json={"attempt_id": "attempt-1"},
+        )
+        default_delete_response = await client.delete("/admin/storefront/custom-domain")
+        delete_response = await client.delete(
+            "/admin/storefront/custom-domain",
+            params={"attempt_id": "attempt-1"},
+        )
+
+    assert status_response.status_code == 200
+    assert status_response.json() is None
+    assert attempt_status_response.status_code == 200
+    assert attempt_status_response.json() is None
+    assert observe_response.status_code == 200
+    assert observe_response.json() is None
+    assert default_delete_response.status_code == 200
+    assert default_delete_response.json() == {
+        "application_status": "disconnected",
+        "attempt_id": None,
+    }
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {
+        "application_status": "disconnected",
+        "attempt_id": "attempt-1",
+    }
+    fake_domains.get_status.assert_has_awaits(
+        [call(owner), call(owner, attempt_id="attempt-1")]
+    )
+    fake_domains.observe.assert_awaited_once_with(owner, "attempt-1")
+    fake_domains.disconnect.assert_has_awaits(
+        [call(owner), call(owner, attempt_id="attempt-1")]
+    )
+
+
+@pytest.mark.asyncio
+async def test_callback_shaped_verify_input_cannot_bypass_typed_dns_verification(
+    monkeypatch,
+):
+    fake_domains = SimpleNamespace(verify=AsyncMock())
+    monkeypatch.setattr(storefront_api, "storefront_domain_service", fake_domains)
+    owner = _owner()
+    app = _test_app()
+    app.dependency_overrides[storefront_api.require_storefront_owner] = lambda: owner
+    app.dependency_overrides[storefront_api.require_custom_domain] = lambda: (
+        StorefrontEntitlements(
+            owner_id=owner.user_data["_id"],
+            plan_id="plan_signature",
+            storefront_enabled=True,
+            custom_domain_enabled=True,
+        )
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.post(
+            "/admin/storefront/custom-domain/verify",
+            json={"callback": {"success": True, "provider": "forged"}},
+        )
+
+    assert response.status_code == 422
+    fake_domains.verify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_empty_verify_body_and_domain_connect_routes_match_frontend_contract(
+    monkeypatch,
+):
+    domain_response = {
+        "hostname": "events.example.com",
+        "status": "pending",
+        "provider_status": "pending",
+        "ssl_status": "pending_validation",
+        "application_status": "dns_setup_pending",
+        "ownership_status": "pending",
+        "provider_hostname_status": "pending",
+        "routing_dns_status": "pending",
+        "https_status": "pending",
+        "action": "action_required",
+        "provider_hostname_id": None,
+        "attempt_id": "attempt-1",
+        "revision": 1,
+        "claim_expires_at": None,
+        "expected_records": [],
+        "ownership_verification": None,
+        "ownership_verification_http": None,
+        "ssl_validation_records": [],
+        "cname_target": "domains.thespecialwedding.com",
+        "deletion_status": None,
+        "last_error": None,
+    }
+    fake_domains = SimpleNamespace(
+        verify=AsyncMock(return_value=domain_response),
+        observe=AsyncMock(return_value=domain_response),
+        retry_provider=AsyncMock(return_value=domain_response),
+        send_instructions=AsyncMock(
+            return_value={
+                "status": "sent",
+                "link_id": "link-1",
+                "state": "active",
+                "created_at": "2026-07-15T18:00:00Z",
+                "expires_at": "2026-07-22T18:00:00Z",
+                "recipient_hint": "d***@e***.com",
+            }
+        ),
+        list_instruction_links=AsyncMock(
+            return_value={
+                "links": [
+                    {
+                        "link_id": "link-1",
+                        "state": "active",
+                        "created_at": "2026-07-15T18:00:00Z",
+                        "expires_at": "2026-07-22T18:00:00Z",
+                        "recipient_hint": "d***@e***.com",
+                    }
+                ]
+            }
+        ),
+        revoke_instruction_link=AsyncMock(return_value={"status": "revoked"}),
+        read_instruction_link=AsyncMock(
+            return_value={
+                "hostname": "events.example.com",
+                "records": [],
+                "note": None,
+                "expires_at": "2026-07-22T18:00:00Z",
+            }
+        ),
+    )
+    fake_connect = SimpleNamespace(
+        start=AsyncMock(
+            return_value={
+                "authorization_url": "https://dash.cloudflare.com/domain-connect",
+                "attempt_id": "attempt-1",
+            }
+        ),
+        record_callback=AsyncMock(
+            return_value={"attempt_id": "attempt-1", "state": "authorized"}
+        ),
+        complete=AsyncMock(return_value=domain_response),
+    )
+    monkeypatch.setattr(storefront_api, "storefront_domain_service", fake_domains)
+    monkeypatch.setattr(
+        storefront_api, "storefront_domain_connect_service", fake_connect
+    )
+    monkeypatch.setattr(
+        storefront_api.settings,
+        "frontend_url",
+        "https://thespecialwedding.com",
+    )
+    owner = _owner()
+    app = _test_app()
+    app.dependency_overrides[storefront_api.require_storefront_owner] = lambda: owner
+    app.dependency_overrides[storefront_api.require_custom_domain] = lambda: (
+        StorefrontEntitlements(
+            owner_id=owner.user_data["_id"],
+            plan_id="plan_signature",
+            storefront_enabled=True,
+            custom_domain_enabled=True,
+        )
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        verified = await client.post("/admin/storefront/custom-domain/verify")
+        verified_attempt = await client.post(
+            "/admin/storefront/custom-domain/verify",
+            json={"attempt_id": "attempt-1"},
+        )
+        authorized = await client.post(
+            "/admin/storefront/custom-domain/domain-connect/authorize",
+            json={"attempt_id": "attempt-1"},
+        )
+        started = await client.post(
+            "/admin/storefront/custom-domain/domain-connect/start",
+            json={"attempt_id": "attempt-1"},
+        )
+        callback = await client.get(
+            "/admin/storefront/custom-domain/domain-connect/callback",
+            params={"flow": "x" * 43},
+            follow_redirects=False,
+        )
+        completed = await client.post(
+            "/admin/storefront/custom-domain/domain-connect/complete",
+            json={"attempt_id": "attempt-1"},
+            headers={"Authorization": "Bearer route-test-token"},
+        )
+        retried = await client.post(
+            "/admin/storefront/custom-domain/retry",
+            json={"attempt_id": "attempt-1"},
+        )
+        observed = await client.post(
+            "/admin/storefront/custom-domain/observe",
+            json={"attempt_id": "attempt-1"},
+        )
+        instructions = await client.post(
+            "/admin/storefront/custom-domain/instructions",
+            json={
+                "attempt_id": "attempt-1",
+                "email": "dns@example.com",
+                "note": "Please update these records.",
+            },
+        )
+        listed_instructions = await client.get(
+            "/admin/storefront/custom-domain/instructions",
+            params={"attempt_id": "attempt-1"},
+        )
+        revoked = await client.delete(
+            "/admin/storefront/custom-domain/instructions/link-1"
+        )
+        public_instructions = await client.get(
+            "/api/storefront/domain-instructions/" + "t" * 43
+        )
+
+    assert verified.status_code == 200
+    assert verified_attempt.status_code == 200
+    assert authorized.status_code == 200
+    assert started.status_code == 200
+    assert callback.status_code == 303
+    assert callback.headers["location"] == (
+        "https://thespecialwedding.com/admin/packages?storefront=domain&attempt=attempt-1"
+    )
+    assert completed.status_code == 200
+    assert retried.status_code == 200
+    assert observed.status_code == 200
+    assert instructions.json()["status"] == "sent"
+    assert instructions.json()["link_id"] == "link-1"
+    assert listed_instructions.status_code == 200
+    assert listed_instructions.json()["links"][0]["recipient_hint"] == ("d***@e***.com")
+    assert revoked.json() == {"status": "revoked"}
+    assert public_instructions.status_code == 200
+    assert public_instructions.headers["cache-control"] == "no-store, max-age=0"
+    assert public_instructions.json()["hostname"] == "events.example.com"
+    fake_domains.verify.assert_has_awaits(
+        [call(owner), call(owner, attempt_id="attempt-1")]
+    )
+    fake_domains.list_instruction_links.assert_awaited_once_with(owner, "attempt-1")
+    fake_connect.start.assert_has_awaits(
+        [
+            call(owner, "attempt-1"),
+            call(owner, "attempt-1"),
+        ]
+    )
+    fake_connect.complete.assert_awaited_once_with(owner, "attempt-1")
+
+
+@pytest.mark.asyncio
+async def test_domain_connect_completion_rejects_ambient_cookie_without_bearer(
+    monkeypatch,
+):
+    fake_connect = SimpleNamespace(complete=AsyncMock())
+    monkeypatch.setattr(
+        storefront_api, "storefront_domain_connect_service", fake_connect
+    )
+    owner = _owner()
+    app = _test_app()
+    app.dependency_overrides[storefront_api.require_storefront_owner] = lambda: owner
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+        cookies={"admin_token": "ambient-cookie-session"},
+    ) as client:
+        response = await client.post(
+            "/admin/storefront/custom-domain/domain-connect/complete",
+            json={"attempt_id": "attempt-1"},
+        )
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.json()["detail"]["code"] == "bearer_auth_required"
+    fake_connect.complete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_domain_connect_callback_fails_closed_for_unsafe_frontend_origin(
+    monkeypatch,
+):
+    fake_connect = SimpleNamespace(
+        record_callback=AsyncMock(
+            return_value={"attempt_id": "attempt-1", "state": "authorized"}
+        )
+    )
+    monkeypatch.setattr(
+        storefront_api, "storefront_domain_connect_service", fake_connect
+    )
+    monkeypatch.setattr(storefront_api.settings, "frontend_url", "http://example.com")
+    app = _test_app()
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.get(
+            "/admin/storefront/custom-domain/domain-connect/callback",
+            params={"flow": "x" * 43},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 503
+    assert "location" not in response.headers
 
 
 @pytest.mark.asyncio

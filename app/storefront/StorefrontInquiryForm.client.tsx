@@ -17,7 +17,30 @@ type SubmissionState =
 type InquiryPayloadWithoutKey = Omit<StorefrontInquiryPayload, 'idempotency_key'>;
 
 const UNSENT_EDITS_FEEDBACK =
-  'Your previous inquiry was sent. Your latest edits were not sent.';
+  'Your previous inquiry was received. Your latest edits were not received.';
+const GENERIC_INQUIRY_ERROR =
+  'Your inquiry could not be sent. Please try again.';
+
+const INQUIRY_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  inquiry_confirmation_unavailable:
+    'Your inquiry could not be confirmed. Try again to confirm the same request.',
+  inquiry_key_conflict:
+    'This inquiry changed after the first attempt. Review it and submit again.',
+  inquiry_persistence_unavailable:
+    'Your inquiry could not be saved. Please try again.',
+  inquiry_protection_unavailable:
+    'Inquiry protection is temporarily unavailable. Please wait one minute and try again.',
+  storefront_not_found: 'This storefront is not currently available.',
+  invalid_request: 'Check the inquiry fields and try again.',
+};
+
+const SAFE_LEGACY_INQUIRY_MESSAGES = new Set([
+  'Inquiry confirmation is temporarily unavailable',
+  'Inquiry could not be saved. Please try again.',
+  'Inquiry confirmation was interrupted. Try again to confirm the same request.',
+  'This inquiry key was already used with different details',
+  'Storefront not found',
+]);
 
 interface InquiryAttempt {
   idempotencyKey: string;
@@ -74,12 +97,32 @@ async function readJsonBody(response: Response): Promise<unknown> {
 
 function readErrorMessage(body: unknown): string | null {
   if (!body || typeof body !== 'object') return null;
-  const errorBody = body as { detail?: unknown; message?: unknown };
-  if (typeof errorBody.detail === 'string' && errorBody.detail.trim()) {
-    return errorBody.detail;
+  const errorBody = body as {
+    error?: unknown;
+    detail?: unknown;
+    message?: unknown;
+  };
+  const candidates = [errorBody.error, errorBody.detail];
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const nested = candidate as { code?: unknown; error?: unknown };
+    const envelope =
+      nested.error && typeof nested.error === 'object'
+        ? (nested.error as { code?: unknown })
+        : nested;
+    if (typeof envelope.code === 'string') {
+      const safeMessage = INQUIRY_ERROR_MESSAGES[envelope.code];
+      if (safeMessage) return safeMessage;
+    }
   }
-  if (typeof errorBody.message === 'string' && errorBody.message.trim()) {
-    return errorBody.message;
+
+  for (const candidate of [errorBody.detail, errorBody.message]) {
+    if (
+      typeof candidate === 'string' &&
+      SAFE_LEGACY_INQUIRY_MESSAGES.has(candidate.trim())
+    ) {
+      return candidate.trim();
+    }
   }
   return null;
 }
@@ -184,7 +227,7 @@ export default function StorefrontInquiryForm({
         const messageForUser =
           response.status === 429
             ? 'Too many inquiries were sent recently. Please wait a moment and try again.'
-            : serverMessage || 'Your inquiry could not be sent. Please try again.';
+            : serverMessage || GENERIC_INQUIRY_ERROR;
         throw new Error(messageForUser);
       }
 
@@ -206,7 +249,7 @@ export default function StorefrontInquiryForm({
       setFeedback(
         error instanceof Error
           ? error.message
-          : 'Your inquiry could not be sent. Please try again.',
+          : GENERIC_INQUIRY_ERROR,
       );
     }
   };

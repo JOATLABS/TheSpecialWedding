@@ -11,16 +11,19 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { StorefrontImagePicker } from '@/components/storefront/StorefrontImagePicker';
 import { StorefrontView } from '@/components/storefront/StorefrontView';
 import { useAdmin } from '@/contexts/AdminContext';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import {
   buildStorefrontSettingsPatch,
   deleteStorefrontUpload,
   getStorefrontPreviewSeed,
   getStorefrontPreviewUrl,
   getStorefrontSettings,
+  normalizeStorefrontError,
   saveStorefrontSettings,
   uploadStorefrontImage,
   type StorefrontAccess,
@@ -32,12 +35,17 @@ import {
   type StorefrontSettingsUpdate,
 } from '@/services/storefrontApi';
 
-import { CustomDomainManager } from '../components/storefront/CustomDomainManager';
+import { CustomDomainPanel } from '../components/storefront/CustomDomainManager';
+
+export type StorefrontSettingsTab = 'design' | 'content' | 'domain';
 
 interface StorefrontSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   access: StorefrontAccess;
+  initialTab?: StorefrontSettingsTab;
+  domainAttemptId?: string | null;
+  onDomainResumeHandled?: () => void;
 }
 
 interface StorefrontSettingsDialogProps extends StorefrontSettingsModalProps {
@@ -60,8 +68,16 @@ interface StorefrontDraft {
   is_published: boolean;
 }
 
-type ModalView = 'edit' | 'preview';
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
+
+const STOREFRONT_TABS: ReadonlyArray<{
+  id: StorefrontSettingsTab;
+  label: string;
+}> = [
+  { id: 'design', label: 'Design' },
+  { id: 'content', label: 'Content & publish' },
+  { id: 'domain', label: 'Domain' },
+];
 
 const EMPTY_DRAFT: StorefrontDraft = {
   slug: '',
@@ -78,6 +94,14 @@ const EMPTY_DRAFT: StorefrontDraft = {
   reviews_enabled: true,
   is_published: false,
 };
+
+function formatStorefrontError(caught: unknown, fallbackMessage: string): string {
+  const normalized = normalizeStorefrontError(caught, fallbackMessage);
+  const details = [normalized.message];
+  if (normalized.customerAction) details.push(normalized.customerAction);
+  if (normalized.supportId) details.push(`Support ID: ${normalized.supportId}.`);
+  return details.join(' ');
+}
 
 function toDraft(
   settings: StorefrontSettings | null,
@@ -164,8 +188,8 @@ function ToggleSwitch({
   return (
     <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/40">
       <div>
-        <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">{label}</p>
-        <p className="text-[10px] text-slate-500 dark:text-slate-400">{description}</p>
+        <p className="text-base font-semibold text-slate-900 dark:text-slate-100">{label}</p>
+        <p className="mt-1 text-base leading-6 text-slate-600 dark:text-slate-300">{description}</p>
       </div>
       <button
         type="button"
@@ -173,16 +197,20 @@ function ToggleSwitch({
         aria-label={label}
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 ${
-          checked ? 'bg-primary-600' : 'bg-slate-300 dark:bg-slate-600'
-        }`}
+        className="relative inline-flex h-11 w-14 shrink-0 items-center justify-center rounded-full transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
       >
         <span
           aria-hidden="true"
-          className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition ${
-            checked ? 'translate-x-5' : 'translate-x-0'
+          className={`relative inline-flex h-6 w-11 rounded-full transition ${
+            checked ? 'bg-primary-600' : 'bg-slate-300 dark:bg-slate-600'
           }`}
-        />
+        >
+          <span
+            className={`pointer-events-none inline-block h-5 w-5 translate-y-0.5 rounded-full bg-white shadow transition ${
+              checked ? 'translate-x-5' : 'translate-x-0.5'
+            }`}
+          />
+        </span>
       </button>
     </div>
   );
@@ -208,16 +236,26 @@ export function StorefrontSettingsDialog({
   onClose,
   access,
   transport,
+  initialTab = 'design',
+  domainAttemptId = null,
+  onDomainResumeHandled,
 }: StorefrontSettingsDialogProps) {
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [saving, setSaving] = useState(false);
   const [uploadingSlots, setUploadingSlots] = useState<Set<StorefrontImageSlot>>(
     () => new Set(),
   );
-  const [view, setView] = useState<ModalView>('edit');
+  const [activeTab, setActiveTab] = useState<StorefrontSettingsTab>(initialTab);
+  const [showLivePreview, setShowLivePreview] = useState(false);
   const [savedSettings, setSavedSettings] = useState<StorefrontSettings | null>(null);
   const [previewSeed, setPreviewSeed] = useState<StorefrontPreviewData | null>(null);
   const [draft, setDraft] = useState<StorefrontDraft>(() => ({ ...EMPTY_DRAFT }));
+  const [savedPreviewUrl, setSavedPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPortalTarget(document.body);
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const pendingAssetIds = useRef(new Set<string>());
@@ -225,6 +263,8 @@ export function StorefrontSettingsDialog({
   const draftRef = useRef<StorefrontDraft>({ ...EMPTY_DRAFT });
   const dirtyFieldsRef = useRef(new Set<StorefrontSettingsField>());
   const generationRef = useRef(0);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const revokeLocalUrl = useCallback((slot: StorefrontImageSlot) => {
     const url = localObjectUrls.current[slot];
@@ -264,11 +304,15 @@ export function StorefrontSettingsDialog({
     setLoadState('loading');
     setError(null);
     setMessage(null);
-    setView('edit');
+    setSavedPreviewUrl(null);
+    setActiveTab(access.storefront_enabled ? initialTab : 'domain');
+    setShowLivePreview(false);
     try {
       const [settings, preview] = await Promise.all([
         getStorefrontSettings(transport),
-        getStorefrontPreviewSeed(transport),
+        access.storefront_enabled
+          ? getStorefrontPreviewSeed(transport)
+          : Promise.resolve(null),
       ]);
       if (generationRef.current !== generation) {
         return;
@@ -301,9 +345,15 @@ export function StorefrontSettingsDialog({
         return;
       }
       setLoadState('error');
-      setError(caught instanceof Error ? caught.message : 'Unable to load storefront settings');
+      setError(formatStorefrontError(caught, 'Unable to load storefront settings.'));
     }
-  }, [cleanupPendingAssets, revokeAllLocalUrls, transport]);
+  }, [
+    access.storefront_enabled,
+    cleanupPendingAssets,
+    initialTab,
+    revokeAllLocalUrls,
+    transport,
+  ]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -430,7 +480,7 @@ export function StorefrontSettingsDialog({
         [imageField]: previousPreview,
       };
       setDraft(draftRef.current);
-      setError(caught instanceof Error ? caught.message : 'Unable to upload the image');
+      setError(formatStorefrontError(caught, 'Unable to upload the image.'));
     } finally {
       if (generationRef.current === generation) {
         setUploadingSlots((current) => {
@@ -596,7 +646,7 @@ export function StorefrontSettingsDialog({
         restoreSavedImagesAfterFailure();
       }
       if (failedCleanup.length > 0) {
-        const saveMessage = caught instanceof Error ? caught.message : 'Unable to save settings';
+        const saveMessage = formatStorefrontError(caught, 'Unable to save settings.');
         throw new Error(
           `${saveMessage}. An upload also could not be cleaned up; retry before closing.`,
         );
@@ -610,16 +660,13 @@ export function StorefrontSettingsDialog({
       return;
     }
     if (savedSettings?.slug_editable !== false && !draftRef.current.slug.trim()) {
-      setView('edit');
+      setActiveTab('design');
+      setShowLivePreview(false);
       setError('A storefront URL is required before saving.');
       setMessage(null);
       return;
     }
     const generation = generationRef.current;
-    const previewWindow = openPreview ? window.open('about:blank', '_blank') : null;
-    if (previewWindow) {
-      previewWindow.opener = null;
-    }
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -627,30 +674,26 @@ export function StorefrontSettingsDialog({
       const { saved, stableCleanupWarning, recoveredAmbiguousWrite } =
         await performSave(generation);
       if (generationRef.current !== generation) {
-        previewWindow?.close();
         return;
       }
-      setMessage(
-        recoveredAmbiguousWrite
-          ? 'Storefront saved; canonical state was reconciled after an uncertain response.'
-          : stableCleanupWarning
+      const successMessage = recoveredAmbiguousWrite
+        ? 'Storefront saved; canonical state was reconciled after an uncertain response.'
+        : stableCleanupWarning
           ? 'Storefront saved. An old image will be cleaned up by lifecycle recovery.'
           : saved.is_published
             ? 'Storefront saved and published.'
-            : 'Storefront draft saved.',
-      );
+            : 'Storefront draft saved.';
       if (openPreview) {
         const url = new URL(getStorefrontPreviewUrl(saved.slug), window.location.origin).toString();
-        if (previewWindow) {
-          previewWindow.location.href = url;
-        } else {
-          window.open(url, '_blank', 'noopener,noreferrer');
-        }
+        setSavedPreviewUrl(url);
+        setMessage(`${successMessage} Preview link ready.`);
+      } else {
+        setSavedPreviewUrl(null);
+        setMessage(successMessage);
       }
     } catch (caught) {
-      previewWindow?.close();
       if (generationRef.current === generation) {
-        setError(caught instanceof Error ? caught.message : 'Unable to save storefront settings');
+        setError(formatStorefrontError(caught, 'Unable to save storefront settings.'));
       }
     } finally {
       if (generationRef.current === generation) {
@@ -659,7 +702,7 @@ export function StorefrontSettingsDialog({
     }
   };
 
-  const handleClose = async () => {
+  const handleClose = useCallback(async () => {
     if (saving || uploadingSlots.size > 0) {
       return;
     }
@@ -672,213 +715,422 @@ export function StorefrontSettingsDialog({
     generationRef.current += 1;
     revokeAllLocalUrls();
     onClose();
+  }, [
+    cleanupPendingAssets,
+    onClose,
+    revokeAllLocalUrls,
+    saving,
+    uploadingSlots.size,
+  ]);
+
+  useFocusTrap(dialogRef, isOpen && Boolean(portalTarget));
+
+  const handleTabKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    currentIndex: number,
+  ) => {
+    const enabledIndexes = STOREFRONT_TABS.map((_tab, index) => index).filter(
+      (index) => access.storefront_enabled || STOREFRONT_TABS[index].id === 'domain',
+    );
+    const currentPosition = Math.max(enabledIndexes.indexOf(currentIndex), 0);
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowRight') {
+      nextIndex = enabledIndexes[(currentPosition + 1) % enabledIndexes.length];
+    }
+    if (event.key === 'ArrowLeft') {
+      nextIndex =
+        enabledIndexes[
+          (currentPosition - 1 + enabledIndexes.length) % enabledIndexes.length
+        ];
+    }
+    if (event.key === 'Home') nextIndex = enabledIndexes[0];
+    if (event.key === 'End') nextIndex = enabledIndexes.at(-1) ?? null;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextTab = STOREFRONT_TABS[nextIndex];
+    setActiveTab(nextTab.id);
+    setShowLivePreview(false);
+    tabRefs.current[nextIndex]?.focus();
   };
 
-  if (!isOpen) {
+  useEffect(() => {
+    if (!isOpen || !portalTarget) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      if (dialogRef.current?.querySelector('[data-storefront-nested-dialog="true"]')) {
+        return;
+      }
+      event.stopPropagation();
+      void handleClose();
+    };
+
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [handleClose, isOpen, portalTarget]);
+
+  if (!isOpen || !portalTarget) {
     return null;
   }
 
   const platformPath = draft.slug
     ? `/storefront/${encodeURIComponent(draft.slug)}`
     : '/storefront/your-storefront-slug';
+  const platformPreviewPath = draft.slug ? getStorefrontPreviewUrl(draft.slug) : null;
+  const savedStorefrontPreviewPath = savedSettings?.slug
+    ? getStorefrontPreviewUrl(savedSettings.slug)
+    : null;
   const busy = saving || uploadingSlots.size > 0;
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 p-3 backdrop-blur-sm sm:p-6">
+  const renderLoadBoundary = () => {
+    if (loadState === 'loading' || loadState === 'idle') {
+      return (
+        <div className="flex min-h-[28rem] items-center justify-center gap-3 p-6 text-base text-slate-700 dark:text-slate-200">
+          <Loader2 className="h-6 w-6 animate-spin" aria-hidden="true" />
+          Loading storefront settings…
+        </div>
+      );
+    }
+    if (loadState === 'error') {
+      return (
+        <div className="flex min-h-[28rem] flex-col items-center justify-center gap-4 px-6 text-center">
+          <div>
+            <h3 className="text-[16px] font-semibold text-slate-950 dark:text-slate-100">
+              Storefront settings could not be loaded
+            </h3>
+            <p className="mt-2 max-w-md text-base leading-6 text-slate-600 dark:text-slate-300">
+              Saving and previewing are disabled until the current owner state loads successfully.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadStorefront()}
+            className="min-h-11 rounded-lg bg-primary-800 px-4 text-base font-semibold text-white transition hover:bg-primary-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+          >
+            Retry loading storefront
+          </button>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const editorInputClass =
+    'mt-2 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-[16px] text-slate-900 outline-none placeholder:text-slate-500 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-400 dark:disabled:bg-slate-800';
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] overflow-hidden bg-slate-950/70 p-0 backdrop-blur-sm sm:p-6">
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="storefront-settings-title"
-        className="mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-950 sm:min-h-0 sm:max-h-[calc(100vh-3rem)]"
+        aria-describedby="storefront-settings-description"
+        className="mx-auto flex h-[100dvh] max-h-[100dvh] w-full max-w-5xl flex-col overflow-hidden rounded-none bg-white text-slate-900 shadow-2xl dark:bg-slate-950 dark:text-slate-100 sm:h-auto sm:max-h-[calc(100vh-3rem)] sm:rounded-2xl"
       >
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-600 text-white">
-              <Sparkles className="h-5 w-5" aria-hidden="true" />
-            </span>
-            <div>
-              <h2 id="storefront-settings-title" className="font-bold text-slate-950 dark:text-white">
-                Planner Storefront
-              </h2>
-              <p className="text-xs text-slate-500">Design, preview, and publish on your platform URL.</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex rounded-lg bg-slate-100 p-1 dark:bg-slate-900" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={view === 'edit'}
-                disabled={loadState !== 'ready' || saving}
-                onClick={() => setView('edit')}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold ${view === 'edit' ? 'bg-white shadow dark:bg-slate-800' : 'text-slate-500'}`}
-              >
-                Edit design
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={view === 'preview'}
-                disabled={loadState !== 'ready' || saving}
-                onClick={() => setView('preview')}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold ${view === 'preview' ? 'bg-white shadow dark:bg-slate-800' : 'text-slate-500'}`}
-              >
-                Live preview
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => void handleClose()}
-              disabled={busy}
-              aria-label="Close storefront settings"
-              className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-900"
-            >
-              <X className="h-5 w-5" aria-hidden="true" />
-            </button>
-          </div>
-        </header>
-
-        <main className="min-h-0 flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-950">
-          {loadState === 'loading' || loadState === 'idle' ? (
-            <div className="flex min-h-[28rem] items-center justify-center gap-3 text-sm text-slate-500">
-              <Loader2 className="h-6 w-6 animate-spin" aria-hidden="true" />
-              Loading storefront settings…
-            </div>
-          ) : loadState === 'error' ? (
-            <div className="flex min-h-[28rem] flex-col items-center justify-center gap-4 px-6 text-center">
-              <div>
-                <h3 className="font-semibold text-slate-900 dark:text-white">
-                  Storefront settings could not be loaded
-                </h3>
-                <p className="mt-1 max-w-md text-sm text-slate-500">
-                  Saving and previewing are disabled until the current owner state loads
-                  successfully.
+        <header className="relative sticky top-0 z-20 border-b border-slate-200 bg-white px-4 py-4 dark:border-slate-700 dark:bg-slate-950 sm:px-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex min-w-0 items-start gap-3 pr-12">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-600 text-white">
+                <Sparkles className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <h2 id="storefront-settings-title" className="text-lg font-bold text-slate-950 dark:text-slate-100">
+                  Planner Storefront
+                </h2>
+                <p id="storefront-settings-description" className="mt-1 text-base leading-6 text-slate-600 dark:text-slate-300">
+                  Design, publish, preview, and connect a domain while your platform URL stays available.
                 </p>
               </div>
+            </div>
+          </div>
+
+          <div
+            className="mt-4 flex max-w-full gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-700 dark:bg-slate-900"
+            role="tablist"
+            aria-label="Storefront settings sections"
+          >
+            {STOREFRONT_TABS.map((tab, index) => {
+              const selected = activeTab === tab.id;
+              const enabled = access.storefront_enabled || tab.id === 'domain';
+              return (
+                <button
+                  key={tab.id}
+                  ref={(element) => {
+                    tabRefs.current[index] = element;
+                  }}
+                  id={`storefront-tab-${tab.id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  aria-disabled={!enabled}
+                  aria-controls={`storefront-panel-${tab.id}`}
+                  tabIndex={selected ? 0 : -1}
+                  disabled={!enabled}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setShowLivePreview(false);
+                  }}
+                  onKeyDown={(event) => handleTabKeyDown(event, index)}
+                  className={`min-h-11 shrink-0 rounded-lg px-4 text-base font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-100 ${
+                    selected
+                      ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-800 dark:text-slate-100'
+                      : 'text-slate-600 hover:bg-white/70 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {access.storefront_enabled ? (
               <button
                 type="button"
-                onClick={() => void loadStorefront()}
-                className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white"
+                aria-pressed={showLivePreview}
+                onClick={() => setShowLivePreview((current) => !current)}
+                className={`inline-flex min-h-11 items-center gap-2 rounded-lg border px-4 text-base font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                  showLivePreview
+                    ? 'border-primary-300 bg-primary-50 text-primary-800 dark:border-primary-800 dark:bg-primary-950/50 dark:text-primary-200'
+                    : 'border-slate-300 bg-white text-slate-800 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800'
+                }`}
               >
-                Retry loading storefront
+                <Eye className="h-4 w-4" aria-hidden="true" />
+                Live preview
               </button>
-            </div>
-          ) : view === 'preview' ? (
-            <div className="bg-slate-200 p-2 sm:p-5 dark:bg-slate-900">
-              <div className="mx-auto max-w-5xl overflow-hidden rounded-xl bg-white shadow-xl">
-                <StorefrontView data={livePreviewData} previewMode />
-              </div>
-            </div>
-          ) : (
-            <fieldset disabled={saving} className="contents">
-            <div className="mx-auto grid max-w-5xl gap-6 p-4 sm:p-6 lg:grid-cols-2">
-              <div className="space-y-6">
-                <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                  <div className="flex items-center gap-2">
-                    <Globe2 className="h-5 w-5 text-slate-500" aria-hidden="true" />
-                    <h3 className="text-sm font-semibold">Storefront identity</h3>
-                  </div>
-                  <div>
-                    <label htmlFor="storefront-slug" className="text-xs font-medium">Storefront URL</label>
-                    <div className="mt-1 flex overflow-hidden rounded-lg border border-slate-300 focus-within:ring-2 focus-within:ring-primary-500 dark:border-slate-700">
-                      <span className="hidden items-center bg-slate-100 px-3 text-xs text-slate-500 sm:flex dark:bg-slate-800">/storefront/</span>
-                      <input
-                        id="storefront-slug"
-                        value={draft.slug}
-                        onChange={(event) => updateDraftField('slug', event.target.value)}
-                        disabled={savedSettings?.slug_editable === false}
-                        maxLength={128}
-                        autoCapitalize="none"
-                        autoCorrect="off"
-                        placeholder="jane-events"
-                        className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 dark:disabled:bg-slate-800"
-                      />
-                    </div>
-                    <p className="mt-1 break-all text-[10px] text-slate-500">{platformPath}</p>
-                    {savedSettings?.slug_editable === false ? (
-                      <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-300">The slug is locked after first publication.</p>
-                    ) : null}
-                  </div>
-                  <div>
-                    <label htmlFor="storefront-title" className="text-xs font-medium">Storefront title</label>
-                    <input id="storefront-title" value={draft.title} maxLength={100} onChange={(event) => updateDraftField('title', event.target.value)} placeholder="Jane's Luxury Weddings" className="mt-1 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary-500 dark:border-slate-700" />
-                  </div>
-                  <div>
-                    <label htmlFor="storefront-description" className="text-xs font-medium">Description</label>
-                    <textarea id="storefront-description" value={draft.description} maxLength={2000} rows={5} onChange={(event) => updateDraftField('description', event.target.value)} placeholder="Describe the planning experience you create." className="mt-1 w-full resize-y rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary-500 dark:border-slate-700" />
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <label htmlFor="storefront-contact-email" className="text-xs font-medium">Contact email</label>
-                      <input id="storefront-contact-email" type="email" value={draft.contact_email} onChange={(event) => updateDraftField('contact_email', event.target.value)} placeholder="hello@example.com" className="mt-1 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary-500 dark:border-slate-700" />
-                    </div>
-                    <div>
-                      <label htmlFor="storefront-contact-phone" className="text-xs font-medium">Contact phone</label>
-                      <input id="storefront-contact-phone" type="tel" maxLength={40} value={draft.contact_phone} onChange={(event) => updateDraftField('contact_phone', event.target.value)} placeholder="+1 555 0100" className="mt-1 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary-500 dark:border-slate-700" />
-                    </div>
-                  </div>
-                  <ToggleSwitch checked={draft.is_published} onChange={(is_published) => updateDraftField('is_published', is_published)} label="Publish storefront" description="Make the saved storefront visible to public visitors." />
-                </section>
-
-                {access.custom_domain_enabled ? (
-                  <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                    <p className="mb-3 text-[11px] text-slate-500">
-                      Custom-domain operations apply immediately; Save settings only changes the
-                      storefront design.
-                    </p>
-                    <CustomDomainManager />
-                  </section>
-                ) : (
-                  <section className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                    <p className="font-semibold text-slate-900 dark:text-white">Custom domain is a separate plan capability</p>
-                    <p className="mt-1">Your storefront works on the platform URL without DNS setup.</p>
-                  </section>
-                )}
-              </div>
-
-              <section className="space-y-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <div className="flex items-center gap-2">
-                  <Paintbrush className="h-5 w-5 text-slate-500" aria-hidden="true" />
-                  <h3 className="text-sm font-semibold">Media and appearance</h3>
-                </div>
-                <div>
-                  <label htmlFor="storefront-theme" className="text-xs font-medium">Theme color</label>
-                  <div className="mt-1 flex items-center gap-3">
-                    <input id="storefront-theme" type="color" value={draft.theme_color} onChange={(event) => updateDraftField('theme_color', event.target.value)} className="h-10 w-12 rounded border border-slate-300 bg-transparent p-1 dark:border-slate-700" />
-                    <input aria-label="Theme color hex value" value={draft.theme_color} pattern="#[0-9A-Fa-f]{6}" onChange={(event) => updateDraftField('theme_color', event.target.value)} className="w-32 rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm uppercase dark:border-slate-700" />
-                  </div>
-                </div>
-                <StorefrontImagePicker id="storefront-hero-image" label="Hero image" hint="Wide landscape image, up to 5 MB." imageUrl={draft.hero_image_url} hasImage={Boolean(draft.hero_asset_id)} uploading={uploadingSlots.has('hero')} onFileSelect={(file) => handleImageUpload('hero', file)} onRemove={() => void handleRemoveImage('hero')} />
-                <StorefrontImagePicker id="storefront-about-image" label="About image" hint="Planner portrait or team image, up to 5 MB." imageUrl={draft.about_image_url} hasImage={Boolean(draft.about_asset_id)} uploading={uploadingSlots.has('about')} onFileSelect={(file) => handleImageUpload('about', file)} onRemove={() => void handleRemoveImage('about')} compact />
-                <div className="space-y-3 border-t border-slate-200 pt-5 dark:border-slate-800">
-                  <div className="flex items-center gap-2"><Eye className="h-5 w-5 text-slate-500" aria-hidden="true" /><h3 className="text-sm font-semibold">Visible content</h3></div>
-                  <ToggleSwitch checked={draft.packages_enabled} onChange={(packages_enabled) => updateDraftField('packages_enabled', packages_enabled)} label="Display packages" description="Show current active, non-template packages." />
-                  <ToggleSwitch checked={draft.reviews_enabled} onChange={(reviews_enabled) => updateDraftField('reviews_enabled', reviews_enabled)} label="Display reviews" description="Show currently published planner reviews." />
-                </div>
-              </section>
-            </div>
-            </fieldset>
-          )}
-        </main>
-
-        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800">
-          <div className="min-h-5 text-xs">
-            {error ? <p role="alert" className="text-red-600 dark:text-red-300">{error}</p> : null}
-            {message ? <p role="status" className="text-emerald-700 dark:text-emerald-300">{message}</p> : null}
+            ) : null}
+            {savedStorefrontPreviewPath ? (
+              <a
+                href={savedStorefrontPreviewPath}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-800 transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+              >
+                <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                Preview storefront
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+            ) : (
+              <button
+                type="button"
+                disabled
+                title="Save the storefront URL before opening the saved preview"
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-slate-100 px-4 text-base font-semibold text-slate-500 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-900 dark:text-slate-500"
+              >
+                <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                Preview storefront
+              </button>
+            )}
           </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            <button type="button" onClick={() => void handleClose()} disabled={busy} className="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-900">Cancel</button>
-            <button type="button" onClick={() => void handleSave(false)} disabled={busy || loadState !== 'ready'} className="inline-flex items-center gap-2 rounded-lg border border-primary-200 bg-white px-4 py-2 text-sm font-semibold text-primary-700 transition hover:bg-primary-50 disabled:opacity-50 dark:border-primary-900 dark:bg-slate-900 dark:text-primary-300">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
-              Save settings
-            </button>
-            <button type="button" onClick={() => void handleSave(true)} disabled={busy || loadState !== 'ready'} className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-700 disabled:opacity-50">
-              <ExternalLink className="h-4 w-4" aria-hidden="true" />
-              {'Save & Preview'}
-            </button>
-          </div>
-        </footer>
+          <button
+            type="button"
+            onClick={() => void handleClose()}
+            disabled={busy}
+            aria-label="Close storefront settings"
+            className="absolute right-4 top-4 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:text-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:disabled:text-slate-300 sm:right-6"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-slate-50 dark:bg-slate-950">
+          <section
+            id="storefront-panel-design"
+            role="tabpanel"
+            aria-labelledby="storefront-tab-design"
+            hidden={showLivePreview || activeTab !== 'design'}
+          >
+            {!showLivePreview && activeTab === 'design' && loadState !== 'ready' ? renderLoadBoundary() : null}
+            {!showLivePreview && activeTab === 'design' && loadState === 'ready' ? (
+              <fieldset disabled={saving} className="contents">
+                <div className="mx-auto grid max-w-5xl gap-6 p-4 sm:p-6 lg:grid-cols-2">
+                  <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                    <div className="flex items-center gap-2">
+                      <Globe2 className="h-5 w-5 text-slate-600 dark:text-slate-300" aria-hidden="true" />
+                      <h3 className="text-[16px] font-semibold">Storefront identity</h3>
+                    </div>
+                    <div>
+                      <label htmlFor="storefront-slug" className="text-base font-semibold">Storefront URL</label>
+                      <div className="mt-2 flex min-h-11 overflow-hidden rounded-lg border border-slate-300 bg-white focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-500/30 dark:border-slate-600 dark:bg-slate-950">
+                        <span className="hidden items-center bg-slate-100 px-3 text-base text-slate-600 sm:flex dark:bg-slate-800 dark:text-slate-300">/storefront/</span>
+                        <input
+                          id="storefront-slug"
+                          value={draft.slug}
+                          onChange={(event) => updateDraftField('slug', event.target.value)}
+                          disabled={savedSettings?.slug_editable === false}
+                          maxLength={128}
+                          autoCapitalize="none"
+                          autoCorrect="off"
+                          placeholder="jane-events"
+                          className="min-w-0 flex-1 bg-transparent px-3 text-[16px] text-slate-900 outline-none placeholder:text-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100 dark:text-slate-100 dark:placeholder:text-slate-400 dark:disabled:bg-slate-800"
+                        />
+                      </div>
+                      <a
+                        href={platformPreviewPath ?? platformPath}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-2 block min-h-11 break-all py-2 text-base font-medium text-primary-700 underline-offset-4 hover:underline dark:text-primary-300"
+                      >
+                        {platformPreviewPath ?? platformPath}
+                      </a>
+                      {savedSettings?.slug_editable === false ? (
+                        <p className="text-base font-medium text-amber-800 dark:text-amber-200">The slug is locked after first publication.</p>
+                      ) : null}
+                    </div>
+                    <div>
+                      <label htmlFor="storefront-title" className="text-base font-semibold">Storefront title</label>
+                      <input id="storefront-title" value={draft.title} maxLength={100} onChange={(event) => updateDraftField('title', event.target.value)} placeholder="Jane's Luxury Weddings" className={editorInputClass} />
+                    </div>
+                    <div>
+                      <label htmlFor="storefront-description" className="text-base font-semibold">Description</label>
+                      <textarea id="storefront-description" value={draft.description} maxLength={2000} rows={5} onChange={(event) => updateDraftField('description', event.target.value)} placeholder="Describe the planning experience you create." className={`${editorInputClass} py-3`} />
+                    </div>
+                  </section>
+
+                  <section className="space-y-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                    <div className="flex items-center gap-2">
+                      <Paintbrush className="h-5 w-5 text-slate-600 dark:text-slate-300" aria-hidden="true" />
+                      <h3 className="text-[16px] font-semibold">Media and appearance</h3>
+                    </div>
+                    <div>
+                      <label htmlFor="storefront-theme" className="text-base font-semibold">Theme color</label>
+                      <div className="mt-2 flex items-center gap-3">
+                        <input id="storefront-theme" type="color" value={draft.theme_color} onChange={(event) => updateDraftField('theme_color', event.target.value)} className="h-11 w-14 rounded-lg border border-slate-300 bg-white p-1 dark:border-slate-600 dark:bg-slate-950" />
+                        <input aria-label="Theme color hex value" value={draft.theme_color} pattern="#[0-9A-Fa-f]{6}" onChange={(event) => updateDraftField('theme_color', event.target.value)} className={`${editorInputClass} mt-0 max-w-40 uppercase`} />
+                      </div>
+                    </div>
+                    <StorefrontImagePicker id="storefront-hero-image" label="Hero image" hint="Wide landscape image, up to 5 MB." imageUrl={draft.hero_image_url} hasImage={Boolean(draft.hero_asset_id)} uploading={uploadingSlots.has('hero')} onFileSelect={(file) => handleImageUpload('hero', file)} onRemove={() => void handleRemoveImage('hero')} />
+                    <StorefrontImagePicker id="storefront-about-image" label="About image" hint="Planner portrait or team image, up to 5 MB." imageUrl={draft.about_image_url} hasImage={Boolean(draft.about_asset_id)} uploading={uploadingSlots.has('about')} onFileSelect={(file) => handleImageUpload('about', file)} onRemove={() => void handleRemoveImage('about')} compact />
+                  </section>
+                </div>
+              </fieldset>
+            ) : null}
+          </section>
+
+          <section
+            id="storefront-panel-content"
+            role="tabpanel"
+            aria-labelledby="storefront-tab-content"
+            hidden={showLivePreview || activeTab !== 'content'}
+          >
+            {!showLivePreview && activeTab === 'content' && loadState !== 'ready' ? renderLoadBoundary() : null}
+            {!showLivePreview && activeTab === 'content' && loadState === 'ready' ? (
+              <fieldset disabled={saving} className="contents">
+                <div className="mx-auto grid max-w-5xl gap-6 p-4 sm:p-6 lg:grid-cols-2">
+                  <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                    <div>
+                      <h3 className="text-[16px] font-semibold">Contact and publication</h3>
+                      <p className="mt-1 text-base leading-6 text-slate-600 dark:text-slate-300">Control how visitors contact you and when the saved storefront becomes public.</p>
+                    </div>
+                    <div>
+                      <label htmlFor="storefront-contact-email" className="text-base font-semibold">Contact email</label>
+                      <input id="storefront-contact-email" type="email" value={draft.contact_email} onChange={(event) => updateDraftField('contact_email', event.target.value)} placeholder="hello@example.com" className={editorInputClass} />
+                    </div>
+                    <div>
+                      <label htmlFor="storefront-contact-phone" className="text-base font-semibold">Contact phone</label>
+                      <input id="storefront-contact-phone" type="tel" maxLength={40} value={draft.contact_phone} onChange={(event) => updateDraftField('contact_phone', event.target.value)} placeholder="+1 555 0100" className={editorInputClass} />
+                    </div>
+                    <ToggleSwitch checked={draft.is_published} onChange={(is_published) => updateDraftField('is_published', is_published)} label="Publish storefront" description="Make the saved storefront visible to public visitors." />
+                  </section>
+
+                  <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                    <div className="flex items-center gap-2">
+                      <Eye className="h-5 w-5 text-slate-600 dark:text-slate-300" aria-hidden="true" />
+                      <h3 className="text-[16px] font-semibold">Visible content</h3>
+                    </div>
+                    <p className="text-base leading-6 text-slate-600 dark:text-slate-300">Choose which current business content appears on the public storefront.</p>
+                    <ToggleSwitch checked={draft.packages_enabled} onChange={(packages_enabled) => updateDraftField('packages_enabled', packages_enabled)} label="Display packages" description="Show current active, non-template packages." />
+                    <ToggleSwitch checked={draft.reviews_enabled} onChange={(reviews_enabled) => updateDraftField('reviews_enabled', reviews_enabled)} label="Display reviews" description="Show currently published planner reviews." />
+                  </section>
+                </div>
+              </fieldset>
+            ) : null}
+          </section>
+
+          <section
+            id="storefront-panel-domain"
+            role="tabpanel"
+            aria-labelledby="storefront-tab-domain"
+            hidden={showLivePreview || activeTab !== 'domain'}
+          >
+            {!showLivePreview && activeTab === 'domain' ? (
+              <div className="mx-auto max-w-[760px] p-4 sm:p-6">
+                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                  <p className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-3 text-base leading-6 text-sky-950 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-100">
+                    Custom-domain operations apply immediately. Save settings only changes storefront design and content.
+                  </p>
+                  <CustomDomainPanel
+                    transport={transport}
+                    canActivate={access.custom_domain_enabled}
+                    canManageExisting={access.can_manage_existing_domain}
+                    platformUrl={platformPath}
+                    isPublished={draft.is_published}
+                    attemptId={domainAttemptId}
+                    onResumeHandled={onDomainResumeHandled}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </section>
+
+          <section
+            role="region"
+            aria-label="Live preview"
+            hidden={!showLivePreview}
+          >
+            {showLivePreview && loadState !== 'ready' ? renderLoadBoundary() : null}
+            {showLivePreview && loadState === 'ready' ? (
+              <div className="bg-slate-200 p-2 sm:p-5 dark:bg-slate-900">
+                <div className="mx-auto max-w-5xl overflow-hidden rounded-xl bg-white shadow-xl">
+                  <StorefrontView data={livePreviewData} previewMode />
+                </div>
+              </div>
+            ) : null}
+          </section>
+        </div>
+
+        {activeTab !== 'domain' || showLivePreview ? (
+          <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-950 sm:px-6">
+            <div className="min-h-6 text-base">
+              {error ? <p role="alert" className="font-medium text-red-700 dark:text-red-300">{error}</p> : null}
+              {message ? <p role="status" className="font-medium text-emerald-700 dark:text-emerald-300">{message}</p> : null}
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button type="button" onClick={() => void handleClose()} disabled={busy} className="min-h-11 rounded-lg px-4 text-base font-medium text-slate-700 transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-700 disabled:hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-800 dark:disabled:bg-slate-800 dark:disabled:text-slate-200 dark:disabled:hover:bg-slate-800">Cancel</button>
+              <button type="button" onClick={() => void handleSave(false)} disabled={busy || loadState !== 'ready'} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-primary-300 bg-white px-4 text-base font-semibold text-primary-700 transition hover:bg-primary-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-700 disabled:hover:bg-slate-200 dark:border-primary-800 dark:bg-slate-900 dark:text-primary-300 dark:disabled:border-slate-600 dark:disabled:bg-slate-800 dark:disabled:text-slate-200 dark:disabled:hover:bg-slate-800">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
+                Save settings
+              </button>
+              <button type="button" onClick={() => void handleSave(true)} disabled={busy || loadState !== 'ready'} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary-800 px-4 text-base font-semibold text-white transition hover:bg-primary-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-700 disabled:hover:bg-slate-200 dark:disabled:bg-slate-800 dark:disabled:text-slate-200 dark:disabled:hover:bg-slate-800">
+                <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                Save for preview
+              </button>
+              {savedPreviewUrl ? (
+                <a
+                  href={savedPreviewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-primary-300 bg-white px-4 text-base font-semibold text-primary-700 transition hover:bg-primary-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:border-primary-800 dark:bg-slate-900 dark:text-primary-300"
+                >
+                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                  Open saved preview
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+              ) : null}
+            </div>
+          </footer>
+        ) : null}
       </div>
-    </div>
+    </div>,
+    portalTarget,
   );
 }

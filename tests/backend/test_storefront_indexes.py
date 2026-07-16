@@ -67,6 +67,97 @@ async def test_storefront_indexes_are_unique_named_and_slug_is_legacy_safe(
     assert domain_planner[1]["unique"] is True
     assert domain_hostname[0] == [("hostname", 1)]
     assert domain_hostname[1]["unique"] is True
+    assert by_name["idx_storefront_domains_lifecycle_retry_lease"][0] == [
+        ("application_status", 1),
+        ("retry_due_at", 1),
+        ("lease_expires_at", 1),
+    ]
+    conflict_attempt = by_name["idx_storefront_domain_conflict_claims_attempt_unique"]
+    assert conflict_attempt[0] == [("attempt_id", 1)]
+    assert conflict_attempt[1]["unique"] is True
+    conflict_digest = by_name["idx_storefront_domain_conflict_claims_digest_unique"]
+    assert conflict_digest[0] == [("claim_token_digest", 1)]
+    assert conflict_digest[1]["unique"] is True
+    assert conflict_digest[1]["partialFilterExpression"] == {
+        "claim_token_digest": {"$type": "string"}
+    }
+    conflict_current = by_name[
+        "idx_storefront_domain_conflict_claims_current_owner_unique"
+    ]
+    assert conflict_current[0] == [("current_owner_key", 1)]
+    assert conflict_current[1]["unique"] is True
+    assert conflict_current[1]["partialFilterExpression"] == {
+        "current_owner_key": {"$type": "string"}
+    }
+    conflict_ttl = by_name["idx_storefront_domain_conflict_claims_purge_ttl"]
+    assert conflict_ttl[0] == [("purge_at", 1)]
+    assert conflict_ttl[1]["expireAfterSeconds"] == 0
+    operation_id = by_name["idx_storefront_domain_operations_operation_unique"]
+    assert operation_id[0] == [("operation_id", 1)]
+    assert operation_id[1]["unique"] is True
+    operation_attempt = by_name[
+        "idx_storefront_domain_operations_domain_attempt_unique"
+    ]
+    assert operation_attempt[0] == [
+        ("domain_id", 1),
+        ("attempt_id", 1),
+        ("kind", 1),
+    ]
+    assert operation_attempt[1]["unique"] is True
+    flow_id = by_name["idx_storefront_domain_flows_id_unique"]
+    assert flow_id[0] == [("flow_id", 1)]
+    assert flow_id[1]["unique"] is True
+    flow_attempt = by_name["idx_storefront_domain_flows_domain_attempt_unique"]
+    assert flow_attempt[0] == [("domain_id", 1), ("attempt_id", 1)]
+    assert flow_attempt[1]["unique"] is True
+    flow_digest = by_name["idx_storefront_domain_flows_digest_unique"]
+    assert flow_digest[0] == [("flow_token_digest", 1)]
+    assert flow_digest[1]["unique"] is True
+    assert flow_digest[1]["partialFilterExpression"] == {
+        "flow_token_digest": {"$type": "string"}
+    }
+    flow_ttl = by_name["idx_storefront_domain_flows_expiry_ttl"]
+    assert flow_ttl[0] == [("expires_at", 1)]
+    assert flow_ttl[1]["expireAfterSeconds"] == 0
+    operation_ttl = by_name["idx_storefront_domain_operations_expiry_ttl"]
+    assert operation_ttl[0] == [("expires_at", 1)]
+    assert operation_ttl[1]["expireAfterSeconds"] == 0
+    instruction_id = by_name["idx_storefront_domain_instruction_links_id_unique"]
+    assert instruction_id[0] == [("link_id", 1)]
+    assert instruction_id[1]["unique"] is True
+    instruction_digest = by_name[
+        "idx_storefront_domain_instruction_links_digest_unique"
+    ]
+    assert instruction_digest[0] == [("token_digest", 1)]
+    assert instruction_digest[1]["unique"] is True
+    instruction_recipient = by_name[
+        "idx_storefront_domain_instruction_links_recipient_unique"
+    ]
+    assert instruction_recipient[0] == [
+        ("domain_id", 1),
+        ("claim_attempt_id", 1),
+        ("recipient_hash", 1),
+    ]
+    assert instruction_recipient[1]["unique"] is True
+    instruction_ttl = by_name["idx_storefront_domain_instruction_links_expiry_ttl"]
+    assert instruction_ttl[0] == [("expires_at", 1)]
+    assert instruction_ttl[1]["expireAfterSeconds"] == 0
+    instruction_quota_key = by_name[
+        "idx_storefront_domain_instruction_quotas_key_unique"
+    ]
+    assert instruction_quota_key[0] == [("quota_key", 1)]
+    assert instruction_quota_key[1]["unique"] is True
+    instruction_quota_ttl = by_name[
+        "idx_storefront_domain_instruction_quotas_expiry_ttl"
+    ]
+    assert instruction_quota_ttl[0] == [("expires_at", 1)]
+    assert instruction_quota_ttl[1]["expireAfterSeconds"] == 0
+    tombstone_receipt = by_name["idx_storefront_domain_tombstones_receipt_unique"]
+    assert tombstone_receipt[0] == [("deletion_receipt_id", 1)]
+    assert tombstone_receipt[1]["unique"] is True
+    tombstone_ttl = by_name["idx_storefront_domain_tombstones_expiry_ttl"]
+    assert tombstone_ttl[0] == [("expires_at", 1)]
+    assert tombstone_ttl[1]["expireAfterSeconds"] == 0
 
     reserved_asset = by_name["idx_storefront_assets_reserved_slot_unique"]
     assert reserved_asset[0] == [("owner_id", 1), ("slot", 1)]

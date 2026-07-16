@@ -27,6 +27,7 @@ services:
       - API_PORT=8000
       - PYTHONPATH=/app
       - ENVIRONMENT=${ENVIRONMENT:-production}
+      - FRONTEND_URL=${FRONTEND_URL:-https://thespecialwedding.io}
 
       # Security Configuration
       - SECRET_KEY=${SECRET_KEY}
@@ -36,6 +37,12 @@ services:
 
       # CORS Configuration
       - CORS_ORIGINS=${CORS_ORIGINS:-''}
+
+      # The bundled Nginx ingress overwrites X-Real-IP and reaches the API only
+      # through this Compose network. Keep both values paired; never trust a
+      # forwarded client-IP header from arbitrary peers.
+      - TRUSTED_PROXY_CIDRS=${TRUSTED_PROXY_CIDRS:-["172.26.0.0/16"]}
+      - TRUSTED_PROXY_CLIENT_IP_HEADER=${TRUSTED_PROXY_CLIENT_IP_HEADER:-X-Real-IP}
 
       # Security Features
       - ENABLE_CSRF_PROTECTION=${ENABLE_CSRF_PROTECTION:-true}
@@ -57,6 +64,7 @@ services:
       # Email Configuration
       - RESEND_API_KEY=${RESEND_API_KEY}
       - RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL}
+      - RESEND_FROM_NAME=${RESEND_FROM_NAME:-The Special Wedding}
       - FROM_EMAIL=${FROM_EMAIL:-${RESEND_FROM_EMAIL}}
 
       # SMS Provider Configuration
@@ -78,8 +86,39 @@ services:
       - S3_ENDPOINT_URL=${S3_ENDPOINT_URL}
       - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID}
       - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY}
+      - S3_REGION=${S3_REGION:-auto}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME}
       - MEDIA_DOMAIN=${MEDIA_DOMAIN}
+      - S3_BLOG_BUCKET_NAME=${S3_BLOG_BUCKET_NAME}
+      - BLOG_MEDIA_DOMAIN=${BLOG_MEDIA_DOMAIN}
+      - S3_STOREFRONT_STAGING_BUCKET_NAME=${S3_STOREFRONT_STAGING_BUCKET_NAME}
+      - STOREFRONT_STAGING_LIFECYCLE_MAX_AGE_DAYS=${STOREFRONT_STAGING_LIFECYCLE_MAX_AGE_DAYS:-1}
+      - STOREFRONT_IMAGE_DECODE_CONCURRENCY=${STOREFRONT_IMAGE_DECODE_CONCURRENCY:-1}
+
+      # Planner Storefront / Cloudflare for SaaS
+      - STOREFRONT_CUSTOM_DOMAINS_ENABLED=${STOREFRONT_CUSTOM_DOMAINS_ENABLED:-false}
+      - STOREFRONT_DOMAIN_CONNECT_DISCOVERY_ENABLED=${STOREFRONT_DOMAIN_CONNECT_DISCOVERY_ENABLED:-false}
+      - STOREFRONT_DOMAIN_CONNECT_AUTHORIZATION_ENABLED=${STOREFRONT_DOMAIN_CONNECT_AUTHORIZATION_ENABLED:-false}
+      - STOREFRONT_CLOUDFLARE_MUTATIONS_ENABLED=${STOREFRONT_CLOUDFLARE_MUTATIONS_ENABLED:-false}
+      - STOREFRONT_CLOUDFLARE_CLEANUP_ENABLED=${STOREFRONT_CLOUDFLARE_CLEANUP_ENABLED:-false}
+      - STOREFRONT_CUSTOM_DOMAIN_ROLLOUT_MODE=${STOREFRONT_CUSTOM_DOMAIN_ROLLOUT_MODE:-allowlist}
+      - STOREFRONT_CUSTOM_DOMAIN_PILOT_HOSTNAMES=${STOREFRONT_CUSTOM_DOMAIN_PILOT_HOSTNAMES:-[]}
+      - STOREFRONT_CUSTOM_DOMAIN_PILOT_OWNER_IDS=${STOREFRONT_CUSTOM_DOMAIN_PILOT_OWNER_IDS:-[]}
+      - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - CLOUDFLARE_SAAS_API_TOKEN=${CLOUDFLARE_SAAS_API_TOKEN}
+      - CLOUDFLARE_ZONE_ID=${CLOUDFLARE_ZONE_ID}
+      - STOREFRONT_FALLBACK_ORIGIN=${STOREFRONT_FALLBACK_ORIGIN}
+      - STOREFRONT_CNAME_TARGET=${STOREFRONT_CNAME_TARGET}
+      - STOREFRONT_PLATFORM_DOMAINS=${STOREFRONT_PLATFORM_DOMAINS:-["thespecialwedding.io","thespecialwedding.com"]}
+      - DOMAIN_CONNECT_PROVIDER_ID=${DOMAIN_CONNECT_PROVIDER_ID:-thespecialwedding.com}
+      - DOMAIN_CONNECT_SERVICE_ID=${DOMAIN_CONNECT_SERVICE_ID:-storefront-subdomain}
+      - DOMAIN_CONNECT_TEMPLATE_VERSION=${DOMAIN_CONNECT_TEMPLATE_VERSION:-1}
+      - DOMAIN_CONNECT_PRIVATE_KEY=${DOMAIN_CONNECT_PRIVATE_KEY}
+      - DOMAIN_CONNECT_KEY_ID=${DOMAIN_CONNECT_KEY_ID:-_dcpubkeyv1}
+      - DOMAIN_CONNECT_PUBLIC_KEY_DOMAIN=${DOMAIN_CONNECT_PUBLIC_KEY_DOMAIN:-domainconnect.thespecialwedding.com}
+      - DOMAIN_CONNECT_CALLBACK_URL=${DOMAIN_CONNECT_CALLBACK_URL}
+      - STOREFRONT_RUNTIME_REVISION=${STOREFRONT_RUNTIME_REVISION:-unknown}
 
       # AWS S3 Configuration (alternative)
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-${S3_ACCESS_KEY_ID}}
@@ -110,7 +149,15 @@ services:
       - CRON_SECRET=${CRON_SECRET}
 
       # Redis Configuration
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - REDIS_ENABLED=${REDIS_ENABLED:-true}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required for production Redis}
+      - REDIS_DB=${REDIS_DB:-0}
+      - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-20}
+      # Retained for legacy helpers while CacheManager consumes the canonical
+      # REDIS_ENABLED/HOST/PORT/PASSWORD/DB settings above.
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/${REDIS_DB:-0}
 
       # Monitoring & Analytics
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -226,17 +273,24 @@ services:
     image: redis:7-alpine
     container_name: weddingapp-redis
 
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required for production Redis}
+
     # Redis configuration for production
-    command: >
-      redis-server
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
-      --save ""
-      --appendonly no
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        exec redis-server
+        --requirepass "$$REDIS_PASSWORD"
+        --maxmemory 256mb
+        --maxmemory-policy allkeys-lru
+        --save ""
+        --appendonly no
 
     # Health check for Redis
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "test \"$$(REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli --raw ping)\" = PONG"]
       interval: 10s
       timeout: 5s
       retries: 3

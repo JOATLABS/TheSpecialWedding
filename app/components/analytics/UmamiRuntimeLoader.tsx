@@ -2,6 +2,8 @@
 
 import { useEffect } from 'react';
 
+import { UMAMI_BEFORE_SEND_HANDLER_NAME } from '@/utils/analyticsPrivacy';
+
 type AnalyticsConfigResponse = {
   websiteId?: string;
   src?: string;
@@ -43,7 +45,9 @@ export function UmamiRuntimeLoader() {
         script.async = true;
         script.defer = true;
         script.src = config.src;
+        script.setAttribute('referrerpolicy', 'no-referrer');
         script.dataset.websiteId = config.websiteId;
+        script.dataset.beforeSend = UMAMI_BEFORE_SEND_HANDLER_NAME;
         document.body.appendChild(script);
       })
       .catch(() => {

@@ -14,11 +14,13 @@ from bson import ObjectId
 from fastapi import HTTPException
 
 from app.core.settings import Settings
+from app.models.storefront import StorefrontDomainResponse
 from app.services.cloudflare_service import CloudflareService, CloudflareServiceError
 from app.services.storefront_domain_service import (
     StorefrontDomainService,
     normalize_custom_hostname,
 )
+from app.services.storefront_domain_rollout import StorefrontDomainRolloutPolicy
 from app.services.storefront_entitlement_service import StorefrontEntitlements
 
 
@@ -60,6 +62,13 @@ class FakeMongo:
         self.db = AsyncDatabase(self.raw)
         self.raw.storefront_domains.create_index("planner_id", unique=True)
         self.raw.storefront_domains.create_index("hostname", unique=True)
+        self.raw.storefront_domain_operations.create_index("operation_id", unique=True)
+        self.raw.storefront_domain_operations.create_index(
+            [("domain_id", 1), ("attempt_id", 1), ("kind", 1)], unique=True
+        )
+        self.raw.storefront_domain_tombstones.create_index(
+            "deletion_receipt_id", unique=True
+        )
 
 
 class FakeEntitlements:
@@ -82,12 +91,31 @@ class FakeEntitlements:
         return self._result(str(planner_id))
 
 
+class FakeDnsResolver:
+    def __init__(self):
+        self.authoritative_calls: list[tuple[str, str, tuple[str, ...]]] = []
+
+    async def query(self, name: str, record_type: str) -> list[str]:
+        if name == "customer.example" and record_type == "NS":
+            return ["ns1.customer-dns.example", "ns2.customer-dns.example"]
+        return []
+
+    async def query_authoritative(
+        self, name: str, record_type: str, nameservers: list[str]
+    ) -> list[str]:
+        self.authoritative_calls.append((name, record_type, tuple(nameservers)))
+        if name == "customer.example" and record_type == "NS":
+            return ["ns1.customer-dns.example", "ns2.customer-dns.example"]
+        return []
+
+
 class FakeCloudflare:
     def __init__(self):
         self.created: list[str] = []
         self.listed: list[str] = []
         self.read: list[str] = []
         self.deleted: list[str] = []
+        self.retried: list[tuple[str, str, str]] = []
         self.create_result = {
             "id": "cf-hostname-1",
             "hostname": "www.luxe-events.example",
@@ -147,6 +175,12 @@ class FakeCloudflare:
             raise self.delete_error
         return deepcopy(self.delete_result)
 
+    async def retry_custom_hostname(
+        self, hostname_id: str, *, ssl_method: str, ssl_type: str
+    ) -> dict:
+        self.retried.append((hostname_id, ssl_method, ssl_type))
+        return deepcopy(self.status_result)
+
 
 @dataclass
 class FakeResponse:
@@ -177,6 +211,30 @@ def _owner(owner_id: str = OWNER_ID) -> dict:
     return {"_id": ObjectId(owner_id), "role": "wedding_planner"}
 
 
+def _ready() -> dict[str, object]:
+    return {"enabled": True, "ready": True, "reason_code": "ready", "missing": []}
+
+
+def _mark_custom_route_active(mongo: FakeMongo) -> None:
+    mongo.raw.storefront_domains.update_one(
+        {"planner_id": OWNER_ID},
+        {
+            "$set": {
+                "application_status": "active",
+                "status": "active",
+                "custom_route_enabled": True,
+                "ownership_status": "verified",
+                "routing_dns_status": "verified",
+                "provider_status": "active",
+                "provider_hostname_status": "active",
+                "ssl_status": "active",
+                "https_status": "verified",
+                "deletion_status": None,
+            }
+        },
+    )
+
+
 @pytest.fixture
 def domain_setup():
     mongo = FakeMongo()
@@ -186,8 +244,12 @@ def domain_setup():
         mongo_client=mongo,
         cloudflare_service=cloudflare,
         entitlement_service=entitlements,
+        dns_resolver=FakeDnsResolver(),
+        claim_encryption_key="storefront-domain-service-test-key",
         cname_target="storefronts.edge.example.net",
         platform_domains={"thespecialwedding.io", "thespecialwedding.com"},
+        readiness_resolver=_ready,
+        rollout_policy=StorefrontDomainRolloutPolicy.build(mode="general"),
     )
     return service, mongo, entitlements, cloudflare
 
@@ -223,6 +285,53 @@ def test_custom_hostname_configuration_is_explicit_and_centrally_typed():
     assert fields["storefront_platform_domains"].alias == "STOREFRONT_PLATFORM_DOMAINS"
 
 
+def test_provider_errors_are_bounded_and_exposed_by_the_public_status_model(
+    domain_setup,
+):
+    service, _, _, _ = domain_setup
+    projection = service._provider_projection(
+        {
+            "status": "blocked",
+            "verification_errors": [
+                "  Hostname validation failed.  ",
+                "Hostname validation failed.",
+                42,
+            ],
+            "ssl": {
+                "status": "validation_timed_out",
+                "validation_errors": [
+                    {"message": "  Certificate validation failed.  "},
+                    {"message": "x" * 700},
+                ],
+                "validation_records": [],
+            },
+        }
+    )
+
+    serialized = service._serialize(
+        {
+            "hostname": "events.customer.example",
+            "status": "pending",
+            "application_status": "action_required",
+            "provider_hostname_status": "blocked",
+            "ownership_status": "verified",
+            "routing_dns_status": "verified",
+            "https_status": "failed",
+            "action": "action_required",
+            "revision": 1,
+            "intent": "new",
+            **projection,
+        }
+    )
+    response = StorefrontDomainResponse.model_validate(serialized)
+
+    assert response.provider_status == "blocked"
+    assert response.ssl_status == "validation_timed_out"
+    assert response.provider_verification_errors == ["Hostname validation failed."]
+    assert response.ssl_validation_errors[0] == "Certificate validation failed."
+    assert len(response.ssl_validation_errors[1]) == 500
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "cname_target",
@@ -238,6 +347,8 @@ async def test_connect_fails_before_reservation_without_valid_cname_target(
         entitlement_service=entitlements,
         cname_target=cname_target,
         platform_domains={"thespecialwedding.io"},
+        readiness_resolver=_ready,
+        rollout_policy=StorefrontDomainRolloutPolicy.build(mode="general"),
     )
 
     with pytest.raises(HTTPException) as unavailable:
@@ -294,13 +405,70 @@ def test_hostname_normalization_rejects_unsafe_or_platform_names(hostname):
 
 @pytest.mark.asyncio
 async def test_cloudflare_requires_explicit_token_and_zone_without_mock_success():
-    service = CloudflareService(api_token="", zone_id="")
+    service = CloudflareService(api_token="", zone_id="", mutations_enabled=True)
 
     with pytest.raises(CloudflareServiceError) as failure:
         await service.create_custom_hostname("events.example")
 
     assert failure.value.kind == "configuration"
     assert failure.value.operation == "create_custom_hostname"
+
+
+@pytest.mark.parametrize(
+    ("api_token", "zone_id", "expected"),
+    [
+        ("token", "zone-123", True),
+        ("", "zone-123", False),
+        ("   ", "zone-123", False),
+        ("token", "", False),
+        ("token", "zone/123", False),
+    ],
+)
+def test_cloudflare_configuration_attestation_uses_real_validation(
+    api_token, zone_id, expected
+):
+    service = CloudflareService(api_token=api_token, zone_id=zone_id)
+
+    assert service.is_configured is expected
+
+
+@pytest.mark.parametrize(
+    ("cname_target", "cloudflare", "expected"),
+    [
+        (
+            "storefronts.example.com",
+            CloudflareService(
+                api_token="token", zone_id="zone-123", mutations_enabled=True
+            ),
+            True,
+        ),
+        (
+            "   ",
+            CloudflareService(
+                api_token="token", zone_id="zone-123", mutations_enabled=True
+            ),
+            False,
+        ),
+        (
+            "storefronts.example.com",
+            CloudflareService(api_token="", zone_id="zone-123", mutations_enabled=True),
+            False,
+        ),
+    ],
+)
+def test_domain_provider_readiness_requires_valid_cname_and_cloudflare_config(
+    cname_target, cloudflare, expected
+):
+    service = StorefrontDomainService(
+        mongo_client=object(),
+        cloudflare_service=cloudflare,
+        entitlement_service=object(),
+        cname_target=cname_target,
+        platform_domains={"thespecialwedding.io"},
+        readiness_resolver=_ready,
+    )
+
+    assert service.provider_configuration_present is expected
 
 
 @pytest.mark.asyncio
@@ -314,7 +482,10 @@ async def test_cloudflare_surfaces_structured_provider_errors_for_all_verbs():
     )
     client = FakeHttpClient(response)
     service = CloudflareService(
-        api_token="secret", zone_id="zone-123", http_client=client
+        api_token="secret",
+        zone_id="zone-123",
+        http_client=client,
+        mutations_enabled=True,
     )
 
     calls = (
@@ -347,7 +518,10 @@ async def test_cloudflare_lists_custom_hostnames_by_exact_hostname_filter():
     )
     client = FakeHttpClient(response)
     service = CloudflareService(
-        api_token="secret", zone_id="zone-123", http_client=client
+        api_token="secret",
+        zone_id="zone-123",
+        http_client=client,
+        mutations_enabled=True,
     )
 
     result = await service.list_custom_hostnames("events.example")
@@ -370,31 +544,131 @@ async def test_cloudflare_lists_custom_hostnames_by_exact_hostname_filter():
 
 
 @pytest.mark.asyncio
-async def test_connect_reserves_owner_and_hostname_then_returns_pending_dns_dto(
+async def test_cloudflare_provisioning_and_cleanup_flags_fail_closed_independently():
+    client = FakeHttpClient(FakeResponse(200, {"success": True, "result": {}}))
+    service = CloudflareService(
+        api_token="secret",
+        zone_id="zone-123",
+        http_client=client,
+        mutations_enabled=False,
+        cleanup_enabled=False,
+    )
+
+    for call in (
+        service.create_custom_hostname("events.example"),
+        service.retry_custom_hostname("provider-id", ssl_method="txt", ssl_type="dv"),
+    ):
+        with pytest.raises(CloudflareServiceError) as blocked:
+            await call
+        assert blocked.value.kind == "configuration"
+        assert blocked.value.errors[0]["code"] == "cloudflare_mutations_disabled"
+
+    with pytest.raises(CloudflareServiceError) as cleanup_blocked:
+        await service.delete_custom_hostname("provider-id")
+    assert cleanup_blocked.value.kind == "configuration"
+    assert cleanup_blocked.value.errors[0]["code"] == "cloudflare_cleanup_disabled"
+
+    assert client.requests == []
+
+
+@pytest.mark.asyncio
+async def test_cloudflare_cleanup_remains_available_when_new_provisioning_is_rolled_back():
+    client = FakeHttpClient(
+        FakeResponse(200, {"success": True, "result": {"id": "provider-id"}})
+    )
+    service = CloudflareService(
+        api_token="secret",
+        zone_id="zone-123",
+        http_client=client,
+        mutations_enabled=False,
+        cleanup_enabled=True,
+    )
+
+    await service.delete_custom_hostname("provider-id")
+
+    assert client.requests[0][0] == "DELETE"
+    with pytest.raises(CloudflareServiceError) as create_blocked:
+        await service.create_custom_hostname("events.example")
+    assert create_blocked.value.errors[0]["code"] == "cloudflare_mutations_disabled"
+
+
+@pytest.mark.asyncio
+async def test_cloudflare_retry_is_no_change_patch_with_original_ssl_values():
+    response = FakeResponse(
+        200,
+        {
+            "success": True,
+            "result": {"id": "provider/id", "status": "pending"},
+        },
+    )
+    client = FakeHttpClient(response)
+    service = CloudflareService(
+        api_token="secret",
+        zone_id="zone-123",
+        http_client=client,
+        mutations_enabled=True,
+    )
+
+    await service.retry_custom_hostname("provider/id", ssl_method="txt", ssl_type="dv")
+
+    assert client.requests == [
+        (
+            "PATCH",
+            "https://api.cloudflare.com/client/v4/zones/zone-123/custom_hostnames/provider%2Fid",
+            {
+                "headers": {
+                    "Authorization": "Bearer secret",
+                    "Content-Type": "application/json",
+                },
+                "timeout": 10.0,
+                "json": {"ssl": {"method": "txt", "type": "dv"}},
+            },
+        )
+    ]
+
+
+def test_domain_provider_readiness_requires_runtime_mutation_readiness():
+    cloudflare = CloudflareService(
+        api_token="token", zone_id="zone-123", mutations_enabled=True
+    )
+    service = StorefrontDomainService(
+        mongo_client=object(),
+        cloudflare_service=cloudflare,
+        entitlement_service=object(),
+        cname_target="storefronts.example.com",
+        platform_domains={"thespecialwedding.io"},
+        readiness_resolver=lambda: {
+            "enabled": True,
+            "ready": False,
+            "reason_code": "provider_mutations_disabled",
+            "missing": [],
+        },
+    )
+
+    assert service.provider_configuration_present is False
+
+
+@pytest.mark.asyncio
+async def test_legacy_connect_now_reserves_manual_claim_without_provider_mutation(
     domain_setup,
 ):
     service, mongo, _, cloudflare = domain_setup
 
-    result = await service.connect(_owner(), "WWW.Luxe-Events.Example")
+    result = await service.connect(_owner(), "WWW.Luxe-Events.Customer.Example")
 
-    assert cloudflare.created == ["www.luxe-events.example"]
-    assert result == {
-        "hostname": "www.luxe-events.example",
-        "status": "pending",
-        "provider_status": "pending",
-        "ssl_status": "pending_validation",
-        "ownership_verification": cloudflare.create_result["ownership_verification"],
-        "ownership_verification_http": cloudflare.create_result[
-            "ownership_verification_http"
-        ],
-        "ssl_validation_records": cloudflare.create_result["ssl"]["validation_records"],
-        "cname_target": "storefronts.edge.example.net",
-        "deletion_status": None,
-        "last_error": None,
+    assert cloudflare.created == []
+    assert cloudflare.listed == []
+    assert result["hostname"] == "www.luxe-events.customer.example"
+    assert result["application_status"] == "dns_setup_pending"
+    assert result["ownership_status"] == "pending"
+    assert result["provider_hostname_status"] == "not_created"
+    assert {record["type"] for record in result["expected_records"]} == {
+        "TXT",
+        "CNAME",
     }
     stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
-    assert stored["provider_hostname_id"] == "cf-hostname-1"
-    assert stored["hostname"] == "www.luxe-events.example"
+    assert stored["provider_hostname_id"] is None
+    assert stored["hostname"] == "www.luxe-events.customer.example"
     assert stored["status"] == "pending"
 
 
@@ -430,7 +704,7 @@ async def test_provider_create_failure_releases_local_reservation(domain_setup):
     )
 
     with pytest.raises(HTTPException) as failure:
-        await service.connect(_owner(), "events.example")
+        await service._legacy_unverified_provider_connect(_owner(), "events.example")
 
     assert failure.value.status_code == 502
     assert mongo.raw.storefront_domains.count_documents({}) == 0
@@ -455,7 +729,7 @@ async def test_ambiguous_create_retains_receipt_and_refresh_reconciles_exact_map
 
     monkeypatch.setattr(cloudflare, "create_custom_hostname", commit_then_lose_response)
     with pytest.raises(HTTPException) as ambiguous:
-        await service.connect(_owner(), "events.example")
+        await service._legacy_unverified_provider_connect(_owner(), "events.example")
     assert ambiguous.value.status_code == 502
     receipt = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
     assert receipt["status"] == "provisioning_unknown"
@@ -464,10 +738,42 @@ async def test_ambiguous_create_retains_receipt_and_refresh_reconciles_exact_map
     refreshed = await service.refresh(_owner())
 
     assert refreshed["status"] == "pending"
-    assert cloudflare.listed == ["events.example"]
+    assert cloudflare.listed == ["events.example", "events.example"]
     stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
     assert stored["provider_hostname_id"] == "cf-hostname-1"
     assert cloudflare.created == ["events.example"]
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_legacy_create_never_adopts_preexisting_exact_mapping(
+    domain_setup,
+):
+    service, mongo, _, cloudflare = domain_setup
+    preexisting = {
+        **deepcopy(cloudflare.create_result),
+        "id": "cf-preexisting",
+        "hostname": "events.example",
+    }
+    cloudflare.list_result = [preexisting]
+    cloudflare.create_error = CloudflareServiceError(
+        operation="create_custom_hostname",
+        kind="transport",
+        message="response lost after provider request",
+    )
+
+    with pytest.raises(HTTPException):
+        await service._legacy_unverified_provider_connect(_owner(), "events.example")
+
+    with pytest.raises(HTTPException) as ambiguous:
+        await service.refresh(_owner())
+
+    assert ambiguous.value.status_code == 502
+    assert ambiguous.value.detail["code"] == "ambiguous_provider_create"
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["application_status"] == "operator_review"
+    assert stored["provider_hostname_id"] is None
+    assert stored["last_error"]["code"] == "ambiguous_provider_create"
+    assert stored["provider_ids_before"] == ["cf-preexisting"]
 
 
 @pytest.mark.asyncio
@@ -490,7 +796,7 @@ async def test_ambiguous_create_disconnect_reconciles_then_deletes_without_dupli
 
     monkeypatch.setattr(cloudflare, "create_custom_hostname", commit_then_lose_response)
     with pytest.raises(HTTPException):
-        await service.connect(_owner(), "events.example")
+        await service._legacy_unverified_provider_connect(_owner(), "events.example")
 
     await service.disconnect(_owner())
 
@@ -510,7 +816,7 @@ async def test_unknown_create_with_zero_lookup_can_retry_without_duplicate_reser
         message="request outcome unknown",
     )
     with pytest.raises(HTTPException):
-        await service.connect(_owner(), "events.example")
+        await service._legacy_unverified_provider_connect(_owner(), "events.example")
     assert mongo.raw.storefront_domains.count_documents({}) == 1
 
     cloudflare.create_error = None
@@ -525,7 +831,9 @@ async def test_unknown_create_with_zero_lookup_can_retry_without_duplicate_reser
             }
         },
     )
-    connected = await service.connect(_owner(), "events.example")
+    connected = await service._legacy_unverified_provider_connect(
+        _owner(), "events.example"
+    )
 
     assert connected["status"] == "pending"
     assert mongo.raw.storefront_domains.count_documents({}) == 1
@@ -541,7 +849,7 @@ async def test_unknown_create_zero_lookup_disconnect_preserves_receipt(domain_se
         message="request outcome unknown",
     )
     with pytest.raises(HTTPException):
-        await service.connect(_owner(), "events.example")
+        await service._legacy_unverified_provider_connect(_owner(), "events.example")
 
     with pytest.raises(HTTPException) as pending:
         await service.disconnect(_owner())
@@ -564,7 +872,7 @@ async def test_back_to_back_zero_lookups_do_not_bypass_reconciliation_grace(
         message="request outcome unknown",
     )
     with pytest.raises(HTTPException):
-        await service.connect(_owner(), "events.example")
+        await service._legacy_unverified_provider_connect(_owner(), "events.example")
 
     first = await service.refresh(_owner())
     second = await service.refresh(_owner())
@@ -586,7 +894,7 @@ async def test_refresh_recovers_stale_provisioning_attempt_before_lookup(
         message="request outcome unknown",
     )
     with pytest.raises(HTTPException):
-        await service.connect(_owner(), "events.example")
+        await service._legacy_unverified_provider_connect(_owner(), "events.example")
     stale_at = datetime.now(timezone.utc) - timedelta(minutes=11)
     mongo.raw.storefront_domains.update_one(
         {"planner_id": OWNER_ID},
@@ -623,7 +931,7 @@ async def test_disconnect_recovers_stale_provisioning_then_deletes_provider_mapp
         message="request outcome unknown",
     )
     with pytest.raises(HTTPException):
-        await service.connect(_owner(), "events.example")
+        await service._legacy_unverified_provider_connect(_owner(), "events.example")
     stale_at = datetime.now(timezone.utc) - timedelta(minutes=11)
     mongo.raw.storefront_domains.update_one(
         {"planner_id": OWNER_ID},
@@ -659,7 +967,7 @@ async def test_provider_5xx_create_failure_retains_unknown_receipt(domain_setup)
     )
 
     with pytest.raises(HTTPException) as ambiguous:
-        await service.connect(_owner(), "events.example")
+        await service._legacy_unverified_provider_connect(_owner(), "events.example")
 
     assert ambiguous.value.status_code == 502
     stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
@@ -676,7 +984,7 @@ async def test_unknown_create_mismatched_provider_lookup_fails_closed(domain_set
         message="request outcome unknown",
     )
     with pytest.raises(HTTPException):
-        await service.connect(_owner(), "events.example")
+        await service._legacy_unverified_provider_connect(_owner(), "events.example")
     cloudflare.list_result = [
         {
             **cloudflare.create_result,
@@ -703,7 +1011,7 @@ async def test_unknown_create_multiple_provider_matches_fail_closed(domain_setup
         message="request outcome unknown",
     )
     with pytest.raises(HTTPException):
-        await service.connect(_owner(), "events.example")
+        await service._legacy_unverified_provider_connect(_owner(), "events.example")
     cloudflare.list_result = [
         {**cloudflare.create_result, "id": "cf-1", "hostname": "events.example"},
         {**cloudflare.create_result, "id": "cf-2", "hostname": "events.example"},
@@ -714,7 +1022,9 @@ async def test_unknown_create_multiple_provider_matches_fail_closed(domain_setup
 
     assert ambiguous.value.status_code == 502
     stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
-    assert stored["status"] == "provisioning_unknown"
+    assert stored["status"] == "pending"
+    assert stored["application_status"] == "operator_review"
+    assert stored["last_error"]["code"] == "ambiguous_provider_create"
     assert stored["provider_hostname_id"] is None
 
 
@@ -737,7 +1047,7 @@ async def test_post_provider_local_failure_compensates_provider_and_local_reserv
     )
 
     with pytest.raises(HTTPException) as failure:
-        await service.connect(_owner(), "events.example")
+        await service._legacy_unverified_provider_connect(_owner(), "events.example")
 
     assert failure.value.status_code == 503
     assert cloudflare.deleted == ["cf-hostname-1"]
@@ -769,14 +1079,17 @@ async def test_failed_provider_compensation_preserves_retryable_mapping(
     )
 
     with pytest.raises(HTTPException) as failure:
-        await service.connect(_owner(), "events.example")
+        await service._legacy_unverified_provider_connect(_owner(), "events.example")
 
     assert failure.value.status_code == 503
     stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
     assert stored["provider_hostname_id"] == "cf-hostname-1"
     assert stored["status"] == "delete_failed"
+    assert stored["application_status"] == "disconnect_failed"
     assert stored["deletion_status"] == "retry_pending"
     assert stored["delete_attempts"] == 1
+    assert stored["custom_route_enabled"] is False
+    assert stored["retry_due_at"] is not None
 
 
 @pytest.mark.asyncio
@@ -792,7 +1105,7 @@ async def test_refresh_requires_both_hostname_and_ssl_active(
     domain_setup, provider_status, ssl_status, expected_status
 ):
     service, mongo, _, cloudflare = domain_setup
-    await service.connect(_owner(), "events.example")
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
     cloudflare.status_result["status"] = provider_status
     cloudflare.status_result["ssl"]["status"] = ssl_status
 
@@ -810,10 +1123,11 @@ async def test_refresh_provider_not_found_revokes_route_and_reprovisions_fresh_i
     domain_setup,
 ):
     service, mongo, _, cloudflare = domain_setup
-    await service.connect(_owner(), "events.example")
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
     cloudflare.status_result["status"] = "active"
     cloudflare.status_result["ssl"]["status"] = "active"
     await service.refresh(_owner())
+    _mark_custom_route_active(mongo)
     assert await service.resolve_active_hostname("events.example") is not None
 
     cloudflare.status_error = CloudflareServiceError(
@@ -835,7 +1149,9 @@ async def test_refresh_provider_not_found_revokes_route_and_reprovisions_fresh_i
 
     cloudflare.status_error = None
     cloudflare.create_result["id"] = "cf-hostname-2"
-    reconnected = await service.connect(_owner(), "events.example")
+    reconnected = await service._legacy_unverified_provider_connect(
+        _owner(), "events.example"
+    )
 
     assert reconnected["status"] == "pending"
     assert cloudflare.created == ["events.example", "events.example"]
@@ -852,7 +1168,7 @@ async def test_refresh_provider_not_found_is_fenced_from_rebound_hostname(
     domain_setup, monkeypatch
 ):
     service, mongo, _, cloudflare = domain_setup
-    await service.connect(_owner(), "events.example")
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
     cloudflare.status_result["status"] = "active"
     cloudflare.status_result["ssl"]["status"] = "active"
     await service.refresh(_owner())
@@ -894,7 +1210,7 @@ async def test_refresh_rejects_provider_identity_drift_without_activating_mappin
     domain_setup,
 ):
     service, mongo, _, cloudflare = domain_setup
-    await service.connect(_owner(), "events.example")
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
     cloudflare.status_result.update(
         {
             "id": "different-provider-id",
@@ -918,7 +1234,7 @@ async def test_owner_scope_prevents_other_planner_from_reading_or_deleting_mappi
     domain_setup,
 ):
     service, mongo, _, cloudflare = domain_setup
-    await service.connect(_owner(), "events.example")
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
 
     assert await service.get_for_owner(_owner(SECOND_OWNER_ID)) is None
     assert await service.disconnect(_owner(SECOND_OWNER_ID)) is None
@@ -929,7 +1245,7 @@ async def test_owner_scope_prevents_other_planner_from_reading_or_deleting_mappi
 @pytest.mark.asyncio
 async def test_delete_failure_preserves_mapping_with_retry_state(domain_setup):
     service, mongo, _, cloudflare = domain_setup
-    await service.connect(_owner(), "events.example")
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
     cloudflare.delete_error = CloudflareServiceError(
         operation="delete_custom_hostname",
         kind="transport",
@@ -945,7 +1261,19 @@ async def test_delete_failure_preserves_mapping_with_retry_state(domain_setup):
     assert stored["status"] == "delete_failed"
     assert stored["deletion_status"] == "retry_pending"
     assert stored["delete_attempts"] == 1
-    assert stored["last_error"] == "Cloudflare request failed"
+    assert stored["last_error"]["code"] == "provider_delete_failed"
+    operation = mongo.raw.storefront_domain_operations.find_one(
+        {"operation_id": stored["provider_delete_operation_id"]}
+    )
+    assert operation["kind"] == "provider_delete"
+    assert operation["state"] == "failed"
+    assert operation["planner_id"] == OWNER_ID
+    assert operation["domain_id"] == str(stored["_id"])
+    assert operation["hostname"] == "events.example"
+    assert operation["provider_hostname_id"] == "cf-hostname-1"
+    assert len(operation["request_fingerprint"]) == 64
+    assert operation["retry_error"]["code"] == "provider_delete_failed"
+    assert "Cloudflare request failed" not in repr(operation)
 
 
 @pytest.mark.asyncio
@@ -953,7 +1281,7 @@ async def test_delete_failure_refresh_preserves_intent_and_retry_can_finish(
     domain_setup,
 ):
     service, mongo, _, cloudflare = domain_setup
-    await service.connect(_owner(), "events.example")
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
     cloudflare.status_result["status"] = "active"
     cloudflare.status_result["ssl"]["status"] = "active"
     await service.refresh(_owner())
@@ -979,6 +1307,26 @@ async def test_delete_failure_refresh_preserves_intent_and_retry_can_finish(
 
     assert cloudflare.deleted == ["cf-hostname-1", "cf-hostname-1"]
     assert mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID}) is None
+    operations = list(
+        mongo.raw.storefront_domain_operations.find(
+            {"planner_id": OWNER_ID, "kind": "provider_delete"}
+        )
+    )
+    assert len(operations) == 2
+    assert {operation["state"] for operation in operations} == {
+        "failed",
+        "completed",
+    }
+    assert len({operation["operation_id"] for operation in operations}) == 2
+    tombstone = mongo.raw.storefront_domain_tombstones.find_one(
+        {"planner_id": OWNER_ID}
+    )
+    completed = next(
+        operation for operation in operations if operation["state"] == "completed"
+    )
+    assert tombstone["provider_delete_operation_id"] == completed["operation_id"]
+    assert tombstone["provider_delete_receipt"] == completed["provider_receipt"]
+    assert tombstone["provider_delete_receipt"]["outcome"] == "deleted"
 
 
 @pytest.mark.asyncio
@@ -986,7 +1334,7 @@ async def test_refresh_started_before_disconnect_cannot_resurrect_deleted_mappin
     domain_setup, monkeypatch
 ):
     service, mongo, _, cloudflare = domain_setup
-    await service.connect(_owner(), "events.example")
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
     cloudflare.status_result["status"] = "active"
     cloudflare.status_result["ssl"]["status"] = "active"
 
@@ -1028,9 +1376,56 @@ async def test_refresh_started_before_disconnect_cannot_resurrect_deleted_mappin
 
 
 @pytest.mark.asyncio
+async def test_concurrent_disconnect_reuses_attempt_receipt_without_double_delete(
+    domain_setup, monkeypatch
+):
+    service, mongo, _, cloudflare = domain_setup
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
+    delete_started = asyncio.Event()
+    release_delete = asyncio.Event()
+
+    async def delayed_delete(hostname_id: str) -> dict:
+        cloudflare.deleted.append(hostname_id)
+        delete_started.set()
+        await release_delete.wait()
+        return deepcopy(cloudflare.delete_result)
+
+    monkeypatch.setattr(cloudflare, "delete_custom_hostname", delayed_delete)
+    first_disconnect = asyncio.create_task(service.disconnect(_owner()))
+    await delete_started.wait()
+
+    with pytest.raises(HTTPException) as concurrent:
+        await service.disconnect(_owner())
+
+    assert concurrent.value.status_code == 409
+    assert concurrent.value.detail["code"] == "provider_delete_in_progress"
+    assert cloudflare.deleted == ["cf-hostname-1"]
+    operations = list(
+        mongo.raw.storefront_domain_operations.find(
+            {"planner_id": OWNER_ID, "kind": "provider_delete"}
+        )
+    )
+    assert len(operations) == 1
+    assert operations[0]["state"] == "requesting"
+    assert operations[0]["request_count"] == 1
+
+    release_delete.set()
+    assert await first_disconnect is None
+    completed = mongo.raw.storefront_domain_operations.find_one(
+        {"operation_id": operations[0]["operation_id"]}
+    )
+    assert completed["state"] == "completed"
+    assert completed["request_count"] == 1
+    tombstone = mongo.raw.storefront_domain_tombstones.find_one(
+        {"planner_id": OWNER_ID}
+    )
+    assert tombstone["provider_delete_operation_id"] == completed["operation_id"]
+
+
+@pytest.mark.asyncio
 async def test_disconnect_claim_failure_never_calls_provider(domain_setup, monkeypatch):
     service, mongo, _, cloudflare = domain_setup
-    await service.connect(_owner(), "events.example")
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
     collection = mongo.db["storefront_domains"]
     original_update = collection.update_one
 
@@ -1054,7 +1449,7 @@ async def test_provider_delete_success_local_exception_is_durable_and_retryable(
     domain_setup, monkeypatch
 ):
     service, mongo, _, cloudflare = domain_setup
-    await service.connect(_owner(), "events.example")
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
     collection = mongo.db["storefront_domains"]
     original_delete = collection.delete_one
 
@@ -1086,7 +1481,7 @@ async def test_provider_delete_success_local_miss_is_durable_and_retryable(
     domain_setup, monkeypatch
 ):
     service, mongo, _, cloudflare = domain_setup
-    await service.connect(_owner(), "events.example")
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
     collection = mongo.db["storefront_domains"]
     original_delete = collection.delete_one
 
@@ -1115,7 +1510,7 @@ async def test_provider_delete_success_local_miss_is_durable_and_retryable(
 @pytest.mark.asyncio
 async def test_provider_not_found_is_idempotent_on_delete_retry(domain_setup):
     service, mongo, _, cloudflare = domain_setup
-    await service.connect(_owner(), "events.example")
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
     cloudflare.delete_error = CloudflareServiceError(
         operation="delete_custom_hostname",
         kind="transport",
@@ -1135,12 +1530,31 @@ async def test_provider_not_found_is_idempotent_on_delete_retry(domain_setup):
 
     assert cloudflare.deleted == ["cf-hostname-1", "cf-hostname-1"]
     assert mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID}) is None
+    operations = list(
+        mongo.raw.storefront_domain_operations.find(
+            {"planner_id": OWNER_ID, "kind": "provider_delete"}
+        )
+    )
+    assert len(operations) == 2
+    completed = next(
+        operation for operation in operations if operation["state"] == "completed"
+    )
+    assert completed["provider_receipt"] == {
+        "outcome": "not_found",
+        "provider": "cloudflare",
+        "provider_status_code": 404,
+    }
+    tombstone = mongo.raw.storefront_domain_tombstones.find_one(
+        {"planner_id": OWNER_ID}
+    )
+    assert tombstone["provider_delete_operation_id"] == completed["operation_id"]
+    assert tombstone["provider_delete_receipt"] == completed["provider_receipt"]
 
 
 @pytest.mark.asyncio
 async def test_successful_delete_removes_only_owner_mapping(domain_setup):
     service, mongo, _, cloudflare = domain_setup
-    await service.connect(_owner(), "events.example")
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
     mongo.raw.storefront_domains.insert_one(
         {
             "planner_id": SECOND_OWNER_ID,
@@ -1162,40 +1576,220 @@ async def test_successful_delete_removes_only_owner_mapping(domain_setup):
 
 
 @pytest.mark.asyncio
-async def test_entitlement_loss_blocks_management_and_serving_without_deleting_state(
+async def test_entitlement_loss_preserves_proven_route_status_and_disconnect(
     domain_setup,
 ):
     service, mongo, entitlements, cloudflare = domain_setup
-    await service.connect(_owner(), "events.example")
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
     cloudflare.status_result["status"] = "active"
     cloudflare.status_result["ssl"]["status"] = "active"
     await service.refresh(_owner())
+    _mark_custom_route_active(mongo)
 
     active = await service.resolve_active_hostname("events.example")
     assert active is not None
     assert active["planner_id"] == OWNER_ID
 
     entitlements.enabled_by_owner[OWNER_ID] = False
-    assert await service.resolve_active_hostname("events.example") is None
-    with pytest.raises(HTTPException) as denied:
-        await service.get_for_owner(_owner())
-    assert denied.value.status_code == 403
-    with pytest.raises(HTTPException) as disconnect_denied:
-        await service.disconnect(_owner())
-    assert disconnect_denied.value.status_code == 403
-    assert cloudflare.deleted == []
-    assert mongo.raw.storefront_domains.count_documents({}) == 1
+    assert await service.resolve_active_hostname("events.example") is not None
+    local_status = await service.get_for_owner(_owner())
+    assert local_status["hostname"] == "events.example"
+
+    await service.disconnect(_owner())
+
+    assert cloudflare.deleted == ["cf-hostname-1"]
+    assert mongo.raw.storefront_domains.count_documents({}) == 0
+    tombstone = mongo.raw.storefront_domain_tombstones.find_one(
+        {"planner_id": OWNER_ID}
+    )
+    assert tombstone["hostname"] == "events.example"
+
+
+@pytest.mark.asyncio
+async def test_retry_uses_owner_scoped_attempt_original_ssl_and_throttles(domain_setup):
+    service, mongo, _, cloudflare = domain_setup
+    now = datetime(2026, 7, 15, 20, 0, tzinfo=timezone.utc)
+    service._now = lambda: now
+    domain_id = ObjectId()
+    mongo.raw.storefront_domains.insert_one(
+        {
+            "_id": domain_id,
+            "planner_id": OWNER_ID,
+            "hostname": "events.example",
+            "claim_attempt_id": "attempt-1",
+            "revision": 7,
+            "application_status": "certificate_validation",
+            "status": "pending",
+            "provider_hostname_id": "cf-hostname-1",
+            "provider_ssl_method": "txt",
+            "provider_ssl_type": "dv",
+            "provider_status": "active",
+            "provider_hostname_status": "active",
+            "ssl_status": "pending_validation",
+            "ownership_status": "verified",
+            "routing_dns_status": "verified",
+            "https_status": "pending",
+            "action": "action_required",
+            "deletion_status": None,
+            "updated_at": now,
+        }
+    )
+
+    result = await service.retry_provider(_owner(), "attempt-1")
+
+    assert result["application_status"] == "certificate_validation"
+    assert cloudflare.retried == [("cf-hostname-1", "txt", "dv")]
+    operation = mongo.raw.storefront_domain_operations.find_one(
+        {"domain_id": str(domain_id), "kind": "provider_retry"}
+    )
+    assert operation["state"] == "completed"
+    assert operation["provider_hostname_id"] == "cf-hostname-1"
+    stored = mongo.raw.storefront_domains.find_one({"_id": domain_id})
+    assert stored["retry_due_at"].replace(tzinfo=timezone.utc) == now
+    assert stored["provider_retry_requested_at"].replace(tzinfo=timezone.utc) == now
+
+    with pytest.raises(HTTPException) as throttled:
+        await service.retry_provider(_owner(), "attempt-1")
+    assert throttled.value.status_code == 429
+    assert throttled.value.detail["code"] == "custom_domain_retry_throttled"
+    assert cloudflare.retried == [("cf-hostname-1", "txt", "dv")]
+
+
+@pytest.mark.asyncio
+async def test_retry_readiness_and_owner_scope_fail_before_provider_mutation(
+    domain_setup,
+):
+    service, mongo, _, cloudflare = domain_setup
+    now = datetime(2026, 7, 15, 20, 0, tzinfo=timezone.utc)
+    mongo.raw.storefront_domains.insert_one(
+        {
+            "_id": ObjectId(),
+            "planner_id": OWNER_ID,
+            "hostname": "events.example",
+            "claim_attempt_id": "attempt-1",
+            "revision": 1,
+            "application_status": "hostname_validation",
+            "provider_hostname_id": "cf-hostname-1",
+            "provider_ssl_method": "txt",
+            "provider_ssl_type": "dv",
+            "provider_status": "pending",
+            "provider_hostname_status": "pending",
+            "ssl_status": "pending_validation",
+            "ownership_status": "verified",
+            "routing_dns_status": "verified",
+            "https_status": "pending",
+            "action": "action_required",
+            "deletion_status": None,
+            "updated_at": now,
+        }
+    )
+
+    with pytest.raises(HTTPException) as cross_owner:
+        await service.retry_provider(_owner(SECOND_OWNER_ID), "attempt-1")
+    assert cross_owner.value.status_code == 404
+
+    service._readiness = lambda: {
+        "enabled": True,
+        "ready": False,
+        "reason_code": "provider_mutations_disabled",
+        "missing": [],
+    }
+    with pytest.raises(HTTPException) as disabled:
+        await service.retry_provider(_owner(), "attempt-1")
+    assert disabled.value.status_code == 503
+    assert cloudflare.retried == []
+    assert (
+        mongo.raw.storefront_domain_operations.count_documents(
+            {"kind": "provider_retry"}
+        )
+        == 0
+    )
+
+
+@pytest.mark.asyncio
+async def test_observe_is_owner_scoped_enqueues_without_provider_validation_retry(
+    domain_setup,
+):
+    service, mongo, entitlements, cloudflare = domain_setup
+    now = datetime(2026, 7, 15, 20, 0, tzinfo=timezone.utc)
+    service._now = lambda: now
+    mongo.raw.storefront_domains.insert_one(
+        {
+            "_id": ObjectId(),
+            "planner_id": OWNER_ID,
+            "hostname": "events.example",
+            "claim_attempt_id": "attempt-1",
+            "revision": 2,
+            "application_status": "certificate_validation",
+            "status": "pending",
+            "provider_hostname_id": "cf-hostname-1",
+            "provider_status": "active",
+            "provider_hostname_status": "active",
+            "ssl_status": "pending_validation",
+            "ownership_status": "verified",
+            "routing_dns_status": "verified",
+            "https_status": "pending",
+            "action": "processing",
+            "deletion_status": None,
+            "retry_due_at": now + timedelta(hours=1),
+            "updated_at": now,
+        }
+    )
+    entitlements.enabled_by_owner[OWNER_ID] = False
+
+    observed = await service.observe(_owner(), "attempt-1")
+
+    assert observed["application_status"] == "certificate_validation"
+    assert observed["next_check_at"].replace(tzinfo=timezone.utc) == now
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert stored["retry_due_at"].replace(tzinfo=timezone.utc) == now
+    assert stored["observation_requested_at"].replace(tzinfo=timezone.utc) == now
+    assert cloudflare.read == []
+    assert cloudflare.retried == []
+
+    with pytest.raises(HTTPException) as cross_owner:
+        await service.observe(_owner(SECOND_OWNER_ID), "attempt-1")
+    assert cross_owner.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_disconnect_cleanup_is_not_blocked_by_new_mutation_readiness(
+    domain_setup,
+):
+    service, mongo, _, cloudflare = domain_setup
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
+    before = deepcopy(mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID}))
+    service._readiness = lambda: {
+        "enabled": True,
+        "ready": False,
+        "reason_code": "provider_mutations_disabled",
+        "missing": [],
+    }
+
+    await service.disconnect(_owner())
+
+    assert cloudflare.deleted == [before["provider_hostname_id"]]
+    assert mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID}) is None
+    tombstone = mongo.raw.storefront_domain_tombstones.find_one(
+        {"planner_id": OWNER_ID}
+    )
+    operation = mongo.raw.storefront_domain_operations.find_one(
+        {"operation_id": tombstone["provider_delete_operation_id"]}
+    )
+    assert operation["state"] == "completed"
+    assert tombstone["provider_delete_receipt"] == operation["provider_receipt"]
 
 
 @pytest.mark.asyncio
 async def test_resolver_returns_only_exact_active_hostname(domain_setup):
-    service, _, _, cloudflare = domain_setup
-    await service.connect(_owner(), "events.example")
+    service, mongo, _, cloudflare = domain_setup
+    await service._legacy_unverified_provider_connect(_owner(), "events.example")
 
     assert await service.resolve_active_hostname("events.example") is None
     cloudflare.status_result["status"] = "active"
     cloudflare.status_result["ssl"]["status"] = "active"
     await service.refresh(_owner())
+    _mark_custom_route_active(mongo)
     assert await service.resolve_active_hostname("other.example") is None
     assert (await service.resolve_active_hostname("EVENTS.EXAMPLE"))["hostname"] == (
         "events.example"

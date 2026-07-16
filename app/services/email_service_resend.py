@@ -8,6 +8,9 @@ from typing import Any, Dict, List, Optional, cast
 
 import resend
 
+from app.constants.storefront_domain import (
+    STOREFRONT_DOMAIN_INSTRUCTIONS_EMAIL_TYPE,
+)
 from app.core.database import mongo
 from app.utils.rsvp_links import build_guest_otp_url
 from app.utils.contact_sanitizer import sanitize_email, validate_email_format
@@ -18,6 +21,20 @@ from app.utils.wedding_event_types import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _masked_instruction_recipient(email: str) -> str:
+    """Keep storefront DNS-contact audit data useful without retaining an address."""
+
+    local, separator, domain = email.strip().casefold().rpartition("@")
+    if not separator or not local or not domain:
+        return "masked recipient"
+    labels = domain.split(".")
+    domain_name = labels[0]
+    domain_suffix = ".".join(labels[1:])
+    local_hint = f"{local[0]}***"
+    domain_hint = f"{domain_name[0]}***" if domain_name else "***"
+    return f"{local_hint}@{domain_hint}{'.' + domain_suffix if domain_suffix else ''}"
 
 
 class ResendEmailService:
@@ -72,6 +89,9 @@ class ResendEmailService:
         idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Send a single email using Resend"""
+        is_storefront_domain_instruction = (
+            email_type == STOREFRONT_DOMAIN_INSTRUCTIONS_EMAIL_TYPE
+        )
         if not self.configured:
             return {"success": False, "error": "Email service not configured"}
 
@@ -81,7 +101,11 @@ class ResendEmailService:
         if not sanitized or not validate_email_format(sanitized):
             return {
                 "success": False,
-                "error": f"Invalid recipient email: {original_email!r}",
+                "error": (
+                    "Invalid recipient email"
+                    if is_storefront_domain_instruction
+                    else f"Invalid recipient email: {original_email!r}"
+                ),
             }
 
         try:
@@ -130,13 +154,19 @@ class ResendEmailService:
                 resend.Emails.send,
                 *send_args,
             )
+            provider_message_id = (
+                email_response.get("id")
+                if isinstance(email_response, dict)
+                else getattr(email_response, "id", None)
+            )
+            if not isinstance(provider_message_id, str) or not provider_message_id:
+                provider_message_id = None
 
             # Generate thread_id for linking inbound replies
             thread_id = f"wedding-{wedding_slug}" if wedding_slug else None
 
             # Log the email
             log_entry = {
-                "to": to_email,
                 "subject": subject,
                 "from_email": from_email,
                 "from_name": from_name,
@@ -149,22 +179,51 @@ class ResendEmailService:
                 "idempotency_key": idempotency_key,
                 "sent_at": datetime.now(timezone.utc),
                 "status": "success",
-                "resend_id": email_response.get("id"),
+                "resend_id": provider_message_id,
                 "provider": "resend",
             }
-            await self.email_log_collection.insert_one(log_entry)
+            if is_storefront_domain_instruction:
+                # Resend necessarily receives the destination to deliver the
+                # message. Our application audit trail retains only the same
+                # masked hint shown to the planner, never the address itself.
+                log_entry["recipient_hint"] = _masked_instruction_recipient(sanitized)
+            else:
+                log_entry["to"] = to_email
+            try:
+                await self.email_log_collection.insert_one(log_entry)
+            except Exception:
+                if not is_storefront_domain_instruction:
+                    raise
+                # Provider acceptance is authoritative for this delivery. A
+                # best-effort application audit write must not turn an accepted
+                # idempotent send into a retryable delivery failure.
+                logger.warning(
+                    "Storefront DNS instruction email was accepted, but its "
+                    "masked audit receipt could not be persisted"
+                )
 
+            if is_storefront_domain_instruction:
+                logger.info("Storefront DNS instruction email accepted by Resend")
+                return {
+                    "success": True,
+                    "id": provider_message_id,
+                    "message_id": provider_message_id,
+                }
             logger.info(
-                f"Email sent successfully to {to_email}, ID: {email_response.get('id')}"
+                f"Email sent successfully to {to_email}, ID: {provider_message_id}"
             )
-            return {"success": True, "id": email_response.get("id")}
+            return {"success": True, "id": provider_message_id}
 
         except Exception as e:
-            logger.error(f"Failed to send email to {to_email}: {str(e)}")
+            if is_storefront_domain_instruction:
+                # Provider exceptions may include request data. Do not put the
+                # DNS contact address or raw provider error in application logs.
+                logger.error("Storefront DNS instruction email delivery failed")
+            else:
+                logger.error(f"Failed to send email to {to_email}: {str(e)}")
 
             # Log the failure
             log_entry = {
-                "to": to_email,
                 "subject": subject,
                 "from_email": from_email,
                 "from_name": from_name,
@@ -173,14 +232,33 @@ class ResendEmailService:
                 "idempotency_key": idempotency_key,
                 "sent_at": datetime.now(timezone.utc),
                 "status": "failed",
-                "error": str(e),
                 "provider": "resend",
             }
-            await self.email_log_collection.insert_one(log_entry)
+            if is_storefront_domain_instruction:
+                log_entry.update(
+                    {
+                        "recipient_hint": _masked_instruction_recipient(sanitized),
+                        "error_code": "provider_delivery_failed",
+                    }
+                )
+                try:
+                    await self.email_log_collection.insert_one(log_entry)
+                except Exception:
+                    logger.warning(
+                        "Storefront DNS instruction failure audit receipt could "
+                        "not be persisted"
+                    )
+            else:
+                log_entry.update({"to": to_email, "error": str(e)})
+                await self.email_log_collection.insert_one(log_entry)
 
             return {
                 "success": False,
-                "error": str(e),
+                "error": (
+                    "Email provider delivery failed"
+                    if is_storefront_domain_instruction
+                    else str(e)
+                ),
                 # A network/provider exception can happen after Resend accepted
                 # the request. Callers with a stable provider key may safely
                 # retry inside Resend's idempotency window.

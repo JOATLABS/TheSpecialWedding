@@ -2602,6 +2602,12 @@ async def create_storefront_indexes():
 
     settings = mongo.db["storefront_settings"]
     domains = mongo.db["storefront_domains"]
+    domain_conflict_claims = mongo.db["storefront_domain_conflict_claims"]
+    domain_flows = mongo.db["storefront_domain_flows"]
+    domain_operations = mongo.db["storefront_domain_operations"]
+    domain_instruction_links = mongo.db["storefront_domain_instruction_links"]
+    domain_instruction_quotas = mongo.db["storefront_domain_instruction_quotas"]
+    domain_tombstones = mongo.db["storefront_domain_tombstones"]
     assets = mongo.db["storefront_assets"]
     asset_cleanup_receipts = mongo.db["storefront_asset_cleanup_receipts"]
     inquiries = mongo.db["storefront_inquiries"]
@@ -2643,6 +2649,141 @@ async def create_storefront_indexes():
             [("hostname", ASCENDING)],
             name="idx_storefront_domains_hostname_unique",
             unique=True,
+            background=True,
+        )
+        await domains.create_index(
+            [
+                ("application_status", ASCENDING),
+                ("retry_due_at", ASCENDING),
+                ("lease_expires_at", ASCENDING),
+            ],
+            name="idx_storefront_domains_lifecycle_retry_lease",
+            background=True,
+        )
+        await domain_conflict_claims.create_index(
+            [("attempt_id", ASCENDING)],
+            name="idx_storefront_domain_conflict_claims_attempt_unique",
+            unique=True,
+            background=True,
+        )
+        await domain_conflict_claims.create_index(
+            [("claim_token_digest", ASCENDING)],
+            name="idx_storefront_domain_conflict_claims_digest_unique",
+            unique=True,
+            background=True,
+            partialFilterExpression={"claim_token_digest": {"$type": "string"}},
+        )
+        await domain_conflict_claims.create_index(
+            [("current_owner_key", ASCENDING)],
+            name="idx_storefront_domain_conflict_claims_current_owner_unique",
+            unique=True,
+            background=True,
+            partialFilterExpression={"current_owner_key": {"$type": "string"}},
+        )
+        await domain_conflict_claims.create_index(
+            [("purge_at", ASCENDING)],
+            name="idx_storefront_domain_conflict_claims_purge_ttl",
+            expireAfterSeconds=0,
+            background=True,
+        )
+        await domain_flows.create_index(
+            [("flow_id", ASCENDING)],
+            name="idx_storefront_domain_flows_id_unique",
+            unique=True,
+            background=True,
+        )
+        await domain_flows.create_index(
+            [("domain_id", ASCENDING), ("attempt_id", ASCENDING)],
+            name="idx_storefront_domain_flows_domain_attempt_unique",
+            unique=True,
+            background=True,
+        )
+        await domain_flows.create_index(
+            [("flow_token_digest", ASCENDING)],
+            name="idx_storefront_domain_flows_digest_unique",
+            unique=True,
+            background=True,
+            partialFilterExpression={"flow_token_digest": {"$type": "string"}},
+        )
+        await domain_flows.create_index(
+            [("expires_at", ASCENDING)],
+            name="idx_storefront_domain_flows_expiry_ttl",
+            expireAfterSeconds=0,
+            background=True,
+        )
+        await domain_operations.create_index(
+            [("operation_id", ASCENDING)],
+            name="idx_storefront_domain_operations_operation_unique",
+            unique=True,
+            background=True,
+        )
+        await domain_operations.create_index(
+            [
+                ("domain_id", ASCENDING),
+                ("attempt_id", ASCENDING),
+                ("kind", ASCENDING),
+            ],
+            name="idx_storefront_domain_operations_domain_attempt_unique",
+            unique=True,
+            background=True,
+        )
+        await domain_operations.create_index(
+            [("expires_at", ASCENDING)],
+            name="idx_storefront_domain_operations_expiry_ttl",
+            expireAfterSeconds=0,
+            background=True,
+        )
+        await domain_instruction_links.create_index(
+            [("link_id", ASCENDING)],
+            name="idx_storefront_domain_instruction_links_id_unique",
+            unique=True,
+            background=True,
+        )
+        await domain_instruction_links.create_index(
+            [("token_digest", ASCENDING)],
+            name="idx_storefront_domain_instruction_links_digest_unique",
+            unique=True,
+            background=True,
+            partialFilterExpression={"token_digest": {"$type": "string"}},
+        )
+        await domain_instruction_links.create_index(
+            [
+                ("domain_id", ASCENDING),
+                ("claim_attempt_id", ASCENDING),
+                ("recipient_hash", ASCENDING),
+            ],
+            name="idx_storefront_domain_instruction_links_recipient_unique",
+            unique=True,
+            background=True,
+        )
+        await domain_instruction_links.create_index(
+            [("expires_at", ASCENDING)],
+            name="idx_storefront_domain_instruction_links_expiry_ttl",
+            expireAfterSeconds=0,
+            background=True,
+        )
+        await domain_instruction_quotas.create_index(
+            [("quota_key", ASCENDING)],
+            name="idx_storefront_domain_instruction_quotas_key_unique",
+            unique=True,
+            background=True,
+        )
+        await domain_instruction_quotas.create_index(
+            [("expires_at", ASCENDING)],
+            name="idx_storefront_domain_instruction_quotas_expiry_ttl",
+            expireAfterSeconds=0,
+            background=True,
+        )
+        await domain_tombstones.create_index(
+            [("deletion_receipt_id", ASCENDING)],
+            name="idx_storefront_domain_tombstones_receipt_unique",
+            unique=True,
+            background=True,
+        )
+        await domain_tombstones.create_index(
+            [("expires_at", ASCENDING)],
+            name="idx_storefront_domain_tombstones_expiry_ttl",
+            expireAfterSeconds=0,
             background=True,
         )
         await assets.create_index(

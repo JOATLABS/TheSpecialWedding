@@ -9,7 +9,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 from bson import ObjectId
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.encoders import ENCODERS_BY_TYPE
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -106,11 +107,19 @@ from app.api.storefront import (
     router as storefront_router,
     public_router as storefront_public_router,
 )
+from app.api.storefront_domain_operator import (
+    router as storefront_domain_operator_router,
+)
 from app.api.web_push import router as web_push_router
 from app.api.wedding import router as wedding_router
 from app.core.cache import cache, close_cache, init_cache
 from app.core.database import close_database, init_database
 from app.core.database_indexes import create_all_indexes
+from app.utils.storefront_domain_errors import (
+    build_storefront_domain_error_payload,
+    is_storefront_domain_path,
+    validation_field_errors,
+)
 
 # Import settings and core components
 from app.core.settings import settings
@@ -481,12 +490,36 @@ async def _storefront_inquiry_recovery_scheduler():
         await asyncio.sleep(60)
 
 
+async def _storefront_domain_reconciliation_scheduler():
+    """Reconcile leased custom-domain evidence on the elected leader."""
+
+    from app.services.storefront_domain_reconciliation_service import (
+        storefront_domain_reconciliation_service,
+    )
+
+    while True:
+        try:
+            processed = await storefront_domain_reconciliation_service.sweep_due()
+            if processed:
+                logger.info(
+                    "Storefront domain scheduler reconciled %s domain(s)", processed
+                )
+        except asyncio.CancelledError:
+            logger.info("Storefront domain scheduler shutting down")
+            raise
+        except Exception as e:
+            logger.error(f"Storefront domain scheduler error: {e}", exc_info=True)
+
+        await asyncio.sleep(30)
+
+
 async def _storefront_media_maintenance_scheduler():
-    """Supervise independent storefront media and inquiry recovery loops."""
+    """Supervise independent storefront recovery loops."""
 
     tasks = [
         asyncio.create_task(_storefront_media_recovery_scheduler()),
         asyncio.create_task(_storefront_inquiry_recovery_scheduler()),
+        asyncio.create_task(_storefront_domain_reconciliation_scheduler()),
     ]
     try:
         await asyncio.gather(*tasks)
@@ -877,9 +910,31 @@ async def log_validation_errors(request: Request, exc: RequestValidationError):
         f"422 Validation Error on {request.method} {request.url.path} | "
         f"body={body} | errors={sanitized}"
     )
+    if is_storefront_domain_path(request.url.path):
+        return JSONResponse(
+            status_code=422,
+            content=build_storefront_domain_error_payload(
+                422,
+                {
+                    "code": "invalid_request",
+                    "message": "Check the highlighted domain setup fields.",
+                    "customer_action": "Correct the listed fields and try again.",
+                    "retryable": False,
+                },
+                field_errors=validation_field_errors(exc),
+            ),
+        )
+    return JSONResponse(status_code=422, content={"detail": sanitized})
+
+
+@app.exception_handler(HTTPException)
+async def storefront_domain_http_errors(request: Request, exc: HTTPException):
+    if not is_storefront_domain_path(request.url.path):
+        return await http_exception_handler(request, exc)
     return JSONResponse(
-        status_code=422,
-        content={"detail": sanitized},
+        status_code=exc.status_code,
+        content=build_storefront_domain_error_payload(exc.status_code, exc.detail),
+        headers=exc.headers,
     )
 
 
@@ -1071,6 +1126,11 @@ for router, tag in admin_routers:
     app.include_router(router, prefix="/admin", tags=[tag])
 
 app.include_router(storefront_router, prefix="/admin", tags=["Storefront"])
+app.include_router(
+    storefront_domain_operator_router,
+    prefix="/admin",
+    tags=["Storefront Domain Operations"],
+)
 
 # Admin wedding, guest, and plus-one endpoints (special handling to avoid conflicts)
 app.include_router(wedding_router, prefix="/admin", tags=["Wedding"])

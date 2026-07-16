@@ -1,21 +1,87 @@
-# Storefront Production Hardening Progress
+# Production Storefront Gap-Closure Progress
 
-Plan: `docs/superpowers/plans/2026-07-12-storefront-production-hardening.md`
-Branch base: `fbef0023ba03f5adc370037b1c46ab2d176cd409`
-Worktree: `/Users/emmanuelakinwale/.codex/worktrees/WeddingWebApp/storefront-hardening`
+Canonical acceptance source:
+`docs/guides/STOREFRONT_PRODUCTION_ACCEPTANCE_MATRIX.md`
 
-Tasks:
-- Task 1: completed — `b02dc723`, coverage follow-up `737b9c66`, hostile review approved with no Critical/Important findings
-- Task 2: completed — `ad18663a`, review follow-ups `1cea2e4f` and `cda115db`, hostile review approved with no Critical/Important findings
-- Task 3: completed — external lifecycle implementation and recovery hardening through `86fe7c22`; independent hostile reviews approved with no Critical/Important findings
-- Task 4: completed — typed admin/storefront design workflow through `61ce5f04`; isolated browser walkthrough verified settings, preview, publication, package/review rendering, and optional-domain separation
-- Task 5: completed — public conversion and host-authority hardening through `198596e1`; independent hostile reviews approved with no Critical/Important findings
-- Configuration handoff: completed — `.env.example`, dedicated infrastructure guide, Coolify/deployment checklist links, one bounded read-only storage-preflight deadline with blocking S3 probes off the event loop, jurisdiction-aware CORS, and fail-closed public media target with 14 focused validator tests
+Operator contract:
+`docs/guides/STOREFRONT_INFRASTRUCTURE_SETUP.md`
 
-Final verification:
-- Backend: 2,095 passed, 1 skipped, 0 failed
-- Frontend: 320 passed, 0 failed; lint, type-check, dependency doctor, and production build passed on Node 22
-- Python quality: all 36 branch-changed Python files pass Ruff check and format; repo-wide run still reports unrelated pre-existing AI-file drift
-- Runtime: disposable Mongo/Redis only; Signature and Solo entitlement states, internal preview, publication, inquiry persistence, custom-host 404, and platform redirect behavior verified without live subscription/account/provider mutation
-- Deployment: code gate ready; production Cloudflare for SaaS and private R2 configuration remain explicit external prerequisites
-- Configuration handoff verification: 234 combined backend checks passed; independent code and guide re-reviews approved with no Critical/Important findings
+The earlier `docs/superpowers/plans/2026-07-12-storefront-production-hardening.md`
+is superseded and is not acceptance evidence.
+
+Active objective: implement and visibly validate canonical storefront
+capabilities, internal-slug preview, publication/content/media/inquiries, the
+production custom-domain lifecycle, environment/operator guidance, and
+reproducible frontend testbed evidence without changing subscription or account
+data.
+
+Anti-drift gate:
+
+> “Evaluate the work you have done; are you drifting away from the fucking goal
+> or are you still on task?”
+
+## Completed
+
+- The current checkout contains backend-owned storefront/custom-domain
+  capability resolution and keeps custom-domain operations separate from slug,
+  publication, and subscription state.
+- The current checkout contains the claim-first domain lifecycle, Domain Connect
+  flow records, authoritative-DNS observation, Cloudflare projection,
+  reconciliation worker, operator-review APIs, instruction links, operations,
+  tombstones, rollout allowlists, and independently gated cleanup.
+- The storefront modal is organized around Design, Content & publish, and Domain
+  workflows, with internal-slug preview kept independent from DNS.
+- `.env.example`, production Compose, and the testbed example expose the
+  storefront runtime variables. The focused configuration contract currently
+  passes; that is supporting evidence only.
+- A source-bound deterministic Playwright harness exists under `testbed/` and
+  uses the real production frontend build, FastAPI routes/services, and isolated
+  Mongo with deterministic provider adapters. Its existence is not a passing
+  run.
+
+## Remaining
+
+- Run a fresh source-bound production frontend build and deterministic
+  Playwright lifecycle after the latest fixes. Require Playwright JSON/JUnit/
+  HTML, trace, video, screenshots, a hashed manifest, and successful cleanup.
+- Perform and record the separate visible playback in the user-selected in-app
+  Chrome browser. Automated screenshots do not satisfy this gate.
+- Add a storefront-specific read-only operator doctor that checks cross-field
+  Domain Connect configuration, rollout allowlists, Cloudflare/R2/Resend
+  dependency readiness, and external-evidence receipts. The general
+  `testbed/testbed.py doctor` command does not perform those checks.
+- Reconcile every acceptance-matrix row with the new run manifest and visible
+  playback before changing any internal row to `PASSED`.
+- Record fresh focused backend/frontend/quality commands after all shared-file
+  edits settle. Do not carry forward historical counts as current proof.
+
+## Blocked
+
+- Independently authoritative customer-zone proof is `BLOCKED`: no authorized
+  real DNS-provider consent-to-disconnect lifecycle has been run.
+- Live Cloudflare for SaaS fallback-origin/CNAME/custom-hostname/certificate/
+  HTTPS and cleanup receipts are `BLOCKED` pending approved disposable
+  infrastructure and credentials.
+- Domain Connect automatic setup is `BLOCKED` pending public-key publication,
+  official template acceptance, Cloudflare onboarding, exact discovery support,
+  and a restricted real-account consent lifecycle.
+- Live storefront R2 upload/finalize/privacy/lifecycle evidence and Resend
+  delivery evidence are `BLOCKED` pending environment-scoped provider
+  authorization.
+- A same-zone canary, if later run, will not unblock the independent-provider
+  row; the independently authoritative customer zone is a separate requirement.
+
+## Failed evidence retained
+
+- `testbed/.testbed/artifacts/storefront/runs/0bec60e8271d/run-manifest.json`
+  records `automated_chromium=FAILED`, `cleanup=FAILED`,
+  `in_app_chrome_playback=NOT RUN`, and `live_provider=BLOCKED`. It cannot be
+  promoted to acceptance evidence. Post-run fixes require a new build-bound run.
+
+## Out of scope
+
+- subscription downgrade or mutation
+- automatic storefront unpublish
+- unrelated Redis, billing, account, or product work
+- treating deterministic adapters, screenshots, mocked DNS, or same-zone DNS as
+  independent-provider proof

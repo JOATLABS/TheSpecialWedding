@@ -5,12 +5,19 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.core.cache import cache
+from app.core.settings import Environment
 from app.services import config_validator
 
 
 def test_slug_only_storefront_does_not_warn_for_optional_custom_domains(monkeypatch):
+    monkeypatch.setattr(
+        config_validator.settings, "storefront_custom_domains_enabled", False
+    )
     monkeypatch.setattr(config_validator.settings, "cloudflare_api_token", None)
+    monkeypatch.setattr(config_validator.settings, "cloudflare_saas_api_token", None)
     monkeypatch.setattr(config_validator.settings, "cloudflare_zone_id", None)
+    monkeypatch.setattr(config_validator.settings, "storefront_fallback_origin", None)
     monkeypatch.setattr(config_validator.settings, "storefront_cname_target", None)
     monkeypatch.setattr(
         config_validator.settings, "s3_storefront_staging_bucket_name", None
@@ -19,9 +26,72 @@ def test_slug_only_storefront_does_not_warn_for_optional_custom_domains(monkeypa
     assert config_validator._collect_storefront_configuration_recommendations() == []
 
 
+def test_production_storefront_inquiry_protection_observes_redis_outage(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        config_validator.settings, "environment", Environment.PRODUCTION
+    )
+    monkeypatch.setattr(config_validator.settings, "redis_enabled", True)
+    monkeypatch.setattr(config_validator.settings, "redis_host", "redis")
+    monkeypatch.setattr(config_validator.settings, "redis_password", "secret")
+    monkeypatch.setattr(
+        config_validator.settings, "trusted_proxy_cidrs", ["172.26.0.0/16"]
+    )
+    monkeypatch.setattr(
+        config_validator.settings,
+        "trusted_proxy_client_ip_header",
+        "X-Real-IP",
+    )
+    monkeypatch.setattr(cache, "enabled", False)
+    monkeypatch.setattr(cache, "redis_client", None)
+
+    recommendations = (
+        config_validator._collect_storefront_inquiry_protection_recommendations()
+    )
+
+    assert recommendations == [
+        "REDIS_RUNTIME: Shared Redis is configured but unavailable. New storefront "
+        "inquiries remain fail-closed until connectivity is restored; storefront "
+        "pages and the platform slug are unaffected."
+    ]
+    assert "secret" not in recommendations[0]
+
+
+def test_production_storefront_inquiry_protection_requires_trusted_ingress_pair(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        config_validator.settings, "environment", Environment.PRODUCTION
+    )
+    monkeypatch.setattr(config_validator.settings, "redis_enabled", True)
+    monkeypatch.setattr(config_validator.settings, "redis_host", "redis")
+    monkeypatch.setattr(config_validator.settings, "redis_password", "secret")
+    monkeypatch.setattr(config_validator.settings, "trusted_proxy_cidrs", [])
+    monkeypatch.setattr(
+        config_validator.settings, "trusted_proxy_client_ip_header", None
+    )
+    monkeypatch.setattr(cache, "enabled", True)
+    monkeypatch.setattr(cache, "redis_client", object())
+
+    recommendations = (
+        config_validator._collect_storefront_inquiry_protection_recommendations()
+    )
+
+    assert len(recommendations) == 1
+    assert recommendations[0].startswith(
+        "TRUSTED_PROXY_CIDRS/TRUSTED_PROXY_CLIENT_IP_HEADER:"
+    )
+
+
 def test_partial_custom_domain_configuration_reports_missing_settings(monkeypatch):
+    monkeypatch.setattr(
+        config_validator.settings, "storefront_custom_domains_enabled", True
+    )
     monkeypatch.setattr(config_validator.settings, "cloudflare_api_token", None)
+    monkeypatch.setattr(config_validator.settings, "cloudflare_saas_api_token", None)
     monkeypatch.setattr(config_validator.settings, "cloudflare_zone_id", "zone-id")
+    monkeypatch.setattr(config_validator.settings, "storefront_fallback_origin", None)
     monkeypatch.setattr(config_validator.settings, "storefront_cname_target", None)
     monkeypatch.setattr(
         config_validator.settings, "s3_storefront_staging_bucket_name", None
@@ -32,8 +102,10 @@ def test_partial_custom_domain_configuration_reports_missing_settings(monkeypatc
     )
 
     assert recommendations == [
-        "CLOUDFLARE_API_TOKEN: Custom domains are configured but the scoped "
-        "Cloudflare API token is missing.",
+        "CLOUDFLARE_SAAS_API_TOKEN: Custom domains are configured but the "
+        "dedicated Cloudflare for SaaS token is missing.",
+        "STOREFRONT_FALLBACK_ORIGIN: Custom domains are configured but the "
+        "Cloudflare for SaaS fallback origin is missing.",
         "STOREFRONT_CNAME_TARGET: Custom domains are configured but the customer "
         "CNAME target is missing.",
     ]
@@ -43,10 +115,23 @@ def test_storefront_configuration_uses_settings_loaded_values_not_os_environ(
     monkeypatch,
 ):
     monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_SAAS_API_TOKEN", raising=False)
     monkeypatch.delenv("CLOUDFLARE_ZONE_ID", raising=False)
+    monkeypatch.delenv("STOREFRONT_FALLBACK_ORIGIN", raising=False)
     monkeypatch.delenv("STOREFRONT_CNAME_TARGET", raising=False)
+    monkeypatch.setattr(
+        config_validator.settings, "storefront_custom_domains_enabled", True
+    )
     monkeypatch.setattr(config_validator.settings, "cloudflare_api_token", "token")
+    monkeypatch.setattr(
+        config_validator.settings, "cloudflare_saas_api_token", "saas-token"
+    )
     monkeypatch.setattr(config_validator.settings, "cloudflare_zone_id", "zone-id")
+    monkeypatch.setattr(
+        config_validator.settings,
+        "storefront_fallback_origin",
+        "storefront-origin.example.com",
+    )
     monkeypatch.setattr(
         config_validator.settings,
         "storefront_cname_target",
@@ -57,6 +142,48 @@ def test_storefront_configuration_uses_settings_loaded_values_not_os_environ(
     )
 
     assert config_validator._collect_storefront_configuration_recommendations() == []
+
+
+def test_storefront_configuration_warns_when_rollout_can_strand_cleanup(monkeypatch):
+    monkeypatch.setattr(
+        config_validator.settings, "storefront_custom_domains_enabled", True
+    )
+    monkeypatch.setattr(config_validator.settings, "cloudflare_api_token", None)
+    monkeypatch.setattr(
+        config_validator.settings, "cloudflare_saas_api_token", "saas-token"
+    )
+    monkeypatch.setattr(config_validator.settings, "cloudflare_zone_id", "zone-id")
+    monkeypatch.setattr(
+        config_validator.settings,
+        "storefront_fallback_origin",
+        "storefront-origin.example.com",
+    )
+    monkeypatch.setattr(
+        config_validator.settings,
+        "storefront_cname_target",
+        "storefronts.example.com",
+    )
+    monkeypatch.setattr(
+        config_validator.settings, "s3_storefront_staging_bucket_name", None
+    )
+    monkeypatch.setattr(
+        config_validator.settings, "storefront_cloudflare_mutations_enabled", True
+    )
+    monkeypatch.setattr(
+        config_validator.settings, "storefront_cloudflare_cleanup_enabled", False
+    )
+    monkeypatch.setattr(
+        config_validator.settings, "storefront_custom_domain_rollout_mode", "general"
+    )
+
+    recommendations = (
+        config_validator._collect_storefront_configuration_recommendations()
+    )
+
+    assert any("disconnect cleanup is disabled" in item for item in recommendations)
+    assert any(
+        "external-provider acceptance receipt" in item for item in recommendations
+    )
 
 
 @pytest.mark.asyncio
@@ -136,12 +263,22 @@ async def test_storefront_privacy_warning_redacts_configured_secrets(monkeypatch
 
 def test_invalid_storefront_cname_is_reported_without_a_provider_call(monkeypatch):
     monkeypatch.setattr(
+        config_validator.settings, "storefront_custom_domains_enabled", True
+    )
+    monkeypatch.setattr(
         config_validator.settings,
         "storefront_cname_target",
         "https://storefronts.example.com/path",
     )
-    monkeypatch.setattr(config_validator.settings, "cloudflare_api_token", "token")
+    monkeypatch.setattr(
+        config_validator.settings, "cloudflare_saas_api_token", "saas-token"
+    )
     monkeypatch.setattr(config_validator.settings, "cloudflare_zone_id", "zone-id")
+    monkeypatch.setattr(
+        config_validator.settings,
+        "storefront_fallback_origin",
+        "storefront-origin.example.com",
+    )
     monkeypatch.setattr(
         config_validator.settings, "s3_storefront_staging_bucket_name", None
     )

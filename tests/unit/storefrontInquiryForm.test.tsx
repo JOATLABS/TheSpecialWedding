@@ -36,7 +36,7 @@ describe('StorefrontInquiryForm', () => {
         json: async () => ({
           success: true,
           inquiry_id: 'inquiry-1',
-          message: 'Your inquiry was sent.',
+          message: 'Your inquiry was received.',
         }),
       } as Response;
     };
@@ -56,7 +56,7 @@ describe('StorefrontInquiryForm', () => {
     fireEvent.change(view.getByLabelText('How can we help?'), { target: { value: 'We need full planning.' } });
     fireEvent.click(view.getByRole('button', { name: 'Send inquiry' }));
 
-    await view.findByText('Your inquiry was sent.');
+    await view.findByText('Your inquiry was received.');
     assert.equal(calls.length, 1);
     assert.equal(calls[0]?.url, '/api/proxy/api/storefront/studio%20%26%20co/inquiries');
     assert.equal(calls[0]?.init?.method, 'POST');
@@ -130,6 +130,40 @@ describe('StorefrontInquiryForm', () => {
     assert.equal(calls[1]?.body.idempotency_key, 'inquiry-key-unchanged-retry');
   });
 
+  it('shows a friendly retry state when shared inquiry protection is unavailable', async () => {
+    const fetchImpl: typeof fetch = async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({
+        detail: {
+          error: {
+            code: 'inquiry_protection_unavailable',
+            message: 'provider detail must not be rendered',
+            retryable: true,
+            support_id: 'sf-inquiry-test',
+          },
+        },
+      }),
+    }) as Response;
+    const view = render(
+      <StorefrontInquiryForm identifier="studio.example" fetchImpl={fetchImpl} />,
+    );
+
+    fireEvent.change(view.getByLabelText('Name'), { target: { value: 'Taylor' } });
+    fireEvent.change(view.getByLabelText('Email'), { target: { value: 'taylor@example.com' } });
+    fireEvent.change(view.getByLabelText('How can we help?'), { target: { value: 'Month-of coordination.' } });
+    fireEvent.click(view.getByRole('button', { name: 'Send inquiry' }));
+
+    assert.notEqual(
+      await view.findByText(
+        'Inquiry protection is temporarily unavailable. Please wait one minute and try again.',
+      ),
+      null,
+    );
+    assert.equal(view.queryByText('provider detail must not be rendered'), null);
+    assert.notEqual(view.getByRole('button', { name: 'Try again' }), null);
+  });
+
   it('creates a new idempotency key only after failed form values change', async () => {
     const keys = ['inquiry-key-before-edit', 'inquiry-key-after-edit'];
     const calls: Array<Record<string, unknown>> = [];
@@ -139,7 +173,9 @@ describe('StorefrontInquiryForm', () => {
         return {
           ok: false,
           status: 503,
-          json: async () => ({ detail: 'Please retry.' }),
+          json: async () => ({
+            error: { code: 'inquiry_persistence_unavailable' },
+          }),
         } as Response;
       }
       return {
@@ -164,7 +200,7 @@ describe('StorefrontInquiryForm', () => {
     fireEvent.change(view.getByLabelText('Email'), { target: { value: 'taylor@example.com' } });
     fireEvent.change(view.getByLabelText('How can we help?'), { target: { value: 'Month-of coordination.' } });
     fireEvent.click(view.getByRole('button', { name: 'Send inquiry' }));
-    await view.findByText('Please retry.');
+    await view.findByText('Your inquiry could not be saved. Please try again.');
 
     fireEvent.input(view.getByLabelText('How can we help?'), {
       target: { value: 'Full planning instead.' },
@@ -216,9 +252,11 @@ describe('StorefrontInquiryForm', () => {
     settleFirst?.({
       ok: false,
       status: 503,
-      json: async () => ({ detail: 'Please retry.' }),
+      json: async () => ({
+        error: { code: 'inquiry_persistence_unavailable' },
+      }),
     } as Response);
-    await view.findByText('Please retry.');
+    await view.findByText('Your inquiry could not be saved. Please try again.');
     fireEvent.click(view.getByRole('button', { name: 'Try again' }));
     await view.findByText('Thanks — we will be in touch.');
 
@@ -235,7 +273,9 @@ describe('StorefrontInquiryForm', () => {
         return {
           ok: false,
           status: 503,
-          json: async () => ({ detail: 'Please retry.' }),
+          json: async () => ({
+            error: { code: 'inquiry_persistence_unavailable' },
+          }),
         } as Response;
       }
       return {
@@ -260,7 +300,7 @@ describe('StorefrontInquiryForm', () => {
     fireEvent.change(view.getByLabelText('Email'), { target: { value: 'taylor@example.com' } });
     fireEvent.change(view.getByLabelText('How can we help?'), { target: { value: 'Original message.' } });
     fireEvent.click(view.getByRole('button', { name: 'Send inquiry' }));
-    await view.findByText('Please retry.');
+    await view.findByText('Your inquiry could not be saved. Please try again.');
 
     fireEvent.input(view.getByLabelText('How can we help?'), {
       target: { value: 'Temporary edit.' },
@@ -324,7 +364,7 @@ describe('StorefrontInquiryForm', () => {
       }),
     } as Response);
 
-    await view.findByText(/previous inquiry was sent.*latest edits were not sent/i);
+    await view.findByText(/previous inquiry was received.*latest edits were not received/i);
     assert.equal(
       (view.getByLabelText('How can we help?') as HTMLTextAreaElement).value,
       'Edited while sending.',
@@ -378,7 +418,7 @@ describe('StorefrontInquiryForm', () => {
       target: { value: 'A new request after the first inquiry.' },
     });
 
-    await view.findByText(/previous inquiry was sent.*latest edits were not sent/i);
+    await view.findByText(/previous inquiry was received.*latest edits were not received/i);
     const updatedSubmit = view.getByRole('button', { name: 'Send updated inquiry' });
     assert.equal((updatedSubmit as HTMLButtonElement).disabled, false);
 
@@ -429,7 +469,7 @@ describe('StorefrontInquiryForm', () => {
         json: async () => ({
           success: true,
           inquiry_id: 'legacy-backend-inquiry',
-          message: 'Your inquiry was sent.',
+          message: 'Your inquiry was received.',
         }),
       } as Response;
     };
@@ -445,7 +485,7 @@ describe('StorefrontInquiryForm', () => {
     fireEvent.change(view.getByLabelText('Email'), { target: { value: 'taylor@example.com' } });
     fireEvent.change(view.getByLabelText('How can we help?'), { target: { value: 'Planning help.' } });
     fireEvent.click(view.getByRole('button', { name: 'Send inquiry' }));
-    await view.findByText('Your inquiry was sent.');
+    await view.findByText('Your inquiry was received.');
 
     assert.equal(calls.length, 2);
     assert.equal(calls[0]?.idempotency_key, 'inquiry-key-new-client-old-backend');
@@ -489,5 +529,44 @@ describe('StorefrontInquiryForm', () => {
     await view.findByText('Your inquiry could not be sent. Please try again.');
 
     assert.equal(calls, 1);
+  });
+
+  it('never renders raw proxy or unknown backend diagnostics to a visitor', async () => {
+    const rawDiagnostic =
+      'Failed to reach backend API at http://backend-prod:8000: connect ECONNREFUSED 10.0.0.7';
+    const fetchImpl: typeof fetch = async () =>
+      ({
+        ok: false,
+        status: 502,
+        json: async () => ({
+          error: {
+            code: 'proxy_backend_unreachable',
+            message: rawDiagnostic,
+            support_id: 'proxy_safe_public_id',
+          },
+          detail: rawDiagnostic,
+        }),
+      }) as Response;
+    const view = render(
+      <StorefrontInquiryForm
+        identifier="studio.example"
+        fetchImpl={fetchImpl}
+        createIdempotencyKey={() => 'inquiry-key-proxy-failure'}
+      />,
+    );
+
+    fireEvent.change(view.getByLabelText('Name'), { target: { value: 'Taylor' } });
+    fireEvent.change(view.getByLabelText('Email'), {
+      target: { value: 'taylor@example.com' },
+    });
+    fireEvent.change(view.getByLabelText('How can we help?'), {
+      target: { value: 'Planning help.' },
+    });
+    fireEvent.click(view.getByRole('button', { name: 'Send inquiry' }));
+
+    await view.findByText('Your inquiry could not be sent. Please try again.');
+    assert.equal(view.queryByText(rawDiagnostic), null);
+    assert.equal(view.container.textContent?.includes('backend-prod'), false);
+    assert.equal(view.container.textContent?.includes('10.0.0.7'), false);
   });
 });

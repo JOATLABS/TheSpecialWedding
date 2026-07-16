@@ -143,6 +143,7 @@ class FakeStorage:
             StorageTarget.BLOG_ASSETS: "https://cdn.example.test",
         }
         self.privacy_error: Exception | None = None
+        self.is_client_configured = True
 
     async def require_private_storefront_staging(self, *, force_refresh=False):
         if self.privacy_error:
@@ -151,6 +152,9 @@ class FakeStorage:
     def require_target(self, target):
         if target in self.unavailable_targets:
             raise RuntimeError(f"{target.value} unavailable")
+        return self.target(target)
+
+    def target(self, target):
         return SimpleNamespace(
             bucket_name=self.bucket_by_target[target],
             public_domain=self.public_domain_by_target[target],
@@ -335,6 +339,91 @@ async def _finalize_ready_asset(
 
 def _pending_asset_group(claim: dict) -> dict:
     return {"pending_asset_group": claim["manifest"]}
+
+
+@pytest.mark.parametrize(
+    ("staging_bucket", "published_bucket", "public_domain", "token", "expected"),
+    [
+        (
+            "storefront-staging",
+            "blog-assets",
+            "https://cdn.example.test",
+            "token",
+            True,
+        ),
+        (
+            "storefront-staging",
+            "storefront-staging",
+            "https://cdn.example.test",
+            "token",
+            False,
+        ),
+        ("   ", "blog-assets", "https://cdn.example.test", "token", False),
+        ("storefront-staging", "blog-assets", "   ", "token", False),
+        ("storefront-staging", "blog-assets", "https://cdn.example.test", "   ", False),
+    ],
+)
+def test_media_provider_readiness_requires_distinct_nonblank_targets_and_credentials(
+    monkeypatch,
+    staging_bucket,
+    published_bucket,
+    public_domain,
+    token,
+    expected,
+):
+    configs = {
+        StorageTarget.STOREFRONT_STAGING: SimpleNamespace(
+            bucket_name=staging_bucket, public_domain=None
+        ),
+        StorageTarget.BLOG_ASSETS: SimpleNamespace(
+            bucket_name=published_bucket, public_domain=public_domain
+        ),
+    }
+    storage = SimpleNamespace(
+        is_client_configured=True,
+        target=lambda target: configs[target],
+    )
+    monkeypatch.setattr(
+        storefront_media_module.settings,
+        "cloudflare_account_id",
+        "0123456789abcdef0123456789abcdef",
+    )
+    monkeypatch.setattr(storefront_media_module.settings, "cloudflare_api_token", token)
+    service = StorefrontMediaService(
+        mongo_client=object(),
+        storage=storage,
+        entitlement_service=object(),
+    )
+
+    assert service.provider_configuration_present is expected
+
+
+@pytest.mark.asyncio
+async def test_media_operational_readiness_rejects_configured_but_inaccessible_bucket(
+    monkeypatch,
+):
+    storage = FakeStorage()
+    monkeypatch.setattr(
+        storefront_media_module.settings,
+        "cloudflare_account_id",
+        "0123456789abcdef0123456789abcdef",
+    )
+    monkeypatch.setattr(
+        storefront_media_module.settings, "cloudflare_api_token", "r2-control-token"
+    )
+    service = StorefrontMediaService(
+        mongo_client=object(), storage=storage, entitlement_service=object()
+    )
+
+    assert service.provider_configuration_present is True
+    assert await service.provider_operational_readiness() is True
+
+    storage.unavailable_targets.add(StorageTarget.STOREFRONT_STAGING)
+    assert await service.provider_operational_readiness() is False
+
+    storage.unavailable_targets.clear()
+    storage.privacy_error = RuntimeError("AccessDenied")
+    assert await service.provider_operational_readiness() is False
 
 
 @pytest.mark.asyncio

@@ -166,6 +166,9 @@ class Settings(BaseSettings):
     # Application
     app_name: str = Field(default="Wedding WebApp API", alias="APP_NAME")
     app_version: str = Field(default="1.3.0", alias="APP_VERSION")
+    storefront_runtime_revision: Optional[str] = Field(
+        default=None, alias="STOREFRONT_RUNTIME_REVISION"
+    )
     api_v1_prefix: str = Field(default="/api/v1", alias="API_V1_PREFIX")
 
     # URL Configuration - Single source of truth, NO FALLBACKS
@@ -347,7 +350,44 @@ class Settings(BaseSettings):
     cloudflare_api_token: Optional[str] = Field(
         default=None, alias="CLOUDFLARE_API_TOKEN"
     )
+    # Cloudflare for SaaS custom-hostname control plane. This token is
+    # intentionally distinct from the R2/Stream control token above.
+    cloudflare_saas_api_token: Optional[str] = Field(
+        default=None, alias="CLOUDFLARE_SAAS_API_TOKEN"
+    )
     cloudflare_zone_id: Optional[str] = Field(default=None, alias="CLOUDFLARE_ZONE_ID")
+    storefront_custom_domains_enabled: bool = Field(
+        default=False, alias="STOREFRONT_CUSTOM_DOMAINS_ENABLED"
+    )
+    storefront_domain_connect_discovery_enabled: bool = Field(
+        default=False, alias="STOREFRONT_DOMAIN_CONNECT_DISCOVERY_ENABLED"
+    )
+    storefront_domain_connect_authorization_enabled: bool = Field(
+        default=False, alias="STOREFRONT_DOMAIN_CONNECT_AUTHORIZATION_ENABLED"
+    )
+    storefront_cloudflare_mutations_enabled: bool = Field(
+        default=False, alias="STOREFRONT_CLOUDFLARE_MUTATIONS_ENABLED"
+    )
+    # New provider provisioning and provider cleanup intentionally have
+    # separate kill switches. Rollback may stop new customer onboarding while
+    # still allowing disconnect cleanup and background deletion retries.
+    storefront_cloudflare_cleanup_enabled: bool = Field(
+        default=False, alias="STOREFRONT_CLOUDFLARE_CLEANUP_ENABLED"
+    )
+    storefront_custom_domain_rollout_mode: Literal["allowlist", "general"] = Field(
+        default="allowlist", alias="STOREFRONT_CUSTOM_DOMAIN_ROLLOUT_MODE"
+    )
+    storefront_custom_domain_pilot_hostnames: Annotated[List[str], NoDecode] = Field(
+        default_factory=list,
+        alias="STOREFRONT_CUSTOM_DOMAIN_PILOT_HOSTNAMES",
+    )
+    storefront_custom_domain_pilot_owner_ids: Annotated[List[str], NoDecode] = Field(
+        default_factory=list,
+        alias="STOREFRONT_CUSTOM_DOMAIN_PILOT_OWNER_IDS",
+    )
+    storefront_fallback_origin: Optional[str] = Field(
+        default=None, alias="STOREFRONT_FALLBACK_ORIGIN"
+    )
     storefront_cname_target: Optional[str] = Field(
         default=None, alias="STOREFRONT_CNAME_TARGET"
     )
@@ -357,6 +397,28 @@ class Settings(BaseSettings):
             "thespecialwedding.com",
         ],
         alias="STOREFRONT_PLATFORM_DOMAINS",
+    )
+    domain_connect_provider_id: str = Field(
+        default="thespecialwedding.com", alias="DOMAIN_CONNECT_PROVIDER_ID"
+    )
+    domain_connect_service_id: str = Field(
+        default="storefront-subdomain", alias="DOMAIN_CONNECT_SERVICE_ID"
+    )
+    domain_connect_template_version: int = Field(
+        default=1, ge=1, alias="DOMAIN_CONNECT_TEMPLATE_VERSION"
+    )
+    domain_connect_private_key: Optional[str] = Field(
+        default=None, alias="DOMAIN_CONNECT_PRIVATE_KEY"
+    )
+    domain_connect_key_id: str = Field(
+        default="_dcpubkeyv1", alias="DOMAIN_CONNECT_KEY_ID"
+    )
+    domain_connect_public_key_domain: str = Field(
+        default="domainconnect.thespecialwedding.com",
+        alias="DOMAIN_CONNECT_PUBLIC_KEY_DOMAIN",
+    )
+    domain_connect_callback_url: Optional[str] = Field(
+        default=None, alias="DOMAIN_CONNECT_CALLBACK_URL"
     )
     # Security Features
     # CSRF disabled - JWT Bearer auth is already CSRF-immune (browsers don't auto-attach
@@ -482,6 +544,8 @@ class Settings(BaseSettings):
         "cors_headers",
         "allowed_hosts",
         "storefront_platform_domains",
+        "storefront_custom_domain_pilot_hostnames",
+        "storefront_custom_domain_pilot_owner_ids",
         "trusted_proxy_cidrs",
         mode="before",
     )

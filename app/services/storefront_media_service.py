@@ -99,6 +99,63 @@ class StorefrontMediaService:
         self._entitlements = entitlement_service or storefront_entitlement_service
         self._maintenance_queue_cursor = 0
 
+    @property
+    def provider_configuration_present(self) -> bool:
+        """Whether an upload reservation could reach configured storage providers."""
+
+        staging = self._storage.target(StorageTarget.STOREFRONT_STAGING)
+        published = self._storage.target(StorageTarget.BLOG_ASSETS)
+        staging_bucket = (staging.bucket_name or "").strip()
+        published_bucket = (published.bucket_name or "").strip()
+        return bool(
+            self._storage.is_client_configured
+            and staging_bucket
+            and published_bucket
+            and staging_bucket != published_bucket
+            and (published.public_domain or "").strip()
+            and (settings.cloudflare_account_id or "").strip()
+            and (settings.cloudflare_api_token or "").strip()
+        )
+
+    async def provider_operational_readiness(
+        self, *, timeout_seconds: float = 3.0
+    ) -> bool:
+        """Bounded, read-only proof that both storefront storage targets are usable.
+
+        Configuration presence is intentionally insufficient: a bucket name plus
+        credentials can still be denied by R2. This probe verifies the private
+        staging controls and S3 access before the diagnostic endpoint reports the
+        upload path ready. It never writes an object.
+        """
+
+        if not self.provider_configuration_present:
+            return False
+
+        async def probe() -> bool:
+            await self._storage.require_private_storefront_staging(force_refresh=True)
+            staging, published = await asyncio.gather(
+                asyncio.to_thread(
+                    self._storage.require_target,
+                    StorageTarget.STOREFRONT_STAGING,
+                ),
+                asyncio.to_thread(self._require_public_storefront_target),
+            )
+            return bool(
+                staging.bucket_name
+                and published.bucket_name
+                and staging.bucket_name != published.bucket_name
+                and (published.public_domain or "").strip()
+            )
+
+        try:
+            return bool(await asyncio.wait_for(probe(), timeout=timeout_seconds))
+        except Exception as exc:
+            logger.warning(
+                "Storefront media readiness probe failed closed",
+                extra={"error_type": exc.__class__.__name__},
+            )
+            return False
+
     @staticmethod
     def _owner_data(owner: Any) -> dict:
         if isinstance(owner, dict):

@@ -7,6 +7,9 @@ from types import SimpleNamespace
 import pytest
 
 import app.services.email_service_resend as resend_service_module
+from app.constants.storefront_domain import (
+    STOREFRONT_DOMAIN_INSTRUCTIONS_EMAIL_TYPE,
+)
 from app.services.email_service_resend import ResendEmailService
 
 
@@ -17,6 +20,12 @@ class RecordingEmailLog:
     async def insert_one(self, document: dict) -> SimpleNamespace:
         self.entries.append(document)
         return SimpleNamespace(inserted_id="email-log-1")
+
+
+class FailingRecordingEmailLog(RecordingEmailLog):
+    async def insert_one(self, document: dict) -> SimpleNamespace:
+        self.entries.append(document)
+        raise RuntimeError("audit database rejected dns-admin@example.com")
 
 
 @pytest.mark.asyncio
@@ -119,3 +128,78 @@ async def test_send_email_keeps_event_loop_responsive_while_provider_waits(monke
 
     result = await asyncio.wait_for(task, timeout=1)
     assert result == {"success": True, "id": "resend-waited"}
+
+
+@pytest.mark.asyncio
+async def test_storefront_instruction_acceptance_survives_audit_write_failure_without_recipient_logging(
+    monkeypatch,
+    caplog,
+):
+    service = ResendEmailService.__new__(ResendEmailService)
+    service.configured = True
+    service.email_log_collection = FailingRecordingEmailLog()
+
+    def provider_send(_params: dict, _options: dict) -> dict:
+        return {"id": "resend-instruction-1"}
+
+    monkeypatch.setattr(resend_service_module.resend.Emails, "send", provider_send)
+    caplog.set_level("INFO")
+
+    result = await service.send_email(
+        to_email="dns-admin@example.com",
+        subject="DNS setup instructions",
+        html_content="<p>Read-only instructions</p>",
+        email_type=STOREFRONT_DOMAIN_INSTRUCTIONS_EMAIL_TYPE,
+        idempotency_key="storefront-domain-instructions:sfil_1",
+    )
+
+    assert result == {
+        "success": True,
+        "id": "resend-instruction-1",
+        "message_id": "resend-instruction-1",
+    }
+    assert len(service.email_log_collection.entries) == 1
+    audit_entry = service.email_log_collection.entries[0]
+    assert audit_entry["recipient_hint"] == "d***@e***.com"
+    assert "to" not in audit_entry
+    assert "dns-admin@example.com" not in repr(audit_entry)
+    assert "dns-admin@example.com" not in caplog.text
+    assert "audit database rejected" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_storefront_instruction_provider_failure_redacts_recipient_and_raw_error(
+    monkeypatch,
+    caplog,
+):
+    service = ResendEmailService.__new__(ResendEmailService)
+    service.configured = True
+    service.email_log_collection = RecordingEmailLog()
+
+    def provider_send(_params: dict, _options: dict) -> dict:
+        raise RuntimeError("provider rejected dns-admin@example.com")
+
+    monkeypatch.setattr(resend_service_module.resend.Emails, "send", provider_send)
+    caplog.set_level("INFO")
+
+    result = await service.send_email(
+        to_email="dns-admin@example.com",
+        subject="DNS setup instructions",
+        html_content="<p>Read-only instructions</p>",
+        email_type=STOREFRONT_DOMAIN_INSTRUCTIONS_EMAIL_TYPE,
+        idempotency_key="storefront-domain-instructions:sfil_2",
+    )
+
+    assert result == {
+        "success": False,
+        "error": "Email provider delivery failed",
+        "delivery_unknown": True,
+    }
+    audit_entry = service.email_log_collection.entries[0]
+    assert audit_entry["recipient_hint"] == "d***@e***.com"
+    assert audit_entry["error_code"] == "provider_delivery_failed"
+    assert "to" not in audit_entry
+    assert "error" not in audit_entry
+    assert "dns-admin@example.com" not in repr(audit_entry)
+    assert "dns-admin@example.com" not in caplog.text
+    assert "provider rejected" not in caplog.text

@@ -18,6 +18,7 @@ import {
   type StorefrontApiTransport,
   type StorefrontSettingsField,
 } from '../../app/services/storefrontApi';
+import * as storefrontApiModule from '../../app/services/storefrontApi';
 
 function recordingTransport(responses: unknown[] = []) {
   const calls: Array<{ path: string; method: string; body: unknown }> = [];
@@ -33,6 +34,391 @@ function recordingTransport(responses: unknown[] = []) {
 }
 
 describe('storefrontApi', () => {
+  it('exposes and maps the production custom-domain lifecycle without leaking server DTOs', async () => {
+    const api = storefrontApiModule as unknown as Record<string, (...args: any[]) => any>;
+    for (const operation of [
+      'preflightCustomDomain',
+      'claimCustomDomain',
+      'verifyCustomDomain',
+      'getCustomDomainStatus',
+      'observeCustomDomain',
+      'startCustomDomainConnect',
+      'completeCustomDomainConnect',
+      'retryCustomDomainVerification',
+      'sendCustomDomainInstructions',
+      'getCustomDomainInstructionLinks',
+      'normalizeStorefrontError',
+    ]) {
+      assert.equal(typeof api[operation], 'function', `${operation} must be exported`);
+    }
+
+    const raw = {
+      hostname: 'events.customer.example',
+      host_type: 'subdomain',
+      intent: 'new',
+      recommended_flow: 'manual',
+      authoritative_dns: {
+        zone: 'customer.example',
+        provider: 'cloudflare',
+        provider_name: 'Cloudflare',
+        nameservers: ['anna.ns.cloudflare.com'],
+        control_panel_url: 'https://dash.cloudflare.com/example/dns',
+      },
+      registrar: 'Namecheap',
+      platform_provider: 'Cloudflare for The Special Wedding',
+      domain_connect_supported: false,
+      self_service_allowed: false,
+      customer_action: 'Keep the current routing unchanged and request an assisted cutover.',
+      expected_records: [
+        {
+          type: 'CNAME',
+          name: 'events.customer.example',
+          value: 'domains.thespecialwedding.com',
+          ttl: 300,
+          purpose: 'storefront_routing',
+        },
+      ],
+      observed_records: [],
+      conflicts: [
+        {
+          code: 'cloudflare_o2o_migration_requires_assistance',
+          record_type: 'NS',
+          values: ['anna.ns.cloudflare.com'],
+          message: 'Cloudflare-to-Cloudflare migration requires an assisted cutover.',
+        },
+      ],
+    };
+    const { calls, transport } = recordingTransport([raw]);
+    const mapped = await api.preflightCustomDomain(
+      'events.customer.example',
+      'new',
+      transport,
+    );
+
+    assert.equal(mapped.hostType, 'subdomain');
+    assert.equal(mapped.dnsProvider.name, 'Cloudflare');
+    assert.equal(mapped.dnsProvider.controlPanelUrl, 'https://dash.cloudflare.com/example/dns');
+    assert.equal(mapped.expectedRecords[0].fqdn, 'events.customer.example');
+    assert.equal(mapped.expectedRecords[0].relativeHost, 'events');
+    assert.equal(mapped.expectedRecords[0].purpose, 'storefront_routing');
+    assert.equal(mapped.selfServiceAllowed, false);
+    assert.equal(
+      mapped.customerAction,
+      'Keep the current routing unchanged and request an assisted cutover.',
+    );
+    assert.equal(
+      mapped.conflicts[0].message,
+      'Cloudflare-to-Cloudflare migration requires an assisted cutover.',
+    );
+    assert.deepEqual(calls, [
+      {
+        path: '/admin/storefront/custom-domain/preflight',
+        method: 'POST',
+        body: { domain: 'events.customer.example', intent: 'new' },
+      },
+    ]);
+  });
+
+  it('targets claim, verification, Domain Connect, retry, and instruction endpoints exactly', async () => {
+    const api = storefrontApiModule as unknown as Record<string, (...args: any[]) => any>;
+    const status = {
+      attempt_id: 'attempt_1',
+      hostname: 'events.customer.example',
+      intent: 'new',
+      application_status: 'dns_setup_pending',
+      action: 'action_required',
+      ownership_status: 'pending',
+      routing_dns_status: 'pending',
+      provider_hostname_status: 'not_started',
+      ssl_status: 'not_started',
+      https_status: 'not_started',
+      conflict_code: null,
+      next_check_at: '2026-07-15T17:05:00Z',
+      expected_records: [],
+      observed_records: [],
+      conflicts: [],
+    };
+    const { calls, transport } = recordingTransport([
+      status,
+      status,
+      status,
+      status,
+      status,
+      { authorization_url: 'https://dns.example/authorize', attempt_id: 'attempt_1' },
+      status,
+      status,
+      {
+        status: 'sent',
+        link_id: 'sfil_receipt_1',
+        state: 'active',
+        created_at: '2026-07-15T17:05:00Z',
+        expires_at: '2026-07-22T17:05:00Z',
+        recipient_hint: 'd***@e***.com',
+      },
+      {
+        links: [
+          {
+            link_id: 'sfil_receipt_1',
+            state: 'active',
+            created_at: '2026-07-15T17:05:00Z',
+            expires_at: '2026-07-22T17:05:00Z',
+            recipient_hint: 'd***@e***.com',
+          },
+        ],
+      },
+      { status: 'revoked' },
+    ]);
+
+    await api.claimCustomDomain('events.customer.example', 'new', transport);
+    const verified = await api.verifyCustomDomain(transport, 'attempt_1');
+    await api.getCustomDomainStatus(transport);
+    await api.observeCustomDomain('attempt_1', transport);
+    await api.getCustomDomainStatus(transport, 'attempt_1');
+    const authorization = await api.startCustomDomainConnect('attempt_1', transport);
+    await api.completeCustomDomainConnect('attempt_1', transport);
+    await api.retryCustomDomainVerification('attempt_1', transport);
+    const instructionReceipt = await api.sendCustomDomainInstructions(
+      { attemptId: 'attempt_1', email: 'dns@example.com', note: 'Please add these.' },
+      transport,
+    );
+    const instructionLinks = await api.getCustomDomainInstructionLinks(
+      'attempt_1',
+      transport,
+    );
+    await api.revokeCustomDomainInstructions(instructionReceipt.linkId, transport);
+
+    assert.equal(authorization.authorizationUrl, 'https://dns.example/authorize');
+    assert.deepEqual(instructionReceipt, {
+      status: 'sent',
+      linkId: 'sfil_receipt_1',
+      state: 'active',
+      createdAt: '2026-07-15T17:05:00Z',
+      expiresAt: '2026-07-22T17:05:00Z',
+      recipientHint: 'd***@e***.com',
+    });
+    assert.deepEqual(instructionLinks, [
+      {
+        linkId: 'sfil_receipt_1',
+        state: 'active',
+        createdAt: '2026-07-15T17:05:00Z',
+        expiresAt: '2026-07-22T17:05:00Z',
+        recipientHint: 'd***@e***.com',
+      },
+    ]);
+    assert.equal(verified.conflictCode, null);
+    assert.equal(verified.nextCheckAt, '2026-07-15T17:05:00Z');
+    assert.deepEqual(calls, [
+      {
+        path: '/admin/storefront/custom-domain/claim',
+        method: 'POST',
+        body: { domain: 'events.customer.example', intent: 'new' },
+      },
+      {
+        path: '/admin/storefront/custom-domain/verify',
+        method: 'POST',
+        body: { attempt_id: 'attempt_1' },
+      },
+      { path: '/admin/storefront/custom-domain/status', method: 'GET', body: undefined },
+      {
+        path: '/admin/storefront/custom-domain/observe',
+        method: 'POST',
+        body: { attempt_id: 'attempt_1' },
+      },
+      {
+        path: '/admin/storefront/custom-domain/status?attempt_id=attempt_1',
+        method: 'GET',
+        body: undefined,
+      },
+      {
+        path: '/admin/storefront/custom-domain/domain-connect/authorize',
+        method: 'POST',
+        body: { attempt_id: 'attempt_1' },
+      },
+      {
+        path: '/admin/storefront/custom-domain/domain-connect/complete',
+        method: 'POST',
+        body: { attempt_id: 'attempt_1' },
+      },
+      {
+        path: '/admin/storefront/custom-domain/retry',
+        method: 'POST',
+        body: { attempt_id: 'attempt_1' },
+      },
+      {
+        path: '/admin/storefront/custom-domain/instructions',
+        method: 'POST',
+        body: {
+          attempt_id: 'attempt_1',
+          email: 'dns@example.com',
+          note: 'Please add these.',
+        },
+      },
+      {
+        path: '/admin/storefront/custom-domain/instructions?attempt_id=attempt_1',
+        method: 'GET',
+        body: undefined,
+      },
+      {
+        path: '/admin/storefront/custom-domain/instructions/sfil_receipt_1',
+        method: 'DELETE',
+        body: undefined,
+      },
+    ]);
+  });
+
+  it('normalizes typed and legacy FastAPI errors into customer-safe messages', () => {
+    const api = storefrontApiModule as unknown as Record<string, (...args: any[]) => any>;
+    const typed = api.normalizeStorefrontError(
+      new Error(
+        JSON.stringify({
+          detail: {
+            code: 'hostname_reserved',
+            message: 'This domain is already connected.',
+            customer_action: 'Verify ownership or contact support.',
+            retryable: false,
+            support_id: 'SUP-777',
+          },
+        }),
+      ),
+      'Unable to check the domain',
+    );
+    assert.equal(typed.message, 'This domain is already connected.');
+    assert.equal(typed.customerAction, 'Verify ownership or contact support.');
+    assert.equal(typed.supportId, 'SUP-777');
+
+    const legacy = api.normalizeStorefrontError(
+      new Error('{"detail":"Storefront custom-domain CNAME target is not configured"}'),
+      'Unable to check the domain',
+    );
+    assert.equal(legacy.code, 'custom_domain_configuration_unavailable');
+    assert.match(legacy.message, /temporarily unavailable/i);
+    assert.doesNotMatch(legacy.message, /\{|detail|CNAME target/i);
+
+    const mediaUnavailable = api.normalizeStorefrontError(
+      new Error(
+        JSON.stringify({
+          detail: 'Storefront image storage is temporarily unavailable',
+        }),
+      ),
+      'Unable to upload the image.',
+    );
+    assert.equal(
+      mediaUnavailable.message,
+      'Storefront image storage is temporarily unavailable',
+    );
+    assert.equal(mediaUnavailable.retryable, true);
+
+    const productionEnvelope = api.normalizeStorefrontError(
+      new Error(
+        JSON.stringify({
+          error: {
+            code: 'dns_routing_mismatch',
+            message: 'The routing record does not match yet.',
+            customer_action: 'Replace the CNAME value and check again.',
+            retryable: true,
+            support_id: 'SUP-778',
+            field_errors: {},
+          },
+        }),
+      ),
+      'Unable to check the domain',
+    );
+    assert.equal(productionEnvelope.code, 'dns_routing_mismatch');
+    assert.equal(productionEnvelope.message, 'The routing record does not match yet.');
+    assert.equal(
+      productionEnvelope.customerAction,
+      'Replace the CNAME value and check again.',
+    );
+    assert.equal(productionEnvelope.supportId, 'SUP-778');
+
+    const providerDocument = api.normalizeStorefrontError(
+      new Error('<Error><Code>AccessDenied</Code><RequestId>internal-id</RequestId></Error>'),
+      'Unable to upload the image.',
+    );
+    assert.equal(providerDocument.message, 'Unable to upload the image.');
+    assert.doesNotMatch(providerDocument.message, /AccessDenied|RequestId|</i);
+
+    const stackTrace = api.normalizeStorefrontError(
+      new Error('TypeError: secret failure\n    at internal/service.ts:12:3'),
+      'Unable to save storefront settings.',
+    );
+    assert.equal(stackTrace.message, 'Unable to save storefront settings.');
+
+    const wrappedTrace = api.normalizeStorefrontError(
+      new Error(
+        JSON.stringify({
+          error: {
+            code: 'provider_failure',
+            message: 'Traceback: internal secret\n    at provider.ts:9:1',
+            customer_action: '<script>retry with secret</script>',
+            retryable: true,
+            support_id: '{raw-provider-id}',
+          },
+        }),
+      ),
+      'The provider operation is temporarily unavailable.',
+    );
+    assert.equal(wrappedTrace.message, 'The provider operation is temporarily unavailable.');
+    assert.equal(wrappedTrace.customerAction, null);
+    assert.equal(wrappedTrace.supportId, null);
+
+    const rawProviderDiagnostic = api.normalizeStorefrontError(
+      new Error(
+        'Cloudflare API token secret-token failed for zone 123 at 10.0.0.4',
+      ),
+      'The provider operation is temporarily unavailable.',
+    );
+    assert.equal(
+      rawProviderDiagnostic.message,
+      'The provider operation is temporarily unavailable.',
+    );
+    assert.doesNotMatch(
+      rawProviderDiagnostic.message,
+      /secret-token|zone 123|10\.0\.0\.4/i,
+    );
+  });
+
+  it('fails closed on unknown instruction send, list, and revoke receipt states', async () => {
+    const api = storefrontApiModule as unknown as Record<string, (...args: any[]) => any>;
+    const receipt = {
+      status: 'sent',
+      link_id: 'sfil_receipt_1',
+      state: 'active',
+      created_at: '2026-07-15T17:05:00Z',
+      expires_at: '2026-07-22T17:05:00Z',
+      recipient_hint: 'd***@e***.com',
+    };
+
+    await assert.rejects(
+      api.sendCustomDomainInstructions(
+        { attemptId: 'attempt_1', email: 'dns@example.com' },
+        async () => ({ ...receipt, status: 'queued' }),
+      ),
+      /unreadable receipt/i,
+    );
+    await assert.rejects(
+      api.sendCustomDomainInstructions(
+        { attemptId: 'attempt_1', email: 'dns@example.com' },
+        async () => ({ ...receipt, state: 'provider_accepted' }),
+      ),
+      /unreadable receipt/i,
+    );
+    await assert.rejects(
+      api.getCustomDomainInstructionLinks(
+        'attempt_1',
+        async () => ({ links: [{ ...receipt, state: 'revoked' }] }),
+      ),
+      /unreadable receipt/i,
+    );
+    await assert.rejects(
+      api.revokeCustomDomainInstructions(
+        'sfil_receipt_1',
+        async () => ({ status: 'accepted' }),
+      ),
+      /unreadable receipt/i,
+    );
+  });
+
   it('uses the canonical admin route family and exact response envelopes', async () => {
     const settings = {
       slug: 'jane-events',
@@ -83,7 +469,12 @@ describe('storefrontApi', () => {
       reviews: [],
     };
     const { calls, transport } = recordingTransport([
-      { plan_id: 'signature', storefront_enabled: true, custom_domain_enabled: false },
+      {
+        plan_id: 'signature',
+        storefront_enabled: true,
+        custom_domain_enabled: false,
+        can_manage_existing_domain: false,
+      },
       { settings },
       { status: 'success', settings },
       preview,

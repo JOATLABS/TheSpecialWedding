@@ -1,5 +1,15 @@
 # Storefront Production Hardening Implementation Plan
 
+> **SUPERSEDED — NOT ACCEPTANCE EVIDENCE (2026-07-15):** This earlier plan
+> covered the initial storefront slice and contains lifecycle assumptions that
+> no longer match the production gap-closure contract. In particular, its
+> branch/worktree instructions, entitlement-loss public-serving rule, simplified
+> custom-domain flow, and `READY` statement must not be used for sign-off. The
+> canonical current matrix is
+> [`docs/guides/STOREFRONT_PRODUCTION_ACCEPTANCE_MATRIX.md`](../../guides/STOREFRONT_PRODUCTION_ACCEPTANCE_MATRIX.md),
+> with operational truth in
+> [`docs/guides/STOREFRONT_INFRASTRUCTURE_SETUP.md`](../../guides/STOREFRONT_INFRASTRUCTURE_SETUP.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver a secure, premium planner storefront whose internal slug preview, public publication, package rendering, custom-domain connection, media uploads, and inquiries work end to end without changing live subscription or account data.
@@ -321,7 +331,11 @@
 
 ## Final Verification And Hostile Review
 
-**Storefront branch code gate: READY.** The implementation, adversarial review, focused/full suites, production build, isolated runtime checks, and real browser journey are complete. Production activation still requires the Cloudflare for SaaS and private R2 controls in [`docs/guides/STOREFRONT_INFRASTRUCTURE_SETUP.md`](../../guides/STOREFRONT_INFRASTRUCTURE_SETUP.md); those deployment controls are external prerequisites, not subscription or publication mutations performed by this branch.
+**Historical readiness statement invalidated.** This document does not establish
+the current code gate or production readiness. Only a fresh source-bound
+frontend lifecycle run, visible in-app Chrome review, hostile acceptance-matrix
+review, and explicitly blocked external-provider rows may establish current
+truth.
 
 - [x] Generate a whole-branch review package from `fbef0023` to `HEAD` and dispatch the final senior reviewers.
 - [x] Fix and independently re-review every Critical or Important finding; final cross-reviews approved with none remaining.
