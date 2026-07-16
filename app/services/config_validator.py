@@ -10,8 +10,14 @@ of any missing configuration through:
 import asyncio
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from typing import Dict, List
+from urllib.parse import urlsplit
+
+from cryptography.exceptions import UnsupportedAlgorithm
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.core.database import mongo
 from app.core.settings import settings
@@ -81,6 +87,18 @@ STORAGE_TARGET_ENV_MAP = {
     StorageTarget.BLOG_ASSETS: "S3_BLOG_BUCKET_NAME",
     StorageTarget.STOREFRONT_STAGING: "S3_STOREFRONT_STAGING_BUCKET_NAME",
 }
+
+
+_DOMAIN_CONNECT_PROVIDER_ID = "thespecialwedding.com"
+_DOMAIN_CONNECT_SERVICE_ID = "storefront-subdomain"
+_DOMAIN_CONNECT_TEMPLATE_VERSION = 1
+_DOMAIN_CONNECT_PUBLIC_KEY_DOMAIN = "domainconnect.thespecialwedding.com"
+_DOMAIN_CONNECT_CALLBACK_PATH = (
+    "/admin/storefront/custom-domain/domain-connect/callback"
+)
+_DOMAIN_CONNECT_CNAME_TARGET = "domains.thespecialwedding.com"
+_DOMAIN_CONNECT_SERVICE_ID_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
+_DOMAIN_CONNECT_KEY_ID_PATTERN = re.compile(r"_[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 
 
 def _collect_storage_target_health_recommendations(
@@ -178,13 +196,83 @@ async def _collect_browser_upload_recommendations(storage: MediaStorage) -> List
     return recommendations
 
 
+def _is_nonempty(value: object) -> bool:
+    return bool(str(value or "").strip())
+
+
+def _is_valid_bare_hostname(value: object) -> bool:
+    if not _is_nonempty(value):
+        return False
+    try:
+        # Function-local import avoids the domain-service/settings import cycle.
+        from app.services.storefront_domain_service import normalize_custom_hostname
+
+        normalize_custom_hostname(str(value), platform_domains=())
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _is_valid_domain_connect_private_key(value: object) -> bool:
+    """Validate the signing-key contract without logging or returning key material."""
+
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        key = serialization.load_pem_private_key(value.encode(), password=None)
+    except (TypeError, ValueError, UnsupportedAlgorithm):
+        return False
+    return isinstance(key, rsa.RSAPrivateKey) and key.key_size >= 2048
+
+
+def _domain_connect_callback_is_safe(value: object, public_key_domain: object) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        split = urlsplit(value.strip())
+        port = split.port
+    except ValueError:
+        return False
+    return bool(
+        split.scheme == "https"
+        and split.hostname
+        and split.hostname.lower()
+        == str(public_key_domain or "").strip().rstrip(".").lower()
+        and split.username is None
+        and split.password is None
+        and port in {None, 443}
+        and split.path == _DOMAIN_CONNECT_CALLBACK_PATH
+        and not split.query
+        and not split.fragment
+    )
+
+
 def _collect_storefront_configuration_recommendations() -> List[str]:
     """Validate optional storefront capabilities from canonical loaded settings."""
 
     recommendations: List[str] = []
     upload_configured = bool(settings.storefront_staging_bucket_name)
+    custom_domains_enabled = bool(settings.storefront_custom_domains_enabled)
+    discovery_enabled = bool(
+        getattr(settings, "storefront_domain_connect_discovery_enabled", False)
+    )
+    authorization_enabled = bool(
+        getattr(settings, "storefront_domain_connect_authorization_enabled", False)
+    )
+    mutations_enabled = bool(
+        getattr(settings, "storefront_cloudflare_mutations_enabled", False)
+    )
+    cleanup_enabled = bool(
+        getattr(settings, "storefront_cloudflare_cleanup_enabled", False)
+    )
     custom_domain_configured = bool(
-        settings.cloudflare_zone_id or settings.storefront_cname_target
+        custom_domains_enabled
+        or mutations_enabled
+        or cleanup_enabled
+        or settings.cloudflare_saas_api_token
+        or settings.cloudflare_zone_id
+        or settings.storefront_fallback_origin
+        or settings.storefront_cname_target
     )
 
     if upload_configured and not settings.cloudflare_api_token:
@@ -194,38 +282,339 @@ def _collect_storefront_configuration_recommendations() -> List[str]:
         )
 
     if custom_domain_configured:
-        if not settings.cloudflare_api_token:
+        if not settings.cloudflare_saas_api_token:
             recommendations.append(
-                "CLOUDFLARE_API_TOKEN: Custom domains are configured but the scoped "
-                "Cloudflare API token is missing."
+                "CLOUDFLARE_SAAS_API_TOKEN: Custom domains are configured but the "
+                "dedicated Cloudflare for SaaS token is missing."
             )
         if not settings.cloudflare_zone_id:
             recommendations.append(
                 "CLOUDFLARE_ZONE_ID: Custom domains are configured but the "
                 "Cloudflare for SaaS zone identifier is missing."
             )
+        if not settings.storefront_fallback_origin:
+            recommendations.append(
+                "STOREFRONT_FALLBACK_ORIGIN: Custom domains are configured but the "
+                "Cloudflare for SaaS fallback origin is missing."
+            )
         if not settings.storefront_cname_target:
             recommendations.append(
                 "STOREFRONT_CNAME_TARGET: Custom domains are configured but the "
                 "customer CNAME target is missing."
             )
-
-    cname_target = settings.storefront_cname_target
-    if cname_target:
-        try:
-            # Function-local import avoids the domain service/settings import cycle.
-            from app.services.storefront_domain_service import (
-                normalize_custom_hostname,
+        if mutations_enabled and not custom_domains_enabled:
+            recommendations.append(
+                "STOREFRONT_CUSTOM_DOMAINS_ENABLED: Cloudflare hostname mutations "
+                "are enabled while the owner-scoped custom-domain capability is "
+                "disabled. Provider mutations remain unavailable."
+            )
+        if mutations_enabled and not cleanup_enabled:
+            recommendations.append(
+                "STOREFRONT_CLOUDFLARE_CLEANUP_ENABLED: New Cloudflare hostname "
+                "mutations are enabled but disconnect cleanup is disabled. Enable "
+                "cleanup before creating any provider hostname."
+            )
+        rollout_mode = getattr(
+            settings, "storefront_custom_domain_rollout_mode", "allowlist"
+        )
+        if rollout_mode == "general":
+            recommendations.append(
+                "STOREFRONT_CUSTOM_DOMAIN_ROLLOUT_MODE: General availability is "
+                "enabled. Confirm the external-provider acceptance receipt before "
+                "leaving allowlist mode."
+            )
+        elif mutations_enabled and rollout_mode == "allowlist":
+            # Use the same normalizer as the mutation gate. Invalid/wildcard entries
+            # therefore cannot make startup diagnostics disagree with runtime policy.
+            from app.services.storefront_domain_rollout import (
+                StorefrontDomainRolloutPolicy,
             )
 
-            normalize_custom_hostname(cname_target, platform_domains=())
-        except (TypeError, ValueError):
+            rollout = StorefrontDomainRolloutPolicy.build(
+                mode=rollout_mode,
+                hostnames=getattr(
+                    settings, "storefront_custom_domain_pilot_hostnames", ()
+                ),
+                owner_ids=getattr(
+                    settings, "storefront_custom_domain_pilot_owner_ids", ()
+                ),
+            )
+            if not rollout.hostnames and not rollout.owner_ids:
+                recommendations.append(
+                    "STOREFRONT_CUSTOM_DOMAIN_PILOT_HOSTNAMES/OWNER_IDS: Cloudflare "
+                    "hostname mutations are enabled in allowlist mode, but no valid "
+                    "exact pilot hostname or owner is configured. New setup remains "
+                    "fail-closed."
+                )
+
+    cloudflare_api_token = getattr(settings, "cloudflare_api_token", None)
+    cloudflare_saas_api_token = getattr(settings, "cloudflare_saas_api_token", None)
+    if (
+        _is_nonempty(cloudflare_api_token)
+        and _is_nonempty(cloudflare_saas_api_token)
+        and str(cloudflare_api_token) == str(cloudflare_saas_api_token)
+    ):
+        recommendations.append(
+            "CLOUDFLARE_SAAS_API_TOKEN: The Cloudflare for SaaS token must be "
+            "separate from the R2/Stream control token."
+        )
+
+    cname_target = settings.storefront_cname_target
+    fallback_origin = settings.storefront_fallback_origin
+    if cname_target and not _is_valid_bare_hostname(cname_target):
+        recommendations.append(
+            "STOREFRONT_CNAME_TARGET: Custom domains are unavailable because "
+            "the configured CNAME target is not a bare valid hostname."
+        )
+    if fallback_origin and not _is_valid_bare_hostname(fallback_origin):
+        recommendations.append(
+            "STOREFRONT_FALLBACK_ORIGIN: Custom domains are unavailable because "
+            "the configured fallback origin is not a bare valid hostname."
+        )
+
+    if discovery_enabled or authorization_enabled:
+        if not custom_domains_enabled:
             recommendations.append(
-                "STOREFRONT_CNAME_TARGET: Custom domains are unavailable because "
-                "the configured CNAME target is not a bare valid hostname."
+                "STOREFRONT_CUSTOM_DOMAINS_ENABLED: Domain Connect is enabled while "
+                "the custom-domain capability is disabled."
+            )
+
+        provider_id = getattr(settings, "domain_connect_provider_id", None)
+        service_id = getattr(settings, "domain_connect_service_id", None)
+        template_version = getattr(settings, "domain_connect_template_version", None)
+        if str(provider_id or "").strip().lower() != _DOMAIN_CONNECT_PROVIDER_ID:
+            recommendations.append(
+                "DOMAIN_CONNECT_PROVIDER_ID: The configured provider does not match "
+                "the reviewed storefront Domain Connect template."
+            )
+        if (
+            not isinstance(service_id, str)
+            or not _DOMAIN_CONNECT_SERVICE_ID_PATTERN.fullmatch(service_id.strip())
+            or service_id.strip() != _DOMAIN_CONNECT_SERVICE_ID
+        ):
+            recommendations.append(
+                "DOMAIN_CONNECT_SERVICE_ID: The configured service does not match "
+                "the reviewed storefront Domain Connect template."
+            )
+        if template_version != _DOMAIN_CONNECT_TEMPLATE_VERSION:
+            recommendations.append(
+                "DOMAIN_CONNECT_TEMPLATE_VERSION: The configured version does not "
+                "match the reviewed storefront Domain Connect template."
+            )
+
+    if authorization_enabled:
+        if not discovery_enabled:
+            recommendations.append(
+                "STOREFRONT_DOMAIN_CONNECT_DISCOVERY_ENABLED: Automatic DNS "
+                "authorization requires exact-template discovery to be enabled first."
+            )
+        if not mutations_enabled:
+            recommendations.append(
+                "STOREFRONT_CLOUDFLARE_MUTATIONS_ENABLED: Automatic DNS "
+                "authorization requires the downstream hostname provisioning path."
+            )
+
+        private_key = getattr(settings, "domain_connect_private_key", None)
+        if not _is_nonempty(private_key):
+            recommendations.append(
+                "DOMAIN_CONNECT_PRIVATE_KEY: Automatic DNS authorization is enabled "
+                "but the RS256 signing key is missing."
+            )
+        elif not _is_valid_domain_connect_private_key(private_key):
+            recommendations.append(
+                "DOMAIN_CONNECT_PRIVATE_KEY: The configured signing key must be an "
+                "unencrypted RSA private key of at least 2048 bits."
+            )
+
+        key_id = getattr(settings, "domain_connect_key_id", None)
+        if not isinstance(key_id, str) or not _DOMAIN_CONNECT_KEY_ID_PATTERN.fullmatch(
+            key_id.strip()
+        ):
+            recommendations.append(
+                "DOMAIN_CONNECT_KEY_ID: Automatic DNS authorization requires a "
+                "valid DNS public-key label."
+            )
+
+        public_key_domain = getattr(settings, "domain_connect_public_key_domain", None)
+        if (
+            not _is_valid_bare_hostname(public_key_domain)
+            or str(public_key_domain).strip().rstrip(".").lower()
+            != _DOMAIN_CONNECT_PUBLIC_KEY_DOMAIN
+        ):
+            recommendations.append(
+                "DOMAIN_CONNECT_PUBLIC_KEY_DOMAIN: The configured public-key domain "
+                "does not match the reviewed signed template."
+            )
+
+        callback_url = getattr(settings, "domain_connect_callback_url", None)
+        if not _is_nonempty(callback_url):
+            recommendations.append(
+                "DOMAIN_CONNECT_CALLBACK_URL: Automatic DNS authorization is "
+                "enabled but the HTTPS callback URL is missing."
+            )
+        elif not _domain_connect_callback_is_safe(callback_url, public_key_domain):
+            recommendations.append(
+                "DOMAIN_CONNECT_CALLBACK_URL: The callback must be the exact HTTPS "
+                "storefront callback on DOMAIN_CONNECT_PUBLIC_KEY_DOMAIN with no "
+                "credentials, custom port, query, or fragment."
+            )
+
+        if str(cname_target or "").strip().rstrip(".").lower() != (
+            _DOMAIN_CONNECT_CNAME_TARGET
+        ):
+            recommendations.append(
+                "STOREFRONT_CNAME_TARGET: Automatic DNS authorization does not "
+                "match the fixed CNAME target in the reviewed Domain Connect template."
             )
 
     return list(dict.fromkeys(recommendations))
+
+
+def _collect_storefront_inquiry_protection_recommendations() -> List[str]:
+    """Report production inquiry-protection gaps without exposing Redis secrets."""
+
+    if not settings.is_production():
+        return []
+
+    recommendations: List[str] = []
+    redis_enabled = bool(getattr(settings, "redis_enabled", False))
+    if not redis_enabled:
+        recommendations.append(
+            "REDIS_ENABLED: Production storefront inquiries require the shared "
+            "Redis rate limiter. New inquiry submissions remain fail-closed until "
+            "Redis is enabled; storefront pages and the platform slug are unaffected."
+        )
+    else:
+        if not _is_nonempty(getattr(settings, "redis_host", None)):
+            recommendations.append(
+                "REDIS_HOST: Production storefront inquiry protection requires a "
+                "shared Redis host."
+            )
+        if not _is_nonempty(getattr(settings, "redis_password", None)):
+            recommendations.append(
+                "REDIS_PASSWORD: Production storefront Redis must require a "
+                "deployment-managed password."
+            )
+
+        # Startup validation runs after init_cache(). A configured-but-disconnected
+        # cache is therefore an operational failure, not merely a missing setting.
+        from app.core.cache import cache
+
+        if not (cache.enabled and cache.redis_client):
+            recommendations.append(
+                "REDIS_RUNTIME: Shared Redis is configured but unavailable. New "
+                "storefront inquiries remain fail-closed until connectivity is "
+                "restored; storefront pages and the platform slug are unaffected."
+            )
+
+    trusted_cidrs = list(getattr(settings, "trusted_proxy_cidrs", ()) or ())
+    trusted_header = getattr(settings, "trusted_proxy_client_ip_header", None)
+    if not trusted_cidrs or not trusted_header:
+        recommendations.append(
+            "TRUSTED_PROXY_CIDRS/TRUSTED_PROXY_CLIENT_IP_HEADER: Production "
+            "storefront inquiry limits require an explicitly trusted ingress CIDR "
+            "and one ingress-overwritten client-IP header. Do not trust a forwarded "
+            "header from arbitrary peers."
+        )
+
+    return recommendations
+
+
+def get_storefront_domain_readiness() -> dict[str, object]:
+    """Return non-secret, non-mutating readiness for new custom-domain setup.
+
+    This capability state is deliberately separate from the platform storefront
+    and publication state. A disabled or incomplete custom-domain control plane
+    must never make an internal slug unavailable.
+    """
+
+    enabled = bool(settings.storefront_custom_domains_enabled)
+    if not enabled:
+        return {
+            "enabled": False,
+            "ready": False,
+            "reason_code": "disabled",
+            "missing": [],
+        }
+
+    if not settings.storefront_cloudflare_mutations_enabled:
+        return {
+            "enabled": True,
+            "ready": False,
+            "reason_code": "provider_mutations_disabled",
+            "missing": [],
+        }
+
+    required = {
+        "CLOUDFLARE_SAAS_API_TOKEN": settings.cloudflare_saas_api_token,
+        "CLOUDFLARE_ZONE_ID": settings.cloudflare_zone_id,
+        "STOREFRONT_FALLBACK_ORIGIN": settings.storefront_fallback_origin,
+        "STOREFRONT_CNAME_TARGET": settings.storefront_cname_target,
+    }
+    missing = [name for name, value in required.items() if not str(value or "").strip()]
+    if missing:
+        return {
+            "enabled": True,
+            "ready": False,
+            "reason_code": "configuration_unavailable",
+            "missing": missing,
+        }
+
+    if not bool(getattr(settings, "storefront_cloudflare_cleanup_enabled", False)):
+        return {
+            "enabled": True,
+            "ready": False,
+            "reason_code": "configuration_unavailable",
+            "missing": ["STOREFRONT_CLOUDFLARE_CLEANUP_ENABLED"],
+        }
+
+    if _is_nonempty(getattr(settings, "cloudflare_api_token", None)) and str(
+        settings.cloudflare_api_token
+    ) == str(settings.cloudflare_saas_api_token):
+        return {
+            "enabled": True,
+            "ready": False,
+            "reason_code": "configuration_invalid",
+            "missing": [],
+        }
+
+    if not _is_valid_bare_hostname(
+        settings.storefront_fallback_origin
+    ) or not _is_valid_bare_hostname(settings.storefront_cname_target):
+        return {
+            "enabled": True,
+            "ready": False,
+            "reason_code": "configuration_invalid",
+            "missing": [],
+        }
+
+    if (
+        getattr(settings, "storefront_custom_domain_rollout_mode", "allowlist")
+        == "allowlist"
+    ):
+        from app.services.storefront_domain_rollout import (
+            StorefrontDomainRolloutPolicy,
+        )
+
+        rollout = StorefrontDomainRolloutPolicy.build(
+            mode="allowlist",
+            hostnames=getattr(settings, "storefront_custom_domain_pilot_hostnames", ()),
+            owner_ids=getattr(settings, "storefront_custom_domain_pilot_owner_ids", ()),
+        )
+        if not rollout.hostnames and not rollout.owner_ids:
+            return {
+                "enabled": True,
+                "ready": False,
+                "reason_code": "rollout_unavailable",
+                "missing": [],
+            }
+
+    return {
+        "enabled": True,
+        "ready": True,
+        "reason_code": "ready",
+        "missing": [],
+    }
 
 
 async def _collect_storefront_infrastructure_recommendations(
@@ -329,6 +718,7 @@ async def validate_environment_and_notify() -> Dict[str, List[str]]:
         if not os.getenv(var_name):
             missing_recommended.append(f"{var_name}: {description}")
     missing_recommended.extend(_collect_storefront_configuration_recommendations())
+    missing_recommended.extend(_collect_storefront_inquiry_protection_recommendations())
     storage = MediaStorage() if settings.s3_credentials_configured else None
     missing_recommended.extend(
         _collect_storage_recommendations(storage, include_target_health=False)

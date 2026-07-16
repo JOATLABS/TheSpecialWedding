@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { GET, POST } from '../../app/api/proxy/[[...path]]/route';
+import { DELETE, GET, POST } from '../../app/api/proxy/[[...path]]/route';
 
 const originalFetch = globalThis.fetch;
 const originalBackendServiceUrl = process.env.BACKEND_SERVICE_URL;
@@ -34,6 +34,26 @@ function proxyContext(path: string[]) {
   return {
     params: Promise.resolve({ path }),
   };
+}
+
+async function assertSafeProxyError(response: Response, expectedCode: string) {
+  const payload = (await response.json()) as {
+    error?: {
+      code?: unknown;
+      message?: unknown;
+      customer_action?: unknown;
+      retryable?: unknown;
+      support_id?: unknown;
+      field_errors?: unknown;
+    };
+  };
+  assert.equal(payload.error?.code, expectedCode);
+  assert.equal(typeof payload.error?.message, 'string');
+  assert.equal(typeof payload.error?.customer_action, 'string');
+  assert.equal(typeof payload.error?.retryable, 'boolean');
+  assert.match(String(payload.error?.support_id), /^proxy_[a-f0-9]{16}$/);
+  assert.deepEqual(payload.error?.field_errors, {});
+  return payload;
 }
 
 test.afterEach(() => {
@@ -328,6 +348,27 @@ test('runtime proxy preserves multiple Set-Cookie headers from the backend', asy
   ]);
 });
 
+test('runtime proxy normalizes bodyless upstream responses', async () => {
+  process.env.BACKEND_SERVICE_URL = 'http://backend-prod:8000';
+
+  globalThis.fetch = (async () => new Response(null, { status: 204 })) as typeof fetch;
+
+  const response = await DELETE(
+    new Request(
+      'https://thespecialwedding.io/api/proxy/admin/storefront/custom-domain',
+      {
+        method: 'DELETE',
+        headers: { host: 'thespecialwedding.io' },
+      },
+    ),
+    proxyContext(['admin', 'storefront', 'custom-domain']),
+  );
+
+  assert.equal(response.status, 204);
+  assert.equal(response.body, null);
+  assert.equal(await response.text(), '');
+});
+
 test('runtime proxy fails closed when target origin equals frontend origin', async () => {
   process.env.BACKEND_SERVICE_URL = 'https://thespecialwedding.io';
   let called = false;
@@ -344,7 +385,14 @@ test('runtime proxy fails closed when target origin equals frontend origin', asy
   );
 
   assert.equal(response.status, 503);
-  assert.match(await response.text(), /Proxy backend URL must not point at the frontend origin/);
+  const payload = await assertSafeProxyError(
+    response,
+    'proxy_configuration_unavailable',
+  );
+  assert.doesNotMatch(
+    JSON.stringify(payload),
+    /Proxy backend URL must not point|thespecialwedding\.io/i,
+  );
   assert.equal(called, false);
 });
 
@@ -368,7 +416,11 @@ test('runtime proxy fails closed when no backend target can be resolved', async 
   );
 
   assert.equal(response.status, 503);
-  assert.match(await response.text(), /Could not resolve API base URL/);
+  const payload = await assertSafeProxyError(
+    response,
+    'proxy_configuration_unavailable',
+  );
+  assert.doesNotMatch(JSON.stringify(payload), /Could not resolve API base URL/i);
   assert.equal(called, false);
 });
 
@@ -388,6 +440,45 @@ test('runtime proxy fails closed when backend target uses an unsupported scheme'
   );
 
   assert.equal(response.status, 503);
-  assert.match(await response.text(), /Proxy backend URL must use http or https/);
+  const payload = await assertSafeProxyError(
+    response,
+    'proxy_configuration_unavailable',
+  );
+  assert.doesNotMatch(JSON.stringify(payload), /ftp|backend-prod|must use http/i);
   assert.equal(called, false);
+});
+
+test('runtime proxy keeps backend network failures out of the browser response', async () => {
+  process.env.BACKEND_SERVICE_URL = 'http://backend-prod:8000';
+  const originalConsoleError = console.error;
+  const logEvents: unknown[][] = [];
+  console.error = (...args: unknown[]) => {
+    logEvents.push(args);
+  };
+  globalThis.fetch = (async () => {
+    throw new Error('connect ECONNREFUSED 10.23.45.67:8000 secret-upstream');
+  }) as typeof fetch;
+
+  try {
+    const response = await GET(
+      new Request('https://thespecialwedding.io/api/proxy/health/livez?token=secret', {
+        headers: { host: 'thespecialwedding.io' },
+      }),
+      proxyContext(['health', 'livez']),
+    );
+
+    assert.equal(response.status, 502);
+    const payload = await assertSafeProxyError(response, 'proxy_backend_unreachable');
+    assert.doesNotMatch(
+      JSON.stringify(payload),
+      /10\.23\.45\.67|backend-prod|secret-upstream|token=secret|ECONNREFUSED/i,
+    );
+    assert.equal(logEvents.length, 1);
+    assert.doesNotMatch(
+      JSON.stringify(logEvents),
+      /10\.23\.45\.67|backend-prod|secret-upstream|token=secret|ECONNREFUSED/i,
+    );
+  } finally {
+    console.error = originalConsoleError;
+  }
 });

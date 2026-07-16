@@ -28,7 +28,8 @@ describe('storefront server and shipped consumer compatibility', () => {
 
     assert.match(adminApiSource, /\/admin\/storefront\/custom-domain/);
     assert.doesNotMatch(adminApiSource, /\/api\/storefront\/custom-domain/);
-    assert.match(domainSource, /connectCustomDomain/);
+    assert.match(domainSource, /preflightCustomDomain/);
+    assert.match(domainSource, /claimCustomDomain/);
   });
 
   it('renders the strict public package and contact DTO without legacy fields', () => {

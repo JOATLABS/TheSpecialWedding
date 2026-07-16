@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl
 
 
 class StorefrontSettingsUpdate(BaseModel):
@@ -35,6 +36,17 @@ class StorefrontAccessResponse(BaseModel):
     plan_id: str | None
     storefront_enabled: bool
     custom_domain_enabled: bool
+    can_manage_existing_domain: bool
+
+
+class StorefrontProviderReadinessResponse(BaseModel):
+    """Non-secret attestation used before any provider-mutating verification."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    image_uploads_configured: bool
+    custom_domains_configured: bool
+    runtime_revision: str | None = None
 
 
 class StorefrontSettingsResponse(BaseModel):
@@ -78,6 +90,162 @@ class StorefrontDomainConnectRequest(BaseModel):
     domain: str = Field(min_length=1, max_length=253)
 
 
+class StorefrontDomainPreflightRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    domain: str = Field(min_length=1, max_length=253)
+    intent: Literal["new", "migration"] = "new"
+
+
+class StorefrontDomainClaimRequest(StorefrontDomainPreflightRequest):
+    pass
+
+
+class StorefrontDomainVerifyRequest(BaseModel):
+    """Verification has no caller-supplied proof; DNS is observed independently."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    attempt_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
+
+
+class StorefrontDomainAttemptRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    attempt_id: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class StorefrontDomainConnectAuthorizationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_url: str
+    attempt_id: str
+
+
+class StorefrontDomainInstructionRequest(StorefrontDomainAttemptRequest):
+    email: EmailStr
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class StorefrontDomainInstructionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["sent"]
+    link_id: str
+    state: Literal["active", "delivery_pending", "delivery_failed"]
+    created_at: datetime
+    expires_at: datetime
+    recipient_hint: str
+
+
+class StorefrontDomainInstructionLinkSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    link_id: str
+    state: Literal["active", "delivery_pending", "delivery_failed"]
+    created_at: datetime
+    expires_at: datetime
+    recipient_hint: str
+
+
+class StorefrontDomainInstructionLinksResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    links: list[StorefrontDomainInstructionLinkSummary]
+
+
+class StorefrontDomainInstructionRevokeResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["revoked"]
+
+
+class StorefrontDomainInstructionProvider(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    zone: str
+    control_panel_url: HttpUrl | None = None
+
+
+class StorefrontDomainInstructionPublicResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    hostname: str
+    records: list[StorefrontDnsRecord]
+    provider: StorefrontDomainInstructionProvider | None = None
+    note: str | None = None
+    expires_at: datetime
+
+
+class StorefrontDnsRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["NS", "A", "AAAA", "CNAME", "CAA", "TXT"]
+    name: str
+    value: str | None = None
+    values: list[str] | None = None
+    ttl: int | None = None
+    purpose: str | None = None
+    relative_host: str | None = None
+    proxy: Literal["dns_only", "proxied", "provider_default"] | None = None
+
+
+class StorefrontDnsConflict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    record_type: str
+    values: list[str]
+    message: str | None = None
+
+
+class StorefrontAuthoritativeDnsEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    zone: str
+    provider: str
+    provider_name: str | None = None
+    control_panel_url: str | None = None
+    nameservers: list[str]
+
+
+class StorefrontDomainPreflightResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    hostname: str
+    host_type: Literal["apex", "subdomain"]
+    intent: Literal["new", "migration"]
+    authoritative_dns: StorefrontAuthoritativeDnsEvidence
+    observed_records: list[StorefrontDnsRecord]
+    conflicts: list[StorefrontDnsConflict]
+    expected_records: list[StorefrontDnsRecord]
+    domain_connect_supported: bool = False
+    domain_connect_provider: str | None = None
+    registrar: str | None = None
+    platform_provider: str | None = None
+    recommended_flow: Literal["automatic", "manual", "assisted_migration"]
+    self_service_allowed: bool = True
+    customer_action: str | None = None
+
+
+class StorefrontDomainErrorDetail(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    message: str
+    customer_action: str
+    retryable: bool
+    support_id: str
+    field: str | None = None
+    provider: dict[str, Any] | None = None
+
+
 class StorefrontOwnershipVerification(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -110,12 +278,79 @@ class StorefrontDomainResponse(BaseModel):
     status: str
     provider_status: str
     ssl_status: str
-    ownership_verification: StorefrontOwnershipVerification | None
-    ownership_verification_http: StorefrontOwnershipVerificationHttp | None
-    ssl_validation_records: list[StorefrontSslValidationRecord]
-    cname_target: str | None
-    deletion_status: str | None
-    last_error: str | None
+    application_status: Literal[
+        "claim_pending",
+        "authorization_pending",
+        "authorization_cancelled",
+        "dns_setup_pending",
+        "migration_prevalidation",
+        "cutover_ready",
+        "provider_provisioning",
+        "hostname_validation",
+        "certificate_validation",
+        "deploying",
+        "active",
+        "action_required",
+        "operator_review",
+        "disconnecting",
+        "disconnect_failed",
+        "disconnected",
+        "expired",
+    ] = "claim_pending"
+    ownership_status: str = "pending"
+    provider_hostname_status: str = "pending"
+    routing_dns_status: str = "pending"
+    https_status: str = "pending"
+    action: str = "action_required"
+    provider_hostname_id: str | None = None
+    attempt_id: str | None = None
+    revision: int = Field(default=0, ge=0)
+    claim_expires_at: datetime | None = None
+    intent: Literal["new", "migration"] = "new"
+    authoritative_dns: StorefrontAuthoritativeDnsEvidence | None = None
+    observed_records: list[StorefrontDnsRecord] = Field(default_factory=list)
+    conflicts: list[StorefrontDnsConflict] = Field(default_factory=list)
+    cleanup_records: list[StorefrontDnsRecord] = Field(default_factory=list)
+    domain_connect_supported: bool = False
+    domain_connect_provider: str | None = None
+    registrar: str | None = None
+    platform_provider: str | None = None
+    conflict_code: str | None = None
+    last_checked_at: datetime | None = None
+    next_check_at: datetime | None = None
+    expected_records: list[StorefrontDnsRecord] = Field(default_factory=list)
+    ownership_verification: StorefrontOwnershipVerification | None = None
+    ownership_verification_http: StorefrontOwnershipVerificationHttp | None = None
+    ssl_validation_records: list[StorefrontSslValidationRecord] = Field(
+        default_factory=list
+    )
+    provider_verification_errors: list[str] = Field(default_factory=list)
+    ssl_validation_errors: list[str] = Field(default_factory=list)
+    cname_target: str | None = None
+    deletion_status: str | None = None
+    last_error: StorefrontDomainErrorDetail | str | None = None
+
+
+class StorefrontDomainDisconnectResponse(BaseModel):
+    """Body-bearing confirmation that avoids ambiguous 204 proxy aborts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    application_status: Literal["disconnected"] = "disconnected"
+    attempt_id: str | None = None
+
+
+class StorefrontDomainHttpsProbeResponse(BaseModel):
+    """Opaque proof that one exact domain lifecycle row reached our origin."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal["1"]
+    hostname: str
+    revision: int = Field(ge=0)
+    nonce: str
+    domain_binding: str
+    proof: str
 
 
 class StorefrontUploadCompleteRequest(BaseModel):

@@ -58,6 +58,7 @@ describe('storefront admin workflow contract', () => {
     assert.match(packagesSource, /getStorefrontAccess/);
     assert.match(packagesSource, /storefront_enabled/);
     assert.match(packagesSource, /custom_domain_enabled/);
+    assert.match(packagesSource, /can_manage_existing_domain/);
     assert.doesNotMatch(packagesSource, /planId\.includes/);
     assert.doesNotMatch(packagesSource, /isPremium/);
     assert.match(packagesSource, /Planner Storefront/);
@@ -68,30 +69,416 @@ describe('storefront admin workflow contract', () => {
     assert.match(upgradeSource, /ctaHref\?: string/);
   });
 
+  it('renders the storefront dialog outside the workspace stacking context', () => {
+    const settings = storefrontSettingsFixture();
+    const preview = storefrontPreviewFixture();
+    const transport = mock.fn(
+      async <T>(path: string): Promise<T | undefined> =>
+        (path.endsWith('/settings') ? { settings } : preview) as T,
+    );
+    const view = render(
+      React.createElement(StorefrontSettingsDialog, {
+        isOpen: true,
+        onClose: () => undefined,
+        access: {
+          plan_id: 'signature',
+          storefront_enabled: true,
+          custom_domain_enabled: false,
+          can_manage_existing_domain: false,
+        },
+        transport,
+      }),
+    );
+
+    const dialog = view.getByRole('dialog', { name: /planner storefront/i });
+    assert.equal(view.container.contains(dialog), false);
+    assert.equal(document.body.contains(dialog), true);
+  });
+
+  it('normalizes settings API envelopes before rendering an error', async () => {
+    const transport = mock.fn(async () => {
+      throw new Error(
+        JSON.stringify({
+          error: {
+            code: 'storefront_settings_unavailable',
+            message: 'Storefront settings are temporarily unavailable.',
+            customer_action: 'Try again in a moment.',
+            retryable: true,
+            support_id: 'sfs_settings_1',
+            field_errors: {},
+          },
+        }),
+      );
+    });
+    const view = render(
+      React.createElement(StorefrontSettingsDialog, {
+        isOpen: true,
+        onClose: () => undefined,
+        access: {
+          plan_id: 'signature',
+          storefront_enabled: true,
+          custom_domain_enabled: false,
+          can_manage_existing_domain: false,
+        },
+        transport,
+      }),
+    );
+
+    const alert = await view.findByRole('alert');
+    assert.match(alert.textContent ?? '', /settings are temporarily unavailable/i);
+    assert.match(alert.textContent ?? '', /support id: sfs_settings_1/i);
+    assert.doesNotMatch(alert.textContent ?? '', /\{|"detail"|\}/i);
+  });
+
+  it('places the storefront overlay above the fixed workspace sidebar', () => {
+    const settings = storefrontSettingsFixture();
+    const preview = storefrontPreviewFixture();
+    const transport = mock.fn(
+      async <T>(path: string): Promise<T | undefined> =>
+        (path.endsWith('/settings') ? { settings } : preview) as T,
+    );
+    const view = render(
+      React.createElement(StorefrontSettingsDialog, {
+        isOpen: true,
+        onClose: () => undefined,
+        access: {
+          plan_id: 'signature',
+          storefront_enabled: true,
+          custom_domain_enabled: false,
+          can_manage_existing_domain: false,
+        },
+        transport,
+      }),
+    );
+
+    const overlay = view.getByRole('dialog', { name: /planner storefront/i }).parentElement;
+    assert.ok(overlay);
+    assert.equal(overlay.classList.contains('z-[9999]'), true);
+  });
+
+  it('moves focus into the storefront dialog and locks background scrolling', async () => {
+    mock.method(HTMLElement.prototype, 'getBoundingClientRect', () => ({
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 40,
+      top: 0,
+      right: 100,
+      bottom: 40,
+      left: 0,
+      toJSON: () => ({}),
+    }));
+    const settings = storefrontSettingsFixture();
+    const preview = storefrontPreviewFixture();
+    const transport = mock.fn(
+      async <T>(path: string): Promise<T | undefined> =>
+        (path.endsWith('/settings') ? { settings } : preview) as T,
+    );
+    const user = userEvent.setup({ document: window.document });
+
+    function Harness() {
+      const [open, setOpen] = React.useState(false);
+      return React.createElement(
+        React.Fragment,
+        null,
+        React.createElement('button', { type: 'button', onClick: () => setOpen(true) }, 'Open storefront'),
+        React.createElement(StorefrontSettingsDialog, {
+          isOpen: open,
+          onClose: () => setOpen(false),
+          access: {
+            plan_id: 'signature',
+            storefront_enabled: true,
+            custom_domain_enabled: false,
+            can_manage_existing_domain: false,
+          },
+          transport,
+        }),
+      );
+    }
+
+    const view = render(React.createElement(Harness));
+    await user.click(view.getByRole('button', { name: 'Open storefront' }));
+    const dialog = await view.findByRole('dialog', { name: /planner storefront/i });
+
+    await waitFor(() => assert.equal(dialog.contains(document.activeElement), true));
+    assert.equal(document.body.style.overflow, 'hidden');
+  });
+
+  it('wraps Tab and Shift+Tab at the storefront dialog boundaries', async () => {
+    mock.method(HTMLElement.prototype, 'getBoundingClientRect', () => ({
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 40,
+      top: 0,
+      right: 100,
+      bottom: 40,
+      left: 0,
+      toJSON: () => ({}),
+    }));
+    const settings = storefrontSettingsFixture();
+    const preview = storefrontPreviewFixture();
+    const transport = mock.fn(
+      async <T>(path: string): Promise<T | undefined> =>
+        (path.endsWith('/settings') ? { settings } : preview) as T,
+    );
+    const view = render(
+      React.createElement(StorefrontSettingsDialog, {
+        isOpen: true,
+        onClose: () => undefined,
+        access: {
+          plan_id: 'signature',
+          storefront_enabled: true,
+          custom_domain_enabled: false,
+          can_manage_existing_domain: false,
+        },
+        transport,
+      }),
+    );
+
+    const first = await view.findByRole('tab', { name: 'Design' });
+    const last = await view.findByRole('button', { name: 'Save for preview' });
+    await waitFor(() => assert.equal(last.hasAttribute('disabled'), false));
+
+    last.focus();
+    fireEvent.keyDown(window, { key: 'Tab' });
+    assert.equal(document.activeElement, first);
+
+    first.focus();
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true });
+    assert.equal(document.activeElement, last);
+
+    const domainTab = view.getByRole('tab', { name: 'Domain' });
+    fireEvent.click(domainTab);
+    const comparePlans = await view.findByRole('link', { name: 'Compare plans' });
+    assert.equal(first.getAttribute('tabindex'), '-1');
+    assert.equal(domainTab.getAttribute('tabindex'), '0');
+
+    comparePlans.focus();
+    fireEvent.keyDown(window, { key: 'Tab' });
+    assert.equal(document.activeElement, domainTab);
+
+    domainTab.focus();
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true });
+    assert.equal(document.activeElement, comparePlans);
+  });
+
+  it('closes the storefront dialog on Escape and restores focus and scrolling', async () => {
+    mock.method(HTMLElement.prototype, 'getBoundingClientRect', () => ({
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 40,
+      top: 0,
+      right: 100,
+      bottom: 40,
+      left: 0,
+      toJSON: () => ({}),
+    }));
+    const settings = storefrontSettingsFixture();
+    const preview = storefrontPreviewFixture();
+    const transport = mock.fn(
+      async <T>(path: string): Promise<T | undefined> =>
+        (path.endsWith('/settings') ? { settings } : preview) as T,
+    );
+    const onClose = mock.fn(() => undefined);
+    const triggerView = render(
+      React.createElement('button', { type: 'button' }, 'Open storefront'),
+    );
+    const trigger = triggerView.getByRole('button', { name: 'Open storefront' });
+    trigger.focus();
+    const props = {
+      isOpen: true,
+      onClose,
+      access: {
+        plan_id: 'signature',
+        storefront_enabled: true,
+        custom_domain_enabled: false,
+        can_manage_existing_domain: false,
+      },
+      transport,
+    };
+    const view = render(React.createElement(StorefrontSettingsDialog, props));
+    await view.findByRole('dialog', { name: /planner storefront/i });
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    await waitFor(() => assert.equal(onClose.mock.callCount(), 1));
+    view.rerender(
+      React.createElement(StorefrontSettingsDialog, { ...props, isOpen: false }),
+    );
+    await waitFor(() => assert.equal(view.queryByRole('dialog'), null));
+    await waitFor(() => assert.equal(document.activeElement, trigger));
+    assert.equal(document.body.style.overflow, '');
+  });
+
   it('keeps design saves separate from immediate custom-domain operations', () => {
     assert.match(modalSource, /custom_domain_enabled/);
     assert.match(modalSource, /apply immediately/i);
     assert.doesNotMatch(modalSource, /custom_domain:\s*draft/);
-    assert.match(domainSource, /connectCustomDomain/);
-    assert.match(domainSource, /refreshCustomDomain/);
+    assert.match(domainSource, /preflightCustomDomain/);
+    assert.match(domainSource, /claimCustomDomain/);
+    assert.match(domainSource, /getCustomDomainStatus/);
+    assert.match(domainSource, /verifyCustomDomain/);
     assert.match(domainSource, /removeCustomDomain/);
-    assert.match(domainSource, /ownership_verification_http/);
     assert.match(domainSource, /HTTP verification URL/);
     assert.match(domainSource, /HTTP verification body/);
     assert.doesNotMatch(domainSource, /cname\.thespecialwedding\.com/);
   });
 
-  it('provides slug, publication, contact, live preview, and Save & Preview controls', () => {
+  it('uses semantic storefront tabs with complete keyboard and panel relationships', async () => {
+    const settings = storefrontSettingsFixture();
+    const preview = storefrontPreviewFixture();
+    const transport = mock.fn(async <T>(path: string): Promise<T | undefined> => {
+      if (path.endsWith('/settings')) return { settings } as T;
+      if (path.endsWith('/preview-data')) return preview as T;
+      if (path.endsWith('/custom-domain/status')) return null as T;
+      throw new Error(`Unexpected request ${path}`);
+    });
+    const view = render(
+      React.createElement(StorefrontSettingsDialog, {
+        isOpen: true,
+        onClose: () => undefined,
+        access: {
+          plan_id: 'signature',
+          storefront_enabled: true,
+          custom_domain_enabled: false,
+          can_manage_existing_domain: false,
+        },
+        transport,
+        initialTab: 'design',
+      }),
+    );
+
+    const design = await view.findByRole('tab', { name: 'Design' });
+    const content = view.getByRole('tab', { name: 'Content & publish' });
+    const domain = view.getByRole('tab', { name: 'Domain' });
+    const previewAction = view.getByRole('button', { name: 'Live preview' });
+    assert.equal(view.getAllByRole('tab').length, 3);
+    for (const tab of [design, content, domain]) {
+      const controls = tab.getAttribute('aria-controls');
+      assert.ok(controls);
+      assert.ok(document.getElementById(controls));
+    }
+
+    design.focus();
+    fireEvent.keyDown(design, { key: 'ArrowRight' });
+    assert.equal(document.activeElement, content);
+    assert.equal(content.getAttribute('aria-selected'), 'true');
+    fireEvent.keyDown(content, { key: 'End' });
+    assert.equal(document.activeElement, domain);
+    fireEvent.keyDown(domain, { key: 'Home' });
+    assert.equal(document.activeElement, design);
+
+    fireEvent.click(previewAction);
+    view.getByRole('region', { name: 'Live preview' });
+    assert.equal(view.queryByRole('tabpanel', { name: 'Design' }), null);
+
+    fireEvent.click(domain);
+    const panel = view.getByRole('tabpanel', { name: 'Domain' });
+    assert.equal(panel.closest('fieldset'), null);
+    assert.match(panel.firstElementChild?.className ?? '', /max-w-\[760px\]/);
+    await waitFor(() => view.getByText(/upgrade to add a custom domain/i));
+    assert.equal(view.queryByRole('button', { name: /save settings/i }), null);
+  });
+
+  it('keeps existing-domain diagnostics available after storefront entitlement loss', async () => {
+    const settings = storefrontSettingsFixture();
+    settings.is_published = true;
+    const transport = mock.fn(async <T>(path: string): Promise<T | undefined> => {
+      if (path.endsWith('/settings')) return { settings } as T;
+      if (path.endsWith('/custom-domain/status')) return null as T;
+      throw new Error(`Unexpected request ${path}`);
+    });
+    const view = render(
+      React.createElement(StorefrontSettingsDialog, {
+        isOpen: true,
+        onClose: () => undefined,
+        access: {
+          plan_id: 'solo',
+          storefront_enabled: false,
+          custom_domain_enabled: false,
+          can_manage_existing_domain: true,
+        },
+        transport,
+        initialTab: 'domain',
+      }),
+    );
+
+    const domain = await view.findByRole('tab', { name: 'Domain' });
+    assert.equal(domain.getAttribute('aria-selected'), 'true');
+    assert.equal(view.getByRole('tab', { name: 'Design' }).hasAttribute('disabled'), true);
+    assert.equal(
+      view.getByRole('tab', { name: 'Content & publish' }).hasAttribute('disabled'),
+      true,
+    );
+    assert.equal(view.queryByRole('button', { name: 'Live preview' }), null);
+    await waitFor(() =>
+      assert.equal(
+        transport.mock.calls.some(
+          (call) => call.arguments[0] === '/admin/storefront/custom-domain/status',
+        ),
+        true,
+      ),
+    );
+    assert.equal(
+      transport.mock.calls.some(
+        (call) => call.arguments[0] === '/admin/storefront/preview-data',
+      ),
+      false,
+    );
+    assert.equal(
+      view.getByRole('link', { name: /platform storefront/i }).getAttribute('href'),
+      '/storefront/luxe-events',
+    );
+  });
+
+  it('applies the bounded responsive shell and explicit readable form colors', async () => {
+    const settings = storefrontSettingsFixture();
+    const preview = storefrontPreviewFixture();
+    const transport = mock.fn(
+      async <T>(path: string): Promise<T | undefined> =>
+        (path.endsWith('/settings') ? { settings } : preview) as T,
+    );
+    const view = render(
+      React.createElement(StorefrontSettingsDialog, {
+        isOpen: true,
+        onClose: () => undefined,
+        access: {
+          plan_id: 'signature',
+          storefront_enabled: true,
+          custom_domain_enabled: false,
+          can_manage_existing_domain: false,
+        },
+        transport,
+      }),
+    );
+
+    const dialog = await view.findByRole('dialog', { name: /planner storefront/i });
+    assert.match(dialog.className, /max-w-5xl/);
+    assert.match(dialog.className, /h-\[100dvh\]/);
+    assert.match(dialog.className, /text-slate-900/);
+    assert.match(dialog.className, /dark:text-slate-100/);
+    assert.equal(dialog.getAttribute('aria-describedby'), 'storefront-settings-description');
+    const titleInput = await view.findByLabelText(/storefront title/i);
+    assert.match(titleInput.className, /text-\[16px\]/);
+    assert.match(titleInput.className, /dark:text-slate-100/);
+    assert.match(titleInput.className, /placeholder:text-slate-500/);
+  });
+
+  it('provides slug, publication, contact, live preview, and saved-preview controls', () => {
     assert.match(modalSource, /StorefrontView/);
-    assert.match(modalSource, /Edit design/);
+    assert.match(modalSource, /label: 'Design'/);
+    assert.match(modalSource, /Content & publish/);
+    assert.match(modalSource, /label: 'Domain'/);
     assert.match(modalSource, /Live preview/);
     assert.match(modalSource, /Storefront URL/);
     assert.match(modalSource, /Publish storefront/);
     assert.match(modalSource, /Contact email/);
     assert.match(modalSource, /Contact phone/);
-    assert.match(modalSource, /Save & Preview/);
+    assert.match(modalSource, /Save for preview/);
+    assert.match(modalSource, /Open saved preview/);
     assert.match(modalSource, /getStorefrontPreviewUrl/);
-    assert.match(modalSource, /new URL\(getStorefrontPreviewUrl/);
+    assert.match(modalSource, /new URL\s*\(\s*getStorefrontPreviewUrl/);
     assert.match(modalSource, /window\.location\.origin/);
     assert.match(modalSource, /previewMode/);
     assert.match(modalSource, /failedIds/);
@@ -102,6 +489,52 @@ describe('storefront admin workflow contract', () => {
     assert.doesNotMatch(packagesSource, /previewPackages=/);
     assert.doesNotMatch(modalSource, /useState<any>/);
     assert.doesNotMatch(modalSource, /prev: any/);
+  });
+
+  it('offers a native platform preview link only after the async save succeeds', async () => {
+    const user = userEvent.setup({ document: window.document });
+    const settings = storefrontSettingsFixture();
+    const preview = storefrontPreviewFixture();
+    const transport = mock.fn(
+      async <T>(path: string, method = 'GET'): Promise<T | undefined> => {
+        if (path.endsWith('/settings') && method === 'POST') {
+          return { status: 'success', settings } as T;
+        }
+        if (path.endsWith('/settings')) return { settings } as T;
+        if (path.endsWith('/preview-data')) return preview as T;
+        throw new Error(`Unexpected request ${path}`);
+      },
+    );
+    const openWindow = mock.method(window, 'open', () => null);
+    const view = render(
+      React.createElement(StorefrontSettingsDialog, {
+        isOpen: true,
+        onClose: () => undefined,
+        access: {
+          plan_id: 'signature',
+          storefront_enabled: true,
+          custom_domain_enabled: false,
+          can_manage_existing_domain: false,
+        },
+        transport,
+      }),
+    );
+
+    const preparePreview = await view.findByRole('button', {
+      name: /save for preview/i,
+    });
+    await user.click(preparePreview);
+
+    const previewLink = await view.findByRole('link', {
+      name: /open saved preview/i,
+    });
+    const parsedUrl = new URL(previewLink.getAttribute('href') ?? '');
+    assert.equal(parsedUrl.pathname, '/storefront/luxe-events');
+    assert.equal(parsedUrl.search, '?preview=1');
+    assert.equal(previewLink.getAttribute('target'), '_blank');
+    assert.match(previewLink.getAttribute('rel') ?? '', /noopener/);
+    assert.match(previewLink.getAttribute('rel') ?? '', /noreferrer/);
+    assert.equal(openWindow.mock.callCount(), 0);
   });
 
   it('exposes a native, labelled file input for pointer and keyboard users', () => {
@@ -178,6 +611,11 @@ describe('storefront admin workflow contract', () => {
     view.getByText('Full Planning');
     view.getByText('Vendor sourcing');
     view.getByText(/Wonderful planning experience/);
+    view.getByRole('img', { name: '5 out of 5 stars' });
+    assert.match(
+      view.getByText('Add an about image to introduce the planner.').className,
+      /text-slate-600/,
+    );
     const inquiryButton = view.getByRole('button', { name: /inquiries disabled in preview/i });
     assert.equal((inquiryButton as HTMLButtonElement).disabled, true);
   });
@@ -215,6 +653,7 @@ describe('storefront admin workflow contract', () => {
           plan_id: 'signature',
           storefront_enabled: true,
           custom_domain_enabled: false,
+          can_manage_existing_domain: false,
         },
         transport,
       }),
@@ -226,7 +665,7 @@ describe('storefront admin workflow contract', () => {
       true,
     );
     assert.equal(
-      (view.getByRole('button', { name: /save & preview/i }) as HTMLButtonElement).disabled,
+      (view.getByRole('button', { name: /save for preview/i }) as HTMLButtonElement).disabled,
       true,
     );
 
@@ -264,6 +703,7 @@ describe('storefront admin workflow contract', () => {
           plan_id: 'signature',
           storefront_enabled: true,
           custom_domain_enabled: false,
+          can_manage_existing_domain: false,
         },
         transport,
       }),
@@ -272,7 +712,9 @@ describe('storefront admin workflow contract', () => {
     const slug = await waitFor(() => view.getByLabelText(/storefront url/i));
     await user.clear(slug);
     await user.type(slug, '   ');
+    await user.click(view.getByRole('tab', { name: /content & publish/i }));
     await user.click(view.getByRole('switch', { name: /publish storefront/i }));
+    await user.click(view.getByRole('tab', { name: /^design$/i }));
     assert.equal((slug as HTMLInputElement).value, '   ');
     await user.click(view.getByRole('button', { name: /^save settings$/i }));
 
@@ -280,7 +722,7 @@ describe('storefront admin workflow contract', () => {
     assert.match(view.getByRole('alert').textContent ?? '', /storefront url.*required/i);
     assert.equal(postCount, 0);
 
-    await user.click(view.getByRole('button', { name: /save & preview/i }));
+    await user.click(view.getByRole('button', { name: /save for preview/i }));
     assert.equal(postCount, 0);
     assert.equal(openWindow.mock.callCount(), 0);
   });
@@ -328,6 +770,7 @@ describe('storefront admin workflow contract', () => {
           plan_id: 'signature',
           storefront_enabled: true,
           custom_domain_enabled: false,
+          can_manage_existing_domain: false,
         },
         transport,
       }),
@@ -338,6 +781,7 @@ describe('storefront admin workflow contract', () => {
     await user.click(view.getByRole('button', { name: /save settings/i }));
 
     await waitFor(() => assert.deepEqual(savedBody, { title: 'Updated locally' }));
+    await user.click(view.getByRole('tab', { name: /content & publish/i }));
     await waitFor(() =>
       assert.equal(
         view.getByRole('switch', { name: /publish storefront/i }).getAttribute('aria-checked'),
@@ -386,6 +830,7 @@ describe('storefront admin workflow contract', () => {
           plan_id: 'signature',
           storefront_enabled: true,
           custom_domain_enabled: false,
+          can_manage_existing_domain: false,
         },
         transport,
       }),
@@ -435,6 +880,7 @@ describe('storefront admin workflow contract', () => {
           plan_id: 'signature',
           storefront_enabled: true,
           custom_domain_enabled: false,
+          can_manage_existing_domain: false,
         },
         transport,
       }),
@@ -492,6 +938,7 @@ describe('storefront admin workflow contract', () => {
             plan_id: 'signature',
             storefront_enabled: true,
             custom_domain_enabled: false,
+            can_manage_existing_domain: false,
           },
           transport,
         }),

@@ -17,7 +17,11 @@ import app.utils.rate_limiter as rate_limiter_module
 from app.core.settings import Settings
 from app.models.storefront import StorefrontInquiryRequest
 from app.services.storefront_inquiry_service import StorefrontInquiryService
-from app.utils.rate_limiter import get_client_ip
+from app.utils.rate_limiter import (
+    RateLimiter,
+    SharedRateLimiterUnavailable,
+    get_client_ip,
+)
 
 
 OWNER_ID = "507f1f77bcf86cd799439011"
@@ -342,6 +346,11 @@ class FakeRateLimiter:
         return self.allowed, 4 if self.allowed else 0, 1234567890
 
 
+class UnavailableSharedRateLimiter:
+    async def is_allowed(self, key: str, requests_per_minute: int | None = None):
+        raise SharedRateLimiterUnavailable("test Redis outage")
+
+
 class FakeEmailService:
     def __init__(
         self,
@@ -445,7 +454,7 @@ def pending_inquiry_document(
         "storefront_slug": "luxe-light",
         "idempotency_key": payload.idempotency_key,
         "request_hash": request_hash or service._request_hash(payload),
-        "response_message": "Thanks — your inquiry was sent to the wedding planner.",
+        "response_message": "Thanks — your inquiry was received by the wedding planner.",
         "name": payload.name,
         "email": str(payload.email),
         "phone": payload.phone,
@@ -1183,6 +1192,119 @@ async def test_rate_limit_is_keyed_by_canonical_storefront_and_ip_before_insert(
 
     assert exc_info.value.status_code == 429
     assert limiter.keys == ["203.0.113.10:luxe-light"]
+    assert mongo.db["storefront_inquiries"].inserted == []
+    assert email.calls == []
+
+
+@pytest.mark.asyncio
+async def test_required_shared_limiter_never_falls_back_when_redis_is_down(
+    monkeypatch,
+):
+    monkeypatch.setattr(rate_limiter_module.cache, "enabled", False)
+    monkeypatch.setattr(rate_limiter_module.cache, "redis_client", None)
+    limiter = RateLimiter(
+        "storefront_inquiry",
+        default_requests_per_minute=5,
+        require_shared_backend=True,
+    )
+
+    with pytest.raises(SharedRateLimiterUnavailable):
+        await limiter.is_allowed("203.0.113.10:luxe-light")
+
+    assert limiter.ip_requests == {}
+
+
+@pytest.mark.asyncio
+async def test_two_api_replica_limiters_share_one_visitor_budget_and_isolate_visitors(
+    monkeypatch,
+):
+    class SharedRedisCounter:
+        enabled = True
+        redis_client = object()
+
+        def __init__(self):
+            self.counts: dict[str, int] = {}
+
+        async def increment(self, key: str, expire: int) -> int:
+            assert expire == 60
+            self.counts[key] = self.counts.get(key, 0) + 1
+            return self.counts[key]
+
+        async def ttl(self, _key: str) -> int:
+            return 60
+
+    shared_redis = SharedRedisCounter()
+    monkeypatch.setattr(rate_limiter_module, "cache", shared_redis)
+    replica_a = RateLimiter(
+        "storefront_inquiry",
+        default_requests_per_minute=5,
+        require_shared_backend=True,
+    )
+    replica_b = RateLimiter(
+        "storefront_inquiry",
+        default_requests_per_minute=5,
+        require_shared_backend=True,
+    )
+    visitor_one = "203.0.113.10:luxe-light"
+
+    for index in range(5):
+        replica = replica_a if index % 2 == 0 else replica_b
+        allowed, _remaining, _reset = await replica.is_allowed(visitor_one)
+        assert allowed is True
+
+    denied, remaining, _reset = await replica_b.is_allowed(visitor_one)
+    assert denied is False
+    assert remaining == 0
+
+    # A different visitor and a different canonical storefront key each receive
+    # an independent shared budget even when they reach the other replica.
+    other_visitor, *_ = await replica_a.is_allowed("198.51.100.20:luxe-light")
+    other_storefront, *_ = await replica_b.is_allowed("203.0.113.10:another-storefront")
+    assert other_visitor is True
+    assert other_storefront is True
+    assert len(shared_redis.counts) == 3
+    assert replica_a.ip_requests == {}
+    assert replica_b.ip_requests == {}
+
+
+def test_production_storefront_service_requires_shared_rate_limiting(monkeypatch):
+    monkeypatch.setattr(
+        storefront_inquiry_service_module,
+        "settings",
+        SimpleNamespace(is_production=lambda: True),
+    )
+
+    service = StorefrontInquiryService(
+        mongo_client=FakeMongo(),
+        storefront_service=FakeStorefrontService(),
+        email_service=FakeEmailService(),
+    )
+
+    assert service._rate_limiter.require_shared_backend is True
+
+
+@pytest.mark.asyncio
+async def test_redis_outage_returns_friendly_retryable_503_before_insert():
+    service, mongo, _storefront, _limiter, email = make_service()
+    service._rate_limiter = UnavailableSharedRateLimiter()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.capture(
+            "luxe-light",
+            inquiry_payload(),
+            client_ip="203.0.113.10",
+            user_agent=None,
+        )
+
+    error = exc_info.value
+    assert error.status_code == 503
+    assert error.headers == {"Retry-After": "60"}
+    envelope = error.detail["error"]
+    assert envelope["code"] == "inquiry_protection_unavailable"
+    assert envelope["retryable"] is True
+    assert envelope["support_id"].startswith("sf-inquiry-")
+    assert envelope["field_errors"] == {}
+    assert "Redis" not in envelope["message"]
     assert mongo.db["storefront_inquiries"].inserted == []
     assert email.calls == []
 

@@ -14,6 +14,7 @@
     "lint": "node scripts/ensure-deps.mjs && npm run repo:check-copy-artifacts && eslint .",
     "type-check": "node scripts/ensure-deps.mjs && tsc --noEmit --pretty",
     "test": "node scripts/ensure-deps.mjs && tsx --test tests/**/*.test.ts tests/**/*.test.tsx",
+    "test:e2e:storefront": ".venv.nosync/bin/python testbed/verify_storefront_frontend_lifecycle.py",
     "images:optimize": "npx -y -p node@16 -p @squoosh/cli squoosh-cli -d public --webp '{\"quality\":80}' --avif '{\"cqLevel\":33}' public/*.png",
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s",
     "changelog:auto": "auto-changelog -p --commit-limit false",
@@ -82,6 +83,7 @@
     "tiny-invariant": "^1.3.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "^1.61.1",
     "@remotion/captions": "4.0.484",
     "@remotion/cli": "4.0.484",

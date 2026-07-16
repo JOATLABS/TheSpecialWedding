@@ -71,6 +71,7 @@ Use this checklist to ensure you don't miss any steps during deployment.
 ### Email Service Secrets (Resend)
 - [ ] `RESEND_API_KEY` - Resend API key
 - [ ] `RESEND_FROM_EMAIL` - Verified sender email
+- [ ] `RESEND_FROM_NAME` - Customer-visible sender name used by storefront inquiry and DNS-instruction mail
 
 ### SMS Service Secrets (Choose One)
 **Twilio:**
@@ -87,6 +88,7 @@ Use this checklist to ensure you don't miss any steps during deployment.
 
 ### Storage Secrets (Cloudflare R2 or AWS S3)
 - [ ] `S3_ENDPOINT_URL` - R2/S3 endpoint
+- [ ] `S3_REGION=auto` for Cloudflare R2
 - [ ] `S3_ACCESS_KEY_ID` - Access key
 - [ ] `S3_SECRET_ACCESS_KEY` - Secret key
 - [ ] `S3_BUCKET_NAME` - Primary gallery/profile/document bucket
@@ -106,9 +108,24 @@ Use this checklist to ensure you don't miss any steps during deployment.
 - [ ] An enabled deletion lifecycle covers `storefront/` within `STOREFRONT_STAGING_LIFECYCLE_MAX_AGE_DAYS`
 - [ ] Staging-bucket CORS allows browser `PUT` with `Content-Type` from the exact frontend origin
 - [ ] `CLOUDFLARE_ACCOUNT_ID` matches the account in `S3_ENDPOINT_URL`
-- [ ] `CLOUDFLARE_API_TOKEN` can read R2 bucket controls and manage custom-hostname certificates in `CLOUDFLARE_ZONE_ID`
+- [ ] `CLOUDFLARE_API_TOKEN` is limited to the R2 control-plane reads required by the privacy doctor
+- [ ] `CLOUDFLARE_SAAS_API_TOKEN` is a separate token scoped only to the SaaS zone with `Zone Read` and `SSL and Certificates Write`; it is never the R2 token
+- [ ] `CLOUDFLARE_ZONE_ID` is the exact Cloudflare for SaaS zone
+- [ ] `STOREFRONT_FALLBACK_ORIGIN` is configured as the active fallback origin
 - [ ] `STOREFRONT_CNAME_TARGET` is the active Cloudflare-for-SaaS CNAME target
 - [ ] `STOREFRONT_PLATFORM_DOMAINS` is identical on frontend and backend
+- [ ] `STOREFRONT_RUNTIME_REVISION` is the immutable deployed Git SHA or image digest, not `unknown`
+- [ ] `STOREFRONT_CUSTOM_DOMAINS_ENABLED=false` for the initial read-only deploy
+- [ ] `STOREFRONT_CLOUDFLARE_MUTATIONS_ENABLED=false` for the initial read-only deploy
+- [ ] `STOREFRONT_DOMAIN_CONNECT_DISCOVERY_ENABLED=false` and `STOREFRONT_DOMAIN_CONNECT_AUTHORIZATION_ENABLED=false` until external onboarding receipts exist
+- [ ] `STOREFRONT_CUSTOM_DOMAIN_ROLLOUT_MODE=allowlist` with exact `STOREFRONT_CUSTOM_DOMAIN_PILOT_HOSTNAMES` and/or `STOREFRONT_CUSTOM_DOMAIN_PILOT_OWNER_IDS` before any pilot provisioning
+- [ ] `STOREFRONT_CLOUDFLARE_CLEANUP_ENABLED=true` before the first provider create and throughout rollback/cleanup
+- [ ] `DOMAIN_CONNECT_PROVIDER_ID`, `DOMAIN_CONNECT_SERVICE_ID`, and `DOMAIN_CONNECT_TEMPLATE_VERSION` match the accepted template exactly
+- [ ] `DOMAIN_CONNECT_PRIVATE_KEY` is backend-only; `DOMAIN_CONNECT_KEY_ID`, `DOMAIN_CONNECT_PUBLIC_KEY_DOMAIN`, and `DOMAIN_CONNECT_CALLBACK_URL` match published DNS and the exact HTTPS callback
+- [ ] Production Compose plus focused storefront configuration/template checks pass without printing secrets
+- [ ] Current-source deterministic storefront Playwright run has a passing cleanup and source-bound manifest
+- [ ] Separate visible playback is approved in the user-selected in-app Chrome browser
+- [ ] Same-zone canary and independently authoritative customer-zone receipts are tracked separately; external provider remains `BLOCKED` until the latter passes
 
 ### Payment Secrets (Stripe)
 - [ ] `STRIPE_SECRET_KEY` - Stripe secret key

@@ -131,6 +131,12 @@ Required for both `frontend-prod` and `frontend-staging`:
 - `FRONTEND_URL=https://thespecialwedding.io` or `https://staging.thespecialwedding.io`
 - `INTERNAL_API_BASE_URL=...`
 - `NEXT_PUBLIC_API_BASE_URL=https://api.thespecialwedding.io` or `https://api.staging.thespecialwedding.io`
+- `STOREFRONT_PLATFORM_DOMAINS=["thespecialwedding.io","thespecialwedding.com"]`
+  (use the matching first-party staging hosts in staging while retaining the
+  production platform domains that must never be accepted as customer domains)
+- `STOREFRONT_CNAME_TARGET=domains.thespecialwedding.com` (or the exact
+  environment-scoped staging target). This non-secret value is read by the
+  Next.js host/probe boundary and must match the backend.
 
 Important note:
 
@@ -166,6 +172,14 @@ Required:
 - environment-specific `CORS_ORIGINS`
 - environment-specific host validation inputs (`ALLOWED_HOSTS` or derived config)
 - environment-specific `SCHEDULER_HMAC_SECRET`
+- the exact same `STOREFRONT_PLATFORM_DOMAINS` value used by that environment's
+  frontend host classifier
+- the exact same `STOREFRONT_CNAME_TARGET` value used by that environment's
+  frontend host/probe boundary
+- `STOREFRONT_RUNTIME_REVISION=<immutable deployed Git SHA or image digest>`;
+  do not leave the acceptance environment on `unknown`
+- all Cloudflare for SaaS, rollout, cleanup, Domain Connect, R2, and Resend
+  values from the storefront guide; secrets remain backend-only
 
 Examples:
 
@@ -372,6 +386,21 @@ Manual examples:
 - [ ] GitHub environment variable `SCHEDULER_BASE_URL` set on both environments
 - [ ] `SCHEDULER_HMAC_SECRET` set on both backend environments
 - [ ] Calendar scheduler workflow has production secrets and succeeds on a manual dry run
+- [ ] `STOREFRONT_PLATFORM_DOMAINS` and `STOREFRONT_CNAME_TARGET` match on each
+      frontend/backend pair
+- [ ] Storefront backend reports the exact immutable
+      `STOREFRONT_RUNTIME_REVISION`
+- [ ] New custom-domain onboarding starts in `allowlist` mode with exact pilot
+      hostname/owner values; cleanup is enabled before provider mutation
+- [ ] Domain Connect discovery and authorization remain disabled until template,
+      signing-key, Cloudflare-onboarding, and real-consent receipts exist
+- [ ] Current-source deterministic storefront Playwright run and cleanup pass
+      with a bound artifact manifest
+- [ ] Separate visible storefront playback completed in the user-selected in-app
+      Chrome browser
+- [ ] Independent customer DNS-provider lifecycle remains marked `BLOCKED` until
+      an authorized disposable-zone receipt exists; same-zone proof is not a
+      substitute
 - [ ] Dedicated smoke-test accounts created
 - [ ] Staging seed data loaded
 - [ ] First `main` merge reaches staging successfully

@@ -54,6 +54,7 @@ not be deleted by cleanup — that's what lets the seed phase stay cheap.
 
 | Driver | Purpose | Cleanup |
 | --- | --- | --- |
+| `verify_storefront_frontend_lifecycle.py` | Storefront-only Playwright proof against the production frontend build, real FastAPI routes, isolated Mongo, and deterministic provider adapters. It validates entitlement boundaries, slug draft/preview/publication/content/inquiries, the resumable DNS/customer-domain lifecycle, failure states, provider-delete receipt, accessibility, overflow, console/page/request cleanliness, and nonce/build/revision binding. Live external-provider mode is a configuration fence only and cannot produce a pass. | `cleanup_storefront_frontend_lifecycle_state.py` |
 | `verify_marketing_capture_workspace.py` | Refreshes the canonical public plan catalog locally with Stripe disabled, resets and seeds the isolated fictional Phase 1 planner workspace, verifies the exact plan payload and `no-store` response through the frontend proxy plus planner/team/couple authentication and exact gallery bytes, and preflights the canonical 17 session-aware scene routes against the exact clean served build before the separate manually driven Chrome review. It accepts only the documented 127.0.0.1 capture origins. | `cleanup_marketing_capture_workspace_state.py` |
 | `verify_team_member_gate_via_test_clock.py` | PR1 / task #20 — team-member login and stale sessions are blocked when the planner's subscription is `past_due` / `unpaid`, planner feature routes 402, and Chrome checkpoints validate the shared `billingBlockTarget` targets before recovery clears the gate. Reuses the legacy clock id when present, otherwise a named `team-member-gate` clock. Template for phase-gated runners. | `cleanup_team_member_gate_verify_state.py` |
 | `verify_metrics_snapshot_no_body.py` | Metrics cron contract - proves `POST /metrics/snapshot` works with auth headers and no request body, then confirms latest/history reads expose the inserted snapshot. | `cleanup_metrics_snapshot_no_body_state.py` |
@@ -83,7 +84,70 @@ python testbed/testbed.py up --with-frontend
 
 # Clean up partial state so the next SEED phase starts fresh:
 python testbed/cleanup_team_member_gate_verify_state.py
+
+# Reproducible storefront lifecycle. The build helper writes the source-bound
+# receipt consumed by the verifier; the verifier owns isolated services,
+# browser artifacts, assertions, and cleanup.
+python testbed/build_storefront_frontend.py
+TESTBED_NON_INTERACTIVE=1 \
+TESTBED_STOREFRONT_EXTERNAL_MODE=deterministic \
+TESTBED_STOREFRONT_INQUIRY_DELIVERY_MODE=disabled \
+npm run test:e2e:storefront
 ```
+
+For a deterministic custom-domain lifecycle through the real FastAPI routes,
+services, state machine, owner scope, and Mongo persistence, start the backend
+with the testbed-only ASGI entry point:
+
+```bash
+export TESTBED_NON_INTERACTIVE=1
+export BACKEND_URL=http://127.0.0.1:8112
+export FRONTEND_URL=http://127.0.0.1:3112
+export MONGO_URI=mongodb://127.0.0.1:28117
+export MONGO_DB=wedding_storefront_test
+export STOREFRONT_PROVIDER_HARNESS_RUN_ID=storefront-e2e-unique-run
+export STOREFRONT_PROVIDER_HARNESS_TOKEN='<at-least-43-character-random-run-token>'
+export STOREFRONT_PROVIDER_HARNESS_CUSTOMER_ZONE=customer.test
+.venv.nosync/bin/uvicorn testbed.storefront_provider_harness:app \
+  --host 127.0.0.1 --port 8112
+```
+
+The provider harness fails before importing `app.main` unless unattended mode,
+both HTTP origins, Mongo, the labelled database, the reserved `.test`/`.invalid`
+customer zone, run id, and unguessable run token pass the safety contract. Its
+state-changing controls exist only under
+`/__testbed/storefront-provider`, require both
+`X-Storefront-Testbed-Run-Id` and `X-Storefront-Testbed-Control-Token`, and are
+not registered by the production application. Responses carry
+`X-Storefront-Provider-Mode: deterministic-testbed`. This evidence proves the
+application lifecycle without browser interception; it must remain separate
+from live Cloudflare and independently authoritative customer-DNS acceptance.
+
+The storefront verifier refuses remote backend, frontend, and Mongo hosts even
+when they are called “staging.” `deterministic` is the executable local
+lifecycle and proves application behavior without claiming external-provider
+acceptance. `live` currently validates only configuration and exact-allowlist
+fences and must report the external-provider row `BLOCKED`; it cannot emit a
+passed live-provider receipt until the real Cloudflare/customer-zone driver is
+implemented and explicitly authorized.
+
+The separately authorized same-zone infrastructure canary is implemented in
+`testbed/storefront_same_zone_canary.py`. It uses one exact unused subdomain of
+`thespecialwedding.com`, separate DNS/SaaS tokens, an exact zone allowlist, and
+a run-bound `CREATE_AND_DELETE` acknowledgement. It verifies fallback-origin,
+friendly-CNAME, custom-hostname, certificate, HTTPS edge routing, and exact
+cleanup receipts. Even a green canary keeps `independent_customer_provider`
+`BLOCKED`; it is not a customer DNS-provider journey. Run `--config-only`
+first, which performs no network calls or mutations.
+
+Each storefront run writes Playwright JSON, JUnit, HTML, trace, video,
+screenshots, and a hashed run manifest under
+`testbed/.testbed/artifacts/storefront/runs/<nonce>/`. The manifest binds the
+nonce, git fingerprint, frontend build ID, backend revision, timestamp, and
+routes. Page errors, unexpected console/network failures, raw JSON customer
+errors, accessibility violations, missing markers, or horizontal overflow fail
+the run. These artifacts support—but do not replace—the separate visible
+playback in the user-selected in-app Chrome browser.
 
 Each driver expects the same `.env` the app uses (`STRIPE_SECRET_KEY`,
 `MONGO_URI`, etc.). Drivers write *real* rows to the real Mongo and *real*
@@ -95,8 +159,9 @@ customers to the real Stripe test mode — that's the point.
    so the base QA accounts are never touched and cleanup can target the tag.
 2. **Idempotent seed.** Re-running the seed phase on an already-seeded clock
    must no-op rather than crash.
-3. **ENTER gates at every UX-observable checkpoint.** No checkpoint should
-   advance without giving the user a chance to inspect the browser.
+3. **Visible frontend evidence.** Use deterministic Playwright artifacts for
+   unattended storefront runs and a separate visible pass in the user-selected
+   browser. Other phase-gated drivers may retain ENTER checkpoints.
 4. **Structured logging with explicit CHECKPOINT markers** so grepping the
    log post-run tells you exactly what passed.
 5. **Name the test clock in a module constant,** not a flag. The clock is

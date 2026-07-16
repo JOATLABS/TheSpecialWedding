@@ -48,10 +48,10 @@ export function StorefrontImagePicker({
   return (
     <div className="space-y-2">
       <div>
-        <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+        <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
           {label}
         </p>
-        <p id={hintId} className="text-[11px] text-slate-500 dark:text-slate-400">
+        <p id={hintId} className="mt-1 text-base leading-6 text-slate-600 dark:text-slate-300">
           {hint}
         </p>
       </div>
@@ -66,7 +66,7 @@ export function StorefrontImagePicker({
           {imageUrl ? (
             <img src={imageUrl} alt={`${label} preview`} className="h-full w-full object-cover" />
           ) : (
-            <div className="flex h-full items-center justify-center px-12 text-center text-xs text-slate-500">
+            <div className="flex h-full items-center justify-center px-6 text-center text-base text-slate-600 dark:text-slate-300 sm:px-12">
               The saved image is attached, but its preview is temporarily unavailable.
             </div>
           )}
@@ -74,7 +74,7 @@ export function StorefrontImagePicker({
             type="button"
             onClick={onRemove}
             disabled={uploading}
-            className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-slate-950/80 px-3 py-1.5 text-xs font-medium text-white shadow-sm backdrop-blur transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="absolute right-3 top-3 inline-flex min-h-11 items-center gap-2 rounded-full bg-slate-950/90 px-4 text-base font-semibold text-white shadow-sm backdrop-blur transition hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-700 disabled:hover:bg-slate-200 dark:disabled:bg-slate-800 dark:disabled:text-slate-200 dark:disabled:hover:bg-slate-800"
           >
             <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
             Remove
@@ -120,10 +120,10 @@ export function StorefrontImagePicker({
             ) : (
               <ImagePlus className="mb-2 h-6 w-6 text-slate-400" aria-hidden="true" />
             )}
-            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+            <span className="text-base font-semibold text-slate-800 dark:text-slate-100">
               {uploading ? 'Uploading image…' : 'Choose an image or drop it here'}
             </span>
-            <span className="mt-1 text-[10px] text-slate-500">
+            <span className="mt-1 text-base text-slate-600 dark:text-slate-300">
               JPEG, PNG, or WebP · 5 MB maximum
             </span>
           </label>

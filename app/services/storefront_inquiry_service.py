@@ -15,6 +15,7 @@ from fastapi import HTTPException, status
 from pymongo.errors import DuplicateKeyError
 
 from app.core.database import mongo
+from app.core.settings import settings
 from app.models.planner_notification import (
     PlannerNotificationTypes,
     create_notification_document,
@@ -26,13 +27,19 @@ from app.services.storefront_service import (
     storefront_service as default_storefront_service,
 )
 from app.utils.planner_ownership import normalize_query_id
-from app.utils.rate_limiter import RateLimiter, create_rate_limiter
+from app.utils.rate_limiter import (
+    RateLimiter,
+    SharedRateLimiterUnavailable,
+    create_rate_limiter,
+)
 
 
 logger = logging.getLogger(__name__)
 
 STOREFRONT_INQUIRY_RATE_LIMIT = 5
-STOREFRONT_INQUIRY_MESSAGE = "Thanks — your inquiry was sent to the wedding planner."
+STOREFRONT_INQUIRY_MESSAGE = (
+    "Thanks — your inquiry was received by the wedding planner."
+)
 STOREFRONT_NOTIFICATION_LEASE = timedelta(minutes=5)
 STOREFRONT_NOTIFICATION_RETRY_BASE = timedelta(minutes=1)
 STOREFRONT_NOTIFICATION_RETRY_MAX = timedelta(hours=1)
@@ -60,6 +67,10 @@ class StorefrontInquiryService:
         self._rate_limiter = rate_limiter or create_rate_limiter(
             "storefront_inquiry",
             requests_per_minute=STOREFRONT_INQUIRY_RATE_LIMIT,
+            # A per-process fallback lets a multi-replica production deployment
+            # multiply the public inquiry allowance. Local/test environments may
+            # retain the bounded in-memory fallback, but production fails closed.
+            require_shared_backend=settings.is_production(),
         )
         self._email = email_service or ResendEmailService()
 
@@ -1099,10 +1110,36 @@ class StorefrontInquiryService:
             return response
 
         rate_subject = f"{client_ip or 'unknown'}:{slug}"
-        is_allowed, _remaining, reset_time = await self._rate_limiter.is_allowed(
-            rate_subject,
-            requests_per_minute=STOREFRONT_INQUIRY_RATE_LIMIT,
-        )
+        try:
+            is_allowed, _remaining, reset_time = await self._rate_limiter.is_allowed(
+                rate_subject,
+                requests_per_minute=STOREFRONT_INQUIRY_RATE_LIMIT,
+            )
+        except SharedRateLimiterUnavailable as exc:
+            support_id = f"sf-inquiry-{uuid4().hex[:12]}"
+            logger.error(
+                "Storefront inquiry rejected because shared rate limiting is unavailable",
+                extra={"support_id": support_id, "storefront_slug": slug},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                headers={"Retry-After": "60"},
+                detail={
+                    "error": {
+                        "code": "inquiry_protection_unavailable",
+                        "message": (
+                            "Inquiry protection is temporarily unavailable. "
+                            "Please try again shortly."
+                        ),
+                        "customer_action": (
+                            "Wait one minute, then submit the inquiry again."
+                        ),
+                        "retryable": True,
+                        "support_id": support_id,
+                        "field_errors": {},
+                    }
+                },
+            ) from exc
         if not is_allowed:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -1240,7 +1277,7 @@ class StorefrontInquiryService:
                 to_email=recipient,
                 subject="New storefront inquiry",
                 html_content=html_content,
-                from_name="The Special Wedding",
+                from_name=settings.resend_from_name,
                 email_type="storefront_inquiry",
                 idempotency_key=provider_idempotency_key,
             )

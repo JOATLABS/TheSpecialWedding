@@ -7,6 +7,7 @@ import {
   resolveCustomStorefrontHost,
   resolveStorefrontRewriteHost,
 } from '../../app/utils/storefrontHost';
+import { STOREFRONT_DOMAIN_PROBE_PATH } from '../../app/utils/storefrontDomainVerification';
 import { proxy } from '../../proxy';
 
 interface IdnaHostnameFixture {
@@ -270,4 +271,28 @@ test('a custom storefront host cannot render another tenant slug path', () => {
 
   assert.notEqual(platformResponse.status, 404);
   assert.equal(platformResponse.headers.get('x-middleware-rewrite'), null);
+});
+
+test('a custom host exposes only the signed storefront verification route beyond root', () => {
+  const probeResponse = proxy(
+    new NextRequest(
+      `https://studio.example.com${STOREFRONT_DOMAIN_PROBE_PATH}`,
+      { headers: { host: 'studio.example.com' } },
+    ),
+  );
+  assert.notEqual(probeResponse.status, 404);
+  assert.equal(probeResponse.headers.get('x-middleware-rewrite'), null);
+
+  for (const pathname of [
+    '/.well-known/tsw-storefront-verification/extra',
+    '/.well-known/other',
+    '/domain-instructions/secret',
+  ]) {
+    const response = proxy(
+      new NextRequest(`https://studio.example.com${pathname}`, {
+        headers: { host: 'studio.example.com' },
+      }),
+    );
+    assert.equal(response.status, 404, pathname);
+  }
 });

@@ -896,7 +896,9 @@ async def test_public_projection_filters_packages_reviews_and_private_owner_fiel
 
 
 @pytest.mark.asyncio
-async def test_eligibility_loss_retains_authored_publication_state(setup_storefront):
+async def test_eligibility_loss_preserves_read_access_and_published_routes(
+    setup_storefront,
+):
     service, fake_mongo, entitlements = setup_storefront
     owner = _owner()
     await service.update_settings(
@@ -910,12 +912,18 @@ async def test_eligibility_loss_retains_authored_publication_state(setup_storefr
     )
 
     entitlements.enabled_by_owner[OWNER_ID] = False
-    with pytest.raises(HTTPException) as settings_denied:
-        await service.get_settings(owner)
-    assert settings_denied.value.status_code == 403
-    with pytest.raises(HTTPException) as public_denied:
-        await service.get_public_storefront("luxe-events")
-    assert public_denied.value.status_code == 404
+    settings = await service.get_settings(owner)
+    assert settings["slug"] == "luxe-events"
+    assert (await service.get_public_storefront("luxe-events"))["slug"] == (
+        "luxe-events"
+    )
+    service._domains.owner_by_hostname["events.example"] = OWNER_ID
+    assert (await service.get_public_storefront("events.example"))["slug"] == (
+        "luxe-events"
+    )
+    with pytest.raises(HTTPException) as update_denied:
+        await service.update_settings(owner, StorefrontSettingsUpdate(title="Changed"))
+    assert update_denied.value.status_code == 403
 
     after = fake_mongo.raw.storefront_settings.find_one({"planner_id": OWNER_ID})
     assert after == before
@@ -964,7 +972,38 @@ async def test_access_reports_independent_current_capabilities(setup_storefront)
         "plan_id": "plan_signature",
         "storefront_enabled": True,
         "custom_domain_enabled": True,
+        "can_manage_existing_domain": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_access_preserves_existing_domain_management_after_entitlement_loss(
+    setup_storefront,
+):
+    service, fake_mongo, entitlements = setup_storefront
+    fake_mongo.raw.storefront_domains.insert_one(
+        {
+            "planner_id": OWNER_ID,
+            "hostname": "events.example",
+            "application_status": "active",
+        }
+    )
+    entitlements.enabled_by_owner[OWNER_ID] = False
+
+    access = await service.get_access(_owner())
+
+    assert access == {
+        "plan_id": "plan_boutique",
+        "storefront_enabled": False,
+        "custom_domain_enabled": False,
+        "can_manage_existing_domain": True,
+    }
+
+    fake_mongo.raw.storefront_domains.update_one(
+        {"planner_id": OWNER_ID},
+        {"$set": {"application_status": "disconnected"}},
+    )
+    assert (await service.get_access(_owner()))["can_manage_existing_domain"] is False
 
 
 @pytest.mark.asyncio

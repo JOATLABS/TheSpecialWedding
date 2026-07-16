@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.constants.roles import is_wedding_planner_role
 from app.constants.storefront import (
@@ -21,6 +22,9 @@ from app.services.storefront_entitlement_service import (
 from app.utils.planner_ownership import normalize_planner_id
 
 
+_storefront_bearer = HTTPBearer(auto_error=False)
+
+
 async def require_storefront_owner(
     current_user: ExtendedAuthUser = Depends(get_current_user_extended),
 ) -> ExtendedAuthUser:
@@ -31,6 +35,36 @@ async def require_storefront_owner(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Planner-owner access required",
+        )
+    return current_user
+
+
+async def require_bearer_storefront_owner(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_storefront_bearer),
+    current_user: ExtendedAuthUser = Depends(require_storefront_owner),
+) -> ExtendedAuthUser:
+    """Require an explicit Bearer token for sensitive redirect completion.
+
+    ``get_current_user_extended`` intentionally supports the ``admin_token``
+    cookie for normal planner navigation. Domain Connect completion is the
+    state-changing step after a cross-site provider redirect, so accepting the
+    ambient cookie here would make the one-time flow CSRF-reachable. The same
+    Bearer token is still fully verified by the nested owner dependency.
+    """
+
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "code": "bearer_auth_required",
+                "message": (
+                    "Automatic DNS setup must be resumed from an authenticated "
+                    "planner session."
+                ),
+                "customer_action": "Reload the storefront settings and sign in again.",
+                "retryable": False,
+            },
+            headers={"WWW-Authenticate": "Bearer"},
         )
     return current_user
 

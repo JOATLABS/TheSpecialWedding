@@ -18,6 +18,7 @@ from app.constants.storefront import (
     PENDING_ASSET_RECOVERY_FIELDS,
     RESERVED_STOREFRONT_SLUGS,
 )
+from app.constants.storefront_domain import DISCONNECTED
 from app.core.database import mongo
 from app.models.storefront import (
     PublicPackage,
@@ -133,16 +134,27 @@ class StorefrontService:
         return entitlements
 
     async def get_access(self, owner: Any) -> dict:
+        owner_id = self._owner_id(owner)
         entitlements = await self._resolve_owner_entitlements(owner)
+        existing_domain = await self._mongo.db["storefront_domains"].find_one(
+            {
+                "planner_id": owner_id,
+                "$or": [
+                    {"application_status": {"$exists": False}},
+                    {"application_status": {"$ne": DISCONNECTED}},
+                ],
+            },
+            {"_id": 1},
+        )
         return StorefrontAccessResponse(
             plan_id=entitlements.plan_id,
             storefront_enabled=entitlements.storefront_enabled,
             custom_domain_enabled=entitlements.custom_domain_enabled,
+            can_manage_existing_domain=existing_domain is not None,
         ).model_dump()
 
     async def get_settings(self, owner: Any) -> dict | None:
         owner_id = self._owner_id(owner)
-        await self._require_storefront(owner)
         await self._media.recover_pending_settings_assets(owner)
         settings = await self._mongo.db["storefront_settings"].find_one(
             {"planner_id": owner_id}
@@ -670,15 +682,6 @@ class StorefrontService:
 
         owner_id = normalize_planner_id(settings.get("planner_id"))
         if not owner_id:
-            self._raise_not_found()
-        try:
-            entitlements = await self._entitlements.resolve_for_planner_id(owner_id)
-        except StorefrontEntitlementResolutionError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Storefront eligibility is temporarily unavailable",
-            ) from exc
-        if not entitlements.storefront_enabled:
             self._raise_not_found()
         return {"owner_id": owner_id, "slug": settings["slug"], "settings": settings}
 

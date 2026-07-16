@@ -1,8 +1,8 @@
 // app/layout.tsx
 import './styles/globals.css'
-import Script from 'next/script'
 import type { Metadata } from 'next'
-import { UmamiRuntimeLoader } from './components/analytics/UmamiRuntimeLoader';
+import { UmamiAnalyticsBoundary } from './components/analytics/UmamiAnalyticsBoundary';
+import { UMAMI_PRIVACY_GUARD_SCRIPT } from './utils/analyticsPrivacy';
 import { resolveUmamiScriptConfig } from './utils/umamiScriptConfig';
 
 export const metadata: Metadata = {
@@ -89,6 +89,10 @@ export default function RootLayout({
       <head>
         <meta name="tsw-app-build-commit" content={appBuildCommit} />
         <script
+          id="tsw-umami-privacy-guard"
+          dangerouslySetInnerHTML={{ __html: UMAMI_PRIVACY_GUARD_SCRIPT }}
+        />
+        <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
             __html: JSON.stringify({
@@ -124,16 +128,8 @@ export default function RootLayout({
       <body suppressHydrationWarning>
         {children}
 
-        {/* Umami Analytics — self-hosted on Coolify, privacy-first, no cookies. */}
-        {umamiConfig && (
-          <Script
-            async
-            src={umamiConfig.src}
-            data-website-id={umamiConfig.websiteId}
-            strategy="afterInteractive"
-          />
-        )}
-        <UmamiRuntimeLoader />
+        {/* Umami is completely withheld from secret-bearing instruction routes. */}
+        <UmamiAnalyticsBoundary config={umamiConfig} />
       </body>
     </html>
   )

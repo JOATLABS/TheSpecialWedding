@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { NextResponse } from 'next/server';
 
 import { getProxyBackendBaseUrl } from '@/utils/env';
@@ -46,13 +48,81 @@ const RESPONSE_HEADERS_TO_STRIP = new Set([
   'upgrade',
 ]);
 
-function jsonError(message: string, status: number): NextResponse<{ error: string; detail: string }> {
+type ProxyErrorEnvelope = {
+  error: {
+    code: string;
+    message: string;
+    customer_action: string;
+    retryable: boolean;
+    support_id: string;
+    field_errors: Record<string, string>;
+  };
+};
+
+function createSupportId(): string {
+  return `proxy_${randomUUID().replaceAll('-', '').slice(0, 16)}`;
+}
+
+function jsonError(
+  {
+    code,
+    message,
+    customerAction,
+    retryable,
+    supportId = createSupportId(),
+  }: {
+    code: string;
+    message: string;
+    customerAction: string;
+    retryable: boolean;
+    supportId?: string;
+  },
+  status: number,
+): NextResponse<ProxyErrorEnvelope> {
   return NextResponse.json(
     {
-      error: status >= 500 ? 'API proxy error' : 'API proxy request rejected',
-      detail: message,
+      error: {
+        code,
+        message,
+        customer_action: customerAction,
+        retryable,
+        support_id: supportId,
+        field_errors: {},
+      },
     },
     { status },
+  );
+}
+
+function internalProxyError(
+  code: 'proxy_configuration_unavailable' | 'proxy_backend_unreachable',
+  status: 502 | 503,
+  request: Request,
+  error: unknown,
+): NextResponse<ProxyErrorEnvelope> {
+  const supportId = createSupportId();
+  const requestUrl = new URL(request.url);
+  const errorName = error instanceof Error ? error.name : typeof error;
+
+  // Diagnostics stay in server logs, bound to an opaque support ID. Never put
+  // backend origins, request URLs, exception messages, provider payloads, or
+  // secrets in either the browser response or the log event.
+  console.error(`[api-proxy:${supportId}] ${code}`, {
+    method: request.method,
+    pathname: requestUrl.pathname,
+    errorName,
+  });
+
+  return jsonError(
+    {
+      code,
+      message: 'This service is temporarily unavailable.',
+      customerAction:
+        'Try again in a moment. If the problem continues, contact support with the support ID.',
+      retryable: true,
+      supportId,
+    },
+    status,
   );
 }
 
@@ -153,15 +223,22 @@ async function proxyRequest(request: Request, context: ProxyContext): Promise<Re
   const params = await context.params;
   const pathSegments = params.path ?? [];
   if (!isAllowedCustomStorefrontRequest(request, pathSegments)) {
-    return jsonError('Not Found', 404);
+    return jsonError(
+      {
+        code: 'proxy_route_not_found',
+        message: 'The requested route was not found.',
+        customerAction: 'Check the link and try again.',
+        retryable: false,
+      },
+      404,
+    );
   }
   let apiBase: string;
 
   try {
     apiBase = getProxyBackendBaseUrl(requestUrl.origin);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return jsonError(message, 503);
+    return internalProxyError('proxy_configuration_unavailable', 503, request, err);
   }
 
   const targetUrl = buildTargetUrl(apiBase, requestUrl, pathSegments);
@@ -177,14 +254,22 @@ async function proxyRequest(request: Request, context: ProxyContext): Promise<Re
 
     const upstreamResponse = await fetch(targetUrl, init);
 
-    return new Response(upstreamResponse.body, {
+    // A 204/205/304 response is bodyless by definition. Passing Fetch's empty
+    // ReadableStream through to Next can make Chromium abort the response even
+    // though the upstream mutation succeeded, which leaves browser diagnostics
+    // reporting a false network failure. Normalize those statuses to a null
+    // body at the proxy boundary.
+    const responseBody = [204, 205, 304].includes(upstreamResponse.status)
+      ? null
+      : upstreamResponse.body;
+
+    return new Response(responseBody, {
       status: upstreamResponse.status,
       statusText: upstreamResponse.statusText,
       headers: buildResponseHeaders(upstreamResponse.headers),
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return jsonError(`Failed to reach backend API at ${targetUrl}: ${message}`, 502);
+    return internalProxyError('proxy_backend_unreachable', 502, request, err);
   }
 }
 

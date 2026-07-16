@@ -56,13 +56,71 @@ class CloudflareService:
         zone_id: str | None = None,
         http_client: Any | None = None,
         timeout_seconds: float = 10.0,
+        mutations_enabled: bool | None = None,
+        cleanup_enabled: bool | None = None,
     ) -> None:
         self._api_token = (
-            settings.cloudflare_api_token if api_token is None else api_token
+            settings.cloudflare_saas_api_token if api_token is None else api_token
         )
         self._zone_id = settings.cloudflare_zone_id if zone_id is None else zone_id
         self._http_client = http_client
         self._timeout_seconds = timeout_seconds
+        self._mutations_enabled = (
+            bool(getattr(settings, "storefront_cloudflare_mutations_enabled", False))
+            if mutations_enabled is None
+            else mutations_enabled
+        )
+        # Explicit constructor flags remain source-compatible for focused
+        # tests, while the production singleton reads the independent cleanup
+        # switch. Cleanup must be able to remain enabled during onboarding
+        # rollback.
+        self._cleanup_enabled = (
+            bool(
+                getattr(
+                    settings,
+                    "storefront_cloudflare_cleanup_enabled",
+                    self._mutations_enabled,
+                )
+            )
+            if cleanup_enabled is None and mutations_enabled is None
+            else (
+                self._mutations_enabled if cleanup_enabled is None else cleanup_enabled
+            )
+        )
+
+    def _require_mutation_enabled(self, operation: str) -> None:
+        if self._mutations_enabled:
+            return
+        raise CloudflareServiceError(
+            "Cloudflare custom-hostname mutations are disabled",
+            operation=operation,
+            kind="configuration",
+            errors=(
+                {
+                    "code": "cloudflare_mutations_disabled",
+                    "message": (
+                        "STOREFRONT_CLOUDFLARE_MUTATIONS_ENABLED must be enabled"
+                    ),
+                },
+            ),
+        )
+
+    def _require_cleanup_enabled(self, operation: str) -> None:
+        if self._cleanup_enabled:
+            return
+        raise CloudflareServiceError(
+            "Cloudflare custom-hostname cleanup is disabled",
+            operation=operation,
+            kind="configuration",
+            errors=(
+                {
+                    "code": "cloudflare_cleanup_disabled",
+                    "message": (
+                        "STOREFRONT_CLOUDFLARE_CLEANUP_ENABLED must be enabled"
+                    ),
+                },
+            ),
+        )
 
     def _require_configuration(self, operation: str) -> tuple[str, str]:
         token = (self._api_token or "").strip()
@@ -75,7 +133,7 @@ class CloudflareService:
                 errors=(
                     {
                         "code": "cloudflare_not_configured",
-                        "message": "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID are required",
+                        "message": "CLOUDFLARE_SAAS_API_TOKEN and CLOUDFLARE_ZONE_ID are required",
                     },
                 ),
             )
@@ -92,6 +150,16 @@ class CloudflareService:
                 ),
             )
         return token, zone_id
+
+    @property
+    def is_configured(self) -> bool:
+        """Return whether provider calls could be made, without exposing secrets."""
+
+        try:
+            self._require_configuration("configuration_check")
+        except CloudflareServiceError:
+            return False
+        return True
 
     @staticmethod
     def _provider_errors(payload: object) -> tuple[dict[str, Any], ...]:
@@ -148,7 +216,10 @@ class CloudflareService:
                     method, url, **request_kwargs
                 )
             else:
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(
+                    trust_env=False,
+                    follow_redirects=False,
+                ) as client:
                     response = await client.request(method, url, **request_kwargs)
         except httpx.RequestError as exc:
             raise CloudflareServiceError(
@@ -226,6 +297,7 @@ class CloudflareService:
         return result
 
     async def create_custom_hostname(self, hostname: str) -> dict[str, Any]:
+        self._require_mutation_enabled("create_custom_hostname")
         return cast(
             dict[str, Any],
             await self._request(
@@ -254,12 +326,33 @@ class CloudflareService:
         )
 
     async def delete_custom_hostname(self, hostname_id: str) -> dict[str, Any]:
+        self._require_cleanup_enabled("delete_custom_hostname")
         return cast(
             dict[str, Any],
             await self._request(
                 "DELETE",
                 "delete_custom_hostname",
                 f"/{quote(hostname_id, safe='')}",
+            ),
+        )
+
+    async def retry_custom_hostname(
+        self,
+        hostname_id: str,
+        *,
+        ssl_method: str,
+        ssl_type: str,
+    ) -> dict[str, Any]:
+        """Retry validation without changing the customer's SSL configuration."""
+
+        self._require_mutation_enabled("retry_custom_hostname")
+        return cast(
+            dict[str, Any],
+            await self._request(
+                "PATCH",
+                "retry_custom_hostname",
+                f"/{quote(hostname_id, safe='')}",
+                json={"ssl": {"method": ssl_method, "type": ssl_type}},
             ),
         )
 

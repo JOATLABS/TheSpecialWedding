@@ -1,0 +1,31 @@
+{
+  "providerId": "thespecialwedding.com",
+  "providerName": "The Special Wedding",
+  "serviceId": "storefront-subdomain",
+  "serviceName": "Planner Storefront",
+  "version": 1,
+  "description": "Connects one customer-owned subdomain to a planner storefront and proves application ownership.",
+  "variableDescription": "%verificationToken%: one-time seven-day storefront ownership token",
+  "syncBlock": false,
+  "syncPubKeyDomain": "domainconnect.thespecialwedding.com",
+  "syncRedirectDomain": "domainconnect.thespecialwedding.com",
+  "hostRequired": true,
+  "records": [
+    {
+      "type": "TXT",
+      "host": "_tsw-storefront",
+      "data": "tsw-verification=%verificationToken%",
+      "ttl": 300,
+      "groupId": "storefront",
+      "txtConflictMatchingMode": "Prefix",
+      "txtConflictMatchingPrefix": "tsw-verification="
+    },
+    {
+      "type": "CNAME",
+      "host": "@",
+      "pointsTo": "domains.thespecialwedding.com",
+      "ttl": 300,
+      "groupId": "storefront"
+    }
+  ]
+}

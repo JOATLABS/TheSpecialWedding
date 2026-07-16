@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
@@ -8,10 +8,17 @@ import { toast } from 'sonner';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import PageHeader from '../components/PageHeader';
-import StorefrontSettingsModal from './StorefrontSettingsModal';
+import StorefrontSettingsModal, {
+  type StorefrontSettingsTab,
+} from './StorefrontSettingsModal';
+import {
+  buildStorefrontRouteUrl,
+  parseStorefrontRouteState,
+} from './storefrontRouteState';
 import UpgradeModal from '@/components/ui/UpgradeModal';
 import {
   getStorefrontAccess,
+  normalizeStorefrontError,
   type StorefrontAccess,
 } from '@/services/storefrontApi';
 import {
@@ -64,6 +71,16 @@ const statusConfig = {
   }
 };
 
+const unknownStatusConfig = {
+  label: 'Needs review',
+  icon: Clock,
+  className: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+};
+
+function getPackageStatusConfig(status: string) {
+  return statusConfig[status as keyof typeof statusConfig] ?? unknownStatusConfig;
+}
+
 export default function PackagesPage() {
   const { token, apiRequest } = useAdmin();
   const [packages, setPackages] = useState<PackageData[]>([]);
@@ -73,18 +90,53 @@ export default function PackagesPage() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [storefrontAccess, setStorefrontAccess] = useState<StorefrontAccess | null>(null);
   const [storefrontAccessLoading, setStorefrontAccessLoading] = useState(true);
+  const [storefrontInitialTab, setStorefrontInitialTab] = useState<StorefrontSettingsTab>('design');
+  const [storefrontAttemptId, setStorefrontAttemptId] = useState<string | null>(null);
+  const handledStorefrontRouteRef = useRef<string | null>(null);
+
+  const replaceStorefrontRoute = useCallback(
+    (tab: 'domain' | null, attemptId: string | null = null) => {
+      const nextUrl = buildStorefrontRouteUrl(
+        window.location.pathname,
+        new URLSearchParams(window.location.search),
+        tab === 'domain' ? { tab, attemptId } : { tab: null },
+      );
+      window.history.replaceState(window.history.state, '', nextUrl);
+    },
+    [],
+  );
 
   const handleOpenStorefront = () => {
     if (!storefrontAccess) {
       toast.error('Storefront access could not be verified. Please try again.');
       return;
     }
-    if (!storefrontAccess.storefront_enabled) {
+    if (
+      !storefrontAccess.storefront_enabled &&
+      !storefrontAccess.can_manage_existing_domain
+    ) {
       setShowUpgradeModal(true);
       return;
     }
+    setStorefrontInitialTab(
+      storefrontAccess.storefront_enabled ? 'design' : 'domain',
+    );
+    setStorefrontAttemptId(null);
+    replaceStorefrontRoute(null);
     setIsStorefrontModalOpen(true);
   };
+
+  const handleCloseStorefront = () => {
+    setIsStorefrontModalOpen(false);
+    setStorefrontInitialTab('design');
+    setStorefrontAttemptId(null);
+    replaceStorefrontRoute(null);
+  };
+
+  const handleStorefrontDomainResumeHandled = useCallback(() => {
+    setStorefrontAttemptId(null);
+    replaceStorefrontRoute('domain');
+  }, [replaceStorefrontRoute]);
 
   useEffect(() => {
     if (!token) {
@@ -103,11 +155,18 @@ export default function PackagesPage() {
       .catch((caught) => {
         if (!cancelled) {
           setStorefrontAccess(null);
-          toast.error(
-            caught instanceof Error
-              ? caught.message
-              : 'Storefront access could not be verified',
+          const accessError = normalizeStorefrontError(
+            caught,
+            'Storefront access could not be verified.',
           );
+          toast.error(accessError.message, {
+            description: [
+              accessError.customerAction,
+              accessError.supportId ? `Support ID: ${accessError.supportId}.` : null,
+            ]
+              .filter(Boolean)
+              .join(' '),
+          });
         }
       })
       .finally(() => {
@@ -119,6 +178,25 @@ export default function PackagesPage() {
       cancelled = true;
     };
   }, [apiRequest, token]);
+
+  useEffect(() => {
+    if (storefrontAccessLoading || !storefrontAccess) return;
+    const routeKey = window.location.search;
+    if (handledStorefrontRouteRef.current === routeKey) return;
+    const routeState = parseStorefrontRouteState(new URLSearchParams(routeKey));
+    if (routeState.tab !== 'domain') return;
+    handledStorefrontRouteRef.current = routeKey;
+    if (
+      !storefrontAccess.storefront_enabled &&
+      !storefrontAccess.can_manage_existing_domain
+    ) {
+      setShowUpgradeModal(true);
+      return;
+    }
+    setStorefrontInitialTab('domain');
+    setStorefrontAttemptId(routeState.attemptId);
+    setIsStorefrontModalOpen(true);
+  }, [storefrontAccess, storefrontAccessLoading]);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -272,18 +350,23 @@ export default function PackagesPage() {
         title="Marketing & Packages"
         description="Manage your service packages and public storefront profile"
       >
-        <div className="flex items-center gap-3">
+        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
           <Button
             variant="outline"
-            className="flex items-center gap-2"
+            className="flex w-full items-center justify-center gap-2 sm:w-auto"
             onClick={handleOpenStorefront}
             disabled={storefrontAccessLoading}
           >
             <Settings size={18} />
-            {storefrontAccessLoading ? 'Checking Storefront…' : 'Configure Storefront'}
+            {storefrontAccessLoading
+              ? 'Checking Storefront…'
+              : !storefrontAccess?.storefront_enabled &&
+                  storefrontAccess?.can_manage_existing_domain
+                ? 'Manage Storefront Domain'
+                : 'Configure Storefront'}
           </Button>
-          <Link href="/admin/packages/new">
-            <Button className="flex items-center gap-2">
+          <Link href="/admin/packages/new" className="w-full sm:w-auto">
+            <Button className="flex w-full items-center justify-center gap-2 sm:w-auto">
               <Plus size={18} />
               New Package
             </Button>
@@ -377,7 +460,8 @@ export default function PackagesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredPackages.map((pkg) => {
-            const StatusIcon = statusConfig[pkg.status].icon;
+            const packageStatus = getPackageStatusConfig(pkg.status);
+            const StatusIcon = packageStatus.icon;
 
             return (
               <Card key={pkg.id || pkg._id} className="p-6 hover:shadow-lg transition-shadow relative">
@@ -392,9 +476,9 @@ export default function PackagesPage() {
 
                 {/* Status Badge */}
                 <div className="flex items-center gap-2 mb-3">
-                  <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${statusConfig[pkg.status].className}`}>
+                  <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${packageStatus.className}`}>
                     <StatusIcon size={12} />
-                    {statusConfig[pkg.status].label}
+                    {packageStatus.label}
                   </span>
                 </div>
 
@@ -513,12 +597,16 @@ export default function PackagesPage() {
       
       <StorefrontSettingsModal 
         isOpen={isStorefrontModalOpen} 
-        onClose={() => setIsStorefrontModalOpen(false)}
+        onClose={handleCloseStorefront}
         access={storefrontAccess ?? {
           plan_id: null,
           storefront_enabled: false,
           custom_domain_enabled: false,
+          can_manage_existing_domain: false,
         }}
+        initialTab={storefrontInitialTab}
+        domainAttemptId={storefrontAttemptId}
+        onDomainResumeHandled={handleStorefrontDomainResumeHandled}
       />
       
       <UpgradeModal 

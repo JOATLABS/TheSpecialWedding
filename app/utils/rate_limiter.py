@@ -18,6 +18,10 @@ from app.core.settings import settings
 logger = logging.getLogger(__name__)
 
 
+class SharedRateLimiterUnavailable(RuntimeError):
+    """Raised when a security-sensitive limiter cannot reach shared Redis."""
+
+
 class RateLimiter:
     """
     Rate limiter with Redis-backed shared counters and in-memory fallback.
@@ -29,11 +33,13 @@ class RateLimiter:
         default_requests_per_minute: int = 60,
         window_seconds: int = 60,
         max_ips_tracked: int = 10000,
+        require_shared_backend: bool = False,
     ):
         self.bucket_name = bucket_name
         self.default_requests_per_minute = default_requests_per_minute
         self.window_seconds = window_seconds
         self.max_ips_tracked = max_ips_tracked
+        self.require_shared_backend = require_shared_backend
         self.ip_requests: Dict[str, Deque[float]] = {}
 
     def _cleanup_old_requests(
@@ -58,6 +64,10 @@ class RateLimiter:
         key = CacheKeys.rate_limit(client_ip, self.bucket_name)
         current_count = await cache.increment(key, expire=self.window_seconds)
         if current_count is None:
+            if self.require_shared_backend:
+                raise SharedRateLimiterUnavailable(
+                    f"Shared rate limiter unavailable for {self.bucket_name}"
+                )
             return self._check_memory_limit(client_ip, limit)
 
         ttl = await cache.ttl(key)
@@ -98,12 +108,23 @@ class RateLimiter:
         if cache.enabled and cache.redis_client:
             try:
                 return await self._check_redis_limit(client_ip, limit)
+            except SharedRateLimiterUnavailable:
+                raise
             except Exception as exc:
                 logger.warning(
                     "Redis-backed rate limit failed for bucket %s: %s",
                     self.bucket_name,
                     exc,
                 )
+
+        if self.require_shared_backend:
+            logger.error(
+                "Required shared rate limiter is unavailable for bucket %s",
+                self.bucket_name,
+            )
+            raise SharedRateLimiterUnavailable(
+                f"Shared rate limiter unavailable for {self.bucket_name}"
+            )
 
         return self._check_memory_limit(client_ip, limit)
 
@@ -124,12 +145,14 @@ def create_rate_limiter(
     requests_per_minute: int = 60,
     max_ips: int = 10000,
     window_seconds: int = 60,
+    require_shared_backend: bool = False,
 ) -> RateLimiter:
     return RateLimiter(
         bucket_name=bucket_name,
         default_requests_per_minute=requests_per_minute,
         max_ips_tracked=max_ips,
         window_seconds=window_seconds,
+        require_shared_backend=require_shared_backend,
     )
 
 

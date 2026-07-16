@@ -31,6 +31,13 @@ import {
   Calendar,
   PlayCircle
 } from 'lucide-react';
+import StorefrontDomainReviewQueue from './StorefrontDomainReviewQueue';
+import PlatformTabs, {
+  platformPanelId,
+  platformTabId,
+  type PlatformTabId,
+} from './PlatformTabs';
+import { resolvePlatformPrimaryView } from './platformViewState';
 
 // Types
 interface HealthMetrics {
@@ -224,7 +231,6 @@ interface SchedulerOverview {
   summary: SchedulerSummaryTotals;
 }
 
-type TabType = 'health' | 'errors' | 'performance' | 'backups' | 'scheduler';
 type SeverityFilter = 'all' | 'critical' | 'warning' | 'other';
 type AcknowledgedFilter = 'all' | 'true' | 'false';
 
@@ -248,7 +254,20 @@ export default function PlatformInfrastructurePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabType>('health');
+  const [activeTab, setActiveTab] = useState<PlatformTabId>('health');
+
+  const selectTab = useCallback((tab: PlatformTabId) => {
+    setActiveTab(tab);
+    const url = new URL(window.location.href);
+    if (tab === 'storefront') url.searchParams.set('tab', 'storefront');
+    else url.searchParams.delete('tab');
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get('tab');
+    if (requestedTab === 'storefront') setActiveTab('storefront');
+  }, []);
 
   // Error filtering state
   const [allErrors, setAllErrors] = useState<ErrorSummary[]>([]);
@@ -689,7 +708,45 @@ export default function PlatformInfrastructurePage() {
     return { text: 'Healthy', color: 'text-green-600 dark:text-green-400' };
   };
 
-  if (authLoading || loading) {
+  const primaryView = resolvePlatformPrimaryView({
+    activeTab,
+    authLoading,
+    healthLoading: loading,
+    isRootAdmin: Boolean(userProfile?.is_root_admin),
+    hasMetrics: Boolean(metrics),
+    hasHealthError: Boolean(error),
+  });
+
+  if (primaryView === 'storefront') {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Platform Infrastructure"
+          description="Root-admin infrastructure controls and storefront-domain reviews"
+        />
+        <PlatformTabs activeTab={activeTab} onChange={selectTab} />
+        <div
+          id={platformPanelId('storefront')}
+          role="tabpanel"
+          aria-labelledby={platformTabId('storefront')}
+          tabIndex={0}
+        >
+          {token ? (
+            <StorefrontDomainReviewQueue token={token} />
+          ) : (
+            <div
+              role="alert"
+              className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100"
+            >
+              Authentication is required to load storefront-domain reviews.
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (primaryView === 'loading') {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -700,7 +757,7 @@ export default function PlatformInfrastructurePage() {
     );
   }
 
-  if (error && !metrics) {
+  if (primaryView === 'health_error') {
     return (
       <div className="space-y-6">
         <div>
@@ -722,7 +779,7 @@ export default function PlatformInfrastructurePage() {
     );
   }
 
-  if (!metrics) return null;
+  if (primaryView === 'empty' || !metrics) return null;
 
   const selectedErrorWindowLabel = formatErrorWindowLabel(errorWindowDays);
   const healthErrorWindowLabel = formatErrorWindowLabel(metrics.errors?.window_days || errorWindowDays);
@@ -734,14 +791,6 @@ export default function PlatformInfrastructurePage() {
     unacknowledged: 0,
     acknowledged: 0,
   };
-
-  const tabs = [
-    { id: 'health' as TabType, label: 'System Health', icon: Activity },
-    { id: 'errors' as TabType, label: 'Errors', icon: AlertTriangle },
-    { id: 'performance' as TabType, label: 'Performance', icon: Zap },
-    { id: 'scheduler' as TabType, label: 'Scheduler', icon: Calendar },
-    { id: 'backups' as TabType, label: 'Backups', icon: Shield },
-  ];
 
   return (
     <div className="space-y-6">
@@ -791,32 +840,17 @@ export default function PlatformInfrastructurePage() {
         Last updated: {formatAdminTimestamp(metrics.generated_at, adminTimezone)}
       </div>
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200 dark:border-gray-700">
-        <nav className="flex gap-4">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === tab.id
-                    ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {tab.label}
-              </button>
-            );
-          })}
-        </nav>
-      </div>
+      <PlatformTabs activeTab={activeTab} onChange={selectTab} />
 
       {/* Tab Content */}
       {activeTab === 'health' && (
-        <div className="space-y-6">
+        <div
+          id={platformPanelId('health')}
+          role="tabpanel"
+          aria-labelledby={platformTabId('health')}
+          tabIndex={0}
+          className="space-y-6"
+        >
           {/* System Health Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
             {/* Database */}
@@ -1142,7 +1176,13 @@ export default function PlatformInfrastructurePage() {
       )}
 
       {activeTab === 'errors' && (
-        <div className="space-y-6">
+        <div
+          id={platformPanelId('errors')}
+          role="tabpanel"
+          aria-labelledby={platformTabId('errors')}
+          tabIndex={0}
+          className="space-y-6"
+        >
           {/* Error Filters */}
           <Card className="p-4">
             <div className="flex flex-wrap items-center gap-4">
@@ -1446,7 +1486,13 @@ export default function PlatformInfrastructurePage() {
       )}
 
       {activeTab === 'performance' && (
-        <div className="space-y-6">
+        <div
+          id={platformPanelId('performance')}
+          role="tabpanel"
+          aria-labelledby={platformTabId('performance')}
+          tabIndex={0}
+          className="space-y-6"
+        >
           {/* Performance Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-7 gap-4">
             <Card className="p-4">
@@ -1571,7 +1617,13 @@ export default function PlatformInfrastructurePage() {
       )}
 
       {activeTab === 'scheduler' && (
-        <div className="space-y-6">
+        <div
+          id={platformPanelId('scheduler')}
+          role="tabpanel"
+          aria-labelledby={platformTabId('scheduler')}
+          tabIndex={0}
+          className="space-y-6"
+        >
           {loadingScheduler && !schedulerOverview ? (
             <Card className="p-12 text-center">
               <Loader2 className="w-12 h-12 text-primary-500 mx-auto mb-4 animate-spin" />
@@ -1800,7 +1852,13 @@ export default function PlatformInfrastructurePage() {
       )}
 
       {activeTab === 'backups' && (
-        <div className="space-y-6">
+        <div
+          id={platformPanelId('backups')}
+          role="tabpanel"
+          aria-labelledby={platformTabId('backups')}
+          tabIndex={0}
+          className="space-y-6"
+        >
           {metrics.backups ? (
             <Card className="p-6">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-6">Backup Status</h3>
