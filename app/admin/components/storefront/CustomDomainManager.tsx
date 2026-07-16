@@ -291,11 +291,15 @@ function DnsRecordCard({
 
 function VerificationProgress({ journey }: { journey: StorefrontDomainJourney }) {
   const ownershipRecord = journey.expectedRecords.find(
-    (record) => record.type === 'TXT' || record.purpose.includes('ownership'),
+    (record) => record.purpose === 'application_ownership',
   );
   const routingRecord = journey.expectedRecords.find(
-    (record) => record.type === 'CNAME' || record.purpose.includes('routing'),
+    (record) => record.purpose === 'storefront_routing',
   );
+  const migrationPrevalidation =
+    journey.intent === 'migration' && journey.applicationStatus === 'migration_prevalidation';
+  const migrationCutoverReady =
+    journey.intent === 'migration' && journey.applicationStatus === 'cutover_ready';
   const checks = [
     {
       label: 'Ownership',
@@ -312,10 +316,16 @@ function VerificationProgress({ journey }: { journey: StorefrontDomainJourney })
       status: journey.routingDnsStatus,
       expected: routingRecord?.value
         ? `${routingRecord.type} ${routingRecord.fqdn} → ${routingRecord.value}`
-        : 'The storefront CNAME target',
+        : migrationPrevalidation
+          ? 'Withheld until ownership and provider prevalidation are complete'
+          : migrationCutoverReady
+            ? 'Keep the current route until the storefront CNAME is available'
+            : 'The storefront CNAME target',
       observed: routingRecord?.observedValues.length
         ? routingRecord.observedValues.join(', ')
-        : 'Not detected',
+        : migrationPrevalidation || migrationCutoverReady
+          ? 'Current website routing remains unchanged'
+          : 'Not detected',
     },
     {
       label: 'Provider hostname',
@@ -353,6 +363,24 @@ function VerificationProgress({ journey }: { journey: StorefrontDomainJourney })
           <p>Next automatic check: {formatCheckedAt(journey.nextCheckAt)}</p>
         </div>
       </div>
+      {migrationPrevalidation ? (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+          <p className="text-base font-semibold">Storefront routing is withheld during prevalidation</p>
+          <p className="mt-1 text-base leading-6">
+            Keep the current website route unchanged. We will show the storefront CNAME only after
+            ownership and provider prevalidation make the final cutover ready.
+          </p>
+        </div>
+      ) : null}
+      {migrationCutoverReady ? (
+        <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sky-950 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-100">
+          <p className="text-base font-semibold">Storefront routing is ready for cutover</p>
+          <p className="mt-1 text-base leading-6">
+            The storefront routing record is now shown separately from provider certificate records.
+            Change the current route only when you are ready to send customer traffic to the storefront.
+          </p>
+        </div>
+      ) : null}
       <ol className="grid gap-3">
         {checks.map(({ label, status, expected, observed }) => {
           const passed = isPassing(status);

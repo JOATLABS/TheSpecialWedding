@@ -424,6 +424,22 @@ def test_dns_provider_detection_is_honest_for_shared_and_branded_nameservers():
     ) == ("DNS provider not detected", None)
 
 
+@pytest.mark.parametrize(
+    ("nameservers", "expected_provider"),
+    [
+        (["Ada.NS.Cloudflare.COM."], "cloudflare"),
+        (["ns.cloudflare.com.example.net"], "unknown"),
+        (["evilcloudflare.com"], "unknown"),
+        (["ns-123.awsdns-45.net"], "amazon_route53"),
+        (["ns-123.awsdns-45.net.example.org"], "unknown"),
+    ],
+)
+def test_dns_provider_detection_requires_exact_suffix_or_label_boundaries(
+    nameservers, expected_provider
+):
+    assert StorefrontDomainService._dns_provider(nameservers) == expected_provider
+
+
 @pytest.mark.asyncio
 async def test_preflight_advertises_live_domain_connect_only_for_safe_new_host(
     claim_setup,
@@ -1010,6 +1026,113 @@ async def test_verify_rejects_noncurrent_txt_proof_without_provider_mutation(
             item for item in result["observed_records"] if item["type"] == "TXT"
         )
         assert txt_observation["values"] == ["tsw-verification=wrong-token"]
+    assert cloudflare.created == []
+    assert cloudflare.listed == []
+
+
+@pytest.mark.asyncio
+async def test_expired_claim_write_cannot_overwrite_concurrent_claim_rotation(
+    claim_setup, monkeypatch
+):
+    service, mongo, _, _, cloudflare = claim_setup
+    first = await service.claim(_owner(), HOSTNAME, intent="new")
+    mongo.raw.storefront_domains.update_one(
+        {"planner_id": OWNER_ID},
+        {
+            "$set": {
+                "claim_expires_at": datetime.now(timezone.utc) - timedelta(seconds=1)
+            }
+        },
+    )
+    collection = mongo.db["storefront_domains"]
+    original_update = collection.update_one
+    rotated_fields: dict = {}
+
+    async def rotate_before_expiry_write(query, update, *args, **kwargs):
+        if update.get("$set", {}).get("ownership_status") == "expired":
+            assert query["revision"] == first["revision"]
+            assert query["claim_attempt_id"] == first["attempt_id"]
+            assert query["authoritative_dns.zone"] == ZONE
+            assert query["authoritative_dns.nameservers"] == [
+                "ns-cloud-a1.googledomains.com",
+                "ns-cloud-a2.googledomains.com",
+            ]
+            assert query["deletion_status"] is None
+            rotated, _token = service._new_claim_fields(
+                HOSTNAME,
+                revision=first["revision"] + 1,
+                intent="new",
+            )
+            rotated_fields.update(rotated)
+            mongo.raw.storefront_domains.update_one(
+                {"planner_id": OWNER_ID}, {"$set": rotated}
+            )
+        return await original_update(query, update, *args, **kwargs)
+
+    monkeypatch.setattr(collection, "update_one", rotate_before_expiry_write)
+
+    current = await service.verify(_owner())
+
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert current["attempt_id"] == rotated_fields["claim_attempt_id"]
+    assert current["revision"] == first["revision"] + 1
+    assert current["ownership_status"] == "pending"
+    assert stored["claim_attempt_id"] == rotated_fields["claim_attempt_id"]
+    assert stored["last_error"] is None
+    assert cloudflare.created == []
+    assert cloudflare.listed == []
+
+
+@pytest.mark.asyncio
+async def test_unavailable_claim_material_write_cannot_overwrite_disconnect_intent(
+    claim_setup, monkeypatch
+):
+    service, mongo, _, _, cloudflare = claim_setup
+    claim = await service.claim(_owner(), HOSTNAME, intent="new")
+    mongo.raw.storefront_domains.update_one(
+        {"planner_id": OWNER_ID},
+        {"$set": {"claim_token_encrypted": "not-a-valid-fernet-token"}},
+    )
+    collection = mongo.db["storefront_domains"]
+    original_update = collection.update_one
+    deletion_attempt_id = "disconnect-race-attempt"
+
+    async def disconnect_before_quarantine_write(query, update, *args, **kwargs):
+        last_error = update.get("$set", {}).get("last_error") or {}
+        if last_error.get("code") == "claim_material_unavailable":
+            assert query["revision"] == claim["revision"]
+            assert query["claim_attempt_id"] == claim["attempt_id"]
+            assert query["authoritative_dns.zone"] == ZONE
+            assert query["deletion_status"] is None
+            mongo.raw.storefront_domains.update_one(
+                {"planner_id": OWNER_ID},
+                {
+                    "$set": {
+                        "status": "deleting",
+                        "application_status": "disconnecting",
+                        "action": "processing",
+                        "custom_route_enabled": False,
+                        "deletion_status": "provider_delete_pending",
+                        "deletion_attempt_id": deletion_attempt_id,
+                        "provider_delete_operation_id": "delete-operation-race",
+                        "last_error": None,
+                    },
+                    "$inc": {"revision": 1},
+                },
+            )
+        return await original_update(query, update, *args, **kwargs)
+
+    monkeypatch.setattr(collection, "update_one", disconnect_before_quarantine_write)
+
+    current = await service.verify(_owner())
+
+    stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
+    assert current["application_status"] == "disconnecting"
+    assert current["deletion_status"] == "provider_delete_pending"
+    assert current["revision"] == claim["revision"] + 1
+    assert stored["deletion_attempt_id"] == deletion_attempt_id
+    assert stored["last_error"] is None
+    assert "provider_create_attempt_id" not in stored
     assert cloudflare.created == []
     assert cloudflare.listed == []
 

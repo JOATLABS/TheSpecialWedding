@@ -461,8 +461,19 @@ class StorefrontDomainService:
 
     @staticmethod
     def _dns_provider(nameservers: list[str]) -> str:
-        authority = " ".join(nameservers).lower()
-        providers = (
+        normalized_nameservers = tuple(
+            nameserver.strip().casefold().rstrip(".")
+            for nameserver in nameservers
+            if isinstance(nameserver, str) and nameserver.strip()
+        )
+
+        def has_dns_suffix(suffix: str) -> bool:
+            return any(
+                nameserver == suffix or nameserver.endswith(f".{suffix}")
+                for nameserver in normalized_nameservers
+            )
+
+        suffix_providers = (
             # Squarespace documents that its default nameservers may use the
             # googledomains.com suffix and that other companies share these
             # nameserver families. Do not send a customer to a single provider
@@ -470,15 +481,22 @@ class StorefrontDomainService:
             ("squarespacedns.com", "squarespace_dns"),
             ("googledomains.com", "google_or_squarespace_dns"),
             ("cloudflare.com", "cloudflare"),
-            ("awsdns-", "amazon_route53"),
             ("domaincontrol.com", "godaddy"),
             ("registrar-servers.com", "namecheap"),
             ("dnsowl.com", "namesilo"),
         )
-        return next(
-            (provider for marker, provider in providers if marker in authority),
-            "unknown",
-        )
+        for suffix, provider in suffix_providers:
+            if has_dns_suffix(suffix):
+                return provider
+        if any(
+            re.fullmatch(
+                r"ns-\d+\.awsdns-\d+\.(?:com|net|org|co\.uk)",
+                nameserver,
+            )
+            for nameserver in normalized_nameservers
+        ):
+            return "amazon_route53"
+        return "unknown"
 
     @staticmethod
     def _dns_provider_details(provider: str) -> tuple[str, str | None]:
@@ -556,6 +574,30 @@ class StorefrontDomainService:
             retryable=False,
             field="domain",
         )
+
+    @staticmethod
+    def _ownership_claim_cas_filter(record: dict, owner_id: str) -> dict[str, Any]:
+        """Fence ownership writes to the exact active claim lifecycle snapshot."""
+
+        authority = record.get("authoritative_dns")
+        return {
+            "_id": record["_id"],
+            "planner_id": owner_id,
+            "revision": record.get("revision"),
+            "claim_attempt_id": record.get("claim_attempt_id"),
+            "authoritative_dns.zone": (
+                authority.get("zone") if isinstance(authority, dict) else None
+            ),
+            "authoritative_dns.nameservers": (
+                authority.get("nameservers") if isinstance(authority, dict) else None
+            ),
+            "provider_hostname_id": record.get("provider_hostname_id"),
+            # Ownership verification is never allowed to advance or rewrite a
+            # row after disconnect has reserved its monotonic deletion intent.
+            "deletion_status": None,
+            "deletion_attempt_id": record.get("deletion_attempt_id"),
+            "provider_delete_operation_id": record.get("provider_delete_operation_id"),
+        }
 
     async def _expire_domain_after_delegation_change(
         self,
@@ -1703,8 +1745,8 @@ class StorefrontDomainService:
                 "Start the claim again to generate a fresh TXT value.",
                 retryable=False,
             )
-            await collection.update_one(
-                {"_id": record["_id"], "planner_id": owner_id},
+            expired = await collection.update_one(
+                self._ownership_claim_cas_filter(record, owner_id),
                 {
                     "$set": {
                         "application_status": (
@@ -1716,13 +1758,30 @@ class StorefrontDomainService:
                         "action": "action_required",
                         "last_error": error,
                         "updated_at": self._now(),
-                    }
+                    },
+                    "$inc": {"revision": 1},
                 },
             )
             saved = await collection.find_one(
                 {"_id": record["_id"], "planner_id": owner_id}
             )
-            return self._serialize(saved)
+            if saved:
+                return self._serialize(saved)
+            if not getattr(expired, "matched_count", 0):
+                raise self._domain_http_error(
+                    status.HTTP_409_CONFLICT,
+                    "claim_changed",
+                    "The domain claim changed while its expiration was recorded.",
+                    "Reload custom-domain status before retrying.",
+                    retryable=True,
+                )
+            raise self._domain_http_error(
+                status.HTTP_409_CONFLICT,
+                "claim_state_unavailable",
+                "The expired domain claim could not be read safely.",
+                "Reload custom-domain status before retrying.",
+                retryable=True,
+            )
 
         token = self._decrypt_claim_token(record)
         if not token:
@@ -1732,23 +1791,42 @@ class StorefrontDomainService:
                 "Restart the domain claim or contact support.",
                 retryable=False,
             )
-            attempt_id = record.get("provider_create_attempt_id") or uuid4().hex
-            await collection.update_one(
-                {"_id": record["_id"], "planner_id": owner_id},
+            provider_attempt_id = (
+                record.get("provider_create_attempt_id") or uuid4().hex
+            )
+            quarantined = await collection.update_one(
+                self._ownership_claim_cas_filter(record, owner_id),
                 {
                     "$set": {
-                        "provider_create_attempt_id": attempt_id,
+                        "provider_create_attempt_id": provider_attempt_id,
                         "application_status": OPERATOR_REVIEW,
                         "action": "operator_review",
                         "last_error": error,
                         "updated_at": self._now(),
-                    }
+                    },
+                    "$inc": {"revision": 1},
                 },
             )
             saved = await collection.find_one(
                 {"_id": record["_id"], "planner_id": owner_id}
             )
-            return self._serialize(saved)
+            if saved:
+                return self._serialize(saved)
+            if not getattr(quarantined, "matched_count", 0):
+                raise self._domain_http_error(
+                    status.HTTP_409_CONFLICT,
+                    "claim_changed",
+                    "The domain claim changed while invalid claim material was quarantined.",
+                    "Reload custom-domain status before retrying.",
+                    retryable=True,
+                )
+            raise self._domain_http_error(
+                status.HTTP_409_CONFLICT,
+                "claim_state_unavailable",
+                "The quarantined domain claim could not be read safely.",
+                "Reload custom-domain status before retrying.",
+                retryable=True,
+            )
 
         expected_txt = f"tsw-verification={token}"
         txt_name = f"_tsw-storefront.{record['hostname']}"
@@ -1836,15 +1914,7 @@ class StorefrontDomainService:
                 }
             )
         observation = await collection.update_one(
-            {
-                "_id": record["_id"],
-                "planner_id": owner_id,
-                "revision": record.get("revision"),
-                "claim_attempt_id": record.get("claim_attempt_id"),
-                "authoritative_dns.zone": authority.get("zone"),
-                "authoritative_dns.nameservers": authority.get("nameservers"),
-                "deletion_status": None,
-            },
+            self._ownership_claim_cas_filter(record, owner_id),
             {"$set": observation_fields},
         )
         if not getattr(observation, "matched_count", 0):
@@ -2462,6 +2532,9 @@ class StorefrontDomainService:
         last_requested = self._aware(record.get("observation_requested_at"))
         if last_requested and now - last_requested < timedelta(seconds=15):
             return self._serialize(record)
+        # Scheduling a read-only observation must not rotate the lifecycle
+        # revision: signed HTTPS challenges bind that revision, so changing it
+        # here would invalidate an already leased probe and strand its lease.
         queued = await collection.update_one(
             {
                 "_id": record["_id"],
@@ -2476,7 +2549,6 @@ class StorefrontDomainService:
                     "retry_due_at": now,
                     "updated_at": now,
                 },
-                "$inc": {"revision": 1},
             },
         )
         if not getattr(queued, "matched_count", 0):

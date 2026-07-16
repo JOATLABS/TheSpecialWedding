@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 
 import { getServerApiBaseUrl } from '@/utils/env';
 import {
+  buildStorefrontProbeIngressProof,
+  STOREFRONT_DOMAIN_PROBE_INGRESS_HEADER,
+} from '@/utils/storefrontDomainProbeIngress.server';
+import {
   STOREFRONT_DOMAIN_PROBE_HEADER,
   STOREFRONT_DOMAIN_PROBE_HOST_HEADER,
   STOREFRONT_DOMAIN_PROBE_PATTERN,
@@ -77,6 +81,18 @@ export async function GET(request: Request): Promise<Response> {
     return notFound();
   }
 
+  const ingressSecret = process.env.STOREFRONT_PROBE_INGRESS_SECRET ?? '';
+  let ingressProof: string;
+  try {
+    ingressProof = buildStorefrontProbeIngressProof(
+      authority.hostname,
+      challenge,
+      ingressSecret,
+    );
+  } catch {
+    return notFound();
+  }
+
   try {
     const apiBase = getServerApiBaseUrl().replace(/\/+$/, '');
     const upstream = await fetch(
@@ -89,6 +105,7 @@ export async function GET(request: Request): Promise<Response> {
           Accept: 'application/json',
           [STOREFRONT_DOMAIN_PROBE_HEADER]: challenge,
           [STOREFRONT_DOMAIN_PROBE_HOST_HEADER]: authority.hostname,
+          [STOREFRONT_DOMAIN_PROBE_INGRESS_HEADER]: ingressProof,
         },
         signal: AbortSignal.timeout(5_000),
       },

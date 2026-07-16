@@ -13,6 +13,7 @@ from app.services.storefront_domain_https_probe import (
     StorefrontDomainHttpsProbeService,
     build_probe_attestation,
     build_probe_challenge,
+    build_probe_ingress_proof,
 )
 from app.services.storefront_domain_reconciliation_service import (
     SystemStorefrontHttpsVerifier,
@@ -20,6 +21,7 @@ from app.services.storefront_domain_reconciliation_service import (
 
 
 SECRET = "storefront-probe-test-secret-that-is-at-least-32-bytes"
+INGRESS_SECRET = "storefront-ingress-test-secret-1234567890"
 HOSTNAME = "events.customer.example"
 OWNER_ID = "507f1f77bcf86cd799439011"
 
@@ -27,8 +29,10 @@ OWNER_ID = "507f1f77bcf86cd799439011"
 class AsyncCollection:
     def __init__(self, collection):
         self._collection = collection
+        self.find_one_calls = 0
 
     async def find_one(self, *args, **kwargs):
+        self.find_one_calls += 1
         return self._collection.find_one(*args, **kwargs)
 
 
@@ -111,10 +115,15 @@ async def test_probe_service_attests_exact_domain_without_requiring_publication(
     service = StorefrontDomainHttpsProbeService(
         mongo_client=mongo,
         secret_key=SECRET,
+        ingress_secret=INGRESS_SECRET,
         platform_domains=("thespecialwedding.com",),
     )
 
-    response = await service.attest(HOSTNAME, challenge)
+    response = await service.attest(
+        HOSTNAME,
+        challenge,
+        build_probe_ingress_proof(HOSTNAME, challenge, INGRESS_SECRET),
+    )
 
     assert response == build_probe_attestation(record, challenge, SECRET)
     assert "planner_id" not in response
@@ -142,13 +151,94 @@ async def test_probe_service_fails_closed_for_stale_or_wrong_lifecycle_identity(
     service = StorefrontDomainHttpsProbeService(
         mongo_client=mongo,
         secret_key=SECRET,
+        ingress_secret=INGRESS_SECRET,
         platform_domains=("thespecialwedding.com",),
     )
 
     with pytest.raises(HTTPException) as failure:
-        await service.attest(HOSTNAME, challenge)
+        await service.attest(
+            HOSTNAME,
+            challenge,
+            build_probe_ingress_proof(HOSTNAME, challenge, INGRESS_SECRET),
+        )
 
     assert failure.value.status_code == 404
+
+
+def test_probe_ingress_proof_has_a_cross_runtime_canonical_vector():
+    challenge = f"v1.fixed-probe-nonce.{'a' * 64}"
+
+    assert build_probe_ingress_proof(HOSTNAME, challenge, INGRESS_SECRET) == (
+        "v1.694b6d79166112818756c1a1cf6997c7f3030ca0859f05eb5a36011f72ab7a8e"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "relay_proof",
+    [
+        "",
+        f"v1.{'0' * 64}",
+        build_probe_ingress_proof(
+            HOSTNAME,
+            build_probe_challenge(domain_record(), SECRET, nonce="other-probe-nonce"),
+            INGRESS_SECRET,
+        ),
+        build_probe_ingress_proof(
+            "other.customer.example",
+            build_probe_challenge(domain_record(), SECRET, nonce="fixed-probe-nonce"),
+            INGRESS_SECRET,
+        ),
+        build_probe_ingress_proof(
+            HOSTNAME,
+            build_probe_challenge(domain_record(), SECRET, nonce="fixed-probe-nonce"),
+            "different-ingress-test-secret-123456789",
+        ),
+    ],
+)
+async def test_probe_service_rejects_public_relay_without_exact_trusted_ingress(
+    relay_proof,
+):
+    mongo = FakeMongo()
+    record = domain_record()
+    mongo.raw.storefront_domains.insert_one(deepcopy(record))
+    challenge = build_probe_challenge(record, SECRET, nonce="fixed-probe-nonce")
+    service = StorefrontDomainHttpsProbeService(
+        mongo_client=mongo,
+        secret_key=SECRET,
+        ingress_secret=INGRESS_SECRET,
+        platform_domains=("thespecialwedding.com",),
+    )
+
+    with pytest.raises(HTTPException) as failure:
+        await service.attest(HOSTNAME, challenge, relay_proof)
+
+    assert failure.value.status_code == 404
+    assert mongo.db["storefront_domains"].find_one_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_probe_service_fails_closed_when_ingress_configuration_is_missing():
+    mongo = FakeMongo()
+    record = domain_record()
+    mongo.raw.storefront_domains.insert_one(deepcopy(record))
+    challenge = build_probe_challenge(record, SECRET, nonce="fixed-probe-nonce")
+    service = StorefrontDomainHttpsProbeService(
+        mongo_client=mongo,
+        secret_key=SECRET,
+        ingress_secret="",
+        platform_domains=("thespecialwedding.com",),
+    )
+
+    with pytest.raises(HTTPException) as failure:
+        await service.attest(
+            HOSTNAME,
+            challenge,
+            build_probe_ingress_proof(HOSTNAME, challenge, INGRESS_SECRET),
+        )
+
+    assert failure.value.status_code == 404
+    assert mongo.db["storefront_domains"].find_one_calls == 0
 
 
 @pytest.mark.asyncio

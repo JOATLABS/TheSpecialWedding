@@ -25,14 +25,65 @@ from app.utils.planner_ownership import normalize_planner_id
 PROBE_PATH = "/.well-known/tsw-storefront-verification"
 PROBE_HEADER = "x-tsw-storefront-probe"
 PROBE_HOST_HEADER = "x-tsw-storefront-host"
+PROBE_INGRESS_HEADER = "x-tsw-storefront-ingress-proof"
 MAX_PROBE_RESPONSE_BYTES = 8 * 1024
 
 _PROBE_VERSION = "1"
+_INGRESS_PROOF_VERSION = "1"
 _NONCE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 _SIGNATURE_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_INGRESS_PROOF_PATTERN = re.compile(r"^v1\.[0-9a-f]{64}$")
 _ATTESTATION_KEYS = frozenset(
     {"version", "hostname", "revision", "nonce", "domain_binding", "proof"}
 )
+
+
+def _ingress_payload(hostname: str, challenge: str) -> bytes:
+    return (
+        f"v{_INGRESS_PROOF_VERSION}\n"
+        "GET\n"
+        "/api/storefront/domain-verification-probe\n"
+        f"{hostname}\n"
+        f"{challenge}"
+    ).encode("utf-8")
+
+
+def build_probe_ingress_proof(
+    hostname: str,
+    challenge: str,
+    ingress_secret: str,
+) -> str:
+    """Authenticate the server-side Next ingress without exposing its secret."""
+
+    if not isinstance(ingress_secret, str) or len(ingress_secret.encode("utf-8")) < 32:
+        raise ValueError("A strong storefront probe ingress secret is required")
+    if not isinstance(hostname, str) or not hostname:
+        raise ValueError("A normalized storefront probe hostname is required")
+    if not isinstance(challenge, str) or not challenge:
+        raise ValueError("A storefront HTTPS probe challenge is required")
+    digest = hmac.new(
+        ingress_secret.encode("utf-8"),
+        _ingress_payload(hostname, challenge),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"v{_INGRESS_PROOF_VERSION}.{digest}"
+
+
+def verify_probe_ingress_proof(
+    hostname: str,
+    challenge: str,
+    supplied_proof: str,
+    ingress_secret: str | None,
+) -> bool:
+    if not isinstance(supplied_proof, str) or not _INGRESS_PROOF_PATTERN.fullmatch(
+        supplied_proof
+    ):
+        return False
+    try:
+        expected = build_probe_ingress_proof(hostname, challenge, ingress_secret or "")
+    except (TypeError, ValueError):
+        return False
+    return hmac.compare_digest(supplied_proof, expected)
 
 
 def _derived_key(secret_key: str) -> bytes:
@@ -169,11 +220,17 @@ class StorefrontDomainHttpsProbeService:
         *,
         mongo_client: Any | None = None,
         secret_key: str | None = None,
+        ingress_secret: str | None = None,
         platform_domains: tuple[str, ...] | list[str] | None = None,
         challenge_verifier: Callable[[Mapping[str, Any], str, str], str] | None = None,
     ) -> None:
         self._mongo = mongo_client or mongo
         self._secret_key = settings.secret_key if secret_key is None else secret_key
+        self._ingress_secret = (
+            settings.storefront_probe_ingress_secret
+            if ingress_secret is None
+            else ingress_secret
+        )
         self._platform_domains = tuple(
             settings.storefront_platform_domains
             if platform_domains is None
@@ -190,12 +247,25 @@ class StorefrontDomainHttpsProbeService:
             detail="Not Found",
         )
 
-    async def attest(self, raw_hostname: str, challenge: str) -> dict[str, Any]:
+    async def attest(
+        self,
+        raw_hostname: str,
+        challenge: str,
+        ingress_proof: str,
+    ) -> dict[str, Any]:
         try:
             hostname = normalize_custom_hostname(
                 raw_hostname, platform_domains=self._platform_domains
             )
         except (TypeError, ValueError):
+            self._not_found()
+
+        if not verify_probe_ingress_proof(
+            hostname,
+            challenge,
+            ingress_proof,
+            self._ingress_secret,
+        ):
             self._not_found()
 
         record = await self._mongo.db["storefront_domains"].find_one(

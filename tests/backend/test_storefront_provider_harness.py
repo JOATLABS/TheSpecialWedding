@@ -4,6 +4,7 @@ import importlib.util
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import ssl
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 
@@ -66,9 +67,7 @@ def test_provider_harness_safety_rejects_missing_mode_weak_token_and_real_zone()
     real_zone = _safe_environment()
     real_zone["STOREFRONT_PROVIDER_HARNESS_CUSTOMER_ZONE"] = "customer.com"
     configured_provider = _safe_environment()
-    configured_provider["S3_ENDPOINT_URL"] = (
-        "https://account.r2.cloudflarestorage.com"
-    )
+    configured_provider["S3_ENDPOINT_URL"] = "https://account.r2.cloudflarestorage.com"
 
     for candidate in (missing_mode, weak_token, real_zone, configured_provider):
         try:
@@ -101,6 +100,86 @@ def test_provider_harness_normalizes_only_the_explicitly_blank_s3_endpoint():
         configured_settings.s3_endpoint_url
         == "https://account.r2.cloudflarestorage.com"
     )
+
+
+@pytest.mark.asyncio
+async def test_signed_edge_probe_replay_distinguishes_active_route_from_disconnect():
+    from app.services.storefront_domain_https_probe import (
+        PROBE_HEADER,
+        build_probe_attestation,
+    )
+    from testbed.storefront_provider_harness_core import (
+        DeterministicProviderState,
+        NextRouteStorefrontHttpsVerifier,
+    )
+
+    environment = storefront_safety.assert_storefront_provider_harness_environment(
+        _safe_environment()
+    )
+    state = DeterministicProviderState(environment)
+    hostname_state = state.configure(
+        "events.customer.test",
+        domain_connect_supported=False,
+        provider_configuration_ready=True,
+        provider_mutations_enabled=True,
+    )
+    record = {
+        "_id": ObjectId("507f1f77bcf86cd799439099"),
+        "planner_id": "507f1f77bcf86cd799439011",
+        "hostname": "events.customer.test",
+        "revision": 7,
+        "provider_hostname_id": "tb_cf_edge_probe",
+    }
+    hostname_state.provider_result = {
+        "id": record["provider_hostname_id"],
+        "hostname": record["hostname"],
+        "status": "active",
+        "ssl": {"status": "active"},
+    }
+    hostname_state.https_ok = True
+    route_available = True
+    secret_key = "testbed-storefront-edge-probe-secret-" + ("a" * 32)
+
+    def edge(request: httpx.Request) -> httpx.Response:
+        assert request.headers["host"] == record["hostname"]
+        if not route_available:
+            return httpx.Response(404, text="Not Found")
+        challenge = request.headers[PROBE_HEADER]
+        return httpx.Response(
+            200,
+            json=build_probe_attestation(record, challenge, secret_key),
+            headers={"content-type": "application/json"},
+        )
+
+    verifier = NextRouteStorefrontHttpsVerifier(
+        state,
+        frontend_origin=environment.frontend_origin,
+        ca_certificate="",
+        secret_key=secret_key,
+        ssl_context=ssl.create_default_context(),
+        http_transport=httpx.MockTransport(edge),
+    )
+
+    active_receipt = await verifier.probe_current(record)
+    assert active_receipt == {
+        "hostname": record["hostname"],
+        "path": "/.well-known/tsw-storefront-verification",
+        "status_code": 200,
+        "verified": True,
+    }
+
+    route_available = False
+    hostname_state.provider_result = None
+    disconnected_receipt = await verifier.replay_last_verified(record["hostname"])
+    assert disconnected_receipt == {
+        "hostname": record["hostname"],
+        "path": "/.well-known/tsw-storefront-verification",
+        "status_code": 404,
+        "verified": False,
+    }
+    status = state.status()
+    assert status["explicit_https_probe_count"] == 2
+    assert status["latest_explicit_https_probe"] == disconnected_receipt
 
 
 def test_uvicorn_entrypoint_exists_only_under_testbed_and_production_has_no_controls():
@@ -1251,5 +1330,73 @@ async def test_provider_disabled_and_disconnect_failure_remain_structured_and_re
                 reconnect.json()["provider_hostname_id"]
                 != tombstone["provider_hostname_id"]
             )
+    finally:
+        bundle.restore()
+
+
+@pytest.mark.asyncio
+async def test_manual_advance_never_steals_an_unexpired_reconciliation_lease():
+    from testbed.storefront_provider_harness_core import (
+        CONTROL_PREFIX,
+        create_storefront_provider_harness,
+    )
+
+    mongo = FakeMongo()
+    environment = storefront_safety.assert_storefront_provider_harness_environment(
+        _safe_environment()
+    )
+    bundle = create_storefront_provider_harness(
+        environment=environment,
+        mongo_client=mongo,
+        entitlement_service=FakeEntitlements(),
+        production_app=_production_route_app(),
+    )
+    headers = {
+        "x-storefront-testbed-run-id": environment.run_id,
+        "x-storefront-testbed-control-token": environment.control_token,
+    }
+    now = datetime.now(timezone.utc)
+
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=bundle.app),
+            base_url="http://127.0.0.1:8112",
+        ) as client:
+            configured = await client.post(
+                f"{CONTROL_PREFIX}/configure",
+                headers=headers,
+                json={"hostname": HOSTNAME},
+            )
+            assert configured.status_code == 200
+            mongo.raw.storefront_domains.insert_one(
+                {
+                    "_id": ObjectId(),
+                    "planner_id": OWNER_ID,
+                    "hostname": HOSTNAME,
+                    "application_status": "active",
+                    "provider_hostname_id": "tb_cf_locked",
+                    "revision": 3,
+                    "deletion_status": None,
+                    "retry_due_at": now - timedelta(minutes=1),
+                    "lease_token": "sdl_background_worker",
+                    "lease_expires_at": now + timedelta(minutes=2),
+                    "reconciliation_started_at": now,
+                }
+            )
+
+            advanced = await client.post(
+                f"{CONTROL_PREFIX}/advance",
+                headers=headers,
+                json={"hostname": HOSTNAME, "reconcile_passes": 1},
+            )
+
+            assert advanced.status_code == 200
+            assert advanced.json()["reconciled"] == 0
+            stored = mongo.raw.storefront_domains.find_one({"hostname": HOSTNAME})
+            assert stored["lease_token"] == "sdl_background_worker"
+            assert abs(
+                stored["lease_expires_at"].replace(tzinfo=timezone.utc)
+                - (now + timedelta(minutes=2))
+            ) < timedelta(milliseconds=1)
     finally:
         bundle.restore()

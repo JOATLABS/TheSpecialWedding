@@ -46,6 +46,29 @@ type StorefrontRunManifest = {
   };
 };
 
+type DeterministicProbeReceipt = {
+  hostname: string;
+  path: string;
+  status_code: number | null;
+  verified: boolean;
+};
+
+type DeterministicProviderStatus = {
+  external_provider_live: boolean;
+  authoritative_query_count: number;
+  https_probe_count: number;
+  explicit_https_probe_count: number;
+  latest_https_probe: DeterministicProbeReceipt | null;
+  latest_explicit_https_probe: DeterministicProbeReceipt | null;
+  provider_records: number;
+  instruction_receipts: number;
+  cloudflare_calls: Array<{ operation: string; hostname: string }>;
+};
+
+type DeterministicProviderProbeStatus = DeterministicProviderStatus & {
+  probe: DeterministicProbeReceipt;
+};
+
 type BrowserDiagnostics = {
   console: Array<{ type: string; text: string }>;
   pageErrors: string[];
@@ -556,6 +579,23 @@ async function providerControl<T extends Record<string, unknown>>(
   const payload = (await response.json()) as T;
   expect(payload.run_id ?? manifest.run_id).toBe(manifest.run_id);
   return payload;
+}
+
+async function requestDomainObservation(page: Page): Promise<void> {
+  const responsePromise = page.waitForResponse((response) => {
+    const request = response.request();
+    return (
+      request.method() === "POST" &&
+      new URL(response.url()).pathname.endsWith(
+        "/admin/storefront/custom-domain/observe",
+      )
+    );
+  });
+  const [response] = await Promise.all([
+    responsePromise,
+    page.getByRole("button", { name: "Check again" }).click(),
+  ]);
+  expect(response.status(), "custom-domain observation request").toBe(200);
 }
 
 async function currentAdminToken(page: Page): Promise<string> {
@@ -2162,7 +2202,7 @@ test.describe("storefront production testbed", () => {
       .getByRole("button", { name: /I've added these records/i })
       .click();
     await expect(domainRegion.getByRole("alert")).toContainText(
-      /custom-domain setup is temporarily unavailable/i,
+      /custom-domain provider operations are temporarily unavailable/i,
     );
     await expect(domainRegion.getByRole("alert")).not.toContainText(
       /CLOUDFLARE_ZONE_ID|STOREFRONT_CNAME_TARGET|CLOUDFLARE_SAAS_API_TOKEN/i,
@@ -2255,7 +2295,7 @@ test.describe("storefront production testbed", () => {
       ssl_status: "pending_validation",
       https_ok: false,
     });
-    await page.getByRole("button", { name: "Check again" }).click();
+    await requestDomainObservation(page);
     await providerControl(page, "advance", {
       hostname: mainHostname,
       reconcile_passes: 1,
@@ -2297,7 +2337,7 @@ test.describe("storefront production testbed", () => {
       ssl_status: "active",
       https_ok: false,
     });
-    await page.getByRole("button", { name: "Check again" }).click();
+    await requestDomainObservation(page);
     await providerControl(page, "advance", {
       hostname: mainHostname,
       reconcile_passes: 1,
@@ -2336,12 +2376,50 @@ test.describe("storefront production testbed", () => {
       ssl_status: "active",
       https_ok: true,
     });
-    await page.getByRole("button", { name: "Check again" }).click();
+    await requestDomainObservation(page);
     await providerControl(page, "advance", {
       hostname: mainHostname,
       reconcile_passes: 1,
     });
     await expect(page.getByText("Custom domain is live")).toBeVisible();
+    await expect(
+      page.getByRole("listitem").filter({ hasText: "Ownership" }),
+    ).toContainText(/Passed/i);
+    await expect(
+      page.getByRole("listitem").filter({ hasText: "DNS routing" }),
+    ).toContainText(/Passed/i);
+    await expect(
+      page.getByRole("listitem").filter({ hasText: "Provider hostname" }),
+    ).toContainText(/Passed/i);
+    await expect(
+      page.getByRole("listitem").filter({ hasText: "SSL certificate" }),
+    ).toContainText(/Passed/i);
+    await expect(
+      page.getByRole("listitem").filter({ hasText: "Secure storefront" }),
+    ).toContainText(/Passed/i);
+    const activeHarnessStatus =
+      await providerControl<DeterministicProviderProbeStatus>(
+        page,
+        "probe-route",
+        { hostname: mainHostname, mode: "current" },
+      );
+    expect(activeHarnessStatus.external_provider_live).toBe(false);
+    expect(activeHarnessStatus.https_probe_count).toBeGreaterThan(0);
+    expect(activeHarnessStatus.explicit_https_probe_count).toBeGreaterThan(0);
+    expect(activeHarnessStatus.probe).toEqual({
+      hostname: mainHostname,
+      path: "/.well-known/tsw-storefront-verification",
+      status_code: 200,
+      verified: true,
+    });
+    expect(activeHarnessStatus.latest_explicit_https_probe).toEqual(
+      activeHarnessStatus.probe,
+    );
+    expect(activeHarnessStatus.provider_records).toBeGreaterThan(0);
+    await testInfo.attach("deterministic-active-provider-receipt", {
+      body: Buffer.from(JSON.stringify(activeHarnessStatus, null, 2)),
+      contentType: "application/json",
+    });
     const immutableStateAfterActivation =
       await immutableStorefrontAccountSnapshot(page);
     expect(immutableStateAfterActivation).toEqual(
@@ -2460,29 +2538,29 @@ test.describe("storefront production testbed", () => {
     );
     await platformAfter.close();
 
-    const harnessStatus = await providerControl<{
-      external_provider_live: boolean;
-      authoritative_query_count: number;
-      https_probe_count: number;
-      latest_https_probe: {
-        hostname: string;
-        path: string;
-        status_code: number;
-        verified: boolean;
-      } | null;
-      provider_records: number;
-      instruction_receipts: number;
-      cloudflare_calls: Array<{ operation: string; hostname: string }>;
-    }>(page, "status");
+    const harnessStatus =
+      await providerControl<DeterministicProviderProbeStatus>(
+        page,
+        "probe-route",
+        { hostname: mainHostname, mode: "saved" },
+      );
     expect(harnessStatus.external_provider_live).toBe(false);
     expect(harnessStatus.authoritative_query_count).toBeGreaterThan(0);
-    expect(harnessStatus.https_probe_count).toBeGreaterThan(0);
-    expect(harnessStatus.latest_https_probe).toEqual({
+    expect(harnessStatus.https_probe_count).toBeGreaterThan(
+      activeHarnessStatus.https_probe_count,
+    );
+    expect(harnessStatus.probe).toEqual({
       hostname: mainHostname,
       path: "/.well-known/tsw-storefront-verification",
-      status_code: 200,
-      verified: true,
+      status_code: 404,
+      verified: false,
     });
+    expect(harnessStatus.latest_explicit_https_probe).toEqual(
+      harnessStatus.probe,
+    );
+    expect(harnessStatus.explicit_https_probe_count).toBeGreaterThan(
+      activeHarnessStatus.explicit_https_probe_count,
+    );
     expect(harnessStatus.provider_records).toBe(0);
     expect(harnessStatus.instruction_receipts).toBeGreaterThan(0);
     const deleteCalls = harnessStatus.cloudflare_calls.filter(
@@ -2536,9 +2614,13 @@ test.describe("storefront production testbed", () => {
         storefrontRevisionUnchanged:
           immutableStateAfterDisconnect.storefront.revision ===
           immutableStateBeforeDomainLifecycle.storefront.revision,
+        deterministicHttpsRouteActiveBeforeDisconnect:
+          activeHarnessStatus.probe.status_code === 200 &&
+          activeHarnessStatus.probe.verified === true,
       },
       [
         "domain-lifecycle-immutability-receipt",
+        "deterministic-active-provider-receipt",
         ...activeDomainAttachments,
         ...disconnectedDomainAttachments,
       ],
@@ -2562,6 +2644,12 @@ test.describe("storefront production testbed", () => {
           disconnected.application_status === "disconnected",
         deterministicDeleteAttemptAndRetryObserved: deleteCalls.length === 2,
         providerRecordRemoved: harnessStatus.provider_records === 0,
+        customRouteUnavailableAfterDisconnect:
+          harnessStatus.probe.status_code === 404 &&
+          harnessStatus.probe.verified === false,
+        disconnectProbeOccurredAfterActiveProbe:
+          harnessStatus.explicit_https_probe_count >
+          activeHarnessStatus.explicit_https_probe_count,
         exactCustomerDnsCleanupRendered: true,
         platformPublicationUnaffected:
           immutableStateAfterDisconnect.storefront.published,

@@ -187,6 +187,10 @@ class Settings(BaseSettings):
     secret_key: str = Field(
         default="", alias="SECRET_KEY"
     )  # Required - validated below
+    storefront_probe_ingress_secret: Optional[str] = Field(
+        default=None,
+        alias="STOREFRONT_PROBE_INGRESS_SECRET",
+    )
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(
         default=60, alias="ACCESS_TOKEN_EXPIRE_MINUTES"
@@ -208,6 +212,21 @@ class Settings(BaseSettings):
         if v.lower() in weak_keys or len(v) < 32:
             raise ValueError(
                 "SECRET_KEY must be at least 32 characters and not a common default"
+            )
+        return v
+
+    @field_validator("storefront_probe_ingress_secret")
+    @classmethod
+    def validate_storefront_probe_ingress_secret(
+        cls, v: Optional[str]
+    ) -> Optional[str]:
+        """Keep the Next-to-FastAPI probe credential strong and server-only."""
+
+        if v is None or not v.strip():
+            return None
+        if len(v.encode("utf-8")) < 32:
+            raise ValueError(
+                "STOREFRONT_PROBE_INGRESS_SECRET must be at least 32 bytes"
             )
         return v
 

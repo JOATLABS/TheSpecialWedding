@@ -219,13 +219,19 @@ The final HTTPS observation uses the exact
 `/.well-known/tsw-storefront-verification` route on the customer hostname. The
 worker sends a short-lived HMAC challenge bound to domain row ID, planner owner,
 normalized hostname, lifecycle revision, and nonce. The Next.js edge forwards
-only that exact well-known path and host binding to the backend; the backend
-returns a matching signed attestation. The worker pins the resolved public IP,
+only that exact well-known path and host binding to the backend. It also adds a
+request-bound HMAC made with `STOREFRONT_PROBE_INGRESS_SECRET`; FastAPI rejects
+missing, malformed, replayed-to-another-host, or caller-forged ingress proofs
+before reading a domain row or signing an attestation. The backend then returns
+a matching signed attestation. The worker pins the resolved public IP,
 keeps SNI and `Host` on the customer hostname, rejects redirects, limits the
 body to 8 KiB, and accepts only the exact JSON attestation. All other custom-host
 paths keep the normal storefront routing restrictions. `SECRET_KEY` supplies
-the server-only key material and must remain at least 32 characters; no new
-browser-visible probe secret is introduced.
+the challenge/attestation key material. `STOREFRONT_PROBE_INGRESS_SECRET` is a
+separate server-only credential shared only by the Next and FastAPI runtimes.
+Both must contain at least 32 random bytes, and neither may be exposed through a
+`NEXT_PUBLIC_*` variable. Missing ingress identity makes only the custom-domain
+probe return `404`; the platform slug remains available.
 
 Cloudflare exposes hostname and certificate validation separately. Production
 readiness requires both statuses to be active and DNS to point to the SaaS
@@ -248,6 +254,7 @@ Roll the control plane out in independent stages:
 | `STOREFRONT_DOMAIN_CONNECT_DISCOVERY_ENABLED` | Allows read-only `_domainconnect` provider discovery and presentation of a supported provider. | `false` until the exact template is published and provider compatibility is recorded. |
 | `STOREFRONT_DOMAIN_CONNECT_AUTHORIZATION_ENABLED` | Allows signed provider redirects and callbacks that can change customer DNS. | `false` until signing-key publication, callback validation, template approval, and provider-specific E2E proof pass. |
 | `STOREFRONT_RUNTIME_REVISION` | Non-secret immutable backend deploy identity returned by provider readiness and bound into storefront testbed receipts. | Exact deployed Git SHA or deployment digest; never the Compose fallback `unknown` for acceptance. |
+| `STOREFRONT_PROBE_INGRESS_SECRET` | Authenticates exact host/challenge forwarding from the server-side Next custom-host route to FastAPI. | One secret-manager value containing at least 32 random bytes, injected into both runtimes and never exposed to browsers. |
 
 Disabling any flag is fail-closed for new work. It must not delete an existing
 mapping, hide the platform slug, unpublish a storefront, block media, or lose an
@@ -267,6 +274,7 @@ secrets in `NEXT_PUBLIC_*` variables.
 | `STOREFRONT_FALLBACK_ORIGIN` | Custom domains enabled | Bare hostname `storefront-origin.thespecialwedding.com`. |
 | `STOREFRONT_CNAME_TARGET` | Custom domains enabled | Bare hostname `domains.thespecialwedding.com`. |
 | `STOREFRONT_PLATFORM_DOMAINS` | Every environment | JSON array or comma-separated first-party domains. Include `thespecialwedding.io` and `thespecialwedding.com`; never include planner domains. |
+| `STOREFRONT_PROBE_INGRESS_SECRET` | Custom domains enabled | At least 32 random bytes shared by the server-side Next and FastAPI runtimes. Rotate both deployments together; a mismatch fails the HTTPS check closed. Never use `NEXT_PUBLIC_` or reuse `SECRET_KEY`, Cloudflare, R2, Resend, or Domain Connect credentials. |
 | `DOMAIN_CONNECT_PROVIDER_ID` | Domain Connect | `thespecialwedding.com`, matching the template filename and payload exactly. |
 | `DOMAIN_CONNECT_SERVICE_ID` | Domain Connect | `storefront-subdomain`, matching the template exactly. |
 | `DOMAIN_CONNECT_TEMPLATE_VERSION` | Domain Connect | Approved template version; currently candidate version `1`. Changing DNS semantics requires a reviewed version increment. |
@@ -701,6 +709,14 @@ TESTBED_NON_INTERACTIVE=1 \
 TESTBED_STOREFRONT_EXTERNAL_MODE=deterministic \
 TESTBED_STOREFRONT_INQUIRY_DELIVERY_MODE=disabled \
 npm run test:e2e:storefront
+
+# After the automated run, hold a new isolated source-bound fixture set for
+# visible review in the user-selected in-app Chrome. This skips Playwright,
+# blanks external-provider credentials, and cleans up on Ctrl-C.
+TESTBED_NON_INTERACTIVE=1 \
+TESTBED_STOREFRONT_EXTERNAL_MODE=deterministic \
+TESTBED_STOREFRONT_INQUIRY_DELIVERY_MODE=disabled \
+.venv.nosync/bin/python testbed/serve_storefront_visible_playback.py
 ```
 
 Deployment order:
@@ -810,12 +826,21 @@ receipts and tombstones before re-enabling new provisioning.
 
 These evidence classes are deliberately separate:
 
-### Deterministic application lifecycle — `NOT RUN` on current source
+### Deterministic application lifecycle — `PASSED` for application-only scope
 
 The real frontend/FastAPI/Mongo lifecycle can run against deterministic
-DNS/Cloudflare/HTTPS/email adapters. The retained run `0bec60e8271d` failed its
-automated browser and cleanup gates. Changes made after it need a fresh build
-and manifest. A future deterministic pass would prove application behavior only.
+DNS/Cloudflare/HTTPS/email adapters. Source-bound run `2c2262cbb4d6` passed the
+ten exact required Playwright test/project pairs with zero unexpected/flaky
+results, 18 of 20 browser scenarios, persistence, protected account and
+subscription hashing, deterministic provider control-plane checks, cleanup, and
+post-shutdown artifact sealing. Its manifest is
+`testbed/.testbed/artifacts/storefront/runs/2c2262cbb4d6/run-manifest.json`.
+
+The command exited nonzero by design because the evidence gate kept scenario 4
+blocked without configured object-storage upload/finalize/persist/render proof
+and scenario 14 blocked without an independently authoritative customer zone
+and scoped Cloudflare for SaaS credentials. This receipt proves application
+behavior only; it is not an external-provider completion receipt.
 
 ### Visible in-app Chrome — `NOT RUN`
 

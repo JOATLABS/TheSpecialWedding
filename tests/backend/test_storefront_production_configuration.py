@@ -38,6 +38,7 @@ DOMAIN_SETTING_ALIASES = {
     ),
     "cloudflare_saas_api_token": "CLOUDFLARE_SAAS_API_TOKEN",
     "storefront_fallback_origin": "STOREFRONT_FALLBACK_ORIGIN",
+    "storefront_probe_ingress_secret": "STOREFRONT_PROBE_INGRESS_SECRET",
     "domain_connect_provider_id": "DOMAIN_CONNECT_PROVIDER_ID",
     "domain_connect_service_id": "DOMAIN_CONNECT_SERVICE_ID",
     "domain_connect_template_version": "DOMAIN_CONNECT_TEMPLATE_VERSION",
@@ -137,6 +138,7 @@ def test_domain_readiness_fails_closed_without_disabling_the_platform_storefront
             cloudflare_zone_id=None,
             storefront_fallback_origin=None,
             storefront_cname_target=None,
+            storefront_probe_ingress_secret=None,
             storefront_platform_domains=["thespecialwedding.io"],
         ),
     )
@@ -152,6 +154,7 @@ def test_domain_readiness_fails_closed_without_disabling_the_platform_storefront
             "CLOUDFLARE_ZONE_ID",
             "STOREFRONT_FALLBACK_ORIGIN",
             "STOREFRONT_CNAME_TARGET",
+            "STOREFRONT_PROBE_INGRESS_SECRET",
         ],
     }
     assert "storefront_enabled" not in readiness
@@ -169,6 +172,7 @@ def test_env_compose_and_testbed_expose_the_same_storefront_runtime_contract():
         "CLOUDFLARE_ZONE_ID",
         "STOREFRONT_CNAME_TARGET",
         "STOREFRONT_PLATFORM_DOMAINS",
+        "STOREFRONT_PROBE_INGRESS_SECRET",
         "S3_STOREFRONT_STAGING_BUCKET_NAME",
         "S3_REGION",
         "BLOG_MEDIA_DOMAIN",
@@ -188,6 +192,17 @@ def test_env_compose_and_testbed_expose_the_same_storefront_runtime_contract():
         assert f"{variable}=" in root_env
         assert f"{variable}=" in testbed_env
         assert f"- {variable}=${{{variable}" in compose
+
+
+def test_storefront_probe_ingress_secret_rejects_weak_values():
+    with pytest.raises(ValueError, match="STOREFRONT_PROBE_INGRESS_SECRET"):
+        Settings.model_validate(
+            {
+                "SECRET_KEY": "test-secret-key-that-is-longer-than-32-bytes",
+                "CORS_ORIGINS": ["http://127.0.0.1:3000"],
+                "STOREFRONT_PROBE_INGRESS_SECRET": "too-short",
+            }
+        )
 
 
 def test_production_compose_matches_cache_manager_and_trusted_ingress_contract():

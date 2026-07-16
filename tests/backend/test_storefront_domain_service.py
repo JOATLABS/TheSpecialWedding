@@ -1732,6 +1732,8 @@ async def test_observe_is_owner_scoped_enqueues_without_provider_validation_retr
             "action": "processing",
             "deletion_status": None,
             "retry_due_at": now + timedelta(hours=1),
+            "lease_token": "sdl_inflight_observation",
+            "lease_expires_at": now + timedelta(minutes=2),
             "updated_at": now,
         }
     )
@@ -1744,6 +1746,11 @@ async def test_observe_is_owner_scoped_enqueues_without_provider_validation_retr
     stored = mongo.raw.storefront_domains.find_one({"planner_id": OWNER_ID})
     assert stored["retry_due_at"].replace(tzinfo=timezone.utc) == now
     assert stored["observation_requested_at"].replace(tzinfo=timezone.utc) == now
+    assert stored["revision"] == 2
+    assert stored["lease_token"] == "sdl_inflight_observation"
+    assert stored["lease_expires_at"].replace(tzinfo=timezone.utc) == now + timedelta(
+        minutes=2
+    )
     assert cloudflare.read == []
     assert cloudflare.retried == []
 

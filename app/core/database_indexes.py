@@ -2644,12 +2644,21 @@ async def create_storefront_indexes():
             name="idx_storefront_domains_planner_unique",
             unique=True,
             background=True,
+            # Old experimental rows may predate the owner-scoped schema. Do
+            # not let multiple missing/null values turn a safe rollout into a
+            # production boot outage. The pre-deploy storefront-domain data
+            # migration inventories and quarantines those rows explicitly;
+            # every application-created row has a string planner_id.
+            partialFilterExpression={"planner_id": {"$type": "string"}},
         )
         await domains.create_index(
             [("hostname", ASCENDING)],
             name="idx_storefront_domains_hostname_unique",
             unique=True,
             background=True,
+            # See planner_id above. Real string hostnames remain globally
+            # unique; malformed legacy rows do not weaken the live invariant.
+            partialFilterExpression={"hostname": {"$type": "string"}},
         )
         await domains.create_index(
             [

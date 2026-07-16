@@ -32,6 +32,7 @@ def configured_storefront(monkeypatch):
         "cloudflare_zone_id": None,
         "storefront_fallback_origin": None,
         "storefront_cname_target": None,
+        "storefront_probe_ingress_secret": None,
         "domain_connect_provider_id": "thespecialwedding.com",
         "domain_connect_service_id": "storefront-subdomain",
         "domain_connect_template_version": 1,
@@ -84,6 +85,9 @@ def _enable_domain_connect(monkeypatch):
         "cloudflare_zone_id": "zone-id",
         "storefront_fallback_origin": "storefront-origin.thespecialwedding.com",
         "storefront_cname_target": "domains.thespecialwedding.com",
+        "storefront_probe_ingress_secret": (
+            "test-storefront-probe-ingress-secret-at-least-32-bytes"
+        ),
         "domain_connect_provider_id": "thespecialwedding.com",
         "domain_connect_service_id": "storefront-subdomain",
         "domain_connect_template_version": 1,
@@ -172,6 +176,7 @@ def test_doctor_validates_enabled_domain_connect_without_printing_secrets(
     for field in (
         "cloudflare_saas_api_token",
         "domain_connect_private_key",
+        "storefront_probe_ingress_secret",
     ):
         assert secret_values[field] not in output
     assert configured_storefront["cloudflare_api_token"] not in output

@@ -83,7 +83,8 @@ describe("storefront frontend lifecycle testbed contract", () => {
     assert.match(driver, /certificate_sha256/);
     assert.match(driver, /storefront_https_proxy\.mjs/);
     assert.match(driver, /frontend_upstream_url/);
-    assert.match(driver, /latest_https_probe/);
+    assert.match(driver, /latest_explicit_https_probe/);
+    assert.match(driver, /explicit_https_probe_count/);
     assert.match(driver, /shutil\.which\("mongod"\)/);
     assert.match(driver, /allow_redirects=False/);
     assert.doesNotMatch(driver, /validate_browser_checkpoint_evidence/);
@@ -147,6 +148,7 @@ describe("storefront frontend lifecycle testbed contract", () => {
       "FRONTEND_URL",
       "STOREFRONT_PLATFORM_DOMAINS",
       "STOREFRONT_CNAME_TARGET",
+      "STOREFRONT_PROBE_INGRESS_SECRET",
       "CLOUDFLARE_ACCOUNT_ID",
       "CLOUDFLARE_API_TOKEN",
       "CLOUDFLARE_ZONE_ID",

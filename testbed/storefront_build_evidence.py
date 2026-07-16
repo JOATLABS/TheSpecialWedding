@@ -31,6 +31,7 @@ STOREFRONT_EVIDENCE_INPUTS = (
     "testbed/storefront_https_proxy.mjs",
     "testbed/storefront_provider_harness.py",
     "testbed/storefront_provider_harness_core.py",
+    "testbed/serve_storefront_visible_playback.py",
     "testbed/storefront_testbed_safety.py",
     "testbed/validate_storefront_domain_connect_template.py",
     "testbed/verify_storefront_frontend_lifecycle.py",
