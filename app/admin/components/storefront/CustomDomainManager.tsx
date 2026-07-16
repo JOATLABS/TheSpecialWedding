@@ -536,6 +536,8 @@ export function CustomDomainPanel({
     setLoading(true);
     setStatusLoadState('loading');
     setJourney(null);
+    setDisconnectedRecords([]);
+    setCancelledConflict(false);
     setError(null);
     try {
       setJourney(await getCustomDomainStatus(transport));
@@ -553,6 +555,8 @@ export function CustomDomainPanel({
     resumedAttemptRef.current = attemptId;
     setLoading(true);
     setStatusLoadState('loading');
+    setDisconnectedRecords([]);
+    setCancelledConflict(false);
     setError(null);
     try {
       await completeCustomDomainConnect(attemptId, transport);
@@ -640,14 +644,23 @@ export function CustomDomainPanel({
 
   useEffect(() => {
     const currentAttemptId = journey?.attemptId;
-    if (!currentAttemptId) {
+    if (
+      !currentAttemptId ||
+      journey?.applicationStatus === 'disconnected' ||
+      Boolean(journey?.conflictCode)
+    ) {
       instructionAttemptRef.current = null;
       setInstructionReceipts([]);
       setInstructionLinksLoadState('idle');
       return;
     }
     void loadInstructionLinks(currentAttemptId);
-  }, [journey?.attemptId, loadInstructionLinks]);
+  }, [
+    journey?.applicationStatus,
+    journey?.attemptId,
+    journey?.conflictCode,
+    loadInstructionLinks,
+  ]);
 
   const closeDisconnectConfirmation = () => {
     setDisconnectOpen(false);
@@ -957,6 +970,33 @@ export function CustomDomainPanel({
     operatorReview &&
       journey?.lastError?.code === 'cloudflare_o2o_migration_requires_assistance',
   );
+  const persistedDisconnectedJourney =
+    journey?.applicationStatus === 'disconnected' ? journey : null;
+  const cleanupRecords = disconnectedRecords.length
+    ? disconnectedRecords
+    : persistedDisconnectedJourney?.cleanupRecords.length
+      ? persistedDisconnectedJourney.cleanupRecords
+      : (persistedDisconnectedJourney?.expectedRecords ?? []);
+  const showDisconnectedReceipt = Boolean(
+    !loading &&
+      statusLoadState === 'ready' &&
+      (persistedDisconnectedJourney || (!journey && disconnectedRecords.length > 0)),
+  );
+  const disconnectedConflict = Boolean(
+    cancelledConflict || persistedDisconnectedJourney?.conflictCode === 'hostname_reserved',
+  );
+
+  const startAnotherDomainSetup = () => {
+    setJourney(null);
+    setDisconnectedRecords([]);
+    setCancelledConflict(false);
+    setDomainInput('');
+    setIntent('new');
+    setPreflight(null);
+    setError(null);
+    setDisconnectOpen(false);
+    setAnnouncement('Ready to set up another custom domain.');
+  };
 
   return (
     <section aria-labelledby="custom-domain-heading" className="space-y-5 text-slate-900 dark:text-slate-100">
@@ -983,7 +1023,7 @@ export function CustomDomainPanel({
         {announcement}
       </p>
 
-      {attemptId && journey ? (
+      {attemptId && journey && !persistedDisconnectedJourney ? (
         <p className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-base text-sky-950 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-100">
           Resuming setup attempt {attemptId}.
         </p>
@@ -1006,21 +1046,23 @@ export function CustomDomainPanel({
         </button>
       ) : null}
 
-      {!loading && !journey && disconnectedRecords.length > 0 ? (
+      {showDisconnectedReceipt ? (
         <div className="space-y-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
           <div>
             <p className="text-base font-semibold">
-              {cancelledConflict
+              {disconnectedConflict
                 ? 'Ownership review cancelled'
                 : 'Connection removed from The Special Wedding'}
             </p>
             <p className="mt-1 text-base leading-6">
-              Your platform URL and publication setting did not change. Delete these DNS records
-              at your DNS provider when you are ready to finish cleanup.
+              Your platform URL and publication setting did not change.{' '}
+              {cleanupRecords.length
+                ? 'Delete these DNS records at your DNS provider when you are ready to finish cleanup.'
+                : 'No customer DNS cleanup records were retained for this connection.'}
             </p>
           </div>
           <div className="space-y-3">
-            {disconnectedRecords.map((record) => (
+            {cleanupRecords.map((record) => (
               <DnsRecordCard
                 key={`${record.type}-${record.fqdn}-${record.value ?? ''}`}
                 record={record}
@@ -1031,10 +1073,7 @@ export function CustomDomainPanel({
           {canActivate ? (
             <button
               type="button"
-              onClick={() => {
-                setDisconnectedRecords([]);
-                setCancelledConflict(false);
-              }}
+              onClick={startAnotherDomainSetup}
               className={secondaryButtonClass}
             >
               Set up another domain
@@ -1173,7 +1212,7 @@ export function CustomDomainPanel({
         </div>
       ) : null}
 
-      {journey ? (
+      {journey && !persistedDisconnectedJourney ? (
         <div className="space-y-5">
           {!canActivate && !active ? (
             <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
@@ -1216,7 +1255,7 @@ export function CustomDomainPanel({
 
           <JourneyNotice journey={journey} />
 
-          {journey.lastError && !assistedCloudflareMigration ? (
+          {journey.lastError && !assistedCloudflareMigration && !error ? (
             <CustomerErrorNotice
               error={normalizeStorefrontError(
                 new StorefrontCustomerError(journey.lastError),

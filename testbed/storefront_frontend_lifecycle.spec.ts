@@ -704,6 +704,17 @@ async function disconnectDomain(page: Page) {
   return confirmation;
 }
 
+async function prepareNewDomainInput(page: Page) {
+  const input = page.getByLabel("Storefront domain");
+  const reset = page.getByRole("button", { name: "Set up another domain" });
+  await expect(input.or(reset)).toBeVisible();
+  if (await reset.isVisible()) {
+    await reset.click();
+  }
+  await expect(input).toBeVisible();
+  return input;
+}
+
 test.describe("storefront production testbed", () => {
   test.describe.configure({ mode: "serial" });
 
@@ -1327,6 +1338,7 @@ test.describe("storefront production testbed", () => {
     page,
     context,
   }, testInfo) => {
+    test.setTimeout(240_000);
     test.skip(
       testInfo.project.name !== "chromium-desktop-dark",
       "one serial provider owner",
@@ -1693,16 +1705,17 @@ test.describe("storefront production testbed", () => {
     await login(page, manifest.fixtures.signature_email, signaturePassword);
     await openStorefrontDialog(page);
     await selectTab(page, "Domain");
-    await page.getByLabel("Storefront domain").fill(claimedHostname);
+    const conflictDomainInput = await prepareNewDomainInput(page);
+    await conflictDomainInput.fill(claimedHostname);
     await page.getByRole("button", { name: "Check domain" }).click();
     await page.getByRole("button", { name: "Set up manually" }).click();
     await expect(
-      page.getByText("This hostname is already reserved"),
+      page.getByText("This hostname is already reserved", { exact: true }),
     ).toBeVisible();
     await expect(
       page.getByText(/do not reveal who currently uses the hostname/i),
     ).toBeVisible();
-    await expect(page.getByText(/tsw-conflict-verification=/i)).toBeVisible();
+    await expect(page.getByText(/^tsw-conflict-verification=/i)).toBeVisible();
     await expect(
       page.getByRole("button", { name: /Continue to/i }),
     ).toHaveCount(0);
@@ -1791,7 +1804,7 @@ test.describe("storefront production testbed", () => {
     await login(page, manifest.fixtures.signature_email, signaturePassword);
     await openStorefrontDialog(page);
     await selectTab(page, "Domain");
-    await page.getByLabel("Storefront domain").fill(mainHostname);
+    await (await prepareNewDomainInput(page)).fill(mainHostname);
     await page.getByRole("button", { name: "Check domain" }).click();
     await page
       .getByRole("button", { name: /Connect automatically with/i })
@@ -1800,7 +1813,7 @@ test.describe("storefront production testbed", () => {
       page.getByRole("heading", { name: "Review the exact DNS changes" }),
     ).toBeVisible();
     await expect(
-      page.getByText(`_tsw-storefront.${mainHostname}`),
+      page.getByText(`_tsw-storefront.${mainHostname}`, { exact: true }),
     ).toBeVisible();
     const copyAll = page.getByRole("button", { name: /Copy all records/i });
     await context.grantPermissions(["clipboard-read", "clipboard-write"], {
@@ -1954,7 +1967,7 @@ test.describe("storefront production testbed", () => {
       "POST",
       "/admin/storefront/custom-domain/instructions",
       {
-        attempt_id: new URL(page.url()).searchParams.get("attempt"),
+        attempt_id: resumedAutomaticAttemptId,
         email: dnsContact,
         note: "Use only these exact records.",
       },

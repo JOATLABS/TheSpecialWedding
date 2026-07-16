@@ -571,6 +571,51 @@ describe('storefront production custom-domain journey', () => {
     assert.doesNotMatch(alert.textContent ?? '', /\{|"detail"/);
   });
 
+  it('shows the current action failure instead of a stale journey error', async () => {
+    assert.ok(DomainPanel);
+    const transport: StorefrontApiTransport = async <T,>(
+      path: string,
+      method = 'GET',
+    ) => {
+      if (path.includes('/instructions?attempt_id=')) return { links: [] } as T;
+      if (path.endsWith('/status')) {
+        return domainStatus({
+          last_error: {
+            code: 'ownership_record_missing',
+            message: 'The current ownership TXT value was not found.',
+            customer_action: 'Publish the exact current TXT value.',
+            retryable: true,
+            support_id: 'SUP-STALE-1',
+          },
+        }) as T;
+      }
+      if (path.endsWith('/verify') && method === 'POST') {
+        throw new Error(
+          '{"error":{"code":"provider_configuration_unavailable","message":"Custom-domain setup is temporarily unavailable.","customer_action":"Keep using your platform storefront URL while support finishes provider setup.","retryable":true,"support_id":"SUP-CURRENT-1"}}',
+        );
+      }
+      throw new Error(`Unexpected request ${method} ${path}`);
+    };
+    const user = userEvent.setup({ document: window.document });
+    const view = render(
+      React.createElement(DomainPanel, {
+        transport,
+        canActivate: true,
+        platformUrl: '/storefront/luxe-events',
+        isPublished: true,
+      }),
+    );
+
+    await waitFor(() => view.getByText(/current ownership TXT value was not found/i));
+    await user.click(view.getByRole('button', { name: /i've added these records/i }));
+    const alerts = await view.findAllByRole('alert');
+    assert.equal(alerts.length, 1);
+    assert.match(alerts[0]?.textContent ?? '', /custom-domain setup is temporarily unavailable/i);
+    assert.match(alerts[0]?.textContent ?? '', /platform storefront URL/i);
+    assert.doesNotMatch(alerts[0]?.textContent ?? '', /current ownership TXT value was not found/i);
+    assert.doesNotMatch(alerts[0]?.textContent ?? '', /SUP-STALE-1/);
+  });
+
   it('renders operator-review action and support ID from backend truth', async () => {
     assert.ok(DomainPanel);
     const transport: StorefrontApiTransport = async <T,>() =>
@@ -1011,6 +1056,145 @@ describe('storefront production custom-domain journey', () => {
     await waitFor(() => assert.equal(deleted, true));
     view.getByText(/connection removed from the special wedding/i);
     view.getByText(/delete these DNS records/i);
+  });
+
+  it('restores a persisted disconnect receipt and permits a new setup without replaying lifecycle actions', async () => {
+    assert.ok(DomainPanel);
+    const calls: Array<{ path: string; method: string }> = [];
+    const transport: StorefrontApiTransport = async <T,>(path: string, method = 'GET') => {
+      calls.push({ path, method });
+      if (path.endsWith('/status')) {
+        return domainStatus({
+          attempt_id: null,
+          application_status: 'disconnected',
+          action: 'remove_dns_records',
+          ownership_status: 'verified',
+          routing_dns_status: 'verified',
+          provider_hostname_status: 'deleted',
+          ssl_status: 'inactive',
+          https_status: 'inactive',
+          expected_records: [],
+          cleanup_records: domainStatus().expected_records,
+        }) as T;
+      }
+      throw new Error(`Unexpected request ${method} ${path}`);
+    };
+    const user = userEvent.setup({ document: window.document });
+    const view = render(
+      React.createElement(DomainPanel, {
+        transport,
+        canActivate: true,
+        platformUrl: '/storefront/luxe-events',
+        isPublished: true,
+      }),
+    );
+
+    await waitFor(() => view.getByText(/connection removed from the special wedding/i));
+    view.getByText(/platform URL and publication setting did not change/i);
+    view.getByText(/delete these DNS records/i);
+    view.getByText('domains.thespecialwedding.com');
+    assert.equal(view.queryByRole('button', { name: /disconnect domain/i }), null);
+    assert.equal(view.queryByRole('button', { name: /i've added/i }), null);
+    assert.equal(view.queryByRole('button', { name: /check again/i }), null);
+    assert.equal(
+      calls.some((call) => call.path.includes('/instructions?attempt_id=')),
+      false,
+    );
+
+    await user.click(view.getByRole('button', { name: /set up another domain/i }));
+    await waitFor(() => view.getByLabelText(/storefront domain/i));
+    assert.equal(view.queryByText(/connection removed from the special wedding/i), null);
+  });
+
+  it('keeps persisted disconnect cleanup visible without offering replacement setup when activation is unavailable', async () => {
+    assert.ok(DomainPanel);
+    const transport: StorefrontApiTransport = async <T,>(path: string, method = 'GET') => {
+      if (path.endsWith('/status')) {
+        return domainStatus({
+          attempt_id: null,
+          application_status: 'disconnected',
+          action: 'remove_dns_records',
+          provider_hostname_status: 'deleted',
+          ssl_status: 'inactive',
+          https_status: 'inactive',
+          expected_records: [],
+          cleanup_records: domainStatus().expected_records,
+        }) as T;
+      }
+      throw new Error(`Unexpected request ${method} ${path}`);
+    };
+    const view = render(
+      React.createElement(DomainPanel, {
+        transport,
+        canActivate: false,
+        canManageExisting: true,
+        platformUrl: '/storefront/luxe-events',
+        isPublished: false,
+      }),
+    );
+
+    await waitFor(() => view.getByText(/connection removed from the special wedding/i));
+    view.getByText(/delete these DNS records/i);
+    assert.equal(view.queryByRole('button', { name: /set up another domain/i }), null);
+    assert.equal(view.queryByRole('button', { name: /disconnect domain/i }), null);
+  });
+
+  it('clears the prior owner disconnect receipt when the authenticated transport changes', async () => {
+    assert.ok(DomainPanel);
+    const firstTransport: StorefrontApiTransport = async <T,>(
+      path: string,
+      method = 'GET',
+    ) => {
+      if (method === 'DELETE') return undefined;
+      if (path.endsWith('/status')) {
+        return domainStatus({
+          attempt_id: null,
+          application_status: 'active',
+          action: 'none',
+          ownership_status: 'verified',
+          routing_dns_status: 'verified',
+          provider_hostname_status: 'active',
+          ssl_status: 'active',
+          https_status: 'verified',
+          cleanup_records: domainStatus().expected_records,
+        }) as T;
+      }
+      throw new Error(`Unexpected request ${method} ${path}`);
+    };
+    const secondTransport: StorefrontApiTransport = async <T,>(
+      path: string,
+      method = 'GET',
+    ) => {
+      if (path.endsWith('/status')) return null as T;
+      throw new Error(`Unexpected request ${method} ${path}`);
+    };
+    const user = userEvent.setup({ document: window.document });
+    const view = render(
+      React.createElement(DomainPanel, {
+        transport: firstTransport,
+        canActivate: true,
+        platformUrl: '/storefront/first-owner',
+        isPublished: true,
+      }),
+    );
+
+    await user.click(await view.findByRole('button', { name: /disconnect domain/i }));
+    await user.click(view.getByRole('button', { name: /^disconnect domain$/i, hidden: false }));
+    await waitFor(() => view.getByText(/connection removed from the special wedding/i));
+    view.getByText('events.customer.example');
+
+    view.rerender(
+      React.createElement(DomainPanel, {
+        transport: secondTransport,
+        canActivate: true,
+        platformUrl: '/storefront/second-owner',
+        isPublished: false,
+      }),
+    );
+
+    await waitFor(() => view.getByLabelText(/storefront domain/i));
+    assert.equal(view.queryByText(/connection removed from the special wedding/i), null);
+    assert.equal(view.queryByText('events.customer.example'), null);
   });
 
   it('closes the confirmation and focuses a visible error when disconnect fails', async () => {
