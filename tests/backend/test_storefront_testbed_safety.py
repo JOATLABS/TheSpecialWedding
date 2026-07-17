@@ -12,7 +12,7 @@ import pytest
 import testbed.cleanup_storefront_frontend_lifecycle_state as cleanup_module
 from testbed.verify_storefront_frontend_lifecycle import (
     PROVIDER_DISABLED_ENVIRONMENT_KEYS,
-    _assert_disabled_provider_fence,
+    _assert_provider_fence,
     _disabled_provider_child_environment,
 )
 from testbed.storefront_testbed_safety import (
@@ -43,9 +43,9 @@ def test_deterministic_child_environment_blanks_every_external_provider_key():
 
     assert child["SAFE_TESTBED_VALUE"] == "retained"
     assert all(child[name] == "" for name in PROVIDER_DISABLED_ENVIRONMENT_KEYS)
-    _assert_disabled_provider_fence(child)
+    _assert_provider_fence(child)
     with pytest.raises(RuntimeError, match="provider credentials/configuration"):
-        _assert_disabled_provider_fence(inherited)
+        _assert_provider_fence(inherited)
 
 
 @pytest.mark.parametrize(

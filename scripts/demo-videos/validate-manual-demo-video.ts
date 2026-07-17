@@ -424,6 +424,18 @@ function gitExitStatus(args: readonly string[]): number {
   return result.status;
 }
 
+const GENERATED_DEMO_VIDEO_ARTIFACT_PREFIXES = [
+  'output/demo-videos/',
+  'public/demo-videos/',
+] as const;
+
+function isGeneratedDemoVideoArtifact(gitPath: string): boolean {
+  const normalized = gitPath.replace(/^"|"$/g, '');
+  return GENERATED_DEMO_VIDEO_ARTIFACT_PREFIXES.some((prefix) =>
+    normalized.startsWith(prefix),
+  );
+}
+
 function assertAvailableCleanRecordingBuild(
   receiptCommit: string,
   options: ManualDemoVideoValidationOptions,
@@ -439,9 +451,14 @@ function assertAvailableCleanRecordingBuild(
   if (options.allowStagedPublicationChanges) {
     const unstagedChanges = gitOutput(['diff', '--name-only']);
     const untrackedChanges = gitOutput(['ls-files', '--others', '--exclude-standard']);
-    if (unstagedChanges || untrackedChanges) {
+    const offending = [...unstagedChanges.split('\n'), ...untrackedChanges.split('\n')]
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+      .filter((entry) => !isGeneratedDemoVideoArtifact(entry));
+    if (offending.length > 0) {
       throw new Error(
-        'Staged publication validation rejects unstaged or untracked changes.',
+        'Staged publication validation rejects unstaged or untracked changes outside '
+          + `generated demo-video artifacts: ${offending.sort().join(', ')}`,
       );
     }
   } else {
