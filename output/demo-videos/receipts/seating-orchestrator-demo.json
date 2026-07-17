@@ -40,7 +40,7 @@
       "action": "Use the in-product Zoom out control twice until it reads 70%, then inspect the seeded room outline, fixtures, and six positioned tables.",
       "visibleResult": "The seating canvas uses the seeded venue plan instead of an empty generic grid.",
       "atSeconds": 30,
-      "frameSha256": "a1ede1f6311c38fe785c93275636a3887cd892d3e385b7da853e68f324765cf9"
+      "framePerceptualHash": "b228171509181918"
     },
     {
       "label": "Existing guest assignments",
@@ -48,7 +48,7 @@
       "action": "Inspect the populated tables and existing guest assignments without moving anyone.",
       "visibleResult": "Seeded guests are already connected to named tables with capacity context visible.",
       "atSeconds": 45,
-      "frameSha256": "b200ef318fcd081e2b9355f29a3cfd3efdddfb5c59eb435b8ee1c20dd5340be1"
+      "framePerceptualHash": "a228171509181918"
     },
     {
       "label": "Day-of readiness checks",
@@ -56,7 +56,7 @@
       "action": "Inspect the assigned totals, floor-plan status, and visible layout checks beside the canvas.",
       "visibleResult": "The planner can review seating readiness and venue-layout warnings without changing the chart.",
       "atSeconds": 55,
-      "frameSha256": "a6a2d56beb8aafbabd4d44ffcf43c4d2591477e18b43fec87a235ce05b28e791"
+      "framePerceptualHash": "2217551918191909"
     }
   ],
   "review": {

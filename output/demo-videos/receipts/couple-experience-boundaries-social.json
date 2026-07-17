@@ -41,7 +41,7 @@
       "action": "Hold on the planner-controlled couple intake form and its structured questions.",
       "visibleResult": "The planner owns the intake workflow and the information requested from the couple.",
       "atSeconds": 2,
-      "frameSha256": "76c27bdcb579ea1641363edc5d680471b3704ac0aecf2211c21679eaad50e797"
+      "framePerceptualHash": "a026272723232080"
     },
     {
       "label": "Boundaries couple form",
@@ -49,7 +49,7 @@
       "action": "Switch manually to the couple portal Forms view and inspect the assigned intake.",
       "visibleResult": "The couple sees its assigned questionnaire and completion context without planner editing controls.",
       "atSeconds": 7,
-      "frameSha256": "1f1b2003757c36b7e1f6ef822121e49da79aad7328d680d3101eca588debc885"
+      "framePerceptualHash": "e030308000200080"
     },
     {
       "label": "Boundaries couple payments",
@@ -57,7 +57,7 @@
       "action": "Open Payments and hold on the package and schedule without using payment controls.",
       "visibleResult": "The couple sees shared payment context while planner finance operations remain private.",
       "atSeconds": 13,
-      "frameSha256": "d8dbbf7e3fab44e1341099484d292fbee7236040201c5a2c8656469baf39a7b9"
+      "framePerceptualHash": "e020152520202080"
     }
   ],
   "review": {

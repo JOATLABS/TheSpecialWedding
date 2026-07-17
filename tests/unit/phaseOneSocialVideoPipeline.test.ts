@@ -66,7 +66,7 @@ function withFrameProof(checkpoints: readonly DemoCaptureCheckpoint[]) {
   return checkpoints.map((checkpoint, index) => ({
     ...checkpoint,
     atSeconds: 2 + index * 6,
-    frameSha256: 'a'.repeat(64),
+    framePerceptualHash: '0'.repeat(16),
   }));
 }
 
