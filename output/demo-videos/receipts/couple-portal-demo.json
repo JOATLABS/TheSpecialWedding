@@ -40,7 +40,7 @@
       "action": "Inspect the wedding overview, guest snapshot, countdown, and guided next steps.",
       "visibleResult": "Sofia & Daniel see their wedding context and current planning state without planner-only controls.",
       "atSeconds": 5,
-      "frameSha256": "8095e47f91f16ccdaad59c85b1aa276c541652923dd04fbdc81437f43549fecd"
+      "framePerceptualHash": "6061212934243429"
     },
     {
       "label": "Shared timeline",
@@ -48,7 +48,7 @@
       "action": "Open Timeline, expand Traditional Ceremony, and inspect its three-item run of show.",
       "visibleResult": "The couple-facing timeline shows the ceremony time, venue, and seeded processional, cocktail-hour, and reception-door cues.",
       "atSeconds": 24,
-      "frameSha256": "bbaaf9f420ebfa7ee40c1425bb9623d56beea31a0f2da6f29c972dd88af35345"
+      "framePerceptualHash": "6027213131391d00"
     },
     {
       "label": "Payment schedule",
@@ -56,7 +56,7 @@
       "action": "Open Payments and inspect the package and payment schedule without using payment controls.",
       "visibleResult": "The couple can see the current contract and payment context while planner operations remain private.",
       "atSeconds": 38,
-      "frameSha256": "a4e2788e46c3a3476013834a77623e1b19b14164361f2232477ef7afa68b4a8d"
+      "framePerceptualHash": "6021352520600080"
     },
     {
       "label": "Assigned forms",
@@ -64,7 +64,7 @@
       "action": "Open Forms and inspect the seeded questionnaire and its current completion status.",
       "visibleResult": "The assigned questionnaire is visible inside the same guided wedding portal.",
       "atSeconds": 49,
-      "frameSha256": "1c4fff15d867f5b54a0ce70faec2262caa483def38fe7550b9a5d932fb58abcc"
+      "framePerceptualHash": "6030308000000080"
     }
   ],
   "review": {

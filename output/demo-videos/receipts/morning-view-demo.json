@@ -40,7 +40,7 @@
       "action": "Scan both active wedding cards and compare their setup progress.",
       "visibleResult": "Sofia & Daniel and Avery & Morgan show populated status, progress, and next-action context.",
       "atSeconds": 6,
-      "frameSha256": "be1c4fac53d37c01681a200a8333c35e195c4eef5d9cc888c4a6c675eb2ceaff"
+      "framePerceptualHash": "383615302069393c"
     },
     {
       "label": "Attention signals",
@@ -48,7 +48,7 @@
       "action": "Review the visible RSVP, recent-activity, and pending-form signals across the portfolio.",
       "visibleResult": "The seeded RSVP and setup signals distinguish the wedding that is moving from the one that needs attention.",
       "atSeconds": 24,
-      "frameSha256": "99a5db36f101424fd23f42ad00b430cadcd01d62375551126f4cfdb51d3587e1"
+      "framePerceptualHash": "1030213c3b240f02"
     },
     {
       "label": "Incomplete wedding guidance",
@@ -56,7 +56,7 @@
       "action": "Open Avery & Morgan's source record and inspect its incomplete setup guidance.",
       "visibleResult": "The source record identifies the remaining setup work without changing wedding data.",
       "atSeconds": 48,
-      "frameSha256": "d8b3f7cb06550682e42c908ded4c6d2eef1a2747e3e1c0d7ac8808c3a0d3feee"
+      "framePerceptualHash": "808199b980000000"
     }
   ],
   "review": {

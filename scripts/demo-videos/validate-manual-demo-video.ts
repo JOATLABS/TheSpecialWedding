@@ -20,7 +20,7 @@ type ManualCaptureBounds = {
 
 export type ManualCaptureCheckpoint = DemoCaptureCheckpoint & {
   atSeconds: number;
-  frameSha256: string;
+  framePerceptualHash: string;
 };
 
 type ManualRuntimeBuildIdentity = {
@@ -181,6 +181,113 @@ export function extractVideoFrameSha256(artifactPath: string, atSeconds: number)
   }
 
   return sha256(result.stdout);
+}
+
+// Perceptual frame identity (version-stable across ffmpeg builds).
+//
+// A byte-exact SHA-256 of a re-encoded frame is brittle: different ffmpeg
+// versions decode + PNG-encode the same visual frame to different bytes, so the
+// hash only matches on the exact machine that generated it. Instead we compute a
+// difference hash (dHash) from a deterministic tiny grayscale grid. ffmpeg
+// downscales the decoded frame to a fixed 9x8 gray raster; dHash then compares
+// adjacent horizontal pixels, producing a 64-bit fingerprint that is stable
+// across ffmpeg versions while still detecting a swapped or corrupted frame.
+const PERCEPTUAL_HASH_WIDTH = 9;
+const PERCEPTUAL_HASH_HEIGHT = 8;
+const PERCEPTUAL_HASH_HEX_LENGTH = 16; // 64 bits
+// Maximum tolerated Hamming distance between the stored and observed dHash.
+// 0 would re-introduce brittleness; a small window absorbs sub-perceptual
+// decoder/scaler rounding differences while still rejecting a different frame
+// (unrelated frames differ by ~20-32 bits on a 64-bit dHash).
+export const PERCEPTUAL_HASH_MAX_HAMMING_DISTANCE = 6;
+
+export function extractVideoFramePerceptualHash(
+  artifactPath: string,
+  atSeconds: number,
+): string {
+  const result = spawnSync(
+    'ffmpeg',
+    [
+      '-v',
+      'error',
+      '-i',
+      artifactPath,
+      '-ss',
+      atSeconds.toFixed(3),
+      '-map',
+      '0:v:0',
+      '-frames:v',
+      '1',
+      '-vf',
+      `scale=${PERCEPTUAL_HASH_WIDTH}:${PERCEPTUAL_HASH_HEIGHT}:flags=area,format=gray`,
+      '-f',
+      'rawvideo',
+      '-pix_fmt',
+      'gray',
+      'pipe:1',
+    ],
+    { maxBuffer: 4 * 1024 * 1024 },
+  );
+
+  if (result.error) {
+    throw new Error(`ffmpeg could not extract the reviewed frame: ${result.error.message}`);
+  }
+  if (result.status !== 0 || !Buffer.isBuffer(result.stdout)) {
+    throw new Error(
+      `ffmpeg could not extract the reviewed frame at ${atSeconds.toFixed(3)} seconds.`,
+    );
+  }
+
+  const expectedBytes = PERCEPTUAL_HASH_WIDTH * PERCEPTUAL_HASH_HEIGHT;
+  if (result.stdout.length !== expectedBytes) {
+    throw new Error(
+      `ffmpeg produced an unexpected grayscale raster (${result.stdout.length} of `
+        + `${expectedBytes} bytes) at ${atSeconds.toFixed(3)} seconds.`,
+    );
+  }
+
+  return computeDifferenceHashHex(result.stdout);
+}
+
+function computeDifferenceHashHex(gray: Buffer): string {
+  // Compare each pixel to its right-hand neighbour across the 9-wide grid,
+  // yielding 8x8 = 64 comparison bits.
+  const bits: number[] = [];
+  for (let row = 0; row < PERCEPTUAL_HASH_HEIGHT; row += 1) {
+    for (let col = 0; col < PERCEPTUAL_HASH_WIDTH - 1; col += 1) {
+      const left = gray[row * PERCEPTUAL_HASH_WIDTH + col];
+      const right = gray[row * PERCEPTUAL_HASH_WIDTH + col + 1];
+      bits.push(left > right ? 1 : 0);
+    }
+  }
+
+  let hex = '';
+  for (let nibble = 0; nibble < bits.length; nibble += 4) {
+    const value =
+      (bits[nibble] << 3) | (bits[nibble + 1] << 2) | (bits[nibble + 2] << 1) | bits[nibble + 3];
+    hex += value.toString(16);
+  }
+  return hex.padStart(PERCEPTUAL_HASH_HEX_LENGTH, '0');
+}
+
+export function perceptualHashHammingDistance(a: string, b: string): number {
+  const normalizedA = a.toLowerCase();
+  const normalizedB = b.toLowerCase();
+  if (
+    normalizedA.length !== PERCEPTUAL_HASH_HEX_LENGTH
+    || normalizedB.length !== PERCEPTUAL_HASH_HEX_LENGTH
+  ) {
+    throw new Error('Perceptual hashes must be 16 lowercase hex characters (64 bits).');
+  }
+  let distance = 0;
+  for (let index = 0; index < PERCEPTUAL_HASH_HEX_LENGTH; index += 1) {
+    let xor = parseInt(normalizedA[index], 16) ^ parseInt(normalizedB[index], 16);
+    while (xor > 0) {
+      distance += xor & 1;
+      xor >>= 1;
+    }
+  }
+  return distance;
 }
 
 function probeVideo(artifactPath: string): VideoProbe {
@@ -377,8 +484,10 @@ export function validateManualCaptureCheckpoints(
       throw new Error('Manual capture checkpoint atSeconds values must be strictly increasing.');
     }
     previousAtSeconds = checkpoint.atSeconds;
-    if (!/^[0-9a-f]{64}$/i.test(checkpoint.frameSha256)) {
-      throw new Error(`checkpoints[${index}].frameSha256 must be a full SHA-256 checksum.`);
+    if (!/^[0-9a-f]{16}$/i.test(checkpoint.framePerceptualHash)) {
+      throw new Error(
+        `checkpoints[${index}].framePerceptualHash must be a 16-character (64-bit) hex dHash.`,
+      );
     }
   }
 
@@ -590,10 +699,20 @@ function validateCheckpointFrames(
       );
     }
 
-    const extractedFrameSha256 = extractVideoFrameSha256(artifactPath, checkpoint.atSeconds);
-    if (extractedFrameSha256 !== checkpoint.frameSha256.toLowerCase()) {
+    const observedPerceptualHash = extractVideoFramePerceptualHash(
+      artifactPath,
+      checkpoint.atSeconds,
+    );
+    const distance = perceptualHashHammingDistance(
+      observedPerceptualHash,
+      checkpoint.framePerceptualHash,
+    );
+    if (distance > PERCEPTUAL_HASH_MAX_HAMMING_DISTANCE) {
       throw new Error(
-        `Reviewed frame checksum does not match the MP4 at ${checkpoint.atSeconds.toFixed(3)} seconds (${checkpoint.label}).`,
+        `Reviewed frame no longer matches the MP4 at ${checkpoint.atSeconds.toFixed(3)} `
+          + `seconds (${checkpoint.label}): perceptual distance ${distance} exceeds `
+          + `${PERCEPTUAL_HASH_MAX_HAMMING_DISTANCE} (observed ${observedPerceptualHash}, `
+          + `reviewed ${checkpoint.framePerceptualHash.toLowerCase()}).`,
       );
     }
   }
