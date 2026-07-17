@@ -51,20 +51,31 @@ class TestContracts:
 
 @pytest.mark.integration
 class TestPackages:
-    """Test package management."""
+    """Test package management.
 
-    def test_list_packages(self, api):
-        """List packages."""
+    Packages are scoped to a planner owner (fix c0c0b3ab "scope packages to
+    planner owner"): every package route resolves an owner id via
+    get_owner_identity and fails closed with 403 when the session has no planner
+    owner scope. The integration stack only seeds a root admin, which is
+    intentionally *not* a planner owner, so these routes must fail closed here.
+    The owner-scoped success path (planner/team-member) is covered by the unit
+    suite tests/backend/test_package_owner_scope.py.
+    """
+
+    def test_list_packages_requires_planner_owner_scope(self, api):
+        """Listing packages fails closed for a non-planner (root admin) session."""
         resp = api.get("/admin/packages")
-        assert resp.status_code == 200
+        assert resp.status_code == 403, resp.text
+        assert "owner scope" in resp.text.lower()
 
-    def test_package_stats(self, api):
-        """Get package statistics."""
+    def test_package_stats_requires_planner_owner_scope(self, api):
+        """Package stats fails closed for a non-planner (root admin) session."""
         resp = api.get("/admin/packages/stats")
-        assert resp.status_code == 200
+        assert resp.status_code == 403, resp.text
+        assert "owner scope" in resp.text.lower()
 
-    def test_create_package(self, api):
-        """Create a service package."""
+    def test_create_package_requires_planner_owner_scope(self, api):
+        """Creating a package fails closed for a non-planner (root admin) session."""
         resp = api.post(
             "/admin/packages",
             json={
@@ -80,7 +91,8 @@ class TestPackages:
                 ],
             },
         )
-        assert resp.status_code in (200, 201, 422), f"Create package: {resp.text}"
+        assert resp.status_code == 403, f"Create package: {resp.text}"
+        assert "owner scope" in resp.text.lower()
 
 
 @pytest.mark.integration
