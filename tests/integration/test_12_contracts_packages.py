@@ -75,20 +75,21 @@ class TestPackages:
         assert "owner scope" in resp.text.lower()
 
     def test_create_package_requires_planner_owner_scope(self, api):
-        """Creating a package fails closed for a non-planner (root admin) session."""
+        """Creating a package fails closed for a non-planner (root admin) session.
+
+        The body must satisfy CreatePackageRequest (notably total_amount) so the
+        request reaches the owner-scope dependency instead of failing body
+        validation with 422 first.
+        """
         resp = api.post(
             "/admin/packages",
             json={
                 "name": "Gold Photography Package",
                 "description": "8 hours of coverage, 500 edited photos",
-                "price": 4500.00,
-                "service_type": "photography",
-                "features": [
-                    "8 hours coverage",
-                    "500 edited photos",
-                    "Online gallery",
-                    "Engagement session",
-                ],
+                "total_amount": 4500.00,
+                "currency": "usd",
+                "services": [],
+                "payment_schedule": [],
             },
         )
         assert resp.status_code == 403, f"Create package: {resp.text}"
