@@ -196,10 +196,12 @@ const PERCEPTUAL_HASH_WIDTH = 9;
 const PERCEPTUAL_HASH_HEIGHT = 8;
 const PERCEPTUAL_HASH_HEX_LENGTH = 16; // 64 bits
 // Maximum tolerated Hamming distance between the stored and observed dHash.
-// 0 would re-introduce brittleness; a small window absorbs sub-perceptual
-// decoder/scaler rounding differences while still rejecting a different frame
-// (unrelated frames differ by ~20-32 bits on a 64-bit dHash).
-export const PERCEPTUAL_HASH_MAX_HAMMING_DISTANCE = 6;
+// 0 would re-introduce brittleness; this window absorbs cross-ffmpeg-version
+// decoder/scaler rounding differences (observed up to 7 bits between the
+// capture host and the CI runner on identical frames) while staying well below
+// the ~20-32 bit separation that distinguishes unrelated frames on a 64-bit
+// dHash. It fingerprints frame identity, not exact pixels.
+export const PERCEPTUAL_HASH_MAX_HAMMING_DISTANCE = 10;
 
 export function extractVideoFramePerceptualHash(
   artifactPath: string,
