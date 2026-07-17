@@ -26,7 +26,7 @@ function withFrameProof(checkpoints: readonly DemoCaptureCheckpoint[]) {
   return checkpoints.map((checkpoint, index) => ({
     ...checkpoint,
     atSeconds: 5 + index * 10,
-    frameSha256: 'a'.repeat(64),
+    framePerceptualHash: '0'.repeat(16),
   }));
 }
 
@@ -56,7 +56,7 @@ describe('demo capture execution', () => {
     assert.match(validator, /ffprobe/);
     assert.match(validator, /ffmpeg/);
     assert.match(validator, /image2pipe/);
-    assert.match(validator, /frameSha256/);
+    assert.match(validator, /framePerceptualHash/);
     assert.match(validator, /atSeconds/);
     assert.match(validator, /runtimeBuildIdentity/);
     assert.match(validator, /meta\[name="tsw-app-build-commit"\]/);
@@ -189,7 +189,7 @@ describe('demo capture execution', () => {
           action: 'Open a page.',
           visibleResult: 'A page is visible.',
           atSeconds: 5 + index * 10,
-          frameSha256: 'a'.repeat(64),
+          framePerceptualHash: '0'.repeat(16),
         })),
         HERO_DEMO_VIDEO,
       ),
@@ -248,11 +248,11 @@ describe('demo capture execution', () => {
     assert.throws(
       () => validateManualCaptureCheckpoints(
         receiptCheckpoints.map((checkpoint, index) => index === 2
-          ? { ...checkpoint, frameSha256: 'not-a-frame-hash' }
+          ? { ...checkpoint, framePerceptualHash: 'not-a-frame-hash' }
           : checkpoint),
         HERO_DEMO_VIDEO,
       ),
-      /frameSha256 must be a full SHA-256 checksum/,
+      /framePerceptualHash must be a 16-character \(64-bit\) hex dHash/,
     );
   });
 

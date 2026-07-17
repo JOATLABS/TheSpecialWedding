@@ -40,7 +40,7 @@
       "action": "Inspect the seeded story, theme, and privacy settings without changing any fields.",
       "visibleResult": "The planner source record contains the public story, branding, and guest-access configuration.",
       "atSeconds": 6,
-      "frameSha256": "27730fd560795a3860be238d23fd2fc7f23785f6c51f31c527cc33a4157d1274"
+      "framePerceptualHash": "81819197a72b3531"
     },
     {
       "label": "Public wedding view",
@@ -48,7 +48,7 @@
       "action": "Manually switch to the prepared public microsite and inspect its story, venue, and event-day presentation.",
       "visibleResult": "The guest-facing microsite presents Sofia & Daniel with the seeded story, approved venue, and event-day details.",
       "atSeconds": 20,
-      "frameSha256": "14f795af6ee1917c482624255166275148fee27851a7a9da883ea0324175ebca"
+      "framePerceptualHash": "4677772b37ab9fb7"
     },
     {
       "label": "Public gallery",
@@ -56,7 +56,7 @@
       "action": "Open the public gallery and inspect the approved seeded wedding images.",
       "visibleResult": "The gallery shows the approved ceremony, portrait, and reception imagery without planner controls.",
       "atSeconds": 36,
-      "frameSha256": "8de5756c8e9c7cbd09cd680c9846d9a5f7709657a7634ed4664b22b315384d0d"
+      "framePerceptualHash": "0c0ce8d030000001"
     }
   ],
   "review": {

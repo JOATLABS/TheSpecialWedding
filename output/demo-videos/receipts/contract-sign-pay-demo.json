@@ -40,7 +40,7 @@
       "action": "Inspect the existing agreement, vendor, amount, status, and key dates in the planner workspace.",
       "visibleResult": "The seeded Photography Services Agreement shows its vendor, value, status, version, and dates.",
       "atSeconds": 5,
-      "frameSha256": "dcd08da76c96aa6eb894178099bdb6337d4b151c520f1cf83988715f2e0b5a93"
+      "framePerceptualHash": "9a9babab83010080"
     },
     {
       "label": "Contract canvas output",
@@ -48,7 +48,7 @@
       "action": "Open Contract Sections and inspect the rendered scope, clauses, and terms in the read-only view.",
       "visibleResult": "The read-only contract canvas presents the seeded agreement sections and legal terms.",
       "atSeconds": 17,
-      "frameSha256": "18c6f57ff1406f408b9cf63929c33125e4f2482777107e916513a9b190d027f0"
+      "framePerceptualHash": "9a9b938797170d80"
     },
     {
       "label": "Vendor payment milestones",
@@ -56,7 +56,7 @@
       "action": "Open Payments and inspect the seeded deposit and remaining contract milestones.",
       "visibleResult": "Payment Milestones shows the existing schedule and status without initiating a transaction.",
       "atSeconds": 29,
-      "frameSha256": "12f798973672a150c5024e1ea991dfe491562fab00c3749e599f80f2857abbd6"
+      "framePerceptualHash": "9a9b919181000080"
     },
     {
       "label": "Wedding budget context",
@@ -64,7 +64,7 @@
       "action": "Return to the wedding budget and inspect the recorded vendor spend and category totals.",
       "visibleResult": "The budget shows populated planned-versus-actual vendor spend for the same wedding workspace.",
       "atSeconds": 42,
-      "frameSha256": "6ac91dbe1c1dbf2a83b3a73a1fa3117b123ba8b0607f6a0686b672a30dc9462b"
+      "framePerceptualHash": "a030393615112119"
     }
   ],
   "review": {

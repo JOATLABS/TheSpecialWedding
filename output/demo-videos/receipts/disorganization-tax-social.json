@@ -17,7 +17,12 @@
     "width": 1440,
     "height": 900,
     "durationSeconds": 25,
-    "captureBounds": { "x": 0, "y": 0, "width": 1440, "height": 900 }
+    "captureBounds": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 900
+    }
   },
   "operatorAttestation": {
     "browserWasVisible": true,
@@ -36,7 +41,7 @@
       "action": "Scan the two populated wedding cards and their attention signals.",
       "visibleResult": "Morning View distinguishes two active weddings through current progress and next-action context.",
       "atSeconds": 3,
-      "frameSha256": "58d9651871ca54da4f3fffc22fc1b9bf67a7956bd56d3ddbdb73d481c7430d2c"
+      "framePerceptualHash": "f836151020213830"
     },
     {
       "label": "Disorganization conversation queue",
@@ -44,7 +49,7 @@
       "action": "Open the seeded planner inbox and hold on the wedding-scoped conversation queue.",
       "visibleResult": "Guest, couple, and support conversations appear in one planner-owned operational inbox.",
       "atSeconds": 10,
-      "frameSha256": "645af14ed6ea4dc867538781634f39c2ee7f51efa14c4ea6e05f13a4240b8de0"
+      "framePerceptualHash": "f07138383aaa0888"
     },
     {
       "label": "Disorganization budget context",
@@ -52,7 +57,7 @@
       "action": "Open the Sofia & Daniel budget and hold on category spend and remaining funds.",
       "visibleResult": "The populated wedding budget keeps current spend and remaining funds visible in the same workspace.",
       "atSeconds": 18,
-      "frameSha256": "0d8aacd4e980b8b990709e0e6ffee534887373685c4b922d12a439a31ae1142d"
+      "framePerceptualHash": "f030383611112119"
     }
   ],
   "review": {

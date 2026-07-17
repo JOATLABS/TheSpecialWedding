@@ -41,7 +41,7 @@
       "action": "Open Events and hold on The Glasshouse at Riverbend at 4:00 PM.",
       "visibleResult": "The planner-owned event record shows The Glasshouse at Riverbend and the 4:00 PM start.",
       "atSeconds": 4,
-      "frameSha256": "9c935ce75b6c3f5e5bef2639b0e8d8f9d5adebb9376fa851f094bd24db745a08"
+      "framePerceptualHash": "a08191b597170300"
     },
     {
       "label": "Connection guest view",
@@ -49,7 +49,7 @@
       "action": "Switch manually to the public schedule and hold on the same venue and time.",
       "visibleResult": "The public wedding schedule shows the Glasshouse venue and 4:00 PM without planner controls.",
       "atSeconds": 12,
-      "frameSha256": "344d172e0af520ab38466e6c22aae6c0c97d7f255fad57bd6e262706198db779"
+      "framePerceptualHash": "4f0f078797979696"
     },
     {
       "label": "Connection couple view",
@@ -57,7 +57,7 @@
       "action": "Switch manually to the couple Timeline and hold on the matching event plan.",
       "visibleResult": "The couple Timeline presents the same Glasshouse event inside the guided couple workspace.",
       "atSeconds": 22,
-      "frameSha256": "27fe59cf66a27307117a33495e7b69d260c4526a4b6507e56a4f308d53c03d12"
+      "framePerceptualHash": "e027258000200080"
     }
   ],
   "review": {
