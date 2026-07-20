@@ -24,7 +24,7 @@ import React from 'react';
  */
 
 export type BrandLockupVariant = 'full' | 'mark' | 'icon';
-export type BrandLockupSurface = 'dark' | 'light';
+export type BrandLockupSurface = 'dark' | 'light' | 'theme';
 export type BrandLockupSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 
 export interface BrandLockupProps {
@@ -102,6 +102,26 @@ const PALETTES: Record<BrandLockupSurface, SurfacePalette> = {
     taglineText: 'rgba(92, 47, 52, 0.85)',
     taglineLink: '#3D1418',
     taglineUnderline: 'rgba(61, 20, 24, 0.55)',
+  },
+  theme: {
+    ringStops: [
+      { offset: '0%', color: 'var(--theme-secondary-light, #ead79b)' },
+      { offset: '35%', color: 'var(--theme-secondary, #d4af37)' },
+      { offset: '70%', color: 'var(--theme-accent, #c8847e)' },
+      { offset: '100%', color: 'var(--theme-primary, #1e3a5f)' },
+    ],
+    heartStops: [
+      { offset: '0%', color: 'var(--theme-accent-light, #e7b9b5)' },
+      { offset: '55%', color: 'var(--theme-accent, #c8847e)' },
+      { offset: '100%', color: 'var(--theme-primary, #1e3a5f)' },
+    ],
+    heartOutline: 'var(--theme-primary, #1e3a5f)',
+    shadowColor: 'rgba(0, 0, 0, 0.8)',
+    wordmarkEyebrow: 'var(--theme-secondary-light, #ead79b)',
+    wordmarkHeadline: 'var(--theme-accent-light, #e7b9b5)',
+    taglineText: 'rgba(255, 255, 255, 0.55)',
+    taglineLink: 'rgba(255, 255, 255, 0.9)',
+    taglineUnderline: 'rgba(255, 255, 255, 0.35)',
   },
 };
 

@@ -14,6 +14,8 @@ import {
   type PublicGalleryAccess,
 } from '@/utils/publicGallery';
 import { fetchGuestSessionAccess } from '@/utils/guestAccess';
+import { PublicMicrositeFooter } from '@/components/landing-page/PublicMicrositeFooter';
+import { useTheme } from '@/hooks/useTheme';
 
 export default function GalleryPage() {
   const contextWedding = useContext(WeddingContext);
@@ -32,6 +34,8 @@ export default function GalleryPage() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const galleryRequestRef = useRef<AbortController | null>(null);
+
+  useTheme(wedding || contextWedding);
 
   const handleGuestVerified = (
     weddingData: any,
@@ -316,6 +320,8 @@ export default function GalleryPage() {
           Back to Wedding Page
         </a>
       </div>
+
+      <PublicMicrositeFooter />
     </div>
   );
 }
