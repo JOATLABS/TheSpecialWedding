@@ -21,6 +21,7 @@ import GuestHelpRequestModal from '@/components/GuestHelpRequestModal';
 import { resolveMediaUrl } from '@/utils/mediaUrl';
 import { RSVPHelpBlock } from '@/components/landing-page/RSVPHelpBlock';
 import { LandingGalleryPreview } from '@/components/landing-page/LandingGalleryPreview';
+import { PublicMicrositeFooter } from '@/components/landing-page/PublicMicrositeFooter';
 
 /* ═══════════════════════════════════════════════════════════
    Wedding page content — rendered as primary + lightweight clone
@@ -35,6 +36,8 @@ interface WeddingContentProps {
   onGalleryRetry?: () => void;
   onCelebrateClick?: () => void;
   onRequestHelp?: () => void;
+  onPrivacy?: () => void;
+  onTerms?: () => void;
 }
 
 function WeddingContent({
@@ -46,6 +49,8 @@ function WeddingContent({
   onGalleryRetry,
   onCelebrateClick,
   onRequestHelp,
+  onPrivacy,
+  onTerms,
 }: WeddingContentProps) {
   return (
     <div className="relative z-10">
@@ -253,17 +258,11 @@ function WeddingContent({
         </GlassCard>
       </SectionWrapper>
 
-      {/* Minimal footer — acts as a bridge back to the cloned hero */}
-      <footer className="bg-black bg-opacity-40 backdrop-blur-sm text-white py-6 mt-12">
-        <div className="max-w-4xl mx-auto px-6 text-center">
-          <div className="mb-3">
-            <p className="text-lg font-semibold">TheSpecialWedding</p>
-          </div>
-          <div className="text-sm text-gray-300">
-            <p>Developed by JOAT LABS</p>
-          </div>
-        </div>
-      </footer>
+      <PublicMicrositeFooter
+        isClone={isClone}
+        onPrivacy={onPrivacy}
+        onTerms={onTerms}
+      />
     </div>
   );
 }
@@ -341,28 +340,12 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({
                 setShowRSVPLinkModal(true);
               }}
               onRequestHelp={() => setShowGuestHelpModal(true)}
+              onPrivacy={() => setShowPrivacy(true)}
+              onTerms={() => setShowTerms(true)}
             />
           )}
         </InfiniteScrollWrapper>
       </main>
-
-      {/* ── Legal footer links (accessible via nav, rendered once) ── */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 pointer-events-none">
-        <div className="flex justify-center gap-6 pb-3 pointer-events-auto">
-          <button
-            onClick={() => setShowTerms(true)}
-            className="text-[10px] uppercase tracking-[0.3em] text-white/40 hover:text-white/70 transition-colors bg-black/20 backdrop-blur-sm px-3 py-1 rounded-full"
-          >
-            Terms
-          </button>
-          <button
-            onClick={() => setShowPrivacy(true)}
-            className="text-[10px] uppercase tracking-[0.3em] text-white/40 hover:text-white/70 transition-colors bg-black/20 backdrop-blur-sm px-3 py-1 rounded-full"
-          >
-            Privacy
-          </button>
-        </div>
-      </div>
 
       {/* ── Modals — rendered once, outside scroll wrapper ── */}
       <TermsModal
