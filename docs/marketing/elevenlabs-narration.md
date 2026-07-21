@@ -32,7 +32,7 @@ workflow changes.
 | Setting | Env var | Flag | Default |
 | --- | --- | --- | --- |
 | API key | `ELEVEN_LABS_API_KEY` (or `ELEVENLABS_API_KEY`) | — | required unless `--dry-run` |
-| Voice | `ELEVENLABS_VOICE_ID` | `--voice-id` | `21m00Tcm4TlvDq8ikWAM` (“Rachel”, ElevenLabs premade US female) |
+| Voice | `ELEVENLABS_VOICE_ID` | `--voice-id` | `My4OXDyai4TWzZlKmUyw` (the founder’s cloned voice; premade US-female fallback: “Rachel”, `21m00Tcm4TlvDq8ikWAM`) |
 | Model | `ELEVENLABS_MODEL_ID` | `--model` | `eleven_multilingual_v2` |
 | Output format | `ELEVENLABS_OUTPUT_FORMAT` | `--output-format` | `mp3_44100_128` |
 | Speaking speed | `ELEVENLABS_SPEED` | `--speed` | provider default (accepted range 0.7–1.2) |
