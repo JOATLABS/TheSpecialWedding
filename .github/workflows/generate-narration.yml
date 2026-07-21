@@ -1,13 +1,20 @@
 # =============================================================================
 # ElevenLabs narration refresh
 # Manually dispatched. Regenerates demo-video narration masters from the
-# voiceover scripts in app/data/demoVideos.ts, optionally re-renders the
-# affected exports, and opens a draft PR carrying the regenerated artifacts.
+# voiceover scripts in app/data/demoVideos.ts, re-renders the affected
+# exports, and opens a draft PR carrying the regenerated artifacts.
 #
-# The PR is intentionally NOT deployable on its own: the published-video build
-# gate keeps failing until a human watches the new exports and refreshes the
-# playback-approval receipts with `npm run demo:approve-playback`. That final
-# approval commit is pushed by the reviewer, which also triggers CI on the PR.
+# With render disabled, the regenerated masters are only uploaded as a
+# workflow artifact for listening — no branch or PR is created, because a
+# committed narration master that disagrees with the rendered exports would
+# pass the published-video gate (it binds approvals to the exports, and only
+# requires that narration exists).
+#
+# The render-mode PR is intentionally NOT deployable on its own: the
+# published-video build gate keeps failing until a human watches the new
+# exports and refreshes the playback-approval receipts with
+# `npm run demo:approve-playback`. That final approval commit is pushed by
+# the reviewer, which also triggers CI on the PR.
 # =============================================================================
 name: Generate Narration (ElevenLabs)
 
@@ -23,7 +30,7 @@ on:
         required: false
         default: ""
       render:
-        description: "Re-render exports/thumbnails after regenerating narration"
+        description: "Re-render exports and open the refresh PR; off = only upload a narration preview artifact"
         type: boolean
         default: true
       dry_run:
@@ -116,8 +123,21 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Upload narration preview instead of a PR (render disabled)
+        if: ${{ github.event.inputs.dry_run != 'true' && steps.changes.outputs.changed == 'true' && github.event.inputs.render != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: narration-preview-${{ github.run_number }}
+          path: output/demo-videos/narration/
+          retention-days: 14
+
+      - name: Explain the preview-only outcome
+        if: ${{ github.event.inputs.dry_run != 'true' && steps.changes.outputs.changed == 'true' && github.event.inputs.render != 'true' }}
+        run: |
+          echo "Render was disabled, so the regenerated masters were uploaded as the narration-preview artifact instead of a PR. Committing narration without re-rendered exports would let the canonical master disagree with the audio users hear while still passing the published-video gate. Re-dispatch with render enabled to produce the refresh PR." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Commit regenerated narration to a refresh branch
-        if: ${{ github.event.inputs.dry_run != 'true' && steps.changes.outputs.changed == 'true' }}
+        if: ${{ github.event.inputs.dry_run != 'true' && steps.changes.outputs.changed == 'true' && github.event.inputs.render == 'true' }}
         id: branch
         run: |
           set -euo pipefail
@@ -133,6 +153,7 @@ jobs:
 
       - name: Re-render exports with the new narration
         if: ${{ github.event.inputs.dry_run != 'true' && steps.changes.outputs.changed == 'true' && github.event.inputs.render == 'true' }}
+        id: render
         run: |
           set -euo pipefail
           npx remotion browser ensure || true
@@ -150,7 +171,7 @@ jobs:
           fi
 
       - name: Push branch and open draft PR
-        if: ${{ github.event.inputs.dry_run != 'true' && steps.changes.outputs.changed == 'true' }}
+        if: ${{ github.event.inputs.dry_run != 'true' && steps.changes.outputs.changed == 'true' && github.event.inputs.render == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -161,8 +182,8 @@ jobs:
           cat > /tmp/pr-body.md <<'EOF'
           ## ElevenLabs narration refresh
 
-          Regenerated narration masters (and re-rendered exports when enabled) from the
-          voiceover scripts in `app/data/demoVideos.ts`. Per-demo provenance lives in
+          Regenerated narration masters and re-rendered exports from the voiceover
+          scripts in `app/data/demoVideos.ts`. Per-demo provenance lives in
           `output/demo-videos/narration/*.narration.json`.
 
           ## Required human review before this can ship
