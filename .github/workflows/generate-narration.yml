@@ -1,0 +1,185 @@
+# =============================================================================
+# ElevenLabs narration refresh
+# Manually dispatched. Regenerates demo-video narration masters from the
+# voiceover scripts in app/data/demoVideos.ts, optionally re-renders the
+# affected exports, and opens a draft PR carrying the regenerated artifacts.
+#
+# The PR is intentionally NOT deployable on its own: the published-video build
+# gate keeps failing until a human watches the new exports and refreshes the
+# playback-approval receipts with `npm run demo:approve-playback`. That final
+# approval commit is pushed by the reviewer, which also triggers CI on the PR.
+# =============================================================================
+name: Generate Narration (ElevenLabs)
+
+on:
+  workflow_dispatch:
+    inputs:
+      demos:
+        description: 'Space-separated demo ids, or "all-published"'
+        required: false
+        default: "all-published"
+      voice_id:
+        description: "ElevenLabs voice id override (blank = repo default voice)"
+        required: false
+        default: ""
+      render:
+        description: "Re-render exports/thumbnails after regenerating narration"
+        type: boolean
+        default: true
+      dry_run:
+        description: "Print the narration plan without calling ElevenLabs"
+        type: boolean
+        default: false
+
+concurrency:
+  group: narration-refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  narrate:
+    name: Regenerate narration
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Receipt validation during rendering verifies capture-commit
+          # ancestry, which needs full history.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install ffmpeg (assembly + probing)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -n 1
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve target demos
+        id: targets
+        run: |
+          set -euo pipefail
+          DEMOS_INPUT="${{ github.event.inputs.demos }}"
+          if [ -z "$DEMOS_INPUT" ] || [ "$DEMOS_INPUT" = "all-published" ]; then
+            NARRATE_ARGS="--all-published"
+            DEMO_IDS="$(npx tsx scripts/demo-videos/generate-narration.ts --list-published | tr '\n' ' ')"
+          else
+            NARRATE_ARGS=""
+            for id in $DEMOS_INPUT; do
+              NARRATE_ARGS="$NARRATE_ARGS --demo $id"
+            done
+            DEMO_IDS="$DEMOS_INPUT"
+          fi
+          echo "narrate_args=$NARRATE_ARGS" >> "$GITHUB_OUTPUT"
+          echo "demo_ids=$DEMO_IDS" >> "$GITHUB_OUTPUT"
+          echo "Target demos: $DEMO_IDS"
+
+      - name: Generate narration with ElevenLabs
+        env:
+          ELEVEN_LABS_API_KEY: ${{ secrets.ELEVEN_LABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ github.event.inputs.voice_id }}
+        run: |
+          set -euo pipefail
+          EXTRA=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            EXTRA="--dry-run"
+          fi
+          npm run demo:narrate -- ${{ steps.targets.outputs.narrate_args }} $EXTRA
+
+      - name: Stop after dry run
+        if: ${{ github.event.inputs.dry_run == 'true' }}
+        run: echo "Dry run complete — no artifacts were generated." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Detect narration changes
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        id: changes
+        run: |
+          set -euo pipefail
+          git add -Af output/demo-videos/narration
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Narration masters already match the current scripts and voice; nothing to publish." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit regenerated narration to a refresh branch
+        if: ${{ github.event.inputs.dry_run != 'true' && steps.changes.outputs.changed == 'true' }}
+        id: branch
+        run: |
+          set -euo pipefail
+          BRANCH="chore/elevenlabs-narration-${{ github.run_number }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git commit -m "Regenerate demo narration with ElevenLabs"
+          echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Re-render exports with the new narration
+        if: ${{ github.event.inputs.dry_run != 'true' && steps.changes.outputs.changed == 'true' && github.event.inputs.render == 'true' }}
+        run: |
+          set -euo pipefail
+          npx remotion browser ensure || true
+          for id in ${{ steps.targets.outputs.demo_ids }}; do
+            echo "::group::Render $id"
+            npm run demo:render -- --demo "$id"
+            echo "::endgroup::"
+          done
+          git add -Af public/demo-videos/exports public/demo-videos/thumbnails \
+            public/demo-videos/captions public/demo-videos/transcripts
+          if git diff --cached --quiet; then
+            echo "Renders produced no changes." >> "$GITHUB_STEP_SUMMARY"
+          else
+            git commit -m "Re-render demo videos with regenerated narration"
+          fi
+
+      - name: Push branch and open draft PR
+        if: ${{ github.event.inputs.dry_run != 'true' && steps.changes.outputs.changed == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BRANCH="${{ steps.branch.outputs.name }}"
+          git push -u origin "$BRANCH"
+
+          cat > /tmp/pr-body.md <<'EOF'
+          ## ElevenLabs narration refresh
+
+          Regenerated narration masters (and re-rendered exports when enabled) from the
+          voiceover scripts in `app/data/demoVideos.ts`. Per-demo provenance lives in
+          `output/demo-videos/narration/*.narration.json`.
+
+          ## Required human review before this can ship
+
+          The published-video build gate intentionally fails until the playback-approval
+          receipts are refreshed by a human who watched the new exports:
+
+          1. Check out this branch and watch every re-rendered export at normal speed
+             with narration audible (desktop + mobile for website demos, portrait for
+             social demos).
+          2. Refresh the approvals you actually reviewed:
+             `npm run demo:approve-playback -- --all-published --reviewer "Your Name" --attest-all`
+          3. Commit and push the refreshed receipts to this branch (your push also
+             triggers CI, which this bot-created PR cannot trigger on its own).
+          4. Merge once CI is green; staging deploys automatically from main.
+          EOF
+
+          gh pr create \
+            --draft \
+            --base main \
+            --head "$BRANCH" \
+            --title "Regenerate demo narration with ElevenLabs" \
+            --body-file /tmp/pr-body.md
