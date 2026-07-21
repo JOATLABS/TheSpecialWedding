@@ -769,6 +769,7 @@ export function CustomDomainPanel({
   const observationPollResolveRef = useRef<(() => void) | null>(null);
   const automaticSupportCheckRef = useRef(0);
   const errorFocusTimerRef = useRef<number | null>(null);
+  const disconnectFocusTimerRef = useRef<number | null>(null);
 
   const setCaughtError = useCallback((caught: unknown, fallback: string) => {
     setError(normalizeStorefrontError(caught, fallback));
@@ -904,6 +905,10 @@ export function CustomDomainPanel({
         window.clearTimeout(errorFocusTimerRef.current);
         errorFocusTimerRef.current = null;
       }
+      if (disconnectFocusTimerRef.current !== null) {
+        window.clearTimeout(disconnectFocusTimerRef.current);
+        disconnectFocusTimerRef.current = null;
+      }
     },
     [cancelObservationPoll],
   );
@@ -953,7 +958,13 @@ export function CustomDomainPanel({
 
   const closeDisconnectConfirmation = () => {
     setDisconnectOpen(false);
-    window.setTimeout(() => disconnectTriggerRef.current?.focus(), 0);
+    if (disconnectFocusTimerRef.current !== null) {
+      window.clearTimeout(disconnectFocusTimerRef.current);
+    }
+    disconnectFocusTimerRef.current = window.setTimeout(() => {
+      disconnectFocusTimerRef.current = null;
+      disconnectTriggerRef.current?.focus();
+    }, 0);
   };
 
   const copyValue = useCallback(async (label: string, value: string) => {
