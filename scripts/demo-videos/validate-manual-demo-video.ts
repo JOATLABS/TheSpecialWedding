@@ -540,6 +540,13 @@ const GENERATED_DEMO_VIDEO_ARTIFACT_PREFIXES = [
   'public/demo-videos/',
 ] as const;
 
+// The runbook's publication step stages the allowlist edit together with the
+// generated artifacts before re-running the validators from the staged tree,
+// so this one source path is a sanctioned staged change. Its content is still
+// bound by validation: capture-receipt checkpoints must exactly match the
+// catalog, and the fresh-checkout proof re-runs the gates from committed state.
+const PUBLICATION_ALLOWLIST_PATH = 'app/data/demoVideos.ts';
+
 function isGeneratedDemoVideoArtifact(gitPath: string): boolean {
   const normalized = gitPath.replace(/^"|"$/g, '');
   return GENERATED_DEMO_VIDEO_ARTIFACT_PREFIXES.some((prefix) =>
@@ -570,6 +577,21 @@ function assertAvailableCleanRecordingBuild(
       throw new Error(
         'Staged publication validation rejects unstaged or untracked changes outside '
           + `generated demo-video artifacts: ${offending.sort().join(', ')}`,
+      );
+    }
+    // The index must get the same scrutiny: staged source edits would otherwise
+    // flow into rendered media while remaining invisible to the checks above,
+    // breaking the bond between the receipt commit and what actually rendered.
+    const stagedChanges = gitOutput(['diff', '--cached', '--name-only']);
+    const offendingStaged = stagedChanges.split('\n')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+      .filter((entry) => !isGeneratedDemoVideoArtifact(entry))
+      .filter((entry) => entry.replace(/^"|"$/g, '') !== PUBLICATION_ALLOWLIST_PATH);
+    if (offendingStaged.length > 0) {
+      throw new Error(
+        'Staged publication validation rejects staged changes outside generated demo-video '
+          + `artifacts and the publication allowlist: ${offendingStaged.sort().join(', ')}`,
       );
     }
   } else {
