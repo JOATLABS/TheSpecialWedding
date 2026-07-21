@@ -41,6 +41,8 @@
     "demo:validate-playback": "tsx scripts/demo-videos/validate-demo-video-playback-approval.ts",
     "demo:seed": "sh -c 'if [ -x .venv.nosync/bin/python ]; then PYTHON_BIN=.venv.nosync/bin/python; else PYTHON_BIN=python3; fi; TESTBED_NON_INTERACTIVE=1 exec \"$PYTHON_BIN\" testbed/verify_marketing_capture_workspace.py \"$@\"' --",
     "demo:auth-state": "tsx scripts/demo-videos/create-demo-storage-state.ts",
+    "demo:narrate": "tsx scripts/demo-videos/generate-narration.ts",
+    "demo:approve-playback": "tsx scripts/demo-videos/refresh-playback-approval.ts",
     "demo:render": "tsx scripts/demo-videos/render-demo-video.ts",
     "demo:verify-routes": "tsx scripts/demo-videos/verify-demo-routes.ts",
     "demo:remotion:studio": "remotion studio remotion/index.ts",

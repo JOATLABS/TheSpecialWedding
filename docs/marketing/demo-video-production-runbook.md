@@ -421,9 +421,19 @@ The validator does not launch or control a browser. It rejects scripted-capture 
 
 ## 6. Narration And Post-Production
 
-Record narration separately from the screen. Do not capture the microphone or system audio in the raw browser take. Read the `voiceover` lines in `app/data/demoVideos.ts` exactly, with the final line landing in the five-second CTA. Reject narration with room noise, clipped words, synthetic route names, local-server language, or claims the footage does not prove.
+Narration is produced separately from the screen. Do not capture the microphone or system audio in the raw browser take.
 
-Normalize the approved narration master into the canonical ignored path:
+The canonical narration path is the ElevenLabs generator (see `docs/marketing/elevenlabs-narration.md`):
+
+```bash
+ELEVEN_LABS_API_KEY=... npm run demo:narrate -- --demo planner-command-center-walkthrough
+```
+
+It reads the `voiceover` lines in `app/data/demoVideos.ts` exactly, aligns each line with its caption cue against the validated take duration, applies the normalization chain below, writes the canonical master plus a `{demoId}.narration.json` provenance manifest, and fails closed when a line cannot fit its timing window. Voice, model, and speed are configurable (`ELEVENLABS_VOICE_ID` for a cloned voice). Listen to every generated master before rendering and reject any take with mispronounced product names, wrong emphasis, or claims the footage does not prove.
+
+A human-recorded narration master remains acceptable. Read the `voiceover` lines exactly, with the final line landing in the five-second CTA. Reject narration with room noise, clipped words, synthetic route names, local-server language, or claims the footage does not prove.
+
+For a human-recorded master, normalize the approved source into the canonical ignored path:
 
 ```bash
 mkdir -p output/demo-videos/narration
