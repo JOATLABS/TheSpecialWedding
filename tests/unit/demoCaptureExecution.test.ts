@@ -87,7 +87,10 @@ describe('demo capture execution', () => {
     );
 
     const renderer = source('scripts/demo-videos/render-demo-video.ts');
-    assert.match(renderer, /validateManualDemoVideo\(receiptPath\)/);
+    assert.match(
+      renderer,
+      /validateManualDemoVideo\(receiptPath, \{\s*allowStagedPublicationChanges: demo\.status === 'published',\s*\}\)/,
+    );
     assert.match(renderer, /Manual demo renders do not accept --raw or --duration-seconds overrides/);
     assert.match(renderer, /requirement\.narrationPath/);
     assert.match(renderer, /requirement\.renderNarrationInputPath/);

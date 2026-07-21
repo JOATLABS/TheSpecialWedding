@@ -181,18 +181,11 @@ export const APPROVED_PUBLIC_DEMO_VIDEO_PUBLICATIONS: Readonly<
     captionUrl: '/demo-videos/captions/contract-sign-pay-demo.vtt',
     transcriptUrl: '/demo-videos/transcripts/contract-sign-pay-demo.md',
   },
-  'vendor-directory-crm-demo': {
-    approval: 'approved',
-    captureReceiptPath: 'output/demo-videos/receipts/vendor-directory-crm-demo.json',
-    playbackApprovalPath: 'output/demo-videos/playback-approvals/vendor-directory-crm-demo.json',
-    appBuildCommit: '2e2033e8e2fb3bfe7a06bfa4ea9f4f78e0533ab3',
-    appBuildLabel: 'Phase 1 planner OS product proof',
-    recordedAt: '2026-07-15T04:42:09Z',
-    assetUrl: '/demo-videos/exports/vendor-directory-crm-demo-16x9.mp4',
-    thumbnailUrl: '/demo-videos/thumbnails/vendor-directory-crm-demo-16x9.png',
-    captionUrl: '/demo-videos/captions/vendor-directory-crm-demo.vtt',
-    transcriptUrl: '/demo-videos/transcripts/vendor-directory-crm-demo.md',
-  },
+  // vendor-directory-crm-demo was intentionally removed from this allowlist on
+  // 2026-07-21: the approved take led with the public marketing directory (an
+  // ad-acquisition surface) instead of the planner-owned vendor CRM the demo
+  // sells. The rescripted planner-first story requires a fresh manual retake
+  // before it can be re-approved here.
 });
 
 export const APPROVED_PHASE_ONE_SOCIAL_VIDEO_PUBLICATIONS: Readonly<
@@ -1036,79 +1029,71 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     id: 'vendor-directory-crm-demo',
     featureId: 'vendor-network',
     title: 'Vendor Directory & CRM',
-    audience: 'Planners deciding whether vendor discovery and private vendor records can live together.',
+    audience: 'Planners who want their studio’s vendor relationships, contracts, and payment status in one private workspace.',
     durationSeconds: 60,
     priority: 'phase-one',
     status: 'scripted',
     routePlan: [
-      '/vendors',
-      '/vendors/67c400000000000000000001',
       '/admin/vendors',
     ],
     captureCheckpoints: [
       {
-        label: 'Public vendor directory',
-        route: '/vendors',
-        action: 'Search the public directory for Luna Meridian and inspect the single seeded matching result.',
-        visibleResult:
-          'The public directory shows one approved Luna Meridian Photography listing without requiring a vendor account.',
-      },
-      {
-        label: 'Public vendor profile',
-        route: '/vendors/67c400000000000000000001',
-        action: 'Open Luna Meridian Photography and inspect its services, price range, and contact details.',
-        visibleResult:
-          'The public profile presents the seeded vendor specialties and discovery information.',
-      },
-      {
-        label: 'Planner vendor overview',
+        label: 'Vendor management overview',
         route: '/admin/vendors',
-        action: 'Manually switch to the prepared planner tab and inspect vendor, contract, paid, and outstanding totals.',
+        action: 'Open Planner Vendor Management on the Overview tab and inspect vendor, contract, paid, and outstanding totals.',
         visibleResult:
-          'The planner overview summarizes the seeded vendor book and its contract and payment status.',
+          'The planner overview summarizes the seeded vendor book with its contract and payment totals.',
       },
       {
         label: 'Private vendor directory',
         route: '/admin/vendors',
-        action: 'Open Vendor Directory and inspect the saved studio contacts and wedding counts.',
+        action: 'Open the Vendor Directory tab and inspect the saved studio contacts, categories, and wedding counts.',
         visibleResult:
-          'The planner-owned directory shows seeded contacts and private operational context.',
+          'The planner-owned directory shows the seeded contacts, including Luna Meridian Photography, with private operational context.',
       },
       {
         label: 'Planner contract context',
         route: '/admin/vendors',
-        action: 'Open Contracts and inspect the existing agreement amounts and statuses.',
+        action: 'Open the Contracts tab and inspect the existing agreement amounts and statuses.',
         visibleResult:
-          'The seeded agreements remain attached to the planner vendor workspace with visible status and value.',
+          'The seeded agreements stay attached to the planner vendor workspace with visible status and value.',
+      },
+      {
+        label: 'Vendor payment status',
+        route: '/admin/vendors',
+        action: 'Open the Payments tab and inspect the recorded milestone history without opening any transaction controls.',
+        visibleResult:
+          'The planner sees paid and outstanding context for the same vendor book without initiating a transaction.',
       },
     ],
     seedRequirements: [
-      'Public vendor directory with mixed categories and one uniquely searchable Luna Meridian Photography profile.',
-      'Planner vendor workspace with saved contacts, contract status, and payment totals.',
+      'Planner vendor workspace seeded with six saved contacts including Luna Meridian Photography, four agreements with mixed statuses, and populated paid and outstanding totals.',
     ],
     script: [
       {
         timestamp: '0:00-0:15',
-        action: 'Filter the public vendor directory and open the seeded photography profile.',
-        voiceover: 'Vendor discovery can start in the public directory without leaving the platform.',
+        action: 'Open Planner Vendor Management and inspect the vendor, contract, paid, and outstanding totals.',
+        voiceover: 'This is the planner’s private vendor CRM: the studio’s vendor book, contracts, and payment context in one workspace.',
       },
       {
         timestamp: '0:15-0:40',
-        action: 'Manually switch to the prepared planner tab, pause on Vendor Management, then inspect the private directory.',
-        voiceover: 'The planner workspace adds private contact, wedding, contract, and payment context to public discovery.',
+        action: 'Open the Vendor Directory tab and inspect the saved studio contacts and their wedding history.',
+        voiceover: 'The directory is the planner’s own working list — the vendors a studio rebooks wedding after wedding, with contact context that stays with the business.',
       },
       {
         timestamp: '0:40-1:00',
-        action: 'Open Contracts and inspect the existing agreement amounts and statuses.',
-        voiceover: 'Agreements and payment context stay attached to the planner-owned vendor record instead of disappearing into email.',
+        action: 'Open the Contracts tab, then the Payments tab, and inspect the agreement amounts and recorded status.',
+        voiceover: 'Every vendor stays connected to its agreements and payment status, so the relationship and the money live in one planner-owned record.',
       },
     ],
     recordingChecklist: [
-      'Prepare two clean tabs before recording: the public vendor directory first and the authenticated planner Vendor Management workspace second.',
-      'Enter presentation mode with the address bar hidden before recording, then manually switch to the prepared planner tab after the public profile.',
+      'Prepare one authenticated planner tab on Vendor Management with the address bar hidden before recording.',
       ...defaultChecklist,
+      'Stay inside the planner workspace for the entire take; the public marketing directory is not part of this story.',
+      'Do not open vendor edit, delete, or transaction controls; this recording is status inspection only.',
     ],
-    captureNotes: 'Make the public-directory and planner-CRM distinction visible through the prepared manual tab switch; do not expose a local address, open a vendor portal, or imply the vendor has planner access.',
+    captureNotes:
+      'Tell the story entirely inside the planner-owned Vendor Management workspace: overview totals, the private directory, contracts, then payments. The public marketing directory is intentionally excluded — it is an advertising acquisition surface, not the planner CRM this demo proves.',
   },
   {
     id: 'knowledge-base-demo',

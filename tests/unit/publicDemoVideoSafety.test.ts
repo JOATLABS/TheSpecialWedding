@@ -33,6 +33,9 @@ const RETAKE_REQUIRED_DEMO_IDS = [
   'team-permissions-audit-demo',
 ] as const;
 
+// vendor-directory-crm-demo is intentionally absent: its approved take led
+// with the public marketing directory instead of the planner vendor CRM, so it
+// was unpublished pending a rescripted planner-first retake.
 const APPROVED_PHASE_ONE_WEBSITE_DEMO_IDS = [
   'planner-command-center-walkthrough',
   'morning-view-demo',
@@ -41,7 +44,6 @@ const APPROVED_PHASE_ONE_WEBSITE_DEMO_IDS = [
   'guest-management-demo',
   'seating-orchestrator-demo',
   'contract-sign-pay-demo',
-  'vendor-directory-crm-demo',
 ] as const;
 
 const approvedPhaseOneWebsiteIds = new Set<string>(APPROVED_PHASE_ONE_WEBSITE_DEMO_IDS);

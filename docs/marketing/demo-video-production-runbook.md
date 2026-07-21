@@ -37,6 +37,7 @@ Generated media and receipts are gitignored. Every complete demo has these commo
 
 - raw manual recording: `output/demo-videos/raw/{demoId}.mp4`
 - narration master: `output/demo-videos/narration/{demoId}.m4a`
+- narration provenance manifest (generated narration only): `output/demo-videos/narration/{demoId}.narration.json`
 - manual receipt: `output/demo-videos/receipts/{demoId}.json`
 - human playback approval: `output/demo-videos/playback-approvals/{demoId}.json`
 - WebVTT captions: `public/demo-videos/captions/{demoId}.vtt`
@@ -421,9 +422,19 @@ The validator does not launch or control a browser. It rejects scripted-capture 
 
 ## 6. Narration And Post-Production
 
-Record narration separately from the screen. Do not capture the microphone or system audio in the raw browser take. Read the `voiceover` lines in `app/data/demoVideos.ts` exactly, with the final line landing in the five-second CTA. Reject narration with room noise, clipped words, synthetic route names, local-server language, or claims the footage does not prove.
+Narration is produced separately from the screen. Do not capture the microphone or system audio in the raw browser take.
 
-Normalize the approved narration master into the canonical ignored path:
+The canonical narration path is the ElevenLabs generator (see `docs/marketing/elevenlabs-narration.md`):
+
+```bash
+ELEVEN_LABS_API_KEY=... npm run demo:narrate -- --demo planner-command-center-walkthrough
+```
+
+It reads the `voiceover` lines in `app/data/demoVideos.ts` exactly, aligns each line with its caption cue against the validated take duration, applies the normalization chain below, writes the canonical master plus a `{demoId}.narration.json` provenance manifest, and fails closed when a line cannot fit its timing window. Voice, model, and speed are configurable (`ELEVENLABS_VOICE_ID` for a cloned voice). Listen to every generated master before rendering and reject any take with mispronounced product names, wrong emphasis, or claims the footage does not prove.
+
+A human-recorded narration master remains acceptable. Read the `voiceover` lines exactly, with the final line landing in the five-second CTA. Reject narration with room noise, clipped words, synthetic route names, local-server language, or claims the footage does not prove.
+
+For a human-recorded master, normalize the approved source into the canonical ignored path:
 
 ```bash
 mkdir -p output/demo-videos/narration
@@ -625,6 +636,7 @@ format=16x9 # use 9x16 for a social story
 git add -f \
   "output/demo-videos/raw/${demo_id}.mp4" \
   "output/demo-videos/narration/${demo_id}.m4a" \
+  "output/demo-videos/narration/${demo_id}.narration.json" \
   "output/demo-videos/receipts/${demo_id}.json" \
   "output/demo-videos/playback-approvals/${demo_id}.json" \
   "public/demo-videos/exports/${demo_id}-${format}.mp4" \
@@ -634,6 +646,6 @@ git add -f \
 git add app/data/demoVideos.ts
 ```
 
-Do not force-track Remotion props or either `.render-input` staging file. Re-run the exact demo's playback and asset validators from the staged tree, then prove the same commands in a fresh checkout before deployment. The raw and narration evidence remain outside the deployable `public/` tree but must be retained so the publication validator can reproduce the receipt checks. CDN publication is not a documentation-only substitution: the current allowlist intentionally accepts only canonical same-origin paths, so CDN support requires an explicit code and validator change before any URL is attached.
+For a human-recorded master there is no narration manifest; drop that one line from the command instead of creating a placeholder. Do not force-track Remotion props or either `.render-input` staging file. Re-run the exact demo's playback and asset validators from the staged tree, then prove the same commands in a fresh checkout before deployment. The raw and narration evidence remain outside the deployable `public/` tree but must be retained so the publication validator can reproduce the receipt checks. CDN publication is not a documentation-only substitution: the current allowlist intentionally accepts only canonical same-origin paths, so CDN support requires an explicit code and validator change before any URL is attached.
 
 If any item fails, keep the public manifest in its retake-safe `recording` state.
