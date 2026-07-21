@@ -19,12 +19,13 @@ import {
 
 // ElevenLabs defaults. Every identifier can be overridden by flag or env so a
 // provider-side rename is a configuration change, not a code change.
-// - Voice: "Rachel" (ElevenLabs premade, American English, female). Replace
-//   with a cloned voice by setting ELEVENLABS_VOICE_ID or --voice-id.
+// - Voice: the founder's cloned narration voice ("Emmanuel Akinwale" in the
+//   account's VoiceLab). Override with ELEVENLABS_VOICE_ID or --voice-id;
+//   the premade US-female fallback is Rachel, 21m00Tcm4TlvDq8ikWAM.
 // - Model: eleven_multilingual_v2 is the stable high-quality tier.
 // - Output: mp3_44100_128 is the highest MP3 rate available on the Starter
 //   plan; mp3_44100_192 requires Creator or above.
-const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
+const DEFAULT_VOICE_ID = 'My4OXDyai4TWzZlKmUyw';
 const DEFAULT_MODEL_ID = 'eleven_multilingual_v2';
 const DEFAULT_OUTPUT_FORMAT = 'mp3_44100_128';
 const ELEVENLABS_API_BASE_URL = 'https://api.elevenlabs.io';

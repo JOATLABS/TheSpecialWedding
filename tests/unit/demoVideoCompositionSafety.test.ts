@@ -85,6 +85,19 @@ describe('demo video marketing composition safety', () => {
     assert.doesNotMatch(source, /fontFamily:\s*['"]Inter,/);
   });
 
+  it('keeps the music bed looping under absolute-time ducking instead of loop-relative volume', () => {
+    assert.match(source, /<Audio\s+src=\{staticFile\(props\.musicPath\)\}/);
+    assert.match(source, /loop/);
+    assert.match(source, /musicVolumeAtSeconds\(frame \/ fps, props\.narrationWindows \?\? \[\]\)/);
+    assert.doesNotMatch(
+      source,
+      /volume=\{\s*\(/,
+      'music volume must be computed from the composition frame, not a loop-relative callback',
+    );
+    assert.match(rendererSource, /readNarrationWindows/);
+    assert.match(rendererSource, /no-music/);
+  });
+
   it('renders an explicit narration track instead of silently discarding the approved script', () => {
     assert.match(source, /import\s*\{[^}]*Audio[^}]*Video[^}]*\}\s*from\s*['"]@remotion\/media['"]/);
     assert.match(source, /<Audio\s+src=\{staticFile\(props\.narrationPath\)\}/);
