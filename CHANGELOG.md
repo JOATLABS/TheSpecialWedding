@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-21 — Narration defaults to the founder's cloned voice; Actions PR-policy fallback
+
+- Made the founder's ElevenLabs voice clone the default narration voice after the premade-voice batch was reviewed and rejected as still sounding synthetic; `ELEVENLABS_VOICE_ID`/`--voice-id` still override, and the premade US-female voice remains documented as the fallback.
+- The narration workflow no longer fails an otherwise-complete run when repository policy forbids GitHub Actions from creating pull requests: the regenerated artifacts are already pushed on the refresh branch, so the run now succeeds with a warning and a compare link in the run summary instead. The first production run hit exactly this — all 11 masters synthesized and all 11 exports re-rendered, with only the final `gh pr create` refused by the repo setting.
+- Verified with silence-map analysis (ffmpeg silencedetect, old vs new masters) that the pauses reported in review of the generated narration are the by-design caption-aligned gaps between voiceover lines — the new masters' gaps are equal to or shorter than the previous production masters' — not a synthesis or assembly defect. Open follow-ups for perceived quality: an optional music bed with narration ducking in the Remotion composition, and denser voiceover scripts.
+
 ## 2026-07-21 — Demo narration is generated with ElevenLabs instead of low-grade TTS
 
 - Root-caused the robotic walkthrough narration to the source masters (22.05 kHz mono AAC at ~30 kbps from an old TTS engine), not to Remotion, which performs no speech synthesis and faithfully rendered the poor input. Added `npm run demo:narrate` (`scripts/demo-videos/generate-narration.ts`): per-line ElevenLabs synthesis with request-stitching continuity, caption-aligned sequential placement that fails closed on window drift or end-of-video overrun, the runbook's exact normalization chain into the canonical 44.1 kHz AAC 192k master path, and a committed `{demoId}.narration.json` provenance manifest that doubles as a regeneration cache. Voice (default: ElevenLabs premade US female "Rachel"), model, output format, and speed are env/flag configurable, so a cloned planner voice is a one-variable change.
