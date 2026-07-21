@@ -7,6 +7,7 @@ import {
   useVideoConfig,
 } from 'remotion';
 
+import { musicVolumeAtSeconds } from './musicDucking';
 import type { DemoVideoRemotionProps } from './types';
 
 const OUTRO_DURATION_SECONDS = 5;
@@ -64,6 +65,17 @@ export function DemoVideoComposition(props: DemoVideoRemotionProps) {
       }}
     >
       {props.narrationPath ? <Audio src={staticFile(props.narrationPath)} /> : null}
+
+      {props.musicPath ? (
+        <Audio
+          src={staticFile(props.musicPath)}
+          loop
+          // Computed from the composition frame, not a volume callback: with
+          // `loop` the callback frame restarts every loop iteration, while
+          // ducking windows are absolute video timestamps.
+          volume={musicVolumeAtSeconds(frame / fps, props.narrationWindows ?? [])}
+        />
+      ) : null}
 
       {isVertical ? (
         <div

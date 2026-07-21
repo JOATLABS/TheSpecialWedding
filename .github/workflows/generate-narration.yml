@@ -201,9 +201,26 @@ jobs:
           4. Merge once CI is green; staging deploys automatically from main.
           EOF
 
-          gh pr create \
+          # Repos can forbid Actions from creating pull requests
+          # (Settings → Actions → General → workflow permissions). The branch
+          # is already pushed either way, so fall back to a compare link
+          # instead of failing a run whose artifacts are complete.
+          if gh pr create \
             --draft \
             --base main \
             --head "$BRANCH" \
             --title "Regenerate demo narration with ElevenLabs" \
-            --body-file /tmp/pr-body.md
+            --body-file /tmp/pr-body.md; then
+            echo "Opened draft PR for $BRANCH." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::GitHub Actions may not create pull requests in this repository. The regenerated artifacts are pushed on $BRANCH — open the PR manually."
+            {
+              echo "## Narration refresh is pushed, PR must be opened manually"
+              echo ""
+              echo "This repository does not allow GitHub Actions to create pull requests."
+              echo "All regenerated artifacts are on \`$BRANCH\`:"
+              echo ""
+              echo "https://github.com/${{ github.repository }}/compare/main...$BRANCH?expand=1"
+              cat /tmp/pr-body.md
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

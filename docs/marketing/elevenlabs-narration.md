@@ -32,7 +32,7 @@ workflow changes.
 | Setting | Env var | Flag | Default |
 | --- | --- | --- | --- |
 | API key | `ELEVEN_LABS_API_KEY` (or `ELEVENLABS_API_KEY`) | — | required unless `--dry-run` |
-| Voice | `ELEVENLABS_VOICE_ID` | `--voice-id` | `21m00Tcm4TlvDq8ikWAM` (“Rachel”, ElevenLabs premade US female) |
+| Voice | `ELEVENLABS_VOICE_ID` | `--voice-id` | `My4OXDyai4TWzZlKmUyw` (the founder’s cloned voice; premade US-female fallback: “Rachel”, `21m00Tcm4TlvDq8ikWAM`) |
 | Model | `ELEVENLABS_MODEL_ID` | `--model` | `eleven_multilingual_v2` |
 | Output format | `ELEVENLABS_OUTPUT_FORMAT` | `--output-format` | `mp3_44100_128` |
 | Speaking speed | `ELEVENLABS_SPEED` | `--speed` | provider default (accepted range 0.7–1.2) |
@@ -76,6 +76,19 @@ the fix being a shorter voiceover line or a higher `--speed`.
 
 `ffmpeg`/`ffprobe` must be on `PATH` (they already are in CI and in the
 capture-host runbook environment).
+
+## Music bed
+
+Renders include a quiet Afrobeat-style elevator bed
+(`public/demo-videos/music/afrobeat-elevator-bed.m4a`) that loops for the full
+video and automatically ducks while narration plays. The ducking windows come
+from each demo's `.narration.json` manifest, so the music follows the actually
+synthesized speech; a human-recorded master (no manifest) gets the bed at a
+constant low level. The track is synthesized deterministically by
+`npm run demo:music` (`scripts/demo-videos/generate-music-bed.ts`) — no
+third-party audio, so the license lives in this repository. Pass `--no-music`
+to `demo:render` to render without the bed; levels live as constants in
+`remotion/musicDucking.ts` (base and ducked volume, ramp, and lead time).
 
 ## Shipping the regenerated audio
 
