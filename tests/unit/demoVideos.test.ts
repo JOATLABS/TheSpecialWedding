@@ -72,8 +72,7 @@ describe('demo video manifest', () => {
         '/admin/budget?wedding_id=wedding_marketing_capture_sofia_daniel',
       ],
       'vendor-directory-crm-demo': [
-        '/vendors',
-        '/vendors/67c400000000000000000001',
+        '/admin/vendors',
         '/admin/vendors',
         '/admin/vendors',
         '/admin/vendors',
@@ -110,17 +109,25 @@ describe('demo video manifest', () => {
       `${vendorDemo.script.map((step) => step.action).join(' ')} ${vendorDemo.script.map((step) => step.voiceover).join(' ')}`,
       /vendor portal|vendors? can collaborate through scoped portals/i,
     );
-    const publicVendorCheckpoint = vendorDemo.captureCheckpoints?.find(
-      (checkpoint) => checkpoint.label === 'Public vendor directory',
+    // The vendor CRM story lives entirely in the planner workspace. The public
+    // marketing directory is an ad-acquisition surface and must never stand in
+    // for the planner's private vendor directory again.
+    assert.equal(
+      vendorDemo.routePlan.every((route) => route.startsWith('/admin/vendors')),
+      true,
+      'vendor demo must not leave the planner vendor workspace',
     );
-    const publicVendorProfileCheckpoint = vendorDemo.captureCheckpoints?.find(
-      (checkpoint) => checkpoint.label === 'Public vendor profile',
+    assert.equal(
+      vendorDemo.captureCheckpoints?.some((checkpoint) => checkpoint.route.startsWith('/vendors')),
+      false,
+      'vendor demo must not present the public marketing directory',
     );
-    assert.ok(publicVendorCheckpoint);
-    assert.ok(publicVendorProfileCheckpoint);
-    assert.match(publicVendorCheckpoint.action, /Luna Meridian/);
-    assert.doesNotMatch(publicVendorCheckpoint.action, /by Photography/i);
-    assert.match(publicVendorProfileCheckpoint.action, /Luna Meridian Photography/);
+    const privateDirectoryCheckpoint = vendorDemo.captureCheckpoints?.find(
+      (checkpoint) => checkpoint.label === 'Private vendor directory',
+    );
+    assert.ok(privateDirectoryCheckpoint);
+    assert.match(privateDirectoryCheckpoint.visibleResult, /Luna Meridian Photography/);
+    assert.match(privateDirectoryCheckpoint.visibleResult, /planner-owned/i);
 
     const vendorContractFeature = MARKETING_FEATURES.find((feature) => feature.id === 'book-the-client');
     const vendorContractDemo = phaseOneDemos.find((demo) => demo.id === 'contract-sign-pay-demo');
@@ -193,9 +200,10 @@ describe('demo video manifest', () => {
     assert.match(joinedCopy(guestManagement), /Priya Shah/i);
     assert.match(joinedCopy(guestManagement), /Vegetarian/i);
     assert.match(joinedCopy(seating), /70%/i);
-    assert.match(joinedCopy(vendorDemo), /prepared planner tab/i);
-    assert.match(joinedCopy(vendorDemo), /manually switch/i);
+    assert.match(joinedCopy(vendorDemo), /authenticated planner tab/i);
+    assert.match(joinedCopy(vendorDemo), /planner-owned/i);
     assert.match(joinedCopy(vendorDemo), /address bar.*hidden|hidden.*address bar/i);
+    assert.doesNotMatch(joinedCopy(vendorDemo), /public directory|marketing directory as|discovery can start/i);
   });
 
   it('keeps scripted clips useful before final recordings are attached', () => {
