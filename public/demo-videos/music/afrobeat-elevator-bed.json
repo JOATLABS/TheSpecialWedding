@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "generator": "scripts/demo-videos/generate-music-bed.ts",
+  "style": "afrobeat-elevator",
+  "bpm": 102,
+  "bars": 8,
+  "loopSeconds": 18.824,
+  "sampleRate": 44100,
+  "masteredLoudnessLufs": -20,
+  "license": "Synthesized from code in this repository; no third-party audio.",
+  "outputSha256": "48fbcc182ca38c58b64c9c35b1edd4e85c5f40b91d5ea8817c650d37a601efcc"
+}

@@ -458,7 +458,7 @@ npm run demo:render -- \
   --receipt output/demo-videos/receipts/planner-command-center-walkthrough.json
 ```
 
-The renderer fails closed when narration is missing and probes the finished MP4 to ensure it contains an audio stream. It uses the exact raw recording duration, fills the 16:9 canvas height with the 16:10 product window, preserves the complete window with `contain`, writes accessible WebVTT captions beside the video instead of burning them over product controls, and fades to the activation CTA for the final five seconds.
+The renderer fails closed when narration is missing and probes the finished MP4 to ensure it contains an audio stream. Renders also mix in the repo's synthesized Afrobeat elevator bed (`public/demo-videos/music/afrobeat-elevator-bed.m4a`), ducked under narration via the generated-narration manifest; pass `--no-music` to render without it. It uses the exact raw recording duration, fills the 16:9 canvas height with the 16:10 product window, preserves the complete window with `contain`, writes accessible WebVTT captions beside the video instead of burning them over product controls, and fades to the activation CTA for the final five seconds.
 
 Only after one social story's manual receipt and narration master exist, render its channel-native portrait format:
 

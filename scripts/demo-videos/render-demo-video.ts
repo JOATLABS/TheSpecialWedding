@@ -10,10 +10,38 @@ import {
   resolveDemoVideoRenderTarget,
   type DemoVideoExportFormat,
 } from '../../app/data/demoVideoProduction';
+import type { NarrationWindow } from '../../remotion/musicDucking';
 import type { DemoVideoRemotionProps } from '../../remotion/types';
 import { buildWebVttForDemo } from './captions';
 import { getNumberValue, getRequiredValue, parseCliArgs, resolveFromRepo } from './cli';
 import { validateManualDemoVideo } from './validate-manual-demo-video';
+
+const MUSIC_BED_STATIC_PATH = 'demo-videos/music/afrobeat-elevator-bed.m4a';
+
+/**
+ * Ducking follows the synthesized speech recorded in the narration provenance
+ * manifest. A human-recorded master has no manifest, so the bed plays at a
+ * constant low level in that case (no windows).
+ */
+function readNarrationWindows(narrationPath: string): NarrationWindow[] {
+  const manifestFile = resolveFromRepo(narrationPath.replace(/\.m4a$/, '.narration.json'));
+  if (!fs.existsSync(manifestFile)) return [];
+
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+    const segments = (parsed as { segments?: unknown }).segments;
+    if (!Array.isArray(segments)) return [];
+
+    return segments.flatMap((segment) => {
+      const start = (segment as { placedStartSeconds?: unknown }).placedStartSeconds;
+      const end = (segment as { placedEndSeconds?: unknown }).placedEndSeconds;
+      if (typeof start !== 'number' || typeof end !== 'number' || end <= start) return [];
+      return [{ startSeconds: start, endSeconds: end }];
+    });
+  } catch {
+    return [];
+  }
+}
 
 function runRemotion(args: readonly string[]): void {
   const result = spawnSync('npx', ['remotion', ...args], {
@@ -134,12 +162,21 @@ function main(): void {
   const thumbnailFile = resolveFromRepo('public', target.thumbnailPath.replace(/^\//, ''));
   const propsFile = resolveFromRepo('output', 'demo-videos', 'props', `${demoId}-${format}.json`);
 
+  const musicFile = resolveFromRepo('public', MUSIC_BED_STATIC_PATH);
+  const useMusic = !args.flags.has('no-music') && fs.existsSync(musicFile);
+
   const props: DemoVideoRemotionProps = {
     demoId,
     title: demo.title,
     audience: demo.audience,
     rawVideoPath: requirement.renderInputPath,
     narrationPath: requirement.renderNarrationInputPath,
+    ...(useMusic
+      ? {
+          musicPath: MUSIC_BED_STATIC_PATH,
+          narrationWindows: readNarrationWindows(requirement.narrationPath),
+        }
+      : {}),
     format,
     durationSeconds,
     phaseOnePillar: demo.phaseOnePillar,
