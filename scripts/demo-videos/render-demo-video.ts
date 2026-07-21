@@ -102,7 +102,12 @@ function main(): void {
   const receiptPath = args.values.get('receipt')
     ? path.resolve(args.values.get('receipt')!)
     : resolveFromRepo(requirement.captureReceiptPath);
-  const validation = validateManualDemoVideo(receiptPath);
+  // Published demos tolerate in-flight regenerated demo artifacts (a narration
+  // or render refresh touches several tracked outputs before one publication
+  // commit); everything outside those generated paths must still be clean.
+  const validation = validateManualDemoVideo(receiptPath, {
+    allowStagedPublicationChanges: demo.status === 'published',
+  });
   if (validation.demoId !== demoId) {
     throw new Error(`Receipt ${receiptPath} belongs to ${validation.demoId}, not ${demoId}.`);
   }
