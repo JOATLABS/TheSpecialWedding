@@ -63,7 +63,7 @@ ELEVEN_LABS_API_KEY=... npm run demo:narrate -- --all-published
 
 # One demo, with a cloned voice
 ELEVEN_LABS_API_KEY=... npm run demo:narrate -- \
-  --demo vendor-directory-crm-demo \
+  --demo morning-view-demo \
   --voice-id YOUR_CLONED_VOICE_ID
 ```
 
