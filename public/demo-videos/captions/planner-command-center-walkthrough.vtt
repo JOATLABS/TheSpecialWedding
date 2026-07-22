@@ -6,19 +6,19 @@ Start with one wedding in the planner command center, then follow its plan inste
 
 2
 00:00:09.862 --> 00:00:29.587
-The wedding record is the source: The Glasshouse at Riverbend, four o’clock, captured once in the planner plan.
+The wedding record is the source of truth. Open Events and the Traditional ceremony is already specific: The Glasshouse at Riverbend, a four o’clock start — captured once, in the one plan the entire wedding runs on.
 
 3
 00:00:29.587 --> 00:00:39.449
-The guest-facing microsite presents that same venue and time without exposing planner operations.
+The guest-facing microsite shows that same venue and the same four o’clock, presented cleanly with no planner controls.
 
 4
 00:00:39.449 --> 00:00:49.311
-The couple gets a guided view of the same venue and time while planner-only controls remain private.
+The couple’s guided portal carries the identical plan — same venue, same time — while planner-only operations stay private.
 
 5
 00:00:49.311 --> 00:01:04.104
-Back in the planner workspace, isolate the declined list as operational context without reconciling another sheet.
+Back in the planner workspace, one filter isolates every declined guest with group and plus-one context intact — the operational picture, without reconciling another spreadsheet.
 
 6
 00:01:04.104 --> 00:01:13.967

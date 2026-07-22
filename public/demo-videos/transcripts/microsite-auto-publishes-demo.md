@@ -9,16 +9,16 @@ Target duration: 45 seconds
 
 Action: Open the wedding source record and inspect its theme, story, and privacy settings.
 
-Begin with the planner-owned wedding record: its public story, branding, and guest-access settings.
+Begin in the planner-owned wedding record: the public story, the branding, and the guest-access settings all live here, decided by the planner.
 
 ### 0:12-0:28
 
 Action: Manually switch to the prepared public microsite and inspect its story, venue, and event-day presentation.
 
-The guest view presents the seeded public content in a polished experience without planner controls.
+The guest view presents that content as a polished wedding site: the couple’s story, the approved venue, the event-day details — everything a guest needs, and none of the planner’s controls.
 
 ### 0:28-0:45
 
 Action: Open the public gallery and inspect the approved wedding images.
 
-The gallery completes the guest-facing view while the private planning workspace stays out of sight.
+The public gallery completes it with the approved ceremony, portrait, and reception imagery. Guests get a finished experience; the private planning workspace never enters the frame.
