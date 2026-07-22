@@ -1,19 +1,19 @@
 {
   "schemaVersion": 1,
   "demoId": "guest-management-demo",
-  "reviewedAt": "2026-07-15T09:36:41.208Z",
+  "reviewedAt": "2026-07-22T22:43:10.996Z",
   "reviewer": "Emmanuel Akinwale",
   "reviewMethod": "human-normal-speed-playback",
   "sidecars": {
     "captions": {
       "artifactPath": "public/demo-videos/captions/guest-management-demo.vtt",
-      "artifactSha256": "a644dc0fb770eb162b5b1f9097c4e04ac4d45e0c3ddd229378f414cf6edbb8b1",
-      "byteLength": 456
+      "artifactSha256": "e8c196459feea39b6be730be31acd2df12ce949d5e68d316ab9aa52b48fb00a0",
+      "byteLength": 717
     },
     "transcript": {
       "artifactPath": "public/demo-videos/transcripts/guest-management-demo.md",
-      "artifactSha256": "4c66ca6a658f28570e4074a621dc5eac42659264c6b58e8e186212a0a8f94acf",
-      "byteLength": 814
+      "artifactSha256": "3b9f4c9775b1e5bde4be8dff980b0fb3e2d20c5d55454165db53b27aae0f092c",
+      "byteLength": 1075
     }
   },
   "targets": [
@@ -21,11 +21,11 @@
       "format": "web-16x9",
       "video": {
         "artifactPath": "public/demo-videos/exports/guest-management-demo-16x9.mp4",
-        "artifactSha256": "24ac07c6c757255d4210d0d78bbaff2178bbe84bee346e483d77794b4176bcb9",
-        "byteLength": 3853064,
+        "artifactSha256": "e8969a29e83c1fb7fe84e3be035d4fdd5fbb4ff44daf30fec07bec462b9b2e00",
+        "byteLength": 3819639,
         "width": 1920,
         "height": 1080,
-        "durationSeconds": 60.053333,
+        "durationSeconds": 60.053,
         "hasAudio": true
       },
       "thumbnail": {
