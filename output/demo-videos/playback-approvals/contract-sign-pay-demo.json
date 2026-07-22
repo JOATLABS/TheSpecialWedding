@@ -1,19 +1,19 @@
 {
   "schemaVersion": 1,
   "demoId": "contract-sign-pay-demo",
-  "reviewedAt": "2026-07-15T09:36:41.208Z",
+  "reviewedAt": "2026-07-22T22:43:10.996Z",
   "reviewer": "Emmanuel Akinwale",
   "reviewMethod": "human-normal-speed-playback",
   "sidecars": {
     "captions": {
       "artifactPath": "public/demo-videos/captions/contract-sign-pay-demo.vtt",
-      "artifactSha256": "32616e11ee60adb6f6a018c3c3af51f8182f545a7c6648faf9aa22272860766c",
-      "byteLength": 388
+      "artifactSha256": "4cabdb9ae199a85e5758901f8556ee7aa9b0345166531a87532bd067c87f5839",
+      "byteLength": 708
     },
     "transcript": {
       "artifactPath": "public/demo-videos/transcripts/contract-sign-pay-demo.md",
-      "artifactSha256": "306352ceea48aec904bacfe0328d540ba4c50790febc7b0a99e2be0a6fe983d4",
-      "byteLength": 794
+      "artifactSha256": "14a8343f3d47e8a3179be2f6b30b7677fee2b22e6e5d218850be1731f88ff1de",
+      "byteLength": 1114
     }
   },
   "targets": [
@@ -21,8 +21,8 @@
       "format": "web-16x9",
       "video": {
         "artifactPath": "public/demo-videos/exports/contract-sign-pay-demo-16x9.mp4",
-        "artifactSha256": "561069603db906d071a5419224ee4e0deaa7d8bfb92fd813c3bf508fd9ed5ef5",
-        "byteLength": 3087285,
+        "artifactSha256": "648f69412b5db475a997d7e1c4d4ef92a90605331c31b68993c4563d7d706b7b",
+        "byteLength": 3062916,
         "width": 1920,
         "height": 1080,
         "durationSeconds": 50.048,

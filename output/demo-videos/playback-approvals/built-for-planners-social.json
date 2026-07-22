@@ -1,19 +1,19 @@
 {
   "schemaVersion": 1,
   "demoId": "built-for-planners-social",
-  "reviewedAt": "2026-07-15T09:36:41.208Z",
+  "reviewedAt": "2026-07-22T22:45:31.716Z",
   "reviewer": "Emmanuel Akinwale",
   "reviewMethod": "human-normal-speed-playback",
   "sidecars": {
     "captions": {
       "artifactPath": "public/demo-videos/captions/built-for-planners-social.vtt",
-      "artifactSha256": "271f4a597e6ae8f114d901f689cfbe0e4e6c1845fd41e32ea0358f1ed30f3da1",
-      "byteLength": 370
+      "artifactSha256": "d1dfed9307e8e8349013709c6059b283aa1cda6aaedb411dcb67b200cd2af049",
+      "byteLength": 431
     },
     "transcript": {
       "artifactPath": "public/demo-videos/transcripts/built-for-planners-social.md",
-      "artifactSha256": "18488990e4b22e743f9ea0f950fe7f239da61032928e41736f64964a05e6f958",
-      "byteLength": 767
+      "artifactSha256": "472b50cdcc57003ab82b3ecb9c763be42562c5c0a3004742f7df3a53ac7b4b60",
+      "byteLength": 828
     }
   },
   "targets": [
@@ -21,17 +21,17 @@
       "format": "social-9x16",
       "video": {
         "artifactPath": "public/demo-videos/exports/built-for-planners-social-9x16.mp4",
-        "artifactSha256": "5729d9cf48bd9cd066c881da3520ea86b5e965d79f5ff822a6ef15393d2cdd2a",
-        "byteLength": 2439618,
+        "artifactSha256": "1de147393d0759b85873b13d53897be4484c917ca3b8cfd07416a25b4e3c561a",
+        "byteLength": 2397663,
         "width": 1080,
         "height": 1920,
-        "durationSeconds": 35.008,
+        "durationSeconds": 35.051,
         "hasAudio": true
       },
       "thumbnail": {
         "artifactPath": "public/demo-videos/thumbnails/built-for-planners-social-9x16.png",
-        "artifactSha256": "db11656d229c5a9c5096b49b6adfdb0cefcb64a3e18245936ae46c8c95b3c81f",
-        "byteLength": 831831,
+        "artifactSha256": "19fba0da61632bf7602cd95842472dc2c47a6cb3782cfe66b319f9dae5208dd7",
+        "byteLength": 828990,
         "width": 1080,
         "height": 1920
       },
