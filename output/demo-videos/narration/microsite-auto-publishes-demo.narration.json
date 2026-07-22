@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "demoId": "microsite-auto-publishes-demo",
+  "generatedAt": "2026-07-22T01:02:57.664Z",
+  "generator": "scripts/demo-videos/generate-narration.ts",
+  "provider": "elevenlabs",
+  "modelId": "eleven_multilingual_v2",
+  "voiceId": "My4OXDyai4TWzZlKmUyw",
+  "outputFormat": "mp3_44100_128",
+  "voiceSettings": {
+    "stability": 0.5,
+    "similarity_boost": 0.75,
+    "style": 0,
+    "use_speaker_boost": true,
+    "speed": 1.1
+  },
+  "durationSource": "capture-receipt",
+  "videoDurationSeconds": 45,
+  "segments": [
+    {
+      "index": 0,
+      "text": "Begin in the planner-owned wedding record: the public story, the branding, and the guest-access settings all live here, decided by the planner.",
+      "textSha256": "f0bff98fc13fa31c57d4ce2c1aed2b64408050b47e6e33184925a098d0a60529",
+      "characterCount": 143,
+      "scheduledStartSeconds": 0,
+      "scheduledEndSeconds": 12,
+      "placedStartSeconds": 0,
+      "audioDurationSeconds": 8.542041,
+      "placedEndSeconds": 8.542041
+    },
+    {
+      "index": 1,
+      "text": "The guest view presents that content as a polished wedding site: the couple’s story, the approved venue, the event-day details — everything a guest needs, and none of the planner’s controls.",
+      "textSha256": "adea87832a9263592ee6c16c2d7b4b7133c81d5cde66f697a789c3c6bc9d4743",
+      "characterCount": 190,
+      "scheduledStartSeconds": 12,
+      "scheduledEndSeconds": 28,
+      "placedStartSeconds": 12,
+      "audioDurationSeconds": 12.773878,
+      "placedEndSeconds": 24.773878
+    },
+    {
+      "index": 2,
+      "text": "The public gallery completes it with the approved ceremony, portrait, and reception imagery. Guests get a finished experience; the private planning workspace never enters the frame.",
+      "textSha256": "b03e15c96431679ae6316a7f7efddbaee3b18ef942ce7224d19f0e53a9c77f8d",
+      "characterCount": 181,
+      "scheduledStartSeconds": 28,
+      "scheduledEndSeconds": 45,
+      "placedStartSeconds": 28,
+      "audioDurationSeconds": 12.016327,
+      "placedEndSeconds": 40.016327000000004
+    }
+  ],
+  "totalCharacterCount": 514,
+  "inputsSha256": "09eab8f507ab82fbb8253da1c36819b706730bb42d980e6aebda016eeb2ec26e",
+  "masterPath": "output/demo-videos/narration/microsite-auto-publishes-demo.m4a",
+  "masterSha256": "c49fe19d1941849b49b0d5d9d2ddbf562470c83180c4854154eeee4998883016",
+  "masterDurationSeconds": 45
+}
