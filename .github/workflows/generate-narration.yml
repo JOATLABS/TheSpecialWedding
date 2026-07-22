@@ -29,6 +29,10 @@ on:
         description: "ElevenLabs voice id override (blank = repo default voice)"
         required: false
         default: ""
+      speed:
+        description: "Speaking speed 0.7-1.2 (blank = provider default 1.0)"
+        required: false
+        default: "1.1"
       render:
         description: "Re-render exports and open the refresh PR; off = only upload a narration preview artifact"
         type: boolean
@@ -98,6 +102,7 @@ jobs:
         env:
           ELEVEN_LABS_API_KEY: ${{ secrets.ELEVEN_LABS_API_KEY }}
           ELEVENLABS_VOICE_ID: ${{ github.event.inputs.voice_id }}
+          ELEVENLABS_SPEED: ${{ github.event.inputs.speed }}
         run: |
           set -euo pipefail
           EXTRA=""

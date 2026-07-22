@@ -408,22 +408,22 @@ const HERO_DEMO_VIDEO_DRAFT: DemoVideo = {
     {
       timestamp: '0:10-0:30',
       action: 'Open Events and inspect the Glasshouse venue and 4:00 PM start time.',
-      voiceover: 'The wedding record is the source: The Glasshouse at Riverbend, four o’clock, captured once in the planner plan.',
+      voiceover: 'The wedding record is the source of truth. Open Events and the Traditional ceremony is already specific: The Glasshouse at Riverbend, a four o’clock start — captured once, in the one plan the entire wedding runs on.',
     },
     {
       timestamp: '0:30-0:40',
       action: 'Manually switch to the public tab and inspect the matching event details.',
-      voiceover: 'The guest-facing microsite presents that same venue and time without exposing planner operations.',
+      voiceover: 'The guest-facing microsite shows that same venue and the same four o’clock, presented cleanly with no planner controls.',
     },
     {
       timestamp: '0:40-0:50',
       action: 'Manually switch to the couple tab, open Timeline, and inspect the matching plan.',
-      voiceover: 'The couple gets a guided view of the same venue and time while planner-only controls remain private.',
+      voiceover: 'The couple’s guided portal carries the identical plan — same venue, same time — while planner-only operations stay private.',
     },
     {
       timestamp: '0:50-1:05',
       action: 'Return to the planner, open Guests, and filter the table to Declined.',
-      voiceover: 'Back in the planner workspace, isolate the declined list as operational context without reconciling another sheet.',
+      voiceover: 'Back in the planner workspace, one filter isolates every declined guest with group and plus-one context intact — the operational picture, without reconciling another spreadsheet.',
     },
     {
       timestamp: '1:05-1:15',
@@ -487,17 +487,17 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         timestamp: '0:00-0:12',
         action: 'Open the planner dashboard and pause on the active wedding summary.',
-        voiceover: 'This is the 8am view: every wedding that needs attention, without opening a spreadsheet.',
+        voiceover: 'This is the eight a-m view: every active wedding, its current status, and what needs attention first — before a single spreadsheet gets opened.',
       },
       {
         timestamp: '0:12-0:36',
         action: 'Compare the visible RSVP, activity, and pending-form signals on the two wedding cards.',
-        voiceover: 'RSVP movement, recent activity, pending forms, and setup progress distinguish what is moving from what needs attention.',
+        voiceover: 'Two weddings, two different mornings. Sofia and Daniel are moving: RSVPs arriving, recent activity, setup nearly complete. Avery and Morgan need attention — pending forms and unfinished setup, surfaced right on the card. The dashboard separates what is moving from what needs a planner today.',
       },
       {
         timestamp: '0:36-1:00',
         action: "Open Avery & Morgan's source record and inspect the remaining setup guidance.",
-        voiceover: 'The workflow does not end at insight. It points the planner to the next action that moves a real wedding forward.',
+        voiceover: 'Insight is not the end of the workflow. Opening Avery and Morgan’s record turns attention into the next concrete action: the setup guide names the remaining work, so the morning starts with a decision instead of a hunt — and a real wedding moves forward.',
       },
     ],
     recordingChecklist: defaultChecklist,
@@ -579,17 +579,17 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         timestamp: '0:00-0:12',
         action: 'Begin on the seeded couple dashboard and inspect the wedding overview.',
-        voiceover: 'This is what the couple sees after the planner invites them: one guided portal, not another spreadsheet.',
+        voiceover: 'This is what the couple sees after the invite: one guided portal for their whole wedding — not another spreadsheet, and not the planner’s dashboard.',
       },
       {
         timestamp: '0:12-0:38',
         action: 'Open Timeline, expand Traditional Ceremony, then open Payments and inspect the shared financial context.',
-        voiceover: 'The schedule and payment context couples usually ask about stay tied to the wedding record they already share with the planner.',
+        voiceover: 'The Timeline answers what couples actually ask. Traditional Ceremony expands into its run of show — processional, cocktail hour, reception doors — tied to the venue and time already planned. Payments sits in the same portal: the package and its schedule, connected to the record they share with their planner.',
       },
       {
         timestamp: '0:38-1:00',
         action: 'Open Forms, inspect the assigned questionnaire, and return to the dashboard.',
-        voiceover: 'The couple can review and self-serve while planner-only operations remain private.',
+        voiceover: 'Forms brings the planner’s questionnaire into the same guided flow, completion status visible at a glance. The couple can act on their side of the wedding any time, while planner-only controls never leave the planner’s workspace.',
       },
     ],
     recordingChecklist: defaultChecklist,
@@ -638,17 +638,17 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         timestamp: '0:00-0:12',
         action: 'Open the wedding source record and inspect its theme, story, and privacy settings.',
-        voiceover: 'Begin with the planner-owned wedding record: its public story, branding, and guest-access settings.',
+        voiceover: 'Begin in the planner-owned wedding record: the public story, the branding, and the guest-access settings all live here, decided by the planner.',
       },
       {
         timestamp: '0:12-0:28',
         action: 'Manually switch to the prepared public microsite and inspect its story, venue, and event-day presentation.',
-        voiceover: 'The guest view presents the seeded public content in a polished experience without planner controls.',
+        voiceover: 'The guest view presents that content as a polished wedding site: the couple’s story, the approved venue, the event-day details — everything a guest needs, and none of the planner’s controls.',
       },
       {
         timestamp: '0:28-0:45',
         action: 'Open the public gallery and inspect the approved wedding images.',
-        voiceover: 'The gallery completes the guest-facing view while the private planning workspace stays out of sight.',
+        voiceover: 'The public gallery completes it with the approved ceremony, portrait, and reception imagery. Guests get a finished experience; the private planning workspace never enters the frame.',
       },
     ],
     recordingChecklist: [
@@ -756,17 +756,17 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         timestamp: '0:00-0:14',
         action: 'Open Guest Management and inspect invitation, response, attendance, and plus-one totals.',
-        voiceover: 'This is the planner guest operating table: invitation, response, attendance, and plus-one state in one view.',
+        voiceover: 'This is the planner’s guest operating table: invitations, responses, attendance, and plus-ones — the entire list with its current state visible in one view.',
       },
       {
         timestamp: '0:14-0:36',
         action: 'Filter to Declined and inspect the RSVP, group, and plus-one columns preserved in the table.',
-        voiceover: 'The declined slice narrows the work without stripping away the visible guest context a planner still needs.',
+        voiceover: 'Filtering to Declined narrows the work without losing the picture: every declined guest keeps RSVP, group, and plus-one context in the table, so follow-up happens with full information instead of a stripped-down list.',
       },
       {
         timestamp: '0:36-1:00',
         action: 'Clear the RSVP filter, switch to Card View, and inspect the collapsed Priya Shah card.',
-        voiceover: 'Priya’s card brings her confirmed response, Friends group, vegetarian meal, and submitted plus-one into one readable planner view.',
+        voiceover: 'Card View turns the same data into a briefing. Priya Shah’s card reads at a glance — confirmed, Friends group, vegetarian meal, one submitted plus-one — everything a planner needs to know about a guest, in one readable place.',
       },
     ],
     recordingChecklist: [
@@ -814,17 +814,17 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         timestamp: '0:00-0:12',
         action: 'Open Seating, use the in-product Zoom out control twice to reach 70%, and show the room outline with fixtures.',
-        voiceover: 'Seating starts with the actual room, not a blank grid.',
+        voiceover: 'Seating starts with the actual room — the venue outline, its fixtures, and the tables placed where they will really stand, not a blank generic grid.',
       },
       {
         timestamp: '0:12-0:36',
         action: 'Inspect the populated tables and existing guest assignments without moving anyone.',
-        voiceover: 'Guest records, meal context, and household notes stay connected while the planner places people.',
+        voiceover: 'The tables are already populated, and every seated guest arrives with their record attached — meal context and household notes stay connected while the planner places people, so seating decisions run on information instead of memory.',
       },
       {
         timestamp: '0:36-1:00',
         action: 'Inspect assigned totals, floor-plan status, and the visible layout checks.',
-        voiceover: 'The chart becomes an export-ready day-of artifact with venue context intact.',
+        voiceover: 'Beside the canvas, the chart reports its own readiness: assigned totals, floor-plan status, and the visible layout checks. What starts as a diagram becomes an export-ready day-of artifact with the venue context intact.',
       },
     ],
     recordingChecklist: [
@@ -943,17 +943,17 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         timestamp: '0:00-0:12',
         action: 'Open the existing planner contract and inspect its details and status.',
-        voiceover: 'A vendor agreement starts from the record the planner already owns.',
+        voiceover: 'A vendor agreement starts from the record the planner already owns: the vendor, the value, the status, and the key dates, together in one place.',
       },
       {
         timestamp: '0:12-0:30',
         action: 'Open Contract Sections, then Payments, and inspect the seeded clauses and milestones.',
-        voiceover: 'Scope, clauses, deliverables, and payment terms stay connected instead of splitting into another document tool.',
+        voiceover: 'Contract Sections renders the scope, clauses, and terms as a readable canvas, and Payments keeps the deposit and remaining milestones attached to the same agreement — not a document in one tool and a spreadsheet in another.',
       },
       {
         timestamp: '0:30-0:50',
         action: 'Return to the wedding budget and inspect the vendor commitment in its category context.',
-        voiceover: 'The wedding budget carries that same vendor commitment into the planner\'s complete financial picture.',
+        voiceover: 'The wedding budget carries that same commitment into the complete financial picture — planned versus actual by category, with the vendor’s numbers where the planner expects them. Agreements and budget stay one connected story.',
       },
     ],
     recordingChecklist: [
@@ -1030,7 +1030,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     featureId: 'vendor-network',
     title: 'Vendor Directory & CRM',
     audience: 'Planners who want their studio’s vendor relationships, contracts, and payment status in one private workspace.',
-    durationSeconds: 60,
+    durationSeconds: 45,
     priority: 'phase-one',
     status: 'scripted',
     routePlan: [
@@ -1071,19 +1071,19 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
     ],
     script: [
       {
-        timestamp: '0:00-0:15',
+        timestamp: '0:00-0:12',
         action: 'Open Planner Vendor Management and inspect the vendor, contract, paid, and outstanding totals.',
-        voiceover: 'This is the planner’s private vendor CRM: the studio’s vendor book, contracts, and payment context in one workspace.',
+        voiceover: 'This is the planner’s private vendor CRM: the studio’s vendor book, its contracts, and its payment context — one workspace the planner owns.',
       },
       {
-        timestamp: '0:15-0:40',
+        timestamp: '0:12-0:28',
         action: 'Open the Vendor Directory tab and inspect the saved studio contacts and their wedding history.',
-        voiceover: 'The directory is the planner’s own working list — the vendors a studio rebooks wedding after wedding, with contact context that stays with the business.',
+        voiceover: 'The directory is the planner’s own working list: the vendors a studio rebooks wedding after wedding, with contacts, categories, and history that stay with the business instead of scattering across inboxes.',
       },
       {
-        timestamp: '0:40-1:00',
+        timestamp: '0:28-0:45',
         action: 'Open the Contracts tab, then the Payments tab, and inspect the agreement amounts and recorded status.',
-        voiceover: 'Every vendor stays connected to its agreements and payment status, so the relationship and the money live in one planner-owned record.',
+        voiceover: 'Contracts and Payments complete the record: every vendor stays connected to its agreements and their status, so the relationship and the money live in one planner-owned place, ready before the next wedding books.',
       },
     ],
     recordingChecklist: [
@@ -1240,7 +1240,7 @@ const PHASE_ONE_SOCIAL_VIDEO_STORY_DRAFTS = [
       {
         timestamp: '0:08-0:17',
         action: 'Switch manually to the public wedding schedule with the same venue and time.',
-        voiceover: 'Guests get the details they need without seeing the work behind them.',
+        voiceover: 'Guests get the venue, the time, and the details they need — without ever seeing the planner’s work behind them.',
       },
       {
         timestamp: '0:17-0:25',
@@ -1438,17 +1438,17 @@ const PHASE_ONE_SOCIAL_VIDEO_STORY_DRAFTS = [
       {
         timestamp: '0:00-0:10',
         action: 'Filter Guest Management to Declined and hold on the preserved guest context.',
-        voiceover: 'Generic event tools see names. Wedding planners need RSVP, household, meal, and plus-one context.',
+        voiceover: 'Generic event tools see a list of names. Wedding planners need RSVP state, households, meals, and plus-one context.',
       },
       {
         timestamp: '0:10-0:20',
         action: 'Open the venue-aware seating plan and hold on fixtures, tables, and assignments.',
-        voiceover: 'Seating starts with the actual room and the people already connected to it.',
+        voiceover: 'Seating starts with the actual room — fixtures, tables, and the people already connected to every seat.',
       },
       {
         timestamp: '0:20-0:30',
         action: 'Open Planner Vendor Management and hold on the private operational record.',
-        voiceover: 'Vendor relationships, contracts, and status stay inside the planner’s operating system.',
+        voiceover: 'Vendor relationships, contracts, and status stay private, inside the planner’s own operating system.',
       },
     ],
     recordingChecklist: [

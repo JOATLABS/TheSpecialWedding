@@ -4,6 +4,11 @@ interface DomHandle {
   cleanup: () => void;
 }
 
+// A cleanup that is still waiting for React's scheduler to drain. A new
+// installDom() finishes it immediately so the fresh globals are never
+// stomped by a stale deferred restore.
+let pendingRestore: (() => void) | null = null;
+
 function copyWindowProperty<K extends keyof typeof globalThis>(
   target: typeof globalThis,
   source: Window & typeof globalThis,
@@ -18,6 +23,9 @@ function copyWindowProperty<K extends keyof typeof globalThis>(
 }
 
 export function installDom(): DomHandle {
+  pendingRestore?.();
+  pendingRestore = null;
+
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'http://localhost/',
   });
@@ -122,22 +130,40 @@ export function installDom(): DomHandle {
 
   return {
     cleanup: () => {
-      dom.window.close();
-      restoreProperty('window', originalWindow);
-      restoreProperty('self', originalSelf);
-      restoreProperty('document', originalDocument);
-      restoreProperty('navigator', originalNavigator);
-      restoreProperty('location', originalLocation);
-      restoreProperty('HTMLElement', originalHTMLElement);
-      restoreProperty('Node', originalNode);
-      restoreProperty('Event', originalEvent);
-      restoreProperty('CustomEvent', originalCustomEvent);
-      restoreProperty('MutationObserver', originalMutationObserver);
-      restoreProperty('getComputedStyle', originalGetComputedStyle);
-      restoreProperty('requestAnimationFrame', originalRequestAnimationFrame);
-      restoreProperty('cancelAnimationFrame', originalCancelAnimationFrame);
-      restoreProperty('matchMedia', originalMatchMedia);
-      restoreProperty('ResizeObserver', originalResizeObserver);
+      const restore = () => {
+        dom.window.close();
+        restoreProperty('window', originalWindow);
+        restoreProperty('self', originalSelf);
+        restoreProperty('document', originalDocument);
+        restoreProperty('navigator', originalNavigator);
+        restoreProperty('location', originalLocation);
+        restoreProperty('HTMLElement', originalHTMLElement);
+        restoreProperty('Node', originalNode);
+        restoreProperty('Event', originalEvent);
+        restoreProperty('CustomEvent', originalCustomEvent);
+        restoreProperty('MutationObserver', originalMutationObserver);
+        restoreProperty('getComputedStyle', originalGetComputedStyle);
+        restoreProperty('requestAnimationFrame', originalRequestAnimationFrame);
+        restoreProperty('cancelAnimationFrame', originalCancelAnimationFrame);
+        restoreProperty('matchMedia', originalMatchMedia);
+        restoreProperty('ResizeObserver', originalResizeObserver);
+      };
+
+      // react-dom flushes renderer work on setImmediate macrotasks. Restoring
+      // the globals while that work is still queued makes the scheduler tick
+      // throw "ReferenceError: window is not defined" after the test ends
+      // (observed as the storefrontDomainJourney flake). Defer the teardown
+      // two macrotask rounds so any queued renderer tick still sees a window;
+      // each test file runs in its own process, so the deferred restore
+      // cannot leak into another suite, and a re-install finishes it early.
+      pendingRestore = restore;
+      setImmediate(() => {
+        setImmediate(() => {
+          if (pendingRestore !== restore) return;
+          pendingRestore = null;
+          restore();
+        });
+      });
     },
   };
 }

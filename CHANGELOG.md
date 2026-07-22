@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-07-21 — Voiceover scripts densified to the cloned voice's measured pace
+
+- Rewrote the under-filled voiceover lines across the published website demos, the hero walkthrough, and three social stories after review rejected the long dead-air stretches between lines. Line lengths are calibrated to the cloned voice's measured speaking rate from the first clone synthesis run (p10 12.4 chars/sec, median 14.2): every densified line targets most of its caption window at the median rate while still fitting at the slowest measured rate, raising median window fill from 23-54% to 64-88% on the previously sparse lines. Capture checkpoints, script actions, durations, and receipts are untouched — narration text is the only change, so no retakes are required and the committed exports remain valid until the next regeneration pass.
+- Retimed the unpublished vendor-directory rescript from 60 to 45 seconds with dense planner-first lines, so its upcoming manual retake is paced tighter instead of inheriting the lingering-screen rhythm review complained about.
+- Honest limitation, recorded for the next retake cycle: denser narration plus the music bed fills the audio, but the footage itself still lingers on each screen as originally recorded; genuinely faster pacing requires shorter manual takes with correspondingly shorter authored durations.
+- Fixed the storefrontDomainJourney flake that intermittently failed CI all day (reproduced 4-of-6 standalone). Stack tracing showed react-dom's scheduler tick throwing `ReferenceError: window is not defined`: the jsdom harness restored globals synchronously while React still had renderer work queued on a `setImmediate` macrotask. `tests/unit/testDom.ts` now defers the global restore by two macrotask rounds (with a re-install guard), so queued renderer ticks always see a window; 8-of-8 stress runs pass after the fix. Also brought the disconnect-dialog focus timer in `CustomDomainManager` under the same tracked-and-cleared-on-unmount discipline as the component's other timers.
+
 ## 2026-07-21 — Narration defaults to the founder's cloned voice; Actions PR-policy fallback
 
 - Made the founder's ElevenLabs voice clone the default narration voice after the premade-voice batch was reviewed and rejected as still sounding synthetic; `ELEVENLABS_VOICE_ID`/`--voice-id` still override, and the premade US-female voice remains documented as the fallback.
