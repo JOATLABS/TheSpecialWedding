@@ -35,7 +35,7 @@ workflow changes.
 | Voice | `ELEVENLABS_VOICE_ID` | `--voice-id` | `My4OXDyai4TWzZlKmUyw` (the founder’s cloned voice; premade US-female fallback: “Rachel”, `21m00Tcm4TlvDq8ikWAM`) |
 | Model | `ELEVENLABS_MODEL_ID` | `--model` | `eleven_multilingual_v2` |
 | Output format | `ELEVENLABS_OUTPUT_FORMAT` | `--output-format` | `mp3_44100_128` |
-| Speaking speed | `ELEVENLABS_SPEED` | `--speed` | provider default (accepted range 0.7–1.2) |
+| Speaking speed | `ELEVENLABS_SPEED` | `--speed` | provider default 1.0; the workflow dispatch input defaults to 1.1 because the cloned voice's training sample reads slower than natural pace (accepted range 0.7–1.2) |
 | Delivery | — | `--stability`, `--similarity-boost`, `--style` | 0.5 / 0.75 / 0 |
 
 - **Your cloned voice:** create the clone in ElevenLabs VoiceLab, copy its
