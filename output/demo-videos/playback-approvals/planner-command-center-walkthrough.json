@@ -1,19 +1,19 @@
 {
   "schemaVersion": 1,
   "demoId": "planner-command-center-walkthrough",
-  "reviewedAt": "2026-07-15T09:36:41.208Z",
+  "reviewedAt": "2026-07-22T22:43:10.996Z",
   "reviewer": "Emmanuel Akinwale",
   "reviewMethod": "human-normal-speed-playback",
   "sidecars": {
     "captions": {
       "artifactPath": "public/demo-videos/captions/planner-command-center-walkthrough.vtt",
-      "artifactSha256": "f3878838f520517e9b3db3d4519162edfbb7f931f763adb9bf4c3c1fb8ea3733",
-      "byteLength": 800
+      "artifactSha256": "4269e92d91c358e23daaf18064092af05c45d2667b4d493f7a7ccd9131e281bf",
+      "byteLength": 1025
     },
     "transcript": {
       "artifactPath": "public/demo-videos/transcripts/planner-command-center-walkthrough.md",
-      "artifactSha256": "467a1e56badf3f5d611583317859640a1619e591ddc3e0490b5f127caa56eb90",
-      "byteLength": 1387
+      "artifactSha256": "92727e172c660545deedff75da149992a95c50774a5b6baaf8f8221486fa41f5",
+      "byteLength": 1612
     }
   },
   "targets": [
@@ -21,8 +21,8 @@
       "format": "web-16x9",
       "video": {
         "artifactPath": "public/demo-videos/exports/planner-command-center-walkthrough-16x9.mp4",
-        "artifactSha256": "2d5d38067be8d9fe8f48c36ddbae4ab6998f2db0f8185bcb90afed884bebde3d",
-        "byteLength": 6421429,
+        "artifactSha256": "a26b30227d434092c38243ab523f9f38da3b85c15e2dcf0d5703e6f85d302cae",
+        "byteLength": 6403026,
         "width": 1920,
         "height": 1080,
         "durationSeconds": 74.048,
@@ -30,8 +30,8 @@
       },
       "thumbnail": {
         "artifactPath": "public/demo-videos/thumbnails/planner-command-center-walkthrough-16x9.png",
-        "artifactSha256": "88d070c4db62ce8396009786274871d2ab5d042652a7a49bb81e5ddbb9f3c6ac",
-        "byteLength": 442497,
+        "artifactSha256": "e0a793711094110f1d91a033f4e55ead4fcf803c88e5944e5e4549f7c95ef9fe",
+        "byteLength": 161592,
         "width": 1920,
         "height": 1080
       },
