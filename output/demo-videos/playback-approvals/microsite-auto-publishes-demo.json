@@ -1,19 +1,19 @@
 {
   "schemaVersion": 1,
   "demoId": "microsite-auto-publishes-demo",
-  "reviewedAt": "2026-07-15T09:36:41.208Z",
+  "reviewedAt": "2026-07-22T22:43:10.996Z",
   "reviewer": "Emmanuel Akinwale",
   "reviewMethod": "human-normal-speed-playback",
   "sidecars": {
     "captions": {
       "artifactPath": "public/demo-videos/captions/microsite-auto-publishes-demo.vtt",
-      "artifactSha256": "bf4f61f14184225022ca6211b920f856aa763498ebfa996a4220e7123afc3c71",
-      "byteLength": 408
+      "artifactSha256": "bdefa551ed8846fb33a7d87662d4bd89a1b151ba56d961984dcc97b9b96d46e9",
+      "byteLength": 629
     },
     "transcript": {
       "artifactPath": "public/demo-videos/transcripts/microsite-auto-publishes-demo.md",
-      "artifactSha256": "4f01bb113f40444ff73bc0a818b94fa5d484a19a388a3d4ed64fa6eb5179ebc8",
-      "byteLength": 806
+      "artifactSha256": "3d516d79496a3565a190c768a13adcc3d7a45950077b67c0b614b9f7c0a22cad",
+      "byteLength": 1027
     }
   },
   "targets": [
@@ -21,8 +21,8 @@
       "format": "web-16x9",
       "video": {
         "artifactPath": "public/demo-videos/exports/microsite-auto-publishes-demo-16x9.mp4",
-        "artifactSha256": "272467bab507e6d2d0f83014c71af718bdcf7758aeeca461cbfc7a7daf5f7708",
-        "byteLength": 3298561,
+        "artifactSha256": "0aaa9c7eb73ac50e07f50a51061470d771006963888ee68988f9cd8cfbcdadbe",
+        "byteLength": 3377639,
         "width": 1920,
         "height": 1080,
         "durationSeconds": 45.056,

@@ -1,19 +1,19 @@
 {
   "schemaVersion": 1,
   "demoId": "couple-portal-demo",
-  "reviewedAt": "2026-07-15T09:36:41.208Z",
+  "reviewedAt": "2026-07-22T22:43:10.996Z",
   "reviewer": "Emmanuel Akinwale",
   "reviewMethod": "human-normal-speed-playback",
   "sidecars": {
     "captions": {
       "artifactPath": "public/demo-videos/captions/couple-portal-demo.vtt",
-      "artifactSha256": "873e27c262f9bf5e7094dab4c4d226341e368ab3984a371172c486b239fd0d79",
-      "byteLength": 422
+      "artifactSha256": "f0ab681b543ed261b8d03e1715cc1b4f20e68643b43aee256d8acf92f030e853",
+      "byteLength": 807
     },
     "transcript": {
       "artifactPath": "public/demo-videos/transcripts/couple-portal-demo.md",
-      "artifactSha256": "f5436e5ae47fef167c9ecec645d631609e202c9909f9aa358733419b63ec539d",
-      "byteLength": 777
+      "artifactSha256": "23d9c56ff364b8840c95383af4ff43a263659623e6881ff066fdd93789731987",
+      "byteLength": 1162
     }
   },
   "targets": [
@@ -21,11 +21,11 @@
       "format": "web-16x9",
       "video": {
         "artifactPath": "public/demo-videos/exports/couple-portal-demo-16x9.mp4",
-        "artifactSha256": "39e13606ee8c99ef9219ce0878eb598e80fd5bc3586bfd55d6f0a292edbb7688",
-        "byteLength": 3401551,
+        "artifactSha256": "6132eba34b9fe9f38d25afbce03972a9ed86885204f51f9598e702855ef7ed67",
+        "byteLength": 3371403,
         "width": 1920,
         "height": 1080,
-        "durationSeconds": 60.053333,
+        "durationSeconds": 60.053,
         "hasAudio": true
       },
       "thumbnail": {

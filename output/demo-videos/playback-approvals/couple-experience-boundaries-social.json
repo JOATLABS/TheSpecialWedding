@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "demoId": "couple-experience-boundaries-social",
-  "reviewedAt": "2026-07-15T09:36:41.208Z",
+  "reviewedAt": "2026-07-22T22:43:10.996Z",
   "reviewer": "Emmanuel Akinwale",
   "reviewMethod": "human-normal-speed-playback",
   "sidecars": {
@@ -21,17 +21,17 @@
       "format": "social-9x16",
       "video": {
         "artifactPath": "public/demo-videos/exports/couple-experience-boundaries-social-9x16.mp4",
-        "artifactSha256": "2827d26943b8b01e29300a89eef85c35c5586e3e0f4262d67967a47eec9ee478",
-        "byteLength": 1365287,
+        "artifactSha256": "42dac813e3e17b58bac9edbd63d2d2c996aa2769372aae56116a4fd1b92a2cee",
+        "byteLength": 1327731,
         "width": 1080,
         "height": 1920,
-        "durationSeconds": 20.032,
+        "durationSeconds": 20.053,
         "hasAudio": true
       },
       "thumbnail": {
         "artifactPath": "public/demo-videos/thumbnails/couple-experience-boundaries-social-9x16.png",
-        "artifactSha256": "f9104fd6690170d70f653739f16bdfce23e60b8a8365ae0a1aeb5ebf73c89e47",
-        "byteLength": 773485,
+        "artifactSha256": "7ec32d0e993c281343176e93a99849ed3ece8784ba370678696da7498d8fa74e",
+        "byteLength": 778632,
         "width": 1080,
         "height": 1920
       },

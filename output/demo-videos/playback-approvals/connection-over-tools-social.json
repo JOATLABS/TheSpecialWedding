@@ -1,19 +1,19 @@
 {
   "schemaVersion": 1,
   "demoId": "connection-over-tools-social",
-  "reviewedAt": "2026-07-15T09:36:41.208Z",
+  "reviewedAt": "2026-07-22T22:43:10.996Z",
   "reviewer": "Emmanuel Akinwale",
   "reviewMethod": "human-normal-speed-playback",
   "sidecars": {
     "captions": {
       "artifactPath": "public/demo-videos/captions/connection-over-tools-social.vtt",
-      "artifactSha256": "4ad2f78c1cd3eee1e60da8717fb547fb17e2ef33148fc4d3f77503dcbbb3507f",
-      "byteLength": 352
+      "artifactSha256": "e73ab76dc97d672c41651b8acb9243172e41f38ef42d3d6354ae7bf51b9c5684",
+      "byteLength": 398
     },
     "transcript": {
       "artifactPath": "public/demo-videos/transcripts/connection-over-tools-social.md",
-      "artifactSha256": "c9954e4c7c3ac910a87e5ba53c1185ea7fb4158a61bc9835635ba47ce9b7513d",
-      "byteLength": 701
+      "artifactSha256": "eadc6fb3605971cfd6d9319c14ba5e8fe44844b1fe5f8126b884ce0340d24564",
+      "byteLength": 747
     }
   },
   "targets": [
@@ -21,17 +21,17 @@
       "format": "social-9x16",
       "video": {
         "artifactPath": "public/demo-videos/exports/connection-over-tools-social-9x16.mp4",
-        "artifactSha256": "eccc9d93f10d51a1d55615f670db9731137e7705b984cba93247dec8c3240931",
-        "byteLength": 2080951,
+        "artifactSha256": "251bcc34fe5ca0a7b3e4247c2624dccfbec123d9144f8a53172acd83a15b092a",
+        "byteLength": 2054094,
         "width": 1080,
         "height": 1920,
-        "durationSeconds": 30,
+        "durationSeconds": 30.059,
         "hasAudio": true
       },
       "thumbnail": {
         "artifactPath": "public/demo-videos/thumbnails/connection-over-tools-social-9x16.png",
-        "artifactSha256": "9f6e9b7ba1bdf955d9b8c7ceae02182674c6397a80e57db69986058c2280c71c",
-        "byteLength": 722883,
+        "artifactSha256": "060635cc9b35d801c5030467b0c04dcdb7255ed0056998d68d3fca1d9e471029",
+        "byteLength": 722438,
         "width": 1080,
         "height": 1920
       },
