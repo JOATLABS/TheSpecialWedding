@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "demoId": "disorganization-tax-social",
+  "generatedAt": "2026-07-22T01:03:29.818Z",
+  "generator": "scripts/demo-videos/generate-narration.ts",
+  "provider": "elevenlabs",
+  "modelId": "eleven_multilingual_v2",
+  "voiceId": "My4OXDyai4TWzZlKmUyw",
+  "outputFormat": "mp3_44100_128",
+  "voiceSettings": {
+    "stability": 0.5,
+    "similarity_boost": 0.75,
+    "style": 0,
+    "use_speaker_boost": true,
+    "speed": 1.1
+  },
+  "durationSource": "capture-receipt",
+  "videoDurationSeconds": 25,
+  "segments": [
+    {
+      "index": 0,
+      "text": "Disorganization charges interest every morning you rebuild context from scratch.",
+      "textSha256": "3c513ab672f6ff84954fa738d50b69a1a67ee7590658088045bdba4a082f4b5b",
+      "characterCount": 80,
+      "scheduledStartSeconds": 0,
+      "scheduledEndSeconds": 7,
+      "placedStartSeconds": 0,
+      "audioDurationSeconds": 6.086531,
+      "placedEndSeconds": 6.086531
+    },
+    {
+      "index": 1,
+      "text": "Messages stay tied to the wedding work instead of disappearing across personal inboxes.",
+      "textSha256": "e489395c8c60a1d5bad4e238133aa0d77de820183440558eea7209e82d7a1962",
+      "characterCount": 87,
+      "scheduledStartSeconds": 7,
+      "scheduledEndSeconds": 14,
+      "placedStartSeconds": 7,
+      "audioDurationSeconds": 5.250612,
+      "placedEndSeconds": 12.250612
+    },
+    {
+      "index": 2,
+      "text": "The financial context is already there when the planner needs to act.",
+      "textSha256": "3a76fc0ffe34ff1054a01e1a6affdf5885f66aa92b21a095f2020717e2f9bfce",
+      "characterCount": 69,
+      "scheduledStartSeconds": 14,
+      "scheduledEndSeconds": 20,
+      "placedStartSeconds": 14,
+      "audioDurationSeconds": 3.369796,
+      "placedEndSeconds": 17.369796
+    }
+  ],
+  "totalCharacterCount": 236,
+  "inputsSha256": "8f7c38eee7c99580824f6046977944a1148eaa9ddd31edb36c9f909428051b37",
+  "masterPath": "output/demo-videos/narration/disorganization-tax-social.m4a",
+  "masterSha256": "dfb2b5a099b291da99b42307e79510ea177fba59c55e8afe9c1d5ee3d5a592e9",
+  "masterDurationSeconds": 25
+}

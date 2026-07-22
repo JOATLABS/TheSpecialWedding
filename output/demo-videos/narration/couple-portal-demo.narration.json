@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "demoId": "couple-portal-demo",
+  "generatedAt": "2026-07-22T01:02:51.313Z",
+  "generator": "scripts/demo-videos/generate-narration.ts",
+  "provider": "elevenlabs",
+  "modelId": "eleven_multilingual_v2",
+  "voiceId": "My4OXDyai4TWzZlKmUyw",
+  "outputFormat": "mp3_44100_128",
+  "voiceSettings": {
+    "stability": 0.5,
+    "similarity_boost": 0.75,
+    "style": 0,
+    "use_speaker_boost": true,
+    "speed": 1.1
+  },
+  "durationSource": "capture-receipt",
+  "videoDurationSeconds": 60,
+  "segments": [
+    {
+      "index": 0,
+      "text": "This is what the couple sees after the invite: one guided portal for their whole wedding — not another spreadsheet, and not the planner’s dashboard.",
+      "textSha256": "5cd93af2793feb47779902392c88ee008a01a2fd2f0259d22245e002f2713d34",
+      "characterCount": 148,
+      "scheduledStartSeconds": 0,
+      "scheduledEndSeconds": 12,
+      "placedStartSeconds": 0,
+      "audioDurationSeconds": 9.325714,
+      "placedEndSeconds": 9.325714
+    },
+    {
+      "index": 1,
+      "text": "The Timeline answers what couples actually ask. Traditional Ceremony expands into its run of show — processional, cocktail hour, reception doors — tied to the venue and time already planned. Payments sits in the same portal: the package and its schedule, connected to the record they share with their planner.",
+      "textSha256": "925b029d15e8c5cc151ef46f437b2b054d96c07157c260d6f65154d9616344e3",
+      "characterCount": 309,
+      "scheduledStartSeconds": 12,
+      "scheduledEndSeconds": 38,
+      "placedStartSeconds": 12,
+      "audioDurationSeconds": 21.733878,
+      "placedEndSeconds": 33.733878000000004
+    },
+    {
+      "index": 2,
+      "text": "Forms brings the planner’s questionnaire into the same guided flow, completion status visible at a glance. The couple can act on their side of the wedding any time, while planner-only controls never leave the planner’s workspace.",
+      "textSha256": "41f96791a351476481e15ea4a9c109230c3d445cd19cf4edd481567985c0c09c",
+      "characterCount": 229,
+      "scheduledStartSeconds": 38,
+      "scheduledEndSeconds": 60,
+      "placedStartSeconds": 38,
+      "audioDurationSeconds": 14.053878,
+      "placedEndSeconds": 52.053878
+    }
+  ],
+  "totalCharacterCount": 686,
+  "inputsSha256": "1b3836fbfce644ddc3f8f597ea67ab95c74607bac563a72b219f41f8893cafd9",
+  "masterPath": "output/demo-videos/narration/couple-portal-demo.m4a",
+  "masterSha256": "c81d298b309513137f0e43d1c93680361c77b639b5e87449752ee29c57d2fb7c",
+  "masterDurationSeconds": 60
+}

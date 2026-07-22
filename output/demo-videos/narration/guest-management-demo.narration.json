@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "demoId": "guest-management-demo",
+  "generatedAt": "2026-07-22T01:03:05.513Z",
+  "generator": "scripts/demo-videos/generate-narration.ts",
+  "provider": "elevenlabs",
+  "modelId": "eleven_multilingual_v2",
+  "voiceId": "My4OXDyai4TWzZlKmUyw",
+  "outputFormat": "mp3_44100_128",
+  "voiceSettings": {
+    "stability": 0.5,
+    "similarity_boost": 0.75,
+    "style": 0,
+    "use_speaker_boost": true,
+    "speed": 1.1
+  },
+  "durationSource": "capture-receipt",
+  "videoDurationSeconds": 60,
+  "segments": [
+    {
+      "index": 0,
+      "text": "This is the planner’s guest operating table: invitations, responses, attendance, and plus-ones — the entire list with its current state visible in one view.",
+      "textSha256": "40ab25e6b42aec78b443ab14be89edc479b002ef32be19238d2e312337668509",
+      "characterCount": 156,
+      "scheduledStartSeconds": 0,
+      "scheduledEndSeconds": 14,
+      "placedStartSeconds": 0,
+      "audioDurationSeconds": 10.396735,
+      "placedEndSeconds": 10.396735
+    },
+    {
+      "index": 1,
+      "text": "Filtering to Declined narrows the work without losing the picture: every declined guest keeps RSVP, group, and plus-one context in the table, so follow-up happens with full information instead of a stripped-down list.",
+      "textSha256": "c1ea478df7670111b40d02cc87231c8a1eef4af89f2a3018f42a7525d76fb64e",
+      "characterCount": 217,
+      "scheduledStartSeconds": 14,
+      "scheduledEndSeconds": 36,
+      "placedStartSeconds": 14,
+      "audioDurationSeconds": 16.013061,
+      "placedEndSeconds": 30.013061
+    },
+    {
+      "index": 2,
+      "text": "Card View turns the same data into a briefing. Priya Shah’s card reads at a glance — confirmed, Friends group, vegetarian meal, one submitted plus-one — everything a planner needs to know about a guest, in one readable place.",
+      "textSha256": "e6568fbb6af249c4c4807ec2aa4a3d856330cc618cb54f7975537fb94865ec05",
+      "characterCount": 225,
+      "scheduledStartSeconds": 36,
+      "scheduledEndSeconds": 60,
+      "placedStartSeconds": 36,
+      "audioDurationSeconds": 16.561633,
+      "placedEndSeconds": 52.561633
+    }
+  ],
+  "totalCharacterCount": 598,
+  "inputsSha256": "998282735552ac695c6df282c9789863fd339b1af690d590176687b17fb926ae",
+  "masterPath": "output/demo-videos/narration/guest-management-demo.m4a",
+  "masterSha256": "6797a501e3e5a61191a7e437114847af26ed2af49dc00edfdb3766efd87b3f46",
+  "masterDurationSeconds": 60
+}

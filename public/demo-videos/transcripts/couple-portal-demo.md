@@ -9,16 +9,16 @@ Target duration: 60 seconds
 
 Action: Begin on the seeded couple dashboard and inspect the wedding overview.
 
-This is what the couple sees after the planner invites them: one guided portal, not another spreadsheet.
+This is what the couple sees after the invite: one guided portal for their whole wedding — not another spreadsheet, and not the planner’s dashboard.
 
 ### 0:12-0:38
 
 Action: Open Timeline, expand Traditional Ceremony, then open Payments and inspect the shared financial context.
 
-The schedule and payment context couples usually ask about stay tied to the wedding record they already share with the planner.
+The Timeline answers what couples actually ask. Traditional Ceremony expands into its run of show — processional, cocktail hour, reception doors — tied to the venue and time already planned. Payments sits in the same portal: the package and its schedule, connected to the record they share with their planner.
 
 ### 0:38-1:00
 
 Action: Open Forms, inspect the assigned questionnaire, and return to the dashboard.
 
-The couple can review and self-serve while planner-only operations remain private.
+Forms brings the planner’s questionnaire into the same guided flow, completion status visible at a glance. The couple can act on their side of the wedding any time, while planner-only controls never leave the planner’s workspace.

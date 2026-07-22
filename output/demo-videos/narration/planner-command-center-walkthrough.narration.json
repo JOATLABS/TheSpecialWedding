@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "demoId": "planner-command-center-walkthrough",
+  "generatedAt": "2026-07-22T01:02:34.362Z",
+  "generator": "scripts/demo-videos/generate-narration.ts",
+  "provider": "elevenlabs",
+  "modelId": "eleven_multilingual_v2",
+  "voiceId": "My4OXDyai4TWzZlKmUyw",
+  "outputFormat": "mp3_44100_128",
+  "voiceSettings": {
+    "stability": 0.5,
+    "similarity_boost": 0.75,
+    "style": 0,
+    "use_speaker_boost": true,
+    "speed": 1.1
+  },
+  "durationSource": "capture-receipt",
+  "videoDurationSeconds": 73.966667,
+  "segments": [
+    {
+      "index": 0,
+      "text": "Start with one wedding in the planner command center, then follow its plan instead of touring disconnected tools.",
+      "textSha256": "2b3a8f3cb955d63b7ec53ea83187081bd964ee98aba9da99dd0a18b63669be95",
+      "characterCount": 113,
+      "scheduledStartSeconds": 0,
+      "scheduledEndSeconds": 9.862,
+      "placedStartSeconds": 0,
+      "audioDurationSeconds": 6.948571,
+      "placedEndSeconds": 6.948571
+    },
+    {
+      "index": 1,
+      "text": "The wedding record is the source of truth. Open Events and the Traditional ceremony is already specific: The Glasshouse at Riverbend, a four o’clock start — captured once, in the one plan the entire wedding runs on.",
+      "textSha256": "733a8abb9d143695d6fcd59ac95019596b4301a9dcba6bb305a3e4fe23684c89",
+      "characterCount": 215,
+      "scheduledStartSeconds": 9.862,
+      "scheduledEndSeconds": 29.587,
+      "placedStartSeconds": 9.862,
+      "audioDurationSeconds": 15.36,
+      "placedEndSeconds": 25.222
+    },
+    {
+      "index": 2,
+      "text": "The guest-facing microsite shows that same venue and the same four o’clock, presented cleanly with no planner controls.",
+      "textSha256": "acf8c9332f7b49f01587b285cd352dc6af8070506029ce1b8ba50da867540115",
+      "characterCount": 119,
+      "scheduledStartSeconds": 29.587,
+      "scheduledEndSeconds": 39.449,
+      "placedStartSeconds": 29.587,
+      "audioDurationSeconds": 7.418776,
+      "placedEndSeconds": 37.005776
+    },
+    {
+      "index": 3,
+      "text": "The couple’s guided portal carries the identical plan — same venue, same time — while planner-only operations stay private.",
+      "textSha256": "f967b965be9b4916ad335d8e5eb81aeb23860b7eda3671042880187e9496c124",
+      "characterCount": 123,
+      "scheduledStartSeconds": 39.449,
+      "scheduledEndSeconds": 49.311,
+      "placedStartSeconds": 39.449,
+      "audioDurationSeconds": 8.594286,
+      "placedEndSeconds": 48.043285999999995
+    },
+    {
+      "index": 4,
+      "text": "Back in the planner workspace, one filter isolates every declined guest with group and plus-one context intact — the operational picture, without reconciling another spreadsheet.",
+      "textSha256": "cba1a8eb3d24805fb306c9fd04eabd88ed8439360ff4df5163eb376089fa2bda",
+      "characterCount": 178,
+      "scheduledStartSeconds": 49.311,
+      "scheduledEndSeconds": 64.104,
+      "placedStartSeconds": 49.311,
+      "audioDurationSeconds": 11.964082,
+      "placedEndSeconds": 61.275082
+    },
+    {
+      "index": 5,
+      "text": "One planner-owned workspace. Start with one wedding.",
+      "textSha256": "ee0e85cc283749d12c4b62f52e7aaf0305bce2a58bc5425cbc788c0f83ecac6d",
+      "characterCount": 52,
+      "scheduledStartSeconds": 64.104,
+      "scheduledEndSeconds": 73.967,
+      "placedStartSeconds": 64.104,
+      "audioDurationSeconds": 3.761633,
+      "placedEndSeconds": 67.865633
+    }
+  ],
+  "totalCharacterCount": 800,
+  "inputsSha256": "5e8cd244a1d4bdc2f120c5304dfac4ad5dae5e65f04783847c90c3ac61931627",
+  "masterPath": "output/demo-videos/narration/planner-command-center-walkthrough.m4a",
+  "masterSha256": "e7082c9234790ed23cc209711d4369cd30b2b4705699530d84531660aede0cc5",
+  "masterDurationSeconds": 73.967007
+}

@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "demoId": "seating-orchestrator-demo",
+  "generatedAt": "2026-07-22T01:03:13.650Z",
+  "generator": "scripts/demo-videos/generate-narration.ts",
+  "provider": "elevenlabs",
+  "modelId": "eleven_multilingual_v2",
+  "voiceId": "My4OXDyai4TWzZlKmUyw",
+  "outputFormat": "mp3_44100_128",
+  "voiceSettings": {
+    "stability": 0.5,
+    "similarity_boost": 0.75,
+    "style": 0,
+    "use_speaker_boost": true,
+    "speed": 1.1
+  },
+  "durationSource": "capture-receipt",
+  "videoDurationSeconds": 60,
+  "segments": [
+    {
+      "index": 0,
+      "text": "Seating starts with the actual room — the venue outline, its fixtures, and the tables placed where they will really stand, not a blank generic grid.",
+      "textSha256": "ee534b95b5fda7a717a7a7cda02db6ca4c91217249fbbf8fee4c758988e718ea",
+      "characterCount": 148,
+      "scheduledStartSeconds": 0,
+      "scheduledEndSeconds": 12,
+      "placedStartSeconds": 0,
+      "audioDurationSeconds": 9.848163,
+      "placedEndSeconds": 9.848163
+    },
+    {
+      "index": 1,
+      "text": "The tables are already populated, and every seated guest arrives with their record attached — meal context and household notes stay connected while the planner places people, so seating decisions run on information instead of memory.",
+      "textSha256": "bd09de1c4acbc6fd7502524945073f31747b17538909379d507feb6a71c4a753",
+      "characterCount": 233,
+      "scheduledStartSeconds": 12,
+      "scheduledEndSeconds": 36,
+      "placedStartSeconds": 12,
+      "audioDurationSeconds": 15.072653,
+      "placedEndSeconds": 27.072653000000003
+    },
+    {
+      "index": 2,
+      "text": "Beside the canvas, the chart reports its own readiness: assigned totals, floor-plan status, and the visible layout checks. What starts as a diagram becomes an export-ready day-of artifact with the venue context intact.",
+      "textSha256": "39e2121059f16eed6bc0dc981aa5051ed66d1af34f12592c15a18f6c5b5aefac",
+      "characterCount": 218,
+      "scheduledStartSeconds": 36,
+      "scheduledEndSeconds": 60,
+      "placedStartSeconds": 36,
+      "audioDurationSeconds": 16.613878,
+      "placedEndSeconds": 52.613878
+    }
+  ],
+  "totalCharacterCount": 599,
+  "inputsSha256": "8a0f93d1814e035ff33f6fb346189ce3d29957eebc4610b20451677e3f162e5f",
+  "masterPath": "output/demo-videos/narration/seating-orchestrator-demo.m4a",
+  "masterSha256": "b76982798a14bdfc690662ff65a81705b0aea748fbfd05c67b096aff570d3111",
+  "masterDurationSeconds": 60
+}

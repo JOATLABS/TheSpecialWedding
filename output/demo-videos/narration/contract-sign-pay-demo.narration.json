@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "demoId": "contract-sign-pay-demo",
+  "generatedAt": "2026-07-22T01:03:21.361Z",
+  "generator": "scripts/demo-videos/generate-narration.ts",
+  "provider": "elevenlabs",
+  "modelId": "eleven_multilingual_v2",
+  "voiceId": "My4OXDyai4TWzZlKmUyw",
+  "outputFormat": "mp3_44100_128",
+  "voiceSettings": {
+    "stability": 0.5,
+    "similarity_boost": 0.75,
+    "style": 0,
+    "use_speaker_boost": true,
+    "speed": 1.1
+  },
+  "durationSource": "capture-receipt",
+  "videoDurationSeconds": 50,
+  "segments": [
+    {
+      "index": 0,
+      "text": "A vendor agreement starts from the record the planner already owns: the vendor, the value, the status, and the key dates, together in one place.",
+      "textSha256": "f340720733b0957f7eec1f1a1627e1344602d4f8e1e50c0fcc8969b69672c3f2",
+      "characterCount": 144,
+      "scheduledStartSeconds": 0,
+      "scheduledEndSeconds": 12,
+      "placedStartSeconds": 0,
+      "audioDurationSeconds": 9.142857,
+      "placedEndSeconds": 9.142857
+    },
+    {
+      "index": 1,
+      "text": "Contract Sections renders the scope, clauses, and terms as a readable canvas, and Payments keeps the deposit and remaining milestones attached to the same agreement — not a document in one tool and a spreadsheet in another.",
+      "textSha256": "6ac233c177beb4d21a12e2c60b85ee67ecd1ba50cb98d38744451c593dd805d7",
+      "characterCount": 223,
+      "scheduledStartSeconds": 12,
+      "scheduledEndSeconds": 30,
+      "placedStartSeconds": 12,
+      "audioDurationSeconds": 14.576327,
+      "placedEndSeconds": 26.576327
+    },
+    {
+      "index": 2,
+      "text": "The wedding budget carries that same commitment into the complete financial picture — planned versus actual by category, with the vendor’s numbers where the planner expects them. Agreements and budget stay one connected story.",
+      "textSha256": "fdbd9ee2fed172e57e0ec1ad0b4f376852bc45957b2d73d396198a09baacbfdc",
+      "characterCount": 226,
+      "scheduledStartSeconds": 30,
+      "scheduledEndSeconds": 50,
+      "placedStartSeconds": 30,
+      "audioDurationSeconds": 15.542857,
+      "placedEndSeconds": 45.542857
+    }
+  ],
+  "totalCharacterCount": 593,
+  "inputsSha256": "c83e288fd9a15034f0130a220ece11ed51fcac618efff41880711819dac4f5d5",
+  "masterPath": "output/demo-videos/narration/contract-sign-pay-demo.m4a",
+  "masterSha256": "ee371121272710db02f3abb63ddecc77f3c126c25eda48276421df47d1eb2139",
+  "masterDurationSeconds": 50
+}

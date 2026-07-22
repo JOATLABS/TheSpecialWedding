@@ -9,16 +9,16 @@ Target duration: 35 seconds
 
 Action: Filter Guest Management to Declined and hold on the preserved guest context.
 
-Generic event tools see names. Wedding planners need RSVP, household, meal, and plus-one context.
+Generic event tools see a list of names. Wedding planners need RSVP state, households, meals, and plus-one context.
 
 ### 0:10-0:20
 
 Action: Open the venue-aware seating plan and hold on fixtures, tables, and assignments.
 
-Seating starts with the actual room and the people already connected to it.
+Seating starts with the actual room — fixtures, tables, and the people already connected to every seat.
 
 ### 0:20-0:30
 
 Action: Open Planner Vendor Management and hold on the private operational record.
 
-Vendor relationships, contracts, and status stay inside the planner’s operating system.
+Vendor relationships, contracts, and status stay private, inside the planner’s own operating system.

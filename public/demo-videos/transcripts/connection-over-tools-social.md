@@ -15,7 +15,7 @@ Connection matters more than adding another tool. Start with one planner-owned e
 
 Action: Switch manually to the public wedding schedule with the same venue and time.
 
-Guests get the details they need without seeing the work behind them.
+Guests get the venue, the time, and the details they need — without ever seeing the planner’s work behind them.
 
 ### 0:17-0:25
 

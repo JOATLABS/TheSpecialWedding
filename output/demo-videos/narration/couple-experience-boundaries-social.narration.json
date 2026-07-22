@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "demoId": "couple-experience-boundaries-social",
+  "generatedAt": "2026-07-22T01:03:33.471Z",
+  "generator": "scripts/demo-videos/generate-narration.ts",
+  "provider": "elevenlabs",
+  "modelId": "eleven_multilingual_v2",
+  "voiceId": "My4OXDyai4TWzZlKmUyw",
+  "outputFormat": "mp3_44100_128",
+  "voiceSettings": {
+    "stability": 0.5,
+    "similarity_boost": 0.75,
+    "style": 0,
+    "use_speaker_boost": true,
+    "speed": 1.1
+  },
+  "durationSource": "capture-receipt",
+  "videoDurationSeconds": 20,
+  "segments": [
+    {
+      "index": 0,
+      "text": "Clear boundaries start with a workflow the planner owns.",
+      "textSha256": "bd22bf77357122a8f5f4dfc8bcc732195b14abefe7c625ff722dc8e6d3306bcd",
+      "characterCount": 56,
+      "scheduledStartSeconds": 0,
+      "scheduledEndSeconds": 5,
+      "placedStartSeconds": 0,
+      "audioDurationSeconds": 3.291429,
+      "placedEndSeconds": 3.291429
+    },
+    {
+      "index": 1,
+      "text": "The couple gets a guided next step, not the planner’s internal controls.",
+      "textSha256": "ec7cd33e926a2c5cd690c93e26572f16b1484193483e464bd530a05be78de190",
+      "characterCount": 72,
+      "scheduledStartSeconds": 5,
+      "scheduledEndSeconds": 10,
+      "placedStartSeconds": 5,
+      "audioDurationSeconds": 4.545306,
+      "placedEndSeconds": 9.545306
+    },
+    {
+      "index": 2,
+      "text": "The answers clients need stay available without another midnight text.",
+      "textSha256": "c2e5fb78ecb138eed4f658c986ce5391e118b2da6d48cdb25364ce9613e2fddb",
+      "characterCount": 70,
+      "scheduledStartSeconds": 10,
+      "scheduledEndSeconds": 15,
+      "placedStartSeconds": 10,
+      "audioDurationSeconds": 3.604898,
+      "placedEndSeconds": 13.604898
+    }
+  ],
+  "totalCharacterCount": 198,
+  "inputsSha256": "ab294f84eba5bb0f5ef89367cbcc01dab6c1a6e62e4c69e90dd4972ca5a20f23",
+  "masterPath": "output/demo-videos/narration/couple-experience-boundaries-social.m4a",
+  "masterSha256": "e509d01160d007e6b47d702669e8262451250e9bd9434f1cba36f853967f0973",
+  "masterDurationSeconds": 20
+}
