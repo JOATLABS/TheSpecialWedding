@@ -58,7 +58,7 @@ export function PublicMicrositeFooter({
             onClick={() => {
               umamiTrack('microsite_platform_brand_clicked', { location: 'footer' });
             }}
-            className="inline-flex min-w-0 items-center rounded-md opacity-90 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--theme-secondary-light)] focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+            className="inline-flex min-h-11 min-w-0 items-center rounded-md opacity-90 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--theme-secondary-light)] focus-visible:ring-offset-2 focus-visible:ring-offset-black"
           >
             {brand}
           </a>
@@ -78,14 +78,14 @@ export function PublicMicrositeFooter({
                   <button
                     type="button"
                     onClick={onPrivacy}
-                    className="rounded-sm transition-colors hover:text-white hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--theme-secondary-light)]"
+                    className="inline-flex min-h-11 items-center rounded-sm transition-colors hover:text-white hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--theme-secondary-light)]"
                   >
                     Privacy
                   </button>
                 ) : (
                   <a
                     href="/privacy"
-                    className="rounded-sm transition-colors hover:text-white hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--theme-secondary-light)]"
+                    className="inline-flex min-h-11 items-center rounded-sm transition-colors hover:text-white hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--theme-secondary-light)]"
                   >
                     Privacy
                   </a>
@@ -95,14 +95,14 @@ export function PublicMicrositeFooter({
                   <button
                     type="button"
                     onClick={onTerms}
-                    className="rounded-sm transition-colors hover:text-white hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--theme-secondary-light)]"
+                    className="inline-flex min-h-11 items-center rounded-sm transition-colors hover:text-white hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--theme-secondary-light)]"
                   >
                     Terms
                   </button>
                 ) : (
                   <a
                     href="/terms"
-                    className="rounded-sm transition-colors hover:text-white hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--theme-secondary-light)]"
+                    className="inline-flex min-h-11 items-center rounded-sm transition-colors hover:text-white hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--theme-secondary-light)]"
                   >
                     Terms
                   </a>
