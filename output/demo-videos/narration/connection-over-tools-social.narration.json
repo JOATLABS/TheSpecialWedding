@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "demoId": "connection-over-tools-social",
+  "generatedAt": "2026-07-22T01:03:25.849Z",
+  "generator": "scripts/demo-videos/generate-narration.ts",
+  "provider": "elevenlabs",
+  "modelId": "eleven_multilingual_v2",
+  "voiceId": "My4OXDyai4TWzZlKmUyw",
+  "outputFormat": "mp3_44100_128",
+  "voiceSettings": {
+    "stability": 0.5,
+    "similarity_boost": 0.75,
+    "style": 0,
+    "use_speaker_boost": true,
+    "speed": 1.1
+  },
+  "durationSource": "capture-receipt",
+  "videoDurationSeconds": 30,
+  "segments": [
+    {
+      "index": 0,
+      "text": "Connection matters more than adding another tool. Start with one planner-owned event plan.",
+      "textSha256": "f5dbb26addec6868f3c97687c0e153bed8533ac7d273075c8fe1de9c1ef0b4a5",
+      "characterCount": 90,
+      "scheduledStartSeconds": 0,
+      "scheduledEndSeconds": 8,
+      "placedStartSeconds": 0,
+      "audioDurationSeconds": 6.452245,
+      "placedEndSeconds": 6.452245
+    },
+    {
+      "index": 1,
+      "text": "Guests get the venue, the time, and the details they need — without ever seeing the planner’s work behind them.",
+      "textSha256": "24cf8304e2af2c7165648466dfe24d9d50b151031674b61594057aa4d173a9b8",
+      "characterCount": 111,
+      "scheduledStartSeconds": 8,
+      "scheduledEndSeconds": 17,
+      "placedStartSeconds": 8,
+      "audioDurationSeconds": 6.765714,
+      "placedEndSeconds": 14.765714
+    },
+    {
+      "index": 2,
+      "text": "The couple sees the same plan in a guided workspace. One wedding, three clear views.",
+      "textSha256": "409b68134fa673eb3f5e5eba598951b424fd731588b64550fd5c75f8c2698610",
+      "characterCount": 84,
+      "scheduledStartSeconds": 17,
+      "scheduledEndSeconds": 25,
+      "placedStartSeconds": 17,
+      "audioDurationSeconds": 5.668571,
+      "placedEndSeconds": 22.668571
+    }
+  ],
+  "totalCharacterCount": 285,
+  "inputsSha256": "4392faf64a6015d19b81de097c28fafa0f43d4b5c0b1f78baa6ed31487b2e9e3",
+  "masterPath": "output/demo-videos/narration/connection-over-tools-social.m4a",
+  "masterSha256": "91c7d7c001fa3a5bae3d3283554c501476d7c675c61c6ca1b6bb141d4a6f3351",
+  "masterDurationSeconds": 30
+}

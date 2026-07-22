@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "demoId": "morning-view-demo",
+  "generatedAt": "2026-07-22T01:02:42.885Z",
+  "generator": "scripts/demo-videos/generate-narration.ts",
+  "provider": "elevenlabs",
+  "modelId": "eleven_multilingual_v2",
+  "voiceId": "My4OXDyai4TWzZlKmUyw",
+  "outputFormat": "mp3_44100_128",
+  "voiceSettings": {
+    "stability": 0.5,
+    "similarity_boost": 0.75,
+    "style": 0,
+    "use_speaker_boost": true,
+    "speed": 1.1
+  },
+  "durationSource": "capture-receipt",
+  "videoDurationSeconds": 60,
+  "segments": [
+    {
+      "index": 0,
+      "text": "This is the eight a-m view: every active wedding, its current status, and what needs attention first — before a single spreadsheet gets opened.",
+      "textSha256": "3b732bd56d0edfedc6b0b4d394eae0d57495c14fae0604a60d485ac1d0a79fae",
+      "characterCount": 143,
+      "scheduledStartSeconds": 0,
+      "scheduledEndSeconds": 12,
+      "placedStartSeconds": 0,
+      "audioDurationSeconds": 9.560816,
+      "placedEndSeconds": 9.560816
+    },
+    {
+      "index": 1,
+      "text": "Two weddings, two different mornings. Sofia and Daniel are moving: RSVPs arriving, recent activity, setup nearly complete. Avery and Morgan need attention — pending forms and unfinished setup, surfaced right on the card. The dashboard separates what is moving from what needs a planner today.",
+      "textSha256": "ccf026288f5cddc40597263945f3a8718e51b33d5c4c6edcb2e64674edaf276e",
+      "characterCount": 292,
+      "scheduledStartSeconds": 12,
+      "scheduledEndSeconds": 36,
+      "placedStartSeconds": 12,
+      "audioDurationSeconds": 20.088163,
+      "placedEndSeconds": 32.088163
+    },
+    {
+      "index": 2,
+      "text": "Insight is not the end of the workflow. Opening Avery and Morgan’s record turns attention into the next concrete action: the setup guide names the remaining work, so the morning starts with a decision instead of a hunt — and a real wedding moves forward.",
+      "textSha256": "bcccc22a46f4fe14ddc599cdf63e40370f22bf330939f79a28e3f02edc5dd46c",
+      "characterCount": 254,
+      "scheduledStartSeconds": 36,
+      "scheduledEndSeconds": 60,
+      "placedStartSeconds": 36,
+      "audioDurationSeconds": 16.483265,
+      "placedEndSeconds": 52.483265
+    }
+  ],
+  "totalCharacterCount": 689,
+  "inputsSha256": "52a4024b9306fb028a79883a269f9a02d00b01bc5d6d6c98ecf959f941e1e25f",
+  "masterPath": "output/demo-videos/narration/morning-view-demo.m4a",
+  "masterSha256": "48cae4361da89996e295d0881e0565ce809f14cc9dd8a7cc6fb34005b0269fe5",
+  "masterDurationSeconds": 60
+}

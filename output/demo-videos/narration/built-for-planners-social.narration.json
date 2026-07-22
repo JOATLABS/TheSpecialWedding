@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "demoId": "built-for-planners-social",
+  "generatedAt": "2026-07-22T01:03:38.444Z",
+  "generator": "scripts/demo-videos/generate-narration.ts",
+  "provider": "elevenlabs",
+  "modelId": "eleven_multilingual_v2",
+  "voiceId": "My4OXDyai4TWzZlKmUyw",
+  "outputFormat": "mp3_44100_128",
+  "voiceSettings": {
+    "stability": 0.5,
+    "similarity_boost": 0.75,
+    "style": 0,
+    "use_speaker_boost": true,
+    "speed": 1.1
+  },
+  "durationSource": "capture-receipt",
+  "videoDurationSeconds": 35,
+  "segments": [
+    {
+      "index": 0,
+      "text": "Generic event tools see a list of names. Wedding planners need RSVP state, households, meals, and plus-one context.",
+      "textSha256": "d1446488371276fd8171357a6c78edbc505869eced15d7eb8feb79d4acebfed5",
+      "characterCount": 115,
+      "scheduledStartSeconds": 0,
+      "scheduledEndSeconds": 10,
+      "placedStartSeconds": 0,
+      "audioDurationSeconds": 7.836735,
+      "placedEndSeconds": 7.836735
+    },
+    {
+      "index": 1,
+      "text": "Seating starts with the actual room — fixtures, tables, and the people already connected to every seat.",
+      "textSha256": "781426d1d25567da6d5e11237aa12cabdd6f552193f7e507da736e28b7cd4c44",
+      "characterCount": 103,
+      "scheduledStartSeconds": 10,
+      "scheduledEndSeconds": 20,
+      "placedStartSeconds": 10,
+      "audioDurationSeconds": 7.105306,
+      "placedEndSeconds": 17.105306
+    },
+    {
+      "index": 2,
+      "text": "Vendor relationships, contracts, and status stay private, inside the planner’s own operating system.",
+      "textSha256": "09c8ee5506ced8224532618c076d84f683d53fee22c4826b7fdfecb383b2793f",
+      "characterCount": 100,
+      "scheduledStartSeconds": 20,
+      "scheduledEndSeconds": 30,
+      "placedStartSeconds": 20,
+      "audioDurationSeconds": 6.765714,
+      "placedEndSeconds": 26.765714
+    }
+  ],
+  "totalCharacterCount": 318,
+  "inputsSha256": "9a75678539285607da11514e1bc300b8f6d89d9c2a1375b66a727ec3152224b1",
+  "masterPath": "output/demo-videos/narration/built-for-planners-social.m4a",
+  "masterSha256": "d7823f95128f91ba4cae4753b8f6d520040fd680566c49cf7ef9344e0d837e7c",
+  "masterDurationSeconds": 35
+}
