@@ -13,7 +13,7 @@ type PhaseOneHeroProofProps = {
 export function PhaseOneHeroProof({ demo }: PhaseOneHeroProofProps) {
   return (
     <div
-      className="relative mx-auto w-full max-w-3xl"
+      className="relative mx-auto w-full max-w-5xl"
       data-testid="phase-one-hero-proof"
       aria-label="The Special Wedding planner command center"
     >
@@ -22,15 +22,15 @@ export function PhaseOneHeroProof({ demo }: PhaseOneHeroProofProps) {
         asset={heroProof}
         alt="Populated Morning View for Marigold and Co. Weddings, showing the complete planner workspace"
         label="Marigold & Co. · Planner workspace"
-        sizes="(min-width: 1280px) 680px, (min-width: 1024px) 52vw, calc(100vw - 40px)"
+        sizes="(min-width: 1280px) 1024px, calc(100vw - 40px)"
         priority
         variant="hero"
       />
       {demo.assetUrl ? (
-        <div className="relative mt-5 flex justify-center">
+        <div className="relative mt-6 flex justify-center">
           <DemoVideoLauncher
             demo={demo}
-            label="Watch the planner workspace walkthrough"
+            label="Watch the walkthrough"
             variant="hero"
           />
         </div>

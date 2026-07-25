@@ -146,16 +146,6 @@ const faqPageJsonLd = {
   })),
 };
 
-function SectionBridge({ label }: { label: string }) {
-  return (
-    <div className="pointer-events-none flex items-center justify-center py-8 sm:py-10" aria-hidden="true">
-      <div className="h-px w-16 bg-gradient-to-r from-transparent via-slate-400 to-transparent" />
-      <span className="mx-4 text-[11px] font-semibold uppercase tracking-[0.5em] text-slate-300">{label}</span>
-      <div className="h-px w-16 bg-gradient-to-r from-transparent via-slate-400 to-transparent" />
-    </div>
-  );
-}
-
 export default function HomePage() {
   const heroDemo = toPublicDemoVideo(HERO_DEMO_VIDEO);
   const featureDemosByFeatureId = Object.fromEntries(
@@ -170,64 +160,55 @@ export default function HomePage() {
       />
       <SaasNav />
 
-      <section className="relative isolate overflow-hidden bg-slate-950 px-5 pb-20 pt-32 sm:px-8 sm:pb-24 sm:pt-36 lg:px-12 lg:pb-28">
+      <section className="relative isolate overflow-hidden bg-slate-950 px-5 pb-24 pt-32 sm:px-8 sm:pb-28 sm:pt-36 lg:px-12 lg:pb-32">
         <div
-          className="absolute inset-0 -z-10 bg-[radial-gradient(900px_620px_at_12%_10%,rgba(212,165,165,0.2),transparent_68%),radial-gradient(900px_620px_at_90%_18%,rgba(232,196,106,0.12),transparent_68%)]"
+          className="absolute inset-0 -z-10 bg-[radial-gradient(900px_620px_at_50%_8%,rgba(212,165,165,0.2),transparent_68%)]"
           aria-hidden="true"
         />
-        <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[minmax(0,0.78fr)_minmax(520px,1.22fr)] lg:gap-14">
-          <div className="max-w-xl">
+        <div className="mx-auto max-w-7xl">
+          <div className="mx-auto max-w-3xl text-center">
             <h1 className="text-5xl font-semibold leading-[0.98] tracking-[-0.035em] text-white sm:text-6xl lg:text-7xl">
-              The connected operating system built specifically for wedding planners.
+              One workspace. Every wedding you run.
             </h1>
-            <p className="mt-7 text-lg leading-8 text-slate-300 sm:text-xl">
-              Manage the wedding record, public details, couple timeline, and guest-response context from one planner-owned workspace—while planner-only operations stay private.
+            <p className="mx-auto mt-7 max-w-2xl text-lg leading-8 text-slate-300 sm:text-xl">
+              Planner, couple, and guests — one connected record, with your operations kept private.
             </p>
-            <div className="mt-9 flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="mt-10 flex flex-col items-center justify-center gap-5 sm:flex-row">
               <Link
                 href="/#pricing"
-                className="inline-flex min-h-12 items-center justify-center rounded-full bg-wedding-rose px-7 py-3 text-base font-semibold text-slate-950 shadow-lg shadow-wedding-rose/20 transition hover:bg-wedding-blush focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-wedding-rose"
+                className="inline-flex min-h-12 items-center justify-center rounded-full bg-wedding-rose px-8 py-3 text-base font-semibold text-slate-950 shadow-lg shadow-wedding-rose/20 transition hover:bg-wedding-blush focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-wedding-rose"
               >
-                Start one wedding free
+                Start free
               </Link>
               <Link
                 href="/#showcase"
-                className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/20 px-7 py-3 text-base font-semibold text-white transition hover:border-white/40 hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
+                className="text-base font-semibold text-white underline decoration-wedding-rose/70 underline-offset-4 transition hover:text-wedding-rose focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
               >
-                See the connected workspace
+                See how it works ›
               </Link>
             </div>
           </div>
-          <PhaseOneHeroProof demo={heroDemo} />
+          <div className="mt-16 sm:mt-20">
+            <PhaseOneHeroProof demo={heroDemo} />
+          </div>
         </div>
       </section>
 
       <HomepageTemplatesBand />
 
-      <SectionBridge label="See what's inside" />
-
-      <section id="showcase" className="scroll-mt-28 bg-slate-950 px-5 py-8 sm:px-8 sm:py-10 lg:px-12">
+      <section id="showcase" className="scroll-mt-28 bg-slate-950 px-5 py-20 sm:px-8 sm:py-24 lg:px-12">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-6 max-w-4xl sm:mb-10">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.28em] text-wedding-rose">Planner outcomes</p>
-              <h2 className="mt-3 text-3xl font-semibold tracking-normal text-white sm:mt-4 sm:text-5xl">
-                See how one connected record changes the work.
-              </h2>
-              <p className="mt-5 max-w-3xl text-base leading-7 text-slate-300 sm:text-lg">
-                These are the four operating outcomes a systems-minded planner should be able to verify before signing up—not another disconnected feature list.
-              </p>
-            </div>
+          <div className="mx-auto mb-16 max-w-3xl text-center sm:mb-20">
+            <p className="text-sm font-semibold uppercase tracking-[0.28em] text-wedding-rose">Planner outcomes</p>
+            <h2 className="mt-4 text-3xl font-semibold tracking-normal text-white sm:text-5xl">
+              See how one connected record changes the work.
+            </h2>
           </div>
           <FeatureShowcase demoVideosByFeatureId={featureDemosByFeatureId} />
         </div>
       </section>
 
-      <SectionBridge label="Find your fit" />
-
       <PricingSignupSection pricing={fallbackPricing} theme={defaultTheme} />
-
-      <SectionBridge label="Why this exists" />
 
       <section className="bg-slate-950 px-6 py-16 sm:px-8 lg:px-12">
         <div className="mx-auto grid max-w-7xl gap-8 rounded-3xl border border-white/10 bg-white/[0.035] p-7 sm:p-10 lg:grid-cols-[0.82fr_1.18fr] lg:items-center">
@@ -247,8 +228,6 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-
-      <SectionBridge label="Still exploring" />
 
       <section className="bg-slate-950 px-6 py-16 sm:px-8 lg:px-12">
         <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.75fr_1.25fr]">
