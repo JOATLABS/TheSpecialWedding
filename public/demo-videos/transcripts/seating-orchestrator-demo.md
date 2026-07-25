@@ -9,7 +9,7 @@ Target duration: 60 seconds
 
 Action: Open Seating, use the in-product Zoom out control twice to reach 70%, and show the room outline with fixtures.
 
-Seating starts with the actual room — the venue outline, its fixtures, and the tables placed where they will really stand, not a blank generic grid.
+This is the seating chart, built on the actual room — the venue outline, its fixtures, and tables placed where they will really stand.
 
 ### 0:12-0:36
 
