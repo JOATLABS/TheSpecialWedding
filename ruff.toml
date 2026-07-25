@@ -1,23 +1,126 @@
 # Ruff configuration for the FastAPI backend (`app/`).
 #
 # WHY THIS FILE EXISTS
-# CI installs ruff unpinned (`pip install ruff`). Without an explicit rule
-# selection, every ruff release can silently re-lint the whole repository:
-# ruff 0.16.0 expanded the default rule set and turned a green backend into
-# 7777 errors overnight, with no code change. Selecting rules explicitly means
-# rule coverage changes only when this file changes.
+# CI once installed ruff unpinned with no repository config at all. Both halves
+# of that were load-bearing: ruff 0.16.0 replaced the old fixed default rule set
+# (`["E4", "E7", "E9", "F"]`) with a much larger, version-dependent one, and a
+# green backend became 7777 errors overnight with no code change.
+#
+# Two independent mechanisms keep lint results stable, because neither is
+# sufficient alone:
+#
+#   1. `select` below pins the *rule surface*. `ignore` alone cannot do this --
+#      it only subtracts from whatever the installed ruff happens to default to,
+#      so a future default expansion would reintroduce the same breakage. The
+#      list is the exact set ruff 0.16.0 enables by default; it is enumerated
+#      rather than written as prefixes because most prefixes are only partially
+#      default-enabled (`S` is 3 of 73 rules, `D` is 1 of 48), so `select = ["S"]`
+#      would switch on 70 rules nobody has triaged.
+#
+#   2. The CI pin (`ruff==0.16.0` in .github/workflows/ci.yml) fixes the rule
+#      *implementations*. Ruff can change what an existing rule flags between
+#      releases, so an explicit `select` alone still would not make lint
+#      reproducible. Bumping that pin is a deliberate, reviewable act.
 #
 # The 0.16 rules were adopted rather than reverted: ~5,800 modernizations were
 # applied (PEP 604/585 typing, f-string conversions, import sorting). The
 # `ignore` list below covers what could not be mechanically fixed, each with a
-# reason — these are follow-up work, not permanent exemptions.
+# reason -- these are follow-up work, not permanent exemptions.
+#
+# To regenerate `select` after an intentional ruff upgrade:
+#   ruff check --show-settings --isolated <any-file> \
+#     | sed -n '/linter.rules.enabled/,/^]/p' \
+#     | grep -oE '\([A-Z]+[0-9]+\)' | tr -d '()' | sort -u
 
 target-version = "py311"
 
 [lint]
-# Rule selection is ruff's default set for the pinned `target-version`, which
-# 0.16 expanded considerably. The exceptions below are explicit so a future
-# expansion shows up as a config change rather than a surprise CI failure.
+# The exact rule set ruff 0.16.0 enables by default (413 rules). Regenerate with
+# the command in the header above; do not hand-edit individual entries.
+select = [
+  "ASYNC100", "ASYNC105", "ASYNC115", "ASYNC116", "ASYNC210", "ASYNC220",
+  "ASYNC221", "ASYNC222", "ASYNC230", "ASYNC251",
+  "B002", "B003", "B004", "B005", "B006", "B008", "B009", "B010", "B012",
+  "B013", "B014", "B015", "B016", "B017", "B018", "B019", "B020", "B021",
+  "B022", "B023", "B025", "B026", "B029", "B030", "B031", "B032", "B033",
+  "B035", "B039",
+  "BLE001",
+  "C400", "C401", "C402", "C403", "C404", "C405", "C406", "C408", "C409",
+  "C410", "C411", "C413", "C414", "C415", "C417", "C418", "C419",
+  "D419",
+  "DTZ001", "DTZ002", "DTZ003", "DTZ004", "DTZ005", "DTZ006", "DTZ007",
+  "DTZ011", "DTZ012", "DTZ901",
+  "E722", "E902",
+  "EXE001", "EXE002", "EXE004", "EXE005",
+  "F401", "F402", "F404", "F407", "F501", "F502", "F503", "F504", "F505",
+  "F506", "F507", "F508", "F509", "F521", "F522", "F523", "F524", "F525",
+  "F541", "F601", "F602", "F621", "F622", "F631", "F632", "F633", "F634",
+  "F701", "F702", "F704", "F706", "F707", "F811", "F821", "F822", "F823",
+  "F841", "F842", "F901",
+  "FA100", "FA102",
+  "FLY002",
+  "FURB105", "FURB122", "FURB129", "FURB132", "FURB136", "FURB157",
+  "FURB161", "FURB162", "FURB163", "FURB166", "FURB167", "FURB168",
+  "FURB169", "FURB177", "FURB181", "FURB188", "FURB192",
+  "G010", "G101", "G201", "G202",
+  "I001",
+  "INT001", "INT002", "INT003",
+  "ISC004",
+  "LOG001", "LOG002", "LOG009", "LOG014", "LOG015",
+  "N999",
+  "PERF101", "PERF102", "PERF402",
+  "PGH005",
+  "PIE790", "PIE794", "PIE796", "PIE800", "PIE804", "PIE807", "PIE808",
+  "PIE810",
+  "PLC0105", "PLC0131", "PLC0132", "PLC0205", "PLC0206", "PLC0208",
+  "PLC0414", "PLC3002",
+  "PLE0100", "PLE0101", "PLE0115", "PLE0116", "PLE0117", "PLE0118",
+  "PLE0303", "PLE0304", "PLE0305", "PLE0307", "PLE0308", "PLE0309",
+  "PLE0604", "PLE0605", "PLE0643", "PLE0704", "PLE1132", "PLE1142",
+  "PLE1205", "PLE1206", "PLE1300", "PLE1307", "PLE1310", "PLE1507",
+  "PLE1519", "PLE1520", "PLE1700", "PLE2502", "PLE2510", "PLE2512",
+  "PLE2513", "PLE2514", "PLE2515",
+  "PLR0124", "PLR0133", "PLR0206", "PLR0402", "PLR1704", "PLR1708",
+  "PLR1711", "PLR1716", "PLR1722", "PLR1730", "PLR1733", "PLR1736",
+  "PLR2044",
+  "PLW0120", "PLW0127", "PLW0128", "PLW0129", "PLW0131", "PLW0133",
+  "PLW0177", "PLW0211", "PLW0245", "PLW0406", "PLW0602", "PLW0604",
+  "PLW0642", "PLW0711", "PLW1501", "PLW1507", "PLW1508", "PLW1509",
+  "PLW1510", "PLW2101",
+  "PT010", "PT014", "PT020", "PT025", "PT026", "PT031",
+  "PTH124", "PTH210",
+  "PYI001", "PYI002", "PYI003", "PYI004", "PYI005", "PYI006", "PYI007",
+  "PYI008", "PYI009", "PYI010", "PYI012", "PYI013", "PYI015", "PYI016",
+  "PYI017", "PYI018", "PYI019", "PYI020", "PYI025", "PYI026", "PYI029",
+  "PYI030", "PYI032", "PYI033", "PYI034", "PYI035", "PYI036", "PYI041",
+  "PYI042", "PYI043", "PYI044", "PYI045", "PYI046", "PYI047", "PYI048",
+  "PYI049", "PYI050", "PYI052", "PYI055", "PYI057", "PYI058", "PYI059",
+  "PYI061", "PYI062", "PYI063", "PYI064", "PYI066",
+  "RET501",
+  "RUF007", "RUF008", "RUF009", "RUF010", "RUF012", "RUF013", "RUF015",
+  "RUF016", "RUF017", "RUF018", "RUF019", "RUF020", "RUF022", "RUF023",
+  "RUF024", "RUF026", "RUF028", "RUF030", "RUF032", "RUF033", "RUF034",
+  "RUF040", "RUF041", "RUF046", "RUF048", "RUF049", "RUF051", "RUF053",
+  "RUF057", "RUF058", "RUF059", "RUF063", "RUF068", "RUF100", "RUF101",
+  "RUF200",
+  "S102", "S110", "S112",
+  "SIM101", "SIM102", "SIM103", "SIM107", "SIM113", "SIM114", "SIM115",
+  "SIM117", "SIM118", "SIM201", "SIM202", "SIM208", "SIM210", "SIM211",
+  "SIM220", "SIM221", "SIM222", "SIM223", "SIM401", "SIM905", "SIM911",
+  "T100",
+  "TC004", "TC005", "TC007", "TC010",
+  "TRY002", "TRY004", "TRY201", "TRY203", "TRY401",
+  "UP001", "UP003", "UP004", "UP005", "UP006", "UP007", "UP008", "UP009",
+  "UP010", "UP011", "UP012", "UP014", "UP017", "UP018", "UP019", "UP020",
+  "UP021", "UP022", "UP023", "UP024", "UP025", "UP026", "UP028", "UP029",
+  "UP030", "UP031", "UP032", "UP033", "UP034", "UP035", "UP036", "UP037",
+  "UP039", "UP040", "UP041", "UP043", "UP044", "UP045", "UP046", "UP047",
+  "UP049", "UP050",
+  "W605",
+  "YTT101", "YTT102", "YTT103", "YTT201", "YTT202", "YTT203", "YTT204",
+  "YTT301", "YTT302", "YTT303",
+]
+
 ignore = [
   # Blind `except Exception:` handlers (1069 sites). Narrowing these changes
   # runtime error-handling semantics and needs per-site judgement, so they are
