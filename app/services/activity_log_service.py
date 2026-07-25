@@ -22,8 +22,8 @@ Usage:
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from app.core.database import mongo
 
@@ -84,13 +84,13 @@ class ActivityLogService:
         self,
         activity_type: str,
         message: str,
-        wedding_id: Optional[str] = None,
-        planner_email: Optional[str] = None,
-        actor_email: Optional[str] = None,
-        actor_name: Optional[str] = None,
-        actor_role: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        wedding_id: str | None = None,
+        planner_email: str | None = None,
+        actor_email: str | None = None,
+        actor_name: str | None = None,
+        actor_role: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Create a new activity log entry.
 
@@ -105,7 +105,7 @@ class ActivityLogService:
             metadata: Additional context data
         """
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             doc = {
                 "type": activity_type,
                 "message": message,
@@ -145,11 +145,11 @@ class ActivityLogService:
         wedding_id: str,
         guest_name: str,
         response: str,
-        planner_email: Optional[str] = None,
-        guest_email: Optional[str] = None,
+        planner_email: str | None = None,
+        guest_email: str | None = None,
         plus_ones: int = 0,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Log when an RSVP is submitted by a guest"""
         response_text = {
             "confirmed": "accepted",
@@ -182,14 +182,14 @@ class ActivityLogService:
         guest_name: str,
         old_response: str,
         new_response: str,
-        planner_email: Optional[str] = None,
-        guest_email: Optional[str] = None,
-        guest_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        planner_email: str | None = None,
+        guest_email: str | None = None,
+        guest_id: str | None = None,
+    ) -> dict[str, Any]:
         """Log when an RSVP is updated"""
         message = f"{guest_name} changed RSVP from {old_response} to {new_response}"
 
-        meta: Dict[str, Any] = {
+        meta: dict[str, Any] = {
             "guest_name": guest_name,
             "old_response": old_response,
             "new_response": new_response,
@@ -212,12 +212,12 @@ class ActivityLogService:
         wedding_id: str,
         guest_name: str,
         planner_email: str,
-        guest_id: Optional[str] = None,
-        guest_email: Optional[str] = None,
-        added_by: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        guest_id: str | None = None,
+        guest_email: str | None = None,
+        added_by: str | None = None,
+    ) -> dict[str, Any]:
         """Log when a guest is added to the guest list"""
-        meta: Dict[str, Any] = {"guest_name": guest_name, "guest_email": guest_email}
+        meta: dict[str, Any] = {"guest_name": guest_name, "guest_email": guest_email}
         if guest_id:
             meta["guest_id"] = guest_id
         return await self.log_activity(
@@ -234,12 +234,12 @@ class ActivityLogService:
         wedding_id: str,
         guest_name: str,
         planner_email: str,
-        guest_id: Optional[str] = None,
-        changes: Optional[Dict[str, Any]] = None,
-        updated_by: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        guest_id: str | None = None,
+        changes: dict[str, Any] | None = None,
+        updated_by: str | None = None,
+    ) -> dict[str, Any]:
         """Log when a guest's information is updated"""
-        meta: Dict[str, Any] = {"guest_name": guest_name, "changes": changes or {}}
+        meta: dict[str, Any] = {"guest_name": guest_name, "changes": changes or {}}
         if guest_id:
             meta["guest_id"] = guest_id
         return await self.log_activity(
@@ -256,11 +256,11 @@ class ActivityLogService:
         wedding_id: str,
         guest_name: str,
         planner_email: str,
-        guest_id: Optional[str] = None,
-        deleted_by: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        guest_id: str | None = None,
+        deleted_by: str | None = None,
+    ) -> dict[str, Any]:
         """Log when a guest is removed from the guest list"""
-        meta: Dict[str, Any] = {"guest_name": guest_name}
+        meta: dict[str, Any] = {"guest_name": guest_name}
         if guest_id:
             meta["guest_id"] = guest_id
         return await self.log_activity(
@@ -274,7 +274,7 @@ class ActivityLogService:
 
     async def log_guests_imported(
         self, wedding_id: str, count: int, planner_email: str, source: str = "csv"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Log when guests are bulk imported"""
         return await self.log_activity(
             activity_type=ActivityTypes.GUEST_IMPORTED,
@@ -295,14 +295,14 @@ class ActivityLogService:
         message_type: str,
         planner_email: str,
         status: str = "sent",
-        guest_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        guest_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Log when an SMS is sent"""
         status_text = "sent" if status == "sent" else f"failed ({status})"
         message = f"SMS {status_text} to {recipient_name}: {message_type}"
 
-        meta: Dict[str, Any] = {
+        meta: dict[str, Any] = {
             "recipient_name": recipient_name,
             "recipient_phone": (
                 recipient_phone[-4:] if recipient_phone else None
@@ -329,7 +329,7 @@ class ActivityLogService:
         reminder_type: str,
         planner_email: str,
         channel: str = "sms",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Log when reminders are sent to guests"""
         message = f"Sent {reminder_type} reminder to {recipient_count} guest{'s' if recipient_count != 1 else ''} via {channel}"
 
@@ -352,15 +352,15 @@ class ActivityLogService:
         recipient_name: str,
         email_type: str,
         planner_email: str,
-        recipient_email: Optional[str] = None,
-        guest_id: Optional[str] = None,
+        recipient_email: str | None = None,
+        guest_id: str | None = None,
         status: str = "sent",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Log when an email is sent"""
         status_text = "sent" if status == "sent" else f"failed ({status})"
         message = f"Email {status_text} to {recipient_name}: {email_type}"
 
-        meta: Dict[str, Any] = {
+        meta: dict[str, Any] = {
             "recipient_name": recipient_name,
             "recipient_email": recipient_email,
             "email_type": email_type,
@@ -385,7 +385,7 @@ class ActivityLogService:
         member_email: str,
         role: str,
         invited_by: str,
-        member_name: Optional[str] = None,
+        member_name: str | None = None,
     ):
         display = member_name or member_email
         return await self.log_activity(
@@ -406,7 +406,7 @@ class ActivityLogService:
         planner_email: str,
         member_email: str,
         member_name: str,
-        role: Optional[str] = None,
+        role: str | None = None,
     ):
         role_label = f" ({role})" if role else ""
         return await self.log_activity(
@@ -429,8 +429,8 @@ class ActivityLogService:
         member_email: str,
         changes: dict,
         updated_by: str,
-        member_name: Optional[str] = None,
-        member_role: Optional[str] = None,
+        member_name: str | None = None,
+        member_role: str | None = None,
     ):
         display = member_name or member_email
         role_label = f" ({member_role})" if member_role else ""
@@ -454,8 +454,8 @@ class ActivityLogService:
         planner_email: str,
         member_email: str,
         deactivated_by: str,
-        member_name: Optional[str] = None,
-        member_role: Optional[str] = None,
+        member_name: str | None = None,
+        member_role: str | None = None,
     ):
         display = member_name or member_email
         role_label = f" ({member_role})" if member_role else ""
@@ -476,8 +476,8 @@ class ActivityLogService:
         planner_email: str,
         member_email: str,
         reactivated_by: str,
-        member_name: Optional[str] = None,
-        member_role: Optional[str] = None,
+        member_name: str | None = None,
+        member_role: str | None = None,
     ):
         display = member_name or member_email
         role_label = f" ({member_role})" if member_role else ""
@@ -498,8 +498,8 @@ class ActivityLogService:
         planner_email: str,
         member_email: str,
         removed_by: str,
-        member_name: Optional[str] = None,
-        member_role: Optional[str] = None,
+        member_name: str | None = None,
+        member_role: str | None = None,
     ):
         display = member_name or member_email
         role_label = f" ({member_role})" if member_role else ""

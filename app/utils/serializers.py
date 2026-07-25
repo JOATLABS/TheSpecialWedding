@@ -3,7 +3,7 @@ Utility functions for serializing MongoDB documents and other data structures
 """
 
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any
 
 from bson import ObjectId
 
@@ -40,7 +40,7 @@ def serialize_mongo_doc(doc: Any) -> Any:
     return doc
 
 
-def serialize_mongo_docs(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def serialize_mongo_docs(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Serialize a list of MongoDB documents
 

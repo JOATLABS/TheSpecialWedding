@@ -9,9 +9,10 @@ import json
 import logging
 import re
 import secrets
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
 import httpx
@@ -30,10 +31,10 @@ from app.core.config import settings
 from app.core.database import mongo
 from app.models.calendar import ScheduleItemType, VisibilityMode
 from app.models.calendar_connection import (
-    CalendarSchedulerAccessMode,
-    CalendarSyncTargetingMode,
     CalendarConnectionStatus,
+    CalendarSchedulerAccessMode,
     CalendarSchedulerRole,
+    CalendarSyncTargetingMode,
 )
 from app.models.calendar_sync import CalendarSyncStatusValue
 from app.services.calendar_audit_service import calendar_audit_service
@@ -50,7 +51,7 @@ _CALENDAR_LIST_MAX_PAGES = 20
 
 # Mapping from event hex color to Google Calendar's numeric colorId. Hoisted
 # to module scope so it is not rebuilt on every event sync.
-_GOOGLE_EVENT_COLOR_MAP: Dict[str, str] = {
+_GOOGLE_EVENT_COLOR_MAP: dict[str, str] = {
     "#a4bdfc": "1",
     "#7ae7bf": "2",
     "#dbadff": "3",
@@ -257,8 +258,8 @@ class GoogleCalendarService:
         await cache.clear_pattern(f"calendar_external_events:{connection_id}:*")
 
     def _classify_google_exception(self, exc: Exception) -> dict[str, Any]:
-        status_code: Optional[int] = None
-        error_reason: Optional[str] = None
+        status_code: int | None = None
+        error_reason: str | None = None
         # Redact at the source — `message` flows into `last_error` in the DB
         # via `_apply_provider_error_to_connection`.
         message = _redact_sensitive(exc)
@@ -390,10 +391,10 @@ class GoogleCalendarService:
         *,
         success: bool,
         connection_doc: dict[str, Any],
-        external_event_id: Optional[str] = None,
-        etag: Optional[str] = None,
-        classification: Optional[dict[str, Any]] = None,
-        event: Optional[dict[str, Any]] = None,
+        external_event_id: str | None = None,
+        etag: str | None = None,
+        classification: dict[str, Any] | None = None,
+        event: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         classification = classification or {}
         return {
@@ -408,7 +409,7 @@ class GoogleCalendarService:
             "event": event,
         }
 
-    def _get_client_config(self) -> Dict[str, Any]:
+    def _get_client_config(self) -> dict[str, Any]:
         """Build OAuth client configuration from settings."""
         if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
             raise HTTPException(
@@ -451,12 +452,12 @@ class GoogleCalendarService:
         )
         return Fernet(derived_key)
 
-    def _encrypt_token(self, token: Optional[str]) -> Optional[str]:
+    def _encrypt_token(self, token: str | None) -> str | None:
         if not token:
             return None
         return self._get_fernet().encrypt(token.encode()).decode()
 
-    def _decrypt_token(self, token: Optional[str]) -> Optional[str]:
+    def _decrypt_token(self, token: str | None) -> str | None:
         if not token:
             return None
         return self._get_fernet().decrypt(token.encode()).decode()
@@ -467,7 +468,7 @@ class GoogleCalendarService:
         user_email: str,
         owner_id: str,
         owner_email: str,
-        redirect_to: Optional[str] = None,
+        redirect_to: str | None = None,
     ) -> str:
         now = datetime.now(UTC)
         payload = {
@@ -486,7 +487,7 @@ class GoogleCalendarService:
             algorithm="HS256",
         )
 
-    def _decode_state(self, state: str) -> Dict[str, Any]:
+    def _decode_state(self, state: str) -> dict[str, Any]:
         try:
             payload = jwt.decode(
                 state,
@@ -516,7 +517,7 @@ class GoogleCalendarService:
         user_email: str,
         owner_id: str,
         owner_email: str,
-        redirect_to: Optional[str] = None,
+        redirect_to: str | None = None,
     ) -> str:
         """Generate an OAuth authorization URL for a planner/team member."""
         flow = Flow.from_client_config(
@@ -549,8 +550,8 @@ class GoogleCalendarService:
         *,
         code: str,
         state: str,
-        current_user_context: Optional[dict[str, Optional[str]]] = None,
-    ) -> Dict[str, Any]:
+        current_user_context: dict[str, str | None] | None = None,
+    ) -> dict[str, Any]:
         """Exchange authorization code for tokens and persist connection rows."""
         state_payload = self._decode_state(state)
 
@@ -623,7 +624,7 @@ class GoogleCalendarService:
         # C-5: capped calendarList pagination so a corporate account with
         # thousands of subscribed calendars cannot run away with a worker.
         calendars: list[dict[str, Any]] = []
-        page_token: Optional[str] = None
+        page_token: str | None = None
         for _page_index in range(_CALENDAR_LIST_MAX_PAGES):
             response = await asyncio.to_thread(
                 lambda token=page_token: (
@@ -878,9 +879,9 @@ class GoogleCalendarService:
         self,
         *,
         owner_id: str,
-        current_user_id: Optional[str],
+        current_user_id: str | None,
         include_all_owner_connections: bool,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """List visible calendar connections within an owner scope."""
         query: dict[str, Any] = {"owner_planner_id": owner_id}
         if not include_all_owner_connections and current_user_id:
@@ -914,10 +915,10 @@ class GoogleCalendarService:
         connection_doc: dict,
         *,
         access_token: str,
-        refresh_token: Optional[str],
-        token_expiry: Optional[datetime],
+        refresh_token: str | None,
+        token_expiry: datetime | None,
         connection_status: str = CalendarConnectionStatus.ACTIVE.value,
-        last_error: Optional[str] = None,
+        last_error: str | None = None,
     ) -> None:
         """Update all calendar rows for the same user/provider account."""
         query = {
@@ -936,7 +937,7 @@ class GoogleCalendarService:
 
     async def get_credentials_for_connection(
         self, connection_id: str
-    ) -> Optional[Credentials]:
+    ) -> Credentials | None:
         """Load decrypted credentials for a connection, refreshing if needed.
 
         Refreshes are guarded by a per-account lock so concurrent requests for
@@ -1023,8 +1024,8 @@ class GoogleCalendarService:
         connection_id: str,
         updates: dict[str, Any],
         *,
-        actor_email: Optional[str] = None,
-        actor_role: Optional[str] = None,
+        actor_email: str | None = None,
+        actor_role: str | None = None,
     ) -> dict:
         """Update mutable connection flags."""
         connection_doc = await self._get_connection_doc(connection_id)
@@ -1372,8 +1373,8 @@ class GoogleCalendarService:
         self,
         connection_id: str,
         *,
-        actor_email: Optional[str] = None,
-        actor_role: Optional[str] = None,
+        actor_email: str | None = None,
+        actor_role: str | None = None,
     ) -> dict:
         """Delete one connection row.
 
@@ -1470,8 +1471,8 @@ class GoogleCalendarService:
         self,
         user_email: str,
         *,
-        owner_planner_id: Optional[str] = None,
-    ) -> Optional[dict]:
+        owner_planner_id: str | None = None,
+    ) -> dict | None:
         """Resolve the active default writable connection for a user."""
         query = {
             "user_email": user_email,
@@ -1489,8 +1490,8 @@ class GoogleCalendarService:
         return await self.connections_collection.find_one(query)
 
     async def get_connection_status(
-        self, user_email: str, *, owner_planner_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, user_email: str, *, owner_planner_id: str | None = None
+    ) -> dict[str, Any]:
         """Compatibility helper for legacy UI that expects one status object."""
         connection = await self.get_default_write_connection_for_user(
             user_email, owner_planner_id=owner_planner_id
@@ -1520,15 +1521,15 @@ class GoogleCalendarService:
         }
 
     async def disconnect(
-        self, user_email: str, *, owner_planner_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, user_email: str, *, owner_planner_id: str | None = None
+    ) -> dict[str, Any]:
         """Compatibility helper to disconnect every connection for a user.
 
         Performs revocation per *provider account* (not per row), then bulk
         deletes the rows in a single statement. Avoids the partial-failure
         and silent-truncation issues of the prior per-row loop.
         """
-        scoped_filter: Dict[str, Any] = {"user_email": user_email}
+        scoped_filter: dict[str, Any] = {"user_email": user_email}
         if owner_planner_id:
             scoped_filter["owner_planner_id"] = owner_planner_id
         docs = await self.connections_collection.find(scoped_filter).to_list(
@@ -1542,7 +1543,7 @@ class GoogleCalendarService:
 
         # Group rows by (user_id, provider_account_email) — one revoke per
         # Google account, regardless of how many calendars are connected.
-        by_account: Dict[tuple[str, str], list[dict[str, Any]]] = {}
+        by_account: dict[tuple[str, str], list[dict[str, Any]]] = {}
         for doc in docs:
             key = (
                 str(doc.get("user_id") or ""),
@@ -1623,8 +1624,8 @@ class GoogleCalendarService:
 
     def _build_event_body(
         self,
-        task: Dict[str, Any],
-        attendee_emails: Optional[list[str]] = None,
+        task: dict[str, Any],
+        attendee_emails: list[str] | None = None,
     ) -> dict:
         """Translate a canonical task record into a Google Calendar event body."""
         event_body: dict[str, Any] = {
@@ -1681,8 +1682,8 @@ class GoogleCalendarService:
     async def create_google_event_for_connection(
         self,
         connection_id: str,
-        task: Dict[str, Any],
-        attendee_emails: Optional[list[str]] = None,
+        task: dict[str, Any],
+        attendee_emails: list[str] | None = None,
     ) -> dict[str, Any]:
         """Create an event on a specific Google calendar connection."""
         credentials = await self.get_credentials_for_connection(connection_id)
@@ -1750,8 +1751,8 @@ class GoogleCalendarService:
         self,
         connection_id: str,
         external_event_id: str,
-        task: Dict[str, Any],
-        attendee_emails: Optional[list[str]] = None,
+        task: dict[str, Any],
+        attendee_emails: list[str] | None = None,
     ) -> dict[str, Any]:
         """Update an existing event on a specific Google calendar connection."""
         credentials = await self.get_credentials_for_connection(connection_id)
@@ -1935,10 +1936,10 @@ class GoogleCalendarService:
         self,
         connection_id: str,
         *,
-        time_min: Optional[datetime] = None,
-        time_max: Optional[datetime] = None,
+        time_min: datetime | None = None,
+        time_max: datetime | None = None,
         max_results: int = 200,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Fetch events from a specific connection for shared-calendar aggregation."""
         if not time_min:
             time_min = datetime.now(UTC)
@@ -2015,12 +2016,12 @@ class GoogleCalendarService:
     async def fetch_google_events(
         self,
         user_email: str,
-        time_min: Optional[datetime] = None,
-        time_max: Optional[datetime] = None,
+        time_min: datetime | None = None,
+        time_max: datetime | None = None,
         max_results: int = 100,
         *,
-        owner_planner_id: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        owner_planner_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Legacy wrapper for single-user Google event fetch."""
         connection = await self.get_default_write_connection_for_user(
             user_email, owner_planner_id=owner_planner_id

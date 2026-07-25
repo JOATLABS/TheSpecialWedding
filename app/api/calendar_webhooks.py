@@ -30,15 +30,15 @@ import hashlib
 import logging
 import re
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import unquote
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 
-from app.services.calendar_idempotency_service import calendar_idempotency_service
-from app.services.calendar_webhook_service import calendar_webhook_service
 from app.services.aurinko_contacts_sync_service import aurinko_contacts_sync_service
 from app.services.aurinko_tasks_sync_service import aurinko_tasks_sync_service
+from app.services.calendar_idempotency_service import calendar_idempotency_service
+from app.services.calendar_webhook_service import calendar_webhook_service
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ _TASKLIST_RESOURCE_RE = re.compile(r"^/tasklists/([^/]+)/tasks/?$")
 _CONTACTS_RESOURCE_RE = re.compile(r"^/contacts/?$")
 
 
-def _coerce_datetime(value: Any) -> Optional[datetime]:
+def _coerce_datetime(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         return value
     if isinstance(value, str):
@@ -64,7 +64,7 @@ def _coerce_datetime(value: Any) -> Optional[datetime]:
     return None
 
 
-def _extract_calendar_id(resource: Optional[str]) -> Optional[str]:
+def _extract_calendar_id(resource: str | None) -> str | None:
     if not resource:
         return None
     match = _CALENDAR_RESOURCE_RE.match(resource)
@@ -76,7 +76,7 @@ def _extract_calendar_id(resource: Optional[str]) -> Optional[str]:
     return unquote(match.group(1))
 
 
-def _extract_tasklist_id(resource: Optional[str]) -> Optional[str]:
+def _extract_tasklist_id(resource: str | None) -> str | None:
     if not resource:
         return None
     match = _TASKLIST_RESOURCE_RE.match(resource)
@@ -85,7 +85,7 @@ def _extract_tasklist_id(resource: Optional[str]) -> Optional[str]:
     return unquote(match.group(1))
 
 
-def _resource_kind(resource: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+def _resource_kind(resource: str | None) -> tuple[str | None, str | None]:
     if not resource:
         return None, None
     calendar_id = _extract_calendar_id(resource)

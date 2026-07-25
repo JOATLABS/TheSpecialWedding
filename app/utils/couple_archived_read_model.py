@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from app.core.database import mongo
 from app.utils.id_utils import to_str_id
 
 
-async def get_archived_wedding_record(wedding_id: str) -> Optional[dict[str, Any]]:
+async def get_archived_wedding_record(wedding_id: str) -> dict[str, Any] | None:
     """Fetch the archived wedding snapshot for a wedding if one exists."""
     if not wedding_id:
         return None
@@ -16,19 +16,19 @@ async def get_archived_wedding_record(wedding_id: str) -> Optional[dict[str, Any
     )
 
 
-def get_archived_wedding_snapshot(archive: Optional[dict[str, Any]]) -> dict[str, Any]:
+def get_archived_wedding_snapshot(archive: dict[str, Any] | None) -> dict[str, Any]:
     return (archive or {}).get("wedding") or {}
 
 
-def get_archived_registries(archive: Optional[dict[str, Any]]) -> list[dict[str, Any]]:
+def get_archived_registries(archive: dict[str, Any] | None) -> list[dict[str, Any]]:
     return list(get_archived_wedding_snapshot(archive).get("registries") or [])
 
 
-def get_archived_faqs(archive: Optional[dict[str, Any]]) -> list[dict[str, Any]]:
+def get_archived_faqs(archive: dict[str, Any] | None) -> list[dict[str, Any]]:
     return list(get_archived_wedding_snapshot(archive).get("faqs") or [])
 
 
-def build_archived_guest_stats(archive: Optional[dict[str, Any]]) -> dict[str, Any]:
+def build_archived_guest_stats(archive: dict[str, Any] | None) -> dict[str, Any]:
     """Return archived guest statistics using the same shape as the live dashboard."""
     guests = list((archive or {}).get("guests") or [])
     rsvps = list((archive or {}).get("rsvps") or [])
@@ -113,10 +113,10 @@ def build_archived_guest_stats(archive: Optional[dict[str, Any]]) -> dict[str, A
 
 
 def build_archived_non_responders(
-    archive: Optional[dict[str, Any]],
+    archive: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
     """Reconstruct the couple non-responder list from archived guest and RSVP data."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     guests = list((archive or {}).get("guests") or [])
     rsvps = list((archive or {}).get("rsvps") or [])
     responded_ids = {
@@ -159,7 +159,7 @@ def build_archived_non_responders(
 
 
 def build_archived_budget_breakdown(
-    archive: Optional[dict[str, Any]],
+    archive: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """Return a budget-breakdown-shaped archived payload from stored budget data."""
     budget_doc = (archive or {}).get("budget") or {}
@@ -193,10 +193,8 @@ def build_archived_budget_breakdown(
     stored_total_spent = float(
         budget_doc.get("total_spent", budget_doc.get("spent_total", 0)) or 0
     )
-    if stored_total_budget > total_budgeted:
-        total_budgeted = stored_total_budget
-    if stored_total_spent > total_spent:
-        total_spent = stored_total_spent
+    total_budgeted = max(total_budgeted, stored_total_budget)
+    total_spent = max(total_spent, stored_total_spent)
 
     for category in breakdown:
         category["percent_of_total_budget"] = (
@@ -219,10 +217,10 @@ def build_archived_budget_breakdown(
     }
 
 
-def _coerce_datetime(value: Any) -> Optional[datetime]:
+def _coerce_datetime(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
+            return value.replace(tzinfo=UTC)
         return value
 
     if isinstance(value, str):
@@ -232,17 +230,17 @@ def _coerce_datetime(value: Any) -> Optional[datetime]:
         except ValueError:
             return None
         if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
+            return parsed.replace(tzinfo=UTC)
         return parsed
 
     return None
 
 
-def _serialize_datetime(value: Any) -> Optional[str]:
+def _serialize_datetime(value: Any) -> str | None:
     dt = _coerce_datetime(value)
     if not dt:
         return None
-    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return dt.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _normalize_attending_events(rsvp: dict[str, Any]) -> list[str]:

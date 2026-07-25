@@ -1,9 +1,9 @@
 import hashlib
 import os
 import re
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from io import BytesIO
-from typing import Iterable, Optional
 from urllib.parse import urlparse
 
 import qrcode
@@ -47,7 +47,7 @@ class GalleryUploadService:
         return normalized or fallback
 
     @classmethod
-    def get_planner_scope_from_wedding(cls, wedding: Optional[dict]) -> Optional[str]:
+    def get_planner_scope_from_wedding(cls, wedding: dict | None) -> str | None:
         if not wedding:
             return None
 
@@ -67,7 +67,7 @@ class GalleryUploadService:
         cls,
         folder: str,
         wedding_slug: str,
-        planner_scope: Optional[str] = None,
+        planner_scope: str | None = None,
     ) -> str:
         normalized_folder = cls._strip_storage_part(folder)
         normalized_slug = cls._strip_storage_part(wedding_slug)
@@ -83,7 +83,7 @@ class GalleryUploadService:
         cls,
         folder: str,
         wedding_slug: str,
-        planner_scope: Optional[str] = None,
+        planner_scope: str | None = None,
     ) -> list[str]:
         prefixes: list[str] = []
         if planner_scope:
@@ -99,20 +99,18 @@ class GalleryUploadService:
         folder: str,
         wedding_slug: str,
         filename: str,
-        planner_scope: Optional[str] = None,
-        timestamp: Optional[str] = None,
+        planner_scope: str | None = None,
+        timestamp: str | None = None,
     ) -> str:
         safe_filename = os.path.basename(str(filename))
-        safe_timestamp = timestamp or datetime.now(timezone.utc).strftime(
-            "%Y%m%d_%H%M%S"
-        )
+        safe_timestamp = timestamp or datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         prefix = cls.build_wedding_storage_prefix(
             folder, wedding_slug, planner_scope
         ).rstrip("/")
         return f"{prefix}/{safe_timestamp}_{safe_filename}"
 
     @classmethod
-    def parse_wedding_storage_key(cls, key: str) -> Optional[dict]:
+    def parse_wedding_storage_key(cls, key: str) -> dict | None:
         parts = cls._strip_storage_part(key).split("/")
         if len(parts) < 3:
             return None
@@ -138,7 +136,7 @@ class GalleryUploadService:
         }
 
     @classmethod
-    def parse_wedding_storage_prefix(cls, prefix: str) -> Optional[dict]:
+    def parse_wedding_storage_prefix(cls, prefix: str) -> dict | None:
         parts = cls._strip_storage_part(prefix).split("/")
         if len(parts) < 2:
             return None
@@ -161,7 +159,7 @@ class GalleryUploadService:
         }
 
     @classmethod
-    def build_legacy_storage_identity(cls, key: str) -> Optional[str]:
+    def build_legacy_storage_identity(cls, key: str) -> str | None:
         parsed = cls.parse_wedding_storage_key(key)
         if not parsed:
             return None
@@ -170,7 +168,7 @@ class GalleryUploadService:
     def build_public_url(self, key: str) -> str:
         return self.storage.build_public_url(StorageTarget.PRIMARY, key)
 
-    def resolve_asset_url(self, value: Optional[str]) -> Optional[str]:
+    def resolve_asset_url(self, value: str | None) -> str | None:
         """Resolve a stored wedding asset reference to a full public URL.
 
         Accepts either a raw R2 object key (e.g. ``our-story/planner-XYZ/slug/file.jpg``)
@@ -184,7 +182,7 @@ class GalleryUploadService:
             return value
         return self.build_public_url(value)
 
-    def resolve_wedding_media_urls(self, wedding: Optional[dict]) -> Optional[dict]:
+    def resolve_wedding_media_urls(self, wedding: dict | None) -> dict | None:
         """Replace stored keys on wedding asset fields with full public URLs.
 
         Guest-facing endpoints should run the wedding dict through this helper so
@@ -252,7 +250,7 @@ class GalleryUploadService:
         )
 
     @staticmethod
-    def _encode_scoped_cursor(scope: str, cursor: Optional[str]) -> Optional[str]:
+    def _encode_scoped_cursor(scope: str, cursor: str | None) -> str | None:
         if scope == "legacy" and cursor is None:
             return "legacy::"
         if not cursor:
@@ -260,7 +258,7 @@ class GalleryUploadService:
         return f"{scope}::{cursor}"
 
     @staticmethod
-    def _decode_scoped_cursor(cursor: Optional[str]) -> tuple[str, Optional[str]]:
+    def _decode_scoped_cursor(cursor: str | None) -> tuple[str, str | None]:
         if not cursor:
             return ("primary", None)
         if "::" in cursor:
@@ -272,7 +270,7 @@ class GalleryUploadService:
     def create_presigned_url(self, filename: str, expires_in: int = 300):
         """Legacy method - creates presigned URL without wedding_slug (deprecated)."""
         try:
-            key = f"gallery/{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{filename}"
+            key = f"gallery/{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}_{filename}"
             url = self.storage.generate_presigned_put_url(
                 StorageTarget.PRIMARY,
                 key=key,
@@ -283,7 +281,7 @@ class GalleryUploadService:
             raise HTTPException(status_code=503, detail=str(exc))
         except ClientError as exc:
             raise HTTPException(
-                status_code=500, detail=f"Error creating upload URL: {str(exc)}"
+                status_code=500, detail=f"Error creating upload URL: {exc!s}"
             )
 
     def create_presigned_url_with_wedding(
@@ -292,7 +290,7 @@ class GalleryUploadService:
         wedding_slug: str,
         folder: str = "gallery",
         expires_in: int = 300,
-        planner_scope: Optional[str] = None,
+        planner_scope: str | None = None,
     ):
         """Create a presigned URL with wedding-aware storage keys."""
         try:
@@ -312,7 +310,7 @@ class GalleryUploadService:
             raise HTTPException(status_code=503, detail=str(exc))
         except ClientError as exc:
             raise HTTPException(
-                status_code=500, detail=f"Error creating upload URL: {str(exc)}"
+                status_code=500, detail=f"Error creating upload URL: {exc!s}"
             )
 
     def get_file_url(self, key: str):
@@ -327,7 +325,7 @@ class GalleryUploadService:
             raise HTTPException(status_code=503, detail=str(exc))
         except ClientError as exc:
             raise HTTPException(
-                status_code=500, detail=f"Error generating file URL: {str(exc)}"
+                status_code=500, detail=f"Error generating file URL: {exc!s}"
             )
 
     def delete_file(self, key: str):
@@ -340,7 +338,7 @@ class GalleryUploadService:
             error_code = exc.response.get("Error", {}).get("Code", "Unknown")
             raise HTTPException(
                 status_code=500,
-                detail=f"Error deleting file ({error_code}): {str(exc)}",
+                detail=f"Error deleting file ({error_code}): {exc!s}",
             )
 
     def _format_listed_objects(self, objects: list[dict]) -> list[dict]:
@@ -357,7 +355,7 @@ class GalleryUploadService:
         self,
         prefix: str = "gallery/",
         limit: int = 60,
-        cursor: Optional[str] = None,
+        cursor: str | None = None,
     ):
         try:
             response = self.storage.list_objects_page(
@@ -379,7 +377,7 @@ class GalleryUploadService:
             error_code = exc.response.get("Error", {}).get("Code", "Unknown")
             raise HTTPException(
                 status_code=500,
-                detail=f"Error listing files ({error_code}): {str(exc)}",
+                detail=f"Error listing files ({error_code}): {exc!s}",
             )
 
     def list_uploaded_files(self, prefix: str = "gallery/"):
@@ -408,14 +406,14 @@ class GalleryUploadService:
             error_code = exc.response.get("Error", {}).get("Code", "Unknown")
             raise HTTPException(
                 status_code=500,
-                detail=f"Error listing files ({error_code}): {str(exc)}",
+                detail=f"Error listing files ({error_code}): {exc!s}",
             )
 
     def list_wedding_files(
         self,
         folder: str,
         wedding_slug: str,
-        planner_scope: Optional[str] = None,
+        planner_scope: str | None = None,
     ):
         prefixes = self.build_wedding_storage_prefixes(
             folder=folder,
@@ -429,9 +427,9 @@ class GalleryUploadService:
         self,
         folder: str,
         wedding_slug: str,
-        planner_scope: Optional[str] = None,
+        planner_scope: str | None = None,
         limit: int = 60,
-        cursor: Optional[str] = None,
+        cursor: str | None = None,
     ):
         prefixes = self.build_wedding_storage_prefixes(
             folder=folder,
@@ -530,7 +528,7 @@ class GalleryUploadService:
             raise
         except Exception as exc:
             raise HTTPException(
-                status_code=500, detail=f"Error generating QR code: {str(exc)}"
+                status_code=500, detail=f"Error generating QR code: {exc!s}"
             )
 
     def upload_file_direct(
@@ -538,7 +536,7 @@ class GalleryUploadService:
         file: UploadFile,
         wedding_slug: str,
         folder: str = "gallery",
-        planner_scope: Optional[str] = None,
+        planner_scope: str | None = None,
     ):
         try:
             if file.content_type not in ALLOWED_GALLERY_TYPES:
@@ -567,5 +565,5 @@ class GalleryUploadService:
             error_code = exc.response.get("Error", {}).get("Code", "Unknown")
             raise HTTPException(
                 status_code=500,
-                detail=f"Error uploading file ({error_code}): {str(exc)}",
+                detail=f"Error uploading file ({error_code}): {exc!s}",
             )

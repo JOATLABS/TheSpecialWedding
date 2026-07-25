@@ -28,17 +28,17 @@ from app.models.storefront import (
     StorefrontAccessResponse,
     StorefrontAssetDeleteResponse,
     StorefrontAssetResponse,
-    StorefrontDomainClaimRequest,
     StorefrontDomainAttemptRequest,
+    StorefrontDomainClaimRequest,
     StorefrontDomainConnectAuthorizationResponse,
-    StorefrontDomainInstructionRequest,
-    StorefrontDomainInstructionLinksResponse,
-    StorefrontDomainInstructionPublicResponse,
-    StorefrontDomainInstructionRevokeResponse,
-    StorefrontDomainInstructionResponse,
-    StorefrontDomainHttpsProbeResponse,
     StorefrontDomainConnectRequest,
     StorefrontDomainDisconnectResponse,
+    StorefrontDomainHttpsProbeResponse,
+    StorefrontDomainInstructionLinksResponse,
+    StorefrontDomainInstructionPublicResponse,
+    StorefrontDomainInstructionRequest,
+    StorefrontDomainInstructionResponse,
+    StorefrontDomainInstructionRevokeResponse,
     StorefrontDomainPreflightRequest,
     StorefrontDomainPreflightResponse,
     StorefrontDomainResponse,
@@ -52,16 +52,16 @@ from app.models.storefront import (
     StorefrontUploadCompleteRequest,
     StorefrontUploadReservationResponse,
 )
-from app.services.storefront_domain_service import storefront_domain_service
+from app.services.storefront_domain_connect_service import (
+    storefront_domain_connect_service,
+)
 from app.services.storefront_domain_https_probe import (
     PROBE_HEADER,
     PROBE_HOST_HEADER,
     PROBE_INGRESS_HEADER,
     storefront_domain_https_probe_service,
 )
-from app.services.storefront_domain_connect_service import (
-    storefront_domain_connect_service,
-)
+from app.services.storefront_domain_service import storefront_domain_service
 from app.services.storefront_entitlement_service import StorefrontEntitlements
 from app.services.storefront_inquiry_service import storefront_inquiry_service
 from app.services.storefront_media_service import (

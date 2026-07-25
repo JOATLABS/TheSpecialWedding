@@ -59,7 +59,7 @@ async def update_wedding_meter_state(
                 {"$set": set_fields},
             )
             return result.matched_count > 0
-        except Exception as exc:  # noqa: BLE001 — Mongo error type varies
+        except Exception as exc:
             if attempt == 1:
                 logger.warning(
                     "update_wedding_meter_state attempt 1 failed for "

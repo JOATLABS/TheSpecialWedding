@@ -6,7 +6,6 @@ All endpoints require planner authentication.
 """
 
 import logging
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -74,7 +73,7 @@ class PackageServiceRequest(BaseModel):
     """Service item in a package."""
 
     name: str = Field(..., min_length=1, max_length=200)
-    description: Optional[str] = Field(None, max_length=500)
+    description: str | None = Field(None, max_length=500)
     included: bool = True
 
 
@@ -85,58 +84,58 @@ class ScheduleItemRequest(BaseModel):
     trigger: str = Field(
         ..., pattern="^(on_signing|days_after_signing|days_before_wedding|fixed_date)$"
     )
-    days_after: Optional[int] = Field(None, ge=0)
-    days_before: Optional[int] = Field(None, ge=0)
-    fixed_date: Optional[str] = None
-    amount: Optional[float] = Field(None, ge=0)
-    percentage: Optional[float] = Field(None, ge=0, le=100)
+    days_after: int | None = Field(None, ge=0)
+    days_before: int | None = Field(None, ge=0)
+    fixed_date: str | None = None
+    amount: float | None = Field(None, ge=0)
+    percentage: float | None = Field(None, ge=0, le=100)
 
 
 class CreatePackageRequest(BaseModel):
     """Request to create a new package."""
 
     name: str = Field(..., min_length=1, max_length=200)
-    description: Optional[str] = Field(None, max_length=2000)
-    services: List[PackageServiceRequest] = Field(default_factory=list)
+    description: str | None = Field(None, max_length=2000)
+    services: list[PackageServiceRequest] = Field(default_factory=list)
     total_amount: float = Field(..., gt=0)
     currency: str = Field(default="usd", pattern="^[a-z]{3}$")
-    payment_schedule: List[ScheduleItemRequest] = Field(default_factory=list)
+    payment_schedule: list[ScheduleItemRequest] = Field(default_factory=list)
     cancellation_policy: str = Field(default="")
-    late_payment_policy: Optional[str] = None
-    custom_terms: Optional[str] = None
+    late_payment_policy: str | None = None
+    custom_terms: str | None = None
     is_template: bool = False
-    status: Optional[str] = Field(default="draft", pattern="^(draft|active)$")
+    status: str | None = Field(default="draft", pattern="^(draft|active)$")
 
 
 class UpdatePackageRequest(BaseModel):
     """Request to update a package."""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=200)
-    description: Optional[str] = Field(None, max_length=2000)
-    services: Optional[List[PackageServiceRequest]] = None
-    total_amount: Optional[float] = Field(None, gt=0)
-    payment_schedule: Optional[List[ScheduleItemRequest]] = None
-    cancellation_policy: Optional[str] = None
-    late_payment_policy: Optional[str] = None
-    custom_terms: Optional[str] = None
-    status: Optional[str] = Field(None, pattern="^(draft|active|archived)$")
+    name: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = Field(None, max_length=2000)
+    services: list[PackageServiceRequest] | None = None
+    total_amount: float | None = Field(None, gt=0)
+    payment_schedule: list[ScheduleItemRequest] | None = None
+    cancellation_policy: str | None = None
+    late_payment_policy: str | None = None
+    custom_terms: str | None = None
+    status: str | None = Field(None, pattern="^(draft|active|archived)$")
 
 
 class CoupleInfoRequest(BaseModel):
     """Couple contact information."""
 
     partner1_name: str = Field(..., min_length=1, max_length=100)
-    partner2_name: Optional[str] = Field(None, max_length=100)
+    partner2_name: str | None = Field(None, max_length=100)
     email: str = Field(..., max_length=254)
-    phone: Optional[str] = Field(None, max_length=20)
+    phone: str | None = Field(None, max_length=20)
 
 
 class SendPackageRequest(BaseModel):
     """Request to send package to couple."""
 
     couple: CoupleInfoRequest
-    wedding_date: Optional[str] = None
-    wedding_id: Optional[str] = None
+    wedding_date: str | None = None
+    wedding_id: str | None = None
 
 
 # ============================================================================
@@ -147,7 +146,7 @@ class SendPackageRequest(BaseModel):
 @router.get("/packages", tags=["Packages"])
 async def list_packages(
     include_templates: bool = Query(False),
-    status: Optional[str] = Query(None, pattern="^(draft|active|archived)$"),
+    status: str | None = Query(None, pattern="^(draft|active|archived)$"),
     limit: int = Query(50, ge=1, le=100),
     skip: int = Query(0, ge=0),
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
@@ -171,7 +170,7 @@ async def list_packages(
         return {"packages": packages, "count": len(packages)}
 
     except Exception as e:
-        logger.error(f"Failed to list packages: {str(e)}")
+        logger.error(f"Failed to list packages: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to retrieve packages")
 
 
@@ -198,7 +197,7 @@ async def create_package(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to create package: {str(e)}")
+        logger.error(f"Failed to create package: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to create package")
 
 
@@ -213,7 +212,7 @@ async def get_package_stats(
         return stats
 
     except Exception as e:
-        logger.error(f"Failed to get package stats: {str(e)}")
+        logger.error(f"Failed to get package stats: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to retrieve statistics")
 
 
@@ -233,7 +232,7 @@ async def get_package(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get package: {str(e)}")
+        logger.error(f"Failed to get package: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to retrieve package")
 
 
@@ -262,7 +261,7 @@ async def update_package(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to update package: {str(e)}")
+        logger.error(f"Failed to update package: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to update package")
 
 
@@ -285,14 +284,14 @@ async def delete_package(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to delete package: {str(e)}")
+        logger.error(f"Failed to delete package: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to delete package")
 
 
 @router.post("/packages/{package_id}/duplicate", tags=["Packages"])
 async def duplicate_package(
     package_id: str,
-    name: Optional[str] = None,
+    name: str | None = None,
     as_template: bool = True,
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
@@ -316,7 +315,7 @@ async def duplicate_package(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to duplicate package: {str(e)}")
+        logger.error(f"Failed to duplicate package: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to duplicate package")
 
 
@@ -372,7 +371,7 @@ async def send_package_to_couple(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to send package: {str(e)}")
+        logger.error(f"Failed to send package: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to send package")
 
 
@@ -384,9 +383,9 @@ async def send_package_to_couple(
 class AIPricingSuggestionRequest(BaseModel):
     """Request for AI pricing suggestions."""
 
-    services: List[PackageServiceRequest] = Field(default_factory=list)
-    location: Optional[str] = Field(None, max_length=100)
-    wedding_size: Optional[int] = Field(None, ge=1, le=1000)
+    services: list[PackageServiceRequest] = Field(default_factory=list)
+    location: str | None = Field(None, max_length=100)
+    wedding_size: int | None = Field(None, ge=1, le=1000)
 
 
 @router.post("/packages/ai-pricing", tags=["Packages"])
@@ -505,12 +504,12 @@ async def get_ai_pricing_suggestion(
             },
         )
     except AIGenerationError as e:
-        logger.error(f"AI generation error: {str(e)}")
+        logger.error(f"AI generation error: {e!s}")
         raise HTTPException(
             status_code=503, detail="AI service temporarily unavailable"
         )
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get AI pricing: {str(e)}")
+        logger.error(f"Failed to get AI pricing: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to get pricing suggestion")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Any, Optional
+from typing import Any
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -40,11 +40,11 @@ class AurinkoContactsSyncService:
             "connection_id": connection_id,
         }
 
-    def _external_id(self, payload: dict[str, Any]) -> Optional[str]:
+    def _external_id(self, payload: dict[str, Any]) -> str | None:
         value = payload.get("id") or payload.get("contactId")
         return str(value) if value else None
 
-    def _external_etag(self, payload: dict[str, Any]) -> Optional[str]:
+    def _external_etag(self, payload: dict[str, Any]) -> str | None:
         value = payload.get("etag") or payload.get("changeKey")
         return str(value) if value else None
 
@@ -110,7 +110,7 @@ class AurinkoContactsSyncService:
 
     def _vendor_body(
         self, vendor: dict[str, Any], connection: dict[str, Any]
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         display_name = (
             vendor.get("contact_name") or vendor.get("business_name") or ""
         ).strip()
@@ -152,7 +152,7 @@ class AurinkoContactsSyncService:
             key: value for key, value in body.items() if value not in (None, [], "")
         }
 
-    async def _couple_email(self, wedding: dict[str, Any]) -> Optional[str]:
+    async def _couple_email(self, wedding: dict[str, Any]) -> str | None:
         for field in ("email", "couple_email", "contact_email", "reminder_from_email"):
             if wedding.get(field):
                 return str(wedding[field])
@@ -165,7 +165,7 @@ class AurinkoContactsSyncService:
 
     async def _couple_body(
         self, wedding: dict[str, Any], connection: dict[str, Any]
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         display_name = str(wedding.get("couple_names") or "").strip()
         email = await self._couple_email(wedding)
         if not display_name and not email:
@@ -186,9 +186,9 @@ class AurinkoContactsSyncService:
     async def _enabled_connections(
         self,
         *,
-        owner_planner_email: Optional[str],
-        owner_planner_id: Optional[str] = None,
-        connection_id: Optional[str] = None,
+        owner_planner_email: str | None,
+        owner_planner_id: str | None = None,
+        connection_id: str | None = None,
     ) -> list[dict[str, Any]]:
         query: dict[str, Any] = {
             "connection_status": CalendarConnectionStatus.ACTIVE.value,
@@ -292,7 +292,7 @@ class AurinkoContactsSyncService:
             )
 
     async def mirror_vendor_to_aurinko(
-        self, vendor_id: str, connection_id: Optional[str] = None
+        self, vendor_id: str, connection_id: str | None = None
     ) -> None:
         vendor = await self.vendor_profiles.find_one({"_id": ObjectId(vendor_id)})
         if not vendor or not vendor.get("is_active", True):
@@ -311,7 +311,7 @@ class AurinkoContactsSyncService:
                 )
 
     async def mirror_couple_to_aurinko(
-        self, wedding_id: str, connection_id: Optional[str] = None
+        self, wedding_id: str, connection_id: str | None = None
     ) -> None:
         wedding = await self.weddings_collection.find_one({"_id": wedding_id})
         if not wedding:
@@ -336,7 +336,7 @@ class AurinkoContactsSyncService:
         *,
         source_type: str,
         source_id: str,
-        connection_id: Optional[str] = None,
+        connection_id: str | None = None,
     ) -> None:
         query: dict[str, Any] = {"source_type": source_type, "source_id": source_id}
         if connection_id:

@@ -16,7 +16,7 @@ Existing role-aware modules:
 
 from __future__ import annotations
 
-from typing import Mapping, Optional
+from collections.abc import Mapping
 
 ROLE_WEDDING_PLANNER = "wedding_planner"
 ROLE_TEAM_MEMBER = "team_member"
@@ -25,7 +25,7 @@ ROLE_ROOT_ADMIN = "ROOT_ADMIN"
 ROLE_COUPLE = "couple"
 
 
-def _normalize(role: Optional[str]) -> str:
+def _normalize(role: str | None) -> str:
     """Strip + lower a role string, defending against case/whitespace drift.
 
     The canonical write path stores the lowercase form, but legacy or
@@ -37,7 +37,7 @@ def _normalize(role: Optional[str]) -> str:
     return (role or "").strip().lower()
 
 
-def is_wedding_planner_role(role: Optional[str]) -> bool:
+def is_wedding_planner_role(role: str | None) -> bool:
     """Return True when ``role`` is the canonical wedding-planner role.
 
     Use this anywhere a service needs to gate planner-only behaviour
@@ -47,7 +47,7 @@ def is_wedding_planner_role(role: Optional[str]) -> bool:
     return _normalize(role) == ROLE_WEDDING_PLANNER
 
 
-def is_wedding_planner_user(user: Optional[Mapping[str, object]]) -> bool:
+def is_wedding_planner_user(user: Mapping[str, object] | None) -> bool:
     """Convenience: predicate over a user document instead of a raw role."""
     if not user:
         return False

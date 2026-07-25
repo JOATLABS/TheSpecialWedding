@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _require_metrics_token(authorization: Optional[str] = Header(None)) -> None:
+def _require_metrics_token(authorization: str | None = Header(None)) -> None:
     if not settings.PLATFORM_METRICS_TOKEN:
         logger.error("PLATFORM_METRICS_TOKEN is not configured in settings")
         raise HTTPException(
@@ -35,7 +35,7 @@ def _require_metrics_token(authorization: Optional[str] = Header(None)) -> None:
         )
 
 
-def _serialize_snapshot_response(document: Dict[str, Any]) -> Dict[str, Any]:
+def _serialize_snapshot_response(document: dict[str, Any]) -> dict[str, Any]:
     snapshot_time = document.get("snapshot_time")
     ingested_at = document.get("ingested_at")
     return {
@@ -55,7 +55,7 @@ def _serialize_snapshot_response(document: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def build_live_platform_metrics_payload() -> Dict[str, Any]:
+async def build_live_platform_metrics_payload() -> dict[str, Any]:
     """Build the current platform metrics payload for scheduled snapshots."""
 
     from app.api.admin_platform_metrics import build_platform_health_payload
@@ -81,13 +81,13 @@ async def get_metrics_snapshot():
     dependencies=[Depends(_require_metrics_token)],
 )
 async def ingest_metrics_snapshot(
-    payload: Optional[Dict[str, Any]] = Body(default=None),
+    payload: dict[str, Any] | None = Body(default=None),
 ):
     if payload is None:
         live_metrics = await build_live_platform_metrics_payload()
         payload = {
             "snapshot_time": live_metrics.get("generated_at")
-            or datetime.now(timezone.utc).isoformat(),
+            or datetime.now(UTC).isoformat(),
             "metrics": live_metrics,
         }
 
@@ -121,7 +121,7 @@ async def get_admin_metrics_overview(
         live_health = await build_platform_health_payload()
 
         # Format as a snapshot response for dashboard compatibility
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return {
             "id": None,
             "timestamp": now.isoformat(),
@@ -143,16 +143,16 @@ async def get_admin_metrics_overview(
     dependencies=[Depends(require_root_admin)],
 )
 async def get_metrics_history(
-    start_date: Optional[str] = Query(None, description="ISO-8601 timestamp inclusive"),
+    start_date: str | None = Query(None, description="ISO-8601 timestamp inclusive"),
 ):
-    since: Optional[datetime] = None
+    since: datetime | None = None
     if start_date:
         try:
             since = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
             if since.tzinfo is None:
-                since = since.replace(tzinfo=timezone.utc)
+                since = since.replace(tzinfo=UTC)
             else:
-                since = since.astimezone(timezone.utc)
+                since = since.astimezone(UTC)
         except ValueError as exc:
             raise HTTPException(
                 status_code=400, detail="start_date must be an ISO-8601 datetime"

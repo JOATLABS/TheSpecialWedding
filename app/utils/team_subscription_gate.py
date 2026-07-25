@@ -14,7 +14,7 @@ surface (tests reference ``auth_extended.compute_owner_subscription_block``).
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from bson import ObjectId
 
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_team_member_block_reason(
-    owner_sub_status: Optional[str], owner_email: Optional[str]
+    owner_sub_status: str | None, owner_email: str | None
 ) -> str:
     """Build a 402 detail string for a team member whose owning planner is blocked.
 
@@ -44,10 +44,10 @@ def build_team_member_block_reason(
 
 
 async def compute_owner_subscription_block(
-    owner_id: Optional[str],
-    owner_email: Optional[str],
+    owner_id: str | None,
+    owner_email: str | None,
     mongo_client: Any = None,
-) -> Tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """Decide whether a team member should inherit a billing block from their owning planner.
 
     Returns ``(is_blocked, owner_sub_status)``.

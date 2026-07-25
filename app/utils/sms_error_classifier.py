@@ -7,8 +7,6 @@ Categorizes Twilio error codes into actionable groups so the system can
 take appropriate action (retry, flag phone, alert admin, etc.).
 """
 
-from typing import Optional
-
 # Temporary errors — safe to retry with exponential backoff
 TEMPORARY_ERRORS = {
     "30001",  # Queue overflow - message queue is full
@@ -41,7 +39,7 @@ COMPLIANCE_ERRORS = {
 }
 
 
-def classify_error(error_code: Optional[int]) -> str:
+def classify_error(error_code: int | None) -> str:
     """
     Classify a Twilio error code into an actionable category.
 
@@ -68,21 +66,21 @@ def classify_error(error_code: Optional[int]) -> str:
     return "unknown"
 
 
-def should_retry(error_code: Optional[int]) -> bool:
+def should_retry(error_code: int | None) -> bool:
     """Return True if the error is temporary and the message should be retried."""
     return classify_error(error_code) == "temporary"
 
 
-def is_account_level(error_code: Optional[int]) -> bool:
+def is_account_level(error_code: int | None) -> bool:
     """Return True if the error affects the entire Twilio account."""
     return classify_error(error_code) == "account_level"
 
 
-def is_permanent_recipient(error_code: Optional[int]) -> bool:
+def is_permanent_recipient(error_code: int | None) -> bool:
     """Return True if the error means the phone number is permanently unreachable."""
     return classify_error(error_code) == "permanent_recipient"
 
 
-def is_compliance(error_code: Optional[int]) -> bool:
+def is_compliance(error_code: int | None) -> bool:
     """Return True if the error is compliance-related (opt-out, blocked)."""
     return classify_error(error_code) == "compliance"

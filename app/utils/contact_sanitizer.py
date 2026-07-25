@@ -8,10 +8,9 @@ send-time code paths (defense-in-depth before calling Twilio/Telnyx/Resend).
 """
 
 import re
-from typing import Optional
 
 
-def sanitize_phone(phone: Optional[str]) -> Optional[str]:
+def sanitize_phone(phone: str | None) -> str | None:
     """
     Sanitize a phone number by stripping whitespace and common delimiters.
 
@@ -45,8 +44,8 @@ def sanitize_phone(phone: Optional[str]) -> Optional[str]:
 
 
 def normalize_phone_e164(
-    phone: Optional[str], default_country_code: str = "1"
-) -> Optional[str]:
+    phone: str | None, default_country_code: str = "1"
+) -> str | None:
     """
     Sanitize and normalize a phone number to E.164 format for Twilio/Telnyx.
 
@@ -85,7 +84,7 @@ def validate_phone_format(phone: str) -> bool:
     return 10 <= len(digits) <= 15
 
 
-def sanitize_email(email: Optional[str]) -> Optional[str]:
+def sanitize_email(email: str | None) -> str | None:
     """
     Sanitize an email address by stripping whitespace and lowercasing.
 

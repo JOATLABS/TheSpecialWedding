@@ -1,6 +1,6 @@
 import argparse
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from app.services.media_storage import MediaStorage, StorageTarget
@@ -9,7 +9,7 @@ from app.services.media_storage import MediaStorage, StorageTarget
 def upload_image(local_path: str, folder: str = "gallery") -> str:
     storage = MediaStorage()
     filename = os.path.basename(local_path)
-    key = f"{folder}/{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{filename}"
+    key = f"{folder}/{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}_{filename}"
 
     with open(local_path, "rb") as file_handle:
         storage.upload_fileobj(file_handle, StorageTarget.PRIMARY, key)

@@ -1,6 +1,6 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -74,7 +74,7 @@ PUBLIC_CHECKOUT_ALLOWED_STATUSES = frozenset(
 )
 
 
-def normalize_subscription_status(status: Optional[str]) -> Optional[str]:
+def normalize_subscription_status(status: str | None) -> str | None:
     """Return the canonical internal subscription status string."""
 
     if status is None:
@@ -100,20 +100,20 @@ class SubscriptionPlanModel(BaseModel):
 
     id: str = Field(..., alias="_id", description="Unique plan identifier")
     name: str = Field(..., description="Plan name (e.g., 'Starter', 'Professional')")
-    description: Optional[str] = Field(None, description="Plan description")
+    description: str | None = Field(None, description="Plan description")
 
     # Pricing
     price_monthly: float = Field(0, description="Monthly price in USD")
-    price_yearly: Optional[float] = Field(
+    price_yearly: float | None = Field(
         None, description="Yearly price in USD (if different from 12x monthly)"
     )
 
     # Stripe Integration
-    stripe_product_id: Optional[str] = Field(None, description="Stripe product ID")
-    stripe_price_id_monthly: Optional[str] = Field(
+    stripe_product_id: str | None = Field(None, description="Stripe product ID")
+    stripe_price_id_monthly: str | None = Field(
         None, description="Stripe price ID for monthly billing"
     )
-    stripe_price_id_yearly: Optional[str] = Field(
+    stripe_price_id_yearly: str | None = Field(
         None, description="Stripe price ID for yearly billing"
     )
 
@@ -129,11 +129,11 @@ class SubscriptionPlanModel(BaseModel):
     is_metered: bool = Field(
         False, description="Whether this plan uses metered billing"
     )
-    meter_event_name: Optional[str] = Field(
+    meter_event_name: str | None = Field(
         None,
         description="Stripe Meter Event Name for usage reporting (required if is_metered)",
     )
-    meter_id: Optional[str] = Field(None, description="Stripe Meter ID")
+    meter_id: str | None = Field(None, description="Stripe Meter ID")
 
     # Features and Limits
     max_weddings: int = Field(
@@ -156,10 +156,10 @@ class SubscriptionPlanModel(BaseModel):
     storage_gb: int = Field(1, description="Storage limit in GB")
     staff_seats: int = Field(0, description="Number of staff accounts allowed")
     # Feature flags - vendor_management enables/disables the entire vendor feature
-    features: Dict[str, bool] = Field(
+    features: dict[str, bool] = Field(
         default_factory=dict, description="Feature availability flags"
     )
-    features_list: Optional[List[str]] = Field(
+    features_list: list[str] | None = Field(
         None, description="Human-readable feature highlights for display"
     )
 
@@ -169,11 +169,11 @@ class SubscriptionPlanModel(BaseModel):
     )
     is_featured: bool = Field(False, description="Whether to highlight this plan")
     sort_order: int = Field(0, description="Sort order for backend queries")
-    display_order: Optional[int] = Field(
+    display_order: int | None = Field(
         None, description="Display order for frontend (falls back to sort_order)"
     )
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     created_by: str = Field(..., description="ROOT_ADMIN email who created this plan")
 
     class Config:
@@ -220,7 +220,7 @@ class UserSubscriptionModel(BaseModel):
 
     # Plan snapshot at subscription time (grandfathering support)
     # These limits are LOCKED at subscription creation - don't change when plan is modified
-    plan_snapshot: Optional[Dict[str, Any]] = Field(
+    plan_snapshot: dict[str, Any] | None = Field(
         default=None,
         description="Snapshot of plan limits at subscription time for grandfathering",
     )
@@ -235,63 +235,59 @@ class UserSubscriptionModel(BaseModel):
 
     # Dates
     start_date: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Subscription start date",
     )
-    trial_start_date: Optional[datetime] = Field(
+    trial_start_date: datetime | None = Field(
         None, description="Trial start date from Stripe"
     )
-    trial_end_date: Optional[datetime] = Field(
-        None, description="Trial expiration date"
-    )
+    trial_end_date: datetime | None = Field(None, description="Trial expiration date")
     current_period_start: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Current billing period start",
     )
     current_period_end: datetime = Field(..., description="Current billing period end")
-    cancelled_at: Optional[datetime] = Field(None, description="Cancellation date")
-    trial_expired_at: Optional[datetime] = Field(
+    cancelled_at: datetime | None = Field(None, description="Cancellation date")
+    trial_expired_at: datetime | None = Field(
         None, description="When trial was expired by system"
     )
-    cancellation_reason: Optional[str] = Field(
-        None, description="Reason for cancellation"
-    )
-    archived_at: Optional[datetime] = Field(
+    cancellation_reason: str | None = Field(None, description="Reason for cancellation")
+    archived_at: datetime | None = Field(
         None, description="When subscription was archived for cleanup"
     )
-    stripe_checkout_completed_at: Optional[datetime] = Field(
+    stripe_checkout_completed_at: datetime | None = Field(
         None, description="When Stripe checkout was completed"
     )
-    last_payment_date: Optional[datetime] = Field(
+    last_payment_date: datetime | None = Field(
         None, description="Date of last successful payment"
     )
-    last_payment_attempt: Optional[datetime] = Field(
+    last_payment_attempt: datetime | None = Field(
         None, description="Date of last payment attempt"
     )
 
     # Usage tracking
-    usage: Dict[str, Any] = Field(
+    usage: dict[str, Any] = Field(
         default_factory=dict, description="Current usage statistics"
     )
 
     # Payment integration
-    stripe_customer_id: Optional[str] = Field(None, description="Stripe customer ID")
-    stripe_subscription_id: Optional[str] = Field(
+    stripe_customer_id: str | None = Field(None, description="Stripe customer ID")
+    stripe_subscription_id: str | None = Field(
         None, description="Stripe subscription ID"
     )
-    stripe_status: Optional[str] = Field(
+    stripe_status: str | None = Field(
         None, description="Raw Stripe subscription status"
     )
-    stripe_checkout_session_id: Optional[str] = Field(
+    stripe_checkout_session_id: str | None = Field(
         None, description="Stripe checkout session ID"
     )
-    payment_status: Optional[str] = Field(
+    payment_status: str | None = Field(
         None, description="Payment status from Stripe (paid, unpaid, past_due)"
     )
-    expired_reason: Optional[str] = Field(
+    expired_reason: str | None = Field(
         None, description="Reason for expiration (e.g., checkout_session_expired)"
     )
-    trial_will_end_notified_at: Optional[datetime] = Field(
+    trial_will_end_notified_at: datetime | None = Field(
         None, description="When trial ending notification was sent"
     )
 
@@ -304,7 +300,7 @@ class UserSubscriptionModel(BaseModel):
         default=1,
         description="Optimistic lock version — increment on every write, include in update filter",
     )
-    state_history: List[Dict[str, Any]] = Field(
+    state_history: list[dict[str, Any]] = Field(
         default_factory=list,
         description="Append-only log of state transitions [{from, to, trigger, at, metadata}]. "
         "IMPORTANT: When appending via $push, use $slice: -100 to cap at 100 entries "
@@ -312,8 +308,8 @@ class UserSubscriptionModel(BaseModel):
     )
 
     # System fields
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     created_by: str = Field(
         ..., description="ROOT_ADMIN email who created this subscription"
     )
@@ -364,7 +360,7 @@ class UsageTrackingModel(BaseModel):
     credits_reset_date: datetime = Field(..., description="When AI credits reset")
 
     # System fields
-    last_updated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_updated: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     class Config:
         json_schema_extra = {
@@ -382,7 +378,7 @@ class UsageTrackingModel(BaseModel):
 
 
 # Request/Response models for API
-def _validate_storefront_plan_features(features: Optional[Dict[str, bool]]) -> None:
+def _validate_storefront_plan_features(features: dict[str, bool] | None) -> None:
     if (
         features
         and features.get(CUSTOM_DOMAIN_FEATURE) is True
@@ -395,25 +391,25 @@ class CreateSubscriptionPlanRequest(BaseModel):
     """Request model for creating subscription plans"""
 
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     price_monthly: float
-    price_yearly: Optional[float] = None
+    price_yearly: float | None = None
     # 2026-05-09: defaults flipped to flat. Operator can flip per-plan via the
     # admin UI when ready to switch a specific plan to metered billing.
     is_metered: bool = False
-    meter_event_name: Optional[str] = None
-    meter_id: Optional[str] = None
+    meter_event_name: str | None = None
+    meter_id: str | None = None
     max_weddings: int = 1
     max_weddings_lifetime: bool = False
     max_guests_per_wedding: int = 100
     ai_credits_monthly: int = 10
     storage_gb: int = 1
     staff_seats: int = 0
-    features: Dict[str, bool] = Field(default_factory=dict)
-    features_list: Optional[List[str]] = None
+    features: dict[str, bool] = Field(default_factory=dict)
+    features_list: list[str] | None = None
     is_featured: bool = False
     sort_order: int = 0
-    display_order: Optional[int] = None
+    display_order: int | None = None
     trial_days: int = Field(default=0, ge=0, description="Trial days (0 = no trial)")
 
     @model_validator(mode="after")
@@ -425,26 +421,26 @@ class CreateSubscriptionPlanRequest(BaseModel):
 class UpdateSubscriptionPlanRequest(BaseModel):
     """Request model for updating subscription plans"""
 
-    name: Optional[str] = None
-    description: Optional[str] = None
-    price_monthly: Optional[float] = None
-    price_yearly: Optional[float] = None
-    is_metered: Optional[bool] = None
-    meter_event_name: Optional[str] = None
-    meter_id: Optional[str] = None
-    max_weddings: Optional[int] = None
-    max_weddings_lifetime: Optional[bool] = None
-    max_guests_per_wedding: Optional[int] = None
-    ai_credits_monthly: Optional[int] = None
-    storage_gb: Optional[int] = None
-    staff_seats: Optional[int] = None
-    features: Optional[Dict[str, bool]] = None
-    features_list: Optional[List[str]] = None
-    is_active: Optional[bool] = None
-    is_featured: Optional[bool] = None
-    sort_order: Optional[int] = None
-    display_order: Optional[int] = None
-    trial_days: Optional[int] = Field(
+    name: str | None = None
+    description: str | None = None
+    price_monthly: float | None = None
+    price_yearly: float | None = None
+    is_metered: bool | None = None
+    meter_event_name: str | None = None
+    meter_id: str | None = None
+    max_weddings: int | None = None
+    max_weddings_lifetime: bool | None = None
+    max_guests_per_wedding: int | None = None
+    ai_credits_monthly: int | None = None
+    storage_gb: int | None = None
+    staff_seats: int | None = None
+    features: dict[str, bool] | None = None
+    features_list: list[str] | None = None
+    is_active: bool | None = None
+    is_featured: bool | None = None
+    sort_order: int | None = None
+    display_order: int | None = None
+    trial_days: int | None = Field(
         default=None, ge=0, description="Trial days (0 = no trial)"
     )
 

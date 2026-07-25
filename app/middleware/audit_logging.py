@@ -9,8 +9,8 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 from fastapi import Request
@@ -52,9 +52,9 @@ class AuditLogBuffer:
         batch_size: int = 100,
         max_buffer: int = 10000,
     ) -> None:
-        self._queue: list[Dict[str, Any]] = []
-        self._collection: Optional[Any] = None
-        self._flush_task: Optional[asyncio.Task] = None
+        self._queue: list[dict[str, Any]] = []
+        self._collection: Any | None = None
+        self._flush_task: asyncio.Task | None = None
         self._stopped = asyncio.Event()
         self._flush_interval_s = flush_interval_s
         self._batch_size = batch_size
@@ -63,7 +63,7 @@ class AuditLogBuffer:
         self._dropped_total = 0
         self._batch_event = asyncio.Event()
 
-    def append(self, entry: Dict[str, Any]) -> None:
+    def append(self, entry: dict[str, Any]) -> None:
         """Append an audit entry. Sync, lock-free, safe to call from middleware.
 
         CPython list operations are GIL-protected, and the flush loop's
@@ -129,7 +129,7 @@ class AuditLogBuffer:
         self._batch_event.set()
         try:
             await asyncio.wait_for(self._flush_task, timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # Loop didn't exit in time — cancel and move on
             self._flush_task.cancel()
             try:
@@ -162,7 +162,7 @@ class AuditLogBuffer:
                         self._batch_event.wait(),
                         timeout=self._flush_interval_s,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
                 self._batch_event.clear()
                 if self._stopped.is_set():
@@ -247,7 +247,7 @@ def _normalize_route_template(path: str) -> str:
     return normalized
 
 
-def _extract_route_template(request: Request) -> Optional[str]:
+def _extract_route_template(request: Request) -> str | None:
     """Read the FastAPI route template after routing has matched the request."""
     route = request.scope.get("route")
     route_path = getattr(route, "path", None)
@@ -338,7 +338,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         # Log all POST, PUT, DELETE, PATCH requests
         return True
 
-    def _get_client_info(self, request: Request) -> Dict[str, Any]:
+    def _get_client_info(self, request: Request) -> dict[str, Any]:
         """Extract client information from request"""
         # Get IP address
         forwarded = request.headers.get("X-Forwarded-For")
@@ -413,15 +413,15 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
 
     def _create_audit_entry(
         self,
-        request_info: Dict[str, Any],
+        request_info: dict[str, Any],
         response_status: int,
         response_time: float,
-        user_id: Optional[str] = None,
-        error_message: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        user_id: str | None = None,
+        error_message: str | None = None,
+    ) -> dict[str, Any]:
         """Create audit log entry"""
         return {
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": datetime.now(UTC),
             "request_id": request_info["request_id"],
             "event_type": self._determine_event_type(
                 request_info["method"], request_info["path"]
@@ -467,12 +467,12 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         else:
             return "other"
 
-    def _generate_session_hash(self, request_info: Dict[str, Any]) -> str:
+    def _generate_session_hash(self, request_info: dict[str, Any]) -> str:
         """Generate a session hash for correlating requests"""
         session_data = f"{request_info['ip_address']}:{request_info['user_agent']}"
         return hashlib.sha256(session_data.encode()).hexdigest()[:16]
 
-    def _schedule_database_log(self, audit_entry: Dict[str, Any]) -> None:
+    def _schedule_database_log(self, audit_entry: dict[str, Any]) -> None:
         """Queue the audit entry for batched flush to Mongo.
 
         Replaces the previous ``asyncio.create_task(insert_one(...))`` per
@@ -483,7 +483,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         """
         audit_buffer.append(audit_entry)
 
-    def _log_to_file(self, audit_entry: Dict[str, Any]):
+    def _log_to_file(self, audit_entry: dict[str, Any]):
         """Log audit entry to file"""
         # Convert datetime to string for JSON serialization
         audit_entry_copy = audit_entry.copy()
@@ -569,12 +569,12 @@ class AuditEventLogger:
         email: str,
         success: bool,
         ip_address: str,
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
     ):
         """Log login attempt"""
         await self.audit_collection.insert_one(
             {
-                "timestamp": datetime.now(timezone.utc),
+                "timestamp": datetime.now(UTC),
                 "event_type": "login_attempt",
                 "email": email,
                 "success": success,
@@ -594,7 +594,7 @@ class AuditEventLogger:
         """Log data access event"""
         await self.audit_collection.insert_one(
             {
-                "timestamp": datetime.now(timezone.utc),
+                "timestamp": datetime.now(UTC),
                 "event_type": "data_access",
                 "user_id": user_id,
                 "resource_type": resource_type,
@@ -609,14 +609,14 @@ class AuditEventLogger:
         event_type: str,
         severity: str,
         description: str,
-        user_id: Optional[str] = None,
-        ip_address: Optional[str] = None,
-        additional_data: Optional[Dict[str, Any]] = None,
+        user_id: str | None = None,
+        ip_address: str | None = None,
+        additional_data: dict[str, Any] | None = None,
     ):
         """Log security event"""
         await self.audit_collection.insert_one(
             {
-                "timestamp": datetime.now(timezone.utc),
+                "timestamp": datetime.now(UTC),
                 "event_type": "security_event",
                 "security_event_type": event_type,
                 "severity": severity,

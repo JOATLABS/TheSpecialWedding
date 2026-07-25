@@ -181,7 +181,7 @@ async def create_support_ticket_indexes():
         return True
 
     except Exception as e:
-        logger.error(f"Error creating support ticket indexes: {str(e)}")
+        logger.error(f"Error creating support ticket indexes: {e!s}")
         return False
 
 
@@ -227,7 +227,7 @@ async def create_wedding_indexes():
         return True
 
     except Exception as e:
-        logger.error(f"Error creating wedding indexes: {str(e)}")
+        logger.error(f"Error creating wedding indexes: {e!s}")
         return False
 
 
@@ -250,7 +250,7 @@ async def create_table_indexes():
         logger.info("All table indexes created successfully")
         return True
     except Exception as e:
-        logger.error(f"Error creating table indexes: {str(e)}")
+        logger.error(f"Error creating table indexes: {e!s}")
         return False
 
 
@@ -274,7 +274,7 @@ async def create_seating_layout_indexes():
         logger.info("All seating layout indexes created successfully")
         return True
     except Exception as e:
-        logger.error(f"Error creating seating layout indexes: {str(e)}")
+        logger.error(f"Error creating seating layout indexes: {e!s}")
         return False
 
 
@@ -366,7 +366,7 @@ async def create_guest_indexes():
         logger.info("All guest indexes created successfully")
         return True
     except Exception as e:
-        logger.error(f"Error creating guest indexes: {str(e)}")
+        logger.error(f"Error creating guest indexes: {e!s}")
         return False
 
 
@@ -385,7 +385,7 @@ async def create_plus_one_indexes():
 
         return True
     except Exception as e:
-        logger.error(f"Error creating plus_one indexes: {str(e)}")
+        logger.error(f"Error creating plus_one indexes: {e!s}")
         return False
 
 
@@ -417,7 +417,7 @@ async def create_rsvp_indexes():
 
         return True
     except Exception as e:
-        logger.error(f"Error creating rsvp indexes: {str(e)}")
+        logger.error(f"Error creating rsvp indexes: {e!s}")
         return False
 
 
@@ -455,7 +455,7 @@ async def create_form_indexes():
 
         return True
     except Exception as e:
-        logger.error(f"Error creating form indexes: {str(e)}")
+        logger.error(f"Error creating form indexes: {e!s}")
         return False
 
 
@@ -531,7 +531,7 @@ async def create_subscription_indexes():
 
         return True
     except Exception as e:
-        logger.error(f"Error creating subscription indexes: {str(e)}")
+        logger.error(f"Error creating subscription indexes: {e!s}")
         return False
 
 
@@ -571,7 +571,7 @@ async def create_user_indexes():
 
         return True
     except Exception as e:
-        logger.error(f"Error creating user indexes: {str(e)}")
+        logger.error(f"Error creating user indexes: {e!s}")
         return False
 
 
@@ -625,7 +625,7 @@ async def create_reminders_sent_indexes():
         logger.info("All reminders_sent indexes created successfully")
         return True
     except Exception as e:
-        logger.error(f"Error creating reminders_sent indexes: {str(e)}")
+        logger.error(f"Error creating reminders_sent indexes: {e!s}")
         return False
 
 
@@ -675,7 +675,7 @@ async def create_payment_indexes():
 
         return True
     except Exception as e:
-        logger.error(f"Error creating payment indexes: {str(e)}")
+        logger.error(f"Error creating payment indexes: {e!s}")
         return False
 
 
@@ -731,7 +731,7 @@ async def create_admin_activity_log_indexes():
         logger.info("All admin_activity_log indexes created successfully")
         return True
     except Exception as e:
-        logger.error(f"Error creating admin_activity_log indexes: {str(e)}")
+        logger.error(f"Error creating admin_activity_log indexes: {e!s}")
         return False
 
 
@@ -821,7 +821,7 @@ async def create_activity_logs_indexes():
         logger.info("All activity_logs indexes created successfully")
         return True
     except Exception as e:
-        logger.error(f"Error creating activity_logs indexes: {str(e)}")
+        logger.error(f"Error creating activity_logs indexes: {e!s}")
         return False
 
 
@@ -857,7 +857,7 @@ async def create_vendor_contract_activity_indexes():
         logger.info("All vendor_contract_activities indexes created successfully")
         return True
     except Exception as e:
-        logger.error(f"Error creating vendor_contract_activities indexes: {str(e)}")
+        logger.error(f"Error creating vendor_contract_activities indexes: {e!s}")
         return False
 
 
@@ -950,7 +950,7 @@ async def create_vendor_contract_security_indexes():
         logger.info("All vendor contract security indexes created successfully")
         return True
     except Exception as e:
-        logger.error(f"Error creating vendor contract security indexes: {str(e)}")
+        logger.error(f"Error creating vendor contract security indexes: {e!s}")
         return False
 
 
@@ -995,7 +995,7 @@ async def create_vendor_assignment_indexes():
         logger.info("All vendor_assignments indexes created successfully")
         return True
     except Exception as e:
-        logger.error(f"Error creating vendor_assignments indexes: {str(e)}")
+        logger.error(f"Error creating vendor_assignments indexes: {e!s}")
         return False
 
 
@@ -1049,7 +1049,7 @@ async def create_audit_logs_indexes():
         logger.info("All audit_logs indexes created successfully")
         return True
     except Exception as e:
-        logger.error(f"Error creating audit_logs indexes: {str(e)}")
+        logger.error(f"Error creating audit_logs indexes: {e!s}")
         return False
 
 
@@ -1092,7 +1092,7 @@ async def create_security_audit_logs_indexes():
         logger.info("All security_audit_logs indexes created successfully")
         return True
     except Exception as e:
-        logger.error(f"Error creating security_audit_logs indexes: {str(e)}")
+        logger.error(f"Error creating security_audit_logs indexes: {e!s}")
         return False
 
 
@@ -1113,7 +1113,7 @@ async def create_errors_indexes():
                 logger.debug(
                     f"Index {old_index_name} doesn't exist or couldn't be dropped: {e}"
                 )
-                pass  # Index doesn't exist, that's fine
+                # Index doesn't exist, that's fine
 
         # 1. TTL index on timestamp - also serves as the timestamp sorting index
         # Auto-delete ALL errors after 30 days
@@ -1149,7 +1149,7 @@ async def create_errors_indexes():
         logger.info("All errors indexes created successfully")
         return True
     except Exception as e:
-        logger.error(f"Error creating errors indexes: {str(e)}")
+        logger.error(f"Error creating errors indexes: {e!s}")
         return False
 
 
@@ -1233,7 +1233,7 @@ async def create_kb_articles_indexes():
         return True
 
     except Exception as e:
-        logger.error(f"Error creating KB articles indexes: {str(e)}")
+        logger.error(f"Error creating KB articles indexes: {e!s}")
         return False
 
 
@@ -1318,7 +1318,7 @@ async def create_blog_articles_indexes():
         return True
 
     except Exception as e:
-        logger.error(f"Error creating blog articles indexes: {str(e)}")
+        logger.error(f"Error creating blog articles indexes: {e!s}")
         return False
 
 
@@ -1435,7 +1435,7 @@ async def create_team_member_indexes():
         logger.info("All team_member indexes created successfully")
         return True
     except Exception as e:
-        logger.error(f"Error creating team_member indexes: {str(e)}")
+        logger.error(f"Error creating team_member indexes: {e!s}")
         return False
 
 
@@ -1498,7 +1498,7 @@ async def create_advertising_indexes():
 
         logger.info("All sponsored_vendors indexes created successfully")
     except Exception as e:
-        logger.error(f"Error creating sponsored_vendors indexes: {str(e)}")
+        logger.error(f"Error creating sponsored_vendors indexes: {e!s}")
 
     # =========================================================================
     # ad_events — 5 indexes (highest volume collection)
@@ -1559,7 +1559,7 @@ async def create_advertising_indexes():
 
         logger.info("All ad_events indexes created successfully")
     except Exception as e:
-        logger.error(f"Error creating ad_events indexes: {str(e)}")
+        logger.error(f"Error creating ad_events indexes: {e!s}")
 
     # =========================================================================
     # ad_leads — 4 indexes (lead funnel + vendor performance)
@@ -1610,7 +1610,7 @@ async def create_advertising_indexes():
 
         logger.info("All ad_leads indexes created successfully")
     except Exception as e:
-        logger.error(f"Error creating ad_leads indexes: {str(e)}")
+        logger.error(f"Error creating ad_leads indexes: {e!s}")
 
     # =========================================================================
     # planner_ad_preferences — 1 unique index
@@ -1626,7 +1626,7 @@ async def create_advertising_indexes():
         )
         logger.info("Created index: idx_planner_prefs_planner_id (unique)")
     except Exception as e:
-        logger.error(f"Error creating planner_ad_preferences indexes: {str(e)}")
+        logger.error(f"Error creating planner_ad_preferences indexes: {e!s}")
 
     # =========================================================================
     # ad_feature_flags — 1 unique index (singleton collection)
@@ -1641,7 +1641,7 @@ async def create_advertising_indexes():
         )
         logger.info("Created index: idx_feature_flags_key (unique)")
     except Exception as e:
-        logger.error(f"Error creating ad_feature_flags indexes: {str(e)}")
+        logger.error(f"Error creating ad_feature_flags indexes: {e!s}")
 
     # =========================================================================
     # ad_stats_daily — 4 indexes (pre-aggregated rollup queries)
@@ -1690,7 +1690,7 @@ async def create_advertising_indexes():
 
         logger.info("All ad_stats_daily indexes created successfully")
     except Exception as e:
-        logger.error(f"Error creating ad_stats_daily indexes: {str(e)}")
+        logger.error(f"Error creating ad_stats_daily indexes: {e!s}")
 
     logger.info("All advertising indexes created/verified (19 total)")
     return True
@@ -1743,7 +1743,7 @@ async def create_campaign_platform_indexes():
         )
         logger.info("All ad_campaigns indexes created (6)")
     except Exception as e:
-        logger.error(f"Error creating ad_campaigns indexes: {str(e)}")
+        logger.error(f"Error creating ad_campaigns indexes: {e!s}")
 
     # =========================================================================
     # ad_creatives — 3 indexes
@@ -1764,7 +1764,7 @@ async def create_campaign_platform_indexes():
         )
         logger.info("All ad_creatives indexes created (3)")
     except Exception as e:
-        logger.error(f"Error creating ad_creatives indexes: {str(e)}")
+        logger.error(f"Error creating ad_creatives indexes: {e!s}")
 
     # =========================================================================
     # campaign_day_stats — 3 indexes
@@ -1786,7 +1786,7 @@ async def create_campaign_platform_indexes():
         )
         logger.info("All campaign_day_stats indexes created (3)")
     except Exception as e:
-        logger.error(f"Error creating campaign_day_stats indexes: {str(e)}")
+        logger.error(f"Error creating campaign_day_stats indexes: {e!s}")
 
     # =========================================================================
     # placement_day_stats — 2 indexes
@@ -1804,7 +1804,7 @@ async def create_campaign_platform_indexes():
         )
         logger.info("All placement_day_stats indexes created (2)")
     except Exception as e:
-        logger.error(f"Error creating placement_day_stats indexes: {str(e)}")
+        logger.error(f"Error creating placement_day_stats indexes: {e!s}")
 
     # =========================================================================
     # ad_fraud_signals — 2 indexes (including 7-day TTL)
@@ -1822,7 +1822,7 @@ async def create_campaign_platform_indexes():
         )
         logger.info("All ad_fraud_signals indexes created (2, incl. TTL)")
     except Exception as e:
-        logger.error(f"Error creating ad_fraud_signals indexes: {str(e)}")
+        logger.error(f"Error creating ad_fraud_signals indexes: {e!s}")
 
     # =========================================================================
     # vendor_ad_billing — 2 indexes
@@ -1839,7 +1839,7 @@ async def create_campaign_platform_indexes():
         )
         logger.info("All vendor_ad_billing indexes created (2)")
     except Exception as e:
-        logger.error(f"Error creating vendor_ad_billing indexes: {str(e)}")
+        logger.error(f"Error creating vendor_ad_billing indexes: {e!s}")
 
     # =========================================================================
     # ad_events — add campaign_id compound index (supplements existing indexes)
@@ -1881,7 +1881,7 @@ async def create_campaign_platform_indexes():
         )
         logger.info("Campaign platform ad_events indexes created (4)")
     except Exception as e:
-        logger.error(f"Error creating campaign ad_events indexes: {str(e)}")
+        logger.error(f"Error creating campaign ad_events indexes: {e!s}")
 
     # =========================================================================
     # ad_leads — add campaign_id index (supplements existing indexes)
@@ -1895,7 +1895,7 @@ async def create_campaign_platform_indexes():
         )
         logger.info("Campaign platform ad_leads index created (1)")
     except Exception as e:
-        logger.error(f"Error creating campaign ad_leads indexes: {str(e)}")
+        logger.error(f"Error creating campaign ad_leads indexes: {e!s}")
 
     # =========================================================================
     # vendor_profiles — sponsored ad dedup index (Phase 3)
@@ -1971,7 +1971,7 @@ async def create_campaign_platform_indexes():
 
         logger.info("Vendor scraper indexes created (3)")
     except Exception as e:
-        logger.error(f"Error creating vendor scraper indexes: {str(e)}")
+        logger.error(f"Error creating vendor scraper indexes: {e!s}")
 
     logger.info("All campaign platform indexes created/verified (25 total)")
     return True
@@ -2030,7 +2030,7 @@ async def create_billing_indexes():
 
         logger.info("All ad_lead_charges indexes created (4)")
     except Exception as e:
-        logger.error(f"Error creating ad_lead_charges indexes: {str(e)}")
+        logger.error(f"Error creating ad_lead_charges indexes: {e!s}")
 
     # =========================================================================
     # vendor_free_tier — 2 indexes
@@ -2054,7 +2054,7 @@ async def create_billing_indexes():
 
         logger.info("All vendor_free_tier indexes created (2)")
     except Exception as e:
-        logger.error(f"Error creating vendor_free_tier indexes: {str(e)}")
+        logger.error(f"Error creating vendor_free_tier indexes: {e!s}")
 
     # =========================================================================
     # vendor_ad_billing — additional payment_status index
@@ -2070,7 +2070,7 @@ async def create_billing_indexes():
 
         logger.info("Additional vendor_ad_billing indexes created (1)")
     except Exception as e:
-        logger.error(f"Error creating additional vendor_ad_billing indexes: {str(e)}")
+        logger.error(f"Error creating additional vendor_ad_billing indexes: {e!s}")
 
     logger.info("All billing indexes created/verified (7 total)")
 
@@ -2086,7 +2086,7 @@ async def create_billing_indexes():
         )
         logger.info("Created index: idx_planner_prefs_planner_id (unique)")
     except Exception as e:
-        logger.error(f"Error creating planner_ad_preferences indexes: {str(e)}")
+        logger.error(f"Error creating planner_ad_preferences indexes: {e!s}")
 
     return True
 
@@ -2984,7 +2984,7 @@ async def create_all_indexes():
         await create_guest_media_indexes()  # Couple guest memories
         logger.info("All database indexes created/verified")
     except Exception as e:
-        logger.error(f"Error creating database indexes: {str(e)}")
+        logger.error(f"Error creating database indexes: {e!s}")
 
     # Storefront uniqueness is an authorization and public-routing invariant,
     # not a performance optimization. Fail application startup if Mongo cannot

@@ -33,7 +33,8 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
-from typing import Any, Awaitable, Callable, TypeVar
+from collections.abc import Awaitable, Callable
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ async def _run_with_retry(
             # Cancellation is not a failure of the side-effect — propagate so
             # task shutdown is not swallowed.
             raise
-        except Exception as err:  # noqa: BLE001 — we log and decide below
+        except Exception as err:
             last_error = err
             if attempt >= max_retries:
                 break
@@ -108,7 +109,7 @@ def best_effort(
     initial_delay: float = DEFAULT_INITIAL_DELAY,
     backoff: float = DEFAULT_BACKOFF_FACTOR,
     op_name: str,
-) -> "_BestEffort":
+) -> _BestEffort:
     """Return a retry primitive usable as a decorator or async context manager.
 
     `op_name` is required and appears in every log line so failures are
@@ -171,7 +172,7 @@ class _BestEffort:
 
     # --- Async context-manager surface ---------------------------------------
 
-    async def __aenter__(self) -> "_BestEffort":
+    async def __aenter__(self) -> _BestEffort:
         # The context-manager surface wraps a single awaited expression. We
         # capture exceptions in __aexit__ and do NOT retry — a one-shot
         # awaited block cannot be replayed. If you need retries inline, use

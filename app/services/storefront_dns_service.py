@@ -33,7 +33,7 @@ class DnspythonStorefrontDnsResolver:
         if record_type == "TXT" and hasattr(value, "strings"):
             chunks = getattr(value, "strings", ())
             return b"".join(chunks).decode("utf-8", errors="strict")
-        text = str(getattr(value, "to_text")())
+        text = str(value.to_text())
         if record_type in {"NS", "CNAME"}:
             return text.rstrip(".").lower()
         return text

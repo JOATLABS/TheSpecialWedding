@@ -1,14 +1,13 @@
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import UTC, datetime, timedelta
 
 import stripe
 from fastapi import HTTPException
 
 from app.constants.billing import (
-    PLAN_BILLING_MODEL_MIGRATION_FLAG,
-    CANONICAL_PUBLIC_PLAN_METER_EVENT_NAME,
     CANONICAL_PUBLIC_PLAN_IDS,
+    CANONICAL_PUBLIC_PLAN_METER_EVENT_NAME,
+    PLAN_BILLING_MODEL_MIGRATION_FLAG,
     plan_billing_model,
     plan_billing_model_migration_enabled,
 )
@@ -123,8 +122,8 @@ class SubscriptionService:
             plan_data["_id"] = f"plan_{plan_data['name'].lower().replace(' ', '_')}"
             self._normalize_plan_billing_fields(plan_data)
             plan_data["created_by"] = creator_email
-            plan_data["created_at"] = datetime.now(timezone.utc)
-            plan_data["updated_at"] = datetime.now(timezone.utc)
+            plan_data["created_at"] = datetime.now(UTC)
+            plan_data["updated_at"] = datetime.now(UTC)
             # Check if plan ID already exists
             existing = await self.plans_collection.find_one({"_id": plan_data["_id"]})
             if existing:
@@ -142,7 +141,7 @@ class SubscriptionService:
                 # Log but don't block creation if stripe fails?
                 # Better to fail so we don't have inconsistent state
                 raise HTTPException(
-                    status_code=500, detail=f"Failed to sync plan to Stripe: {str(e)}"
+                    status_code=500, detail=f"Failed to sync plan to Stripe: {e!s}"
                 )
 
             await self.plans_collection.insert_one(plan_data)
@@ -155,10 +154,10 @@ class SubscriptionService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error creating subscription plan: {str(e)}"
+                status_code=500, detail=f"Error creating subscription plan: {e!s}"
             )
 
-    async def list_plans(self, include_inactive: bool = False) -> List[dict]:
+    async def list_plans(self, include_inactive: bool = False) -> list[dict]:
         """List all subscription plans"""
         try:
             query = {} if include_inactive else {"is_active": True}
@@ -169,9 +168,7 @@ class SubscriptionService:
             plans.sort(key=lambda p: p.get("sort_order", p.get("display_order", 999)))
             return plans
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error listing plans: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Error listing plans: {e!s}")
 
     async def get_plan(self, plan_id: str) -> dict:
         """Get subscription plan by ID"""
@@ -185,9 +182,7 @@ class SubscriptionService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error retrieving plan: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Error retrieving plan: {e!s}")
 
     # Fields that should record an admin-override timestamp when edited
     # via update_plan. These are the strategy fields the seed would
@@ -269,7 +264,7 @@ class SubscriptionService:
         if not updates:
             return False
 
-        updates["updated_at"] = datetime.now(timezone.utc)
+        updates["updated_at"] = datetime.now(UTC)
         await self.plans_collection.update_one(
             {"_id": plan_id},
             {"$set": updates},
@@ -302,7 +297,7 @@ class SubscriptionService:
         ):
             return False
 
-        archived_at = datetime.now(timezone.utc)
+        archived_at = datetime.now(UTC)
         await self.plans_collection.update_one(
             {"_id": legacy_plan_id},
             {
@@ -352,7 +347,7 @@ class SubscriptionService:
             for field in protected_fields:
                 update_data.pop(field, None)
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             update_data["updated_at"] = now
 
             # Snapshot which strategy fields this update is touching so we
@@ -411,7 +406,7 @@ class SubscriptionService:
                 except Exception as e:
                     raise HTTPException(
                         status_code=500,
-                        detail=f"Failed to sync plan to Stripe: {str(e)}",
+                        detail=f"Failed to sync plan to Stripe: {e!s}",
                     )
 
             # Build dot-notation admin_overrides writes. MongoDB interprets
@@ -447,9 +442,7 @@ class SubscriptionService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error updating plan: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Error updating plan: {e!s}")
 
     async def delete_plan(self, plan_id: str) -> dict:
         """Delete subscription plan (only if no active subscriptions)"""
@@ -492,8 +485,8 @@ class SubscriptionService:
                     {
                         "$set": {
                             "is_active": False,
-                            "deleted_at": datetime.now(timezone.utc),
-                            "updated_at": datetime.now(timezone.utc),
+                            "deleted_at": datetime.now(UTC),
+                            "updated_at": datetime.now(UTC),
                         }
                     },
                 )
@@ -517,9 +510,7 @@ class SubscriptionService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error deleting plan: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Error deleting plan: {e!s}")
 
     # User Subscription Management
     async def assign_subscription(
@@ -529,8 +520,8 @@ class SubscriptionService:
         billing_interval: str = "monthly",
         trial_days: int = 0,
         creator_email: str = "",
-        existing_stripe_subscription_id: Optional[str] = None,
-        existing_stripe_customer_id: Optional[str] = None,
+        existing_stripe_subscription_id: str | None = None,
+        existing_stripe_customer_id: str | None = None,
     ) -> dict:
         """Assign subscription plan to user"""
         try:
@@ -558,7 +549,7 @@ class SubscriptionService:
                 )
 
             # Create subscription
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             trial_end = now + timedelta(days=trial_days) if trial_days > 0 else now
 
             if billing_interval == "yearly":
@@ -717,10 +708,10 @@ class SubscriptionService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error assigning subscription: {str(e)}"
+                status_code=500, detail=f"Error assigning subscription: {e!s}"
             )
 
-    async def get_user_subscription(self, user_id: str) -> Optional[dict]:
+    async def get_user_subscription(self, user_id: str) -> dict | None:
         """Get user's current subscription"""
         try:
             subscription = await self.subscriptions_collection.find_one(
@@ -732,10 +723,10 @@ class SubscriptionService:
             return subscription
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving subscription: {str(e)}"
+                status_code=500, detail=f"Error retrieving subscription: {e!s}"
             )
 
-    async def get_user_billing_plan(self, user_id: str) -> Optional[dict]:
+    async def get_user_billing_plan(self, user_id: str) -> dict | None:
         """Resolve the plan owned by a user's active billing relationship.
 
         This lookup intentionally permits an inactive plan document only when
@@ -814,13 +805,13 @@ class SubscriptionService:
             return billing_plan
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving billing plan: {str(e)}"
+                status_code=500, detail=f"Error retrieving billing plan: {e!s}"
             )
 
     async def cancel_subscription(self, user_id: str, reason: str = "") -> dict:
         """Cancel user subscription in both local DB and Stripe, with cleanup orchestration"""
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Find the subscription first to get Stripe subscription ID
             subscription = await self.subscriptions_collection.find_one(
@@ -854,7 +845,7 @@ class SubscriptionService:
                     )
                 except Exception as e:
                     logger.error(
-                        f"Failed to cancel Stripe subscription {stripe_sub_id}: {str(e)}"
+                        f"Failed to cancel Stripe subscription {stripe_sub_id}: {e!s}"
                     )
                     # Still proceed with local cancellation to avoid inconsistent state
 
@@ -935,7 +926,7 @@ class SubscriptionService:
                 logger.info(f"Sent cancellation email to user {user_id}: {email_sent}")
             except Exception as e:
                 logger.warning(
-                    f"Failed to send cancellation email to user {user_id}: {str(e)}"
+                    f"Failed to send cancellation email to user {user_id}: {e!s}"
                 )
 
             # Phase 6: Notify affected couples
@@ -997,7 +988,7 @@ class SubscriptionService:
                                 couples_notified += 1
                         except Exception as e:
                             logger.warning(
-                                f"Failed to notify couple {couple.get('email')} for wedding {couple.get('wedding_id')}: {str(e)}"
+                                f"Failed to notify couple {couple.get('email')} for wedding {couple.get('wedding_id')}: {e!s}"
                             )
 
                     cleanup_results["couples_notified"] = couples_notified
@@ -1005,7 +996,7 @@ class SubscriptionService:
                         f"Notified {couples_notified} couples about planner {user_id} cancellation"
                     )
             except Exception as e:
-                logger.warning(f"Failed to notify couples for user {user_id}: {str(e)}")
+                logger.warning(f"Failed to notify couples for user {user_id}: {e!s}")
 
             return {
                 "message": "Subscription cancelled successfully",
@@ -1016,7 +1007,7 @@ class SubscriptionService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error cancelling subscription: {str(e)}"
+                status_code=500, detail=f"Error cancelling subscription: {e!s}"
             )
 
     # Usage Tracking
@@ -1025,7 +1016,7 @@ class SubscriptionService:
     ) -> dict:
         """Initialize usage tracking for a new subscription"""
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             current_month = now.strftime("%Y-%m")
             # Calculate next month for credits reset
             if now.month == 12:
@@ -1053,7 +1044,7 @@ class SubscriptionService:
 
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error initializing usage tracking: {str(e)}"
+                status_code=500, detail=f"Error initializing usage tracking: {e!s}"
             )
 
     # ------------------------------------------------------------------ #
@@ -1154,11 +1145,11 @@ class SubscriptionService:
         """
         try:
             year, month = current_month.split("-")
-            period_start = datetime(int(year), int(month), 1, tzinfo=timezone.utc)
+            period_start = datetime(int(year), int(month), 1, tzinfo=UTC)
             if int(month) == 12:
-                period_end = datetime(int(year) + 1, 1, 1, tzinfo=timezone.utc)
+                period_end = datetime(int(year) + 1, 1, 1, tzinfo=UTC)
             else:
-                period_end = datetime(int(year), int(month) + 1, 1, tzinfo=timezone.utc)
+                period_end = datetime(int(year), int(month) + 1, 1, tzinfo=UTC)
         except Exception:
             return 0
 
@@ -1277,7 +1268,7 @@ class SubscriptionService:
         alarm. See ``_live_wedding_count`` for why the counter is unreliable.
         """
         try:
-            current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+            current_month = datetime.now(UTC).strftime("%Y-%m")
             usage = await self.usage_collection.find_one(
                 {"user_id": user_id, "current_month": current_month}
             )
@@ -1308,7 +1299,7 @@ class SubscriptionService:
 
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving usage stats: {str(e)}"
+                status_code=500, detail=f"Error retrieving usage stats: {e!s}"
             )
 
     async def check_usage_limits(
@@ -1378,7 +1369,7 @@ class SubscriptionService:
                 # response with overage metadata that callers and the
                 # UI can surface and that billing can pick up at
                 # period close.
-                current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+                current_month = datetime.now(UTC).strftime("%Y-%m")
                 current = await self._live_ai_credits_used(user_id, current_month)
                 limit = limits_source.get("ai_credits_monthly", 10)
                 remaining = max(0, limit - current)
@@ -1477,7 +1468,7 @@ class SubscriptionService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error checking usage limits: {str(e)}"
+                status_code=500, detail=f"Error checking usage limits: {e!s}"
             )
 
     async def increment_usage(
@@ -1485,7 +1476,7 @@ class SubscriptionService:
     ) -> dict:
         """Increment usage for a specific resource"""
         try:
-            current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+            current_month = datetime.now(UTC).strftime("%Y-%m")
             # Map resource types to database fields. These counters are
             # read-caches: authoritative values come from the live-query
             # helpers (_live_wedding_count, _live_storage_bytes,
@@ -1511,7 +1502,7 @@ class SubscriptionService:
                 {"user_id": user_id, "current_month": current_month},
                 {
                     "$inc": {field_name: amount},
-                    "$set": {"last_updated": datetime.now(timezone.utc)},
+                    "$set": {"last_updated": datetime.now(UTC)},
                 },
             )
 
@@ -1526,13 +1517,13 @@ class SubscriptionService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error incrementing usage: {str(e)}"
+                status_code=500, detail=f"Error incrementing usage: {e!s}"
             )
 
     async def reset_monthly_usage(self, user_id: str) -> dict:
         """Reset monthly usage counters (called on subscription renewal)"""
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             current_month = now.strftime("%Y-%m")
             # Calculate next reset date
             if now.month == 12:
@@ -1588,7 +1579,7 @@ class SubscriptionService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error resetting monthly usage: {str(e)}"
+                status_code=500, detail=f"Error resetting monthly usage: {e!s}"
             )
 
     # Analytics and Reporting
@@ -1669,16 +1660,16 @@ class SubscriptionService:
                     "monthly_subscribers": monthly_sub_count,
                     "yearly_subscribers": yearly_sub_count,
                 },
-                "generated_at": datetime.now(timezone.utc),
+                "generated_at": datetime.now(UTC),
             }
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error generating analytics: {str(e)}"
+                status_code=500, detail=f"Error generating analytics: {e!s}"
             )
 
     async def list_all_subscriptions(
-        self, status_filter: Optional[str] = None
-    ) -> List[dict]:
+        self, status_filter: str | None = None
+    ) -> list[dict]:
         """List all user subscriptions with details (ROOT_ADMIN only)"""
         try:
             # Build query
@@ -1760,7 +1751,7 @@ class SubscriptionService:
             return formatted_subscriptions
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error listing subscriptions: {str(e)}"
+                status_code=500, detail=f"Error listing subscriptions: {e!s}"
             )
 
 

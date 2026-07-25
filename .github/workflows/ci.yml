@@ -171,7 +171,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install ruff -r requirements-test.txt
+          # Pinned deliberately. An unpinned ruff re-lints the whole backend on
+          # every release: 0.16.0's expanded default rule set turned a green
+          # build into 7777 errors with no code change. `ruff.toml` pins the
+          # rule surface; this pins the rule implementations. Bump both together.
+          pip install ruff==0.16.0 -r requirements-test.txt
 
       - name: Ruff lint
         run: ruff check app/

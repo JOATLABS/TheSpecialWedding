@@ -24,7 +24,6 @@ import argparse
 import asyncio
 import logging
 import time
-from typing import List, Optional
 
 from app.core.database import mongo
 from app.jobs.vendor_scraper.config import (
@@ -48,7 +47,7 @@ async def scrape_state(
     state_full: str,
     country: str,
     vendor_service: VendorService,
-    categories_filter: Optional[List[str]] = None,
+    categories_filter: list[str] | None = None,
     dry_run: bool = False,
 ) -> dict:
     """
@@ -131,8 +130,8 @@ async def scrape_state(
 
 
 async def run_scraper(
-    states: Optional[List[str]] = None,
-    categories: Optional[List[str]] = None,
+    states: list[str] | None = None,
+    categories: list[str] | None = None,
     dry_run: bool = False,
 ):
     """

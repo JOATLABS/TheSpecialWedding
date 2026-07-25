@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -90,7 +90,7 @@ async def retry_pending_meter_events(
                 # Using current period ensures:
                 # 1. Retries for THIS month are idempotent (won't double-bill this month)
                 # 2. If last month failed and we're now in a new month, we bill for new month
-                current_billing_period = datetime.now(timezone.utc).strftime("%Y-%m")
+                current_billing_period = datetime.now(UTC).strftime("%Y-%m")
                 idempotency_key = f"meter_retry_{wedding.get('_id')}_{sub['stripe_customer_id']}_{current_billing_period}"
 
                 meter_result = stripe_service.report_meter_event(
@@ -110,10 +110,8 @@ async def retry_pending_meter_events(
                         mongo.db["weddings"],
                         wedding.get("_id"),
                         {
-                            "last_billed_at": datetime.now(timezone.utc),
-                            "billed_period": datetime.now(timezone.utc).strftime(
-                                "%Y-%m"
-                            ),
+                            "last_billed_at": datetime.now(UTC),
+                            "billed_period": datetime.now(UTC).strftime("%Y-%m"),
                             "meter_pending": False,
                             "meter_pending_reason": None,
                         },
@@ -133,5 +131,5 @@ async def retry_pending_meter_events(
         return {"retried": retried, "succeeded": succeeded, "failed": failed}
 
     except Exception as e:
-        logger.error(f"Meter retry failed: {str(e)}", exc_info=True)
+        logger.error(f"Meter retry failed: {e!s}", exc_info=True)
         raise HTTPException(status_code=500, detail="Meter retry failed")

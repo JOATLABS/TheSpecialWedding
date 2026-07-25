@@ -6,8 +6,8 @@ Integrates with cron jobs to check for stale contracts.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from bson import ObjectId
 
@@ -31,7 +31,7 @@ class ContractFollowupService:
         self.users = mongo.db["users"]
         self.weddings = mongo.db["weddings"]
 
-    async def check_unsigned_contracts(self, days_threshold: int = 3) -> List[Dict]:
+    async def check_unsigned_contracts(self, days_threshold: int = 3) -> list[dict]:
         """
         Find contracts that have been sent but not signed after threshold days.
 
@@ -42,7 +42,7 @@ class ContractFollowupService:
             List of unsigned contracts that need follow-up
         """
         try:
-            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_threshold)
+            cutoff_date = datetime.now(UTC) - timedelta(days=days_threshold)
 
             # Find contracts sent before cutoff that are still in sent/viewed status
             query = {
@@ -61,10 +61,10 @@ class ContractFollowupService:
             return contracts
 
         except Exception as e:
-            logger.error(f"Failed to check unsigned contracts: {str(e)}")
+            logger.error(f"Failed to check unsigned contracts: {e!s}")
             return []
 
-    async def _get_contracts_with_pending_drafts(self) -> List[ObjectId]:
+    async def _get_contracts_with_pending_drafts(self) -> list[ObjectId]:
         """Get contract IDs that already have pending follow-up drafts."""
         try:
             cursor = self.followup_drafts.find(
@@ -73,15 +73,15 @@ class ContractFollowupService:
             drafts = await cursor.to_list(length=None)
             return [ObjectId(d["contract_id"]) for d in drafts if d.get("contract_id")]
         except Exception as e:
-            logger.error(f"Failed to get pending drafts: {str(e)}")
+            logger.error(f"Failed to get pending drafts: {e!s}")
             return []
 
     async def generate_followup_draft(
         self,
-        contract: Dict,
-        prefetched_wedding: Optional[Dict] = None,
-        prefetched_planner: Optional[Dict] = None,
-    ) -> Optional[Dict]:
+        contract: dict,
+        prefetched_wedding: dict | None = None,
+        prefetched_planner: dict | None = None,
+    ) -> dict | None:
         """
         Generate an AI-drafted follow-up email for an unsigned contract.
 
@@ -120,9 +120,7 @@ class ContractFollowupService:
 
             # Calculate days since sent for urgency context
             sent_at = contract.get("sent_at")
-            days_since_sent = (
-                (datetime.now(timezone.utc) - sent_at).days if sent_at else 0
-            )
+            days_since_sent = (datetime.now(UTC) - sent_at).days if sent_at else 0
 
             context = {
                 "couple_name": couple.get("name", ""),
@@ -213,8 +211,8 @@ Warm regards,
                 "subject": f"Following up on your {package.get('name', 'wedding package')} agreement",
                 "body": email_text,
                 "status": "pending",  # pending, sent, dismissed
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
                 "ai_generated": True,
                 "credits_used": (
                     result.get("credits_used", 0) if "result" in dir() else 0
@@ -229,10 +227,10 @@ Warm regards,
             return draft
 
         except Exception as e:
-            logger.error(f"Failed to generate follow-up draft: {str(e)}")
+            logger.error(f"Failed to generate follow-up draft: {e!s}")
             return None
 
-    async def process_stale_contracts(self, days_threshold: int = 3) -> Dict[str, Any]:
+    async def process_stale_contracts(self, days_threshold: int = 3) -> dict[str, Any]:
         """
         Process all stale unsigned contracts and generate follow-up drafts.
 
@@ -252,7 +250,7 @@ Warm regards,
                 "total_found": len(contracts),
                 "drafts_created": 0,
                 "errors": 0,
-                "processed_at": datetime.now(timezone.utc).isoformat(),
+                "processed_at": datetime.now(UTC).isoformat(),
             }
 
             if not contracts:
@@ -300,7 +298,7 @@ Warm regards,
                         await self._notify_planner_of_draft(contract, draft)
                 except Exception as e:
                     logger.error(
-                        f"Error processing contract {contract.get('_id')}: {str(e)}"
+                        f"Error processing contract {contract.get('_id')}: {e!s}"
                     )
                     results["errors"] += 1
 
@@ -308,10 +306,10 @@ Warm regards,
             return results
 
         except Exception as e:
-            logger.error(f"Failed to process stale contracts: {str(e)}")
+            logger.error(f"Failed to process stale contracts: {e!s}")
             return {"error": str(e)}
 
-    async def _notify_planner_of_draft(self, contract: Dict, draft: Dict):
+    async def _notify_planner_of_draft(self, contract: dict, draft: dict):
         """Send notification to planner about pending follow-up draft."""
         try:
             # For now, just log. Could integrate with notification system.
@@ -325,9 +323,9 @@ Warm regards,
             # await contract_email_service.send_draft_notification(...)
 
         except Exception as e:
-            logger.error(f"Failed to notify planner: {str(e)}")
+            logger.error(f"Failed to notify planner: {e!s}")
 
-    async def get_pending_drafts(self, planner_id: str) -> List[Dict]:
+    async def get_pending_drafts(self, planner_id: str) -> list[dict]:
         """
         Get all pending follow-up drafts for a planner.
 
@@ -352,12 +350,12 @@ Warm regards,
             return drafts
 
         except Exception as e:
-            logger.error(f"Failed to get pending drafts: {str(e)}")
+            logger.error(f"Failed to get pending drafts: {e!s}")
             return []
 
     async def update_draft(
-        self, draft_id: str, planner_id: str, updates: Dict
-    ) -> Optional[Dict]:
+        self, draft_id: str, planner_id: str, updates: dict
+    ) -> dict | None:
         """
         Update a follow-up draft (edit content, mark as sent/dismissed).
 
@@ -372,7 +370,7 @@ Warm regards,
         try:
             allowed_fields = ["body", "subject", "status"]
             update_data = {k: v for k, v in updates.items() if k in allowed_fields}
-            update_data["updated_at"] = datetime.now(timezone.utc)
+            update_data["updated_at"] = datetime.now(UTC)
 
             result = await self.followup_drafts.find_one_and_update(
                 {"_id": ObjectId(draft_id), "planner_id": planner_id},
@@ -387,7 +385,7 @@ Warm regards,
             return result
 
         except Exception as e:
-            logger.error(f"Failed to update draft: {str(e)}")
+            logger.error(f"Failed to update draft: {e!s}")
             return None
 
     async def send_draft(self, draft_id: str, planner_id: str) -> bool:
@@ -444,8 +442,8 @@ Warm regards,
                 {
                     "$set": {
                         "status": "sent",
-                        "sent_at": datetime.now(timezone.utc),
-                        "updated_at": datetime.now(timezone.utc),
+                        "sent_at": datetime.now(UTC),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -454,7 +452,7 @@ Warm regards,
             return True
 
         except Exception as e:
-            logger.error(f"Failed to send follow-up: {str(e)}")
+            logger.error(f"Failed to send follow-up: {e!s}")
             return False
 
 

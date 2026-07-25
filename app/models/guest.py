@@ -1,6 +1,5 @@
 import re
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
@@ -15,72 +14,72 @@ class GuestModel(BaseModel):
     wedding_id: str = Field(...)
     name: str = Field(..., min_length=2, max_length=100)
     token: str = Field(..., min_length=6)
-    phone: Optional[str] = None
-    email: Optional[str] = None
-    group_id: Optional[str] = None
-    table_id: Optional[str] = Field(None, description="ID of assigned seating table")
-    role: Optional[str] = Field("guest")
-    plus_one_allowed: Optional[bool] = Field(default=False)
-    number_of_plus_ones_allowed: Optional[int] = Field(default=0, ge=0, le=10)
-    plus_one_submitted: Optional[bool] = Field(default=False)
-    sms_opt_in: Optional[bool] = Field(
+    phone: str | None = None
+    email: str | None = None
+    group_id: str | None = None
+    table_id: str | None = Field(None, description="ID of assigned seating table")
+    role: str | None = Field("guest")
+    plus_one_allowed: bool | None = Field(default=False)
+    number_of_plus_ones_allowed: int | None = Field(default=0, ge=0, le=10)
+    plus_one_submitted: bool | None = Field(default=False)
+    sms_opt_in: bool | None = Field(
         default=None,
         description="Guest opted in to receive SMS reminders (None=not yet decided)",
     )
-    sms_opt_in_date: Optional[datetime] = Field(
+    sms_opt_in_date: datetime | None = Field(
         None, description="When guest opted in to SMS"
     )
-    sms_opt_out_date: Optional[datetime] = Field(
+    sms_opt_out_date: datetime | None = Field(
         None, description="When guest opted out of SMS"
     )
-    phone_status: Optional[str] = Field(
+    phone_status: str | None = Field(
         None,
         description="Phone delivery status: unknown, valid, invalid, landline, unreachable, unsubscribed",
     )
-    phone_status_updated_at: Optional[datetime] = Field(
+    phone_status_updated_at: datetime | None = Field(
         None, description="When phone_status was last updated"
     )
-    email_opt_in: Optional[bool] = Field(
+    email_opt_in: bool | None = Field(
         default=None,
         description="Guest opted in to receive email reminders (None=not yet decided)",
     )
-    email_opt_in_date: Optional[datetime] = Field(
+    email_opt_in_date: datetime | None = Field(
         None, description="When guest opted in to email"
     )
-    email_opt_out_date: Optional[datetime] = Field(
+    email_opt_out_date: datetime | None = Field(
         None, description="When guest opted out of email"
     )
-    invite_sent: Optional[bool] = Field(
+    invite_sent: bool | None = Field(
         default=False, description="Whether initial invitation was sent"
     )
-    invite_sent_date: Optional[datetime] = Field(
+    invite_sent_date: datetime | None = Field(
         None, description="When initial invitation was sent"
     )
     # Seating optimization fields
-    must_sit_with: Optional[list[str]] = Field(
-        default_factory=lambda: [],
+    must_sit_with: list[str] | None = Field(
+        default_factory=list,
         description="Guest IDs that this guest must sit with (e.g., spouse, partner)",
     )
-    must_sit_apart: Optional[list[str]] = Field(
-        default_factory=lambda: [],
+    must_sit_apart: list[str] | None = Field(
+        default_factory=list,
         description="Guest IDs that this guest should NOT sit near (e.g., ex-partners, conflicts)",
     )
-    accessibility_needs: Optional[str] = Field(
+    accessibility_needs: str | None = Field(
         None,
         description="Accessibility requirements (e.g., wheelchair, near exit, quiet area)",
     )
-    seating_preference: Optional[str] = Field(
+    seating_preference: str | None = Field(
         None,
         description="Seating preference (e.g., near_dance_floor, quiet_corner, near_bar)",
     )
-    age_group: Optional[str] = Field(
+    age_group: str | None = Field(
         None, description="Age group for seating (child, young_adult, adult, elder)"
     )
-    language_preference: Optional[str] = Field(
+    language_preference: str | None = Field(
         None, description="Primary language for multilingual wedding seating"
     )
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     @field_validator("token")
     def validate_token(cls, value):
@@ -124,7 +123,7 @@ class GuestModel(BaseModel):
         "updated_at",
         when_used="json",
     )
-    def serialize_datetimes(self, value: Optional[datetime]) -> Optional[str]:
+    def serialize_datetimes(self, value: datetime | None) -> str | None:
         return value.isoformat() if value else None
 
     class Config:
@@ -147,32 +146,32 @@ class GuestModel(BaseModel):
 class UpdateGuestRequest(BaseModel):
     """Request model for updating guest information"""
 
-    name: Optional[str] = Field(None, min_length=2, max_length=100)
-    phone: Optional[str] = None
-    email: Optional[str] = None
-    group_id: Optional[str] = None
-    table_id: Optional[str] = Field(None, description="ID of assigned seating table")
-    role: Optional[str] = None
-    plus_one_allowed: Optional[bool] = None
-    number_of_plus_ones_allowed: Optional[int] = Field(None, ge=0, le=10)
-    sms_opt_in: Optional[bool] = None
-    email_opt_in: Optional[bool] = None
-    phone_status: Optional[str] = Field(None, description="Phone delivery status")
+    name: str | None = Field(None, min_length=2, max_length=100)
+    phone: str | None = None
+    email: str | None = None
+    group_id: str | None = None
+    table_id: str | None = Field(None, description="ID of assigned seating table")
+    role: str | None = None
+    plus_one_allowed: bool | None = None
+    number_of_plus_ones_allowed: int | None = Field(None, ge=0, le=10)
+    sms_opt_in: bool | None = None
+    email_opt_in: bool | None = None
+    phone_status: str | None = Field(None, description="Phone delivery status")
     # Seating optimization fields
-    must_sit_with: Optional[list[str]] = Field(
+    must_sit_with: list[str] | None = Field(
         None, description="Guest IDs that this guest must sit with"
     )
-    must_sit_apart: Optional[list[str]] = Field(
+    must_sit_apart: list[str] | None = Field(
         None, description="Guest IDs that this guest should NOT sit near"
     )
-    accessibility_needs: Optional[str] = Field(
+    accessibility_needs: str | None = Field(
         None, description="Accessibility requirements"
     )
-    seating_preference: Optional[str] = Field(None, description="Seating preference")
-    age_group: Optional[str] = Field(
+    seating_preference: str | None = Field(None, description="Seating preference")
+    age_group: str | None = Field(
         None, description="Age group (child, young_adult, adult, elder)"
     )
-    language_preference: Optional[str] = Field(
+    language_preference: str | None = Field(
         None, description="Primary language for seating"
     )
 
@@ -219,12 +218,12 @@ class CreateGuestRequest(BaseModel):
     """Request model for creating a single guest"""
 
     name: str = Field(..., min_length=2, max_length=100)
-    phone: Optional[str] = None
-    email: Optional[str] = None
-    group_id: Optional[str] = None
-    role: Optional[str] = Field("guest")
-    plus_one_allowed: Optional[bool] = Field(default=False)
-    number_of_plus_ones_allowed: Optional[int] = Field(default=0, ge=0, le=10)
+    phone: str | None = None
+    email: str | None = None
+    group_id: str | None = None
+    role: str | None = Field("guest")
+    plus_one_allowed: bool | None = Field(default=False)
+    number_of_plus_ones_allowed: int | None = Field(default=0, ge=0, le=10)
 
     @field_validator("phone")
     def validate_phone(cls, value):

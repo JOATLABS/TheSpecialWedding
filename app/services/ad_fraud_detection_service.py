@@ -17,8 +17,8 @@ Called from:
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -46,16 +46,16 @@ class AdFraudDetectionService:
         self,
         planner_id: str,
         campaign_id: str,
-        creative_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        ip_address: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+        creative_id: str | None = None,
+        session_id: str | None = None,
+        ip_address: str | None = None,
+    ) -> dict[str, Any] | None:
         """
         Run real-time fraud checks after a click event.
 
         Returns fraud signal dict if fraud detected, None otherwise.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         signals = []
 
         # Check 1: Click velocity — too many clicks in short window
@@ -105,7 +105,7 @@ class AdFraudDetectionService:
 
     async def _check_click_velocity(
         self, planner_id: str, campaign_id: str, now: datetime
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Detect rapid clicking on the same campaign."""
         window_start = now - timedelta(minutes=self.CLICK_VELOCITY_WINDOW_MINUTES)
 
@@ -144,7 +144,7 @@ class AdFraudDetectionService:
         campaign_id: str,
         creative_id: str,
         now: datetime,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Detect exact duplicate clicks (same planner + campaign + creative within 1 min)."""
         window_start = now - timedelta(seconds=self.DUPLICATE_CLICK_WINDOW_SECONDS)
 
@@ -179,7 +179,7 @@ class AdFraudDetectionService:
 
     async def _check_session_anomaly(
         self, session_id: str, now: datetime
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Detect excessive events from a single session."""
         window_start = now - timedelta(hours=1)
 
@@ -208,7 +208,7 @@ class AdFraudDetectionService:
 
     # ─── Scheduled / Batch Detection (called by nightly cron) ────
 
-    async def run_batch_detection(self) -> Dict[str, Any]:
+    async def run_batch_detection(self) -> dict[str, Any]:
         """
         Run aggregate fraud detection across all campaigns.
         Called by the nightly rollup scheduler.
@@ -220,7 +220,7 @@ class AdFraudDetectionService:
 
         Returns summary of signals created.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         signals_created = 0
 
         # ── 1. High hide rate detection ──

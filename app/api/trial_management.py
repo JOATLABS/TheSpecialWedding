@@ -1,7 +1,6 @@
 import logging
 import os
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
@@ -22,7 +21,7 @@ TRIAL_MAINTENANCE_STATUSES = [
 CRON_SECRET = os.getenv("CRON_SECRET", "")
 
 
-def verify_cron_auth(authorization: Optional[str] = Header(None)):
+def verify_cron_auth(authorization: str | None = Header(None)):
     """Verify cron job authorization. Fail-closed: rejects all requests if CRON_SECRET is not set."""
     if not CRON_SECRET:
         # SECURITY: Fail closed — never allow unprotected cron access in production
@@ -79,7 +78,7 @@ async def run_trial_maintenance(
         }
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error running trial maintenance: {str(e)}"
+            status_code=500, detail=f"Error running trial maintenance: {e!s}"
         )
 
 
@@ -94,7 +93,7 @@ async def get_trial_status(
         from app.core.database import mongo
 
         users_collection = mongo.db["users"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Count trials by status
         active_trials = await users_collection.count_documents(
@@ -134,7 +133,7 @@ async def get_trial_status(
         }
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error getting trial status: {str(e)}"
+            status_code=500, detail=f"Error getting trial status: {e!s}"
         )
 
 
@@ -168,14 +167,14 @@ async def cron_run_trial_maintenance(_: bool = Depends(verify_cron_auth)):
             "message": "Trial maintenance completed successfully",
             "warning_results": warning_result,
             "expiration_results": expiration_result,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
     except Exception as e:
-        logger.error(f"Error in trial maintenance cron: {str(e)}")
+        logger.error(f"Error in trial maintenance cron: {e!s}")
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
 
@@ -194,14 +193,14 @@ async def cron_send_trial_warnings(_: bool = Depends(verify_cron_auth)):
         return {
             "status": "success",
             "results": result,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
     except Exception as e:
-        logger.error(f"Error in trial warnings cron: {str(e)}")
+        logger.error(f"Error in trial warnings cron: {e!s}")
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
 
@@ -220,12 +219,12 @@ async def cron_check_expired_trials(_: bool = Depends(verify_cron_auth)):
         return {
             "status": "success",
             "results": result,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
     except Exception as e:
-        logger.error(f"Error in trial expiration cron: {str(e)}")
+        logger.error(f"Error in trial expiration cron: {e!s}")
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }

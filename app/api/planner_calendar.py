@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Any, List, Optional
+from typing import Any
 from uuid import uuid4
 
 from bson import ObjectId
@@ -36,22 +36,22 @@ from app.models.calendar import (
 )
 from app.models.calendar_connection import CalendarConnectionUpdateRequest
 from app.models.calendar_sync import CalendarSyncStatusValue
+from app.services.aurinko_contacts_sync_service import aurinko_contacts_sync_service
+from app.services.aurinko_tasks_sync_service import aurinko_tasks_sync_service
 from app.services.calendar_aggregation_service import calendar_aggregation_service
 from app.services.calendar_audit_service import calendar_audit_service
 from app.services.calendar_idempotency_service import calendar_idempotency_service
 from app.services.calendar_job_service import calendar_job_service
-from app.services.calendar_sync_service import calendar_sync_service
 from app.services.calendar_provider_service import calendar_provider_service
-from app.services.aurinko_contacts_sync_service import aurinko_contacts_sync_service
-from app.services.aurinko_tasks_sync_service import aurinko_tasks_sync_service
+from app.services.calendar_sync_service import calendar_sync_service
 from app.services.couple_booking_service import couple_booking_service
 from app.services.google_calendar_service import google_calendar_service
+from app.utils.planner_ownership import list_wedding_ids_for_owner
 from app.utils.query_validation import (
     calculate_pagination_params,
     validated_status_filter,
     validated_string_filter,
 )
-from app.utils.planner_ownership import list_wedding_ids_for_owner
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +74,8 @@ class TaskSyncSummaryResponse(BaseModel):
     pending_target_count: int = 0
     has_synced_target: bool = False
     has_configured_target: bool = False
-    primary_external_event_id: Optional[str] = None
-    last_sync_at: Optional[str] = None
+    primary_external_event_id: str | None = None
+    last_sync_at: str | None = None
 
 
 class TaskResponse(BaseModel):
@@ -83,51 +83,51 @@ class TaskResponse(BaseModel):
 
     id: str
     planner_email: str
-    wedding_id: Optional[str] = None
-    wedding_name: Optional[str] = None
+    wedding_id: str | None = None
+    wedding_name: str | None = None
     title: str
-    description: Optional[str] = None
+    description: str | None = None
     category: str
     priority: str
     status: str
     start_date: str
-    end_date: Optional[str] = None
+    end_date: str | None = None
     all_day: bool
-    due_date: Optional[str] = None
-    reminder_minutes: Optional[int] = None
+    due_date: str | None = None
+    reminder_minutes: int | None = None
     external_sync_requested: bool = False
     is_recurring: bool
-    recurrence_rule: Optional[str] = None
-    color: Optional[str] = None
-    notes: Optional[str] = None
-    owner_planner_id: Optional[str] = None
-    owner_planner_email: Optional[str] = None
-    created_by_user_id: Optional[str] = None
-    created_by_email: Optional[str] = None
+    recurrence_rule: str | None = None
+    color: str | None = None
+    notes: str | None = None
+    owner_planner_id: str | None = None
+    owner_planner_email: str | None = None
+    created_by_user_id: str | None = None
+    created_by_email: str | None = None
     assigned_user_ids: list[str] = Field(default_factory=list)
     assigned_user_emails: list[str] = Field(default_factory=list)
-    schedule_item_type: Optional[str] = None
-    visibility_mode: Optional[str] = None
-    calendar_sync_policy: Optional[str] = None
+    schedule_item_type: str | None = None
+    visibility_mode: str | None = None
+    calendar_sync_policy: str | None = None
     sync_target_override_enabled: bool = False
     sync_target_connection_ids: list[str] = Field(default_factory=list)
-    timezone: Optional[str] = None
+    timezone: str | None = None
     couple_attendee_emails: list[str] = Field(default_factory=list)
-    conference_provider: Optional[str] = None
-    conference_url: Optional[str] = None
-    invite_delivery_mode: Optional[str] = None
-    meeting_status: Optional[str] = None
+    conference_provider: str | None = None
+    conference_url: str | None = None
+    invite_delivery_mode: str | None = None
+    meeting_status: str | None = None
     created_at: str
     updated_at: str
     version: int = 1
-    completed_at: Optional[str] = None
-    sync_status_summary: Optional[TaskSyncSummaryResponse] = None
+    completed_at: str | None = None
+    sync_status_summary: TaskSyncSummaryResponse | None = None
 
 
 class TaskListResponse(BaseModel):
     """Response model for list of tasks."""
 
-    tasks: List[TaskResponse]
+    tasks: list[TaskResponse]
     total: int
     page: int
     page_size: int
@@ -144,7 +144,7 @@ class GoogleCallbackResponse(BaseModel):
     """Response after Google OAuth callback."""
 
     connected: bool
-    calendar_id: Optional[str] = None
+    calendar_id: str | None = None
     message: str
 
 
@@ -169,7 +169,7 @@ class ProviderCallbackCalendar(BaseModel):
 
     aurinko_calendar_id: str
     name: str
-    access_role: Optional[str] = None
+    access_role: str | None = None
     is_writable: bool = False
     is_primary: bool = False
     suggested_default_write: bool = False
@@ -209,17 +209,17 @@ class ProviderCallbackResponse(BaseModel):
     """
 
     connected: bool
-    calendar_id: Optional[str] = None
+    calendar_id: str | None = None
     connections_created: int = 0
-    redirect_to: Optional[str] = None
+    redirect_to: str | None = None
     message: str
-    warning: Optional[str] = None
+    warning: str | None = None
     # Option-B picker fields (set on the callback hop, cleared on commit):
     needs_selection: bool = False
-    draft_id: Optional[str] = None
-    account_email: Optional[str] = None
-    account_name: Optional[str] = None
-    provider: Optional[str] = None
+    draft_id: str | None = None
+    account_email: str | None = None
+    account_name: str | None = None
+    provider: str | None = None
     calendars: list[ProviderCallbackCalendar] = []
     tasklists: list[ProviderCallbackTasklist] = []
     contact_books: list[ProviderCallbackContactBook] = []
@@ -229,9 +229,9 @@ class CalendarSelectionPick(BaseModel):
     """One picker choice — sent in the body of /connections/select."""
 
     aurinko_calendar_id: str
-    is_default_write_target: Optional[bool] = None
-    details_visibility: Optional[str] = None  # "details" | "busy_only"
-    is_shared_in_team_view: Optional[bool] = None
+    is_default_write_target: bool | None = None
+    details_visibility: str | None = None  # "details" | "busy_only"
+    is_shared_in_team_view: bool | None = None
 
 
 class TaskListSelectionPick(BaseModel):
@@ -259,16 +259,16 @@ class CalendarConnectionResponse(BaseModel):
     """Serialized external calendar connection."""
 
     id: str
-    owner_planner_id: Optional[str] = None
-    owner_planner_email: Optional[str] = None
-    user_id: Optional[str] = None
-    user_email: Optional[str] = None
+    owner_planner_id: str | None = None
+    owner_planner_email: str | None = None
+    user_id: str | None = None
+    user_email: str | None = None
     provider: str
-    provider_account_email: Optional[str] = None
-    provider_account_name: Optional[str] = None
-    calendar_id: Optional[str] = None
-    calendar_name: Optional[str] = None
-    access_role: Optional[str] = None
+    provider_account_email: str | None = None
+    provider_account_name: str | None = None
+    calendar_id: str | None = None
+    calendar_name: str | None = None
+    access_role: str | None = None
     is_writable: bool = False
     is_primary: bool = False
     is_default_write_target: bool = False
@@ -282,25 +282,25 @@ class CalendarConnectionResponse(BaseModel):
     details_visibility: str = VisibilityMode.BUSY_ONLY.value
     sync_enabled: bool = False
     task_sync_enabled: bool = False
-    task_sync_tasklist_id: Optional[str] = None
-    task_sync_tasklist_name: Optional[str] = None
-    task_sync_subscription_id: Optional[str] = None
+    task_sync_tasklist_id: str | None = None
+    task_sync_tasklist_name: str | None = None
+    task_sync_subscription_id: str | None = None
     contact_sync_enabled: bool = False
-    contact_sync_book_id: Optional[str] = None
-    contact_sync_book_name: Optional[str] = None
-    contact_sync_group_id: Optional[str] = None
-    contact_sync_group_name: Optional[str] = None
-    contact_sync_subscription_id: Optional[str] = None
+    contact_sync_book_id: str | None = None
+    contact_sync_book_name: str | None = None
+    contact_sync_group_id: str | None = None
+    contact_sync_group_name: str | None = None
+    contact_sync_subscription_id: str | None = None
     connection_scopes: list[str] = Field(default_factory=list)
     couple_booking_auto_confirm: bool = True
-    conference_provider_default: Optional[str] = None
+    conference_provider_default: str | None = None
     connection_status: str
-    token_expiry: Optional[datetime] = None
-    last_sync_at: Optional[datetime] = None
-    last_healthcheck_at: Optional[datetime] = None
-    last_error: Optional[str] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    token_expiry: datetime | None = None
+    last_sync_at: datetime | None = None
+    last_healthcheck_at: datetime | None = None
+    last_error: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class ConnectionTasklistResponse(BaseModel):
@@ -331,12 +331,12 @@ class SharedCalendarEventResponse(BaseModel):
 
     id: str
     source_type: str
-    title: Optional[str] = None
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
+    title: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
     all_day: bool = False
-    wedding_id: Optional[str] = None
-    owner_planner_email: Optional[str] = None
+    wedding_id: str | None = None
+    owner_planner_email: str | None = None
     assigned_user_ids: list[str] = Field(default_factory=list)
     assigned_user_emails: list[str] = Field(default_factory=list)
     visibility_mode: str = VisibilityMode.DETAILS.value
@@ -356,7 +356,7 @@ class MeetingUpsertResponse(BaseModel):
 # ============================================================================
 
 
-def _isoformat(value: Optional[datetime | str]) -> Optional[str]:
+def _isoformat(value: datetime | str | None) -> str | None:
     """Convert datetime to ISO format string."""
     if value is None:
         return None
@@ -367,7 +367,7 @@ def _isoformat(value: Optional[datetime | str]) -> Optional[str]:
     return str(value)
 
 
-def _optional_str(value: Any) -> Optional[str]:
+def _optional_str(value: Any) -> str | None:
     """Return string values as-is and coerce simple scalar IDs to strings."""
     if value is None:
         return None
@@ -379,9 +379,9 @@ def _optional_str(value: Any) -> Optional[str]:
 
 
 async def _get_wedding_name(
-    wedding_id: Optional[str],
-    current_user: Optional[ExtendedAuthUser] = None,
-) -> Optional[str]:
+    wedding_id: str | None,
+    current_user: ExtendedAuthUser | None = None,
+) -> str | None:
     """Get wedding couple names by ID."""
     if not wedding_id:
         return None
@@ -417,8 +417,8 @@ def _serialize_task_sync_summary(summary: dict[str, Any]) -> TaskSyncSummaryResp
 
 def _serialize_task(
     task: dict,
-    wedding_name: Optional[str] = None,
-    sync_summary: Optional[dict[str, Any]] = None,
+    wedding_name: str | None = None,
+    sync_summary: dict[str, Any] | None = None,
 ) -> TaskResponse:
     """Serialize a task document to response model."""
     summary = _serialize_task_sync_summary(sync_summary or {})
@@ -538,7 +538,7 @@ def _calendar_owner_email(current_user: ExtendedAuthUser) -> str:
     return str(context.get("owner_email") or current_user.email)
 
 
-def _calendar_user_id(current_user: ExtendedAuthUser) -> Optional[str]:
+def _calendar_user_id(current_user: ExtendedAuthUser) -> str | None:
     context = get_calendar_owner_identity(current_user)
     user_id = context.get("user_id")
     return str(user_id) if user_id else None
@@ -551,8 +551,8 @@ def _calendar_actor_role_scope(current_user: ExtendedAuthUser) -> str:
 
 
 async def _resolve_owner_scoped_wedding_ids(
-    owner_id: Optional[str],
-    owner_email: Optional[str],
+    owner_id: str | None,
+    owner_email: str | None,
     wedding_ids: list[str],
 ) -> list[str]:
     requested_ids = list(dict.fromkeys(str(value) for value in wedding_ids if value))
@@ -619,7 +619,7 @@ def _can_send_meeting_invites(current_user: ExtendedAuthUser) -> bool:
     )
 
 
-def _coerce_event_datetime(value: Any) -> Optional[datetime]:
+def _coerce_event_datetime(value: Any) -> datetime | None:
     """Normalize serialized event timestamps into aware datetimes for availability math."""
     if value is None:
         return None
@@ -688,8 +688,8 @@ async def _resolve_user_emails(user_ids: list[str]) -> list[str]:
 
 
 async def _resolve_couple_attendee_emails(
-    wedding_id: Optional[str],
-    requested_emails: Optional[list[str]] = None,
+    wedding_id: str | None,
+    requested_emails: list[str] | None = None,
 ) -> list[str]:
     """Use explicit couple attendee emails, falling back to wedding couple accounts."""
     normalized = [email for email in (requested_emails or []) if email]
@@ -832,7 +832,7 @@ def _meeting_invite_content_changed(update_fields: dict[str, Any]) -> bool:
     )
 
 
-def _require_idempotency_key(idempotency_key: Optional[str]) -> str:
+def _require_idempotency_key(idempotency_key: str | None) -> str:
     if not idempotency_key:
         raise HTTPException(
             status_code=400,
@@ -848,10 +848,10 @@ def _build_meeting_idempotency_scope(action: str, identifier: str) -> str:
 async def _begin_meeting_idempotency(
     *,
     scope_key: str,
-    idempotency_key: Optional[str],
+    idempotency_key: str | None,
     action: str,
     payload: dict[str, Any],
-) -> tuple[str, Optional[dict[str, Any]]]:
+) -> tuple[str, dict[str, Any] | None]:
     key = _require_idempotency_key(idempotency_key)
     resolution = await calendar_idempotency_service.begin(
         scope_key=scope_key,
@@ -1051,7 +1051,7 @@ async def fetch_google_events(
     days_ahead: int = Query(
         default=30, ge=1, le=365, description="Days ahead to fetch"
     ),
-) -> List[dict]:
+) -> list[dict]:
     """
     Fetch events from connected Google Calendar.
 
@@ -1141,7 +1141,7 @@ async def google_connection_oauth_callback(
     response_model=ProviderAuthUrlResponse,
 )
 async def get_provider_auth_url(
-    service_type: Optional[str] = Query(
+    service_type: str | None = Query(
         default=None,
         description=(
             "Optional provider id to pre-select: one of 'google', 'office365', "
@@ -1640,11 +1640,11 @@ async def sync_connection_contacts_now(
 )
 async def get_shared_calendar_view(
     current_user: ExtendedAuthUser = Depends(require_calendar_access),
-    start: Optional[datetime] = Query(None),
-    end: Optional[datetime] = Query(None),
-    wedding_ids: Optional[List[str]] = Query(None),
-    staff_ids: Optional[List[str]] = Query(None),
-    source_types: Optional[List[str]] = Query(None),
+    start: datetime | None = Query(None),
+    end: datetime | None = Query(None),
+    wedding_ids: list[str] | None = Query(None),
+    staff_ids: list[str] | None = Query(None),
+    source_types: list[str] | None = Query(None),
 ) -> list[SharedCalendarEventResponse]:
     """Return a unified internal plus external shared calendar feed."""
     scope = get_accessible_calendar_scope(current_user)
@@ -1670,7 +1670,7 @@ async def get_staff_availability(
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("view_team_availability")
     ),
-    staff_ids: List[str] = Query(...),
+    staff_ids: list[str] = Query(...),
     start: datetime = Query(...),
     end: datetime = Query(...),
 ) -> dict:
@@ -1733,8 +1733,7 @@ async def get_staff_availability(
                     "end": busy_start.isoformat(),
                 }
             )
-        if busy_end > cursor:
-            cursor = busy_end
+        cursor = max(cursor, busy_end)
     if cursor < end:
         available_windows.append({"start": cursor.isoformat(), "end": end.isoformat()})
 
@@ -1869,13 +1868,13 @@ async def create_task(
 )
 async def list_tasks(
     current_user: ExtendedAuthUser = Depends(require_calendar_access),
-    wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
-    status: Optional[str] = Query(None, description="Filter by status"),
-    category: Optional[str] = Query(None, description="Filter by category"),
-    start_date: Optional[datetime] = Query(
+    wedding_id: str | None = Query(None, description="Filter by wedding ID"),
+    status: str | None = Query(None, description="Filter by status"),
+    category: str | None = Query(None, description="Filter by category"),
+    start_date: datetime | None = Query(
         None, description="Filter tasks after this date"
     ),
-    end_date: Optional[datetime] = Query(
+    end_date: datetime | None = Query(
         None, description="Filter tasks before this date"
     ),
     page: int = Query(default=1, ge=1, le=10000, description="Page number"),
@@ -2232,7 +2231,7 @@ async def sync_task_to_google(
     tags=["Planner Calendar"],
 )
 async def bulk_update_task_status(
-    task_ids: List[str],
+    task_ids: list[str],
     status: str = Query(..., description="New status for all tasks"),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("manage_calendar_tasks")
@@ -2315,7 +2314,7 @@ async def get_month_tasks(
     year: int,
     month: int,
     current_user: ExtendedAuthUser = Depends(require_calendar_access),
-) -> List[TaskResponse]:
+) -> list[TaskResponse]:
     """
     Get all tasks for a specific month.
 
@@ -2388,7 +2387,7 @@ async def get_upcoming_tasks(
     current_user: ExtendedAuthUser = Depends(require_calendar_access),
     days: int = Query(default=7, ge=1, le=90, description="Days ahead to fetch"),
     limit: int = Query(default=20, ge=1, le=100, description="Maximum tasks to return"),
-) -> List[TaskResponse]:
+) -> list[TaskResponse]:
     """
     Get upcoming tasks for the next N days.
 
@@ -2452,7 +2451,7 @@ async def get_upcoming_tasks(
 )
 async def create_meeting(
     data: CalendarEventCreate,
-    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("schedule_meetings")
     ),
@@ -2654,7 +2653,7 @@ async def create_meeting(
 async def update_meeting(
     meeting_id: str,
     updates: CalendarEventUpdate,
-    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("edit_meetings")
     ),
@@ -2918,7 +2917,7 @@ async def update_meeting(
 async def delete_meeting(
     meeting_id: str,
     expected_version: int = Query(..., ge=1),
-    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("cancel_meetings")
     ),
@@ -3319,7 +3318,7 @@ async def decline_couple_booking(
             "Stale client clicks 409."
         ),
     ),
-    reason: Optional[str] = Query(None, max_length=1000),
+    reason: str | None = Query(None, max_length=1000),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("approve_couple_bookings")
     ),

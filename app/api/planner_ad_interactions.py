@@ -22,7 +22,6 @@ Auth model:
 """
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -50,15 +49,15 @@ require_manage_vendors = require_team_permission("manage_vendors")
 
 class AddToDirectoryRequest(BaseModel):
     campaign_id: str = Field(..., description="Campaign to add from")
-    click_id: Optional[str] = Field(None, description="Attribution click ID")
+    click_id: str | None = Field(None, description="Attribution click ID")
 
 
 class WeddingContext(BaseModel):
-    date: Optional[str] = None
-    location: Optional[str] = None
-    guest_count: Optional[int] = None
-    venue: Optional[str] = None
-    budget_range: Optional[str] = None
+    date: str | None = None
+    location: str | None = None
+    guest_count: int | None = None
+    venue: str | None = None
+    budget_range: str | None = None
 
 
 class RequestQuoteRequest(BaseModel):
@@ -66,13 +65,11 @@ class RequestQuoteRequest(BaseModel):
     message: str = Field(
         ..., min_length=1, max_length=2000, description="Quote request message"
     )
-    wedding_id: Optional[str] = Field(
-        None, description="Wedding to associate quote with"
-    )
-    wedding_context: Optional[WeddingContext] = Field(
+    wedding_id: str | None = Field(None, description="Wedding to associate quote with")
+    wedding_context: WeddingContext | None = Field(
         None, description="Wedding details for context"
     )
-    click_id: Optional[str] = Field(None, description="Attribution click ID")
+    click_id: str | None = Field(None, description="Attribution click ID")
     auto_add_to_directory: bool = Field(
         True, description="Auto-add vendor to directory"
     )
@@ -80,7 +77,7 @@ class RequestQuoteRequest(BaseModel):
 
 class DraftQuoteRequest(BaseModel):
     campaign_id: str = Field(..., description="Campaign to draft quote for")
-    wedding_context: Optional[WeddingContext] = Field(
+    wedding_context: WeddingContext | None = Field(
         None, description="Wedding details for context"
     )
 
@@ -235,8 +232,8 @@ def _get_planner_name(user: ExtendedAuthUser) -> str:
 
 @router.get("/sponsored-cards")
 async def get_sponsored_cards(
-    location: Optional[str] = Query(None, description="Planner location for targeting"),
-    categories: Optional[str] = Query(
+    location: str | None = Query(None, description="Planner location for targeting"),
+    categories: str | None = Query(
         None, description="Comma-separated vendor categories"
     ),
     limit: int = Query(3, ge=1, le=10, description="Max cards to return"),

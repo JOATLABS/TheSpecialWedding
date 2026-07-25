@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 PLANNER_BILLING_USER_FIELDS = (
     "plan_id",

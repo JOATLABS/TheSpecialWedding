@@ -11,7 +11,6 @@ from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-
 STOREFRONT_DOMAIN_PATH_PREFIX = "/admin/storefront/custom-domain"
 _SAFE_CODE = re.compile(r"^[a-z][a-z0-9_]{1,79}$")
 _SAFE_SUPPORT_ID = re.compile(r"^[A-Za-z0-9_-]{6,96}$")

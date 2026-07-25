@@ -2,11 +2,11 @@
 Centralized configuration management using Pydantic Settings
 """
 
-import json
 import ipaddress
+import json
 from enum import Enum
 from functools import lru_cache
-from typing import Annotated, Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Literal
 from urllib.parse import urlparse
 
 from pydantic import Field, field_validator
@@ -83,7 +83,7 @@ def _expand_loopback_origins(origins: list[str]) -> list[str]:
     return expanded
 
 
-def _normalize_optional_public_base(value: Any) -> Optional[str]:
+def _normalize_optional_public_base(value: Any) -> str | None:
     """Normalize optional public base URLs/domains to https://host style."""
     if value in (None, ""):
         return None
@@ -98,7 +98,7 @@ def _normalize_optional_public_base(value: Any) -> Optional[str]:
     return f"https://{normalized}".rstrip("/")
 
 
-def _normalize_origin(value: Any) -> Optional[str]:
+def _normalize_origin(value: Any) -> str | None:
     """Normalize an origin-like value to scheme://host[:port]."""
     if value in (None, ""):
         return None
@@ -117,7 +117,7 @@ def _normalize_origin(value: Any) -> Optional[str]:
     return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
 
 
-def _normalize_cookie_domain(value: Any) -> Optional[str]:
+def _normalize_cookie_domain(value: Any) -> str | None:
     """Normalize cookie domains to a consistent, browser-compatible shape."""
     if value in (None, ""):
         return None
@@ -166,28 +166,26 @@ class Settings(BaseSettings):
     # Application
     app_name: str = Field(default="Wedding WebApp API", alias="APP_NAME")
     app_version: str = Field(default="1.3.0", alias="APP_VERSION")
-    storefront_runtime_revision: Optional[str] = Field(
+    storefront_runtime_revision: str | None = Field(
         default=None, alias="STOREFRONT_RUNTIME_REVISION"
     )
     api_v1_prefix: str = Field(default="/api/v1", alias="API_V1_PREFIX")
 
     # URL Configuration - Single source of truth, NO FALLBACKS
-    frontend_url: Optional[str] = Field(default=None, alias="FRONTEND_URL")
-    api_base_url: Optional[str] = Field(default=None, alias="NEXT_PUBLIC_API_BASE_URL")
-    cookie_domain: Optional[str] = Field(default=None, alias="COOKIE_DOMAIN")
-    media_domain: Optional[str] = Field(default=None, alias="MEDIA_DOMAIN")
-    guest_media_domain: Optional[str] = Field(default=None, alias="GUEST_MEDIA_DOMAIN")
-    ad_media_domain: Optional[str] = Field(default=None, alias="AD_MEDIA_DOMAIN")
-    blog_media_domain: Optional[str] = Field(default=None, alias="BLOG_MEDIA_DOMAIN")
-    form_uploads_domain: Optional[str] = Field(
-        default=None, alias="FORM_UPLOADS_DOMAIN"
-    )
+    frontend_url: str | None = Field(default=None, alias="FRONTEND_URL")
+    api_base_url: str | None = Field(default=None, alias="NEXT_PUBLIC_API_BASE_URL")
+    cookie_domain: str | None = Field(default=None, alias="COOKIE_DOMAIN")
+    media_domain: str | None = Field(default=None, alias="MEDIA_DOMAIN")
+    guest_media_domain: str | None = Field(default=None, alias="GUEST_MEDIA_DOMAIN")
+    ad_media_domain: str | None = Field(default=None, alias="AD_MEDIA_DOMAIN")
+    blog_media_domain: str | None = Field(default=None, alias="BLOG_MEDIA_DOMAIN")
+    form_uploads_domain: str | None = Field(default=None, alias="FORM_UPLOADS_DOMAIN")
 
     # Security
     secret_key: str = Field(
         default="", alias="SECRET_KEY"
     )  # Required - validated below
-    storefront_probe_ingress_secret: Optional[str] = Field(
+    storefront_probe_ingress_secret: str | None = Field(
         default=None,
         alias="STOREFRONT_PROBE_INGRESS_SECRET",
     )
@@ -200,7 +198,7 @@ class Settings(BaseSettings):
         default=180, alias="GUEST_ACCESS_SESSION_MINUTES"
     )
     # CORS
-    cors_origins: Annotated[List[str], NoDecode] = Field(
+    cors_origins: Annotated[list[str], NoDecode] = Field(
         default=[], alias="CORS_ORIGINS"
     )  # Required - validated below
 
@@ -217,9 +215,7 @@ class Settings(BaseSettings):
 
     @field_validator("storefront_probe_ingress_secret")
     @classmethod
-    def validate_storefront_probe_ingress_secret(
-        cls, v: Optional[str]
-    ) -> Optional[str]:
+    def validate_storefront_probe_ingress_secret(cls, v: str | None) -> str | None:
         """Keep the Next-to-FastAPI probe credential strong and server-only."""
 
         if v is None or not v.strip():
@@ -232,18 +228,18 @@ class Settings(BaseSettings):
 
     @field_validator("cors_origins")
     @classmethod
-    def validate_cors_origins(cls, v: List[str]) -> List[str]:
+    def validate_cors_origins(cls, v: list[str]) -> list[str]:
         """Ensure cors_origins is configured"""
         if not v:
             raise ValueError("CORS_ORIGINS must be configured with at least one origin")
         return _expand_loopback_origins(v)
 
     cors_credentials: bool = Field(default=True, alias="CORS_CREDENTIALS")
-    cors_methods: Annotated[List[str], NoDecode] = Field(
+    cors_methods: Annotated[list[str], NoDecode] = Field(
         default=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         alias="CORS_METHODS",
     )
-    cors_headers: Annotated[List[str], NoDecode] = Field(
+    cors_headers: Annotated[list[str], NoDecode] = Field(
         default=[
             "Authorization",
             "Content-Type",
@@ -254,20 +250,16 @@ class Settings(BaseSettings):
         ],
         alias="CORS_HEADERS",
     )
-    allowed_hosts: Annotated[List[str], NoDecode] = Field(
+    allowed_hosts: Annotated[list[str], NoDecode] = Field(
         default=[], alias="ALLOWED_HOSTS"
     )
-    trusted_proxy_cidrs: Annotated[List[str], NoDecode] = Field(
+    trusted_proxy_cidrs: Annotated[list[str], NoDecode] = Field(
         default=[], alias="TRUSTED_PROXY_CIDRS"
     )
-    trusted_proxy_client_ip_header: Optional[
-        Literal[
-            "CF-Connecting-IP",
-            "True-Client-IP",
-            "X-Real-IP",
-            "X-Forwarded-For",
-        ]
-    ] = Field(default=None, alias="TRUSTED_PROXY_CLIENT_IP_HEADER")
+    trusted_proxy_client_ip_header: (
+        Literal["CF-Connecting-IP", "True-Client-IP", "X-Real-IP", "X-Forwarded-For"]
+        | None
+    ) = Field(default=None, alias="TRUSTED_PROXY_CLIENT_IP_HEADER")
     # Database
     mongo_uri: str = Field(default="mongodb://localhost:27017", alias="MONGO_URI")
     mongo_db: str = Field(default="wedding", alias="MONGO_DB")
@@ -277,7 +269,7 @@ class Settings(BaseSettings):
     redis_enabled: bool = Field(default=False, alias="REDIS_ENABLED")
     redis_host: str = Field(default="localhost", alias="REDIS_HOST")
     redis_port: int = Field(default=6379, alias="REDIS_PORT")
-    redis_password: Optional[str] = Field(default=None, alias="REDIS_PASSWORD")
+    redis_password: str | None = Field(default=None, alias="REDIS_PASSWORD")
     redis_db: int = Field(default=0, alias="REDIS_DB")
     redis_max_connections: int = Field(default=10, alias="REDIS_MAX_CONNECTIONS")
     # Rate Limiting
@@ -294,41 +286,35 @@ class Settings(BaseSettings):
     )
     rate_limit_login_period: int = Field(default=60, alias="RATE_LIMIT_LOGIN_PERIOD")
     # Email Service (Resend)
-    resend_api_key: Optional[str] = Field(default=None, alias="RESEND_API_KEY")
+    resend_api_key: str | None = Field(default=None, alias="RESEND_API_KEY")
     resend_from_email: str = Field(
         default="noreply@thespecialwedding.io", alias="RESEND_FROM_EMAIL"
     )
-    resend_billing_email: Optional[str] = Field(
-        default=None, alias="RESEND_BILLING_EMAIL"
-    )
+    resend_billing_email: str | None = Field(default=None, alias="RESEND_BILLING_EMAIL")
     resend_from_name: str = Field(
         default="The Special Wedding", alias="RESEND_FROM_NAME"
     )
     # SMS Services
     twilio_enabled: bool = Field(default=False, alias="TWILIO_ENABLED")
-    twilio_account_sid: Optional[str] = Field(default=None, alias="TWILIO_ACCOUNT_SID")
-    twilio_auth_token: Optional[str] = Field(default=None, alias="TWILIO_AUTH_TOKEN")
-    twilio_from_number: Optional[str] = Field(default=None, alias="TWILIO_FROM_NUMBER")
+    twilio_account_sid: str | None = Field(default=None, alias="TWILIO_ACCOUNT_SID")
+    twilio_auth_token: str | None = Field(default=None, alias="TWILIO_AUTH_TOKEN")
+    twilio_from_number: str | None = Field(default=None, alias="TWILIO_FROM_NUMBER")
 
     telnyx_enabled: bool = Field(default=False, alias="TELNYX_ENABLED")
-    telnyx_api_key: Optional[str] = Field(default=None, alias="TELNYX_API_KEY")
-    telnyx_from_number: Optional[str] = Field(default=None, alias="TELNYX_FROM_NUMBER")
+    telnyx_api_key: str | None = Field(default=None, alias="TELNYX_API_KEY")
+    telnyx_from_number: str | None = Field(default=None, alias="TELNYX_FROM_NUMBER")
 
     # AWS S3 / Cloudflare R2 - variable names match .env exactly
     s3_enabled: bool = Field(default=False, alias="S3_ENABLED")
-    s3_access_key_id: Optional[str] = Field(default=None, alias="S3_ACCESS_KEY_ID")
-    s3_secret_access_key: Optional[str] = Field(
-        default=None, alias="S3_SECRET_ACCESS_KEY"
-    )
-    s3_bucket_name: Optional[str] = Field(default=None, alias="S3_BUCKET_NAME")
-    s3_guest_media_bucket_name: Optional[str] = Field(
+    s3_access_key_id: str | None = Field(default=None, alias="S3_ACCESS_KEY_ID")
+    s3_secret_access_key: str | None = Field(default=None, alias="S3_SECRET_ACCESS_KEY")
+    s3_bucket_name: str | None = Field(default=None, alias="S3_BUCKET_NAME")
+    s3_guest_media_bucket_name: str | None = Field(
         default=None, alias="S3_GUEST_MEDIA_BUCKET_NAME"
     )
-    s3_ad_bucket_name: Optional[str] = Field(default=None, alias="S3_AD_BUCKET_NAME")
-    s3_blog_bucket_name: Optional[str] = Field(
-        default=None, alias="S3_BLOG_BUCKET_NAME"
-    )
-    s3_storefront_staging_bucket_name: Optional[str] = Field(
+    s3_ad_bucket_name: str | None = Field(default=None, alias="S3_AD_BUCKET_NAME")
+    s3_blog_bucket_name: str | None = Field(default=None, alias="S3_BLOG_BUCKET_NAME")
+    s3_storefront_staging_bucket_name: str | None = Field(
         default=None, alias="S3_STOREFRONT_STAGING_BUCKET_NAME"
     )
     storefront_staging_lifecycle_max_age_days: int = Field(
@@ -343,38 +329,36 @@ class Settings(BaseSettings):
         le=2,
         alias="STOREFRONT_IMAGE_DECODE_CONCURRENCY",
     )
-    s3_form_uploads_bucket_name: Optional[str] = Field(
+    s3_form_uploads_bucket_name: str | None = Field(
         default=None, alias="S3_FORM_UPLOADS_BUCKET_NAME"
     )
 
     # AI model configuration (env-overridable so a Gemini rename / EOL
     # is a config rollout, not a code deploy).
-    ai_gemini_model_primary: Optional[str] = Field(
+    ai_gemini_model_primary: str | None = Field(
         default="gemini-2.5-flash", alias="AI_GEMINI_MODEL_PRIMARY"
     )
-    ai_gemini_model_economy: Optional[str] = Field(
+    ai_gemini_model_economy: str | None = Field(
         default="gemini-2.0-flash", alias="AI_GEMINI_MODEL_ECONOMY"
     )
     ai_low_credit_threshold: float = Field(
         default=0.10, alias="AI_LOW_CREDIT_THRESHOLD"
     )
     s3_region: str = Field(default="auto", alias="S3_REGION")
-    s3_endpoint_url: Optional[str] = Field(default=None, alias="S3_ENDPOINT_URL")
+    s3_endpoint_url: str | None = Field(default=None, alias="S3_ENDPOINT_URL")
     s3_healthcheck_ttl_seconds: int = Field(
         default=60, alias="S3_HEALTHCHECK_TTL_SECONDS"
     )
-    cloudflare_account_id: Optional[str] = Field(
+    cloudflare_account_id: str | None = Field(
         default=None, alias="CLOUDFLARE_ACCOUNT_ID"
     )
-    cloudflare_api_token: Optional[str] = Field(
-        default=None, alias="CLOUDFLARE_API_TOKEN"
-    )
+    cloudflare_api_token: str | None = Field(default=None, alias="CLOUDFLARE_API_TOKEN")
     # Cloudflare for SaaS custom-hostname control plane. This token is
     # intentionally distinct from the R2/Stream control token above.
-    cloudflare_saas_api_token: Optional[str] = Field(
+    cloudflare_saas_api_token: str | None = Field(
         default=None, alias="CLOUDFLARE_SAAS_API_TOKEN"
     )
-    cloudflare_zone_id: Optional[str] = Field(default=None, alias="CLOUDFLARE_ZONE_ID")
+    cloudflare_zone_id: str | None = Field(default=None, alias="CLOUDFLARE_ZONE_ID")
     storefront_custom_domains_enabled: bool = Field(
         default=False, alias="STOREFRONT_CUSTOM_DOMAINS_ENABLED"
     )
@@ -396,21 +380,21 @@ class Settings(BaseSettings):
     storefront_custom_domain_rollout_mode: Literal["allowlist", "general"] = Field(
         default="allowlist", alias="STOREFRONT_CUSTOM_DOMAIN_ROLLOUT_MODE"
     )
-    storefront_custom_domain_pilot_hostnames: Annotated[List[str], NoDecode] = Field(
+    storefront_custom_domain_pilot_hostnames: Annotated[list[str], NoDecode] = Field(
         default_factory=list,
         alias="STOREFRONT_CUSTOM_DOMAIN_PILOT_HOSTNAMES",
     )
-    storefront_custom_domain_pilot_owner_ids: Annotated[List[str], NoDecode] = Field(
+    storefront_custom_domain_pilot_owner_ids: Annotated[list[str], NoDecode] = Field(
         default_factory=list,
         alias="STOREFRONT_CUSTOM_DOMAIN_PILOT_OWNER_IDS",
     )
-    storefront_fallback_origin: Optional[str] = Field(
+    storefront_fallback_origin: str | None = Field(
         default=None, alias="STOREFRONT_FALLBACK_ORIGIN"
     )
-    storefront_cname_target: Optional[str] = Field(
+    storefront_cname_target: str | None = Field(
         default=None, alias="STOREFRONT_CNAME_TARGET"
     )
-    storefront_platform_domains: Annotated[List[str], NoDecode] = Field(
+    storefront_platform_domains: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
             "thespecialwedding.io",
             "thespecialwedding.com",
@@ -426,7 +410,7 @@ class Settings(BaseSettings):
     domain_connect_template_version: int = Field(
         default=1, ge=1, alias="DOMAIN_CONNECT_TEMPLATE_VERSION"
     )
-    domain_connect_private_key: Optional[str] = Field(
+    domain_connect_private_key: str | None = Field(
         default=None, alias="DOMAIN_CONNECT_PRIVATE_KEY"
     )
     domain_connect_key_id: str = Field(
@@ -436,7 +420,7 @@ class Settings(BaseSettings):
         default="domainconnect.thespecialwedding.com",
         alias="DOMAIN_CONNECT_PUBLIC_KEY_DOMAIN",
     )
-    domain_connect_callback_url: Optional[str] = Field(
+    domain_connect_callback_url: str | None = Field(
         default=None, alias="DOMAIN_CONNECT_CALLBACK_URL"
     )
     # Security Features
@@ -479,7 +463,7 @@ class Settings(BaseSettings):
     # Monitoring
     enable_metrics: bool = Field(default=False, alias="ENABLE_METRICS")
     metrics_endpoint: str = Field(default="/metrics", alias="METRICS_ENDPOINT")
-    enable_api_docs: Optional[bool] = Field(default=None, alias="ENABLE_API_DOCS")
+    enable_api_docs: bool | None = Field(default=None, alias="ENABLE_API_DOCS")
 
     # Feature Flags
     feature_ai_tools: bool = Field(default=True, alias="FEATURE_AI_TOOLS")
@@ -492,11 +476,11 @@ class Settings(BaseSettings):
     )
     # Subscription & Billing
     stripe_enabled: bool = Field(default=True, alias="STRIPE_ENABLED")
-    stripe_secret_key: Optional[str] = Field(default=None, alias="STRIPE_SECRET_KEY")
-    stripe_publishable_key: Optional[str] = Field(
+    stripe_secret_key: str | None = Field(default=None, alias="STRIPE_SECRET_KEY")
+    stripe_publishable_key: str | None = Field(
         default=None, alias="STRIPE_PUBLISHABLE_KEY"
     )
-    stripe_webhook_secret: Optional[str] = Field(
+    stripe_webhook_secret: str | None = Field(
         default=None, alias="STRIPE_WEBHOOK_SECRET"
     )
 
@@ -505,17 +489,15 @@ class Settings(BaseSettings):
     )  # 0 = no free trial
 
     # Admin Settings
-    root_admin_email: Optional[str] = Field(default=None, alias="ROOT_ADMIN_EMAIL")
-    root_admin_password: Optional[str] = Field(
-        default=None, alias="ROOT_ADMIN_PASSWORD"
-    )
+    root_admin_email: str | None = Field(default=None, alias="ROOT_ADMIN_EMAIL")
+    root_admin_password: str | None = Field(default=None, alias="ROOT_ADMIN_PASSWORD")
 
     # AI Service (Gemini)
-    google_api_key: Optional[str] = Field(default=None, alias="GOOGLE_API_KEY")
-    gemini_api_key: Optional[str] = Field(default=None, alias="GEMINI_API_KEY")
+    google_api_key: str | None = Field(default=None, alias="GOOGLE_API_KEY")
+    gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
 
     @property
-    def ai_api_key(self) -> Optional[str]:
+    def ai_api_key(self) -> str | None:
         """Get the AI API key (supports both GOOGLE_API_KEY and GEMINI_API_KEY)."""
         return self.google_api_key or self.gemini_api_key
 
@@ -526,7 +508,7 @@ class Settings(BaseSettings):
 
     # BabyLoveGrowth — pulls AI-generated articles into blog_articles via the
     # API integration (pull model). See docs/plans/babylovegrowth_integration_mockup.md.
-    babylovegrowth_api_key: Optional[str] = Field(
+    babylovegrowth_api_key: str | None = Field(
         default=None, alias="BABYLOVEGROWTH_API_KEY"
     )
     babylovegrowth_api_base_url: str = Field(
@@ -536,7 +518,7 @@ class Settings(BaseSettings):
     babylovegrowth_sync_enabled: bool = Field(
         default=False, alias="BABYLOVEGROWTH_SYNC_ENABLED"
     )
-    babylovegrowth_webhook_secret: Optional[str] = Field(
+    babylovegrowth_webhook_secret: str | None = Field(
         default=None, alias="BABYLOVEGROWTH_WEBHOOK_SECRET"
     )
     # Brand-safety default: synced articles land as draft until Etastic reviews
@@ -581,7 +563,7 @@ class Settings(BaseSettings):
 
     @field_validator("trusted_proxy_cidrs")
     @classmethod
-    def validate_trusted_proxy_cidrs(cls, values: List[str]) -> List[str]:
+    def validate_trusted_proxy_cidrs(cls, values: list[str]) -> list[str]:
         """Canonicalize explicit proxy networks and reject ambiguous entries."""
 
         normalized: list[str] = []
@@ -657,32 +639,32 @@ class Settings(BaseSettings):
         return self.testing or self.environment == Environment.TESTING
 
     @property
-    def normalized_media_domain(self) -> Optional[str]:
+    def normalized_media_domain(self) -> str | None:
         """Canonical public domain/base URL for primary media assets."""
         return _normalize_optional_public_base(self.media_domain)
 
     @property
-    def normalized_ad_media_domain(self) -> Optional[str]:
+    def normalized_ad_media_domain(self) -> str | None:
         """Canonical public domain/base URL for ad assets."""
         return _normalize_optional_public_base(self.ad_media_domain)
 
     @property
-    def normalized_guest_media_domain(self) -> Optional[str]:
+    def normalized_guest_media_domain(self) -> str | None:
         """Canonical public domain/base URL for guest media assets."""
         return _normalize_optional_public_base(self.guest_media_domain)
 
     @property
-    def normalized_blog_media_domain(self) -> Optional[str]:
+    def normalized_blog_media_domain(self) -> str | None:
         """Canonical public domain/base URL for blog assets."""
         return _normalize_optional_public_base(self.blog_media_domain)
 
     @property
-    def normalized_form_uploads_domain(self) -> Optional[str]:
+    def normalized_form_uploads_domain(self) -> str | None:
         """Canonical public domain/base URL for form-attachment uploads."""
         return _normalize_optional_public_base(self.form_uploads_domain)
 
     @property
-    def browser_upload_origins(self) -> List[str]:
+    def browser_upload_origins(self) -> list[str]:
         """
         Browser origins that are expected to perform direct presigned uploads.
 
@@ -722,32 +704,32 @@ class Settings(BaseSettings):
         return origins
 
     @property
-    def primary_media_bucket_name(self) -> Optional[str]:
+    def primary_media_bucket_name(self) -> str | None:
         """Canonical primary bucket for gallery/profile/document media."""
         return self.s3_bucket_name
 
     @property
-    def guest_media_bucket_name(self) -> Optional[str]:
+    def guest_media_bucket_name(self) -> str | None:
         """Dedicated guest media bucket."""
         return self.s3_guest_media_bucket_name
 
     @property
-    def ad_media_bucket_name(self) -> Optional[str]:
+    def ad_media_bucket_name(self) -> str | None:
         """Dedicated ad asset bucket."""
         return self.s3_ad_bucket_name
 
     @property
-    def blog_media_bucket_name(self) -> Optional[str]:
+    def blog_media_bucket_name(self) -> str | None:
         """Dedicated blog asset bucket."""
         return self.s3_blog_bucket_name
 
     @property
-    def storefront_staging_bucket_name(self) -> Optional[str]:
+    def storefront_staging_bucket_name(self) -> str | None:
         """Private staging bucket for browser-uploaded storefront assets."""
         return self.s3_storefront_staging_bucket_name
 
     @property
-    def form_uploads_bucket_name(self) -> Optional[str]:
+    def form_uploads_bucket_name(self) -> str | None:
         """Dedicated bucket for FILE_UPLOAD form-field attachments.
 
         Public form respondents upload here when filling out a form that
@@ -772,7 +754,7 @@ class Settings(BaseSettings):
         return not self.is_production()
 
     @property
-    def trusted_hosts(self) -> List[str]:
+    def trusted_hosts(self) -> list[str]:
         """
         Return the Host-header allowlist for TrustedHostMiddleware.
 
@@ -782,7 +764,7 @@ class Settings(BaseSettings):
         """
         hosts: list[str] = []
 
-        def add_host(candidate: Optional[str]) -> None:
+        def add_host(candidate: str | None) -> None:
             if not candidate:
                 return
 
@@ -790,7 +772,7 @@ class Settings(BaseSettings):
             if not value:
                 return
 
-            normalized: Optional[str]
+            normalized: str | None
             if "://" in value:
                 normalized = urlparse(value).hostname
             elif value.startswith("*.") or value == "*":
@@ -816,7 +798,7 @@ class Settings(BaseSettings):
 
         return hosts
 
-    def get_feature_flags(self) -> Dict[str, bool]:
+    def get_feature_flags(self) -> dict[str, bool]:
         """Get all feature flags"""
         return {
             "ai_tools": self.feature_ai_tools,
@@ -825,7 +807,7 @@ class Settings(BaseSettings):
             "custom_integrations": self.feature_custom_integrations,
         }
 
-    def get_security_config(self) -> Dict[str, Any]:
+    def get_security_config(self) -> dict[str, Any]:
         """Get security configuration"""
         return {
             "csrf_enabled": self.csrf_enabled,
@@ -836,7 +818,7 @@ class Settings(BaseSettings):
         }
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """
     Get cached settings instance

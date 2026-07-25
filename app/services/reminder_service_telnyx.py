@@ -2,7 +2,7 @@
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import telnyx
 from fastapi import HTTPException
@@ -60,7 +60,7 @@ class TelnyxReminderService:
             raise HTTPException(status_code=400, detail="Wedding scope is required")
 
         logs = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         skipped_no_phone = 0
         skipped_opted_out = 0
 
@@ -178,8 +178,8 @@ class TelnyxReminderService:
             return "success"
 
         except Exception as e:
-            logger.error(f"Telnyx SMS failed to {to}: {str(e)}")
-            return f"failed: {str(e)}"
+            logger.error(f"Telnyx SMS failed to {to}: {e!s}")
+            return f"failed: {e!s}"
 
     def _log(
         self,

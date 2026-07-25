@@ -10,7 +10,7 @@ import re
 import secrets
 import time
 import unicodedata
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -132,7 +132,7 @@ class SecurityValidator:
 
     def validate_input_security(
         self, value: Any, field_name: str, context: str = ""
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """
         Comprehensive input validation for security vulnerabilities.
 
@@ -213,11 +213,11 @@ class SecurityValidator:
 
         except Exception as e:
             security_logger.error(
-                f"Security validation error for field {field_name}: {str(e)}"
+                f"Security validation error for field {field_name}: {e!s}"
             )
             return False, "Validation error"
 
-    def _contains_injection_patterns(self, value: str, patterns: List[str]) -> bool:
+    def _contains_injection_patterns(self, value: str, patterns: list[str]) -> bool:
         """Check if value contains any injection patterns"""
         value_lower = value.lower()
 
@@ -226,9 +226,7 @@ class SecurityValidator:
                 return True
         return False
 
-    def _field_specific_validation(
-        self, value: str, field_name: str
-    ) -> Union[str, bool]:
+    def _field_specific_validation(self, value: str, field_name: str) -> str | bool:
         """Perform field-specific validation and sanitization"""
 
         if field_name.lower() in ["name", "guest_name", "full_name"]:
@@ -247,7 +245,7 @@ class SecurityValidator:
             # Generic sanitization
             return html.escape(value, quote=True)
 
-    def _validate_name(self, value: str) -> Union[str, bool]:
+    def _validate_name(self, value: str) -> str | bool:
         """Validate and sanitize name fields"""
         # Allow letters, spaces, hyphens, apostrophes, and common unicode characters
         name_pattern = r"^[a-zA-Z\u00C0-\u017F\u0100-\u024F\u1E00-\u1EFF\s\-'.]+$"
@@ -262,7 +260,7 @@ class SecurityValidator:
         sanitized = re.sub(r"\s+", " ", value.strip())
         return html.escape(sanitized, quote=True)
 
-    def _validate_phone(self, value: str) -> Union[str, bool]:
+    def _validate_phone(self, value: str) -> str | bool:
         """Validate and sanitize phone numbers"""
         # Remove all non-digit characters for validation
         digits_only = re.sub(r"\D", "", value)
@@ -279,7 +277,7 @@ class SecurityValidator:
 
         return html.escape(value.strip(), quote=True)
 
-    def _validate_token(self, value: str) -> Union[str, bool]:
+    def _validate_token(self, value: str) -> str | bool:
         """Validate security tokens"""
         # Tokens should be alphanumeric with possible hyphens/underscores
         token_pattern = r"^[a-zA-Z0-9\-_]+$"
@@ -293,7 +291,7 @@ class SecurityValidator:
 
         return value  # No need to escape tokens
 
-    def _validate_password(self, value: str) -> Union[str, bool]:
+    def _validate_password(self, value: str) -> str | bool:
         """Validate passwords (for wedding password protection)"""
         # Password should not contain HTML or script tags
         if "<" in value or ">" in value or "script" in value.lower():
@@ -304,7 +302,7 @@ class SecurityValidator:
 
         return value  # Don't escape passwords
 
-    def _validate_slug(self, value: str) -> Union[str, bool]:
+    def _validate_slug(self, value: str) -> str | bool:
         """Validate wedding slugs"""
         # Slugs should be lowercase alphanumeric with hyphens
         slug_pattern = r"^[a-z0-9\-]+$"
@@ -317,7 +315,7 @@ class SecurityValidator:
 
         return value
 
-    def _validate_email(self, value: str) -> Union[str, bool]:
+    def _validate_email(self, value: str) -> str | bool:
         """Validate email addresses"""
         email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
 
@@ -329,7 +327,7 @@ class SecurityValidator:
 
         return html.escape(value.lower().strip(), quote=True)
 
-    def validate_object_id(self, value: str) -> Tuple[bool, Optional[str]]:
+    def validate_object_id(self, value: str) -> tuple[bool, str | None]:
         """Validate MongoDB ObjectId"""
         try:
             if not value:
@@ -343,12 +341,12 @@ class SecurityValidator:
             security_logger.warning(f"Invalid ObjectId format: {value}")
             return False, "Invalid ID format"
         except Exception as e:
-            security_logger.error(f"ObjectId validation error: {str(e)}")
+            security_logger.error(f"ObjectId validation error: {e!s}")
             return False, "ID validation error"
 
     def check_brute_force_protection(
         self, identifier: str, context: str = ""
-    ) -> Tuple[bool, int]:
+    ) -> tuple[bool, int]:
         """
         Check and enforce brute force protection with progressive delays.
 
@@ -471,7 +469,7 @@ class SecurityValidator:
         if salt is None:
             salt = secrets.token_hex(16)
 
-        combined = f"{data}{salt}".encode("utf-8")
+        combined = f"{data}{salt}".encode()
         hashed = hashlib.sha256(combined).hexdigest()
 
         return f"{salt}${hashed}"
@@ -483,7 +481,7 @@ class SecurityValidator:
                 return False
 
             salt, expected_hash = hashed.split("$", 1)
-            combined = f"{data}{salt}".encode("utf-8")
+            combined = f"{data}{salt}".encode()
             actual_hash = hashlib.sha256(combined).hexdigest()
 
             return secrets.compare_digest(expected_hash, actual_hash)
@@ -491,7 +489,7 @@ class SecurityValidator:
             return False
 
     def log_security_event(
-        self, event_type: str, details: Dict[str, Any], severity: str = "INFO"
+        self, event_type: str, details: dict[str, Any], severity: str = "INFO"
     ):
         """Log security events with structured data"""
         if severity == "WARNING":

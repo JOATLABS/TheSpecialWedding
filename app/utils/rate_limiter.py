@@ -8,7 +8,6 @@ import ipaddress
 import logging
 import time
 from collections import deque
-from typing import Deque, Dict, Tuple
 
 from fastapi import HTTPException, Request
 
@@ -40,10 +39,10 @@ class RateLimiter:
         self.window_seconds = window_seconds
         self.max_ips_tracked = max_ips_tracked
         self.require_shared_backend = require_shared_backend
-        self.ip_requests: Dict[str, Deque[float]] = {}
+        self.ip_requests: dict[str, deque[float]] = {}
 
     def _cleanup_old_requests(
-        self, request_queue: Deque[float], current_time: float
+        self, request_queue: deque[float], current_time: float
     ) -> None:
         while request_queue and current_time - request_queue[0] > self.window_seconds:
             request_queue.popleft()
@@ -60,7 +59,7 @@ class RateLimiter:
 
     async def _check_redis_limit(
         self, client_ip: str, limit: int
-    ) -> Tuple[bool, int, int]:
+    ) -> tuple[bool, int, int]:
         key = CacheKeys.rate_limit(client_ip, self.bucket_name)
         current_count = await cache.increment(key, expire=self.window_seconds)
         if current_count is None:
@@ -76,7 +75,7 @@ class RateLimiter:
 
         return current_count <= limit, remaining, reset_time
 
-    def _check_memory_limit(self, client_ip: str, limit: int) -> Tuple[bool, int, int]:
+    def _check_memory_limit(self, client_ip: str, limit: int) -> tuple[bool, int, int]:
         current_time = time.time()
 
         if client_ip not in self.ip_requests:
@@ -102,7 +101,7 @@ class RateLimiter:
         self,
         client_ip: str,
         requests_per_minute: int = None,
-    ) -> Tuple[bool, int, int]:
+    ) -> tuple[bool, int, int]:
         limit = requests_per_minute or self.default_requests_per_minute
 
         if cache.enabled and cache.redis_client:
@@ -128,7 +127,7 @@ class RateLimiter:
 
         return self._check_memory_limit(client_ip, limit)
 
-    def get_stats(self) -> Dict[str, int]:
+    def get_stats(self) -> dict[str, int]:
         total_ips = len(self.ip_requests)
         total_requests = sum(len(queue) for queue in self.ip_requests.values())
         return {

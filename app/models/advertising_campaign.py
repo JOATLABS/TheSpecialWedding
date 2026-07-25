@@ -16,9 +16,9 @@ Collections:
 PRD Reference: Sections 6-8 (Full architecture, not Section 14.3 simplified version)
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import Field
 
@@ -157,7 +157,7 @@ class AdCampaign(MongoModel):
 
     # ── Campaign metadata ──
     campaign_name: str = Field(..., max_length=200, description="Campaign display name")
-    campaign_description: Optional[str] = Field(
+    campaign_description: str | None = Field(
         None, max_length=1000, description="Campaign description"
     )
     goal: CampaignGoal = Field(
@@ -169,24 +169,24 @@ class AdCampaign(MongoModel):
     )
 
     # ── Targeting ──
-    target_categories: List[str] = Field(
+    target_categories: list[str] = Field(
         default_factory=list,
         description="VendorCategory values to target (empty = all)",
     )
-    target_wedding_stages: List[str] = Field(
+    target_wedding_stages: list[str] = Field(
         default_factory=list, description="Wedding stages to target (empty = all)"
     )
-    target_placements: List[str] = Field(
+    target_placements: list[str] = Field(
         default_factory=list,
         description="AdPlacementType values (empty = all placements)",
     )
-    target_regions: List[str] = Field(
+    target_regions: list[str] = Field(
         default_factory=list, description="Geographic targeting: city, state, zip codes"
     )
-    target_budget_min: Optional[float] = Field(
+    target_budget_min: float | None = Field(
         None, ge=0, description="Only show to planners with wedding budget >= this"
     )
-    target_budget_max: Optional[float] = Field(
+    target_budget_max: float | None = Field(
         None, ge=0, description="Only show to planners with wedding budget <= this"
     )
 
@@ -207,8 +207,8 @@ class AdCampaign(MongoModel):
     )
 
     # ── Schedule ──
-    start_date: Optional[datetime] = Field(None)
-    end_date: Optional[datetime] = Field(None)
+    start_date: datetime | None = Field(None)
+    end_date: datetime | None = Field(None)
 
     # ── Billing model ──
     billing_model: str = Field(
@@ -238,33 +238,33 @@ class AdCampaign(MongoModel):
     conversion_count: int = Field(default=0, ge=0)
 
     # ── Creatives ──
-    primary_creative_id: Optional[str] = Field(
+    primary_creative_id: str | None = Field(
         None, description="ObjectId ref to primary AdCreative"
     )
-    creative_ids: List[str] = Field(
+    creative_ids: list[str] = Field(
         default_factory=list, description="All creative ObjectIds for this campaign"
     )
 
     # ── Review workflow ──
-    submitted_at: Optional[datetime] = Field(None)
-    reviewed_at: Optional[datetime] = Field(None)
-    reviewed_by: Optional[str] = Field(None, max_length=254)
-    review_notes: Optional[str] = Field(None, max_length=2000)
+    submitted_at: datetime | None = Field(None)
+    reviewed_at: datetime | None = Field(None)
+    reviewed_by: str | None = Field(None, max_length=254)
+    review_notes: str | None = Field(None, max_length=2000)
 
     # ── Vendor category & location (for matching with planner needs) ──
-    vendor_category: Optional[str] = Field(
+    vendor_category: str | None = Field(
         None, description="Primary VendorCategory of the advertising vendor"
     )
-    vendor_service_area: Optional[str] = Field(
+    vendor_service_area: str | None = Field(
         None, max_length=500, description="Vendor's service area (city, state)"
     )
-    vendor_logo_url: Optional[str] = Field(
+    vendor_logo_url: str | None = Field(
         None, description="CDN URL for vendor image (from vendor-ad-assets R2 bucket)"
     )
 
     # ── System ──
     created_by: str = Field(..., max_length=254)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def ctr(self) -> float:
@@ -279,7 +279,7 @@ class AdCampaign(MongoModel):
             return False
         if not self.primary_creative_id:
             return False
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if self.start_date and now < self.start_date:
             return False
         if self.end_date and now > self.end_date:
@@ -310,13 +310,13 @@ class AdCreative(MongoModel):
 
     # ── Creative content ──
     creative_type: CreativeType = Field(default=CreativeType.IMAGE)
-    image_url: Optional[str] = Field(
+    image_url: str | None = Field(
         None, description="CDN URL from vendor-ad-assets R2 bucket"
     )
-    image_alt_text: Optional[str] = Field(None, max_length=200)
+    image_alt_text: str | None = Field(None, max_length=200)
     headline: str = Field(..., max_length=100)
     description: str = Field(..., max_length=300)
-    offer: Optional[str] = Field(
+    offer: str | None = Field(
         None,
         max_length=200,
         description="Special offer text (e.g., '20% off if booked by March 31')",
@@ -325,13 +325,13 @@ class AdCreative(MongoModel):
 
     # ── Review ──
     review_status: CreativeReviewStatus = Field(default=CreativeReviewStatus.PENDING)
-    submitted_at: Optional[datetime] = Field(None)
-    reviewed_at: Optional[datetime] = Field(None)
-    reviewed_by: Optional[str] = Field(None, max_length=254)
-    review_notes: Optional[str] = Field(None, max_length=2000)
+    submitted_at: datetime | None = Field(None)
+    reviewed_at: datetime | None = Field(None)
+    reviewed_by: str | None = Field(None, max_length=254)
+    review_notes: str | None = Field(None, max_length=2000)
 
     is_primary: bool = Field(default=False)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 # =============================================================================
@@ -354,22 +354,22 @@ class CampaignDayStats(MongoModel):
     vendor_id: str = Field(..., description="Denormalized vendor ID")
 
     # ── Event counts ──
-    events: Dict[str, int] = Field(
+    events: dict[str, int] = Field(
         default_factory=dict,
         description="{impression_served: N, click: N, lead_created: N, ...}",
     )
 
     # ── Lead breakdown ──
-    leads_by_type: Dict[str, int] = Field(default_factory=dict)
-    leads_by_status: Dict[str, int] = Field(default_factory=dict)
+    leads_by_type: dict[str, int] = Field(default_factory=dict)
+    leads_by_status: dict[str, int] = Field(default_factory=dict)
 
     # ── Reach ──
     unique_planners: int = Field(default=0, ge=0)
     unique_weddings: int = Field(default=0, ge=0)
 
     # ── Hourly distribution ──
-    hourly_impressions: List[int] = Field(default_factory=lambda: [0] * 24)
-    hourly_clicks: List[int] = Field(default_factory=lambda: [0] * 24)
+    hourly_impressions: list[int] = Field(default_factory=lambda: [0] * 24)
+    hourly_clicks: list[int] = Field(default_factory=lambda: [0] * 24)
 
     # ── Computed metrics ──
     ctr: float = Field(default=0.0)
@@ -413,19 +413,17 @@ class AdFraudSignal(MongoModel):
     """
 
     signal_type: FraudSignalType = Field(...)
-    campaign_id: Optional[str] = Field(None)
-    vendor_id: Optional[str] = Field(None)
-    planner_id: Optional[str] = Field(None, max_length=254)
-    session_id: Optional[str] = Field(None)
+    campaign_id: str | None = Field(None)
+    vendor_id: str | None = Field(None)
+    planner_id: str | None = Field(None, max_length=254)
+    session_id: str | None = Field(None)
 
-    click_velocity: Optional[int] = Field(
-        None, description="Clicks in last 5 min window"
-    )
-    details: Dict[str, Any] = Field(default_factory=dict)
+    click_velocity: int | None = Field(None, description="Clicks in last 5 min window")
+    details: dict[str, Any] = Field(default_factory=dict)
 
     status: FraudSignalStatus = Field(default=FraudSignalStatus.PENDING)
-    flagged_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    notes: Optional[str] = Field(None, max_length=2000)
+    flagged_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    notes: str | None = Field(None, max_length=2000)
 
 
 # =============================================================================
@@ -469,8 +467,8 @@ class VendorAdBilling(MongoModel):
     payment_status: str = Field(
         default="pending", description="pending | invoiced | paid | failed | free"
     )
-    stripe_invoice_id: Optional[str] = Field(None)
-    stripe_customer_id: Optional[str] = Field(None)
+    stripe_invoice_id: str | None = Field(None)
+    stripe_customer_id: str | None = Field(None)
 
 
 class AdLeadCharge(MongoModel):
@@ -491,15 +489,15 @@ class AdLeadCharge(MongoModel):
     is_free_tier: bool = Field(default=False)
 
     # ── Stripe ──
-    stripe_invoice_item_id: Optional[str] = Field(None)
-    stripe_customer_id: Optional[str] = Field(None)
+    stripe_invoice_item_id: str | None = Field(None)
+    stripe_customer_id: str | None = Field(None)
     charge_status: str = Field(
         default="pending", description="pending | charged | free | failed"
     )
 
     # ── Context ──
-    planner_id: Optional[str] = Field(None)
-    click_id: Optional[str] = Field(None)
+    planner_id: str | None = Field(None)
+    click_id: str | None = Field(None)
 
 
 # =============================================================================
@@ -526,7 +524,7 @@ class VendorFreeTierConfig(MongoModel):
     granted_by: str = Field(
         ..., max_length=254, description="Root admin email who granted it"
     )
-    expires_at: Optional[datetime] = Field(
+    expires_at: datetime | None = Field(
         None, description="Optional expiry. Null = permanent free tier."
     )
 
@@ -540,76 +538,76 @@ class CreateCampaignRequest(MongoModel):
     """Request to create a new ad campaign."""
 
     campaign_name: str = Field(..., max_length=200)
-    campaign_description: Optional[str] = Field(None, max_length=1000)
+    campaign_description: str | None = Field(None, max_length=1000)
     goal: CampaignGoal = Field(default=CampaignGoal.PROFILE_VISITS)
-    target_categories: List[str] = Field(default_factory=list)
-    target_wedding_stages: List[str] = Field(default_factory=list)
-    target_placements: List[str] = Field(default_factory=list)
-    target_regions: List[str] = Field(default_factory=list)
-    target_budget_min: Optional[float] = Field(None, ge=0)
-    target_budget_max: Optional[float] = Field(None, ge=0)
+    target_categories: list[str] = Field(default_factory=list)
+    target_wedding_stages: list[str] = Field(default_factory=list)
+    target_placements: list[str] = Field(default_factory=list)
+    target_regions: list[str] = Field(default_factory=list)
+    target_budget_min: float | None = Field(None, ge=0)
+    target_budget_max: float | None = Field(None, ge=0)
     daily_budget: float = Field(default=0.0, ge=0)
     total_budget: float = Field(default=0.0, ge=0)
     bid_amount: float = Field(
         default=0.0, ge=0, description="CPL bid amount for auction ranking"
     )
     pacing_strategy: PacingStrategy = Field(default=PacingStrategy.EVEN)
-    start_date: Optional[datetime] = Field(None)
-    end_date: Optional[datetime] = Field(None)
-    vendor_category: Optional[str] = Field(None)
-    vendor_service_area: Optional[str] = Field(None, max_length=500)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    start_date: datetime | None = Field(None)
+    end_date: datetime | None = Field(None)
+    vendor_category: str | None = Field(None)
+    vendor_service_area: str | None = Field(None, max_length=500)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class UpdateCampaignRequest(MongoModel):
     """Request to update a draft campaign. Only mutable fields."""
 
-    campaign_name: Optional[str] = Field(None, max_length=200)
-    campaign_description: Optional[str] = Field(None, max_length=1000)
-    goal: Optional[CampaignGoal] = Field(None)
-    target_categories: Optional[List[str]] = Field(None)
-    target_wedding_stages: Optional[List[str]] = Field(None)
-    target_placements: Optional[List[str]] = Field(None)
-    target_regions: Optional[List[str]] = Field(None)
-    target_budget_min: Optional[float] = Field(None, ge=0)
-    target_budget_max: Optional[float] = Field(None, ge=0)
-    daily_budget: Optional[float] = Field(None, ge=0)
-    total_budget: Optional[float] = Field(None, ge=0)
-    bid_amount: Optional[float] = Field(
+    campaign_name: str | None = Field(None, max_length=200)
+    campaign_description: str | None = Field(None, max_length=1000)
+    goal: CampaignGoal | None = Field(None)
+    target_categories: list[str] | None = Field(None)
+    target_wedding_stages: list[str] | None = Field(None)
+    target_placements: list[str] | None = Field(None)
+    target_regions: list[str] | None = Field(None)
+    target_budget_min: float | None = Field(None, ge=0)
+    target_budget_max: float | None = Field(None, ge=0)
+    daily_budget: float | None = Field(None, ge=0)
+    total_budget: float | None = Field(None, ge=0)
+    bid_amount: float | None = Field(
         None, ge=0, description="CPL bid amount for auction ranking"
     )
-    pacing_strategy: Optional[PacingStrategy] = Field(None)
-    start_date: Optional[datetime] = Field(None)
-    end_date: Optional[datetime] = Field(None)
-    vendor_category: Optional[str] = Field(None)
-    vendor_service_area: Optional[str] = Field(None, max_length=500)
-    metadata: Optional[Dict[str, Any]] = Field(None)
+    pacing_strategy: PacingStrategy | None = Field(None)
+    start_date: datetime | None = Field(None)
+    end_date: datetime | None = Field(None)
+    vendor_category: str | None = Field(None)
+    vendor_service_area: str | None = Field(None, max_length=500)
+    metadata: dict[str, Any] | None = Field(None)
 
 
 class CreateCreativeRequest(MongoModel):
     """Request to create a new ad creative."""
 
     creative_type: CreativeType = Field(default=CreativeType.IMAGE)
-    image_url: Optional[str] = Field(None)
-    image_alt_text: Optional[str] = Field(None, max_length=200)
+    image_url: str | None = Field(None)
+    image_alt_text: str | None = Field(None, max_length=200)
     headline: str = Field(..., max_length=100)
     description: str = Field(..., max_length=300)
-    offer: Optional[str] = Field(None, max_length=200)
+    offer: str | None = Field(None, max_length=200)
     call_to_action: str = Field(default="View Portfolio", max_length=50)
     is_primary: bool = Field(default=False)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ReviewCampaignDecisionRequest(MongoModel):
     """Root admin request to review a campaign (approve/reject/request changes)."""
 
-    review_notes: Optional[str] = Field(None, max_length=2000)
+    review_notes: str | None = Field(None, max_length=2000)
 
 
 class ReviewCreativeDecisionRequest(MongoModel):
     """Root admin request to review a creative."""
 
-    review_notes: Optional[str] = Field(None, max_length=2000)
+    review_notes: str | None = Field(None, max_length=2000)
 
 
 class SetFreeTierRequest(MongoModel):
@@ -617,14 +615,14 @@ class SetFreeTierRequest(MongoModel):
 
     is_free: bool = Field(...)
     reason: str = Field(default="", max_length=500)
-    expires_at: Optional[datetime] = Field(None)
+    expires_at: datetime | None = Field(None)
 
 
 class UpdateCPLPricingRequest(MongoModel):
     """Root admin request to update CPL pricing on a campaign."""
 
-    cpl_quote_request: Optional[float] = Field(None, ge=0)
-    cpl_directory_add: Optional[float] = Field(None, ge=0)
+    cpl_quote_request: float | None = Field(None, ge=0)
+    cpl_directory_add: float | None = Field(None, ge=0)
 
 
 # =============================================================================
@@ -675,38 +673,38 @@ class AdPlatformConfig(MongoModel):
     min_images_for_campaign: int = Field(default=1, ge=0, le=10)
 
     # ── Metadata ──
-    updated_at: Optional[datetime] = Field(None)
-    updated_by: Optional[str] = Field(None, max_length=254)
+    updated_at: datetime | None = Field(None)
+    updated_by: str | None = Field(None, max_length=254)
 
 
 class UpdatePlatformConfigRequest(MongoModel):
     """Root admin request to update platform config. All fields optional — only provided fields are updated."""
 
     # Feature Flags
-    ads_enabled: Optional[bool] = None
-    show_sponsored_badge: Optional[bool] = None
-    enable_event_tracking: Optional[bool] = None
-    require_creative_review: Optional[bool] = None
-    auto_approve_returning_vendors: Optional[bool] = None
+    ads_enabled: bool | None = None
+    show_sponsored_badge: bool | None = None
+    enable_event_tracking: bool | None = None
+    require_creative_review: bool | None = None
+    auto_approve_returning_vendors: bool | None = None
 
     # Serving Limits
-    max_sponsored_per_page: Optional[int] = Field(None, ge=1, le=10)
-    impressions_per_session: Optional[int] = Field(None, ge=1, le=20)
-    freq_cap_per_campaign_planner_day: Optional[int] = Field(None, ge=1, le=20)
-    review_sla_hours: Optional[int] = Field(None, ge=1, le=168)
-    max_campaigns_per_vendor: Optional[int] = Field(None, ge=1, le=50)
+    max_sponsored_per_page: int | None = Field(None, ge=1, le=10)
+    impressions_per_session: int | None = Field(None, ge=1, le=20)
+    freq_cap_per_campaign_planner_day: int | None = Field(None, ge=1, le=20)
+    review_sla_hours: int | None = Field(None, ge=1, le=168)
+    max_campaigns_per_vendor: int | None = Field(None, ge=1, le=50)
 
     # Fraud Detection
-    max_clicks_per_planner_campaign_hour: Optional[int] = Field(None, ge=1, le=50)
-    hide_rate_auto_pause_threshold: Optional[int] = Field(None, ge=1, le=20)
-    click_velocity_window_minutes: Optional[int] = Field(None, ge=1, le=60)
-    auto_void_suspicious_clicks: Optional[bool] = None
+    max_clicks_per_planner_campaign_hour: int | None = Field(None, ge=1, le=50)
+    hide_rate_auto_pause_threshold: int | None = Field(None, ge=1, le=20)
+    click_velocity_window_minutes: int | None = Field(None, ge=1, le=60)
+    auto_void_suspicious_clicks: bool | None = None
 
     # Vendor Signup
-    vendor_domain: Optional[str] = Field(None, max_length=100)
-    auto_approve_signups: Optional[bool] = None
-    require_profile_completion: Optional[bool] = None
-    min_images_for_campaign: Optional[int] = Field(None, ge=0, le=10)
+    vendor_domain: str | None = Field(None, max_length=100)
+    auto_approve_signups: bool | None = None
+    require_profile_completion: bool | None = None
+    min_images_for_campaign: int | None = Field(None, ge=0, le=10)
 
 
 # =============================================================================
@@ -725,13 +723,13 @@ class PlannerAdPreferences(MongoModel):
     planner_id: str = Field(..., description="Planner user _id")
 
     # ── Vendor hiding ──
-    hidden_vendor_ids: List[str] = Field(
+    hidden_vendor_ids: list[str] = Field(
         default_factory=list,
         description="Vendor IDs this planner has dismissed — never shown again",
     )
 
     # ── Category suppression ──
-    suppressed_categories: List[str] = Field(
+    suppressed_categories: list[str] = Field(
         default_factory=list,
         description="Vendor categories the planner has suppressed (e.g., already booked)",
     )
@@ -743,4 +741,4 @@ class PlannerAdPreferences(MongoModel):
     )
 
     # ── Metadata ──
-    updated_at: Optional[datetime] = Field(None)
+    updated_at: datetime | None = Field(None)

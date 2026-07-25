@@ -4,7 +4,6 @@ Community-driven documentation system for wedding planners
 """
 
 import logging
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
@@ -43,12 +42,12 @@ class ArticleCreateRequest(BaseModel):
         ..., min_length=20, max_length=500, description="Short summary"
     )
     category: str = Field(default="general", description="Article category")
-    tags: List[str] = Field(default_factory=list, description="Article tags")
+    tags: list[str] = Field(default_factory=list, description="Article tags")
     status: str = Field(default="published", description="Article status")
-    card_image: Optional[str] = Field(
+    card_image: str | None = Field(
         None, max_length=500, description="Card/thumbnail image URL"
     )
-    og_image: Optional[str] = Field(
+    og_image: str | None = Field(
         None, max_length=500, description="OG/social share image URL"
     )
 
@@ -77,16 +76,16 @@ class ArticleCreateRequest(BaseModel):
 class ArticleUpdateRequest(BaseModel):
     """Request model for updating a KB article"""
 
-    title: Optional[str] = Field(None, min_length=5, max_length=200)
-    content: Optional[str] = Field(None, min_length=50, max_length=50000)
-    excerpt: Optional[str] = Field(None, min_length=20, max_length=500)
-    category: Optional[str] = None
-    tags: Optional[List[str]] = None
-    status: Optional[str] = None
-    featured: Optional[bool] = None
-    order: Optional[int] = None
-    card_image: Optional[str] = Field(None, max_length=500)
-    og_image: Optional[str] = Field(None, max_length=500)
+    title: str | None = Field(None, min_length=5, max_length=200)
+    content: str | None = Field(None, min_length=50, max_length=50000)
+    excerpt: str | None = Field(None, min_length=20, max_length=500)
+    category: str | None = None
+    tags: list[str] | None = None
+    status: str | None = None
+    featured: bool | None = None
+    order: int | None = None
+    card_image: str | None = Field(None, max_length=500)
+    og_image: str | None = Field(None, max_length=500)
 
     @field_validator("category")
     @classmethod
@@ -107,7 +106,7 @@ class FeedbackRequest(BaseModel):
     """Request model for submitting article feedback"""
 
     helpful: bool = Field(..., description="Was the article helpful?")
-    comment: Optional[str] = Field(None, max_length=500, description="Optional comment")
+    comment: str | None = Field(None, max_length=500, description="Optional comment")
 
 
 class MarkOfficialRequest(BaseModel):
@@ -127,8 +126,8 @@ async def get_articles(
     request: Request,
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=50, description="Items per page"),
-    category: Optional[str] = Query(None, description="Filter by category"),
-    search: Optional[str] = Query(None, min_length=2, description="Search query"),
+    category: str | None = Query(None, description="Filter by category"),
+    search: str | None = Query(None, min_length=2, description="Search query"),
     featured_only: bool = Query(False, description="Only featured articles"),
     official_only: bool = Query(False, description="Only official articles"),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
@@ -385,9 +384,9 @@ async def mark_article_official(
 async def get_all_articles_admin(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-    status: Optional[str] = Query(None, description="Filter by status"),
-    category: Optional[str] = Query(None),
-    search: Optional[str] = Query(None, min_length=2),
+    status: str | None = Query(None, description="Filter by status"),
+    category: str | None = Query(None),
+    search: str | None = Query(None, min_length=2),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """

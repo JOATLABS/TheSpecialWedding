@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from urllib.parse import unquote, urlparse
 
@@ -141,7 +141,7 @@ class AdUploadService:
 
         try:
             normalized_kind = self._normalize_asset_kind(asset_kind)
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
             safe_filename = os.path.basename(filename)
             key = (
                 f"{self._asset_prefix(vendor_id, normalized_kind)}/"
@@ -175,7 +175,7 @@ class AdUploadService:
             raise HTTPException(status_code=503, detail=str(exc))
         except ClientError as exc:
             raise HTTPException(
-                status_code=500, detail=f"Error creating ad upload URL: {str(exc)}"
+                status_code=500, detail=f"Error creating ad upload URL: {exc!s}"
             )
 
     def delete_asset_url(
@@ -197,7 +197,7 @@ class AdUploadService:
             error_code = exc.response.get("Error", {}).get("Code", "Unknown")
             raise HTTPException(
                 status_code=500,
-                detail=f"Error deleting ad file ({error_code}): {str(exc)}",
+                detail=f"Error deleting ad file ({error_code}): {exc!s}",
             )
 
     def delete_ad_file(self, key: str):
@@ -210,7 +210,7 @@ class AdUploadService:
             error_code = exc.response.get("Error", {}).get("Code", "Unknown")
             raise HTTPException(
                 status_code=500,
-                detail=f"Error deleting ad file ({error_code}): {str(exc)}",
+                detail=f"Error deleting ad file ({error_code}): {exc!s}",
             )
 
     def list_vendor_ad_files(self, vendor_id: str) -> list[dict]:
@@ -237,5 +237,5 @@ class AdUploadService:
             error_code = exc.response.get("Error", {}).get("Code", "Unknown")
             raise HTTPException(
                 status_code=500,
-                detail=f"Error listing ad files ({error_code}): {str(exc)}",
+                detail=f"Error listing ad files ({error_code}): {exc!s}",
             )

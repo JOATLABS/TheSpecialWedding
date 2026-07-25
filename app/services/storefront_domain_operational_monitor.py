@@ -12,11 +12,12 @@ opaque, one-way domain reference.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 import hashlib
 import logging
-from typing import Any, Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from bson import ObjectId
 
@@ -25,7 +26,6 @@ from app.constants.storefront_domain import (
     DISCONNECT_FAILED,
     OPERATOR_REVIEW,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ class StorefrontDomainIncident:
 def _aware(value: object) -> datetime | None:
     if not isinstance(value, datetime):
         return None
-    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
 def _mapping(value: object) -> Mapping[str, Any]:
@@ -122,7 +122,7 @@ class StorefrontDomainOperationalMonitor:
         gauge: Callable[..., Any] | None = None,
     ) -> None:
         self._mongo = mongo_client
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
         self._counter = counter
         self._gauge = gauge
 
@@ -176,9 +176,7 @@ class StorefrontDomainOperationalMonitor:
     @staticmethod
     def _backlog_alert_id() -> ObjectId:
         digest = hashlib.sha256(
-            (f"storefront-domain-alert/worker/backlog/{_BACKLOG_SUPPORT_ID}").encode(
-                "utf-8"
-            )
+            (f"storefront-domain-alert/worker/backlog/{_BACKLOG_SUPPORT_ID}").encode()
         ).hexdigest()
         return ObjectId(digest[:24])
 
@@ -219,7 +217,7 @@ class StorefrontDomainOperationalMonitor:
             "event_key": hashlib.sha256(
                 (
                     f"storefront-domain-alert/worker/backlog/{_BACKLOG_SUPPORT_ID}"
-                ).encode("utf-8")
+                ).encode()
             ).hexdigest(),
             "domain_reference": "worker",
             "category": "worker_backlog",

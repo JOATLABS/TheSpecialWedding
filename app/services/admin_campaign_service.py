@@ -12,8 +12,8 @@ PRD Reference: Section 6.8 (Admin Moderation Console)
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -24,7 +24,7 @@ from app.models.advertising_campaign import CampaignStatus, CreativeReviewStatus
 logger = logging.getLogger(__name__)
 
 
-def _serialize(doc: Dict[str, Any]) -> Dict[str, Any]:
+def _serialize(doc: dict[str, Any]) -> dict[str, Any]:
     """Convert ObjectId _id to string for JSON serialization."""
     if doc and "_id" in doc and isinstance(doc["_id"], ObjectId):
         doc["_id"] = str(doc["_id"])
@@ -63,17 +63,17 @@ class AdminCampaignService:
 
     async def get_review_queue(
         self,
-        status_filter: Optional[str] = None,
+        status_filter: str | None = None,
         limit: int = 50,
         skip: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get campaigns pending review, with their primary creative inlined.
 
         Default: pending_review campaigns sorted by submitted_at ascending
         (oldest first, FIFO review).
         """
-        query: Dict[str, Any] = {}
+        query: dict[str, Any] = {}
         if status_filter:
             query["status"] = status_filter
         else:
@@ -104,7 +104,7 @@ class AdminCampaignService:
 
         return results
 
-    async def get_review_counts(self) -> Dict[str, int]:
+    async def get_review_counts(self) -> dict[str, int]:
         """
         Get status counts for the review dashboard.
 
@@ -112,7 +112,7 @@ class AdminCampaignService:
         """
         pipeline = [{"$group": {"_id": "$status", "count": {"$sum": 1}}}]
 
-        counts: Dict[str, int] = {
+        counts: dict[str, int] = {
             "pending_review": 0,
             "active": 0,
             "paused": 0,
@@ -135,15 +135,15 @@ class AdminCampaignService:
         self,
         campaign_id: str,
         admin_email: str,
-        review_notes: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        review_notes: str | None = None,
+    ) -> dict[str, Any]:
         """
         Approve a pending_review campaign. Sets status to active.
 
         Also auto-approves all pending creatives for this campaign.
         """
         oid = _to_oid(campaign_id, "campaign_id")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         updated = await self.campaigns.find_one_and_update(
             {"_id": oid, "status": CampaignStatus.PENDING_REVIEW.value},
@@ -202,11 +202,11 @@ class AdminCampaignService:
         self,
         campaign_id: str,
         admin_email: str,
-        review_notes: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        review_notes: str | None = None,
+    ) -> dict[str, Any]:
         """Reject a pending_review campaign."""
         oid = _to_oid(campaign_id, "campaign_id")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         updated = await self.campaigns.find_one_and_update(
             {"_id": oid, "status": CampaignStatus.PENDING_REVIEW.value},
@@ -251,7 +251,7 @@ class AdminCampaignService:
         campaign_id: str,
         admin_email: str,
         review_notes: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Return a pending_review campaign to the vendor for changes.
         Sets status back to draft so vendor can edit and resubmit.
@@ -263,7 +263,7 @@ class AdminCampaignService:
             )
 
         oid = _to_oid(campaign_id, "campaign_id")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         updated = await self.campaigns.find_one_and_update(
             {"_id": oid, "status": CampaignStatus.PENDING_REVIEW.value},
@@ -311,7 +311,7 @@ class AdminCampaignService:
         self,
         limit: int = 50,
         skip: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get creatives pending review."""
         results = []
         async for doc in (
@@ -327,11 +327,11 @@ class AdminCampaignService:
         self,
         creative_id: str,
         admin_email: str,
-        review_notes: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        review_notes: str | None = None,
+    ) -> dict[str, Any]:
         """Approve a pending creative."""
         oid = _to_oid(creative_id, "creative_id")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         updated = await self.creatives.find_one_and_update(
             {"_id": oid, "review_status": CreativeReviewStatus.PENDING.value},
@@ -358,11 +358,11 @@ class AdminCampaignService:
         self,
         creative_id: str,
         admin_email: str,
-        review_notes: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        review_notes: str | None = None,
+    ) -> dict[str, Any]:
         """Reject a pending creative."""
         oid = _to_oid(creative_id, "creative_id")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         updated = await self.creatives.find_one_and_update(
             {"_id": oid, "review_status": CreativeReviewStatus.PENDING.value},
@@ -389,13 +389,13 @@ class AdminCampaignService:
 
     async def list_all_campaigns(
         self,
-        status_filter: Optional[str] = None,
-        vendor_id: Optional[str] = None,
+        status_filter: str | None = None,
+        vendor_id: str | None = None,
         limit: int = 50,
         skip: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List all campaigns across all vendors (admin view)."""
-        query: Dict[str, Any] = {}
+        query: dict[str, Any] = {}
         if status_filter:
             query["status"] = status_filter
         if vendor_id:
@@ -412,11 +412,11 @@ class AdminCampaignService:
         self,
         campaign_id: str,
         admin_email: str,
-        reason: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        reason: str | None = None,
+    ) -> dict[str, Any]:
         """Admin forcibly pauses an active campaign."""
         oid = _to_oid(campaign_id, "campaign_id")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         updated = await self.campaigns.find_one_and_update(
             {"_id": oid, "status": CampaignStatus.ACTIVE.value},
@@ -441,14 +441,14 @@ class AdminCampaignService:
         self,
         campaign_id: str,
         admin_email: str,
-        reason: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        reason: str | None = None,
+    ) -> dict[str, Any]:
         """
         Admin kills a campaign (sets to rejected regardless of current status).
         Use for policy violations or emergency takedowns.
         """
         oid = _to_oid(campaign_id, "campaign_id")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Allow deactivation from any non-terminal status
         existing = await self.campaigns.find_one({"_id": oid})
@@ -487,13 +487,13 @@ class AdminCampaignService:
     async def get_revenue_summary(
         self,
         days: int = 30,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Revenue summary for the admin dashboard.
         For free tier, this tracks engagement metrics (not actual revenue).
         All spend values are $0.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         period_start = (now - timedelta(days=days)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
@@ -571,7 +571,7 @@ class AdminCampaignService:
         self,
         limit: int = 50,
         skip: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get planner ad feedback: hidden vendors, suppressed categories,
         reduced frequency requests. Helps admin understand planner sentiment.
@@ -615,12 +615,12 @@ class AdminCampaignService:
 
     async def get_fraud_signals(
         self,
-        status_filter: Optional[str] = None,
+        status_filter: str | None = None,
         limit: int = 50,
         skip: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get fraud/anomaly signals from ad_fraud_signals (7-day TTL)."""
-        query: Dict[str, Any] = {}
+        query: dict[str, Any] = {}
         if status_filter:
             query["status"] = status_filter
 
@@ -639,11 +639,11 @@ class AdminCampaignService:
         signal_id: str,
         admin_email: str,
         status: str,
-        notes: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        notes: str | None = None,
+    ) -> dict[str, Any]:
         """Update the investigation status of a fraud signal."""
         oid = _to_oid(signal_id, "signal_id")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         updated = await self.fraud_signals.find_one_and_update(
             {"_id": oid},
@@ -666,17 +666,17 @@ class AdminCampaignService:
 
     async def list_vendor_accounts(
         self,
-        status_filter: Optional[str] = None,
-        category_filter: Optional[str] = None,
-        location_filter: Optional[str] = None,
-        date_from: Optional[str] = None,
-        date_to: Optional[str] = None,
-        search: Optional[str] = None,
+        status_filter: str | None = None,
+        category_filter: str | None = None,
+        location_filter: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        search: str | None = None,
         sort_by: str = "created_at",
         sort_order: int = -1,
         limit: int = 50,
         skip: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         List advertising vendor accounts with advanced filtering.
 
@@ -687,7 +687,7 @@ class AdminCampaignService:
           - date_from/date_to: created_at range (ISO date strings)
           - search: text search on email or business_name
         """
-        query: Dict[str, Any] = {"role": "advertising_vendor"}
+        query: dict[str, Any] = {"role": "advertising_vendor"}
 
         if status_filter:
             query["vendor_account_status"] = status_filter
@@ -701,7 +701,7 @@ class AdminCampaignService:
                 {"business_name": {"$regex": search, "$options": "i"}},
             ]
         if date_from or date_to:
-            date_range_q: Dict[str, Any] = {}
+            date_range_q: dict[str, Any] = {}
             if date_from:
                 try:
                     date_range_q["$gte"] = datetime.fromisoformat(
@@ -755,9 +755,9 @@ class AdminCampaignService:
 
     async def get_vendor_stats_batch(
         self,
-        vendor_ids: List[str],
+        vendor_ids: list[str],
         days: int = 30,
-    ) -> Dict[str, Dict[str, Any]]:
+    ) -> dict[str, dict[str, Any]]:
         """
         Compute stats for multiple vendors in a single aggregation pipeline
         instead of N+1 individual queries.
@@ -767,7 +767,7 @@ class AdminCampaignService:
         if not vendor_ids:
             return {}
 
-        period_start = datetime.now(timezone.utc) - timedelta(days=days)
+        period_start = datetime.now(UTC) - timedelta(days=days)
 
         # ── 1. Aggregate events by vendor_id ──
         events_pipeline = [
@@ -810,7 +810,7 @@ class AdminCampaignService:
             },
         ]
 
-        stats: Dict[str, Dict[str, Any]] = {}
+        stats: dict[str, dict[str, Any]] = {}
         async for doc in self.ad_events.aggregate(events_pipeline):
             vid = doc["_id"]
             impressions = doc.get("impressions", 0)
@@ -865,19 +865,19 @@ class AdminCampaignService:
 
     async def query_events(
         self,
-        event_types: Optional[List[str]] = None,
-        campaign_id: Optional[str] = None,
-        vendor_id: Optional[str] = None,
-        planner_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        date_from: Optional[str] = None,
-        date_to: Optional[str] = None,
+        event_types: list[str] | None = None,
+        campaign_id: str | None = None,
+        vendor_id: str | None = None,
+        planner_id: str | None = None,
+        session_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
         sort_by: str = "created_at",
         sort_order: int = -1,
         limit: int = 100,
         skip: int = 0,
-        aggregate_by: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        aggregate_by: str | None = None,
+    ) -> dict[str, Any]:
         """
         Flexible event search with filtering, sorting, pagination, and optional aggregation.
 
@@ -890,7 +890,7 @@ class AdminCampaignService:
 
         Returns: { items: [...], total: int, aggregations?: {...} }
         """
-        query: Dict[str, Any] = {}
+        query: dict[str, Any] = {}
 
         if event_types:
             query["event_type"] = {"$in": event_types}
@@ -905,7 +905,7 @@ class AdminCampaignService:
 
         # Date range
         if date_from or date_to:
-            date_range_q: Dict[str, Any] = {}
+            date_range_q: dict[str, Any] = {}
             if date_from:
                 try:
                     date_range_q["$gte"] = datetime.fromisoformat(
@@ -1006,9 +1006,9 @@ class AdminCampaignService:
 
     async def bulk_create_vendor_accounts(
         self,
-        vendors: List[Dict[str, Any]],
+        vendors: list[dict[str, Any]],
         admin_email: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Create multiple advertising vendor accounts in one operation.
 
@@ -1020,7 +1020,7 @@ class AdminCampaignService:
 
         Returns summary with created/failed/skipped counts and details.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         created = []
         failed = []
         skipped = []
@@ -1107,7 +1107,7 @@ class AdminCampaignService:
 
     # ─── Platform Config ──────────────────────────────────────────
 
-    async def get_platform_config(self) -> Dict[str, Any]:
+    async def get_platform_config(self) -> dict[str, Any]:
         """Get the advertising platform feature flag / config."""
         config = await self.db["ad_feature_flags"].find_one(
             {"feature_key": "sponsored_vendors"}
@@ -1134,10 +1134,10 @@ class AdminCampaignService:
     async def update_platform_config(
         self,
         admin_email: str,
-        updates: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        updates: dict[str, Any],
+    ) -> dict[str, Any]:
         """Update advertising platform configuration."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         updated = await self.db["ad_feature_flags"].find_one_and_update(
             {"feature_key": "sponsored_vendors"},

@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from bson import ObjectId
 from fastapi import HTTPException, status
@@ -141,14 +141,14 @@ class AuthService:
         await self._reject_blocked_team_member(user)
 
         # Update last_login timestamp
-        login_time = datetime.now(timezone.utc)
+        login_time = datetime.now(UTC)
         try:
             await self.users_collection.update_one(
                 {"_id": user["_id"]}, {"$set": {"last_login": login_time}}
             )
             logger.info(f"Updated last_login for user: {email}")
         except Exception as e:
-            logger.error(f"Failed to update last_login for {email}: {str(e)}")
+            logger.error(f"Failed to update last_login for {email}: {e!s}")
             # Don't fail the login if last_login update fails
 
         token_data = {"sub": user["email"], "role": user.get("role")}

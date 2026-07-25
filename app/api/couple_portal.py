@@ -17,8 +17,8 @@ import copy
 import logging
 import os
 import uuid
-from datetime import UTC, datetime, timezone
-from typing import Any, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from bson import ObjectId
@@ -58,13 +58,14 @@ from app.services.web_push_service import web_push_service
 from app.services.wedding_projection_cache_service import (
     invalidate_wedding_projection_caches,
 )
+from app.utils.best_effort_task import best_effort
+from app.utils.communication_access import CommunicationCapability
 from app.utils.couple_archived_read_model import (
     build_archived_guest_stats,
     get_archived_faqs,
     get_archived_registries,
     get_archived_wedding_record,
 )
-from app.utils.best_effort_task import best_effort
 from app.utils.couple_identity import (
     build_couple_principal_key,
     get_couple_display_name,
@@ -72,7 +73,6 @@ from app.utils.couple_identity import (
     list_couple_identity_keys,
 )
 from app.utils.couple_realtime import couple_sse_channel
-from app.utils.communication_access import CommunicationCapability
 from app.utils.id_utils import to_str_id
 from app.utils.messaging_roles import (
     SENDER_ROLE_COUPLE,
@@ -101,8 +101,8 @@ def _enforce_message_couples(current_user: ExtendedAuthUser) -> None:
 
 
 async def _resolve_couple_planner_email(
-    couple: dict, wedding: Optional[dict] = None
-) -> Optional[str]:
+    couple: dict, wedding: dict | None = None
+) -> str | None:
     """Resolve planner contact from canonical wedding ownership only."""
     if wedding is None and couple.get("wedding_id"):
         wedding = await mongo.get_weddings_collection().find_one(
@@ -176,7 +176,7 @@ async def _resolve_custom_template_owner_scope(
 # ============================================================================
 
 
-def _isoformat_or_none(value: Any) -> Optional[str]:
+def _isoformat_or_none(value: Any) -> str | None:
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, str):
@@ -481,8 +481,8 @@ async def submit_form(
         ),
         "submitted_by_type": "couple",
         "responses": data.responses,
-        "submitted_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc),
+        "submitted_at": datetime.now(UTC),
+        "updated_at": datetime.now(UTC),
     }
 
     if existing:
@@ -491,7 +491,7 @@ async def submit_form(
             {
                 "$set": {
                     "responses": data.responses,
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }
             },
         )
@@ -582,11 +582,11 @@ class CreateUpdateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     content: str = Field(..., min_length=1, max_length=5000)
     type: str = Field(default="update", pattern="^(update|milestone|announcement)$")
-    category: Optional[str] = Field(
+    category: str | None = Field(
         None, max_length=50
     )  # venue, catering, decor, timeline, budget, etc.
     is_milestone: bool = Field(default=False)
-    attachments: List[dict] = Field(default_factory=list)
+    attachments: list[dict] = Field(default_factory=list)
 
 
 @router.post("/couple-portal/updates", tags=["Couple Portal"])
@@ -623,7 +623,7 @@ async def create_update(
         "attachments": data.attachments,
         "created_by": current_user.email,
         "created_by_name": planner_name,
-        "created_at": datetime.now(timezone.utc),
+        "created_at": datetime.now(UTC),
     }
 
     result = await mongo.db["couple_updates"].insert_one(update_doc)
@@ -670,26 +670,26 @@ class AddOrderItemRequest(BaseModel):
 
     wedding_id: str = Field(...)
     title: str = Field(..., min_length=1, max_length=200)
-    description: Optional[str] = Field(None, max_length=1000)
-    time: Optional[str] = Field(None, max_length=20, description="e.g. '6:30 PM'")
-    duration_minutes: Optional[int] = Field(None, ge=1, le=1440)
+    description: str | None = Field(None, max_length=1000)
+    time: str | None = Field(None, max_length=20, description="e.g. '6:30 PM'")
+    duration_minutes: int | None = Field(None, ge=1, le=1440)
 
 
 class UpdateOrderItemRequest(BaseModel):
     """Update an existing order-of-events item."""
 
     wedding_id: str = Field(...)
-    title: Optional[str] = Field(None, min_length=1, max_length=200)
-    description: Optional[str] = Field(None, max_length=1000)
-    time: Optional[str] = Field(None, max_length=20)
-    duration_minutes: Optional[int] = Field(None, ge=1, le=1440)
+    title: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = Field(None, max_length=1000)
+    time: str | None = Field(None, max_length=20)
+    duration_minutes: int | None = Field(None, ge=1, le=1440)
 
 
 class ReorderItemsRequest(BaseModel):
     """Reorder items in the order of events."""
 
     wedding_id: str = Field(...)
-    item_ids: List[str] = Field(..., description="Item IDs in desired display order")
+    item_ids: list[str] = Field(..., description="Item IDs in desired display order")
 
 
 class DeleteOrderItemRequest(BaseModel):
@@ -728,7 +728,7 @@ async def _save_wedding_events(
             "$set": {
                 field_path: value,
                 "updated_by": current_user_email,
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(UTC),
             }
         },
     )
@@ -949,7 +949,7 @@ async def add_event_note(
         "author_name": couple_name or couple["email"],
         "text": data.text,
         "status": "pending",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
     event_notes = event.get("event_notes", [])
@@ -1009,7 +1009,7 @@ async def add_item_note(
         "author_name": couple_name or couple["email"],
         "text": data.text,
         "status": "pending",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
     notes = item.get("notes", [])
@@ -1292,7 +1292,7 @@ def _collect_email_targets(*values: object) -> list[str]:
     return emails
 
 
-def _build_couple_push_principal(couple: Optional[dict]) -> Optional[str]:
+def _build_couple_push_principal(couple: dict | None) -> str | None:
     """Return the push principal for an active, setup-complete couple account."""
     if not couple:
         return None
@@ -1308,7 +1308,7 @@ def _build_couple_push_principal(couple: Optional[dict]) -> Optional[str]:
 
 
 async def _send_couple_push_notification(
-    couple: Optional[dict],
+    couple: dict | None,
     *,
     title: str,
     body: str,
@@ -1339,9 +1339,9 @@ def _preview_push_body(content: str, max_length: int = 120) -> str:
 async def _broadcast_couple_message_change(
     wedding_id: str,
     action: str,
-    record_id: Optional[str] = None,
-    include_couple_id: Optional[str] = None,
-    extra_planner_emails: Optional[List[str]] = None,
+    record_id: str | None = None,
+    include_couple_id: str | None = None,
+    extra_planner_emails: list[str] | None = None,
 ) -> None:
     """Broadcast couple-message updates to relevant planner/team/couple clients."""
     recipients = await _get_message_broadcast_recipients(wedding_id)
@@ -1372,7 +1372,7 @@ async def _broadcast_couple_message_change(
 
 async def _get_accessible_couple_wedding_ids(
     current_user: ExtendedAuthUser,
-    wedding_id: Optional[str] = None,
+    wedding_id: str | None = None,
 ) -> list[str]:
     """Resolve wedding IDs the current user can access for couple conversations."""
     if wedding_id:
@@ -1441,7 +1441,7 @@ async def couple_send_message(
         "content": data.content,
         "read_by_couple": True,
         "read_by_planner": False,
-        "created_at": datetime.now(timezone.utc),
+        "created_at": datetime.now(UTC),
     }
 
     result = await mongo.db["couple_messages"].insert_one(message_doc)
@@ -1501,7 +1501,7 @@ async def couple_send_message(
 async def couple_get_messages(
     couple: dict = Depends(require_couple_auth),
     limit: int = Query(50, ge=1, le=200),
-    before: Optional[str] = Query(
+    before: str | None = Query(
         None, description="Cursor: message ID to load older messages before"
     ),
 ):
@@ -1646,7 +1646,7 @@ async def planner_send_message(
         "content": data.content,
         "read_by_couple": False,
         "read_by_planner": True,
-        "created_at": datetime.now(timezone.utc),
+        "created_at": datetime.now(UTC),
     }
 
     result = await mongo.db["couple_messages"].insert_one(message_doc)
@@ -1702,7 +1702,7 @@ async def planner_send_message(
 async def planner_get_messages(
     wedding_id: str = Query(...),
     limit: int = Query(50, ge=1, le=200),
-    before: Optional[str] = Query(
+    before: str | None = Query(
         None, description="Cursor: message ID to load older messages before"
     ),
     current_user: ExtendedAuthUser = Depends(
@@ -1825,7 +1825,7 @@ async def planner_unread_count(
 
 @router.get("/couple-portal/conversations", tags=["Couple Portal - Messages"])
 async def planner_list_conversations(
-    wedding_id: Optional[str] = Query(None),
+    wedding_id: str | None = Query(None),
     current_user: ExtendedAuthUser = Depends(
         require_communication_capability(CommunicationCapability.COUPLE_MESSAGES)
     ),
@@ -2010,7 +2010,7 @@ async def trigger_couple_digest(
     # Generate digest (look back 7 days by default)
     from datetime import timedelta
 
-    since = datetime.now(timezone.utc) - timedelta(days=7)
+    since = datetime.now(UTC) - timedelta(days=7)
     digest = await couple_portal_service.generate_couple_digest(
         couple_email=couple_doc["email"],
         wedding_id=wedding_id,
@@ -2157,8 +2157,8 @@ class SaveAsTemplateRequest(BaseModel):
 
     form_id: str = Field(...)
     template_name: str = Field(..., min_length=1, max_length=200)
-    description: Optional[str] = Field(None, max_length=1000)
-    category: Optional[str] = Field(None, max_length=50)
+    description: str | None = Field(None, max_length=1000)
+    category: str | None = Field(None, max_length=50)
 
 
 class CreateFromTemplateRequest(BaseModel):
@@ -2213,8 +2213,8 @@ async def save_form_as_template(
             for k, v in source_form.get("settings", {}).items()
             if k not in ("title", "wedding_id")  # Strip wedding-specific settings
         },
-        "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc),
+        "created_at": datetime.now(UTC),
+        "updated_at": datetime.now(UTC),
     }
 
     result = await mongo.db["custom_form_templates"].insert_one(template_doc)
@@ -2300,8 +2300,8 @@ async def create_form_from_custom_template(
         "wedding_id": data.wedding_id,
         "template_type": str(template["_id"]),
         "is_active": True,
-        "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc),
+        "created_at": datetime.now(UTC),
+        "updated_at": datetime.now(UTC),
     }
 
     result = await mongo.db["forms"].insert_one(form_doc)
@@ -2394,7 +2394,7 @@ async def reply_to_event_note(
         "text": data.text,
         "status": "addressed",
         "reply_to": note_id,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
     event_notes.append(reply_note)
@@ -2453,7 +2453,7 @@ async def reply_to_item_note(
         "text": data.text,
         "status": "addressed",
         "reply_to": note_id,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
     notes.append(reply_note)
@@ -2505,7 +2505,7 @@ class CoupleBookMeetingRequest(BaseModel):
     start: datetime
     end: datetime
     title: str = Field(..., min_length=1, max_length=200)
-    notes: Optional[str] = Field(None, max_length=2000)
+    notes: str | None = Field(None, max_length=2000)
     timezone: str = Field(default="UTC")
     idempotency_key: str = Field(..., min_length=8, max_length=200)
 
@@ -2537,7 +2537,7 @@ def _same_booking_instant(left: datetime, right: datetime) -> bool:
     )
 
 
-def _optional_couple_record_id(couple: dict) -> Optional[str]:
+def _optional_couple_record_id(couple: dict) -> str | None:
     try:
         return get_couple_record_id(couple)
     except ValueError:
@@ -2575,7 +2575,7 @@ async def _find_couple_booking_connection(
     owner_planner_id: str,
     staff_id: str,
     wedding_id: str,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     rows = (
         await mongo.get_calendar_connections_collection()
         .find(
@@ -2605,7 +2605,7 @@ async def _begin_couple_booking_idempotency(
     *,
     couple: dict,
     body: CoupleBookMeetingRequest,
-) -> tuple[str, str, Optional[dict[str, Any]]]:
+) -> tuple[str, str, dict[str, Any] | None]:
     scope_key = _couple_booking_scope_key(couple)
     resolution = await calendar_idempotency_service.begin(
         scope_key=scope_key,
@@ -2640,9 +2640,9 @@ async def _begin_couple_booking_idempotency(
 )
 async def get_couple_availability(
     duration: int = Query(..., ge=15, le=480),
-    start: Optional[datetime] = Query(None),
-    end: Optional[datetime] = Query(None),
-    staff_id: Optional[str] = Query(None),
+    start: datetime | None = Query(None),
+    end: datetime | None = Query(None),
+    staff_id: str | None = Query(None),
     couple: dict = Depends(require_couple_auth),
 ) -> CoupleAvailabilityResponse:
     """Return bookable planner/team slots for this couple's wedding."""
@@ -2884,7 +2884,7 @@ async def list_meetings_couple(couple: dict = Depends(require_couple_auth)):
         return {"meetings": [], "count": 0}
 
     tasks_collection = mongo.get_planner_tasks_collection()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cursor = (
         tasks_collection.find(
             {
@@ -2919,9 +2919,7 @@ class RegistryItemRequest(BaseModel):
         description="Registry name (e.g., 'Target', 'Amazon')",
     )
     url: str = Field(..., min_length=1, max_length=2000, description="Registry URL")
-    color: Optional[str] = Field(
-        default="bg-gray-600", description="Button color class"
-    )
+    color: str | None = Field(default="bg-gray-600", description="Button color class")
 
 
 @router.get("/couple/portal/registries", tags=["Couple Portal - Registry"])
@@ -3066,10 +3064,10 @@ class FAQItemRequest(BaseModel):
 
     question: str = Field(..., min_length=1, max_length=500, description="FAQ question")
     answer: str = Field(..., min_length=1, max_length=5000, description="FAQ answer")
-    link_url: Optional[str] = Field(
+    link_url: str | None = Field(
         default=None, max_length=2000, description="Optional CTA link URL"
     )
-    link_label: Optional[str] = Field(
+    link_label: str | None = Field(
         default=None, max_length=200, description="Optional CTA link label"
     )
 
@@ -3225,7 +3223,7 @@ async def get_couple_qr_code(couple: dict = Depends(require_couple_auth)):
             headers={"Content-Disposition": "inline; filename=portal-qr.png"},
         )
     except Exception as e:
-        logger.error(f"QR code generation failed: {str(e)}")
+        logger.error(f"QR code generation failed: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to generate QR code")
 
 
@@ -3246,7 +3244,7 @@ class CouplePushSubscription(BaseModel):
 
     endpoint: str
     keys: CouplePushSubscriptionKeys
-    expirationTime: Optional[int] = None
+    expirationTime: int | None = None
 
 
 class CoupleSubscribeRequest(BaseModel):

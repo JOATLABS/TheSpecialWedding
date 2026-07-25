@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
@@ -7,22 +6,20 @@ from app.utils.event_time import normalize_optional_event_time
 
 
 class EventDetailsModel(BaseModel):
-    venue_name: Optional[str] = Field(default=None, description="Name of the venue")
-    location: Optional[str] = Field(
+    venue_name: str | None = Field(default=None, description="Name of the venue")
+    location: str | None = Field(
         default=None, description="Address or location of the venue"
     )
-    time: Optional[str] = Field(
-        default=None, description="Event time (e.g., '3:00 PM')"
-    )
-    attire: Optional[str] = Field(default=None, description="Dress code/attire details")
-    timezone: Optional[str] = Field(
+    time: str | None = Field(default=None, description="Event time (e.g., '3:00 PM')")
+    attire: str | None = Field(default=None, description="Dress code/attire details")
+    timezone: str | None = Field(
         default=None,
         description="IANA timezone for this event (e.g., 'America/Chicago')",
     )
 
     @field_validator("time")
     @classmethod
-    def validate_time(cls, value: Optional[str]) -> Optional[str]:
+    def validate_time(cls, value: str | None) -> str | None:
         return normalize_optional_event_time(value)
 
 
@@ -31,17 +28,17 @@ class EventNoteModel(BaseModel):
 
     id: str = Field(..., description="Unique note ID")
     author_role: str = Field(..., description="Who wrote it: 'planner' or 'couple'")
-    author_name: Optional[str] = Field(
+    author_name: str | None = Field(
         default=None, description="Display name of the author"
     )
     text: str = Field(..., description="Note content")
     status: str = Field(
         default="pending", description="Note status: pending, seen, addressed"
     )
-    reply_to: Optional[str] = Field(
+    reply_to: str | None = Field(
         default=None, description="Parent note ID if this is a reply"
     )
-    created_at: Optional[str] = Field(
+    created_at: str | None = Field(
         default=None, description="ISO timestamp when the note was created"
     )
 
@@ -53,19 +50,19 @@ class OrderOfEventsItemModel(BaseModel):
     title: str = Field(
         ..., description="Step title (e.g., 'First Dance', 'Cake Cutting')"
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None, description="Optional details about this step"
     )
-    time: Optional[str] = Field(
+    time: str | None = Field(
         default=None, description="Scheduled time (e.g., '6:30 PM')"
     )
-    duration_minutes: Optional[int] = Field(
+    duration_minutes: int | None = Field(
         default=None, description="Estimated duration in minutes"
     )
     order: int = Field(
         default=0, description="Display order (0-indexed, for drag-and-drop reordering)"
     )
-    notes: List[EventNoteModel] = Field(
+    notes: list[EventNoteModel] = Field(
         default_factory=list,
         description="Notes/comments from planner or couple on this step",
     )
@@ -76,20 +73,20 @@ class EventModel(BaseModel):
         ...,
         description="Event type: traditional, white_wedding, reception, engagement, rehearsal",
     )
-    custom_type_label: Optional[str] = Field(
+    custom_type_label: str | None = Field(
         default=None,
         max_length=100,
         description="Planner-defined label for custom event types",
     )
     date: str = Field(..., description="Event date in YYYY-MM-DD format")
-    details: Optional[EventDetailsModel] = Field(
+    details: EventDetailsModel | None = Field(
         default=None, description="Additional event details"
     )
-    order_of_events: List[OrderOfEventsItemModel] = Field(
+    order_of_events: list[OrderOfEventsItemModel] = Field(
         default_factory=list,
         description="Detailed run of show / program for this event",
     )
-    event_notes: List[EventNoteModel] = Field(
+    event_notes: list[EventNoteModel] = Field(
         default_factory=list,
         description="General notes on this event from planner or couple",
     )
@@ -98,18 +95,16 @@ class EventModel(BaseModel):
 class RegistryItemModel(BaseModel):
     name: str = Field(..., description="Registry name (e.g., 'Target', 'Amazon')")
     url: str = Field(..., description="Registry URL")
-    color: Optional[str] = Field(
-        default="bg-gray-600", description="Button color class"
-    )
+    color: str | None = Field(default="bg-gray-600", description="Button color class")
 
 
 class FAQItemModel(BaseModel):
     question: str = Field(..., description="FAQ question")
     answer: str = Field(..., description="FAQ answer")
-    link_url: Optional[str] = Field(
+    link_url: str | None = Field(
         default=None, description="Optional URL for a call-to-action button"
     )
-    link_label: Optional[str] = Field(
+    link_label: str | None = Field(
         default=None, description="Label for the button (e.g., 'Book Hotel Room')"
     )
 
@@ -121,7 +116,7 @@ class PrivacySettingsModel(BaseModel):
     guest_auth_required: bool = Field(
         default=True, description="Whether guest authentication is required"
     )
-    password_protection: Optional[str] = Field(
+    password_protection: str | None = Field(
         default=None, description="Password for password-protected weddings"
     )
     allow_guest_sharing: bool = Field(
@@ -139,18 +134,18 @@ class GuestMediaConfigModel(BaseModel):
     enabled: bool = Field(
         default=True, description="Whether guest memory uploads are open"
     )
-    upload_token_hash: Optional[str] = Field(
+    upload_token_hash: str | None = Field(
         default=None, description="SHA-256 hash of the active guest upload token"
     )
-    upload_closes_at: Optional[datetime] = Field(
+    upload_closes_at: datetime | None = Field(
         default=None, description="When guest memory uploads close"
     )
-    last_rotated_at: Optional[datetime] = Field(
+    last_rotated_at: datetime | None = Field(
         default=None, description="When the guest upload token was last rotated"
     )
 
     @field_serializer("upload_closes_at", "last_rotated_at", when_used="json")
-    def serialize_datetimes(self, value: Optional[datetime]) -> Optional[str]:
+    def serialize_datetimes(self, value: datetime | None) -> str | None:
         return value.isoformat() if value else None
 
 
@@ -163,7 +158,7 @@ class RSVPConfigModel(BaseModel):
         default="Check your phone for your personal invitation link. If you need help, use the Get Help button and our planner will text you.",
         description="RSVP help text",
     )
-    phone_numbers: List[str] = Field(
+    phone_numbers: list[str] = Field(
         default_factory=lambda: ["(319) 529-6088", "(405) 708-1076"],
         description="Contact phone numbers",
     )
@@ -196,7 +191,7 @@ class ThemeConfigModel(BaseModel):
 
 class OurStoryModel(BaseModel):
     text: str = Field(..., description="Our story text/paragraph")
-    image_url: Optional[str] = Field(None, description="S3 key for couple photo")
+    image_url: str | None = Field(None, description="S3 key for couple photo")
     image_shape: str = Field(
         default="circle", description="Image shape: circle, heart, square, or hexagon"
     )
@@ -209,15 +204,15 @@ class WeddingPartyMemberModel(BaseModel):
         ...,
         description="Role: maid_of_honor, bridesmaid, best_man, groomsman, or custom",
     )
-    image_url: Optional[str] = Field(None, description="S3 key for member photo")
-    display_order: Optional[int] = Field(
+    image_url: str | None = Field(None, description="S3 key for member photo")
+    display_order: int | None = Field(
         default=0, description="Display order within their role group"
     )
     side: str = Field(..., description="bride or groom")
-    linked_guest_id: Optional[str] = Field(
+    linked_guest_id: str | None = Field(
         None, description="ID of linked guest if applicable"
     )
-    linked_guest_email: Optional[str] = Field(
+    linked_guest_email: str | None = Field(
         None, description="Email of linked guest for matching"
     )
 
@@ -227,84 +222,84 @@ class WeddingModel(BaseModel):
     couple_names: str = Field(..., min_length=3, max_length=200)
     date: str = Field(..., description="Main wedding date in YYYY-MM-DD format")
     slug: str = Field(..., description="URL-friendly slug for the wedding")
-    events: List[EventModel] = Field(default_factory=list)
-    rsvp_config: Optional[RSVPConfigModel] = Field(default_factory=RSVPConfigModel)
-    privacy_settings: Optional[PrivacySettingsModel] = Field(
+    events: list[EventModel] = Field(default_factory=list)
+    rsvp_config: RSVPConfigModel | None = Field(default_factory=RSVPConfigModel)
+    privacy_settings: PrivacySettingsModel | None = Field(
         default_factory=lambda: PrivacySettingsModel()
     )
-    guest_media: Optional[GuestMediaConfigModel] = Field(
+    guest_media: GuestMediaConfigModel | None = Field(
         default_factory=GuestMediaConfigModel
     )
-    registries: List[RegistryItemModel] = Field(default_factory=list)
-    faqs: List[FAQItemModel] = Field(default_factory=list)
-    theme_config: Optional[ThemeConfigModel] = Field(default_factory=ThemeConfigModel)
-    featured_image: Optional[str] = Field(
+    registries: list[RegistryItemModel] = Field(default_factory=list)
+    faqs: list[FAQItemModel] = Field(default_factory=list)
+    theme_config: ThemeConfigModel | None = Field(default_factory=ThemeConfigModel)
+    featured_image: str | None = Field(
         None, description="S3 key for the featured background image"
     )
-    our_story: Optional[OurStoryModel] = Field(
+    our_story: OurStoryModel | None = Field(
         None, description="Our story content and image"
     )
-    wedding_party: List[WeddingPartyMemberModel] = Field(
+    wedding_party: list[WeddingPartyMemberModel] = Field(
         default_factory=list, description="Wedding party members"
     )
-    reminder_from_email: Optional[str] = Field(
+    reminder_from_email: str | None = Field(
         None, description="Custom from email for reminders (e.g., couple@example.com)"
     )
     # SAAS Multi-tenancy fields (backward compatible - won't break existing weddings)
-    assigned_planner_email: Optional[str] = Field(
+    assigned_planner_email: str | None = Field(
         None, description="Wedding planner responsible for this wedding"
     )
-    assigned_planner_id: Optional[str] = Field(
+    assigned_planner_id: str | None = Field(
         None, description="Wedding planner ID (MongoDB ObjectId)"
     )
-    created_by: Optional[str] = Field(
+    created_by: str | None = Field(
         None, description="ROOT_ADMIN email (always thedeveloper@thespecialwedding.io)"
     )
-    updated_by: Optional[str] = Field(
+    updated_by: str | None = Field(
         None, description="Email of last user to update this wedding"
     )
     status: str = Field(
         default="active", description="Wedding status: active, inactive, deleted"
     )
     # Budget and guest tracking
-    guest_count: Optional[int] = Field(
+    guest_count: int | None = Field(
         None, description="Total number of guests invited", ge=0
     )
-    total_budget: Optional[float] = Field(
+    total_budget: float | None = Field(
         None, description="Total wedding budget amount", ge=0
     )
-    venue: Optional[str] = Field(None, description="Main venue name or location")
+    venue: str | None = Field(None, description="Main venue name or location")
     # Cultural and regional context
-    cultural_style: Optional[str] = Field(
+    cultural_style: str | None = Field(
         None,
         description="Cultural wedding style: nigerian, indian, jewish, mexican, chinese, korean, filipino, greek, italian, western, interfaith, or custom",
     )
-    region: Optional[str] = Field(
+    region: str | None = Field(
         None,
         description="Geographic region for pricing context (e.g., 'Oklahoma City, OK', 'Lagos, Nigeria')",
     )
-    timezone: Optional[str] = Field(
+    timezone: str | None = Field(
         default="America/Chicago",
         description="IANA timezone for wedding events (e.g., 'America/Chicago', 'Africa/Lagos')",
     )
     # Billing fields
-    last_billed_at: Optional[datetime] = Field(
+    last_billed_at: datetime | None = Field(
         None, description="Timestamp of last metered usage report"
     )
-    billed_period: Optional[str] = Field(
+    billed_period: str | None = Field(
         None, description="YYYY-MM period when last metered"
     )
     meter_pending: bool = Field(default=False, description="Meter event pending retry")
-    meter_pending_reason: Optional[str] = Field(
+    meter_pending_reason: str | None = Field(
         None, description="Reason meter event is pending"
     )
-    meter_reversed_period: Optional[str] = Field(
+    meter_reversed_period: str | None = Field(
         None, description="YYYY-MM period of last meter reversal"
     )
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @field_serializer("last_billed_at", "created_at", when_used="json")
-    def serialize_datetimes(self, value: datetime) -> Optional[str]:
+    def serialize_datetimes(self, value: datetime) -> str | None:
         return value.isoformat() if value else None
 
     class Config:
@@ -378,8 +373,8 @@ class WeddingModel(BaseModel):
 
 
 class WeddingCreateModel(WeddingModel):
-    id: Optional[str] = Field(default=None, alias="_id")
-    slug: Optional[str] = Field(
+    id: str | None = Field(default=None, alias="_id")
+    slug: str | None = Field(
         default=None, description="URL-friendly slug for the wedding"
     )
-    created_at: Optional[datetime] = Field(default=None)
+    created_at: datetime | None = Field(default=None)

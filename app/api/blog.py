@@ -5,7 +5,6 @@ Public endpoints for the /resources/blog page (no auth) + Admin CRUD (ROOT_ADMIN
 
 import logging
 import secrets
-from typing import List, Optional
 
 from fastapi import (
     APIRouter,
@@ -43,14 +42,14 @@ class BlogCreateRequest(BaseModel):
     content: str = Field(..., min_length=50, max_length=100000)
     excerpt: str = Field(..., min_length=20, max_length=500)
     category: str = Field(default="general")
-    tags: List[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
     status: str = Field(default="published")
     featured: bool = Field(default=False)
     author_name: str = Field(default="The Special Wedding")
-    meta_title: Optional[str] = Field(None, max_length=70)
-    meta_description: Optional[str] = Field(None, max_length=160)
-    og_image: Optional[str] = None
-    card_image: Optional[str] = None
+    meta_title: str | None = Field(None, max_length=70)
+    meta_description: str | None = Field(None, max_length=160)
+    og_image: str | None = None
+    card_image: str | None = None
 
     @field_validator("category")
     @classmethod
@@ -77,18 +76,18 @@ class BlogCreateRequest(BaseModel):
 class BlogUpdateRequest(BaseModel):
     """Request model for updating a blog article"""
 
-    title: Optional[str] = Field(None, min_length=5, max_length=200)
-    content: Optional[str] = Field(None, min_length=50, max_length=100000)
-    excerpt: Optional[str] = Field(None, min_length=20, max_length=500)
-    category: Optional[str] = None
-    tags: Optional[List[str]] = None
-    status: Optional[str] = None
-    featured: Optional[bool] = None
-    author_name: Optional[str] = Field(None, max_length=100)
-    meta_title: Optional[str] = Field(None, max_length=70)
-    meta_description: Optional[str] = Field(None, max_length=160)
-    og_image: Optional[str] = None
-    card_image: Optional[str] = None
+    title: str | None = Field(None, min_length=5, max_length=200)
+    content: str | None = Field(None, min_length=50, max_length=100000)
+    excerpt: str | None = Field(None, min_length=20, max_length=500)
+    category: str | None = None
+    tags: list[str] | None = None
+    status: str | None = None
+    featured: bool | None = None
+    author_name: str | None = Field(None, max_length=100)
+    meta_title: str | None = Field(None, max_length=70)
+    meta_description: str | None = Field(None, max_length=160)
+    og_image: str | None = None
+    card_image: str | None = None
 
     @field_validator("category")
     @classmethod
@@ -113,8 +112,8 @@ async def get_published_articles(
     request: Request,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=50),
-    category: Optional[str] = Query(None),
-    search: Optional[str] = Query(None, min_length=2),
+    category: str | None = Query(None),
+    search: str | None = Query(None, min_length=2),
     featured_only: bool = Query(False),
 ):
     """
@@ -167,9 +166,9 @@ async def get_all_slugs(request: Request):
 async def get_all_articles_admin(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-    status: Optional[str] = Query(None),
-    category: Optional[str] = Query(None),
-    search: Optional[str] = Query(None, min_length=2),
+    status: str | None = Query(None),
+    category: str | None = Query(None),
+    search: str | None = Query(None, min_length=2),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """Get all blog articles regardless of status (ROOT_ADMIN only)"""
@@ -286,7 +285,7 @@ async def get_blog_image_upload_url(
 @router.post("/webhook/babylovegrowth", tags=["Webhooks"])
 async def handle_babylovegrowth_webhook(
     request: Request,
-    authorization: Optional[str] = Header(default=None),
+    authorization: str | None = Header(default=None),
 ):
     """Receive BabyLoveGrowth publish webhooks.
 
@@ -354,13 +353,13 @@ async def trigger_babylovegrowth_sync(
     will catch any race. The pre-flight check is a UX shortcut, not a
     correctness mechanism.
     """
+    from app.core.database import mongo as _mongo
     from app.core.settings import settings as _settings
     from app.services.babylovegrowth_sync_service import (
         SYNC_STATE_COLLECTION,
         SYNC_STATE_DOC_ID,
         babylovegrowth_sync_service,
     )
-    from app.core.database import mongo as _mongo
 
     if not _settings.babylovegrowth_sync_enabled:
         return {"status": "skipped", "reason": "sync_disabled"}

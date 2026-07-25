@@ -28,8 +28,8 @@ import asyncio
 import logging
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 from bson import ObjectId
@@ -150,7 +150,7 @@ class BabyLoveGrowthClient:
         method: str,
         path: str,
         *,
-        params: Optional[dict] = None,
+        params: dict | None = None,
     ) -> Any:
         """Send a request with retry policy and error-taxonomy mapping."""
         url = f"{self._base_url}{path}"
@@ -160,7 +160,7 @@ class BabyLoveGrowthClient:
             "Accept": "application/json",
         }
 
-        last_exc: Optional[Exception] = None
+        last_exc: Exception | None = None
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             for attempt in range(MAX_RETRY_ATTEMPTS):
                 try:
@@ -749,7 +749,7 @@ class BabyLoveGrowthSyncService:
         *,
         blg_id: int,
         mapped: dict,
-        hero_cdn_url: Optional[str],
+        hero_cdn_url: str | None,
     ) -> dict:
         """Upsert by babylovegrowth_id. Slug collisions retry with -N suffix.
 
@@ -872,8 +872,8 @@ class BabyLoveGrowthSyncService:
     # ──────────────── Image proxy ────────────────
 
     async def _proxy_hero_image(
-        self, remote_url: Optional[str], blg_id: int
-    ) -> Optional[str]:
+        self, remote_url: str | None, blg_id: int
+    ) -> str | None:
         """Best-effort hero image re-host. Returns CDN URL or None."""
         if not remote_url:
             return None
@@ -897,8 +897,8 @@ def _map_blg_article(
     full: dict,
     summary: dict,
     *,
-    status_override: Optional[str] = None,
-) -> Optional[dict]:
+    status_override: str | None = None,
+) -> dict | None:
     """Map a BLG full-article payload to a partial blog_articles document.
 
     Returns None if the article cannot be mapped (e.g. content fails
@@ -1049,7 +1049,7 @@ def _normalize_blg_payload(payload: dict) -> dict:
     return normalized
 
 
-def _coerce_blg_id(value: Any) -> Optional[int]:
+def _coerce_blg_id(value: Any) -> int | None:
     """Return a BLG article id as int, rejecting bools and non-numeric strings."""
     if isinstance(value, bool):
         return None
@@ -1062,7 +1062,7 @@ def _coerce_blg_id(value: Any) -> Optional[int]:
     return None
 
 
-def _parse_blg_datetime(value: Any) -> Optional[datetime]:
+def _parse_blg_datetime(value: Any) -> datetime | None:
     """Parse BLG ISO timestamps as UTC-aware datetimes."""
     if not isinstance(value, str) or not value.strip():
         return None
@@ -1077,18 +1077,18 @@ def _parse_blg_datetime(value: Any) -> Optional[datetime]:
         )
         return None
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 # ─────────────────────────────────────── Helpers ─────────────────────────────
 
 
 def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
-def _make_error(blg_id: Optional[int], stage: str, message: str) -> dict:
+def _make_error(blg_id: int | None, stage: str, message: str) -> dict:
     return {
         "blg_id": blg_id,
         "stage": stage,

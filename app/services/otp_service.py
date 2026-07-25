@@ -3,7 +3,7 @@
 import logging
 import random
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from bson.objectid import ObjectId
 from pymongo import ASCENDING
@@ -27,7 +27,7 @@ def _ensure_utc(dt: datetime) -> datetime:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
+        return dt.replace(tzinfo=UTC)
     return dt
 
 
@@ -88,7 +88,7 @@ class OTPService:
     async def generate_otp(self, guest_id: str, contact_type: str = "phone") -> str:
         """Generate a 6-digit OTP and store it with contact type for auth tracking."""
         otp = str(random.randint(100000, 999999))
-        expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        expires_at = datetime.now(UTC) + timedelta(minutes=5)
 
         # Get fresh collection reference to ensure database is connected
         otp_collection = mongo.db["otps"]
@@ -105,7 +105,7 @@ class OTPService:
             "otp": otp,
             "contact_type": contact_type,
             "expires_at": expires_at,
-            "created_at": datetime.now(timezone.utc),
+            "created_at": datetime.now(UTC),
         }
         insert_result = await otp_collection.insert_one(otp_doc)
 
@@ -182,13 +182,13 @@ class OTPService:
             created_at = _ensure_utc(last_otp.get("created_at"))
             if expires_at:
                 # If OTP has expired, delete it and allow new request
-                if expires_at <= datetime.now(timezone.utc):
+                if expires_at <= datetime.now(UTC):
                     await self.otp_collection.delete_one({"_id": last_otp["_id"]})
                     logger.debug(f"Deleted expired OTP for guest_id: {guest_id}")
                 # Rate limit using settings.rate_limit_auth_period (default 60 seconds)
                 elif created_at:
                     seconds_since_created = (
-                        datetime.now(timezone.utc) - created_at
+                        datetime.now(UTC) - created_at
                     ).total_seconds()
                     if seconds_since_created < settings.rate_limit_auth_period:
                         remaining = int(
@@ -217,7 +217,7 @@ class OTPService:
                 )
             )
         except Exception as e:
-            logger.error(f"Failed to save OTP for guest_id {guest_id}: {str(e)}")
+            logger.error(f"Failed to save OTP for guest_id {guest_id}: {e!s}")
             return {
                 "success": False,
                 "error": "Failed to generate verification code. Please try again.",
@@ -460,7 +460,7 @@ class OTPService:
             {
                 "guest_id": guest_id,
                 "otp": otp_clean,
-                "expires_at": {"$gt": datetime.now(timezone.utc)},
+                "expires_at": {"$gt": datetime.now(UTC)},
             }
         )
 
@@ -516,7 +516,7 @@ class OTPService:
             {
                 "guest_id": guest_id,
                 "otp": otp_clean,
-                "expires_at": {"$gt": datetime.now(timezone.utc)},
+                "expires_at": {"$gt": datetime.now(UTC)},
             }
         )
 
@@ -601,13 +601,13 @@ class OTPService:
             created_at = _ensure_utc(last_otp.get("created_at"))
             if expires_at:
                 # If OTP has expired, delete it and allow new request
-                if expires_at <= datetime.now(timezone.utc):
+                if expires_at <= datetime.now(UTC):
                     await self.otp_collection.delete_one({"_id": last_otp["_id"]})
                     logger.debug(f"Deleted expired OTP for guest_id: {guest_id}")
                 # Rate limit using settings.rate_limit_auth_period (default 60 seconds)
                 elif created_at:
                     seconds_since_created = (
-                        datetime.now(timezone.utc) - created_at
+                        datetime.now(UTC) - created_at
                     ).total_seconds()
                     if seconds_since_created < settings.rate_limit_auth_period:
                         remaining = int(

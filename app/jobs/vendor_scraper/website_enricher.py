@@ -12,7 +12,6 @@ still gets inserted with Google Places data only.
 import ipaddress
 import logging
 import re
-from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 import httpx
@@ -23,7 +22,7 @@ logger = logging.getLogger(__name__)
 PRICE_PATTERN = re.compile(r"\$[\d,]+(?:\.\d{2})?")
 
 
-async def enrich_from_website(website_url: str) -> Dict:
+async def enrich_from_website(website_url: str) -> dict:
     """
     Scrape a vendor's website for description and pricing hints.
 
@@ -90,7 +89,7 @@ async def enrich_from_website(website_url: str) -> Dict:
     return result
 
 
-def _extract_description(html: str) -> Optional[str]:
+def _extract_description(html: str) -> str | None:
     """Extract best description from meta tags.
 
     Handles both attribute orderings:
@@ -132,7 +131,7 @@ def _extract_description(html: str) -> Optional[str]:
     return None
 
 
-def _extract_price_range(html: str) -> Tuple[Optional[float], Optional[float]]:
+def _extract_price_range(html: str) -> tuple[float | None, float | None]:
     """
     Look for dollar amounts in the page and return a (min, max) range.
     Very heuristic — only captures obvious pricing patterns.

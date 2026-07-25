@@ -5,7 +5,6 @@ Handles browser push notification subscriptions and sending.
 """
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -30,7 +29,7 @@ class PushSubscription(BaseModel):
 
     endpoint: str
     keys: PushSubscriptionKeys
-    expirationTime: Optional[int] = None
+    expirationTime: int | None = None
 
 
 class SubscribeRequest(BaseModel):
@@ -50,8 +49,8 @@ class PushNotificationRequest(BaseModel):
 
     title: str
     body: str
-    url: Optional[str] = None
-    tag: Optional[str] = None
+    url: str | None = None
+    tag: str | None = None
 
 
 @router.get("/web-push/vapid-public-key", tags=["Web Push"])
@@ -105,7 +104,7 @@ async def subscribe_to_push(
 
 @router.delete("/web-push/unsubscribe", tags=["Web Push"])
 async def unsubscribe_from_push(
-    body: Optional[UnsubscribeRequest] = None,
+    body: UnsubscribeRequest | None = None,
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """

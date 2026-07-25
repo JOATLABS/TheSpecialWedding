@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
-from datetime import datetime, timedelta, timezone
 import ipaddress
 import json
 import logging
 import random
-from typing import Any, Callable, Mapping, Protocol
+from collections.abc import Callable, Mapping
+from datetime import UTC, datetime, timedelta
+from typing import Any, Protocol
 from urllib.parse import urlunsplit
 from uuid import uuid4
 
@@ -59,7 +59,6 @@ from app.services.storefront_domain_service import (
     normalize_custom_hostname,
     storefront_domain_service,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -234,7 +233,7 @@ class SystemStorefrontHttpsVerifier:
                     except httpx.RequestError:
                         continue
                 return False
-        except (httpx.RequestError, asyncio.TimeoutError):
+        except (TimeoutError, httpx.RequestError):
             return False
 
 
@@ -272,14 +271,14 @@ class StorefrontDomainReconciliationService:
             )
         except (TypeError, ValueError):
             self._cname_target = None
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
         self._jitter = jitter or random.uniform
 
     @staticmethod
     def _aware(value: object) -> datetime | None:
         if not isinstance(value, datetime):
             return None
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
 
     @staticmethod
     def _safe_error(exc: Exception) -> dict[str, object]:

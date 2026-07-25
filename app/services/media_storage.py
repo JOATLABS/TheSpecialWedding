@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
-from enum import Enum
 import re
 import threading
 import time
-from typing import Any, Optional
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any
 from urllib.parse import urlparse
 
 import boto3
@@ -29,15 +29,15 @@ class StorageTarget(str, Enum):
 @dataclass(frozen=True)
 class StorageTargetConfig:
     target: StorageTarget
-    bucket_name: Optional[str]
-    public_domain: Optional[str] = None
+    bucket_name: str | None
+    public_domain: str | None = None
 
     @property
     def is_bucket_configured(self) -> bool:
         return bool(self.bucket_name)
 
     @property
-    def host(self) -> Optional[str]:
+    def host(self) -> str | None:
         if not self.public_domain:
             return None
         return urlparse(self.public_domain).hostname
@@ -46,10 +46,10 @@ class StorageTargetConfig:
 @dataclass(frozen=True)
 class StorageTargetHealth:
     target: StorageTarget
-    bucket_name: Optional[str]
-    public_domain: Optional[str]
+    bucket_name: str | None
+    public_domain: str | None
     status: str
-    issue: Optional[str] = None
+    issue: str | None = None
 
     @property
     def is_ready(self) -> bool:
@@ -59,10 +59,10 @@ class StorageTargetHealth:
 @dataclass(frozen=True)
 class StorageBrowserUploadHealth:
     target: StorageTarget
-    bucket_name: Optional[str]
+    bucket_name: str | None
     origins: tuple[str, ...]
     status: str
-    issue: Optional[str] = None
+    issue: str | None = None
 
     @property
     def is_ready(self) -> bool:
@@ -261,8 +261,8 @@ class MediaStorage:
         target: StorageTarget | str,
         key: str,
         expires_in: int,
-        content_type: Optional[str] = None,
-        content_length: Optional[int] = None,
+        content_type: str | None = None,
+        content_length: int | None = None,
     ) -> str:
         target_config = self.require_target(target)
         params: dict[str, Any] = {"Bucket": target_config.bucket_name, "Key": key}
@@ -287,7 +287,7 @@ class MediaStorage:
         target: StorageTarget | str,
         key: str,
         expires_in: int,
-        extra_params: Optional[dict[str, Any]] = None,
+        extra_params: dict[str, Any] | None = None,
     ) -> str:
         target_config = self.require_target(target)
         params: dict[str, Any] = {"Bucket": target_config.bucket_name, "Key": key}
@@ -304,7 +304,7 @@ class MediaStorage:
         fileobj: Any,
         target: StorageTarget | str,
         key: str,
-        extra_args: Optional[dict[str, Any]] = None,
+        extra_args: dict[str, Any] | None = None,
     ) -> None:
         target_config = self.require_target(target)
         self.client.upload_fileobj(
@@ -323,7 +323,7 @@ class MediaStorage:
         target: StorageTarget | str,
         prefix: str,
         limit: int,
-        cursor: Optional[str] = None,
+        cursor: str | None = None,
     ) -> dict[str, Any]:
         target_config = self.require_target(target)
         request: dict[str, Any] = {
@@ -344,9 +344,9 @@ class MediaStorage:
         target: StorageTarget | str,
         source_key: str,
         destination_key: str,
-        source_target: Optional[StorageTarget | str] = None,
+        source_target: StorageTarget | str | None = None,
         *,
-        source_etag: Optional[str] = None,
+        source_etag: str | None = None,
     ) -> None:
         destination = self.require_target(target)
         source = self.require_target(source_target or target)
@@ -366,7 +366,7 @@ class MediaStorage:
         target: StorageTarget | str,
         key: str,
         *,
-        source_etag: Optional[str] = None,
+        source_etag: str | None = None,
     ) -> bytes:
         target_config = self.require_target(target)
         request: dict[str, Any] = {"Bucket": target_config.bucket_name, "Key": key}

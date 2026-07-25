@@ -11,16 +11,16 @@ Usage:
 import asyncio
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import stripe
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from app.core.database import init_database, mongo  # noqa: E402
-from app.core.settings import settings  # noqa: E402
-from app.constants.billing import plan_billing_model  # noqa: E402
-from app.models.subscription import normalize_subscription_status  # noqa: E402
+from app.constants.billing import plan_billing_model
+from app.core.database import init_database, mongo
+from app.core.settings import settings
+from app.models.subscription import normalize_subscription_status
 
 
 async def sync(email: str):
@@ -143,7 +143,7 @@ async def sync(email: str):
     # Map Stripe status to internal status
     internal_status = normalize_subscription_status(stripe_sub.status) or "active"
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Determine billing interval
     billing_interval = "yearly" if price_interval == "year" else "monthly"
@@ -168,14 +168,10 @@ async def sync(email: str):
 
     # Parse period dates (from items or top-level)
     period_start = (
-        datetime.fromtimestamp(raw_period_start, tz=timezone.utc)
-        if raw_period_start
-        else now
+        datetime.fromtimestamp(raw_period_start, tz=UTC) if raw_period_start else now
     )
     period_end = (
-        datetime.fromtimestamp(raw_period_end, tz=timezone.utc)
-        if raw_period_end
-        else now
+        datetime.fromtimestamp(raw_period_end, tz=UTC) if raw_period_end else now
     )
 
     print("\n[SYNC] Updating platform:")

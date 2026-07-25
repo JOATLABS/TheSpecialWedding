@@ -3,7 +3,7 @@
 import base64
 import html
 import logging
-from typing import Optional
+from datetime import UTC
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
@@ -19,8 +19,8 @@ from app.services.email_service_resend import ResendEmailService
 from app.services.sse_manager import sse_manager
 from app.services.wedding_service import WeddingService
 from app.utils.communication_access import CommunicationCapability
-from app.utils.rsvp_links import build_guest_otp_url
 from app.utils.response import dict_response
+from app.utils.rsvp_links import build_guest_otp_url
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ router = APIRouter()
 wedding_service = WeddingService()
 
 # Initialize email service
-email_service: Optional[ResendEmailService] = None
+email_service: ResendEmailService | None = None
 try:
     email_service = ResendEmailService()
     email_available = email_service.configured
@@ -40,15 +40,15 @@ except Exception as e:
 
 class EmailInviteModel(BaseModel):
     wedding_slug: str
-    custom_subject: Optional[str] = None
-    custom_html: Optional[str] = None
+    custom_subject: str | None = None
+    custom_html: str | None = None
 
 
 class EmailReminderModel(BaseModel):
     wedding_slug: str
     event_type: str
-    custom_subject: Optional[str] = None
-    custom_html: Optional[str] = None
+    custom_subject: str | None = None
+    custom_html: str | None = None
     target_group: str = "all"  # guests, plus-ones, or all
 
 
@@ -109,8 +109,8 @@ async def send_email_invites(
 @router.post("/email/send-invites-with-attachment", tags=["Admin"])
 async def send_email_invites_with_attachment(
     wedding_slug: str = Form(...),
-    custom_subject: Optional[str] = Form(None),
-    custom_html: Optional[str] = Form(None),
+    custom_subject: str | None = Form(None),
+    custom_html: str | None = Form(None),
     attachment: UploadFile = File(...),
     current_user: ExtendedAuthUser = Depends(
         require_communication_capability(CommunicationCapability.RSVP_INVITES)
@@ -141,7 +141,7 @@ async def send_email_invites_with_attachment(
         )
     except Exception as e:
         raise HTTPException(
-            status_code=400, detail=f"Failed to process attachment: {str(e)}"
+            status_code=400, detail=f"Failed to process attachment: {e!s}"
         )
 
     result = await email_service.send_rsvp_invitations(
@@ -198,15 +198,15 @@ class IndividualEmailReminderModel(BaseModel):
     guest_email: str
     guest_name: str
     guest_token: str
-    custom_message: Optional[str] = None
-    custom_subject: Optional[str] = None
+    custom_message: str | None = None
+    custom_subject: str | None = None
 
 
-def _has_custom_individual_message(custom_message: Optional[str]) -> bool:
+def _has_custom_individual_message(custom_message: str | None) -> bool:
     return bool(custom_message and custom_message.strip())
 
 
-def _optional_individual_subject(custom_subject: Optional[str]) -> Optional[str]:
+def _optional_individual_subject(custom_subject: str | None) -> str | None:
     if not custom_subject:
         return None
     trimmed_subject = custom_subject.strip()
@@ -218,8 +218,8 @@ def build_individual_email_reminder_content(
     couple_names: str,
     guest_name: str,
     rsvp_url: str,
-    custom_message: Optional[str] = None,
-    custom_subject: Optional[str] = None,
+    custom_message: str | None = None,
+    custom_subject: str | None = None,
 ) -> tuple[str, str]:
     has_custom_message = _has_custom_individual_message(custom_message)
     subject = _optional_individual_subject(custom_subject) or (
@@ -328,14 +328,14 @@ async def send_individual_email_reminder(
                 {"token": payload.guest_token, "wedding_id": wedding["_id"]}
             )
             if guest and not guest.get("invite_sent"):
-                from datetime import datetime, timezone
+                from datetime import datetime
 
                 await guest_collection.update_one(
                     {"_id": guest["_id"]},
                     {
                         "$set": {
                             "invite_sent": True,
-                            "invite_sent_date": datetime.now(timezone.utc),
+                            "invite_sent_date": datetime.now(UTC),
                         }
                     },
                 )
@@ -359,7 +359,7 @@ async def send_individual_email_reminder(
             }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {e!s}")
 
 
 @router.get("/email/logs", tags=["Admin"])
@@ -367,7 +367,7 @@ async def get_email_logs(
     current_user: ExtendedAuthUser = Depends(
         require_communication_capability(CommunicationCapability.HISTORY)
     ),
-    wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
+    wedding_id: str | None = Query(None, description="Filter by wedding ID"),
     limit: int = Query(100, description="Number of logs to return"),
 ):
     """Get email send logs - filtered by wedding for planners"""

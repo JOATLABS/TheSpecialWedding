@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import base64
 import binascii
-from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import json
 import re
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -38,7 +38,6 @@ from app.services.storefront_domain_service import (
     normalize_custom_hostname,
 )
 from app.utils.planner_ownership import normalize_planner_id
-
 
 _RECEIPT_TTL = timedelta(days=90)
 _REVIEW_REFERENCE_TTL = timedelta(minutes=15)
@@ -64,7 +63,7 @@ class StorefrontDomainOperatorService:
 
     @staticmethod
     def _now() -> datetime:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     def _review_key(self) -> bytes:
         if (
@@ -174,7 +173,7 @@ class StorefrontDomainOperatorService:
                 or not isinstance(decoded[4], int)
             ):
                 raise ValueError("invalid payload")
-            expires_at = datetime.fromtimestamp(decoded[4], tz=timezone.utc)
+            expires_at = datetime.fromtimestamp(decoded[4], tz=UTC)
             if expires_at <= self._now():
                 raise self._error(
                     status.HTTP_409_CONFLICT,
@@ -240,7 +239,7 @@ class StorefrontDomainOperatorService:
     @staticmethod
     def _safe_datetime(value: Any) -> datetime | None:
         if isinstance(value, datetime):
-            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+            return value if value.tzinfo else value.replace(tzinfo=UTC)
         return None
 
     @classmethod
@@ -361,9 +360,7 @@ class StorefrontDomainOperatorService:
                     # not serialized into an unsafe or un-actionable queue item.
                     continue
         combined.sort(
-            key=lambda item: (
-                item.get("updated_at") or datetime.min.replace(tzinfo=timezone.utc)
-            ),
+            key=lambda item: item.get("updated_at") or datetime.min.replace(tzinfo=UTC),
             reverse=True,
         )
         return {
@@ -843,7 +840,7 @@ class StorefrontDomainOperatorService:
             "after_revision": int(receipt.get("after_revision") or before_revision + 1),
             "application_status": application_status,
             "provider_hostname_id": provider_hostname_id,
-            "completed_at": receipt.get("completed_at") or datetime.now(timezone.utc),
+            "completed_at": receipt.get("completed_at") or datetime.now(UTC),
         }
 
     async def approve_o2o_cutover(

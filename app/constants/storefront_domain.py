@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Final
 
-
 # Cloudflare requests use a ten-second HTTP timeout. The wider, immutable
 # two-minute evidence window allows for provider-side completion after a lost
 # response while ensuring an unrelated hostname created later cannot be

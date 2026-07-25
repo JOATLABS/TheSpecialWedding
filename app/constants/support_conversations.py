@@ -1,6 +1,7 @@
 """Canonical kinds and query scopes for records in ``support_tickets``."""
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 CONVERSATION_KIND_FIELD = "conversation_kind"
 PLATFORM_SUPPORT_KIND = "platform_support"

@@ -15,7 +15,7 @@ import asyncio
 import json
 import logging
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.core.database import mongo
 
@@ -82,7 +82,7 @@ async def export_vendors(output_path: str, since_hours: int | None = None):
 
     query = {"source": "scraped"}
     if since_hours:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+        cutoff = datetime.now(UTC) - timedelta(hours=since_hours)
         query["scraped_at"] = {"$gte": cutoff}
 
     try:

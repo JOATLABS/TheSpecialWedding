@@ -11,8 +11,8 @@ This handles wedding-specific notifications for planners:
 These are SEPARATE from platform notifications (root admin announcements).
 """
 
-from datetime import datetime, timezone
-from typing import Final, Literal, Optional
+from datetime import UTC, datetime
+from typing import Final, Literal
 
 from bson import ObjectId
 from pydantic import BaseModel, Field
@@ -21,37 +21,31 @@ from pydantic import BaseModel, Field
 class PlannerNotificationTypes:
     """Notification type constants with Final type annotations for proper Literal inference"""
 
-    FORM_SUBMISSION: Final[Literal["form_submission"]] = "form_submission"
-    RSVP_UPDATE: Final[Literal["rsvp_update"]] = "rsvp_update"
-    GUEST_MESSAGE: Final[Literal["guest_message"]] = "guest_message"
-    PAYMENT_RECEIVED: Final[Literal["payment_received"]] = "payment_received"
-    PAYMENT_FAILED: Final[Literal["payment_failed"]] = "payment_failed"
-    CONTRACT_SIGNED: Final[Literal["contract_signed"]] = "contract_signed"
-    VENDOR_RESPONSE: Final[Literal["vendor_response"]] = "vendor_response"
-    REMINDER: Final[Literal["reminder"]] = "reminder"
-    SYSTEM: Final[Literal["system"]] = "system"
-    SUPPORT_TICKET_RESPONSE: Final[Literal["support_ticket_response"]] = (
-        "support_ticket_response"
-    )
-    DELIVERY_FAILURE: Final[Literal["delivery_failure"]] = "delivery_failure"
-    BULK_SEND_SUMMARY: Final[Literal["bulk_send_summary"]] = "bulk_send_summary"
+    FORM_SUBMISSION: Final = "form_submission"
+    RSVP_UPDATE: Final = "rsvp_update"
+    GUEST_MESSAGE: Final = "guest_message"
+    PAYMENT_RECEIVED: Final = "payment_received"
+    PAYMENT_FAILED: Final = "payment_failed"
+    CONTRACT_SIGNED: Final = "contract_signed"
+    VENDOR_RESPONSE: Final = "vendor_response"
+    REMINDER: Final = "reminder"
+    SYSTEM: Final = "system"
+    SUPPORT_TICKET_RESPONSE: Final = "support_ticket_response"
+    DELIVERY_FAILURE: Final = "delivery_failure"
+    BULK_SEND_SUMMARY: Final = "bulk_send_summary"
     # Sprint 3: Couple portal notification types
-    COUPLE_MESSAGE: Final[Literal["couple_message"]] = "couple_message"
-    COUPLE_NOTE: Final[Literal["couple_note"]] = "couple_note"
+    COUPLE_MESSAGE: Final = "couple_message"
+    COUPLE_NOTE: Final = "couple_note"
     # Two-stage wedding-checklist nudge:
     #   Stage 1 fires when a wedding is created — prompts the planner
     #   to invite the couple to their portal.
     #   Stage 2 fires when the couple finishes setup-password (i.e.
     #   accepts the portal invite) — surfaces an action-button toast
     #   that one-click sends the seeded couple_intake template.
-    WEDDING_CREATED: Final[Literal["wedding_created"]] = "wedding_created"
-    COUPLE_PORTAL_ACCEPTED: Final[Literal["couple_portal_accepted"]] = (
-        "couple_portal_accepted"
-    )
+    WEDDING_CREATED: Final = "wedding_created"
+    COUPLE_PORTAL_ACCEPTED: Final = "couple_portal_accepted"
     # Couple has submitted a new booking request that needs the planner's approval
-    MEETING_BOOKING_REQUEST: Final[Literal["meeting_booking_request"]] = (
-        "meeting_booking_request"
-    )
+    MEETING_BOOKING_REQUEST: Final = "meeting_booking_request"
 
 
 NotificationType = Literal[
@@ -79,16 +73,16 @@ class PlannerNotificationCreate(BaseModel):
     """Model for creating a planner activity notification"""
 
     planner_id: str = Field(..., description="The planner's user ID or email")
-    wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
+    wedding_id: str | None = Field(None, description="Associated wedding ID")
     type: NotificationType = Field(..., description="Notification type")
     title: str = Field(..., min_length=1, max_length=200)
     message: str = Field(..., min_length=1, max_length=1000)
-    metadata: Optional[dict] = Field(
-        default_factory=lambda: {},
+    metadata: dict | None = Field(
+        default_factory=dict,
         description="Additional context (guest name, form type, amount, etc.)",
     )
     priority: Literal["low", "medium", "high"] = Field(default="medium")
-    action_url: Optional[str] = Field(None, description="Deep link to relevant page")
+    action_url: str | None = Field(None, description="Deep link to relevant page")
 
 
 class PlannerNotificationResponse(BaseModel):
@@ -96,17 +90,17 @@ class PlannerNotificationResponse(BaseModel):
 
     id: str
     planner_id: str
-    wedding_id: Optional[str]
-    wedding_name: Optional[str]
+    wedding_id: str | None
+    wedding_name: str | None
     type: NotificationType
     title: str
     message: str
     metadata: dict
     priority: str
-    action_url: Optional[str]
+    action_url: str | None
     is_read: bool
     created_at: datetime
-    read_at: Optional[datetime]
+    read_at: datetime | None
 
     class Config:
         from_attributes = True
@@ -117,10 +111,10 @@ def create_notification_document(
     notification_type: NotificationType,
     title: str,
     message: str,
-    wedding_id: Optional[str] = None,
-    metadata: Optional[dict] = None,
+    wedding_id: str | None = None,
+    metadata: dict | None = None,
     priority: str = "medium",
-    action_url: Optional[str] = None,
+    action_url: str | None = None,
 ) -> dict:
     """
     Create a notification document for MongoDB insertion.
@@ -146,6 +140,6 @@ def create_notification_document(
         "priority": priority,
         "action_url": action_url,
         "is_read": False,
-        "created_at": datetime.now(timezone.utc),
+        "created_at": datetime.now(UTC),
         "read_at": None,
     }

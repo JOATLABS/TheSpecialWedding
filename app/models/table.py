@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -32,11 +32,11 @@ class TableModel(BaseModel):
 
 
 class UpdateTableRequest(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=50)
-    shape: Optional[TableShape] = None
-    capacity: Optional[int] = Field(None, ge=1, le=50)
-    x: Optional[float] = None
-    y: Optional[float] = None
+    name: str | None = Field(None, min_length=1, max_length=50)
+    shape: TableShape | None = None
+    capacity: int | None = Field(None, ge=1, le=50)
+    x: float | None = None
+    y: float | None = None
 
 
 class AssignGuestsRequest(BaseModel):
@@ -65,17 +65,17 @@ class SeatingLayoutFixture(BaseModel):
     y: float = Field(..., ge=0, le=5000)
     width: float = Field(default=180, ge=24, le=2000)
     height: float = Field(default=120, ge=24, le=2000)
-    rotation: Optional[float] = Field(default=0, ge=-360, le=360)
+    rotation: float | None = Field(default=0, ge=-360, le=360)
 
 
 class SeatingLayoutRequest(BaseModel):
     canvas_width: float = Field(default=1600, ge=600, le=5000)
     canvas_height: float = Field(default=1000, ge=400, le=5000)
     outline: list[SeatingLayoutPoint] = Field(default_factory=list, max_length=80)
-    background_image_data_url: Optional[str] = Field(default=None, max_length=1_800_000)
-    background_image_name: Optional[str] = Field(default=None, max_length=160)
+    background_image_data_url: str | None = Field(default=None, max_length=1_800_000)
+    background_image_name: str | None = Field(default=None, max_length=160)
     background_locked: bool = True
-    scale_pixels: Optional[float] = Field(default=None, ge=1, le=5000)
-    scale_distance: Optional[float] = Field(default=None, ge=0.1, le=10000)
+    scale_pixels: float | None = Field(default=None, ge=1, le=5000)
+    scale_distance: float | None = Field(default=None, ge=0.1, le=10000)
     scale_unit: Literal["ft", "m"] = "ft"
     fixtures: list[SeatingLayoutFixture] = Field(default_factory=list, max_length=80)

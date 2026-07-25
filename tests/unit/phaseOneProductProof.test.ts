@@ -66,7 +66,7 @@ describe('Phase 1 product-proof marketing composition', () => {
 
     assert.match(page, /PhaseOneHeroProof/);
     assert.doesNotMatch(page, /StackStage/);
-    assert.match(page, /built specifically for wedding\s+planners/i);
+    assert.match(page, /One workspace\. Every wedding you run\./);
     assert.match(hero, /ProductProofWindow/);
     assert.doesNotMatch(hero, /<Image/);
   });

@@ -1,9 +1,9 @@
 import logging
 import re
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from math import ceil
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import HTTPException
 
@@ -52,7 +52,7 @@ class GuestService:
             logger.debug(f"Invalidated seating cache for wedding {wedding_id}")
         except Exception as e:
             # Cache invalidation failures should not break main operations
-            logger.warning(f"Failed to invalidate guest cache: {str(e)}")
+            logger.warning(f"Failed to invalidate guest cache: {e!s}")
 
     async def get_guest_by_token(self, token: str, wedding_id: str):
         try:
@@ -66,7 +66,7 @@ class GuestService:
             return guest
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail="Error retrieving guest: {}".format(str(e))
+                status_code=500, detail=f"Error retrieving guest: {e!s}"
             )
 
     async def get_guest(self, guest_id: str):
@@ -82,9 +82,9 @@ class GuestService:
 
     async def update_guest_timestamps(self, guest_id, created=False):
         """Update guest timestamps"""
-        update_data = {"updated_at": datetime.now(timezone.utc)}
+        update_data = {"updated_at": datetime.now(UTC)}
         if created:
-            update_data["created_at"] = datetime.now(timezone.utc)
+            update_data["created_at"] = datetime.now(UTC)
 
         obj_id = to_object_id(guest_id, "guest_id")
         await self.collection.update_one({"_id": obj_id}, {"$set": update_data})
@@ -92,13 +92,13 @@ class GuestService:
     def _build_guest_match(
         self,
         wedding_id: str,
-        name: Optional[str] = None,
-        email: Optional[str] = None,
-        phone: Optional[str] = None,
-        group_id: Optional[str] = None,
-        role: Optional[str] = None,
-        phone_issue: Optional[str] = None,
-        sms_status: Optional[str] = None,
+        name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+        group_id: str | None = None,
+        role: str | None = None,
+        phone_issue: str | None = None,
+        sms_status: str | None = None,
     ) -> dict[str, Any]:
         match: dict[str, Any] = {"wedding_id": wedding_id}
         and_clauses: list[dict[str, Any]] = []
@@ -359,11 +359,11 @@ class GuestService:
         page: int = 1,
         limit: int = 50,
         fetch_all: bool = False,
-        name: Optional[str] = None,
-        email: Optional[str] = None,
-        phone: Optional[str] = None,
-        group_id: Optional[str] = None,
-        role: Optional[str] = None,
+        name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+        group_id: str | None = None,
+        role: str | None = None,
         rsvp_status: str = "all",
         plus_one_status: str = "all",
         phone_issue: str = "all",
@@ -611,7 +611,7 @@ class GuestService:
             }
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving guests: {str(e)}"
+                status_code=500, detail=f"Error retrieving guests: {e!s}"
             )
 
     async def list_all_guests_by_wedding(self, wedding_id: str):
@@ -635,7 +635,7 @@ class GuestService:
             return guests
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving guests: {str(e)}"
+                status_code=500, detail=f"Error retrieving guests: {e!s}"
             )
 
     async def update_guest(self, guest_id: str, update_data: dict):
@@ -647,7 +647,7 @@ class GuestService:
             update_data.pop("wedding_id", None)  # Don't allow wedding changes
 
             # Add timestamp
-            update_data["updated_at"] = datetime.now(timezone.utc)
+            update_data["updated_at"] = datetime.now(UTC)
 
             obj_id = to_object_id(guest_id, "guest_id")
             result = await self.collection.update_one(
@@ -670,9 +670,7 @@ class GuestService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error updating guest: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Error updating guest: {e!s}")
 
     async def delete_guest(self, guest_id: str):
         try:
@@ -737,15 +735,13 @@ class GuestService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error deleting guest: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Error deleting guest: {e!s}")
 
     async def get_guest_by_phone_or_name(
         self,
-        phone: Optional[str] = None,
-        name: Optional[str] = None,
-        wedding_id: Optional[str] = None,
+        phone: str | None = None,
+        name: str | None = None,
+        wedding_id: str | None = None,
     ):
         """
         Search for a guest by phone or name, optionally filtered by wedding_id.
@@ -784,7 +780,7 @@ class GuestService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail="Error retrieving guest: {}".format(str(e))
+                status_code=500, detail=f"Error retrieving guest: {e!s}"
             )
 
     async def create_guest(self, guest_data, wedding_id: str):
@@ -825,8 +821,8 @@ class GuestService:
                 "plus_one_submitted": False,
                 "sms_opt_in": True,  # Default to opted-in, guest can opt-out later
                 "email_opt_in": True,  # Default to opted-in, guest can opt-out later
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
             }
 
             result = await self.collection.insert_one(doc)
@@ -840,6 +836,4 @@ class GuestService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error creating guest: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Error creating guest: {e!s}")

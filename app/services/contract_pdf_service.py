@@ -6,8 +6,8 @@ Uploads to cloud storage (R2/S3) and returns the document URL.
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from app.core.database import mongo
 from app.core.settings import settings
@@ -29,7 +29,7 @@ class ContractPDFService:
         self._s3_client = None
 
     @staticmethod
-    def _resolve_couple_display(couple: Dict[str, Any]) -> str:
+    def _resolve_couple_display(couple: dict[str, Any]) -> str:
         primary = (couple.get("partner1_name") or couple.get("name") or "").strip()
         secondary = (
             couple.get("partner2_name") or couple.get("partner_name") or ""
@@ -52,11 +52,11 @@ class ContractPDFService:
                     region_name="auto",
                 )
             except Exception as e:
-                logger.error(f"Failed to create S3 client: {str(e)}")
+                logger.error(f"Failed to create S3 client: {e!s}")
                 raise
         return self._s3_client
 
-    def _generate_html(self, contract: Dict) -> str:
+    def _generate_html(self, contract: dict) -> str:
         """Generate HTML content for the contract PDF."""
         package = contract.get("package_snapshot", {})
         couple = contract.get("couple", {})
@@ -386,7 +386,7 @@ class ContractPDFService:
             <div class="footer">
                 <p>This document was digitally signed and is legally binding.</p>
                 <p>Contract ID: {contract.get("id", "N/A")} | Generated: {
-            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
         }</p>
             </div>
         </body>
@@ -395,7 +395,7 @@ class ContractPDFService:
 
         return html
 
-    async def generate_pdf(self, contract_id: str) -> Optional[str]:
+    async def generate_pdf(self, contract_id: str) -> str | None:
         """
         Generate PDF for a signed contract and upload to storage.
 
@@ -432,7 +432,7 @@ class ContractPDFService:
             pdf_bytes = HTML(string=html_content).write_pdf()
 
             # Upload to S3/R2
-            filename = f"contracts/{contract_id}/{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_signed.pdf"
+            filename = f"contracts/{contract_id}/{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}_signed.pdf"
 
             s3 = self._get_s3_client()
             s3.put_object(
@@ -456,7 +456,7 @@ class ContractPDFService:
                 {
                     "$set": {
                         "document_url": document_url,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -487,7 +487,7 @@ class ContractPDFService:
                     html_content = self._generate_html(contract_data)
                     html_bytes = html_content.encode("utf-8")
 
-                    filename = f"contracts/{contract_id}/{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_signed.html"
+                    filename = f"contracts/{contract_id}/{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}_signed.html"
                     s3 = self._get_s3_client()
                     s3.put_object(
                         Bucket=settings.s3_bucket_name,
@@ -506,7 +506,7 @@ class ContractPDFService:
                         {
                             "$set": {
                                 "document_url": document_url,
-                                "updated_at": datetime.now(timezone.utc),
+                                "updated_at": datetime.now(UTC),
                             }
                         },
                     )
@@ -516,11 +516,11 @@ class ContractPDFService:
                     return document_url
             except Exception as fallback_err:
                 logger.error(
-                    f"HTML fallback also failed for contract {contract_id}: {str(fallback_err)}"
+                    f"HTML fallback also failed for contract {contract_id}: {fallback_err!s}"
                 )
             return None
         except Exception as e:
-            logger.error(f"Failed to generate PDF for contract {contract_id}: {str(e)}")
+            logger.error(f"Failed to generate PDF for contract {contract_id}: {e!s}")
             return None
 
 

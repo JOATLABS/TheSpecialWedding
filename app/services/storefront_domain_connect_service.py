@@ -4,21 +4,22 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from datetime import datetime, timedelta, timezone
 import hashlib
 import ipaddress
 import json
 import secrets
 import socket
-from typing import Any, Callable, Protocol
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from typing import Any, Protocol
 from urllib.parse import quote, urlencode, urljoin, urlsplit, urlunsplit
 from uuid import uuid4
 
+import httpx
+import idna
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from fastapi import HTTPException, status
-import httpx
-import idna
 
 from app.constants.roles import is_wedding_planner_role
 from app.constants.storefront_domain import (
@@ -34,18 +35,17 @@ from app.services.storefront_dns_service import (
     StorefrontDnsResolver,
     storefront_dns_resolver,
 )
+from app.services.storefront_domain_rollout import StorefrontDomainRolloutPolicy
+from app.services.storefront_domain_service import (
+    require_storefront_domain_mutation_allowed,
+    storefront_domain_mutation_cas_filter,
+)
 from app.services.storefront_entitlement_service import (
     StorefrontEntitlementResolutionError,
     StorefrontEntitlementService,
     storefront_entitlement_service,
 )
-from app.services.storefront_domain_service import (
-    require_storefront_domain_mutation_allowed,
-    storefront_domain_mutation_cas_filter,
-)
-from app.services.storefront_domain_rollout import StorefrontDomainRolloutPolicy
 from app.utils.planner_ownership import normalize_planner_id
-
 
 _FLOW_TTL = timedelta(minutes=20)
 _MAX_DISCOVERY_REDIRECTS = 3
@@ -311,7 +311,7 @@ class DomainConnectDiscovery:
                     hostname=safe_hostname,
                     addresses=[address.compressed for address in parsed_addresses],
                 )
-            except (httpx.RequestError, asyncio.TimeoutError) as exc:
+            except (TimeoutError, httpx.RequestError) as exc:
                 raise DomainConnectDiscoveryError(
                     "domain_connect_request_failed",
                     "The DNS provider discovery request could not be completed.",
@@ -509,7 +509,7 @@ class StorefrontDomainConnectService:
         self._readiness = readiness_resolver or get_storefront_domain_readiness
         self._claim_token_reader = claim_token_reader
         self._record_serializer = record_serializer
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
         self._rollout_policy = (
             rollout_policy or StorefrontDomainRolloutPolicy.from_settings()
         )
@@ -972,7 +972,7 @@ class StorefrontDomainConnectService:
     def _aware(value: object) -> datetime | None:
         if not isinstance(value, datetime):
             return None
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
 
     async def record_callback(
         self,

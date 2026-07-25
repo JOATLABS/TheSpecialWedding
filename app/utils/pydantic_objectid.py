@@ -3,7 +3,7 @@ Pydantic v2 compatible ObjectId implementation for MongoDB integration.
 This replaces the deprecated v1 style validators with modern core schema approach.
 """
 
-from typing import Any, Dict
+from typing import Any
 
 from bson import ObjectId
 from pydantic import GetCoreSchemaHandler
@@ -72,8 +72,8 @@ class PyObjectId(ObjectId):
 
     @classmethod
     def __get_pydantic_json_schema__(
-        cls, field_schema: Dict[str, Any], handler
-    ) -> Dict[str, Any]:
+        cls, field_schema: dict[str, Any], handler
+    ) -> dict[str, Any]:
         """
         Generate JSON schema for OpenAPI documentation.
         This replaces the deprecated __modify_schema__ method from v1.
@@ -104,14 +104,14 @@ class PyObjectId(ObjectId):
 
     def __repr__(self) -> str:
         """Developer-friendly representation."""
-        return f"PyObjectId('{str(self)}')"
+        return f"PyObjectId('{self!s}')"
 
     @property
     def hex_string(self) -> str:
         """Get the hexadecimal string representation."""
         return str(self)
 
-    def to_dict(self) -> Dict[str, str]:
+    def to_dict(self) -> dict[str, str]:
         """Convert to dictionary for serialization."""
         return {"$oid": str(self)}
 

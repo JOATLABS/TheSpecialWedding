@@ -58,7 +58,7 @@ class StorefrontDomainRolloutPolicy:
         mode: object = "allowlist",
         hostnames: Iterable[object] = (),
         owner_ids: Iterable[object] = (),
-    ) -> "StorefrontDomainRolloutPolicy":
+    ) -> StorefrontDomainRolloutPolicy:
         normalized_mode = str(mode or "allowlist").strip().lower()
         if normalized_mode not in {"allowlist", "general"}:
             normalized_mode = "allowlist"
@@ -77,7 +77,7 @@ class StorefrontDomainRolloutPolicy:
         )
 
     @classmethod
-    def from_settings(cls) -> "StorefrontDomainRolloutPolicy":
+    def from_settings(cls) -> StorefrontDomainRolloutPolicy:
         return cls.build(
             mode=getattr(
                 settings, "storefront_custom_domain_rollout_mode", "allowlist"

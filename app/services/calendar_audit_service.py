@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from app.services.activity_log_service import activity_log_service
 
@@ -15,11 +15,11 @@ class CalendarAuditService:
         *,
         action: str,
         message: str,
-        owner_planner_email: Optional[str],
-        actor_email: Optional[str],
-        actor_role: Optional[str] = None,
-        wedding_id: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        owner_planner_email: str | None,
+        actor_email: str | None,
+        actor_role: str | None = None,
+        wedding_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         await activity_log_service.log_activity(
             activity_type=action,

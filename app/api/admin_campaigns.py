@@ -14,7 +14,7 @@ Routes: /admin/ads/campaigns/*  (campaign monitor & review)
 """
 
 import logging
-from typing import Optional
+from datetime import UTC
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
@@ -63,7 +63,7 @@ def get_ad_billing_service():
 
 @router.get("/review")
 async def get_review_queue(
-    status: Optional[str] = Query(
+    status: str | None = Query(
         None, description="Filter by status (default: pending_review)"
     ),
     limit: int = Query(50, ge=1, le=100),
@@ -218,8 +218,8 @@ async def reject_creative(
 
 @router.get("/")
 async def list_all_campaigns(
-    status: Optional[str] = Query(None, description="Filter by campaign status"),
-    vendor_id: Optional[str] = Query(None, description="Filter by vendor"),
+    status: str | None = Query(None, description="Filter by campaign status"),
+    vendor_id: str | None = Query(None, description="Filter by vendor"),
     limit: int = Query(50, ge=1, le=100),
     skip: int = Query(0, ge=0),
     service: AdminCampaignService = Depends(get_admin_campaign_service),
@@ -242,7 +242,7 @@ async def list_all_campaigns(
 @router.put("/{campaign_id}/pause")
 async def admin_pause_campaign(
     campaign_id: str,
-    reason: Optional[str] = Body(None, embed=True),
+    reason: str | None = Body(None, embed=True),
     service: AdminCampaignService = Depends(get_admin_campaign_service),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
@@ -261,7 +261,7 @@ async def admin_pause_campaign(
 @router.put("/{campaign_id}/deactivate")
 async def admin_deactivate_campaign(
     campaign_id: str,
-    reason: Optional[str] = Body(None, embed=True),
+    reason: str | None = Body(None, embed=True),
     service: AdminCampaignService = Depends(get_admin_campaign_service),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
@@ -323,7 +323,7 @@ async def get_planner_feedback(
 
 @router.get("/fraud-signals")
 async def get_fraud_signals(
-    status: Optional[str] = Query(None, description="Filter by signal status"),
+    status: str | None = Query(None, description="Filter by signal status"),
     limit: int = Query(50, ge=1, le=100),
     skip: int = Query(0, ge=0),
     service: AdminCampaignService = Depends(get_admin_campaign_service),
@@ -337,7 +337,7 @@ async def get_fraud_signals(
 async def update_fraud_signal(
     signal_id: str,
     status: str = Body(..., embed=True),
-    notes: Optional[str] = Body(None, embed=True),
+    notes: str | None = Body(None, embed=True),
     service: AdminCampaignService = Depends(get_admin_campaign_service),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
@@ -382,16 +382,14 @@ async def bulk_create_vendors(
 
 @router.get("/vendors")
 async def list_vendor_accounts(
-    status: Optional[str] = Query(None, description="Filter by account status"),
-    category: Optional[str] = Query(None, description="Filter by vendor category"),
-    location: Optional[str] = Query(None, description="Text search on vendor location"),
-    date_from: Optional[str] = Query(
+    status: str | None = Query(None, description="Filter by account status"),
+    category: str | None = Query(None, description="Filter by vendor category"),
+    location: str | None = Query(None, description="Text search on vendor location"),
+    date_from: str | None = Query(
         None, description="Filter created_at >= this ISO date"
     ),
-    date_to: Optional[str] = Query(
-        None, description="Filter created_at <= this ISO date"
-    ),
-    search: Optional[str] = Query(
+    date_to: str | None = Query(None, description="Filter created_at <= this ISO date"),
+    search: str | None = Query(
         None, description="Text search on email or business_name"
     ),
     sort_by: str = Query("created_at", description="Sort field"),
@@ -423,20 +421,20 @@ async def list_vendor_accounts(
 
 @router.get("/events/query")
 async def query_events(
-    event_types: Optional[str] = Query(
+    event_types: str | None = Query(
         None, description="Comma-separated event types to filter"
     ),
-    campaign_id: Optional[str] = Query(None, description="Filter by campaign ID"),
-    vendor_id: Optional[str] = Query(None, description="Filter by vendor ID"),
-    planner_id: Optional[str] = Query(None, description="Filter by planner ID"),
-    session_id: Optional[str] = Query(None, description="Filter by session ID"),
-    date_from: Optional[str] = Query(None, description="Filter created_at >= ISO date"),
-    date_to: Optional[str] = Query(None, description="Filter created_at <= ISO date"),
+    campaign_id: str | None = Query(None, description="Filter by campaign ID"),
+    vendor_id: str | None = Query(None, description="Filter by vendor ID"),
+    planner_id: str | None = Query(None, description="Filter by planner ID"),
+    session_id: str | None = Query(None, description="Filter by session ID"),
+    date_from: str | None = Query(None, description="Filter created_at >= ISO date"),
+    date_to: str | None = Query(None, description="Filter created_at <= ISO date"),
     sort_by: str = Query("created_at", description="Sort field"),
     sort_order: int = Query(-1, description="-1 desc, 1 asc"),
     limit: int = Query(100, ge=1, le=1000),
     skip: int = Query(0, ge=0),
-    aggregate_by: Optional[str] = Query(
+    aggregate_by: str | None = Query(
         None,
         description="Group by field: event_type, campaign_id, vendor_id, planner_id, placement",
     ),
@@ -598,9 +596,9 @@ async def update_campaign_cpl_pricing(
     if not updates:
         raise HTTPException(status_code=400, detail="No pricing fields provided")
 
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    updates["updated_at"] = datetime.now(timezone.utc)
+    updates["updated_at"] = datetime.now(UTC)
 
     result = await service.campaigns.update_one(
         {"_id": ObjectId(campaign_id)},

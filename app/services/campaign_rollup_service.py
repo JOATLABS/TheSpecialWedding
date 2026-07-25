@@ -21,15 +21,15 @@ PRD Reference: Section 3.5 (Updated Rollup Service)
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from bson import ObjectId
 
 logger = logging.getLogger(__name__)
 
 
-def _serialize(doc: Dict[str, Any]) -> Dict[str, Any]:
+def _serialize(doc: dict[str, Any]) -> dict[str, Any]:
     """Convert ObjectId _id to string for JSON serialization."""
     if doc and "_id" in doc and isinstance(doc["_id"], ObjectId):
         doc["_id"] = str(doc["_id"])
@@ -55,7 +55,7 @@ class CampaignRollupService:
 
     async def compute_campaign_rollup(
         self,
-        target_date: Optional[datetime] = None,
+        target_date: datetime | None = None,
     ) -> int:
         """
         Compute daily rollup per campaign from ad_events with campaign_id.
@@ -165,7 +165,7 @@ class CampaignRollupService:
             },
         ]
 
-        campaign_rollups: Dict[str, Dict[str, Any]] = {}
+        campaign_rollups: dict[str, dict[str, Any]] = {}
 
         async for doc in self.ad_events.aggregate(events_pipeline):
             campaign_id = doc["_id"]
@@ -206,8 +206,8 @@ class CampaignRollupService:
                 "spend": 0.0,  # Free tier
                 "leads_by_type": {},
                 "leads_by_status": {},
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
             }
 
         # ── Enrich with vendor_id from campaigns collection ──
@@ -321,7 +321,7 @@ class CampaignRollupService:
 
     async def compute_placement_rollup(
         self,
-        target_date: Optional[datetime] = None,
+        target_date: datetime | None = None,
     ) -> int:
         """
         Compute daily rollup per placement type from ad_events with campaign_id.
@@ -389,8 +389,8 @@ class CampaignRollupService:
                 "ctr": round(clicks / impressions * 100, 2) if impressions > 0 else 0.0,
                 "unique_planners": len(unique_planners),
                 "unique_campaigns": len(unique_campaigns),
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
             }
 
             await self.placement_day_stats.update_one(
@@ -411,8 +411,8 @@ class CampaignRollupService:
 
     async def compute_daily_rollup(
         self,
-        target_date: Optional[datetime] = None,
-    ) -> Dict[str, int]:
+        target_date: datetime | None = None,
+    ) -> dict[str, int]:
         """
         Run both campaign and placement rollups for a date.
 
@@ -429,13 +429,13 @@ class CampaignRollupService:
             "placement_stats": placement_count,
         }
 
-    async def backfill_rollups(self, days_back: int = 90) -> Dict[str, int]:
+    async def backfill_rollups(self, days_back: int = 90) -> dict[str, int]:
         """
         Backfill rollups for the last N days.
 
         Useful for initial setup or recovering from missed cron runs.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         total_campaigns = 0
         total_placements = 0
 
@@ -464,7 +464,7 @@ class CampaignRollupService:
         self,
         campaign_id: str,
         days: int = 30,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get daily stats for a specific campaign."""
         period_start = self._get_period_start(days)
 
@@ -478,12 +478,12 @@ class CampaignRollupService:
     async def get_placement_daily_stats(
         self,
         days: int = 30,
-        placement: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        placement: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Get daily stats per placement type."""
         period_start = self._get_period_start(days)
 
-        query: Dict[str, Any] = {"date": {"$gte": period_start}}
+        query: dict[str, Any] = {"date": {"$gte": period_start}}
         if placement:
             query["placement"] = placement
 
@@ -498,11 +498,11 @@ class CampaignRollupService:
 
     def _get_day_boundaries(
         self,
-        target_date: Optional[datetime] = None,
+        target_date: datetime | None = None,
     ) -> tuple:
         """Get UTC midnight boundaries for a date."""
         if target_date is None:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             target_date = (now - timedelta(days=1)).replace(
                 hour=0, minute=0, second=0, microsecond=0
             )
@@ -512,20 +512,20 @@ class CampaignRollupService:
                 minute=0,
                 second=0,
                 microsecond=0,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             )
 
         return target_date, target_date + timedelta(days=1)
 
     def _get_period_start(self, days: int) -> datetime:
         """Get the start of a lookback period."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return (now - timedelta(days=days)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
 
     @staticmethod
-    def _build_hourly_array(raw_hours: list) -> List[int]:
+    def _build_hourly_array(raw_hours: list) -> list[int]:
         """Convert a list of hour values into a 24-element array."""
         hourly = [0] * 24
         for hour in raw_hours:
