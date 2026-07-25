@@ -211,7 +211,7 @@ async def test_get_tickets_selects_platform_support_and_limits_to_active_statuse
             "priority": "medium",
             "status": "open",
             "created_at": support_service_module.datetime.now(
-                support_service_module.timezone.utc
+                support_service_module.UTC
             ),
             "created_by": "planner@example.com",
             "comments": [],
@@ -252,10 +252,10 @@ async def test_planner_ticket_list_hides_internal_comments_and_reports_unread() 
             "priority": "medium",
             "status": "open",
             "created_at": support_service_module.datetime.now(
-                support_service_module.timezone.utc
+                support_service_module.UTC
             ),
             "updated_at": support_service_module.datetime.now(
-                support_service_module.timezone.utc
+                support_service_module.UTC
             ),
             "created_by": "planner@example.com",
             "comments": [
