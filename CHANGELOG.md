@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-25 — Custom-domain focus moves are ordered after render, not raced against it
+
+- Fixed a real accessibility defect behind an intermittent CI failure in `storefrontDomainJourney` ("closes the confirmation and focuses a visible error when disconnect fails"). Both focus moves in `CustomDomainManager` were scheduled with `window.setTimeout(..., 0)` from an async handler, but each target is mounted by the very render that handler triggers — the error notice only exists once `error` is set, and the disconnect trigger only once the confirmation closes. When the timer won the race the ref was still `null`, `?.focus()` silently no-opped, and focus was dropped **permanently**: the dialog had just unmounted, so keyboard and screen-reader users were left on `<body>` with no announcement that the disconnect had failed.
+- Replaced both timers with a single `pendingFocus` request handled in an effect. Effects run after commit, so the ref is populated by construction and the outcome no longer depends on scheduler ordering or machine load. This supersedes the 2026-07-21 change that merely tracked the disconnect timer for cleanup on unmount — the timers are gone rather than better-managed, and the unmount cleanup shrinks accordingly.
+- The failure was load-dependent, which is why it reproduced only in CI (9.2s for a test that runs in ~0.5s standalone) and passed 4-of-4 locally in isolation both before and after. The fix is justified by the ordering argument, not by a reproduction: the full 36-test domain-journey suite and the 27 storefront admin/consumer contract tests pass, and the component is untouched by the rest of this branch.
+
 ## 2026-07-25 — Adopted ruff 0.16's expanded rule set and pinned the rule surface in config
 
 - Backend lint began failing repo-wide with 7777 errors on a frontend-only PR. Root cause reproduced exactly: CI installs ruff unpinned (`pip install ruff`), ruff 0.16.0 shipped a much larger default rule set, and the repository had **no ruff config at all**, so every release could silently re-lint the codebase. `ruff check app/` returns "All checks passed" on 0.15.8 and 7777 errors on 0.16.0 against identical code; backend lint had passed on `main` three days earlier.

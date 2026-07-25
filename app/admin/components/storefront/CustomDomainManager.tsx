@@ -768,8 +768,9 @@ export function CustomDomainPanel({
   const observationPollTimerRef = useRef<number | null>(null);
   const observationPollResolveRef = useRef<(() => void) | null>(null);
   const automaticSupportCheckRef = useRef(0);
-  const errorFocusTimerRef = useRef<number | null>(null);
-  const disconnectFocusTimerRef = useRef<number | null>(null);
+  const [pendingFocus, setPendingFocus] = useState<
+    "error-notice" | "disconnect-trigger" | null
+  >(null);
 
   const setCaughtError = useCallback((caught: unknown, fallback: string) => {
     setError(normalizeStorefrontError(caught, fallback));
@@ -897,18 +898,28 @@ export function CustomDomainPanel({
     if (disconnectOpen) keepDomainRef.current?.focus();
   }, [disconnectOpen]);
 
+  // Both focus targets below are mounted by the very render that requests the
+  // move: the error notice appears only once `error` is set, and the disconnect
+  // trigger only once the confirmation closes. Scheduling the focus on a timer
+  // races that commit — when the timer wins, the ref is still null, the
+  // optional chain silently no-ops, and focus is dropped for good, stranding
+  // keyboard and screen-reader users on <body> with no word that the request
+  // failed. Running it as an effect keyed on the request is ordered after the
+  // commit by construction, so the ref is always populated.
+  useEffect(() => {
+    if (!pendingFocus) return;
+    const target =
+      pendingFocus === "error-notice"
+        ? errorNoticeRef.current
+        : disconnectTriggerRef.current;
+    target?.focus();
+    setPendingFocus(null);
+  }, [pendingFocus]);
+
   useEffect(
     () => () => {
       observationPollRef.current += 1;
       cancelObservationPoll();
-      if (errorFocusTimerRef.current !== null) {
-        window.clearTimeout(errorFocusTimerRef.current);
-        errorFocusTimerRef.current = null;
-      }
-      if (disconnectFocusTimerRef.current !== null) {
-        window.clearTimeout(disconnectFocusTimerRef.current);
-        disconnectFocusTimerRef.current = null;
-      }
     },
     [cancelObservationPoll],
   );
@@ -958,13 +969,7 @@ export function CustomDomainPanel({
 
   const closeDisconnectConfirmation = () => {
     setDisconnectOpen(false);
-    if (disconnectFocusTimerRef.current !== null) {
-      window.clearTimeout(disconnectFocusTimerRef.current);
-    }
-    disconnectFocusTimerRef.current = window.setTimeout(() => {
-      disconnectFocusTimerRef.current = null;
-      disconnectTriggerRef.current?.focus();
-    }, 0);
+    setPendingFocus("disconnect-trigger");
   };
 
   const copyValue = useCallback(async (label: string, value: string) => {
@@ -1316,10 +1321,7 @@ export function CustomDomainPanel({
         // Preserve the actionable disconnect error. The explicit retry affordance
         // remains available for both status and instruction-link observation.
       }
-      errorFocusTimerRef.current = window.setTimeout(() => {
-        errorFocusTimerRef.current = null;
-        errorNoticeRef.current?.focus();
-      }, 0);
+      setPendingFocus("error-notice");
     } finally {
       setSubmitting(false);
     }
