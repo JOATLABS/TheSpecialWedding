@@ -7,7 +7,7 @@ Used by:
 - GET /planner/weddings
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -91,7 +91,7 @@ class ActivityItemModel(BaseModel):
     type: str = "info"
     message: str = ""
     timestamp: str = ""
-    wedding_id: Optional[str] = None
+    wedding_id: str | None = None
     metadata: dict = Field(default_factory=dict)
 
 
@@ -99,15 +99,15 @@ class PlannerMetricsResponse(BaseModel):
     """Response model for GET /planner/metrics."""
 
     summary: MetricsSummaryModel = Field(default_factory=MetricsSummaryModel)
-    weddings: List[WeddingMetricsModel] = Field(default_factory=list)
-    recent_activity: List[ActivityItemModel] = Field(default_factory=list)
+    weddings: list[WeddingMetricsModel] = Field(default_factory=list)
+    recent_activity: list[ActivityItemModel] = Field(default_factory=list)
     revenue_metrics: RevenueMetricsModel = Field(default_factory=RevenueMetricsModel)
 
 
 class ActivityLogResponse(BaseModel):
     """Response model for GET /planner/activity-log."""
 
-    activities: List[ActivityItemModel] = Field(default_factory=list)
+    activities: list[ActivityItemModel] = Field(default_factory=list)
     total: int = 0
     page: int = Field(default=1, ge=1, description="Current page number")
     limit: int = Field(default=50, ge=1, le=200, description="Number of items per page")
@@ -121,22 +121,22 @@ class PlannerWeddingModel(BaseModel):
     couple_names: str = ""
     date: str = ""
     slug: str = ""
-    assigned_planner_email: Optional[str] = None
-    assigned_planner_id: Optional[str] = None
+    assigned_planner_email: str | None = None
+    assigned_planner_id: str | None = None
     status: str = "active"
-    venue: Optional[str] = None
+    venue: str | None = None
     guest_count: int = 0
     created_at: str = ""
     updated_at: str = ""
-    events: List[Any] = Field(default_factory=list)
-    privacy_settings: Optional[PrivacySettingsModel] = None
-    rsvp_config: Optional[Dict[str, Any]] = None
-    theme_config: Optional[Dict[str, Any]] = None
-    registries: List[Any] = Field(default_factory=list)
-    faqs: List[Any] = Field(default_factory=list)
-    our_story: Optional[Dict[str, Any]] = None
-    wedding_party: List[Any] = Field(default_factory=list)
-    featured_image: Optional[str] = Field(
+    events: list[Any] = Field(default_factory=list)
+    privacy_settings: PrivacySettingsModel | None = None
+    rsvp_config: dict[str, Any] | None = None
+    theme_config: dict[str, Any] | None = None
+    registries: list[Any] = Field(default_factory=list)
+    faqs: list[Any] = Field(default_factory=list)
+    our_story: dict[str, Any] | None = None
+    wedding_party: list[Any] = Field(default_factory=list)
+    featured_image: str | None = Field(
         None, description="S3 key for the featured background image"
     )
 

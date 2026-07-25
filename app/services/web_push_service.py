@@ -11,8 +11,8 @@ No external apps required.
 import json
 import logging
 import os
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from app.core.database import mongo
 
@@ -42,11 +42,11 @@ class WebPushService:
         else:
             logger.info("Web Push notifications enabled")
 
-    def get_public_key(self) -> Optional[str]:
+    def get_public_key(self) -> str | None:
         """Get the VAPID public key for client subscription"""
         return self.vapid_public_key
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """
         Check Web Push service health.
         Used by platform monitoring dashboard.
@@ -60,7 +60,7 @@ class WebPushService:
             "vapid_email": self.vapid_email,
             "error": None,
             "total_subscriptions": 0,
-            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "checked_at": datetime.now(UTC).isoformat(),
         }
 
         if not self.enabled:
@@ -77,15 +77,15 @@ class WebPushService:
 
         except Exception as e:
             result["status"] = "error"
-            result["error"] = f"Database check failed: {str(e)}"
+            result["error"] = f"Database check failed: {e!s}"
 
         return result
 
     async def save_subscription(
         self,
         user_id: str,
-        subscription: Dict[str, Any],
-        user_agent: Optional[str] = None,
+        subscription: dict[str, Any],
+        user_agent: str | None = None,
     ) -> bool:
         """
         Save a push subscription for a user.
@@ -108,10 +108,10 @@ class WebPushService:
                         "user_id": user_id,
                         "subscription": subscription,
                         "user_agent": user_agent,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     },
                     "$setOnInsert": {
-                        "created_at": datetime.now(timezone.utc),
+                        "created_at": datetime.now(UTC),
                     },
                 },
                 upsert=True,
@@ -125,7 +125,7 @@ class WebPushService:
             return False
 
     async def remove_subscription(
-        self, endpoint: str, user_id: Optional[str] = None
+        self, endpoint: str, user_id: str | None = None
     ) -> bool:
         """Remove a push subscription by endpoint, optionally scoped to a user."""
         try:
@@ -149,7 +149,7 @@ class WebPushService:
             logger.error(f"Error removing user subscriptions: {e}")
             return 0
 
-    async def get_user_subscriptions(self, user_id: str) -> List[Dict[str, Any]]:
+    async def get_user_subscriptions(self, user_id: str) -> list[dict[str, Any]]:
         """Get all push subscriptions for a user"""
         try:
             collection = mongo.db["push_subscriptions"]
@@ -164,11 +164,11 @@ class WebPushService:
         user_id: str,
         title: str,
         body: str,
-        url: Optional[str] = None,
-        tag: Optional[str] = None,
-        icon: Optional[str] = None,
-        data: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        url: str | None = None,
+        tag: str | None = None,
+        icon: str | None = None,
+        data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Send a push notification to all of a user's subscribed devices.
 
@@ -186,7 +186,7 @@ class WebPushService:
                 "title": title,
                 "body": body,
                 "url": url or "/",
-                "tag": tag or f"notification-{datetime.now(timezone.utc).timestamp()}",
+                "tag": tag or f"notification-{datetime.now(UTC).timestamp()}",
                 "icon": icon or "/icon-192x192.png",
                 **(data or {}),
             }
@@ -241,8 +241,8 @@ class WebPushService:
         }
 
     async def send_to_multiple_users(
-        self, user_ids: List[str], title: str, body: str, **kwargs
-    ) -> Dict[str, Any]:
+        self, user_ids: list[str], title: str, body: str, **kwargs
+    ) -> dict[str, Any]:
         """Send notification to multiple users"""
         results = {"total_users": len(user_ids), "success": 0, "failed": 0}
 

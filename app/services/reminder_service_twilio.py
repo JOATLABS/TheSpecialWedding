@@ -3,8 +3,7 @@
 import asyncio
 import logging
 import os
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import HTTPException
 from twilio.rest import Client  # type: ignore
@@ -97,7 +96,7 @@ class TwilioReminderService:
             raise HTTPException(status_code=400, detail="Wedding scope is required")
 
         logs = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         skipped_no_phone = 0
         skipped_opted_out = 0
 
@@ -286,16 +285,16 @@ class TwilioReminderService:
                 if retryable and attempt < max_retries:
                     wait_time = (attempt + 1) * 1.5  # 1.5s, 3s backoff
                     logger.warning(
-                        f"Twilio SMS attempt {attempt + 1} failed (retryable), retrying in {wait_time}s: {str(e)}"
+                        f"Twilio SMS attempt {attempt + 1} failed (retryable), retrying in {wait_time}s: {e!s}"
                     )
                     time.sleep(wait_time)
                     continue
 
                 logger.error(
-                    f"Twilio SMS failed to {to} after {attempt + 1} attempt(s): {str(e)}"
+                    f"Twilio SMS failed to {to} after {attempt + 1} attempt(s): {e!s}"
                 )
                 return {
-                    "status": f"failed: {str(e)}",
+                    "status": f"failed: {e!s}",
                     "message_sid": None,
                     "initial_status": None,
                     "error_code": error_code,
@@ -304,7 +303,7 @@ class TwilioReminderService:
 
         # Should not reach here, but safety fallback
         return {
-            "status": f"failed: {str(last_error)}",
+            "status": f"failed: {last_error!s}",
             "message_sid": None,
             "initial_status": None,
             "error_code": "unknown",
@@ -442,7 +441,7 @@ class TwilioRSVPReminderHelper:
             raise ValueError("FRONTEND_URL environment variable is required")
 
     async def send_personalized_rsvp_links(
-        self, slug: str, custom_message: Optional[str] = None
+        self, slug: str, custom_message: str | None = None
     ):
         # Get wedding by slug first
         wedding = await self.wedding_collection.find_one({"slug": slug})
@@ -471,7 +470,7 @@ class TwilioRSVPReminderHelper:
             phone = guest.get("phone")
             email = guest.get("email")
             guest_id = guest.get("_id")
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Skip if no token or phone, but track the reason
             if not token:
@@ -546,8 +545,8 @@ class TwilioRSVPReminderHelper:
                     {"$set": {"invite_sent": True, "invite_sent_date": now}},
                 )
             except Exception as e:
-                logger.error(f"Failed to send Twilio invite to {phone}: {str(e)}")
-                status = f"failed: {str(e)}"
+                logger.error(f"Failed to send Twilio invite to {phone}: {e!s}")
+                status = f"failed: {e!s}"
                 failed_count += 1
 
             # Build log record with delivery tracking

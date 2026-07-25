@@ -28,9 +28,10 @@ import asyncio
 import math
 import os
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import stripe
 from bson import ObjectId
@@ -38,20 +39,19 @@ from stripe import InvalidRequestError, StripeError
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from app.constants.registration_sources import (  # noqa: E402
+from app.constants.registration_sources import (
     REGISTRATION_SOURCE_LEGACY,
     is_public_signup_registration,
 )
-from app.core.database import close_database, init_database, mongo  # noqa: E402
-from app.core.settings import settings  # noqa: E402
-from app.models.subscription import (  # noqa: E402
+from app.core.database import close_database, init_database, mongo
+from app.core.settings import settings
+from app.models.subscription import (
     SubscriptionStatus,
     normalize_subscription_status,
 )
-from app.services.stripe_service import StripeService  # noqa: E402
-from app.services.subscription_service import SubscriptionService  # noqa: E402
-from app.utils.planner_billing_scope import is_planner_billing_role  # noqa: E402
-
+from app.services.stripe_service import StripeService
+from app.services.subscription_service import SubscriptionService
+from app.utils.planner_billing_scope import is_planner_billing_role
 
 TRIAL_REPAIR_STATUSES = {
     None,
@@ -84,7 +84,7 @@ class RepairResult:
     status: str
     actions: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
@@ -97,30 +97,30 @@ class RepairStats:
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def stringify_id(value: Any) -> str:
     return str(value) if value is not None else ""
 
 
-def coerce_utc_datetime(value: Any) -> Optional[datetime]:
+def coerce_utc_datetime(value: Any) -> datetime | None:
     if value is None:
         return None
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value, tz=timezone.utc)
+        return datetime.fromtimestamp(value, tz=UTC)
     if isinstance(value, str):
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             return None
         if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
     return None
 
 
@@ -139,7 +139,7 @@ def is_repair_candidate(user: dict[str, Any], root_admin_email: str | None) -> b
 
 def choose_local_subscription(
     subscriptions: Iterable[dict[str, Any]],
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     status_rank = {
         SubscriptionStatus.ACTIVE.value: 70,
         SubscriptionStatus.TRIAL.value: 65,
@@ -164,16 +164,14 @@ def choose_local_subscription(
             coerce_utc_datetime(sub.get("updated_at"))
             or coerce_utc_datetime(sub.get("created_at"))
             or coerce_utc_datetime(sub.get("start_date"))
-            or datetime(1970, 1, 1, tzinfo=timezone.utc)
+            or datetime(1970, 1, 1, tzinfo=UTC)
         )
         return has_stripe_sub, status_score, updated.timestamp()
 
     return max(candidates, key=score)
 
 
-def determine_billing_interval(
-    user: dict[str, Any], sub: Optional[dict[str, Any]]
-) -> str:
+def determine_billing_interval(user: dict[str, Any], sub: dict[str, Any] | None) -> str:
     raw = (
         (sub or {}).get("billing_interval") or user.get("billing_interval") or "monthly"
     )
@@ -184,7 +182,7 @@ def determine_trial_days(
     user: dict[str, Any],
     plan: dict[str, Any],
     now: datetime,
-    override_trial_days: Optional[int] = None,
+    override_trial_days: int | None = None,
 ) -> int:
     if override_trial_days is not None:
         return max(0, override_trial_days)
@@ -210,8 +208,8 @@ def determine_trial_days(
 
 
 def derive_legacy_trial_status(
-    user: dict[str, Any], sub: Optional[dict[str, Any]]
-) -> Optional[str]:
+    user: dict[str, Any], sub: dict[str, Any] | None
+) -> str | None:
     user_status = normalize_subscription_status(user.get("subscription_status"))
     sub_status = normalize_subscription_status((sub or {}).get("status"))
 
@@ -224,9 +222,9 @@ def derive_legacy_trial_status(
 
 def derive_legacy_trial_end(
     user: dict[str, Any],
-    sub: Optional[dict[str, Any]],
+    sub: dict[str, Any] | None,
     plan: dict[str, Any],
-) -> Optional[datetime]:
+) -> datetime | None:
     for value in (
         user.get("trial_end_date"),
         (sub or {}).get("trial_end_date"),
@@ -262,7 +260,7 @@ def can_create_missing_trial_subscription(
 
 def local_trial_already_expired(
     user: dict[str, Any],
-    sub: Optional[dict[str, Any]],
+    sub: dict[str, Any] | None,
     plan: dict[str, Any],
     now: datetime,
 ) -> bool:
@@ -311,7 +309,7 @@ def extract_subscription_item(subscription: dict[str, Any]) -> dict[str, Any]:
 
 def extract_period_dates(
     subscription: dict[str, Any],
-) -> tuple[Optional[datetime], Optional[datetime]]:
+) -> tuple[datetime | None, datetime | None]:
     item = extract_subscription_item(subscription)
     period_start = (
         coerce_utc_datetime(item.get("current_period_start"))
@@ -359,12 +357,12 @@ async def ensure_plan_prices(
 async def ensure_customer(
     db,
     user: dict[str, Any],
-    sub: Optional[dict[str, Any]],
+    sub: dict[str, Any] | None,
     *,
     apply: bool,
     actions: list[str],
     warnings: list[str],
-) -> Optional[str]:
+) -> str | None:
     user_id = stringify_id(user.get("_id"))
     customer_record = await db["stripe_customers"].find_one({"user_id": user_id})
     if not customer_record and user.get("stripe_customer_id"):
@@ -462,8 +460,8 @@ async def patch_local_subscription_fields(
     user: dict[str, Any],
     plan: dict[str, Any],
     *,
-    stripe_subscription: Optional[dict[str, Any]],
-    customer_id: Optional[str],
+    stripe_subscription: dict[str, Any] | None,
+    customer_id: str | None,
     apply: bool,
     actions: list[str],
 ) -> None:
@@ -523,7 +521,7 @@ async def patch_local_subscription_fields(
 async def patch_legacy_user_trial_fields(
     db,
     user: dict[str, Any],
-    sub: Optional[dict[str, Any]],
+    sub: dict[str, Any] | None,
     plan: dict[str, Any],
     *,
     apply: bool,
@@ -594,7 +592,7 @@ async def initialize_usage_if_needed(
         await subscription_service.initialize_usage_tracking(user_id, local_sub["_id"])
 
 
-async def find_user_for_subscription(db, user_id: Any) -> Optional[dict[str, Any]]:
+async def find_user_for_subscription(db, user_id: Any) -> dict[str, Any] | None:
     user_id_text = stringify_id(user_id)
     if ObjectId.is_valid(user_id_text):
         user = await db["users"].find_one({"_id": ObjectId(user_id_text)})
@@ -657,12 +655,12 @@ async def sync_existing_stripe_subscription(
     service: StripeService,
     db,
     user: dict[str, Any],
-    plan_id: Optional[str],
+    plan_id: str | None,
     stripe_subscription_id: str,
     *,
     apply: bool,
     actions: list[str],
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     actions.append(
         f"sync local billing state from Stripe subscription {stripe_subscription_id}"
     )
@@ -720,7 +718,7 @@ async def create_trial_subscription(
     *,
     apply: bool,
     actions: list[str],
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     price_field = f"stripe_price_id_{billing_interval}"
     stripe_price_id = plan.get(price_field)
     if not stripe_price_id:
@@ -766,8 +764,8 @@ async def repair_user(
     user: dict[str, Any],
     *,
     apply: bool,
-    default_plan_id: Optional[str],
-    override_trial_days: Optional[int],
+    default_plan_id: str | None,
+    override_trial_days: int | None,
     include_expired: bool,
     sync_plan_prices: bool,
     create_missing_subscriptions: bool,
@@ -845,7 +843,7 @@ async def repair_user(
     stripe_subscription_id = user.get("stripe_subscription_id") or (
         local_sub or {}
     ).get("stripe_subscription_id")
-    stripe_subscription: Optional[dict[str, Any]] = None
+    stripe_subscription: dict[str, Any] | None = None
 
     if stripe_subscription_id:
         stripe_subscription = await sync_existing_stripe_subscription(

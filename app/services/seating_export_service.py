@@ -6,8 +6,7 @@ for wedding venue display.
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from datetime import UTC, datetime
 
 from app.core.database import mongo
 
@@ -61,8 +60,8 @@ class SeatingExportService:
         )
 
         # Build guest lookup by table_id (T5: normalize ObjectId → string consistently)
-        guests_by_table: Dict[str, List[dict]] = {}
-        unseated_guests: List[dict] = []
+        guests_by_table: dict[str, list[dict]] = {}
+        unseated_guests: list[dict] = []
 
         for guest in guests:
             table_id = guest.get("table_id")
@@ -100,12 +99,12 @@ class SeatingExportService:
 
     def _generate_visual_layout(
         self,
-        tables: List[dict],
-        guests_by_table: Dict[str, List[dict]],
-        unseated_guests: List[dict],
+        tables: list[dict],
+        guests_by_table: dict[str, list[dict]],
+        unseated_guests: list[dict],
         wedding_name: str,
         paper_size: str = "poster",
-        seating_layout: Optional[dict] = None,
+        seating_layout: dict | None = None,
     ) -> str:
         """Generate visual floor plan layout with positioned tables."""
 
@@ -323,7 +322,7 @@ class SeatingExportService:
 <body>
     <div class="header">
         <h1>{self._escape_html(wedding_name)}</h1>
-        <p class="subtitle">Seating Chart &bull; {datetime.now(timezone.utc).strftime("%B %d, %Y")}</p>
+        <p class="subtitle">Seating Chart &bull; {datetime.now(UTC).strftime("%B %d, %Y")}</p>
     </div>
 
     <div class="canvas">
@@ -350,7 +349,7 @@ class SeatingExportService:
         return html
 
     def _render_floor_plan_layers(
-        self, seating_layout: Optional[dict], width: int, height: int, scale: float
+        self, seating_layout: dict | None, width: int, height: int, scale: float
     ) -> str:
         """Render the saved venue context under table cards for visual PDF exports."""
         if not seating_layout:
@@ -431,7 +430,7 @@ class SeatingExportService:
         return "".join(layers)
 
     def _render_table_card(
-        self, table: dict, guests: List[dict], fonts: dict, scale: float = 1.0
+        self, table: dict, guests: list[dict], fonts: dict, scale: float = 1.0
     ) -> str:
         """Render a single table as positioned HTML card."""
         x = int(table.get("x", 0) * scale)
@@ -458,7 +457,7 @@ class SeatingExportService:
         </div>
         """
 
-    def _render_unseated_section(self, unseated_guests: List[dict], fonts: dict) -> str:
+    def _render_unseated_section(self, unseated_guests: list[dict], fonts: dict) -> str:
         """Render list of unseated guests."""
         sorted_guests = sorted(unseated_guests, key=lambda g: g.get("name", "").lower())
         guest_names = ", ".join(
@@ -473,9 +472,9 @@ class SeatingExportService:
 
     def _generate_list_layout(
         self,
-        tables: List[dict],
-        guests_by_table: Dict[str, List[dict]],
-        unseated_guests: List[dict],
+        tables: list[dict],
+        guests_by_table: dict[str, list[dict]],
+        unseated_guests: list[dict],
         wedding_name: str,
         paper_size: str = "poster",
     ) -> str:
@@ -630,7 +629,7 @@ class SeatingExportService:
 <body>
     <div class="header">
         <h1>{self._escape_html(wedding_name)} - Seating List</h1>
-        <p>Generated on {datetime.now(timezone.utc).strftime("%B %d, %Y at %H:%M UTC")}</p>
+        <p>Generated on {datetime.now(UTC).strftime("%B %d, %Y at %H:%M UTC")}</p>
     </div>
 
     <div class="tables-grid">
@@ -655,7 +654,7 @@ class SeatingExportService:
         return html
 
     @staticmethod
-    def _escape_html(text: Optional[str]) -> str:
+    def _escape_html(text: str | None) -> str:
         """Escape HTML special characters."""
         if not text:
             return ""

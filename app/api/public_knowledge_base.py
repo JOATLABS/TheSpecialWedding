@@ -4,7 +4,6 @@ Read-only documentation routes for unauthenticated marketing-site visitors.
 """
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Query, Request
 
@@ -27,8 +26,8 @@ async def get_public_articles(
     request: Request,
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=50, description="Items per page"),
-    category: Optional[str] = Query(None, description="Filter by category"),
-    search: Optional[str] = Query(None, min_length=2, description="Search query"),
+    category: str | None = Query(None, description="Filter by category"),
+    search: str | None = Query(None, min_length=2, description="Search query"),
     featured_only: bool = Query(False, description="Only featured articles"),
     official_only: bool = Query(False, description="Only official articles"),
 ):

@@ -13,8 +13,8 @@ Collection: ad_platform_config (singleton, _id="singleton")
 import asyncio
 import logging
 import time
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # ── Application-level config cache ──
 CACHE_TTL_SECONDS = 60  # Re-read from DB at most once per minute
 
-_config_cache: Optional[Dict[str, Any]] = None
+_config_cache: dict[str, Any] | None = None
 _config_cache_ts: float = 0.0
 _cache_lock: asyncio.Lock = asyncio.Lock()
 
@@ -87,7 +87,7 @@ class AdPlatformConfigService:
     # GET / UPDATE CONFIG
     # =========================================================================
 
-    async def get_config(self, bypass_cache: bool = False) -> Dict[str, Any]:
+    async def get_config(self, bypass_cache: bool = False) -> dict[str, Any]:
         """
         Get the current platform config. Creates default if none exists.
 
@@ -124,8 +124,8 @@ class AdPlatformConfigService:
         return doc
 
     async def update_config(
-        self, updates: Dict[str, Any], admin_email: str
-    ) -> Dict[str, Any]:
+        self, updates: dict[str, Any], admin_email: str
+    ) -> dict[str, Any]:
         """
         Partially update platform config. Only provided (non-None) fields are updated.
         Returns the updated config.
@@ -135,7 +135,7 @@ class AdPlatformConfigService:
         if not clean_updates:
             return await self.get_config()
 
-        clean_updates["updated_at"] = datetime.now(timezone.utc)
+        clean_updates["updated_at"] = datetime.now(UTC)
         clean_updates["updated_by"] = admin_email
 
         await self.config_col.update_one(
@@ -154,12 +154,12 @@ class AdPlatformConfigService:
     # DATA PIPELINE STATUS
     # =========================================================================
 
-    async def get_pipeline_status(self) -> Dict[str, Any]:
+    async def get_pipeline_status(self) -> dict[str, Any]:
         """
         Get data pipeline status: rollup health, collection stats, TTL info.
         Reads live data from MongoDB collections.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         day_ago = now - timedelta(hours=24)
 
         # Get last rollup timestamp
@@ -228,15 +228,15 @@ class AdPlatformConfigService:
         date_range: str = "last_30_days",
         format: str = "json",
         limit: int = 1000,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Export root-admin marketing and advertising data as JSON.
         CSV conversion happens on frontend.
         Returns rows + metadata.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
-        def build_date_filter(field: str = "created_at") -> Dict[str, Any]:
+        def build_date_filter(field: str = "created_at") -> dict[str, Any]:
             if date_range == "last_7_days":
                 return {field: {"$gte": now - timedelta(days=7)}}
             if date_range == "last_30_days":

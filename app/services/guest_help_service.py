@@ -4,18 +4,18 @@ import hashlib
 import logging
 import re
 import time
-from datetime import datetime, timezone
-from typing import Any, ClassVar, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any, ClassVar
 
 from fastapi import HTTPException
 
-from app.core.cache import CacheKeys, cache
-from app.core.database import mongo
 from app.constants.support_conversations import (
     CONVERSATION_KIND_FIELD,
     GUEST_SMS_KIND,
     guest_sms_ticket_scope,
 )
+from app.core.cache import CacheKeys, cache
+from app.core.database import mongo
 from app.services.sms_service import SMSService
 from app.utils.contact_sanitizer import sanitize_phone
 from app.utils.support_inbox_links import build_support_inbox_path
@@ -47,7 +47,7 @@ class GuestHelpRequestService:
         return planner_notification_service
 
     @staticmethod
-    def _normalize_phone_e164(phone: str) -> Optional[str]:
+    def _normalize_phone_e164(phone: str) -> str | None:
         sanitized = sanitize_phone(phone)
         if not sanitized:
             return None
@@ -130,7 +130,7 @@ class GuestHelpRequestService:
 
     async def _find_guest(
         self, wedding_id: str, phone: str, full_name: str
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         phone_variants = self._phone_lookup_variants(phone)
         if not phone_variants:
             return None
@@ -158,7 +158,7 @@ class GuestHelpRequestService:
         full_name: str,
         phone: str,
         relationship_to_couple: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         slug = self._clean_text(slug, max_length=100)
         full_name = self._clean_text(full_name, max_length=100)
         relationship_to_couple = self._clean_text(
@@ -203,7 +203,7 @@ class GuestHelpRequestService:
         wedding_id = str(wedding.get("_id"))
         couple_names = wedding.get("couple_names") or "the couple"
         guest = await self._find_guest(wedding_id, normalized_phone, full_name)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         message = (
             f"Public help request from {full_name} "
@@ -213,7 +213,7 @@ class GuestHelpRequestService:
 
         sms_service = self.sms_service_factory()
         provider = sms_service.get_provider_name()
-        ticket: Dict[str, Any] = {
+        ticket: dict[str, Any] = {
             "phone": normalized_phone,
             "message": message,
             "guest_id": str(guest["_id"]) if guest and guest.get("_id") else None,
@@ -244,18 +244,18 @@ class GuestHelpRequestService:
             f"{couple_names}'s planner. They will respond from the wedding inbox."
         )
         sms_result = sms_service.send_sms(normalized_phone, ack_message)
-        ack_status: Dict[str, Any]
+        ack_status: dict[str, Any]
         if sms_result.get("success"):
             ack_status = {
                 "status": "sent",
-                "sent_at": datetime.now(timezone.utc),
+                "sent_at": datetime.now(UTC),
                 "provider": sms_result.get("provider"),
                 "message_id": sms_result.get("message_id"),
             }
         else:
             ack_status = {
                 "status": "failed",
-                "sent_at": datetime.now(timezone.utc),
+                "sent_at": datetime.now(UTC),
                 "provider": sms_result.get("provider"),
                 "error": sms_result.get("error", "Unknown SMS error"),
             }
@@ -265,7 +265,7 @@ class GuestHelpRequestService:
             {
                 "$set": {
                     "acknowledgment_sms": ack_status,
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }
             },
         )

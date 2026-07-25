@@ -6,9 +6,9 @@ import json
 import logging
 import os
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.core.database import mongo
 from app.core.settings import settings
@@ -68,18 +68,18 @@ class SecurityEvent:
 
     event_type: SecurityEventType
     severity: SecuritySeverity
-    user_email: Optional[str]
-    ip_address: Optional[str]
-    user_agent: Optional[str]
-    resource: Optional[str]
-    action: Optional[str]
-    details: Dict[str, Any]
+    user_email: str | None
+    ip_address: str | None
+    user_agent: str | None
+    resource: str | None
+    action: str | None
+    details: dict[str, Any]
     timestamp: datetime
     success: bool
-    error_message: Optional[str] = None
-    session_id: Optional[str] = None
-    wedding_id: Optional[str] = None
-    form_id: Optional[str] = None
+    error_message: str | None = None
+    session_id: str | None = None
+    wedding_id: str | None = None
+    form_id: str | None = None
 
 
 class SecurityAuditService:
@@ -131,23 +131,23 @@ class SecurityAuditService:
 
         except Exception as e:
             self.enable_file_logging = False
-            logger.warning(f"Failed to setup security file logging: {str(e)}")
+            logger.warning(f"Failed to setup security file logging: {e!s}")
 
     async def log_security_event(
         self,
         event_type: SecurityEventType,
         severity: SecuritySeverity,
-        user_email: Optional[str] = None,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        resource: Optional[str] = None,
-        action: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
+        user_email: str | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        resource: str | None = None,
+        action: str | None = None,
+        details: dict[str, Any] | None = None,
         success: bool = True,
-        error_message: Optional[str] = None,
-        session_id: Optional[str] = None,
-        wedding_id: Optional[str] = None,
-        form_id: Optional[str] = None,
+        error_message: str | None = None,
+        session_id: str | None = None,
+        wedding_id: str | None = None,
+        form_id: str | None = None,
     ):
         """
         Log a security event
@@ -177,7 +177,7 @@ class SecurityAuditService:
                 resource=resource,
                 action=action,
                 details=details or {},
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 success=success,
                 error_message=error_message,
                 session_id=session_id,
@@ -198,7 +198,7 @@ class SecurityAuditService:
                 logger.warning(f"SECURITY ALERT: {event_type.value} - {details}")
 
         except Exception as e:
-            logger.error(f"Failed to log security event: {str(e)}")
+            logger.error(f"Failed to log security event: {e!s}")
 
     async def _log_to_database(self, event: SecurityEvent):
         """Log security event to database"""
@@ -211,7 +211,7 @@ class SecurityAuditService:
             await self.audit_collection.insert_one(event_doc)
 
         except Exception as e:
-            logger.error(f"Failed to log security event to database: {str(e)}")
+            logger.error(f"Failed to log security event to database: {e!s}")
 
     def _log_to_file(self, event: SecurityEvent):
         """Log security event to file"""
@@ -242,18 +242,18 @@ class SecurityAuditService:
                 security_logger.info(log_message)
 
         except Exception as e:
-            logger.error(f"Failed to log security event to file: {str(e)}")
+            logger.error(f"Failed to log security event to file: {e!s}")
 
     async def get_security_events(
         self,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
-        event_types: Optional[List[SecurityEventType]] = None,
-        severity: Optional[SecuritySeverity] = None,
-        user_email: Optional[str] = None,
-        ip_address: Optional[str] = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+        event_types: list[SecurityEventType] | None = None,
+        severity: SecuritySeverity | None = None,
+        user_email: str | None = None,
+        ip_address: str | None = None,
         limit: int = 100,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Retrieve security events based on filters
         """
@@ -297,12 +297,12 @@ class SecurityAuditService:
             return events
 
         except Exception as e:
-            logger.error(f"Failed to retrieve security events: {str(e)}")
+            logger.error(f"Failed to retrieve security events: {e!s}")
             return []
 
     async def get_security_summary(
-        self, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None
-    ) -> Dict[str, Any]:
+        self, start_date: datetime | None = None, end_date: datetime | None = None
+    ) -> dict[str, Any]:
         """
         Get security events summary
         """
@@ -358,19 +358,17 @@ class SecurityAuditService:
             return summary
 
         except Exception as e:
-            logger.error(f"Failed to generate security summary: {str(e)}")
+            logger.error(f"Failed to generate security summary: {e!s}")
             return {}
 
     async def detect_suspicious_activity(
         self, ip_address: str, time_window_minutes: int = 60
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Detect suspicious activity from an IP address
         """
         try:
-            cutoff_time = datetime.now(timezone.utc) - timedelta(
-                minutes=time_window_minutes
-            )
+            cutoff_time = datetime.now(UTC) - timedelta(minutes=time_window_minutes)
             query = {"ip_address": ip_address, "timestamp": {"$gte": cutoff_time}}
 
             cursor = self.audit_collection.find(query)
@@ -416,7 +414,7 @@ class SecurityAuditService:
             return analysis
 
         except Exception as e:
-            logger.error(f"Failed to detect suspicious activity: {str(e)}")
+            logger.error(f"Failed to detect suspicious activity: {e!s}")
             return {}
 
 

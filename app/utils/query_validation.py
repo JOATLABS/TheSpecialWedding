@@ -6,7 +6,6 @@ to prevent injection and ensure sensible bounds.
 """
 
 import logging
-from typing import List, Optional
 
 from fastapi import Query
 
@@ -81,7 +80,7 @@ def validated_skip(skip: int = Query(0, ge=0, le=100000)) -> int:
 
 def validate_sort_field(
     sort: str,
-    allowed_fields: Optional[List[str]] = None,
+    allowed_fields: list[str] | None = None,
     default_field: str = "created_at",
 ) -> str:
     """
@@ -146,8 +145,8 @@ def validate_sort_direction(direction: str) -> int:
 
 
 def validated_string_filter(
-    value: Optional[str], max_length: int = 100, allow_regex: bool = False
-) -> Optional[str]:
+    value: str | None, max_length: int = 100, allow_regex: bool = False
+) -> str | None:
     """
     Validate and sanitize a string filter parameter.
 
@@ -189,8 +188,8 @@ def validated_string_filter(
 
 
 def validated_status_filter(
-    status: Optional[str], allowed_statuses: List[str]
-) -> Optional[str]:
+    status: str | None, allowed_statuses: list[str]
+) -> str | None:
     """
     Validate a status filter against an allowlist.
 
@@ -211,7 +210,7 @@ def validated_status_filter(
     return status
 
 
-def validated_boolean_filter(value: Optional[bool]) -> Optional[bool]:
+def validated_boolean_filter(value: bool | None) -> bool | None:
     """
     Validate a boolean filter parameter.
 
@@ -224,7 +223,7 @@ def validated_boolean_filter(value: Optional[bool]) -> Optional[bool]:
     return value
 
 
-def validated_date_string(date_str: Optional[str]) -> Optional[str]:
+def validated_date_string(date_str: str | None) -> str | None:
     """
     Validate ISO 8601 date string format.
 
@@ -267,9 +266,7 @@ def calculate_pagination_params(page: int, limit: int) -> tuple[int, int]:
     return skip, limit
 
 
-def validated_enum_filter(
-    value: Optional[str], allowed_values: List[str]
-) -> Optional[str]:
+def validated_enum_filter(value: str | None, allowed_values: list[str]) -> str | None:
     """
     Validate an enum filter against allowed values.
 

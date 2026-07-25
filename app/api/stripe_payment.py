@@ -4,7 +4,7 @@ Stripe Payment API Endpoints
 
 import logging
 import secrets
-from typing import Optional
+from datetime import UTC
 
 import stripe
 from bson import ObjectId
@@ -173,9 +173,9 @@ class CreateCheckoutSessionRequest(BaseModel):
     billing_interval: str = Field(
         default="monthly", description="Billing interval: monthly or yearly"
     )
-    success_url: Optional[str] = Field(None, description="Success redirect URL")
-    cancel_url: Optional[str] = Field(None, description="Cancel redirect URL")
-    trial_days: Optional[int] = Field(
+    success_url: str | None = Field(None, description="Success redirect URL")
+    cancel_url: str | None = Field(None, description="Cancel redirect URL")
+    trial_days: int | None = Field(
         default=None, ge=0, description="Number of trial days"
     )
 
@@ -189,10 +189,8 @@ class PublicCreateCheckoutSessionRequest(CreateCheckoutSessionRequest):
 class CreatePortalSessionRequest(BaseModel):
     """Request model for creating a Customer Portal Session"""
 
-    return_url: Optional[str] = Field(
-        None, description="Return URL after portal session"
-    )
-    flow_type: Optional[str] = Field(
+    return_url: str | None = Field(None, description="Return URL after portal session")
+    flow_type: str | None = Field(
         None,
         description="Portal flow type: 'payment_method_update', 'subscription_update', or 'subscription_cancel'",
     )
@@ -204,9 +202,9 @@ class CreatePaymentIntentRequest(BaseModel):
     amount: float = Field(..., description="Payment amount in dollars", gt=0)
     currency: str = Field(default="usd", description="Currency code")
     wedding_id: str = Field(..., description="Associated wedding ID")
-    description: Optional[str] = Field(None, description="Payment description")
-    metadata: Optional[dict] = Field(default=None, description="Additional metadata")
-    destination_user_id: Optional[str] = Field(
+    description: str | None = Field(None, description="Payment description")
+    metadata: dict | None = Field(default=None, description="Additional metadata")
+    destination_user_id: str | None = Field(
         None, description="Internal ID of the user to receive funds (Connect account)"
     )
 
@@ -263,9 +261,9 @@ async def create_checkout_session(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating checkout session: {str(e)}")
+        logger.error(f"Error creating checkout session: {e!s}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to create checkout session: {str(e)}"
+            status_code=500, detail=f"Failed to create checkout session: {e!s}"
         )
 
 
@@ -307,9 +305,9 @@ async def create_public_checkout_session(request: PublicCreateCheckoutSessionReq
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating public checkout session: {str(e)}")
+        logger.error(f"Error creating public checkout session: {e!s}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to create checkout session: {str(e)}"
+            status_code=500, detail=f"Failed to create checkout session: {e!s}"
         )
 
 
@@ -533,9 +531,9 @@ async def create_portal_session(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating portal session: {str(e)}")
+        logger.error(f"Error creating portal session: {e!s}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to create portal session: {str(e)}"
+            status_code=500, detail=f"Failed to create portal session: {e!s}"
         )
 
 
@@ -620,10 +618,8 @@ async def stripe_webhook(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error processing webhook: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Webhook processing failed: {str(e)}"
-        )
+        logger.error(f"Error processing webhook: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Webhook processing failed: {e!s}")
 
 
 # ==================== CONNECT / MARKETPLACE ENDPOINTS ====================
@@ -660,9 +656,9 @@ async def create_connect_account_link(
 
         return {"status": "success", "url": url, "account_id": account_id}
     except Exception as e:
-        logger.error(f"Error creating connect link: {str(e)}")
+        logger.error(f"Error creating connect link: {e!s}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to create onboarding link: {str(e)}"
+            status_code=500, detail=f"Failed to create onboarding link: {e!s}"
         )
 
 
@@ -704,8 +700,8 @@ async def get_connect_status(
         return status
 
     except Exception as e:
-        logger.error(f"Error checking connect status: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to check status: {str(e)}")
+        logger.error(f"Error checking connect status: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to check status: {e!s}")
 
 
 # ==================== PAYMENT COLLECTION FOR COUPLES ====================
@@ -793,7 +789,7 @@ async def create_payment_intent(
         )
 
         # Save payment request record to Mongo
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from app.core.database import mongo
 
@@ -809,8 +805,8 @@ async def create_payment_intent(
                 "status": "pending",  # Initial status
                 "wedding_id": wedding_id,
                 "description": request.description,
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
             }
         )
 
@@ -821,9 +817,9 @@ async def create_payment_intent(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating payment intent: {str(e)}")
+        logger.error(f"Error creating payment intent: {e!s}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to create payment intent: {str(e)}"
+            status_code=500, detail=f"Failed to create payment intent: {e!s}"
         )
 
 
@@ -889,7 +885,7 @@ async def get_payment_requests(
 
         return requests
     except Exception as e:
-        logger.error(f"Error fetching payment requests: {str(e)}")
+        logger.error(f"Error fetching payment requests: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to fetch payment requests")
 
 
@@ -956,7 +952,7 @@ async def get_invoices(
         return result
 
     except Exception as e:
-        logger.error(f"Error fetching invoices: {str(e)}")
+        logger.error(f"Error fetching invoices: {e!s}")
         return []
 
 
@@ -992,7 +988,7 @@ async def get_payment_method(
         customer = stripe.Customer.retrieve(customer_id)
 
         # Safely get default payment method from invoice_settings
-        default_pm_id: Optional[str] = None
+        default_pm_id: str | None = None
         invoice_settings = customer.invoice_settings
         if invoice_settings is not None:
             pm_ref = invoice_settings.default_payment_method
@@ -1038,7 +1034,7 @@ async def get_payment_method(
         return {"has_payment_method": True, "type": pm.type}
 
     except Exception as e:
-        logger.error(f"Error fetching payment method: {str(e)}")
+        logger.error(f"Error fetching payment method: {e!s}")
         return {"has_payment_method": False}
 
 
@@ -1198,9 +1194,9 @@ async def get_subscription_details(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching subscription details: {str(e)}")
+        logger.error(f"Error fetching subscription details: {e!s}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to fetch subscription: {str(e)}"
+            status_code=500, detail=f"Failed to fetch subscription: {e!s}"
         )
 
 

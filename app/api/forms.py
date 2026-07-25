@@ -1,6 +1,5 @@
 import html
 import logging
-from typing import Optional
 
 from fastapi import (
     APIRouter,
@@ -194,13 +193,13 @@ async def create_form(
         return result
 
     except Exception as e:
-        logger.error(f"Form creation failed: user={current_user.email}, error={str(e)}")
+        logger.error(f"Form creation failed: user={current_user.email}, error={e!s}")
         raise
 
 
 @router.get("/forms", tags=["Forms"])
 async def get_forms(
-    wedding_id: Optional[str] = None,
+    wedding_id: str | None = None,
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Get all forms for the current user with security validation"""
@@ -241,7 +240,7 @@ async def get_forms(
     except Exception as e:
         logger.error(
             f"Forms access failed: user={current_user.email}, "
-            f"wedding_id={wedding_id}, error={str(e)}"
+            f"wedding_id={wedding_id}, error={e!s}"
         )
         raise
 
@@ -292,8 +291,7 @@ async def get_form(
         raise
     except Exception as e:
         logger.error(
-            f"Form access failed: id={form_id}, user={current_user.email}, "
-            f"error={str(e)}"
+            f"Form access failed: id={form_id}, user={current_user.email}, error={e!s}"
         )
         raise HTTPException(status_code=500, detail="Failed to retrieve form")
 
@@ -364,8 +362,7 @@ async def update_form(
         raise
     except Exception as e:
         logger.error(
-            f"Form update failed: id={form_id}, user={current_user.email}, "
-            f"error={str(e)}"
+            f"Form update failed: id={form_id}, user={current_user.email}, error={e!s}"
         )
         raise HTTPException(status_code=500, detail="Failed to update form")
 
@@ -454,7 +451,7 @@ async def delete_form(
     except Exception as e:
         logger.error(
             f"Form deletion failed: id={form_id}, user={current_user.email}, "
-            f"error={str(e)}"
+            f"error={e!s}"
         )
         import traceback
 
@@ -515,7 +512,7 @@ async def get_form_responses(
 async def get_form_distributions(
     form_id: str,
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
-    status: Optional[str] = Query(
+    status: str | None = Query(
         None,
         description="Filter by distribution status: sent, opened, clicked, submitted, failed",
     ),
@@ -568,11 +565,11 @@ async def export_form_responses_csv(
     form_id: str,
     request: Request,
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
-    date_from: Optional[str] = Query(
+    date_from: str | None = Query(
         None,
         description="Start date filter (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
     ),
-    date_to: Optional[str] = Query(
+    date_to: str | None = Query(
         None,
         description="End date filter (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
     ),
@@ -731,7 +728,7 @@ async def export_form_responses_csv(
     except Exception as e:
         logger.error(
             f"CSV export failed: form_id={form_id}, user={current_user.email}, "
-            f"error={str(e)}"
+            f"error={e!s}"
         )
         raise HTTPException(
             status_code=500,
@@ -838,7 +835,7 @@ async def get_public_form(form_id: str, request: Request, response: Response):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching public form {form_id}: {str(e)}")
+        logger.error(f"Error fetching public form {form_id}: {e!s}")
         raise HTTPException(status_code=404, detail="Form not found")
 
 
@@ -1021,10 +1018,10 @@ async def preview_form_template_pdf(
 class _MarketingTemplateDownloadRequest(BaseModel):
     template_id: str = Field(..., min_length=1, max_length=64)
     email: EmailStr
-    name: Optional[str] = Field(None, max_length=120)
-    utm_source: Optional[str] = Field(None, max_length=60)
-    utm_medium: Optional[str] = Field(None, max_length=60)
-    utm_campaign: Optional[str] = Field(None, max_length=120)
+    name: str | None = Field(None, max_length=120)
+    utm_source: str | None = Field(None, max_length=60)
+    utm_medium: str | None = Field(None, max_length=60)
+    utm_campaign: str | None = Field(None, max_length=120)
 
 
 @router.post(
@@ -1176,7 +1173,7 @@ async def submit_form(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error submitting form {form_id}: {str(e)}, ip={client_ip}")
+        logger.error(f"Error submitting form {form_id}: {e!s}, ip={client_ip}")
         raise HTTPException(status_code=500, detail="Failed to submit form")
 
 
@@ -1512,7 +1509,7 @@ async def get_seeded_form_for_template(
 async def create_form_from_template(
     template_id: str,
     form_name: str,
-    wedding_id: Optional[str] = None,
+    wedding_id: str | None = None,
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Create a form from a template"""

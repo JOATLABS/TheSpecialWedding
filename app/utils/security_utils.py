@@ -7,8 +7,8 @@ import logging
 import os
 import re
 import secrets
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from urllib.parse import urlparse
 
 import bleach
@@ -21,7 +21,7 @@ class SecurityConfig:
 
     # HTML sanitization settings
     ALLOWED_TAGS = ["b", "i", "u", "em", "strong", "p", "br", "ul", "ol", "li"]
-    ALLOWED_ATTRIBUTES: Dict[str, List[str]] = {}
+    ALLOWED_ATTRIBUTES: dict[str, list[str]] = {}
 
     # Input length limits
     MAX_FORM_NAME_LENGTH = 100
@@ -72,7 +72,7 @@ class InputSanitizer:
             return html.escape(text, quote=True)
 
     @staticmethod
-    def sanitize_text(text: str, max_length: Optional[int] = None) -> str:
+    def sanitize_text(text: str, max_length: int | None = None) -> str:
         """
         Sanitize plain text input
 
@@ -205,7 +205,7 @@ class FormSecurityValidator:
     """Form-specific security validation"""
 
     @staticmethod
-    def validate_form_data(form_data: Dict[str, Any]) -> Dict[str, Any]:
+    def validate_form_data(form_data: dict[str, Any]) -> dict[str, Any]:
         """
         Validate and sanitize form creation data
 
@@ -221,7 +221,7 @@ class FormSecurityValidator:
         if not isinstance(form_data, dict):
             raise ValueError("Form data must be a dictionary")
 
-        sanitized: Dict[str, Any] = {}
+        sanitized: dict[str, Any] = {}
 
         # Validate form name
         name = form_data.get("name", "")
@@ -298,7 +298,7 @@ class FormSecurityValidator:
         return sanitized
 
     @staticmethod
-    def validate_form_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
+    def validate_form_settings(settings: dict[str, Any]) -> dict[str, Any]:
         """
         Validate and sanitize form settings
 
@@ -308,7 +308,7 @@ class FormSecurityValidator:
         Returns:
             Sanitized settings data
         """
-        sanitized: Dict[str, Any] = {}
+        sanitized: dict[str, Any] = {}
         # Required fields
         title = settings.get("title", "")
         if not title:
@@ -354,7 +354,7 @@ class FormSecurityValidator:
         return sanitized
 
     @staticmethod
-    def validate_form_field(field: Dict[str, Any]) -> Dict[str, Any]:
+    def validate_form_field(field: dict[str, Any]) -> dict[str, Any]:
         """
         Validate and sanitize form field data
 
@@ -367,7 +367,7 @@ class FormSecurityValidator:
         if not isinstance(field, dict):
             raise ValueError("Field must be a dictionary")
 
-        sanitized: Dict[str, Any] = {}
+        sanitized: dict[str, Any] = {}
 
         # Required fields
         field_id = field.get("id", "")
@@ -455,8 +455,8 @@ class FormSecurityValidator:
 
     @staticmethod
     def validate_form_response(
-        response_data: Dict[str, Any], form_fields: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        response_data: dict[str, Any], form_fields: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         """
         Validate and sanitize form response data
 
@@ -470,7 +470,7 @@ class FormSecurityValidator:
         if not isinstance(response_data, dict):
             raise ValueError("Response data must be a dictionary")
 
-        sanitized: Dict[str, Any] = {}
+        sanitized: dict[str, Any] = {}
         field_map = {field["id"]: field for field in form_fields}
 
         for field_id, value in response_data.items():
@@ -555,7 +555,7 @@ class FormSecurityValidator:
                         }
 
             except Exception as e:
-                logger.warning(f"Error sanitizing field {field_id}: {str(e)}")
+                logger.warning(f"Error sanitizing field {field_id}: {e!s}")
                 continue  # Skip problematic fields
 
         return sanitized
@@ -565,7 +565,7 @@ class SecurityHeaders:
     """Security headers for form responses"""
 
     @staticmethod
-    def get_form_security_headers() -> Dict[str, str]:
+    def get_form_security_headers() -> dict[str, str]:
         """Get hardening headers for public form responses.
 
         Notable: ``script-src 'self'`` (no ``'unsafe-inline'``). This API
@@ -611,7 +611,7 @@ class RateLimitTracker:
         self._requests = {}
 
     def check_rate_limit(self, key: str, limit: int, window_seconds: int) -> bool:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cutoff = now - timedelta(seconds=window_seconds)
         if key in self._requests:
             self._requests[key] = [
@@ -646,7 +646,7 @@ class RedisRateLimitTracker:
     def check_rate_limit(self, key: str, limit: int, window_seconds: int) -> bool:
         if window_seconds <= 0 or limit <= 0:
             return True
-        now_bucket = int(datetime.now(timezone.utc).timestamp() // window_seconds)
+        now_bucket = int(datetime.now(UTC).timestamp() // window_seconds)
         redis_key = f"rl:{key}:{window_seconds}:{now_bucket}"
         try:
             pipe = self._redis.pipeline()

@@ -1,7 +1,7 @@
 # Module 11: RSVP Reminder Utilities (SMS Link Template + RSVP Tester)
 
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import quote
 
 from bson import ObjectId
@@ -78,7 +78,7 @@ class RSVPReminderHelper:
                         {
                             "$set": {
                                 "invite_sent": True,
-                                "invite_sent_date": datetime.now(timezone.utc),
+                                "invite_sent_date": datetime.now(UTC),
                             }
                         },
                     )
@@ -95,7 +95,7 @@ class RSVPReminderHelper:
                         "status": "sent",
                         "provider": "twilio",
                         "type": "sms",
-                        "sent_at": datetime.now(timezone.utc),
+                        "sent_at": datetime.now(UTC),
                     }
                 )
             except Exception as e:
@@ -113,7 +113,7 @@ class RSVPReminderHelper:
                         "error": str(e),
                         "provider": "twilio",
                         "type": "sms",
-                        "sent_at": datetime.now(timezone.utc),
+                        "sent_at": datetime.now(UTC),
                     }
                 )
         return {"sent": sent}
@@ -135,7 +135,7 @@ class RSVPReminderHelper:
                     "guest_id": guest_id,
                     "attending": attending,
                     "dietary": dietary,
-                    "submitted_at": datetime.now(timezone.utc),
+                    "submitted_at": datetime.now(UTC),
                 }
             },
             upsert=True,

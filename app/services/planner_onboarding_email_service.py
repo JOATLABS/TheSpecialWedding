@@ -6,9 +6,9 @@ import logging
 import os
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from html import escape as _esc
-from typing import Any, Optional
+from typing import Any
 
 from bson import ObjectId
 
@@ -78,15 +78,15 @@ SEQUENCE_STEPS = (
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
-def _ensure_utc(value: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 class PlannerOnboardingEmailService:
@@ -98,7 +98,7 @@ class PlannerOnboardingEmailService:
         self.email_service = ResendEmailService()
 
     async def start_sequence(
-        self, user_id: str, user: Optional[dict[str, Any]] = None, dry_run: bool = False
+        self, user_id: str, user: dict[str, Any] | None = None, dry_run: bool = False
     ) -> dict[str, Any]:
         if user is None:
             user = await self.users_collection.find_one(
@@ -310,7 +310,7 @@ class PlannerOnboardingEmailService:
         self,
         user: dict[str, Any],
         dry_run: bool = False,
-        ctx: Optional[dict[str, Any]] = None,
+        ctx: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         now = _utc_now()
         state = self._state(user)
@@ -488,8 +488,8 @@ class PlannerOnboardingEmailService:
         self,
         user: dict[str, Any],
         step: SequenceStep,
-        ctx: Optional[dict[str, Any]] = None,
-    ) -> tuple[bool, Optional[str]]:
+        ctx: dict[str, Any] | None = None,
+    ) -> tuple[bool, str | None]:
         if step.key == "first_wedding":
             has_wedding = (
                 ctx["has_wedding"] if ctx else await self._has_created_wedding(user)
@@ -527,7 +527,7 @@ class PlannerOnboardingEmailService:
         )
 
     async def _should_exit_for_signature(
-        self, user: dict[str, Any], ctx: Optional[dict[str, Any]] = None
+        self, user: dict[str, Any], ctx: dict[str, Any] | None = None
     ) -> bool:
         if ctx is not None:
             subscription = ctx.get("subscription")
@@ -591,8 +591,8 @@ class PlannerOnboardingEmailService:
         await self.users_collection.update_one({"_id": user_id}, {"$set": updates})
 
     async def _acquire_claim(
-        self, user_id: Any, claim_step: str, step: Optional[SequenceStep] = None
-    ) -> Optional[str]:
+        self, user_id: Any, claim_step: str, step: SequenceStep | None = None
+    ) -> str | None:
         claim_token = secrets.token_urlsafe(12)
         now = _utc_now()
         stale_before = now - CLAIM_TTL
@@ -763,7 +763,7 @@ class PlannerOnboardingEmailService:
 
     async def _find_user_by_unsubscribe_token(
         self, token: str
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Look up a user by unsubscribe token with timing-attack mitigation.
 
         Uses an indexed MongoDB query for the lookup, then validates the
@@ -803,7 +803,7 @@ class PlannerOnboardingEmailService:
             return True
         return _utc_now() - token_created >= UNSUBSCRIBE_TOKEN_TTL
 
-    async def get_unsubscribe_status(self, token: str) -> Optional[dict[str, Any]]:
+    async def get_unsubscribe_status(self, token: str) -> dict[str, Any] | None:
         user = await self._find_user_by_unsubscribe_token(token)
         if not user:
             return None
@@ -822,7 +822,7 @@ class PlannerOnboardingEmailService:
             "unsubscribed_at": unsubscribed_at,
         }
 
-    async def unsubscribe_by_token(self, token: str) -> Optional[dict[str, Any]]:
+    async def unsubscribe_by_token(self, token: str) -> dict[str, Any] | None:
         user = await self._find_user_by_unsubscribe_token(token)
         if not user:
             return None
@@ -932,7 +932,7 @@ class PlannerOnboardingEmailService:
         template_key: str,
         user: dict[str, Any],
         *,
-        unsubscribe_url: Optional[str] = None,
+        unsubscribe_url: str | None = None,
     ) -> tuple[str, str]:
         if template_key == "welcome":
             return self._welcome_email(user, unsubscribe_url=unsubscribe_url)
@@ -960,7 +960,7 @@ class PlannerOnboardingEmailService:
         cta_label: str,
         cta_path: str,
         outro: str,
-        unsubscribe_url: Optional[str],
+        unsubscribe_url: str | None,
     ) -> str:
         cta_url = _esc(f"{self._frontend_url()}{cta_path}")
         unsubscribe_html = (
@@ -1008,7 +1008,7 @@ class PlannerOnboardingEmailService:
         """
 
     def _welcome_email(
-        self, user: dict[str, Any], *, unsubscribe_url: Optional[str]
+        self, user: dict[str, Any], *, unsubscribe_url: str | None
     ) -> tuple[str, str]:
         subject = "Welcome to The Special Wedding — your 18-tool command center"
         intro = f"Hi {self._display_name(user)}, welcome to <strong>The Special Wedding</strong>. Your account is live and you now have access to the planner workspace."
@@ -1042,7 +1042,7 @@ class PlannerOnboardingEmailService:
         )
 
     def _first_wedding_email(
-        self, user: dict[str, Any], *, unsubscribe_url: Optional[str]
+        self, user: dict[str, Any], *, unsubscribe_url: str | None
     ) -> tuple[str, str]:
         subject = "Your first wedding in 5 minutes"
         intro = f"Hi {self._display_name(user)}, the fastest way to see the product come alive is to create your first wedding project."
@@ -1070,7 +1070,7 @@ class PlannerOnboardingEmailService:
         )
 
     def _couple_portal_email(
-        self, user: dict[str, Any], *, unsubscribe_url: Optional[str]
+        self, user: dict[str, Any], *, unsubscribe_url: str | None
     ) -> tuple[str, str]:
         subject = "Meet your couple portal"
         intro = f"Hi {self._display_name(user)}, one of the clearest differentiators in the platform is the <strong>Couple Portal</strong> attached to each wedding."
@@ -1097,7 +1097,7 @@ class PlannerOnboardingEmailService:
         )
 
     def _ai_paperwork_email(
-        self, user: dict[str, Any], *, unsubscribe_url: Optional[str]
+        self, user: dict[str, Any], *, unsubscribe_url: str | None
     ) -> tuple[str, str]:
         subject = "Let AI handle the paperwork"
         intro = f"Hi {self._display_name(user)}, the AI layer in The Special Wedding is built to cut repetitive work without taking control away from you."
@@ -1124,7 +1124,7 @@ class PlannerOnboardingEmailService:
         )
 
     def _team_rules_email(
-        self, user: dict[str, Any], *, unsubscribe_url: Optional[str]
+        self, user: dict[str, Any], *, unsubscribe_url: str | None
     ) -> tuple[str, str]:
         subject = "Your team, your rules"
         intro = f"Hi {self._display_name(user)}, if you collaborate with coordinators or assistants, the planner team workspace lets you keep access clean instead of sharing one login."
@@ -1150,7 +1150,7 @@ class PlannerOnboardingEmailService:
         )
 
     def _planners_love_email(
-        self, user: dict[str, Any], *, unsubscribe_url: Optional[str]
+        self, user: dict[str, Any], *, unsubscribe_url: str | None
     ) -> tuple[str, str]:
         subject = "You're all set — here's what planners love most"
         intro = f"Hi {self._display_name(user)}, after the first two weeks most planners settle into one rhythm: fewer disconnected tools and fewer status checks spread across inboxes and spreadsheets."
@@ -1173,7 +1173,7 @@ class PlannerOnboardingEmailService:
         )
 
     def _signature_exit_email(
-        self, user: dict[str, Any], *, unsubscribe_url: Optional[str]
+        self, user: dict[str, Any], *, unsubscribe_url: str | None
     ) -> tuple[str, str]:
         subject = "Welcome to Signature — your full planner stack is unlocked"
         intro = f"Hi {self._display_name(user)}, your workspace is now on the <strong>Signature</strong> tier."

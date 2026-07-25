@@ -6,12 +6,12 @@ import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from bson import ObjectId
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.exception_handlers import http_exception_handler
 from fastapi.encoders import ENCODERS_BY_TYPE
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -19,21 +19,23 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.admin_activity import router as admin_activity_router
+from app.api.admin_analytics import router as admin_analytics_router
 from app.api.admin_auth import router as auth_router
 from app.api.admin_backup import router as backup_router
 from app.api.admin_campaigns import router as admin_campaigns_router
 from app.api.admin_import import router as import_router
-from app.api.admin_analytics import router as admin_analytics_router
 from app.api.admin_platform_config import router as admin_platform_config_router
 from app.api.admin_platform_metrics import router as admin_platform_metrics_router
 from app.api.admin_rsvp import router as admin_rsvp_router
 from app.api.ai import router as ai_router
+from app.api.aurinko_redirector import router as aurinko_redirector_router
 from app.api.autopilot import router as autopilot_router
 from app.api.behavioral_analytics import couple_router as couple_analytics_router
 from app.api.behavioral_analytics import router as behavioral_analytics_router
 from app.api.billing_jobs import router as billing_jobs_router
 from app.api.blog import router as blog_router
 from app.api.budget import router as budget_router
+from app.api.calendar_webhooks import router as calendar_webhooks_router
 from app.api.config_errors import router as config_errors_router
 from app.api.contracts import (
     client_contracts_admin_router,
@@ -49,8 +51,6 @@ from app.api.couple_notification_stream import (
 )
 from app.api.couple_portal import router as couple_portal_router
 from app.api.email_reminders import router as email_reminder_router
-from app.api.aurinko_redirector import router as aurinko_redirector_router
-from app.api.calendar_webhooks import router as calendar_webhooks_router
 from app.api.email_webhooks import router as email_webhooks_router
 from app.api.forms import router as forms_router
 from app.api.gallery_admin import router as gallery_admin_router
@@ -86,6 +86,15 @@ from app.api.reminder_utilities import router as reminder_utils_router
 from app.api.rspv import router as rsvp_router
 from app.api.saas_config import router as saas_config_router
 from app.api.scheduler_jobs import router as scheduler_jobs_router
+from app.api.storefront import (
+    public_router as storefront_public_router,
+)
+from app.api.storefront import (
+    router as storefront_router,
+)
+from app.api.storefront_domain_operator import (
+    router as storefront_domain_operator_router,
+)
 from app.api.stripe_payment import router as stripe_router
 from app.api.subscription_management import router as subscription_router
 from app.api.support_management import router as support_router
@@ -103,23 +112,11 @@ from app.api.vendor_import import router as vendor_import_router
 from app.api.vendor_management import router as vendor_management_router
 from app.api.vendor_public import router as vendor_public_router
 from app.api.vendor_signup import router as vendor_signup_router
-from app.api.storefront import (
-    router as storefront_router,
-    public_router as storefront_public_router,
-)
-from app.api.storefront_domain_operator import (
-    router as storefront_domain_operator_router,
-)
 from app.api.web_push import router as web_push_router
 from app.api.wedding import router as wedding_router
 from app.core.cache import cache, close_cache, init_cache
 from app.core.database import close_database, init_database
 from app.core.database_indexes import create_all_indexes
-from app.utils.storefront_domain_errors import (
-    build_storefront_domain_error_payload,
-    is_storefront_domain_path,
-    validation_field_errors,
-)
 
 # Import settings and core components
 from app.core.settings import settings
@@ -130,6 +127,11 @@ from app.middleware.error_handler import ErrorHandlerMiddleware
 from app.middleware.performance_monitoring import PerformanceMonitoringMiddleware
 from app.middleware.rate_limiting import RateLimitMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.utils.storefront_domain_errors import (
+    build_storefront_domain_error_payload,
+    is_storefront_domain_path,
+    validation_field_errors,
+)
 
 # Setup logging
 logging.basicConfig(
@@ -186,7 +188,7 @@ async def _acquire_scheduler_leadership(holder_id: str) -> bool:
 
     from app.core.database import mongo
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires_at = now + timedelta(seconds=SCHEDULER_LEASE_TTL_SECONDS)
 
     try:
@@ -246,7 +248,7 @@ async def _nightly_rollup_scheduler():
     while True:
         try:
             # Calculate seconds until next 2:00 AM UTC
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             next_run = now.replace(hour=2, minute=0, second=0, microsecond=0)
             if now >= next_run:
                 next_run += timedelta(days=1)
@@ -313,7 +315,7 @@ async def _monthly_billing_scheduler():
     while True:
         try:
             # Calculate seconds until next 1st of month at 6:00 AM UTC
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             if now.month == 12:
                 next_run = now.replace(
                     year=now.year + 1,
@@ -381,7 +383,7 @@ async def _form_reminder_scheduler():
     while True:
         try:
             # Calculate seconds until next 9:00 AM UTC.
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             next_run = now.replace(hour=9, minute=0, second=0, microsecond=0)
             if now >= next_run:
                 next_run += timedelta(days=1)
@@ -1365,7 +1367,7 @@ if settings.is_development():
                 else:
                     return {"message": "Unable to retrieve cache info"}
             except Exception as e:
-                return {"message": f"Cache error: {str(e)}"}
+                return {"message": f"Cache error: {e!s}"}
         return {"message": "Cache not enabled"}
 
 

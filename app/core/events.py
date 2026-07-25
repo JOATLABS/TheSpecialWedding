@@ -4,9 +4,10 @@ Event Sourcing and Domain Events System
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Union
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -56,19 +57,17 @@ class DomainEvent(BaseModel):
     """Base domain event"""
 
     event_id: str = Field(
-        default_factory=lambda: (
-            f"evt_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}"
-        )
+        default_factory=lambda: f"evt_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S_%f')}"
     )
     event_type: EventType
     aggregate_id: str  # ID of the entity this event relates to
     aggregate_type: str  # Type of entity (user, wedding, guest, etc.)
-    event_data: Dict[str, Any]
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    user_id: Optional[str] = None
-    correlation_id: Optional[str] = None
-    causation_id: Optional[str] = None
+    event_data: dict[str, Any]
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    user_id: str | None = None
+    correlation_id: str | None = None
+    causation_id: str | None = None
     version: int = 1
 
     class Config:
@@ -108,12 +107,12 @@ class EventStore:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to store event {event.event_id}: {str(e)}")
+            logger.error(f"Failed to store event {event.event_id}: {e!s}")
             return False
 
     async def get_events(
         self, aggregate_id: str, aggregate_type: str, from_version: int = 0
-    ) -> List[DomainEvent]:
+    ) -> list[DomainEvent]:
         """Get events for a specific aggregate"""
         try:
             cursor = self.events_collection.find(
@@ -132,13 +131,13 @@ class EventStore:
 
         except Exception as e:
             logger.error(
-                f"Failed to retrieve events for {aggregate_type}:{aggregate_id}: {str(e)}"
+                f"Failed to retrieve events for {aggregate_type}:{aggregate_id}: {e!s}"
             )
             return []
 
     async def get_events_by_type(
         self, event_type: EventType, limit: int = 100, offset: int = 0
-    ) -> List[DomainEvent]:
+    ) -> list[DomainEvent]:
         """Get events by type"""
         try:
             cursor = (
@@ -155,14 +154,14 @@ class EventStore:
             return events
 
         except Exception as e:
-            logger.error(f"Failed to retrieve events by type {event_type}: {str(e)}")
+            logger.error(f"Failed to retrieve events by type {event_type}: {e!s}")
             return []
 
     async def save_snapshot(
         self,
         aggregate_id: str,
         aggregate_type: str,
-        snapshot_data: Dict[str, Any],
+        snapshot_data: dict[str, Any],
         version: int,
     ) -> bool:
         """Save aggregate snapshot for performance optimization"""
@@ -174,7 +173,7 @@ class EventStore:
                     "aggregate_type": aggregate_type,
                     "snapshot_data": snapshot_data,
                     "version": version,
-                    "timestamp": datetime.now(timezone.utc),
+                    "timestamp": datetime.now(UTC),
                 },
                 upsert=True,
             )
@@ -183,13 +182,13 @@ class EventStore:
 
         except Exception as e:
             logger.error(
-                f"Failed to save snapshot for {aggregate_type}:{aggregate_id}: {str(e)}"
+                f"Failed to save snapshot for {aggregate_type}:{aggregate_id}: {e!s}"
             )
             return False
 
     async def get_snapshot(
         self, aggregate_id: str, aggregate_type: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Get latest snapshot for an aggregate"""
         try:
             snapshot = await self.snapshots_collection.find_one(
@@ -200,7 +199,7 @@ class EventStore:
 
         except Exception as e:
             logger.error(
-                f"Failed to retrieve snapshot for {aggregate_type}:{aggregate_id}: {str(e)}"
+                f"Failed to retrieve snapshot for {aggregate_type}:{aggregate_id}: {e!s}"
             )
             return None
 
@@ -209,13 +208,10 @@ class EventBus:
     """Event bus for publishing and subscribing to domain events"""
 
     def __init__(self):
-        self.subscribers: Dict[
+        self.subscribers: dict[
             EventType,
-            List[
-                Union[
-                    Callable[[DomainEvent], Awaitable[None]],
-                    Callable[[DomainEvent], None],
-                ]
+            list[
+                Callable[[DomainEvent], Awaitable[None]] | Callable[[DomainEvent], None]
             ],
         ] = {}
         self.event_store = EventStore()
@@ -223,9 +219,8 @@ class EventBus:
     def subscribe(
         self,
         event_type: EventType,
-        handler: Union[
-            Callable[[DomainEvent], Awaitable[None]], Callable[[DomainEvent], None]
-        ],
+        handler: Callable[[DomainEvent], Awaitable[None]]
+        | Callable[[DomainEvent], None],
     ):
         """Subscribe to an event type"""
         if event_type not in self.subscribers:
@@ -240,7 +235,7 @@ class EventBus:
         await self.event_store.append_event(event)
         # Notify subscribers
         if event.event_type in self.subscribers:
-            tasks: List[Awaitable[Any]] = []
+            tasks: list[Awaitable[Any]] = []
             for handler in self.subscribers[event.event_type]:
                 if asyncio.iscoroutinefunction(handler):
                     tasks.append(handler(event))
@@ -255,7 +250,7 @@ class EventBus:
                     await asyncio.gather(*tasks, return_exceptions=True)
                 except Exception as e:
                     logger.error(
-                        f"Error in event handlers for {event.event_type}: {str(e)}"
+                        f"Error in event handlers for {event.event_type}: {e!s}"
                     )
         logger.info(f"Published event: {event.event_type}")
 
@@ -277,7 +272,7 @@ class EventFactory:
             event_data={
                 "email": email,
                 "role": role,
-                "registration_timestamp": datetime.now(timezone.utc).isoformat(),
+                "registration_timestamp": datetime.now(UTC).isoformat(),
             },
         )
 
@@ -290,7 +285,7 @@ class EventFactory:
             event_data={
                 "planner_id": planner_id,
                 "title": title,
-                "creation_timestamp": datetime.now(timezone.utc).isoformat(),
+                "creation_timestamp": datetime.now(UTC).isoformat(),
             },
             user_id=planner_id,
         )
@@ -306,7 +301,7 @@ class EventFactory:
             event_data={
                 "wedding_id": wedding_id,
                 "response": response,
-                "submission_timestamp": datetime.now(timezone.utc).isoformat(),
+                "submission_timestamp": datetime.now(UTC).isoformat(),
             },
         )
 
@@ -321,7 +316,7 @@ class EventFactory:
             event_data={
                 "resource_type": resource_type,
                 "limit": limit,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
             user_id=user_id,
         )
@@ -335,14 +330,14 @@ class EventFactory:
             event_data={
                 "ip_address": ip_address,
                 "reason": reason,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
             metadata={"security_event": True, "severity": "medium"},
         )
 
     @staticmethod
     def password_changed(
-        user_id: str, email: str, ip_address: Optional[str] = None
+        user_id: str, email: str, ip_address: str | None = None
     ) -> DomainEvent:
         return DomainEvent(
             event_type=EventType.PASSWORD_CHANGED,
@@ -351,7 +346,7 @@ class EventFactory:
             event_data={
                 "email": email,
                 "ip_address": ip_address,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
             metadata={"security_event": True, "severity": "low"},
             user_id=user_id,
@@ -359,7 +354,7 @@ class EventFactory:
 
     @staticmethod
     def email_change_requested(
-        user_id: str, old_email: str, new_email: str, ip_address: Optional[str] = None
+        user_id: str, old_email: str, new_email: str, ip_address: str | None = None
     ) -> DomainEvent:
         return DomainEvent(
             event_type=EventType.EMAIL_CHANGE_REQUESTED,
@@ -369,7 +364,7 @@ class EventFactory:
                 "old_email": old_email,
                 "new_email": new_email,
                 "ip_address": ip_address,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
             metadata={"security_event": True, "severity": "medium"},
             user_id=user_id,
@@ -384,7 +379,7 @@ class EventFactory:
             event_data={
                 "old_email": old_email,
                 "new_email": new_email,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
             metadata={"security_event": True, "severity": "medium"},
             user_id=user_id,
@@ -401,7 +396,7 @@ class EventFactory:
             event_data={
                 "email": email,
                 "updated_fields": updated_fields,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
             user_id=user_id,
         )
@@ -419,7 +414,7 @@ def publishes_event(event_factory_func: Callable[..., DomainEvent]):
                 event = event_factory_func(*args, **kwargs, result=result)
                 await event_bus.publish(event)
             except Exception as e:
-                logger.error(f"Failed to publish event from {func.__name__}: {str(e)}")
+                logger.error(f"Failed to publish event from {func.__name__}: {e!s}")
 
             return result
 

@@ -9,7 +9,6 @@ Planners can only see emails linked to their weddings.
 """
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -38,7 +37,7 @@ class ReplyRequest(BaseModel):
     html_content: str = Field(
         ..., min_length=1, max_length=50000, description="HTML content of reply"
     )
-    text_content: Optional[str] = Field(
+    text_content: str | None = Field(
         None, max_length=50000, description="Plain text fallback"
     )
 
@@ -50,7 +49,7 @@ class ReplyRequest(BaseModel):
 async def get_inbox(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
-    wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
+    wedding_id: str | None = Query(None, description="Filter by wedding ID"),
     unread_only: bool = Query(False, description="Show only unread emails"),
     current_user: ExtendedAuthUser = Depends(
         require_communication_capability(CommunicationCapability.INBOUND_EMAIL)

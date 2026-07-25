@@ -25,7 +25,7 @@ boot. See the parallel design in scripts/seed_subscription_plans.py.
 
 import asyncio
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.core.database import mongo
 
@@ -702,7 +702,7 @@ async def seed_knowledge_base(
 
     for article_data in SEED_ARTICLES:
         existing = await collection.find_one({"slug": article_data["slug"]})
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         content = article_data.get("content", "")
         word_count = len(content.split()) if isinstance(content, str) and content else 0
 

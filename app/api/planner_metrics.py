@@ -1,8 +1,8 @@
 import logging
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from math import ceil
-from typing import Any, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -49,7 +49,7 @@ def _safe_isoformat(value: Any) -> str:
     return ""
 
 
-def _normalize_planner_wedding_venue(value: Any) -> Optional[str]:
+def _normalize_planner_wedding_venue(value: Any) -> str | None:
     """Convert legacy venue objects to the string shape the planner API returns."""
     if value is None or isinstance(value, str):
         return value
@@ -68,7 +68,7 @@ def _normalize_planner_wedding_venue(value: Any) -> Optional[str]:
     return str(value)
 
 
-def _parse_date_safe(value: Optional[Any]) -> Optional[datetime]:
+def _parse_date_safe(value: Any | None) -> datetime | None:
     """Safely parse a date/datetime value and normalize it to UTC."""
     if not value:
         return None
@@ -81,8 +81,8 @@ def _parse_date_safe(value: Optional[Any]) -> Optional[datetime]:
             return None
 
         if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
     except (ValueError, TypeError):
         return None
 
@@ -91,7 +91,7 @@ def _build_owned_weddings_query(
     current_user: ExtendedAuthUser,
     *,
     include_cancelled: bool = False,
-) -> tuple[dict[str, Any], Optional[list[str]], Optional[str]]:
+) -> tuple[dict[str, Any], list[str] | None, str | None]:
     """
     Build the canonical wedding-ownership query for planner and team sessions.
 
@@ -207,7 +207,7 @@ async def get_planner_metrics(
         # Safety cap: typical planner/admin has <5k weddings
         MAX_WEDDINGS = 5000
         weddings = await weddings_collection.find(query).to_list(length=MAX_WEDDINGS)
-        current_date = datetime.now(timezone.utc)
+        current_date = datetime.now(UTC)
 
         wedding_by_id: dict[str, dict[str, Any]] = {}
         wedding_id_values: list[Any] = []
@@ -615,7 +615,7 @@ async def get_planner_metrics(
             )
 
         # Recent activity (latest 10)
-        recent_activity: List[ActivityItemModel] = []
+        recent_activity: list[ActivityItemModel] = []
         try:
             activity_logs_collection = mongo.get_collection("activity_logs")
             cursor = (
@@ -682,7 +682,7 @@ async def get_planner_metrics(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching planner metrics: {str(e)}", exc_info=True)
+        logger.error(f"Error fetching planner metrics: {e!s}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch planner metrics")
 
 
@@ -767,7 +767,7 @@ async def get_activity_log(
         # Activity results already bounded by .limit(limit) above
         activities_raw = await cursor.to_list(length=limit)
 
-        activities: List[ActivityItemModel] = []
+        activities: list[ActivityItemModel] = []
         for activity in activities_raw:
             activities.append(
                 ActivityItemModel(
@@ -796,21 +796,21 @@ async def get_activity_log(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching activity log: {str(e)}", exc_info=True)
+        logger.error(f"Error fetching activity log: {e!s}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch activity log")
 
 
 @router.get(
     "/planner/weddings",
     tags=["Wedding Planner"],
-    response_model=List[PlannerWeddingModel],
+    response_model=list[PlannerWeddingModel],
 )
 async def get_planner_weddings(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
     include_cancelled: bool = Query(
         default=False, description="Include cancelled weddings"
     ),
-) -> List[PlannerWeddingModel]:
+) -> list[PlannerWeddingModel]:
     """
     Get all weddings assigned to the current planner.
 
@@ -857,7 +857,7 @@ async def get_planner_weddings(
         ).to_list(length=MAX_WEDDINGS_LIST)
 
         # Convert ObjectId to string and format response
-        wedding_list: List[PlannerWeddingModel] = []
+        wedding_list: list[PlannerWeddingModel] = []
         for wedding in weddings:
             wedding_list.append(_planner_wedding_model_from_document(wedding))
 
@@ -869,5 +869,5 @@ async def get_planner_weddings(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching planner weddings: {str(e)}", exc_info=True)
+        logger.error(f"Error fetching planner weddings: {e!s}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch weddings")

@@ -22,7 +22,7 @@ directly rather than re-implementing the filter shape.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -38,8 +38,8 @@ logger = logging.getLogger(__name__)
 
 
 async def get_owned_vendor_profile(
-    vendor_id: str, actor_email: Optional[str]
-) -> Optional[dict]:
+    vendor_id: str, actor_email: str | None
+) -> dict | None:
     """Fetch a vendor profile, scoped by ``created_by == actor_email``.
 
     Returns None on bad ID, missing record, or wrong owner.
@@ -51,7 +51,7 @@ async def get_owned_vendor_profile(
     except (InvalidId, TypeError, ValueError):
         return None
 
-    query: Dict[str, Any] = {"_id": obj_id}
+    query: dict[str, Any] = {"_id": obj_id}
     normalized_actor = normalize_planner_email(actor_email)
     if normalized_actor is not None:
         query["created_by"] = normalized_actor
@@ -66,9 +66,7 @@ async def get_owned_vendor_profile(
         return None
 
 
-async def get_owned_wedding(
-    wedding_id: str, actor_email: Optional[str]
-) -> Optional[dict]:
+async def get_owned_wedding(wedding_id: str, actor_email: str | None) -> dict | None:
     """Fetch a wedding, scoped via the canonical planner-ownership query.
 
     Weddings carry ownership via ``assigned_planner_id`` /
@@ -90,7 +88,7 @@ async def get_owned_wedding(
         else None
     )
 
-    async def _find(id_value: Any) -> Optional[dict]:
+    async def _find(id_value: Any) -> dict | None:
         id_filter = {"_id": id_value}
         query = combine_mongo_filters(id_filter, owner_query)
         try:
@@ -117,8 +115,8 @@ async def get_owned_wedding(
 
 
 async def get_owned_assignment(
-    assignment_id: str, actor_email: Optional[str]
-) -> Optional[dict]:
+    assignment_id: str, actor_email: str | None
+) -> dict | None:
     """Fetch a vendor_assignment, scoped by ``created_by == actor_email``.
 
     Returns None on bad ID, missing record, or wrong owner.
@@ -130,7 +128,7 @@ async def get_owned_assignment(
     except (InvalidId, TypeError, ValueError):
         return None
 
-    query: Dict[str, Any] = {"_id": obj_id, "is_deleted": {"$ne": True}}
+    query: dict[str, Any] = {"_id": obj_id, "is_deleted": {"$ne": True}}
     normalized_actor = normalize_planner_email(actor_email)
     if normalized_actor is not None:
         query["created_by"] = normalized_actor
@@ -145,9 +143,7 @@ async def get_owned_assignment(
         return None
 
 
-async def get_owned_contract(
-    contract_id: str, actor_email: Optional[str]
-) -> Optional[dict]:
+async def get_owned_contract(contract_id: str, actor_email: str | None) -> dict | None:
     """Fetch a vendor_contract, scoped by ``created_by == actor_email``.
 
     Used by mutation paths that fetch a contract by ID without going
@@ -162,7 +158,7 @@ async def get_owned_contract(
     except (InvalidId, TypeError, ValueError):
         return None
 
-    query: Dict[str, Any] = {"_id": obj_id, "is_soft_deleted": {"$ne": True}}
+    query: dict[str, Any] = {"_id": obj_id, "is_soft_deleted": {"$ne": True}}
     normalized_actor = normalize_planner_email(actor_email)
     if normalized_actor is not None:
         query["created_by"] = normalized_actor
@@ -177,7 +173,7 @@ async def get_owned_contract(
         return None
 
 
-async def get_owned_form(form_id: str, actor_email: Optional[str]) -> Optional[dict]:
+async def get_owned_form(form_id: str, actor_email: str | None) -> dict | None:
     """Fetch a vendor_form, scoped by ``created_by == actor_email``.
 
     ``vendor_forms.created_by`` is the planner's email — set when the
@@ -194,7 +190,7 @@ async def get_owned_form(form_id: str, actor_email: Optional[str]) -> Optional[d
     except (InvalidId, TypeError, ValueError):
         return None
 
-    query: Dict[str, Any] = {"_id": obj_id}
+    query: dict[str, Any] = {"_id": obj_id}
     normalized_actor = normalize_planner_email(actor_email)
     if normalized_actor is not None:
         query["created_by"] = normalized_actor
@@ -209,8 +205,8 @@ async def get_owned_form(form_id: str, actor_email: Optional[str]) -> Optional[d
 
 
 async def get_owned_form_submission(
-    submission_id: str, actor_email: Optional[str]
-) -> Optional[dict]:
+    submission_id: str, actor_email: str | None
+) -> dict | None:
     """Fetch a vendor form submission, scoped by planner ownership.
 
     ``vendor_submissions`` documents do NOT carry a direct ``created_by``

@@ -11,8 +11,7 @@ Sprint 3: Forgot password, password reset
 import html
 import logging
 import secrets
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
@@ -79,7 +78,7 @@ class CoupleOnboardingUpdateRequest(BaseModel):
     """Update persisted onboarding completion for the couple portal."""
 
     completed: bool = Field(..., description="Whether onboarding has been completed")
-    steps_completed: Optional[list[str]] = Field(
+    steps_completed: list[str] | None = Field(
         None, description="Completed onboarding step identifiers"
     )
 
@@ -274,7 +273,7 @@ async def setup_couple_password(data: CoupleSetupPasswordRequest, response: Resp
     couple = await mongo.db["couple_users"].find_one(
         {
             "invite_token": data.token,
-            "invite_token_expires": {"$gt": datetime.now(timezone.utc)},
+            "invite_token_expires": {"$gt": datetime.now(UTC)},
         }
     )
 
@@ -362,7 +361,7 @@ async def _dispatch_couple_portal_accepted_notification(couple: dict) -> None:
     couple_names = couple.get("couple_names") or couple.get("display_name")
     wedding_id = couple.get("wedding_id")
 
-    seeded_form_id: Optional[str] = None
+    seeded_form_id: str | None = None
     if planner_email:
         seeded_doc = await mongo.db["forms"].find_one(
             {
@@ -427,7 +426,7 @@ async def couple_login(data: CoupleLoginRequest, response: Response):
 
     # Update last login
     await mongo.db["couple_users"].update_one(
-        {"_id": couple["_id"]}, {"$set": {"last_login": datetime.now(timezone.utc)}}
+        {"_id": couple["_id"]}, {"$set": {"last_login": datetime.now(UTC)}}
     )
 
     access_token = _set_couple_session_cookie(response, couple)
@@ -452,7 +451,7 @@ async def verify_invite_token(token: str):
     couple = await mongo.db["couple_users"].find_one(
         {
             "invite_token": token,
-            "invite_token_expires": {"$gt": datetime.now(timezone.utc)},
+            "invite_token_expires": {"$gt": datetime.now(UTC)},
         }
     )
 
@@ -540,11 +539,11 @@ async def update_couple_onboarding_status(
     """Persist couple portal onboarding completion and visited steps."""
     update_data = {
         "onboarding_completed": onboarding_data.completed,
-        "updated_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(UTC),
     }
 
     if onboarding_data.completed:
-        update_data["onboarding_completed_at"] = datetime.now(timezone.utc)
+        update_data["onboarding_completed_at"] = datetime.now(UTC)
 
     if onboarding_data.steps_completed is not None:
         update_data["onboarding_steps_completed"] = onboarding_data.steps_completed
@@ -588,7 +587,7 @@ async def couple_forgot_password(data: CoupleForgotPasswordRequest):
 
     # Generate reset token (mirrors planner pattern: 32 hex chars, 1-hour expiry)
     reset_token = secrets.token_hex(32)
-    reset_expires = datetime.now(timezone.utc) + timedelta(hours=1)
+    reset_expires = datetime.now(UTC) + timedelta(hours=1)
 
     await mongo.db["couple_users"].update_one(
         {"_id": couple["_id"]},
@@ -596,8 +595,8 @@ async def couple_forgot_password(data: CoupleForgotPasswordRequest):
             "$set": {
                 "password_reset_token": reset_token,
                 "password_reset_expires": reset_expires,
-                "password_reset_requested_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "password_reset_requested_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
             }
         },
     )
@@ -688,7 +687,7 @@ async def validate_couple_reset_token(token: str):
 
     if couple.get("password_reset_expires") and couple[
         "password_reset_expires"
-    ] < datetime.now(timezone.utc):
+    ] < datetime.now(UTC):
         # Clean up expired token
         await mongo.db["couple_users"].update_one(
             {"_id": couple["_id"]},
@@ -749,7 +748,7 @@ async def couple_reset_password(data: CoupleResetPasswordRequest, response: Resp
 
     if couple.get("password_reset_expires") and couple[
         "password_reset_expires"
-    ] < datetime.now(timezone.utc):
+    ] < datetime.now(UTC):
         await mongo.db["couple_users"].update_one(
             {"_id": couple["_id"]},
             {
@@ -783,12 +782,12 @@ async def couple_reset_password(data: CoupleResetPasswordRequest, response: Resp
     result = await mongo.db["couple_users"].find_one_and_update(
         {
             "password_reset_token": data.token,
-            "password_reset_expires": {"$gt": datetime.now(timezone.utc)},
+            "password_reset_expires": {"$gt": datetime.now(UTC)},
         },
         {
             "$set": {
                 "password_hash": password_hash,
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(UTC),
             },
             "$unset": {
                 "password_reset_token": True,

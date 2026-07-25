@@ -10,8 +10,8 @@ Vendor contract admin routes live in `app.api.vendor_management` under `/admin/c
 """
 
 import logging
-from datetime import timezone
-from typing import Any, Optional
+from datetime import UTC
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -31,7 +31,7 @@ client_contracts_public_router = APIRouter(prefix="/public")
 client_contracts_cron_router = APIRouter(prefix="/cron/contracts")
 
 
-def _resolve_couple_display_name(couple: Optional[dict]) -> str:
+def _resolve_couple_display_name(couple: dict | None) -> str:
     couple = couple or {}
     partner1 = (couple.get("partner1_name") or couple.get("name") or "").strip()
     partner2 = (couple.get("partner2_name") or couple.get("partner_name") or "").strip()
@@ -40,7 +40,7 @@ def _resolve_couple_display_name(couple: Optional[dict]) -> str:
     return partner1 or partner2 or "A couple"
 
 
-def _resolve_stripe_reference_id(value: Any) -> Optional[str]:
+def _resolve_stripe_reference_id(value: Any) -> str | None:
     if isinstance(value, str):
         return value
     if isinstance(value, dict):
@@ -57,8 +57,8 @@ def _validate_setup_intent_payment_method(
     contract_token: str,
     payment_method_id: str,
     setup_intent_id: str,
-    expected_action: Optional[str],
-) -> tuple[str, Optional[str], Optional[str]]:
+    expected_action: str | None,
+) -> tuple[str, str | None, str | None]:
     """Resolve and validate a payment method captured through Stripe SetupIntent."""
 
     setup_intent = stripe_client.SetupIntent.retrieve(setup_intent_id)
@@ -136,11 +136,11 @@ class SignContractRequest(BaseModel):
     """Request to sign a contract."""
 
     signature_name: str = Field(..., min_length=1, max_length=200)
-    stripe_customer_id: Optional[str] = Field(None, min_length=1)
+    stripe_customer_id: str | None = Field(None, min_length=1)
     stripe_payment_method_id: str = Field(..., min_length=1)
     setup_intent_id: str = Field(..., min_length=1)
-    payment_method_last4: Optional[str] = Field(None, max_length=4)
-    payment_method_brand: Optional[str] = Field(None, max_length=20)
+    payment_method_last4: str | None = Field(None, max_length=4)
+    payment_method_brand: str | None = Field(None, max_length=20)
     accept_terms: bool = Field(...)
 
 
@@ -159,12 +159,12 @@ class CancelContractRequest(BaseModel):
 class MarkPaidExternallyRequest(BaseModel):
     """Request to mark a payment as paid externally."""
 
-    payment_method: Optional[str] = Field(
+    payment_method: str | None = Field(
         None,
         max_length=50,
         description="How payment was received: cash, check, wire, etc.",
     )
-    note: Optional[str] = Field(
+    note: str | None = Field(
         None, max_length=500, description="Optional note about the payment"
     )
 
@@ -172,10 +172,10 @@ class MarkPaidExternallyRequest(BaseModel):
 class RefundPaymentRequest(BaseModel):
     """Request to refund a payment."""
 
-    amount: Optional[float] = Field(
+    amount: float | None = Field(
         None, gt=0, description="Refund amount (partial). If not provided, full refund."
     )
-    reason: Optional[str] = Field(None, max_length=500, description="Reason for refund")
+    reason: str | None = Field(None, max_length=500, description="Reason for refund")
 
 
 # ============================================================================
@@ -185,7 +185,7 @@ class RefundPaymentRequest(BaseModel):
 
 @client_contracts_admin_router.get("", tags=["Contracts"])
 async def list_contracts(
-    status: Optional[str] = Query(None, description="Filter by contract status"),
+    status: str | None = Query(None, description="Filter by contract status"),
     limit: int = Query(50, ge=1, le=100, description="Items per page"),
     skip: int = Query(0, ge=0, description="Items to skip"),
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
@@ -213,13 +213,13 @@ async def list_contracts(
         return {"contracts": contracts, "count": len(contracts)}
 
     except Exception as e:
-        logger.error(f"Failed to list contracts: {str(e)}")
+        logger.error(f"Failed to list contracts: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to retrieve contracts")
 
 
 @client_contracts_admin_router.get("/payments/overview", tags=["Contracts"])
 async def get_contract_payments_overview(
-    contract_statuses: Optional[str] = Query(
+    contract_statuses: str | None = Query(
         "signed,active",
         description="Comma-separated list of contract statuses to include",
     ),
@@ -268,7 +268,7 @@ async def get_contract_payments_overview(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get contract payment overview: {str(e)}")
+        logger.error(f"Failed to get contract payment overview: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to retrieve payment overview"
         )
@@ -280,12 +280,12 @@ async def create_contract(
     wedding_id: str = Query(..., description="Wedding ID"),
     vendor_profile_id: str = Query(..., description="Vendor profile ID"),
     total_amount: float = Query(..., gt=0, description="Total contract amount"),
-    template_id: Optional[str] = Query(None, description="Template ID"),
+    template_id: str | None = Query(None, description="Template ID"),
     deposit_percentage: float = Query(
         50.0, ge=0, le=100, description="Deposit percentage"
     ),
-    service_date: Optional[str] = Query(None, description="Service date (ISO format)"),
-    service_location: Optional[str] = Query(None, description="Service location"),
+    service_date: str | None = Query(None, description="Service date (ISO format)"),
+    service_location: str | None = Query(None, description="Service location"),
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """
@@ -307,7 +307,7 @@ async def create_contract(
                 custom_sections = body
         except Exception as e:
             logger.debug(f"No body or invalid JSON in request: {e}")
-            pass  # No body or not JSON — that's fine
+            # No body or not JSON — that's fine
 
         contract = await contract_service.create_contract(
             planner_id=planner_id,
@@ -326,7 +326,7 @@ async def create_contract(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to create contract: {str(e)}")
+        logger.error(f"Failed to create contract: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to create contract")
 
 
@@ -362,7 +362,7 @@ async def update_contract(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to update contract: {str(e)}")
+        logger.error(f"Failed to update contract: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to update contract")
 
 
@@ -401,7 +401,7 @@ async def update_contract_sections(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to update contract sections: {str(e)}")
+        logger.error(f"Failed to update contract sections: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to update contract sections"
         )
@@ -410,7 +410,7 @@ async def update_contract_sections(
 @client_contracts_admin_router.post("/{contract_id}/send", tags=["Contracts"])
 async def send_contract(
     contract_id: str,
-    message: Optional[str] = Query(None, description="Personal message to include"),
+    message: str | None = Query(None, description="Personal message to include"),
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """
@@ -433,7 +433,7 @@ async def send_contract(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to send contract: {str(e)}")
+        logger.error(f"Failed to send contract: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to send contract")
 
 
@@ -469,7 +469,7 @@ async def create_milestones(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to create milestones: {str(e)}")
+        logger.error(f"Failed to create milestones: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to create milestones")
 
 
@@ -495,7 +495,7 @@ async def get_contract_form_data(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to get contract form data: {str(e)}")
+        logger.error(f"Failed to get contract form data: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to get form data")
 
 
@@ -548,15 +548,15 @@ async def apply_form_data_to_contract(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to apply form data: {str(e)}")
+        logger.error(f"Failed to apply form data: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to apply form data")
 
 
 @client_contracts_admin_router.get("/milestones", tags=["Contracts"])
 async def list_milestones(
-    contract_id: Optional[str] = Query(None),
-    wedding_id: Optional[str] = Query(None),
-    status: Optional[str] = Query(None),
+    contract_id: str | None = Query(None),
+    wedding_id: str | None = Query(None),
+    status: str | None = Query(None),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
@@ -579,7 +579,7 @@ async def list_milestones(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to list milestones: {str(e)}")
+        logger.error(f"Failed to list milestones: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to list milestones")
 
 
@@ -590,8 +590,8 @@ async def record_milestone_payment(
     milestone_id: str,
     amount: float = Query(..., gt=0),
     payment_method: str = Query("manual"),
-    payment_date: Optional[str] = Query(None),
-    notes: Optional[str] = Query(None),
+    payment_date: str | None = Query(None),
+    notes: str | None = Query(None),
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """
@@ -622,7 +622,7 @@ async def record_milestone_payment(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to record payment: {str(e)}")
+        logger.error(f"Failed to record payment: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to record payment")
 
 
@@ -639,7 +639,7 @@ async def get_contract_stats(
         return stats
 
     except Exception as e:
-        logger.error(f"Failed to get contract stats: {str(e)}")
+        logger.error(f"Failed to get contract stats: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to retrieve statistics")
 
 
@@ -670,16 +670,16 @@ async def get_followup_drafts(
         return {"drafts": drafts, "count": len(drafts)}
 
     except Exception as e:
-        logger.error(f"Failed to get follow-up drafts: {str(e)}")
+        logger.error(f"Failed to get follow-up drafts: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to retrieve drafts")
 
 
 class UpdateDraftRequest(BaseModel):
     """Request to update a follow-up draft."""
 
-    subject: Optional[str] = Field(None, max_length=200)
-    body: Optional[str] = Field(None, max_length=5000)
-    status: Optional[str] = Field(None, pattern="^(pending|dismissed)$")
+    subject: str | None = Field(None, max_length=200)
+    body: str | None = Field(None, max_length=5000)
+    status: str | None = Field(None, pattern="^(pending|dismissed)$")
 
 
 @client_contracts_admin_router.put("/followup-drafts/{draft_id}", tags=["Contracts"])
@@ -715,7 +715,7 @@ async def update_followup_draft(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to update draft: {str(e)}")
+        logger.error(f"Failed to update draft: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to update draft")
 
 
@@ -748,7 +748,7 @@ async def send_followup_draft(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to send follow-up: {str(e)}")
+        logger.error(f"Failed to send follow-up: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to send email")
 
 
@@ -782,7 +782,7 @@ async def get_contract(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get contract: {str(e)}")
+        logger.error(f"Failed to get contract: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to retrieve contract")
 
 
@@ -818,7 +818,7 @@ async def update_wedding_date(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to update wedding date: {str(e)}")
+        logger.error(f"Failed to update wedding date: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to update wedding date")
 
 
@@ -848,14 +848,14 @@ async def cancel_contract(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to cancel contract: {str(e)}")
+        logger.error(f"Failed to cancel contract: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to cancel contract")
 
 
 @client_contracts_admin_router.get("/{contract_id}/payments", tags=["Contracts"])
 async def get_contract_payments(
     contract_id: str,
-    status: Optional[str] = Query(
+    status: str | None = Query(
         None,
         pattern="^(scheduled|processing|succeeded|failed|cancelled|paid_externally)$",
     ),
@@ -881,7 +881,7 @@ async def get_contract_payments(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get payments: {str(e)}")
+        logger.error(f"Failed to get payments: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to retrieve payments")
 
 
@@ -917,7 +917,7 @@ async def mark_payment_paid_externally(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to mark payment as paid externally: {str(e)}")
+        logger.error(f"Failed to mark payment as paid externally: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to update payment")
 
 
@@ -957,7 +957,7 @@ async def refund_payment(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to process refund: {str(e)}")
+        logger.error(f"Failed to process refund: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to process refund")
 
 
@@ -997,14 +997,14 @@ async def retry_payment(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to retry payment: {str(e)}")
+        logger.error(f"Failed to retry payment: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to retry payment")
 
 
 class CancelPaymentRequest(BaseModel):
     """Request to cancel a scheduled payment."""
 
-    reason: Optional[str] = Field(
+    reason: str | None = Field(
         None, max_length=500, description="Optional cancellation reason"
     )
 
@@ -1012,7 +1012,7 @@ class CancelPaymentRequest(BaseModel):
 @client_contracts_admin_router.post("/payments/{payment_id}/cancel", tags=["Contracts"])
 async def cancel_payment(
     payment_id: str,
-    request_data: Optional[CancelPaymentRequest] = None,
+    request_data: CancelPaymentRequest | None = None,
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """
@@ -1038,7 +1038,7 @@ async def cancel_payment(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to cancel payment: {str(e)}")
+        logger.error(f"Failed to cancel payment: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to cancel payment")
 
 
@@ -1128,7 +1128,7 @@ async def get_public_contract(token: str, request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get public contract: {str(e)}")
+        logger.error(f"Failed to get public contract: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to retrieve contract")
 
 
@@ -1156,7 +1156,7 @@ async def get_public_contract_status(token: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get contract status: {str(e)}")
+        logger.error(f"Failed to get contract status: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to retrieve status")
 
 
@@ -1226,7 +1226,7 @@ async def sign_contract(token: str, sign_data: SignContractRequest, request: Req
             except HTTPException:
                 raise
             except Exception as e:
-                logger.error(f"Could not validate payment method for signing: {str(e)}")
+                logger.error(f"Could not validate payment method for signing: {e!s}")
                 raise HTTPException(
                     status_code=400, detail="Payment method validation failed"
                 )
@@ -1268,7 +1268,7 @@ async def sign_contract(token: str, sign_data: SignContractRequest, request: Req
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to sign contract: {str(e)}")
+        logger.error(f"Failed to sign contract: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to sign contract")
 
 
@@ -1317,7 +1317,7 @@ async def get_public_contract_payments(token: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get public payments: {str(e)}")
+        logger.error(f"Failed to get public payments: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to retrieve payments")
 
 
@@ -1409,7 +1409,7 @@ async def create_contract_setup_intent(token: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to create setup intent: {str(e)}")
+        logger.error(f"Failed to create setup intent: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to initialize payment setup"
         )
@@ -1520,7 +1520,7 @@ async def get_portal_data(token: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get portal data: {str(e)}")
+        logger.error(f"Failed to get portal data: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to load portal")
 
 
@@ -1580,7 +1580,7 @@ async def update_portal_payment_method(token: str, request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to create update intent: {str(e)}")
+        logger.error(f"Failed to create update intent: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to initialize payment update"
         )
@@ -1591,8 +1591,8 @@ class UpdatePaymentMethodRequest(BaseModel):
 
     payment_method_id: str = Field(..., min_length=1)
     setup_intent_id: str = Field(..., min_length=1)
-    payment_method_last4: Optional[str] = Field(None, max_length=4)
-    payment_method_brand: Optional[str] = Field(None, max_length=20)
+    payment_method_last4: str | None = Field(None, max_length=4)
+    payment_method_brand: str | None = Field(None, max_length=20)
 
 
 @client_contracts_public_router.put(
@@ -1656,7 +1656,7 @@ async def confirm_payment_method_update(
                     "stripe_payment_method_id": resolved_payment_method_id,
                     "payment_method_last4": payment_method_last4,
                     "payment_method_brand": payment_method_brand,
-                    "payment_method_updated_at": datetime.now(timezone.utc),
+                    "payment_method_updated_at": datetime.now(UTC),
                 }
             },
         )
@@ -1697,7 +1697,7 @@ async def confirm_payment_method_update(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to update payment method: {str(e)}")
+        logger.error(f"Failed to update payment method: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to update payment method")
 
 
@@ -1736,12 +1736,12 @@ async def process_contract_followups(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Cron job failed: {str(e)}")
+        logger.error(f"Cron job failed: {e!s}")
         raise HTTPException(status_code=500, detail="Cron job failed")
 
 
 __all__ = [
     "client_contracts_admin_router",
-    "client_contracts_public_router",
     "client_contracts_cron_router",
+    "client_contracts_public_router",
 ]

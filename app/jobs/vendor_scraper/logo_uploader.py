@@ -8,7 +8,7 @@ Returns the CDN URL to use as logo_url.
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from io import BytesIO
 
 import httpx
@@ -69,7 +69,7 @@ async def download_and_upload_logo(
         location = city or state or "unknown"
         location_slug = _slugify(location)
         name_slug = _slugify(business_name)
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         key = f"{R2_LOGO_PREFIX}/{location_slug}/{timestamp}_{name_slug}.{ext}"
 
         # Upload to R2

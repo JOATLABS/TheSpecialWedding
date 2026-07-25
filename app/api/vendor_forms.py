@@ -2,8 +2,8 @@ import logging
 import os
 import secrets
 import string
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -27,7 +27,7 @@ def _build_public_vendor_form_link(
 class VendorFormSubmission(BaseModel):
     """Pydantic model for vendor form submission data"""
 
-    submission_data: Dict[str, Any] = Field(
+    submission_data: dict[str, Any] = Field(
         ..., description="Form field responses keyed by field ID"
     )
 
@@ -62,8 +62,8 @@ class VendorFormService:
                 **form_data,
                 "access_token": self.generate_form_token(),
                 "created_by": created_by,
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
                 "sent_at": None,
                 "submitted_at": None,
                 "submission_data": None,
@@ -77,12 +77,12 @@ class VendorFormService:
                 "form_id": str(result.inserted_id),
             }
         except Exception as e:
-            logging.error(f"Error creating vendor form: {str(e)}")
+            logging.error(f"Error creating vendor form: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Failed to create vendor form: {str(e)}"
+                status_code=500, detail=f"Failed to create vendor form: {e!s}"
             )
 
-    async def get_vendor_forms_for_planner(self, planner_email: str) -> List[dict]:
+    async def get_vendor_forms_for_planner(self, planner_email: str) -> list[dict]:
         """Get all vendor forms for a specific planner"""
         try:
             # Get planner's weddings (safety cap: typical planner has <500 weddings)
@@ -103,12 +103,12 @@ class VendorFormService:
 
             return vendor_forms
         except Exception as e:
-            logging.error(f"Error fetching vendor forms: {str(e)}")
+            logging.error(f"Error fetching vendor forms: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Failed to fetch vendor forms: {str(e)}"
+                status_code=500, detail=f"Failed to fetch vendor forms: {e!s}"
             )
 
-    async def get_all_vendor_forms(self) -> List[dict]:
+    async def get_all_vendor_forms(self) -> list[dict]:
         """Get all vendor forms (ROOT_ADMIN only)"""
         try:
             # Safety cap: limit admin view to 10k forms (can paginate if needed)
@@ -123,9 +123,9 @@ class VendorFormService:
 
             return vendor_forms
         except Exception as e:
-            logging.error(f"Error fetching all vendor forms: {str(e)}")
+            logging.error(f"Error fetching all vendor forms: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Failed to fetch vendor forms: {str(e)}"
+                status_code=500, detail=f"Failed to fetch vendor forms: {e!s}"
             )
 
     async def send_vendor_form(self, form_id: str, planner_email: str) -> dict:
@@ -230,8 +230,8 @@ class VendorFormService:
                     {
                         "$set": {
                             "status": "sent",
-                            "sent_at": datetime.now(timezone.utc),
-                            "updated_at": datetime.now(timezone.utc),
+                            "sent_at": datetime.now(UTC),
+                            "updated_at": datetime.now(UTC),
                         }
                     },
                 )
@@ -243,9 +243,9 @@ class VendorFormService:
         except HTTPException:
             raise
         except Exception as e:
-            logging.error(f"Error sending vendor form: {str(e)}")
+            logging.error(f"Error sending vendor form: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Failed to send vendor form: {str(e)}"
+                status_code=500, detail=f"Failed to send vendor form: {e!s}"
             )
 
 
@@ -329,10 +329,10 @@ async def _get_vendor_form_public_payload(form_id: str, token: str) -> dict:
     except HTTPException:
         raise
     except ValueError as e:
-        logging.warning(f"Validation error getting public vendor form: {str(e)}")
+        logging.warning(f"Validation error getting public vendor form: {e!s}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logging.error(f"Error getting public vendor form: {str(e)}")
+        logging.error(f"Error getting public vendor form: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to load form")
 
 
@@ -384,7 +384,7 @@ async def _submit_vendor_form_payload(
             "vendor_name": form["vendor_name"],
             "wedding_id": form["wedding_id"],
             "submission_data": submission_data,
-            "submitted_at": datetime.now(timezone.utc),
+            "submitted_at": datetime.now(UTC),
             "status": "submitted",
         }
 
@@ -398,9 +398,9 @@ async def _submit_vendor_form_payload(
             {
                 "$set": {
                     "status": "submitted",
-                    "submitted_at": datetime.now(timezone.utc),
+                    "submitted_at": datetime.now(UTC),
                     "submission_data": submission_data,
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }
             },
         )
@@ -436,7 +436,7 @@ async def _submit_vendor_form_payload(
                             <p><strong>Service Type:</strong> {form["vendor_type"].replace("_", " ").title()}</p>
                             <p><strong>Wedding:</strong> {wedding["couple_names"] if wedding else "Unknown"}</p>
                             <p><strong>Form:</strong> {form["form_name"]}</p>
-                            <p><strong>Submitted:</strong> {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")} UTC</p>
+                            <p><strong>Submitted:</strong> {datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")} UTC</p>
                         </div>
 
                         <p>Please log in to your dashboard to review the vendor's submission and take appropriate action.</p>
@@ -472,13 +472,11 @@ async def _submit_vendor_form_payload(
                         vendor_id=str(result.inserted_id),
                     )
                 except Exception as push_error:
-                    logging.warning(
-                        f"Failed to send push notification: {str(push_error)}"
-                    )
+                    logging.warning(f"Failed to send push notification: {push_error!s}")
                     # Continue even if push notification fails
 
         except Exception as e:
-            logging.error(f"Failed to send notification email: {str(e)}")
+            logging.error(f"Failed to send notification email: {e!s}")
             # Continue even if notification fails
 
         return {
@@ -489,10 +487,10 @@ async def _submit_vendor_form_payload(
     except HTTPException:
         raise
     except ValueError as e:
-        logging.warning(f"Validation error submitting vendor form: {str(e)}")
+        logging.warning(f"Validation error submitting vendor form: {e!s}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logging.error(f"Error submitting vendor form: {str(e)}")
+        logging.error(f"Error submitting vendor form: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to submit form")
 
 

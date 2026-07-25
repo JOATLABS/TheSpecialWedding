@@ -18,9 +18,10 @@ import hashlib
 import logging
 import re
 import secrets
-from datetime import UTC, datetime, timedelta
-from typing import Any, AsyncIterator, Dict, List, Optional
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -56,7 +57,7 @@ _AURINKO_LIST_MAX_PAGES = 50
 
 # Shared httpx.AsyncClient — keeps connections alive across calls so the
 # team-availability fan-out (one request per connection) reuses TCP/TLS state.
-_aurinko_http_client: Optional[httpx.AsyncClient] = None
+_aurinko_http_client: httpx.AsyncClient | None = None
 
 
 def _get_aurinko_http_client() -> httpx.AsyncClient:
@@ -148,10 +149,10 @@ class AurinkoClient:
         method: str,
         path: str,
         *,
-        account_token: Optional[str] = None,
-        params: Optional[dict[str, Any]] = None,
-        json_body: Optional[dict[str, Any]] = None,
-        extra_headers: Optional[dict[str, str]] = None,
+        account_token: str | None = None,
+        params: dict[str, Any] | None = None,
+        json_body: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
         platform_auth: bool = False,
     ) -> httpx.Response:
         url = f"{self.base_url}{path}"
@@ -193,7 +194,7 @@ class AurinkoClient:
     _DEFAULT_SERVICE_TYPE = "Google"
 
     @classmethod
-    def resolve_service_type(cls, provider: Optional[str]) -> str:
+    def resolve_service_type(cls, provider: str | None) -> str:
         """Map a planner-facing provider id to Aurinko's ``serviceType``.
 
         - "google" / "office365" / "icloud" / "ews" (case-insensitive)
@@ -215,7 +216,7 @@ class AurinkoClient:
         scopes: list[str],
         return_url: str,
         state: str,
-        service_type: Optional[str] = None,
+        service_type: str | None = None,
     ) -> str:
         """Build a hosted-auth URL the user is redirected to.
 
@@ -446,7 +447,7 @@ class AurinkoClient:
         *,
         account_token: str,
         tasklist_id: str,
-        page_token: Optional[str] = None,
+        page_token: str | None = None,
     ) -> dict[str, Any]:
         """List tasks from one Aurinko task list."""
         params: dict[str, Any] = {"pageSize": _AURINKO_LIST_PAGE_SIZE}
@@ -466,8 +467,8 @@ class AurinkoClient:
         *,
         account_token: str,
         tasklist_id: str,
-        skip_completed_before_date: Optional[datetime] = None,
-        await_ready: Optional[bool] = None,
+        skip_completed_before_date: datetime | None = None,
+        await_ready: bool | None = None,
     ) -> dict[str, Any]:
         """Provision Aurinko's task-list delta stream.
 
@@ -494,8 +495,8 @@ class AurinkoClient:
         account_token: str,
         tasklist_id: str,
         change_set: str,
-        delta_token: Optional[str] = None,
-        page_token: Optional[str] = None,
+        delta_token: str | None = None,
+        page_token: str | None = None,
     ) -> dict[str, Any]:
         """Read one page from Aurinko's task ``updated`` or ``deleted`` stream."""
         if change_set not in {"updated", "deleted"}:
@@ -552,7 +553,7 @@ class AurinkoClient:
         tasklist_id: str,
         task_id: str,
         body: dict[str, Any],
-        etag: Optional[str] = None,
+        etag: str | None = None,
     ) -> dict[str, Any]:
         response = await self._request(
             "PATCH",
@@ -601,8 +602,8 @@ class AurinkoClient:
         self,
         *,
         account_token: str,
-        book_id: Optional[str] = None,
-        page_token: Optional[str] = None,
+        book_id: str | None = None,
+        page_token: str | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {}
         if page_token:
@@ -620,7 +621,7 @@ class AurinkoClient:
         self,
         *,
         account_token: str,
-        await_ready: Optional[bool] = None,
+        await_ready: bool | None = None,
     ) -> dict[str, Any]:
         """Provision Aurinko's contacts delta stream.
 
@@ -644,8 +645,8 @@ class AurinkoClient:
         *,
         account_token: str,
         change_set: str,
-        delta_token: Optional[str] = None,
-        page_token: Optional[str] = None,
+        delta_token: str | None = None,
+        page_token: str | None = None,
     ) -> dict[str, Any]:
         """Read one page from Aurinko's contacts ``updated`` or ``deleted`` stream."""
         if change_set not in {"updated", "deleted"}:
@@ -699,7 +700,7 @@ class AurinkoClient:
         account_token: str,
         contact_id: str,
         body: dict[str, Any],
-        etag: Optional[str] = None,
+        etag: str | None = None,
     ) -> dict[str, Any]:
         response = await self._request(
             "PATCH",
@@ -744,8 +745,8 @@ class AurinkoClient:
         self,
         *,
         account_token: str,
-        calendar_id: Optional[str] = None,
-        resource: Optional[str] = None,
+        calendar_id: str | None = None,
+        resource: str | None = None,
         webhook_url: str,
     ) -> dict[str, Any]:
         """Subscribe to change notifications for one Aurinko resource.
@@ -813,7 +814,7 @@ class AurinkoClient:
         profile: str,
         from_: datetime,
         to: datetime,
-        duration_minutes: Optional[int] = None,
+        duration_minutes: int | None = None,
     ) -> dict[str, Any]:
         """Query Aurinko for free slots in [from_, to] for the given profile.
 
@@ -846,8 +847,8 @@ class AurinkoClient:
         start: datetime,
         duration_minutes: int,
         attendees: list[dict[str, Any]],
-        subject: Optional[str] = None,
-        notes: Optional[str] = None,
+        subject: str | None = None,
+        notes: str | None = None,
         start_conference: bool = False,
     ) -> dict[str, Any]:
         """Create a booking on Aurinko for a chosen slot.
@@ -902,7 +903,7 @@ class AurinkoClient:
         *,
         account_token: str,
         booking_id: str,
-        reason: Optional[str] = None,
+        reason: str | None = None,
     ) -> None:
         """Cancel an Aurinko booking. Idempotent — 404 treated as success.
 
@@ -1034,7 +1035,7 @@ class CalendarProviderService:
             and (settings.AURINKO_CLIENT_SECRET or settings.AURINKO_API_KEY)
         )
 
-    def _webhook_url(self) -> Optional[str]:
+    def _webhook_url(self) -> str | None:
         """Build the public Aurinko webhook delivery URL."""
         base = settings.NEXT_PUBLIC_API_BASE_URL
         if not base:
@@ -1157,8 +1158,8 @@ class CalendarProviderService:
         retry policy code sees the same shape.
         """
         message = _redact_sensitive(exc)
-        status_code: Optional[int] = None
-        error_reason: Optional[str] = None
+        status_code: int | None = None
+        error_reason: str | None = None
 
         if isinstance(exc, httpx.HTTPStatusError):
             status_code = exc.response.status_code
@@ -1256,10 +1257,10 @@ class CalendarProviderService:
         *,
         success: bool,
         connection_doc: dict[str, Any],
-        external_event_id: Optional[str] = None,
-        etag: Optional[str] = None,
-        classification: Optional[dict[str, Any]] = None,
-        event: Optional[dict[str, Any]] = None,
+        external_event_id: str | None = None,
+        etag: str | None = None,
+        classification: dict[str, Any] | None = None,
+        event: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         classification = classification or {}
         return {
@@ -1301,12 +1302,12 @@ class CalendarProviderService:
         )
         return Fernet(derived_key)
 
-    def _encrypt_token(self, token: Optional[str]) -> Optional[str]:
+    def _encrypt_token(self, token: str | None) -> str | None:
         if not token:
             return None
         return self._get_fernet().encrypt(token.encode()).decode()
 
-    def _decrypt_token(self, token: Optional[str]) -> Optional[str]:
+    def _decrypt_token(self, token: str | None) -> str | None:
         if not token:
             return None
         return self._get_fernet().decrypt(token.encode()).decode()
@@ -1318,8 +1319,8 @@ class CalendarProviderService:
         user_email: str,
         owner_id: str,
         owner_email: str,
-        redirect_to: Optional[str] = None,
-        service_type: Optional[str] = None,
+        redirect_to: str | None = None,
+        service_type: str | None = None,
     ) -> str:
         now = datetime.now(UTC)
         payload = {
@@ -1335,7 +1336,7 @@ class CalendarProviderService:
         }
         return jwt.encode(payload, self._get_state_signing_key(), algorithm="HS256")
 
-    def _decode_state(self, state: str) -> Dict[str, Any]:
+    def _decode_state(self, state: str) -> dict[str, Any]:
         try:
             payload = jwt.decode(
                 state,
@@ -1368,8 +1369,8 @@ class CalendarProviderService:
         user_email: str,
         owner_id: str,
         owner_email: str,
-        redirect_to: Optional[str] = None,
-        provider: Optional[str] = None,
+        redirect_to: str | None = None,
+        provider: str | None = None,
     ) -> str:
         """Generate the Aurinko hosted-auth URL for a planner/team member.
 
@@ -1411,8 +1412,8 @@ class CalendarProviderService:
         *,
         code: str,
         state: str,
-        current_user_context: Optional[dict[str, Optional[str]]] = None,
-    ) -> Dict[str, Any]:
+        current_user_context: dict[str, str | None] | None = None,
+    ) -> dict[str, Any]:
         """Exchange the Aurinko callback code for an account token and persist rows."""
         state_payload = self._decode_state(state)
 
@@ -1700,7 +1701,7 @@ class CalendarProviderService:
         self,
         *,
         user_id: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Return the planner's most recent unexpired picker draft, if any.
 
         Used by the callback page's "resume after refresh / back-button /
@@ -1807,9 +1808,9 @@ class CalendarProviderService:
         self,
         *,
         picked_ids: list[str],
-        effective_default_write: Optional[str],
+        effective_default_write: str | None,
         calendars_by_id: dict[str, dict[str, Any]],
-    ) -> Optional[str]:
+    ) -> str | None:
         """Choose the one row that owns account-scoped task/contact sync."""
         if effective_default_write and effective_default_write in picked_ids:
             return effective_default_write
@@ -1822,10 +1823,10 @@ class CalendarProviderService:
         self,
         *,
         picked_ids: list[str],
-        effective_default_write: Optional[str],
+        effective_default_write: str | None,
         existing_by_calendar: dict[str, dict[str, Any]],
         enabled_field: str,
-    ) -> Optional[str]:
+    ) -> str | None:
         enabled_ids = [
             calendar_id
             for calendar_id in picked_ids
@@ -1876,9 +1877,9 @@ class CalendarProviderService:
         draft_id: str,
         user_id: str,
         picks: list[dict[str, Any]],
-        task_picks: Optional[list[dict[str, Any]]] = None,
-        contact_picks: Optional[list[dict[str, Any]]] = None,
-    ) -> Dict[str, Any]:
+        task_picks: list[dict[str, Any]] | None = None,
+        contact_picks: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         """Drain a draft into ``calendar_connections`` rows + webhook subs.
 
         Loads the draft created during ``handle_oauth_callback``, then
@@ -2045,8 +2046,8 @@ class CalendarProviderService:
                 "warning": None,
             }
 
-        selected_tasklist_id: Optional[str] = None
-        selected_tasklist_name: Optional[str] = None
+        selected_tasklist_id: str | None = None
+        selected_tasklist_name: str | None = None
         for pick in task_picks or []:
             tid = str(pick.get("aurinko_tasklist_id") or pick.get("tasklist_id") or "")
             tid = tid.strip()
@@ -2059,8 +2060,8 @@ class CalendarProviderService:
             )
             break
 
-        selected_contact_book_id: Optional[str] = None
-        selected_contact_book_name: Optional[str] = None
+        selected_contact_book_id: str | None = None
+        selected_contact_book_name: str | None = None
         for pick in contact_picks or []:
             bid = str(
                 pick.get("aurinko_contact_book_id") or pick.get("contact_book_id") or ""
@@ -2472,7 +2473,7 @@ class CalendarProviderService:
         # tear down the prior per-row subscription before creating a new one
         # so subscriptions don't accumulate Aurinko-side.
         webhook_url = self._webhook_url()
-        webhook_warning: Optional[str] = None
+        webhook_warning: str | None = None
         webhook_failure_count = 0
         if webhook_url:
             writable_rows = await self.connections_collection.find(
@@ -2797,9 +2798,9 @@ class CalendarProviderService:
         self,
         *,
         owner_id: str,
-        current_user_id: Optional[str],
+        current_user_id: str | None,
         include_all_owner_connections: bool,
-    ) -> List[dict]:
+    ) -> list[dict]:
         query: dict[str, Any] = {"owner_planner_id": owner_id}
         if not include_all_owner_connections and current_user_id:
             query["$or"] = [
@@ -3075,8 +3076,8 @@ class CalendarProviderService:
         connection_id: str,
         updates: dict[str, Any],
         *,
-        actor_email: Optional[str] = None,
-        actor_role: Optional[str] = None,
+        actor_email: str | None = None,
+        actor_role: str | None = None,
     ) -> dict:
         connection_doc = await self.get_connection_doc(connection_id)
         set_doc = {
@@ -3464,8 +3465,8 @@ class CalendarProviderService:
         self,
         connection_id: str,
         *,
-        actor_email: Optional[str] = None,
-        actor_role: Optional[str] = None,
+        actor_email: str | None = None,
+        actor_role: str | None = None,
     ) -> dict:
         """Delete one connection row, revoking the Aurinko account if last row."""
         connection_doc = await self.get_connection_doc(connection_id)
@@ -3599,7 +3600,7 @@ class CalendarProviderService:
 
     async def get_default_write_connection_for_user(
         self, user_email: str
-    ) -> Optional[dict]:
+    ) -> dict | None:
         query = {
             "user_email": user_email,
             "connection_status": CalendarConnectionStatus.ACTIVE.value,
@@ -3613,7 +3614,7 @@ class CalendarProviderService:
             return connection
         return await self.connections_collection.find_one(query)
 
-    async def get_connection_status(self, user_email: str) -> Dict[str, Any]:
+    async def get_connection_status(self, user_email: str) -> dict[str, Any]:
         connection = await self.get_default_write_connection_for_user(user_email)
         if not connection:
             return {
@@ -3639,7 +3640,7 @@ class CalendarProviderService:
 
     async def disconnect(
         self, user_email: str, *, owner_planner_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Disconnect every connection for a (workspace, user) pair.
 
         Team-member identity is compound ``(owner_planner_id, user_email)``;
@@ -3659,7 +3660,7 @@ class CalendarProviderService:
         if not docs:
             return {"disconnected": True, "message": "Calendar was not connected"}
 
-        by_account: Dict[tuple[str, str], list[dict[str, Any]]] = {}
+        by_account: dict[tuple[str, str], list[dict[str, Any]]] = {}
         for doc in docs:
             key = (
                 str(doc.get("user_id") or ""),
@@ -3774,8 +3775,8 @@ class CalendarProviderService:
 
     def _build_event_body(
         self,
-        task: Dict[str, Any],
-        attendee_emails: Optional[list[str]] = None,
+        task: dict[str, Any],
+        attendee_emails: list[str] | None = None,
     ) -> dict:
         """Translate a canonical task into an Aurinko event body."""
         timezone_name = task.get("timezone") or getattr(
@@ -3811,15 +3812,15 @@ class CalendarProviderService:
 
     async def _account_token_for_connection(
         self, connection_doc: dict[str, Any]
-    ) -> Optional[str]:
+    ) -> str | None:
         encrypted = connection_doc.get("aurinko_access_token_encrypted")
         return self._decrypt_token(encrypted)
 
     async def create_event_for_connection(
         self,
         connection_id: str,
-        task: Dict[str, Any],
-        attendee_emails: Optional[list[str]] = None,
+        task: dict[str, Any],
+        attendee_emails: list[str] | None = None,
     ) -> dict[str, Any]:
         connection_doc = await self.get_connection_doc(connection_id)
         token = await self._account_token_for_connection(connection_doc)
@@ -3878,8 +3879,8 @@ class CalendarProviderService:
         self,
         connection_id: str,
         external_event_id: str,
-        task: Dict[str, Any],
-        attendee_emails: Optional[list[str]] = None,
+        task: dict[str, Any],
+        attendee_emails: list[str] | None = None,
     ) -> dict[str, Any]:
         connection_doc = await self.get_connection_doc(connection_id)
         token = await self._account_token_for_connection(connection_doc)
@@ -4042,10 +4043,10 @@ class CalendarProviderService:
         self,
         connection_id: str,
         *,
-        time_min: Optional[datetime] = None,
-        time_max: Optional[datetime] = None,
+        time_min: datetime | None = None,
+        time_max: datetime | None = None,
         max_results: int = 200,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         if not time_min:
             time_min = datetime.now(UTC)
         if not time_max:
@@ -4117,10 +4118,10 @@ class CalendarProviderService:
     async def fetch_external_events(
         self,
         user_email: str,
-        time_min: Optional[datetime] = None,
-        time_max: Optional[datetime] = None,
+        time_min: datetime | None = None,
+        time_max: datetime | None = None,
         max_results: int = 100,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Single-user wrapper used by the planner UI's events feed."""
         connection = await self.get_default_write_connection_for_user(user_email)
         if not connection:

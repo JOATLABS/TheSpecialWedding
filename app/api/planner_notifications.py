@@ -6,7 +6,6 @@ These are SEPARATE from platform notifications sent by root admin.
 """
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 
@@ -23,8 +22,8 @@ async def get_planner_activity_notifications(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=50, description="Items per page"),
     unread_only: bool = Query(False, description="Show only unread notifications"),
-    wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
-    notification_type: Optional[str] = Query(None, description="Filter by type"),
+    wedding_id: str | None = Query(None, description="Filter by wedding ID"),
+    notification_type: str | None = Query(None, description="Filter by type"),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
@@ -94,7 +93,7 @@ async def mark_activity_notification_actioned(
 
 @router.put("/planner/activity-notifications/read-all", tags=["Planner Notifications"])
 async def mark_all_activity_notifications_read(
-    wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
+    wedding_id: str | None = Query(None, description="Filter by wedding ID"),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Mark all activity notifications as read for the current planner"""

@@ -28,10 +28,9 @@ production at first request.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
-
-FORM_TEMPLATES: List[Dict[str, Any]] = [
+FORM_TEMPLATES: list[dict[str, Any]] = [
     # =========================================================================
     # 1. Couple Intake Questionnaire — the first form a planner sends a couple
     # =========================================================================

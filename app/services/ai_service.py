@@ -19,8 +19,8 @@ import html
 import json
 import logging
 import re
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import HTTPException
 
@@ -679,7 +679,7 @@ Always explain what you are doing. If you are executing an action, summarize wha
 # ``AI_GEMINI_MODEL_PRIMARY`` / ``AI_GEMINI_MODEL_ECONOMY`` in env to
 # roll forward. Defaults are the latest known-good IDs at time of
 # writing; LOW_CREDIT_THRESHOLD is also overridable.
-from app.core.settings import settings as _ai_settings  # noqa: E402
+from app.core.settings import settings as _ai_settings
 
 MODEL_PRIMARY = _ai_settings.ai_gemini_model_primary or "gemini-2.5-flash"
 MODEL_ECONOMY = _ai_settings.ai_gemini_model_economy or "gemini-2.0-flash"
@@ -703,7 +703,7 @@ class AIGenerationError(Exception):
         self,
         message: str,
         error_code: str = "ai_error",
-        retry_after: Optional[int] = None,
+        retry_after: int | None = None,
     ):
         self.message = message
         self.error_code = error_code
@@ -828,10 +828,10 @@ class AIService:
                     f"Gemini AI initialized successfully. Primary: {MODEL_PRIMARY}, Economy: {MODEL_ECONOMY}"
                 )
             except ImportError as e:
-                logger.error(f"google-genai package not installed: {str(e)}")
+                logger.error(f"google-genai package not installed: {e!s}")
                 logger.error("Install with: pip install google-genai")
             except Exception as e:
-                logger.error(f"Failed to initialize Gemini client: {str(e)}")
+                logger.error(f"Failed to initialize Gemini client: {e!s}")
         else:
             logger.warning(
                 "AI service disabled - GOOGLE_API_KEY or GEMINI_API_KEY not configured"
@@ -847,11 +847,11 @@ class AIService:
         if not self._client:
             raise AIServiceUnavailableError()
 
-    def get_feature_info(self, feature: str) -> Optional[Dict]:
+    def get_feature_info(self, feature: str) -> dict | None:
         """Get feature configuration."""
         return AI_FEATURES.get(feature)
 
-    def list_features(self) -> Dict[str, Dict]:
+    def list_features(self) -> dict[str, dict]:
         """List all available AI features with their costs."""
         return {
             name: {
@@ -885,8 +885,8 @@ class AIService:
         )
 
     async def _select_model_and_check_credits(
-        self, user_id: str, bypass_limits: Optional[bool] = None
-    ) -> Dict[str, Any]:
+        self, user_id: str, bypass_limits: bool | None = None
+    ) -> dict[str, Any]:
         """
         Select the appropriate model based on user's credit level and return credit status.
 
@@ -954,8 +954,8 @@ class AIService:
             return result
 
     async def check_credits(
-        self, user_id: str, feature: str, bypass_limits: Optional[bool] = None
-    ) -> Dict[str, Any]:
+        self, user_id: str, feature: str, bypass_limits: bool | None = None
+    ) -> dict[str, Any]:
         """
         Check if user has enough AI credits for a feature.
 
@@ -995,12 +995,12 @@ class AIService:
         tenant_id: str,
         feature: str,
         prompt: str,
-        context: Dict[str, Any],
+        context: dict[str, Any],
         force_refresh: bool = False,
-        cache_context: Optional[Dict[str, Any]] = None,
-        subscription_plan: Optional[str] = None,
-        tools: Optional[list] = None,
-    ) -> Dict[str, Any]:
+        cache_context: dict[str, Any] | None = None,
+        subscription_plan: str | None = None,
+        tools: list | None = None,
+    ) -> dict[str, Any]:
         """
         Generate AI response with caching and credit tracking.
 
@@ -1025,7 +1025,7 @@ class AIService:
             raise ValueError(f"Unknown AI feature: {feature}")
 
         feature_config = AI_FEATURES[feature]
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.now(UTC)
 
         # Use cache_context for key generation if provided, otherwise use full context
         key_context = cache_context if cache_context is not None else context
@@ -1139,9 +1139,7 @@ class AIService:
             # never become stored XSS, regardless of how the frontend
             # renders the field.
             response = self._sanitize_ai_output(response)
-            latency_ms = (
-                datetime.now(timezone.utc) - start_time
-            ).total_seconds() * 1000
+            latency_ms = (datetime.now(UTC) - start_time).total_seconds() * 1000
 
             # Root admin uses these tools operationally and should not consume planner credits.
             if not is_root_admin:
@@ -1239,9 +1237,7 @@ class AIService:
                     }
             raise
         except Exception as e:
-            latency_ms = (
-                datetime.now(timezone.utc) - start_time
-            ).total_seconds() * 1000
+            latency_ms = (datetime.now(UTC) - start_time).total_seconds() * 1000
 
             # Log error (no credits charged)
             await self._log_usage(
@@ -1255,7 +1251,7 @@ class AIService:
                 error=str(e),
             )
 
-            logger.error(f"AI generation error for {feature}: {str(e)}")
+            logger.error(f"AI generation error for {feature}: {e!s}")
 
             # Fallback: Try to return cached data instead of erroring out
             # This provides a much better UX - stale insights > no insights.
@@ -1269,7 +1265,7 @@ class AIService:
                 )
                 if fallback:
                     logger.info(
-                        f"Returning cached fallback for {feature} after API error: {str(e)}"
+                        f"Returning cached fallback for {feature} after API error: {e!s}"
                     )
                     return {
                         "response": fallback["response"],
@@ -1282,15 +1278,15 @@ class AIService:
             if isinstance(e, AIGenerationError):
                 raise
 
-            raise AIGenerationError(f"AI generation failed: {str(e)}")
+            raise AIGenerationError(f"AI generation failed: {e!s}")
 
     async def _call_gemini(
         self,
         feature: str,
         prompt: str,
-        context: Dict[str, Any],
+        context: dict[str, Any],
         model: str,
-        tools: Optional[list] = None,
+        tools: list | None = None,
     ) -> Any:
         """
         Make the actual Gemini API call using the new SDK with proper async.
@@ -1377,7 +1373,7 @@ class AIService:
                     ),
                     timeout=60.0,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.error(f"Gemini API timeout (model={model})")
                 raise AITimeoutError()
 
@@ -1484,7 +1480,7 @@ class AIService:
 
             # Fallback: Parse error string for common patterns
             error_str = str(e).lower()
-            logger.error(f"Gemini API error (model={model}): {str(e)}")
+            logger.error(f"Gemini API error (model={model}): {e!s}")
 
             if (
                 "429" in error_str
@@ -1543,12 +1539,9 @@ class AIService:
         try:
             # Sometimes Gemini wraps JSON in markdown code blocks.
             text_to_parse = text
-            if text_to_parse.startswith("```json"):
-                text_to_parse = text_to_parse[7:]
-            if text_to_parse.startswith("```"):
-                text_to_parse = text_to_parse[3:]
-            if text_to_parse.endswith("```"):
-                text_to_parse = text_to_parse[:-3]
+            text_to_parse = text_to_parse.removeprefix("```json")
+            text_to_parse = text_to_parse.removeprefix("```")
+            text_to_parse = text_to_parse.removesuffix("```")
             text_to_parse = text_to_parse.strip()
 
             parsed = json.loads(text_to_parse)
@@ -1757,7 +1750,7 @@ class AIService:
         introduce another collection just for throttling.
         """
         try:
-            today_start = datetime.now(timezone.utc).replace(
+            today_start = datetime.now(UTC).replace(
                 hour=0, minute=0, second=0, microsecond=0
             )
             count = await self.usage_log.count_documents(
@@ -1787,7 +1780,7 @@ class AIService:
         latency_ms: float,
         status: str,
         model: str,
-        error: Optional[str] = None,
+        error: str | None = None,
     ):
         """Log AI usage for analytics and auditing."""
         try:
@@ -1800,11 +1793,11 @@ class AIService:
                 "status": status,
                 "model": model,
                 "error": error,
-                "created_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
             }
             await self.usage_log.insert_one(log_entry)
         except Exception as e:
-            logger.error(f"Failed to log AI usage: {str(e)}")
+            logger.error(f"Failed to log AI usage: {e!s}")
 
     async def _send_low_credit_notification(
         self, user_id: str, credits_remaining: int, credits_limit: int
@@ -1815,7 +1808,7 @@ class AIService:
         """
         try:
             # Get current billing period (first of the month)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             billing_period = now.strftime("%Y-%m")
 
             # Check if we already sent a notification this billing cycle
@@ -1863,11 +1856,11 @@ class AIService:
 
         except Exception as e:
             # Don't fail the AI request if notification fails
-            logger.error(f"Failed to send low credit notification: {str(e)}")
+            logger.error(f"Failed to send low credit notification: {e!s}")
 
     async def get_usage_metrics(
-        self, period_days: int = 7, tenant_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, period_days: int = 7, tenant_id: str | None = None
+    ) -> dict[str, Any]:
         """
         Get AI usage metrics for admin dashboard.
 
@@ -1880,7 +1873,7 @@ class AIService:
         """
         from datetime import timedelta
 
-        start_date = datetime.now(timezone.utc) - timedelta(days=period_days)
+        start_date = datetime.now(UTC) - timedelta(days=period_days)
 
         query = {"created_at": {"$gte": start_date}}
         if tenant_id:
@@ -1989,7 +1982,7 @@ class AIService:
             "top_tenants": top_tenants,
             "feature_breakdown": feature_breakdown,
             "model_breakdown": model_breakdown,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
         }
 
 

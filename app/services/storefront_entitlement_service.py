@@ -7,8 +7,8 @@ limits and are never read or rewritten here.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from app.constants.roles import is_wedding_planner_user

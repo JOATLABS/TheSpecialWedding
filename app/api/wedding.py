@@ -1,6 +1,5 @@
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -39,7 +38,7 @@ subscription_service = SubscriptionService()
 
 def _get_planner_scope(
     current_user: ExtendedAuthUser,
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[str | None, str | None]:
     if current_user.is_team_member:
         return current_user.parent_planner_id, current_user.team_owner_email
     return current_user.user_data.get("_id"), current_user.email
@@ -52,7 +51,7 @@ async def _sync_couple_owner_mirrors(wedding_id: str) -> None:
         {"assigned_planner_id": 1, "assigned_planner_email": 1},
     )
     owner_id, owner_email = extract_wedding_owner_identity(wedding)
-    set_fields: dict = {"updated_at": datetime.now(timezone.utc)}
+    set_fields: dict = {"updated_at": datetime.now(UTC)}
     if owner_id:
         set_fields["planner_id"] = owner_id
     if owner_email:
@@ -71,7 +70,7 @@ async def _sync_couple_owner_mirrors(wedding_id: str) -> None:
 async def list_weddings(
     page: int = Query(1, ge=1, le=10000),
     limit: int = Query(50, ge=1, le=100),
-    search: Optional[str] = Query(None),
+    search: str | None = Query(None),
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """
@@ -195,7 +194,7 @@ async def create_wedding(
 
                     if not already_billed_this_period:
                         # Idempotency key: prevents double-billing on retries
-                        billing_period = datetime.now(timezone.utc).strftime("%Y-%m")
+                        billing_period = datetime.now(UTC).strftime("%Y-%m")
                         idempotency_key = f"wedding_create_{wedding_data['_id']}_{sub['stripe_customer_id']}_{billing_period}"
 
                         meter_result = stripe_service.report_meter_event(
@@ -215,10 +214,10 @@ async def create_wedding(
                                 mongo.db["weddings"],
                                 wedding_data["_id"],
                                 {
-                                    "last_billed_at": datetime.now(timezone.utc),
-                                    "billed_period": datetime.now(
-                                        timezone.utc
-                                    ).strftime("%Y-%m"),
+                                    "last_billed_at": datetime.now(UTC),
+                                    "billed_period": datetime.now(UTC).strftime(
+                                        "%Y-%m"
+                                    ),
                                     "meter_pending": False,
                                     "meter_pending_reason": None,
                                 },
@@ -232,9 +231,9 @@ async def create_wedding(
                                     "meter_pending": True,
                                     "meter_pending_reason": meter_result.get("message")
                                     or "metering_failed",
-                                    "billed_period": datetime.now(
-                                        timezone.utc
-                                    ).strftime("%Y-%m"),
+                                    "billed_period": datetime.now(UTC).strftime(
+                                        "%Y-%m"
+                                    ),
                                 },
                                 context="wedding_create_meter_failed",
                             )
@@ -372,8 +371,8 @@ async def delete_wedding_admin(
             )
             return result
         except Exception as e:
-            logger.error(f"Hard delete failed for wedding {wedding_id}: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Hard delete failed: {str(e)}")
+            logger.error(f"Hard delete failed for wedding {wedding_id}: {e!s}")
+            raise HTTPException(status_code=500, detail=f"Hard delete failed: {e!s}")
 
     # Perform soft delete with meter handling
     try:
@@ -399,7 +398,7 @@ async def delete_wedding_admin(
                     {"_id": sub["plan_id"]}
                 )
                 if plan and plan.get("is_metered") and plan.get("meter_event_name"):
-                    current_period = datetime.now(timezone.utc).strftime("%Y-%m")
+                    current_period = datetime.now(UTC).strftime("%Y-%m")
                     already_reversed = (
                         wedding.get("meter_reversed_period") == current_period
                     )
@@ -453,7 +452,7 @@ async def delete_wedding_admin(
             {
                 "$set": {
                     "status": "cancelled",
-                    "cancelled_at": datetime.now(timezone.utc),
+                    "cancelled_at": datetime.now(UTC),
                 }
             },
         )
@@ -480,9 +479,7 @@ async def delete_wedding_admin(
         raise
     except Exception as exc:
         logger.error(f"Delete operation failed for wedding {wedding_id}: {exc}")
-        raise HTTPException(
-            status_code=500, detail=f"Delete operation failed: {str(exc)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Delete operation failed: {exc!s}")
 
 
 @router.get("/weddings/{wedding_id}", tags=["Wedding"])

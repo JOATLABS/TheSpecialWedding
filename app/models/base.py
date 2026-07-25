@@ -3,8 +3,8 @@ Base model classes and utilities for Pydantic v2 models.
 Provides common functionality and optimizations for all models.
 """
 
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
@@ -18,11 +18,11 @@ class TimestampedModel(BaseModel):
     """
 
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Record creation timestamp",
     )
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Record last update timestamp",
     )
 
@@ -43,12 +43,12 @@ class TimestampedModel(BaseModel):
 
     def refresh_updated_at(self):
         """Manually update the updated_at timestamp."""
-        self.updated_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(UTC)
 
     @property
     def age_minutes(self) -> float:
         """Get the age of this record in minutes (not serialized)."""
-        delta = datetime.now(timezone.utc) - self.created_at
+        delta = datetime.now(UTC) - self.created_at
         return delta.total_seconds() / 60
 
     @field_serializer("created_at", "updated_at", when_used="json")
@@ -77,13 +77,13 @@ class MongoModel(TimestampedModel):
         """Create instance with specific ObjectId."""
         return cls(_id=PyObjectId(object_id), **kwargs)
 
-    def to_mongo_dict(self) -> Dict[str, Any]:
+    def to_mongo_dict(self) -> dict[str, Any]:
         """Convert to MongoDB-ready dictionary."""
         data = self.model_dump(by_alias=True, exclude_unset=True)
         return data
 
     @classmethod
-    def from_mongo_dict(cls, data: Dict[str, Any]):
+    def from_mongo_dict(cls, data: dict[str, Any]):
         """Create instance from MongoDB dictionary."""
         return cls.model_validate(data)
 
@@ -118,7 +118,7 @@ class UserRelatedModel(MongoModel):
         description="Email of the user who created this record",
         max_length=254,  # RFC 5321 email length limit
     )
-    updated_by: Optional[str] = Field(
+    updated_by: str | None = Field(
         None,
         description="Email of the user who last updated this record",
         max_length=254,
@@ -152,7 +152,7 @@ class ValidatedModel(BaseModel):
         arbitrary_types_allowed=True,
     )
 
-    def model_dump_safe(self, exclude_sensitive: bool = True) -> Dict[str, Any]:
+    def model_dump_safe(self, exclude_sensitive: bool = True) -> dict[str, Any]:
         """
         Safe model dump that can exclude sensitive fields.
         Override in subclasses to define sensitive fields.
@@ -166,7 +166,7 @@ class ValidatedModel(BaseModel):
         return self.model_dump(exclude=exclude_fields)
 
     @classmethod
-    def get_example_data(cls) -> Dict[str, Any]:
+    def get_example_data(cls) -> dict[str, Any]:
         """
         Get example data for this model.
         Override in subclasses to provide model-specific examples.
@@ -179,8 +179,8 @@ class ValidatedModel(BaseModel):
 
 # Utility functions for common model operations
 def create_model_example_schema(
-    model_class: type[BaseModel], example_data: Dict[str, Any]
-) -> Dict[str, Any]:
+    model_class: type[BaseModel], example_data: dict[str, Any]
+) -> dict[str, Any]:
     """
     Create a JSON schema with example data for a model class.
 
@@ -197,7 +197,7 @@ def create_model_example_schema(
 
 
 def validate_multiple_models(
-    models_data: list[tuple[type[BaseModel], Dict[str, Any]]],
+    models_data: list[tuple[type[BaseModel], dict[str, Any]]],
 ) -> list[BaseModel]:
     """
     Validate multiple models at once.

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from pymongo import UpdateOne
 
@@ -43,7 +43,7 @@ class CoupleLifecycleService:
         self.users_collection = mongo.get_users_collection()
         self.subscriptions_collection = mongo.db["user_subscriptions"]
 
-    def infer_stored_state(self, couple: Optional[dict]) -> str:
+    def infer_stored_state(self, couple: dict | None) -> str:
         """Infer the persisted couple-access state from explicit or legacy fields."""
         if not couple:
             return COUPLE_PORTAL_STATE_PENDING_SETUP
@@ -68,7 +68,7 @@ class CoupleLifecycleService:
         return COUPLE_PORTAL_STATE_PENDING_SETUP, False
 
     async def _resolve_owner_identity(
-        self, couple: dict, wedding: Optional[dict] = None
+        self, couple: dict, wedding: dict | None = None
     ) -> dict:
         if wedding is None and couple.get("wedding_id"):
             wedding = await self.weddings_collection.find_one(
@@ -80,7 +80,7 @@ class CoupleLifecycleService:
         return await resolve_planner_identity(owner_id, owner_email)
 
     async def _owner_is_blocked(
-        self, couple: dict, wedding: Optional[dict] = None
+        self, couple: dict, wedding: dict | None = None
     ) -> bool:
         suspended_reason = (
             wedding.get("data_access_suspended_reason") if wedding else None
@@ -136,7 +136,7 @@ class CoupleLifecycleService:
         return False
 
     async def resolve_effective_state(
-        self, couple: dict, wedding: Optional[dict] = None
+        self, couple: dict, wedding: dict | None = None
     ) -> dict:
         """Resolve the effective portal state combining stored state and owner lifecycle."""
         stored_state = self.infer_stored_state(couple)
@@ -191,7 +191,7 @@ class CoupleLifecycleService:
 
     def build_setup_completed_update(self) -> dict[str, Any]:
         """State fields for a successfully set-up couple account."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return {
             "is_active": True,
             "access_state": COUPLE_PORTAL_STATE_ACTIVE,
@@ -208,7 +208,7 @@ class CoupleLifecycleService:
         }
 
     def build_revoke_update(self, actor_email: str) -> dict[str, Any]:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return {
             "is_active": False,
             "access_state": COUPLE_PORTAL_STATE_REVOKED,
@@ -221,7 +221,7 @@ class CoupleLifecycleService:
         }
 
     def build_manual_restore_update(self, couple: dict) -> dict[str, Any]:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         restored_state, is_active = self.restore_state_for_couple(couple)
         return {
             "is_active": is_active,
@@ -237,14 +237,14 @@ class CoupleLifecycleService:
     def build_owner_cancelled_update(
         self,
         couple: dict,
-        planner_id: Optional[str],
-        planner_email: Optional[str],
-    ) -> Optional[dict[str, Any]]:
+        planner_id: str | None,
+        planner_email: str | None,
+    ) -> dict[str, Any] | None:
         stored_state = self.infer_stored_state(couple)
         if stored_state == COUPLE_PORTAL_STATE_REVOKED:
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return {
             "is_active": False,
             "access_state": COUPLE_PORTAL_STATE_OWNER_CANCELLED,
@@ -254,11 +254,11 @@ class CoupleLifecycleService:
             "updated_at": now,
         }
 
-    def build_owner_restore_update(self, couple: dict) -> Optional[dict[str, Any]]:
+    def build_owner_restore_update(self, couple: dict) -> dict[str, Any] | None:
         if self.infer_stored_state(couple) != COUPLE_PORTAL_STATE_OWNER_CANCELLED:
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         restored_state, is_active = self.restore_state_for_couple(couple)
         return {
             "is_active": is_active,
@@ -270,7 +270,7 @@ class CoupleLifecycleService:
         }
 
     async def _owned_wedding_ids(
-        self, planner_id: Optional[str], planner_email: Optional[str]
+        self, planner_id: str | None, planner_email: str | None
     ) -> list[str]:
         owner_query = build_wedding_owner_query(planner_id, planner_email)
         if not owner_query:
@@ -281,7 +281,7 @@ class CoupleLifecycleService:
         return [str(wedding["_id"]) for wedding in weddings]
 
     async def bulk_mark_owner_cancelled(
-        self, planner_id: Optional[str], planner_email: Optional[str]
+        self, planner_id: str | None, planner_email: str | None
     ) -> dict[str, Any]:
         wedding_ids = await self._owned_wedding_ids(planner_id, planner_email)
         if not wedding_ids:
@@ -313,7 +313,7 @@ class CoupleLifecycleService:
         }
 
     async def bulk_restore_owner_cancelled(
-        self, planner_id: Optional[str], planner_email: Optional[str]
+        self, planner_id: str | None, planner_email: str | None
     ) -> dict[str, Any]:
         wedding_ids = await self._owned_wedding_ids(planner_id, planner_email)
         if not wedding_ids:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 from datetime import UTC, datetime
-from typing import Any, Optional
+from typing import Any
 
 from icalendar import Calendar, Event  # type: ignore[import-untyped]
 from pymongo import ReturnDocument
@@ -33,7 +33,7 @@ class MeetingInviteService:
     def _build_ics_attachment(
         self,
         task: dict[str, Any],
-        wedding: Optional[dict[str, Any]],
+        wedding: dict[str, Any] | None,
         *,
         method: str = "REQUEST",
     ) -> dict[str, Any]:
@@ -124,11 +124,11 @@ class MeetingInviteService:
         *,
         task: dict[str, Any],
         recipient_email: str,
-        wedding_id: Optional[str],
+        wedding_id: str | None,
         uid: str,
         delivery_mode: str,
         now: datetime,
-    ) -> Optional[str]:
+    ) -> str | None:
         stored_invite = await self.invites_collection.find_one_and_update(
             {"task_id": str(task["_id"]), "recipient_email": recipient_email},
             {
@@ -160,7 +160,7 @@ class MeetingInviteService:
         task: dict[str, Any],
         *,
         method: str = "REQUEST",
-        recipient_emails: Optional[list[str]] = None,
+        recipient_emails: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Send ICS-backed email notifications for one meeting."""
         recipient_emails = recipient_emails or task.get("couple_attendee_emails", [])
@@ -269,7 +269,7 @@ class MeetingInviteService:
         task: dict[str, Any],
         *,
         method: str = "REQUEST",
-        recipient_emails: Optional[list[str]] = None,
+        recipient_emails: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Mark invite recipients as queued before background delivery."""
         recipient_emails = recipient_emails or task.get("couple_attendee_emails", [])
@@ -301,7 +301,7 @@ class MeetingInviteService:
         return queued_rows
 
     async def send_invites(
-        self, task: dict[str, Any], *, recipient_emails: Optional[list[str]] = None
+        self, task: dict[str, Any], *, recipient_emails: list[str] | None = None
     ) -> list[dict[str, Any]]:
         """Send or resend email plus ICS invites to couple attendees for one meeting."""
         return await self._send_ics_email(
@@ -311,7 +311,7 @@ class MeetingInviteService:
         )
 
     async def send_cancellations(
-        self, task: dict[str, Any], *, recipient_emails: Optional[list[str]] = None
+        self, task: dict[str, Any], *, recipient_emails: list[str] | None = None
     ) -> list[dict[str, Any]]:
         """Send ICS cancellations so couple-side calendars remove the meeting."""
         return await self._send_ics_email(

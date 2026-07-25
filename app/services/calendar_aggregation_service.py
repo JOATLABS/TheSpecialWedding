@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 from app.core.database import mongo
 from app.models.calendar import VisibilityMode
 from app.services.calendar_provider_service import calendar_provider_service
 
 
-def _iso(value: Any) -> Optional[str]:
+def _iso(value: Any) -> str | None:
     """Serialize datetime → ISO 8601 string; pass strings through; None stays
     None. Used for external_* fields surfaced into ``details`` so JSON
     responses don't need client-side datetime coercion."""
@@ -31,13 +31,13 @@ class CalendarAggregationService:
     def _build_internal_query(
         self,
         *,
-        owner_email: Optional[str],
-        wedding_ids: Optional[list[str]],
-        staff_ids: Optional[list[str]],
+        owner_email: str | None,
+        wedding_ids: list[str] | None,
+        staff_ids: list[str] | None,
         start: datetime,
         end: datetime,
-        source_types: Optional[list[str]],
-        accessible_wedding_ids: Optional[list[str]],
+        source_types: list[str] | None,
+        accessible_wedding_ids: list[str] | None,
     ) -> dict[str, Any]:
         query: dict[str, Any] = {
             "$or": [
@@ -147,7 +147,7 @@ class CalendarAggregationService:
         }
 
     @staticmethod
-    def _wants_external(source_types: Optional[list[str]]) -> bool:
+    def _wants_external(source_types: list[str] | None) -> bool:
         """Whether external (Aurinko-brokered) events should be included.
 
         - ``None`` / empty list → include external events (no filter applied).
@@ -209,16 +209,16 @@ class CalendarAggregationService:
         self,
         *,
         owner_id: str,
-        owner_email: Optional[str],
-        current_user_id: Optional[str],
+        owner_email: str | None,
+        current_user_id: str | None,
         include_all_owner_connections: bool,
         can_view_details: bool,
-        accessible_wedding_ids: Optional[list[str]],
-        start: Optional[datetime],
-        end: Optional[datetime],
-        wedding_ids: Optional[list[str]] = None,
-        staff_ids: Optional[list[str]] = None,
-        source_types: Optional[list[str]] = None,
+        accessible_wedding_ids: list[str] | None,
+        start: datetime | None,
+        end: datetime | None,
+        wedding_ids: list[str] | None = None,
+        staff_ids: list[str] | None = None,
+        source_types: list[str] | None = None,
     ) -> list[dict]:
         """Build a single calendar feed of internal and external events."""
         start = start or datetime.now(UTC)

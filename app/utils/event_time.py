@@ -1,5 +1,4 @@
 import re
-from typing import Optional
 
 TWELVE_HOUR_TIME_WITH_MINUTES = re.compile(
     r"^(0?[1-9]|1[0-2]):([0-5]\d)\s*([AP]M)$", re.IGNORECASE
@@ -18,7 +17,7 @@ def _format_normalized_event_time(hours24: int, minutes: int) -> str:
     return f"{normalized_hours}:{minutes:02d} {period}"
 
 
-def normalize_optional_event_time(value: Optional[str]) -> Optional[str]:
+def normalize_optional_event_time(value: str | None) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str):

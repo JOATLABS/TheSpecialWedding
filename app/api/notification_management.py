@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field, validator
@@ -27,15 +26,11 @@ class NotificationCreateModel(BaseModel):
     )
     type: str = Field(default="info", description="Notification type")
     target_audience: str = Field(default="all", description="Target audience")
-    wedding_id: Optional[str] = Field(
+    wedding_id: str | None = Field(
         None, description="Wedding ID for targeted notifications"
     )
-    user_id: Optional[str] = Field(
-        None, description="User ID for targeted notifications"
-    )
-    expiry_date: Optional[datetime] = Field(
-        None, description="Notification expiry date"
-    )
+    user_id: str | None = Field(None, description="User ID for targeted notifications")
+    expiry_date: datetime | None = Field(None, description="Notification expiry date")
     is_dismissible: bool = Field(
         default=True, description="Whether notification can be dismissed"
     )
@@ -63,13 +58,13 @@ class NotificationCreateModel(BaseModel):
 
 
 class NotificationUpdateModel(BaseModel):
-    title: Optional[str] = Field(None, min_length=1, max_length=200)
-    message: Optional[str] = Field(None, min_length=1, max_length=1000)
-    type: Optional[str] = None
-    target_audience: Optional[str] = None
-    expiry_date: Optional[datetime] = None
-    is_dismissible: Optional[bool] = None
-    priority: Optional[str] = None
+    title: str | None = Field(None, min_length=1, max_length=200)
+    message: str | None = Field(None, min_length=1, max_length=1000)
+    type: str | None = None
+    target_audience: str | None = None
+    expiry_date: datetime | None = None
+    is_dismissible: bool | None = None
+    priority: str | None = None
 
     @validator("type")
     def validate_type(cls, v):
@@ -115,12 +110,10 @@ async def create_notification(
 async def get_notifications(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
-    type: Optional[str] = Query(None, description="Filter by notification type"),
-    target_audience: Optional[str] = Query(
-        None, description="Filter by target audience"
-    ),
-    status: Optional[str] = Query(None, description="Filter by status"),
-    wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
+    type: str | None = Query(None, description="Filter by notification type"),
+    target_audience: str | None = Query(None, description="Filter by target audience"),
+    status: str | None = Query(None, description="Filter by status"),
+    wedding_id: str | None = Query(None, description="Filter by wedding ID"),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """Get notifications with filtering and pagination - ROOT_ADMIN only"""
@@ -259,7 +252,7 @@ class NotificationTemplateModel(BaseModel):
     )
     type: str = Field(..., description="Template type: email or sms")
     category: str = Field(default="general", description="Template category")
-    variables: List[str] = Field(
+    variables: list[str] = Field(
         default_factory=list, description="List of available variables"
     )
     is_active: bool = Field(default=True, description="Whether template is active")
@@ -272,12 +265,12 @@ class NotificationTemplateModel(BaseModel):
 
 
 class NotificationTemplateUpdateModel(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=200)
-    subject: Optional[str] = Field(None, min_length=1, max_length=200)
-    content: Optional[str] = None
-    category: Optional[str] = None
-    variables: Optional[List[str]] = None
-    is_active: Optional[bool] = None
+    name: str | None = Field(None, min_length=1, max_length=200)
+    subject: str | None = Field(None, min_length=1, max_length=200)
+    content: str | None = None
+    category: str | None = None
+    variables: list[str] | None = None
+    is_active: bool | None = None
 
 
 @router.post("/notification-templates", tags=["Notification Templates"])
@@ -295,10 +288,8 @@ async def create_notification_template(
 async def get_notification_templates(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(50, ge=1, le=100, description="Items per page"),
-    type: Optional[str] = Query(
-        None, description="Filter by template type (email/sms)"
-    ),
-    category: Optional[str] = Query(None, description="Filter by category"),
+    type: str | None = Query(None, description="Filter by template type (email/sms)"),
+    category: str | None = Query(None, description="Filter by category"),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """Get notification templates with filtering and pagination - ROOT_ADMIN only"""

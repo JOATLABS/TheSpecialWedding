@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import stripe as stripe_lib
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
@@ -93,7 +93,7 @@ async def process_daily_usage_check():
                     # Ensure last_billed is timezone aware for comparison
                     if last_billed.tzinfo is None:
                         # Assume UTC if naive, as database typically stores UTC
-                        last_billed = last_billed.replace(tzinfo=timezone.utc)
+                        last_billed = last_billed.replace(tzinfo=UTC)
 
                     if last_billed < current_period_start:
                         needs_billing = True
@@ -117,7 +117,7 @@ async def process_daily_usage_check():
                         await update_wedding_meter_state(
                             mongo.db["weddings"],
                             wedding["_id"],
-                            {"last_billed_at": datetime.now(timezone.utc)},
+                            {"last_billed_at": datetime.now(UTC)},
                             context="billing_job_daily_success",
                         )
                         count_reported += 1
@@ -156,7 +156,7 @@ async def process_orphaned_customer_cleanup():
 
     # Cutoff: only clean up customers older than 48 hours to avoid
     # removing customers who are still in the middle of checkout
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+    cutoff = datetime.now(UTC) - timedelta(hours=48)
 
     stripe_customers = mongo.db["stripe_customers"]
     user_subscriptions = mongo.db["user_subscriptions"]
@@ -338,7 +338,7 @@ async def process_subscription_archival(retention_days: int = 90):
     """Archive inactive subscriptions and clean up associated usage data."""
     logger.info(f"Starting subscription archival (retention: {retention_days} days)...")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cutoff = now - timedelta(days=retention_days)
 
     subscriptions = mongo.db["user_subscriptions"]

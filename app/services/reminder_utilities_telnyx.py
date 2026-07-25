@@ -2,7 +2,7 @@
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import telnyx
 from bson import ObjectId
@@ -92,7 +92,7 @@ class TelnyxRSVPReminderHelper:
                 sent += 1
 
             except Exception as e:
-                logger.error(f"Failed to send Telnyx invite to {phone}: {str(e)}")
+                logger.error(f"Failed to send Telnyx invite to {phone}: {e!s}")
                 failed += 1
 
         return {"sent": sent, "failed": failed, "provider": "telnyx"}
@@ -116,7 +116,7 @@ class TelnyxRSVPReminderHelper:
                     "guest_id": guest_id,
                     "attending": attending,
                     "dietary": dietary,
-                    "submitted_at": datetime.now(timezone.utc),
+                    "submitted_at": datetime.now(UTC),
                 }
             },
             upsert=True,

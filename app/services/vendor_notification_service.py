@@ -18,7 +18,6 @@ Phase 10+ — Notification Wiring.
 
 import asyncio
 import logging
-from typing import Optional
 
 from app.core.settings import settings as app_settings
 
@@ -69,7 +68,7 @@ class VendorNotificationService:
         notification_type: str,
         target_audience: str,
         priority: str = "medium",
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
     ) -> None:
         """Delegate to NotificationService (handles in-portal + push + SSE)."""
         try:
@@ -184,7 +183,7 @@ class VendorNotificationService:
         self,
         vendor_email: str,
         campaign_name: str,
-        reason: Optional[str] = None,
+        reason: str | None = None,
     ) -> None:
         title = "Campaign Rejected"
         message = f'Your campaign "{campaign_name}" was not approved.'
@@ -218,7 +217,7 @@ class VendorNotificationService:
         self,
         vendor_email: str,
         campaign_name: str,
-        notes: Optional[str] = None,
+        notes: str | None = None,
     ) -> None:
         title = "Changes Requested"
         message = f'Changes requested for your campaign "{campaign_name}".'
@@ -389,7 +388,6 @@ class VendorNotificationService:
         This is a no-op kept for backward compat with existing callers."""
         # NotificationService.create_notification with target_audience="root_admin"
         # already fires in-portal + push. Nothing extra needed here.
-        pass
 
     async def notify_admin_campaign_submitted(
         self,

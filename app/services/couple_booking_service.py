@@ -38,8 +38,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -76,11 +76,11 @@ class BookingResult:
     """
 
     task: dict[str, Any]
-    conflict: Optional[dict[str, Any]] = None
+    conflict: dict[str, Any] | None = None
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _coerce_object_id(task_id: str) -> Any:
@@ -93,7 +93,7 @@ def _coerce_object_id(task_id: str) -> Any:
         return task_id
 
 
-def _normalize_datetime(value: Any) -> Optional[datetime]:
+def _normalize_datetime(value: Any) -> datetime | None:
     """Coerce slot ``start``/``end`` inputs to timezone-aware UTC.
 
     Strings are parsed via ``fromisoformat`` (accepting trailing ``Z``);
@@ -105,14 +105,14 @@ def _normalize_datetime(value: Any) -> Optional[datetime]:
         return None
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
     if isinstance(value, str):
         text = value.replace("Z", "+00:00") if value.endswith("Z") else value
         parsed = datetime.fromisoformat(text)
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
     raise ValueError(f"Cannot coerce {value!r} to datetime")
 
 
@@ -198,7 +198,7 @@ class CoupleBookingService:
         task_id: str,
         expected_version: int,
         set_doc: dict[str, Any],
-        owner_filter: Optional[str] = None,
+        owner_filter: str | None = None,
         message: str = "This meeting was changed by another user. Refresh and try again.",
     ) -> dict[str, Any]:
         """Run a versioned find_one_and_update; 409 on miss, return doc on hit."""
@@ -232,8 +232,8 @@ class CoupleBookingService:
         title: str,
         message: str,
         task_id: str,
-        wedding_id: Optional[str] = None,
-        payload: Optional[dict[str, Any]] = None,
+        wedding_id: str | None = None,
+        payload: dict[str, Any] | None = None,
     ) -> None:
         """Persist a planner-notification document.
 
@@ -279,10 +279,10 @@ class CoupleBookingService:
         wedding_id: str,
         topic: str,
         duration_minutes: int,
-        preferred_window_start: Optional[datetime] = None,
-        preferred_window_end: Optional[datetime] = None,
-        notes: Optional[str] = None,
-        target_calendar_connection_id: Optional[str] = None,
+        preferred_window_start: datetime | None = None,
+        preferred_window_end: datetime | None = None,
+        notes: str | None = None,
+        target_calendar_connection_id: str | None = None,
     ) -> dict[str, Any]:
         """Couple submits an open booking request.
 
@@ -359,7 +359,7 @@ class CoupleBookingService:
         task_id: str,
         slots: list[dict[str, Any]],
         expected_version: int,
-        proposed_by_email: Optional[str] = None,
+        proposed_by_email: str | None = None,
     ) -> BookingResult:
         """Planner pushes proposed slots into the request.
 
@@ -562,7 +562,7 @@ class CoupleBookingService:
         owner_planner_id: str,
         task_id: str,
         expected_version: int,
-        reason: Optional[str] = None,
+        reason: str | None = None,
     ) -> BookingResult:
         """Planner declines a PENDING_APPROVAL meeting.
 

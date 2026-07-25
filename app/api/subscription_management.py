@@ -366,7 +366,7 @@ async def sync_plans_to_stripe(
             await subscription_service.update_plan(plan["_id"], {})
             synced_count += 1
         except Exception as e:
-            errors.append(f"Plan {plan.get('name', 'Unknown')}: {str(e)}")
+            errors.append(f"Plan {plan.get('name', 'Unknown')}: {e!s}")
 
     return {"message": f"Synced {synced_count} plans to Stripe", "errors": errors}
 
@@ -646,7 +646,7 @@ async def seed_default_subscription_plans(
                 await subscription_service.create_plan(plan_data, current_user.email)
                 created_plans.append(plan_name)
             except Exception as e:
-                return {"error": f"Failed to create plan '{plan_name}': {str(e)}"}
+                return {"error": f"Failed to create plan '{plan_name}': {e!s}"}
 
         for legacy_plan_id in legacy_aliases_by_canonical_id.get(canonical_plan_id, []):
             archived = await subscription_service.archive_legacy_plan_alias(

@@ -131,8 +131,8 @@ async def send_otp_by_contact(payload: OTPRequestByContact):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error sending OTP by contact: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to send OTP: {str(e)}")
+        logger.error(f"Error sending OTP by contact: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to send OTP: {e!s}")
 
 
 @router.post("/otp/verify", tags=["OTP"])

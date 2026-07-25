@@ -6,8 +6,8 @@ Provides sanitized error responses for production environment
 import logging
 import secrets
 import traceback
-from datetime import datetime, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -65,7 +65,7 @@ class SecureErrorHandler:
             "error": {
                 "code": exc.error_code,
                 "message": sanitized_message,
-                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+                "timestamp": datetime.now(UTC).isoformat() + "Z",
                 "error_id": error_id,
             }
         }
@@ -119,7 +119,7 @@ class SecureErrorHandler:
             "error": {
                 "code": self._get_error_code_from_status(status_code),
                 "message": secure_message,
-                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+                "timestamp": datetime.now(UTC).isoformat() + "Z",
                 "error_id": error_id,
             }
         }
@@ -155,7 +155,7 @@ class SecureErrorHandler:
             "error": {
                 "code": "VALIDATION_ERROR",
                 "message": "Input validation failed",
-                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+                "timestamp": datetime.now(UTC).isoformat() + "Z",
                 "error_id": error_id,
                 "details": sanitized_errors,
             }
@@ -181,7 +181,7 @@ class SecureErrorHandler:
             "error": {
                 "code": "INTERNAL_SERVER_ERROR",
                 "message": "An unexpected error occurred. Please try again later.",
-                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+                "timestamp": datetime.now(UTC).isoformat() + "Z",
                 "error_id": error_id,
             }
         }
@@ -297,7 +297,7 @@ class SecureErrorHandler:
 
     def _generate_error_id(self) -> str:
         """Generate unique error ID for tracking"""
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
         random_part = secrets.token_hex(4)
         return f"ERR-{timestamp}-{random_part}"
 
@@ -307,7 +307,7 @@ class SecureErrorHandler:
         try:
             error_details = {
                 "error_id": error_id,
-                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+                "timestamp": datetime.now(UTC).isoformat() + "Z",
                 "exception_type": type(exc).__name__,
                 "exception_message": str(exc),
                 "path": str(request.url.path),
@@ -324,9 +324,9 @@ class SecureErrorHandler:
 
         except Exception as log_exc:
             # If logging fails, at least try to log the basic error
-            secure_logger.error(f"Failed to log error details: {str(log_exc)}")
+            secure_logger.error(f"Failed to log error details: {log_exc!s}")
 
-    def _log_security_event(self, event_type: str, details: Dict[str, Any]):
+    def _log_security_event(self, event_type: str, details: dict[str, Any]):
         """Log security-related events"""
 
         secure_logger.warning(f"Security Event: {event_type} - {details}")

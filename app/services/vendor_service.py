@@ -13,9 +13,10 @@ import os
 import re
 import secrets
 import string
+from collections.abc import Awaitable, Callable
 from copy import deepcopy
-from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Any
 
 import stripe
 from botocore.exceptions import ClientError
@@ -25,13 +26,6 @@ from fastapi import HTTPException, UploadFile
 
 from app.core.database import mongo
 from app.core.settings import settings
-from app.utils.planner_ownership import (
-    build_wedding_owner_query,
-    combine_mongo_filters,
-    normalize_planner_email,
-    wedding_belongs_to_owner,
-)
-from app.utils import vendor_owner_scope
 from app.models.vendor import (
     ContractKind,
     ContractStatus,
@@ -43,6 +37,13 @@ from app.models.vendor import (
 from app.models.vendor_contracts import VendorContractActivityType
 from app.services.email_service_resend import ResendEmailService
 from app.services.media_storage import MediaStorage, StorageTarget
+from app.utils import vendor_owner_scope
+from app.utils.planner_ownership import (
+    build_wedding_owner_query,
+    combine_mongo_filters,
+    normalize_planner_email,
+    wedding_belongs_to_owner,
+)
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -129,7 +130,7 @@ class VendorService:
 
     def _generate_contract_number(self) -> str:
         """Generate a unique contract number"""
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
         random_suffix = "".join(secrets.choice(string.digits) for _ in range(4))
         return f"CON-{timestamp}-{random_suffix}"
 
@@ -141,7 +142,7 @@ class VendorService:
         return f"{normalized_base}/vendor-contract/{contract_id}/{access_token}"
 
     @staticmethod
-    def _build_inactive_contract_token_fields() -> Dict[str, Any]:
+    def _build_inactive_contract_token_fields() -> dict[str, Any]:
         # Deliberately OMITS `access_token_hash` rather than setting it to
         # None, because the unique-sparse index on access_token_hash treats
         # an explicit null as a value (sparse only excludes documents
@@ -174,7 +175,7 @@ class VendorService:
     def _issue_contract_access_token(
         self, contract_id: str, planner_settings: dict
     ) -> tuple[str, dict]:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         raw_token = self._generate_token()
         return raw_token, {
             "access_token_hash": self._hash_contract_access_token(raw_token),
@@ -189,7 +190,7 @@ class VendorService:
     async def _revoke_contract_access_token(
         self, contract_id: str, session: Any = None
     ) -> None:
-        revoked_at = datetime.now(timezone.utc)
+        revoked_at = datetime.now(UTC)
         await self.vendor_contracts.update_one(
             {
                 "_id": validate_object_id(contract_id, "contract ID"),
@@ -205,8 +206,8 @@ class VendorService:
         )
 
     def _sanitize_public_contract_response(
-        self, contract: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, contract: dict[str, Any]
+    ) -> dict[str, Any]:
         contract.pop("access_token", None)
         contract.pop("access_token_hash", None)
         contract.pop("internal_notes", None)
@@ -252,7 +253,7 @@ class VendorService:
         return exc.status_code == 503 and exc.detail == expected_detail
 
     @staticmethod
-    def _serialize_doc(doc: Dict) -> Dict:
+    def _serialize_doc(doc: dict) -> dict:
         """Normalize a MongoDB document for API response: ensure both 'id' and '_id' are string."""
         if "_id" in doc:
             doc["id"] = str(doc["_id"])
@@ -260,14 +261,14 @@ class VendorService:
         return doc
 
     @staticmethod
-    def _stringify_id(value: Any) -> Optional[str]:
+    def _stringify_id(value: Any) -> str | None:
         if value is None:
             return None
         return str(value)
 
     def _attach_contract_version_metadata(
-        self, contract: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, contract: dict[str, Any]
+    ) -> dict[str, Any]:
         """Backfill default lineage metadata for legacy contracts in API responses."""
         contract_id = self._stringify_id(contract.get("_id") or contract.get("id"))
         contract["version_number"] = int(contract.get("version_number") or 1)
@@ -298,7 +299,7 @@ class VendorService:
         contract.setdefault("token_last_viewed_at", None)
         return contract
 
-    def _get_root_contract_id(self, contract: Dict[str, Any]) -> str:
+    def _get_root_contract_id(self, contract: dict[str, Any]) -> str:
         """Resolve the root/original contract id for a lineage-aware contract document."""
         root_contract_id = contract.get("root_contract_id")
         if root_contract_id:
@@ -310,11 +311,11 @@ class VendorService:
         return str(contract_id)
 
     @staticmethod
-    def _is_contract_current(contract: Dict[str, Any]) -> bool:
+    def _is_contract_current(contract: dict[str, Any]) -> bool:
         return contract.get("is_current_version", True)
 
     def _ensure_contract_current_for_payments(
-        self, contract: Dict[str, Any], *, action: str
+        self, contract: dict[str, Any], *, action: str
     ) -> None:
         """Fail closed when money mutations target a historical contract version."""
         if not self._is_contract_current(contract):
@@ -331,7 +332,7 @@ class VendorService:
             ContractStatus.SIGNED.value,
         }
 
-    async def _ensure_contract_editable(self, contract: Dict[str, Any]) -> None:
+    async def _ensure_contract_editable(self, contract: dict[str, Any]) -> None:
         """Allow edits only for active drafts or draft revisions based on the live version."""
         # Hard lock: once the contract has been signed (and we recorded
         # ``contract_status_locked_at``), refuse all edits regardless of
@@ -374,10 +375,10 @@ class VendorService:
             )
 
     def _build_contract_lineage_query(
-        self, root_contract_id: str, created_by: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, root_contract_id: str, created_by: str | None = None
+    ) -> dict[str, Any]:
         root_object_id = validate_object_id(root_contract_id, "root contract ID")
-        lineage_query: Dict[str, Any] = {
+        lineage_query: dict[str, Any] = {
             "$or": [
                 {"root_contract_id": root_contract_id},
                 {"_id": root_object_id},
@@ -393,8 +394,8 @@ class VendorService:
         return lineage_query
 
     async def _get_contract_lineage(
-        self, root_contract_id: str, created_by: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        self, root_contract_id: str, created_by: str | None = None
+    ) -> list[dict[str, Any]]:
         """Fetch and normalize every contract in a lineage."""
         query = self._build_contract_lineage_query(
             root_contract_id=root_contract_id, created_by=created_by
@@ -408,13 +409,13 @@ class VendorService:
         contracts.sort(
             key=lambda item: (
                 item.get("version_number", 1),
-                item.get("created_at") or datetime.min.replace(tzinfo=timezone.utc),
+                item.get("created_at") or datetime.min.replace(tzinfo=UTC),
             )
         )
         return contracts
 
     async def _get_next_contract_version_number(
-        self, root_contract_id: str, created_by: Optional[str] = None
+        self, root_contract_id: str, created_by: str | None = None
     ) -> int:
         lineage = await self._get_contract_lineage(
             root_contract_id=root_contract_id, created_by=created_by
@@ -426,22 +427,22 @@ class VendorService:
 
     def _build_contract_revision_copy(
         self,
-        source_contract: Dict[str, Any],
+        source_contract: dict[str, Any],
         revision_kind: str,
         next_version_number: int,
-        reason: Optional[str] = None,
+        reason: str | None = None,
         copy_sections: bool = True,
         copy_terms_and_conditions: bool = True,
         copy_cancellation_policy: bool = True,
         copy_custom_clauses: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Clone a live contract into a new editable child version."""
         new_contract_id = ObjectId()
         source_contract_id = self._stringify_id(
             source_contract.get("_id") or source_contract.get("id")
         )
         root_contract_id = self._get_root_contract_id(source_contract)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         revision_contract = {
             "_id": new_contract_id,
@@ -541,15 +542,15 @@ class VendorService:
             {
                 "$set": {
                     "is_current_version": False,
-                    "superseded_at": datetime.now(timezone.utc),
+                    "superseded_at": datetime.now(UTC),
                     "superseded_by_contract_id": superseded_by_contract_id,
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }
             },
         )
 
     async def _restore_contract_version_snapshot(
-        self, contract: Dict[str, Any]
+        self, contract: dict[str, Any]
     ) -> None:
         """Best-effort rollback for version metadata changed before a child send."""
         contract_id = contract.get("id") or contract.get("_id")
@@ -568,8 +569,7 @@ class VendorService:
                     "superseded_by_contract_id": contract.get(
                         "superseded_by_contract_id"
                     ),
-                    "updated_at": contract.get("updated_at")
-                    or datetime.now(timezone.utc),
+                    "updated_at": contract.get("updated_at") or datetime.now(UTC),
                 }
             },
         )
@@ -577,7 +577,7 @@ class VendorService:
     @staticmethod
     def _get_vendor_service_label(
         service_category: str,
-        custom_service_category: Optional[str] = None,
+        custom_service_category: str | None = None,
     ) -> str:
         if service_category == "other" and custom_service_category:
             return custom_service_category.strip()
@@ -592,8 +592,8 @@ class VendorService:
 
     @staticmethod
     def _normalize_vendor_category_data(
-        data: Dict[str, Any], existing: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+        data: dict[str, Any], existing: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         normalized = dict(data)
 
         service_category = normalized.get("service_category")
@@ -620,7 +620,7 @@ class VendorService:
         return normalized
 
     @staticmethod
-    def _omit_empty_google_place_id(data: Dict[str, Any]) -> Dict[str, Any]:
+    def _omit_empty_google_place_id(data: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(data)
         google_place_id = normalized.get("google_place_id")
 
@@ -636,7 +636,7 @@ class VendorService:
 
     async def _get_planner_contract_settings(
         self, planner_email: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get contract settings for a planner, with graceful fallback to system defaults.
 
@@ -682,7 +682,7 @@ class VendorService:
 
         return defaults
 
-    async def _get_wedding(self, wedding_id: str) -> Optional[dict]:
+    async def _get_wedding(self, wedding_id: str) -> dict | None:
         """Get wedding by ID, trying both string and ObjectId formats.
 
         Backwards-compatible shim. Existing callers that pre-date the
@@ -714,8 +714,8 @@ class VendorService:
     # ------------------------------------------------------------------
 
     async def _get_owned_vendor_profile(
-        self, vendor_id: str, actor_email: Optional[str]
-    ) -> Optional[dict]:
+        self, vendor_id: str, actor_email: str | None
+    ) -> dict | None:
         """Fetch a vendor profile scoped by ``created_by == actor_email``.
 
         Uses ``self.vendor_profiles`` so the instance-level collection is
@@ -747,8 +747,8 @@ class VendorService:
             return None
 
     async def _get_owned_wedding(
-        self, wedding_id: str, actor_email: Optional[str]
-    ) -> Optional[dict]:
+        self, wedding_id: str, actor_email: str | None
+    ) -> dict | None:
         """Fetch a wedding scoped by planner ownership via ``self.weddings``.
 
         Uses ``self.weddings`` so the instance-level collection is honoured
@@ -767,7 +767,7 @@ class VendorService:
             else None
         )
 
-        async def _find(id_value) -> Optional[dict]:
+        async def _find(id_value) -> dict | None:
             id_filter = {"_id": id_value}
             query = combine_mongo_filters(id_filter, owner_query)
             try:
@@ -791,26 +791,26 @@ class VendorService:
         return await _find(obj_id)
 
     async def _get_owned_assignment(
-        self, assignment_id: str, actor_email: Optional[str]
-    ) -> Optional[dict]:
+        self, assignment_id: str, actor_email: str | None
+    ) -> dict | None:
         """Delegates to :mod:`app.utils.vendor_owner_scope`."""
         return await vendor_owner_scope.get_owned_assignment(assignment_id, actor_email)
 
     async def _get_owned_contract(
-        self, contract_id: str, actor_email: Optional[str]
-    ) -> Optional[dict]:
+        self, contract_id: str, actor_email: str | None
+    ) -> dict | None:
         """Delegates to :mod:`app.utils.vendor_owner_scope`."""
         return await vendor_owner_scope.get_owned_contract(contract_id, actor_email)
 
     async def _get_owned_form(
-        self, form_id: str, actor_email: Optional[str]
-    ) -> Optional[dict]:
+        self, form_id: str, actor_email: str | None
+    ) -> dict | None:
         """Delegates to :mod:`app.utils.vendor_owner_scope`."""
         return await vendor_owner_scope.get_owned_form(form_id, actor_email)
 
     async def _get_owned_form_submission(
-        self, submission_id: str, actor_email: Optional[str]
-    ) -> Optional[dict]:
+        self, submission_id: str, actor_email: str | None
+    ) -> dict | None:
         """Delegates to :mod:`app.utils.vendor_owner_scope`."""
         return await vendor_owner_scope.get_owned_form_submission(
             submission_id, actor_email
@@ -818,9 +818,9 @@ class VendorService:
 
     async def _resolve_couple_contact(
         self,
-        wedding_id: Optional[str],
-        actor_email: Optional[str],
-    ) -> Dict[str, Optional[str]]:
+        wedding_id: str | None,
+        actor_email: str | None,
+    ) -> dict[str, str | None]:
         """
         Resolve the couple's email + display name for a given wedding_id.
 
@@ -833,7 +833,7 @@ class VendorService:
         dict with `couple_email` and `couple_names` keys — both may be None.
         Never raises.
         """
-        result: Dict[str, Optional[str]] = {
+        result: dict[str, str | None] = {
             "couple_email": None,
             "couple_names": None,
         }
@@ -846,7 +846,7 @@ class VendorService:
         # Defense-in-depth: confirm the wedding belongs to the actor planner
         # before trusting any couple lookups keyed by wedding_id. Skip the
         # check entirely for the root-admin case (actor_email is None).
-        wedding: Optional[dict] = None
+        wedding: dict | None = None
         if normalized_actor_email is not None:
             try:
                 wedding = await self._get_owned_wedding(wedding_id, actor_email)
@@ -865,7 +865,7 @@ class VendorService:
 
         # Authoritative source: couple_users collection (keyed by wedding_id).
         # Scope by planner_email when we have an actor identity.
-        couple_query: Dict[str, Any] = {"wedding_id": wedding_id}
+        couple_query: dict[str, Any] = {"wedding_id": wedding_id}
         if normalized_actor_email is not None:
             couple_query["planner_email"] = normalized_actor_email
 
@@ -926,12 +926,12 @@ class VendorService:
         comm_type: str,
         content: str,
         created_by: str,
-        wedding_id: Optional[str] = None,
-        contract_id: Optional[str] = None,
-        subject: Optional[str] = None,
+        wedding_id: str | None = None,
+        contract_id: str | None = None,
+        subject: str | None = None,
         direction: str = "outgoing",
-        sent_to: Optional[str] = None,
-        attachments: Optional[List[Dict]] = None,
+        sent_to: str | None = None,
+        attachments: list[dict] | None = None,
     ):
         """Log a communication with a vendor"""
         comm = {
@@ -945,7 +945,7 @@ class VendorService:
             "sent_to": sent_to,
             "attachments": attachments or [],
             "created_by": created_by,
-            "created_at": datetime.now(timezone.utc),
+            "created_at": datetime.now(UTC),
         }
         await self.vendor_communications.insert_one(comm)
 
@@ -955,12 +955,12 @@ class VendorService:
         root_contract_id: str,
         activity_type: VendorContractActivityType | str,
         title: str,
-        description: Optional[str],
+        description: str | None,
         actor_type: str,
-        actor_identifier: Optional[str],
-        actor_display_name: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        created_at: Optional[datetime] = None,
+        actor_identifier: str | None,
+        actor_display_name: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        created_at: datetime | None = None,
     ) -> None:
         """Persist one contract activity row for the detail page timeline."""
         try:
@@ -981,7 +981,7 @@ class VendorService:
                     "display_name": actor_display_name,
                 },
                 "metadata": metadata or {},
-                "created_at": created_at or datetime.now(timezone.utc),
+                "created_at": created_at or datetime.now(UTC),
             }
             await self.vendor_contract_activities.insert_one(activity)
         except Exception as exc:
@@ -992,7 +992,7 @@ class VendorService:
                 exc,
             )
 
-    def _serialize_contract_activity_item(self, doc: Dict[str, Any]) -> Dict[str, Any]:
+    def _serialize_contract_activity_item(self, doc: dict[str, Any]) -> dict[str, Any]:
         """Normalize a raw activity document into the API response shape."""
         return {
             "id": str(doc.get("_id") or doc.get("id") or ""),
@@ -1008,8 +1008,8 @@ class VendorService:
         }
 
     def _build_synthesized_contract_activity(
-        self, contract: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        self, contract: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """Build fallback activity entries for legacy contracts with no explicit log rows."""
         contract_id = (
             self._stringify_id(contract.get("_id") or contract.get("id")) or ""
@@ -1023,7 +1023,7 @@ class VendorService:
             or contract.get("vendor_email")
         )
 
-        items: List[Dict[str, Any]] = [
+        items: list[dict[str, Any]] = [
             {
                 "id": f"synth:{contract_id}:created",
                 "contract_id": contract_id,
@@ -1138,8 +1138,8 @@ class VendorService:
                 "weddings_count": 0,
                 "total_revenue": 0.0,
                 "is_active": True,
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
             }
 
             result = await self.vendor_profiles.insert_one(vendor)
@@ -1173,10 +1173,10 @@ class VendorService:
         except HTTPException:
             raise
         except ValueError as e:
-            logger.warning(f"Invalid input creating vendor profile: {str(e)}")
+            logger.warning(f"Invalid input creating vendor profile: {e!s}")
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            logger.error(f"Failed to create vendor profile: {str(e)}")
+            logger.error(f"Failed to create vendor profile: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to create vendor")
 
     async def upsert_scraped_vendor(self, data: dict) -> dict:
@@ -1191,7 +1191,7 @@ class VendorService:
         Returns the vendor doc (inserted or existing).
         """
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             google_place_id = data.get("google_place_id")
             business_name = data.get("business_name", "").strip()
             city = (data.get("city") or "").strip()
@@ -1239,7 +1239,7 @@ class VendorService:
 
             # If it exists as a previously scraped entry, refresh it
             if existing:
-                update_fields: Dict[str, Any] = {
+                update_fields: dict[str, Any] = {
                     "scraped_at": now,
                     "updated_at": now,
                 }
@@ -1319,20 +1319,20 @@ class VendorService:
 
         except Exception as e:
             logger.error(
-                f"Failed to upsert scraped vendor '{data.get('business_name')}': {str(e)}"
+                f"Failed to upsert scraped vendor '{data.get('business_name')}': {e!s}"
             )
             raise
 
     async def get_vendor_profiles(
         self,
-        created_by: Optional[str] = None,
-        category: Optional[str] = None,
-        is_preferred: Optional[bool] = None,
-        search: Optional[str] = None,
-        tags: Optional[List[str]] = None,
+        created_by: str | None = None,
+        category: str | None = None,
+        is_preferred: bool | None = None,
+        search: str | None = None,
+        tags: list[str] | None = None,
         skip: int = 0,
         limit: int = 50,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Get vendor profiles with filtering. If created_by is None, returns all active vendors."""
         try:
             query: dict = {"is_active": True}
@@ -1374,10 +1374,10 @@ class VendorService:
         except HTTPException:
             raise
         except ValueError as e:
-            logger.warning(f"Invalid filter parameters: {str(e)}")
+            logger.warning(f"Invalid filter parameters: {e!s}")
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            logger.error(f"Failed to fetch vendor profiles: {str(e)}")
+            logger.error(f"Failed to fetch vendor profiles: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to fetch vendors")
 
     async def get_vendor_profile(self, vendor_id: str, created_by: str) -> dict:
@@ -1401,11 +1401,11 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error fetching vendor profile: {str(e)}")
+            logger.error(f"Error fetching vendor profile: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to fetch vendor")
 
     async def update_vendor_profile(
-        self, vendor_id: str, data: dict, created_by: Optional[str] = None
+        self, vendor_id: str, data: dict, created_by: str | None = None
     ) -> dict:
         """Update a vendor profile. If created_by is None, updates any vendor (root admin)."""
         try:
@@ -1421,7 +1421,7 @@ class VendorService:
             update_data = self._normalize_vendor_category_data(
                 update_data, existing=existing
             )
-            update_data["updated_at"] = datetime.now(timezone.utc)
+            update_data["updated_at"] = datetime.now(UTC)
 
             result = await self.vendor_profiles.find_one_and_update(
                 query, {"$set": update_data}, return_document=True
@@ -1455,14 +1455,14 @@ class VendorService:
         except HTTPException:
             raise
         except ValueError as e:
-            logger.warning(f"Invalid update data: {str(e)}")
+            logger.warning(f"Invalid update data: {e!s}")
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            logger.error(f"Failed to update vendor profile: {str(e)}")
+            logger.error(f"Failed to update vendor profile: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to update vendor")
 
     async def delete_vendor_profile(
-        self, vendor_id: str, created_by: Optional[str] = None
+        self, vendor_id: str, created_by: str | None = None
     ) -> dict:
         """Soft delete a vendor profile. If created_by is None, deletes any vendor (root admin)."""
         try:
@@ -1474,7 +1474,7 @@ class VendorService:
                 {
                     "$set": {
                         "is_active": False,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
                 return_document=True,
@@ -1504,10 +1504,10 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error deleting vendor profile: {str(e)}")
+            logger.error(f"Error deleting vendor profile: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to delete vendor")
 
-    async def get_vendor_categories_used(self, created_by: str) -> List[str]:
+    async def get_vendor_categories_used(self, created_by: str) -> list[str]:
         """Get list of categories used by planner's vendors"""
         try:
             pipeline = [
@@ -1519,13 +1519,13 @@ class VendorService:
             return [r["_id"] for r in result if r["_id"]]
 
         except Exception as e:
-            logger.error(f"Error getting vendor categories: {str(e)}")
+            logger.error(f"Error getting vendor categories: {e!s}")
             return []
 
     async def get_dashboard_counts(
         self,
-        created_by: Optional[str] = None,
-        wedding_id: Optional[str] = None,
+        created_by: str | None = None,
+        wedding_id: str | None = None,
     ) -> dict:
         """
         Get dashboard counts efficiently using MongoDB aggregation.
@@ -1542,7 +1542,7 @@ class VendorService:
         """
         try:
             # Vendor counts — scope to planner unless root-admin bypass.
-            vendor_query: Dict[str, Any] = {"is_active": True}
+            vendor_query: dict[str, Any] = {"is_active": True}
             if created_by is not None:
                 vendor_query["created_by"] = created_by
             vendor_total = await self.vendor_profiles.count_documents(vendor_query)
@@ -1553,7 +1553,7 @@ class VendorService:
             # Contract counts — scope to planner unless root-admin bypass.
             # Soft-deleted contracts are excluded so dashboard counts only
             # reflect live records.
-            contract_query: Dict[str, Any] = {"is_soft_deleted": {"$ne": True}}
+            contract_query: dict[str, Any] = {"is_soft_deleted": {"$ne": True}}
             if created_by is not None:
                 contract_query["created_by"] = created_by
             if wedding_id:
@@ -1571,7 +1571,7 @@ class VendorService:
             # planner unless root-admin bypass. Pre-fix this filter was
             # missing, so a planner saw totals summed across every
             # other planner's milestones.
-            milestone_query: Dict[str, Any] = {}
+            milestone_query: dict[str, Any] = {}
             if created_by is not None:
                 milestone_query["created_by"] = created_by
             if wedding_id:
@@ -1630,7 +1630,7 @@ class VendorService:
             }
 
         except Exception as e:
-            logger.error(f"Error getting dashboard counts: {str(e)}")
+            logger.error(f"Error getting dashboard counts: {e!s}")
             raise HTTPException(
                 status_code=500, detail="Failed to get dashboard counts"
             )
@@ -1643,9 +1643,9 @@ class VendorService:
         self,
         vendor_profile_id: str,
         wedding_id: str,
-        created_by: Optional[str] = None,
-        budget_category_id: Optional[str] = None,
-        service_notes: Optional[str] = None,
+        created_by: str | None = None,
+        budget_category_id: str | None = None,
+        service_notes: str | None = None,
     ) -> dict:
         """Assign a vendor from directory to a wedding"""
         try:
@@ -1707,8 +1707,8 @@ class VendorService:
                 # insert_one that the unique index is meant to close.
                 "is_deleted": False,
                 "created_by": created_by,
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
             }
 
             result = await self.vendor_assignments.insert_one(assignment)
@@ -1719,7 +1719,7 @@ class VendorService:
                 {"_id": ObjectId(vendor_profile_id)},
                 {
                     "$inc": {"weddings_count": 1},
-                    "$set": {"last_used_at": datetime.now(timezone.utc)},
+                    "$set": {"last_used_at": datetime.now(UTC)},
                 },
             )
 
@@ -1728,15 +1728,15 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error assigning vendor: {str(e)}")
+            logger.error(f"Error assigning vendor: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to assign vendor")
 
     async def get_wedding_vendors(
-        self, wedding_id: str, created_by: Optional[str]
-    ) -> List[dict]:
+        self, wedding_id: str, created_by: str | None
+    ) -> list[dict]:
         """Get all vendors assigned to a wedding"""
         try:
-            query: Dict[str, Any] = {
+            query: dict[str, Any] = {
                 "wedding_id": wedding_id,
                 "is_deleted": {"$ne": True},
             }
@@ -1753,7 +1753,7 @@ class VendorService:
             return assignments
 
         except Exception as e:
-            logger.error(f"Error fetching wedding vendors: {str(e)}")
+            logger.error(f"Error fetching wedding vendors: {e!s}")
             raise HTTPException(
                 status_code=500, detail="Failed to fetch wedding vendors"
             )
@@ -1762,7 +1762,7 @@ class VendorService:
         self,
         assignment_id: str,
         status: str,
-        created_by: Optional[str] = None,
+        created_by: str | None = None,
     ) -> dict:
         """Update vendor assignment status"""
         from app.models.vendor import VendorAssignmentStatus
@@ -1785,7 +1785,7 @@ class VendorService:
             if not owned:
                 raise HTTPException(status_code=404, detail="Assignment not found")
 
-            update_query: Dict[str, Any] = {
+            update_query: dict[str, Any] = {
                 "_id": ObjectId(assignment_id),
                 # Defence-in-depth: the pre-flight check via
                 # ``_get_owned_assignment`` already excludes soft-deleted
@@ -1799,7 +1799,7 @@ class VendorService:
 
             result = await self.vendor_assignments.find_one_and_update(
                 update_query,
-                {"$set": {"status": status, "updated_at": datetime.now(timezone.utc)}},
+                {"$set": {"status": status, "updated_at": datetime.now(UTC)}},
                 return_document=True,
             )
 
@@ -1812,14 +1812,14 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error updating assignment: {str(e)}")
+            logger.error(f"Error updating assignment: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to update assignment")
 
     async def update_assignment(
         self,
         assignment_id: str,
-        fields: Dict[str, Any],
-        created_by: Optional[str] = None,
+        fields: dict[str, Any],
+        created_by: str | None = None,
     ) -> dict:
         """Partial update of a vendor assignment.
 
@@ -1902,7 +1902,7 @@ class VendorService:
                         detail="Budget category belongs to a different wedding",
                     )
 
-            update_query: Dict[str, Any] = {
+            update_query: dict[str, Any] = {
                 "_id": ObjectId(assignment_id),
                 # Defence-in-depth: the pre-flight check already excludes
                 # soft-deleted rows, but re-applying the filter on the
@@ -1913,8 +1913,8 @@ class VendorService:
             if normalized_actor is not None:
                 update_query["created_by"] = normalized_actor
 
-            set_payload: Dict[str, Any] = {
-                "updated_at": datetime.now(timezone.utc),
+            set_payload: dict[str, Any] = {
+                "updated_at": datetime.now(UTC),
             }
             for key in allowed_fields:
                 if key in fields:
@@ -1935,13 +1935,13 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error updating assignment fields: {str(e)}")
+            logger.error(f"Error updating assignment fields: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to update assignment")
 
     async def soft_delete_assignment(
         self,
         assignment_id: str,
-        created_by: Optional[str] = None,
+        created_by: str | None = None,
     ) -> None:
         """Soft-delete a vendor assignment.
 
@@ -1958,7 +1958,7 @@ class VendorService:
             if not owned:
                 raise HTTPException(status_code=404, detail="Assignment not found")
 
-            update_query: Dict[str, Any] = {
+            update_query: dict[str, Any] = {
                 "_id": ObjectId(assignment_id),
                 "is_deleted": {"$ne": True},
             }
@@ -1971,8 +1971,8 @@ class VendorService:
                 {
                     "$set": {
                         "is_deleted": True,
-                        "deleted_at": datetime.now(timezone.utc),
-                        "updated_at": datetime.now(timezone.utc),
+                        "deleted_at": datetime.now(UTC),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -1986,7 +1986,7 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error soft-deleting assignment: {str(e)}")
+            logger.error(f"Error soft-deleting assignment: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to delete assignment")
 
     # =========================================================================
@@ -2015,8 +2015,8 @@ class VendorService:
                 "is_public": data.get("is_public", False),
                 "is_active": True,
                 "usage_count": 0,
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
             }
 
             result = await self.contract_templates.insert_one(template)
@@ -2025,15 +2025,15 @@ class VendorService:
             return template
 
         except Exception as e:
-            logger.error(f"Error creating contract template: {str(e)}")
+            logger.error(f"Error creating contract template: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to create template")
 
     async def get_contract_templates(
         self,
         created_by: str,
-        category: Optional[str] = None,
+        category: str | None = None,
         include_system: bool = True,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Get contract templates available to planner.
 
         When ``category`` is provided, returns templates that target that
@@ -2042,11 +2042,11 @@ class VendorService:
         applicable starter templates.
         """
         try:
-            or_conditions: List[Dict[str, Any]] = [{"created_by": created_by}]
+            or_conditions: list[dict[str, Any]] = [{"created_by": created_by}]
             if include_system:
                 or_conditions.append({"is_system_template": True})
 
-            query: Dict[str, Any] = {"$or": or_conditions, "is_active": True}
+            query: dict[str, Any] = {"$or": or_conditions, "is_active": True}
 
             if category:
                 # Match exact category OR universal templates (None / missing).
@@ -2061,21 +2061,21 @@ class VendorService:
             return templates
 
         except Exception as e:
-            logger.error(f"Error fetching templates: {str(e)}")
+            logger.error(f"Error fetching templates: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to fetch templates")
 
     async def get_contract_template(
         self,
         template_id: str,
-        created_by: Optional[str] = None,
+        created_by: str | None = None,
         include_system: bool = True,
     ) -> dict:
         """Get a specific contract template"""
         try:
-            query: Dict[str, Any] = {"_id": ObjectId(template_id), "is_active": True}
+            query: dict[str, Any] = {"_id": ObjectId(template_id), "is_active": True}
             normalized_actor = normalize_planner_email(created_by)
             if normalized_actor is not None:
-                or_conditions: List[Dict[str, Any]] = [{"created_by": normalized_actor}]
+                or_conditions: list[dict[str, Any]] = [{"created_by": normalized_actor}]
                 if include_system:
                     or_conditions.append({"is_system_template": True})
                 query["$or"] = or_conditions
@@ -2090,7 +2090,7 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error fetching template: {str(e)}")
+            logger.error(f"Error fetching template: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to fetch template")
 
     # =========================================================================
@@ -2116,7 +2116,7 @@ class VendorService:
             "{{planner_name}}": data.get("planner_name", ""),
             "{{planner_email}}": data.get("planner_email", ""),
             "{{planner_company}}": data.get("planner_company", ""),
-            "{{contract_date}}": datetime.now(timezone.utc).strftime("%B %d, %Y"),
+            "{{contract_date}}": datetime.now(UTC).strftime("%B %d, %Y"),
             "{{contract_number}}": data.get("contract_number", ""),
         }
 
@@ -2129,15 +2129,15 @@ class VendorService:
         self,
         wedding_id: str,
         vendor_profile_id: str,
-        created_by: Optional[str] = None,
-        template_id: Optional[str] = None,
-        quote_id: Optional[str] = None,
+        created_by: str | None = None,
+        template_id: str | None = None,
+        quote_id: str | None = None,
         total_amount: float = 0,
-        custom_sections: Optional[List[Dict]] = None,
-        deposit_percentage: Optional[float] = None,
-        deposit_amount: Optional[float] = None,
-        service_date: Optional[datetime] = None,
-        service_location: Optional[str] = None,
+        custom_sections: list[dict] | None = None,
+        deposit_percentage: float | None = None,
+        deposit_amount: float | None = None,
+        service_date: datetime | None = None,
+        service_location: str | None = None,
     ) -> dict:
         """Create a new vendor contract"""
         try:
@@ -2270,7 +2270,7 @@ class VendorService:
             deposit_due_date = None
             if deposit_percentage and total_amount:
                 deposit_amount = total_amount * deposit_percentage / 100
-                deposit_due_date = datetime.now(timezone.utc) + timedelta(
+                deposit_due_date = datetime.now(UTC) + timedelta(
                     days=planner_settings["deposit_due_days"]
                 )
 
@@ -2333,8 +2333,8 @@ class VendorService:
                 "contract_kind": ContractKind.ORIGINAL.value,
                 "amendment_reason": None,
                 "superseded_at": None,
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
                 **self._build_inactive_contract_token_fields(),
             }
 
@@ -2360,7 +2360,7 @@ class VendorService:
                         "$set": {
                             "contract_id": str(contract_id),
                             "contracted_amount": total_amount,
-                            "updated_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(UTC),
                         }
                     },
                 )
@@ -2372,7 +2372,7 @@ class VendorService:
                     {
                         "$set": {
                             "status": QuoteStatus.CONVERTED.value,
-                            "updated_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(UTC),
                         }
                     },
                 )
@@ -2402,23 +2402,23 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error creating contract: {str(e)}")
+            logger.error(f"Error creating contract: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Failed to create contract: {str(e)}"
+                status_code=500, detail=f"Failed to create contract: {e!s}"
             )
 
     async def get_contracts(
         self,
         created_by: str,
-        wedding_id: Optional[str] = None,
-        vendor_profile_id: Optional[str] = None,
-        status: Optional[str] = None,
+        wedding_id: str | None = None,
+        vendor_profile_id: str | None = None,
+        status: str | None = None,
         skip: int = 0,
         limit: int = 50,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Get contracts for a planner"""
         try:
-            query: Dict[str, Any] = {
+            query: dict[str, Any] = {
                 "created_by": created_by,
                 "$or": [
                     {"is_current_version": {"$exists": False}},
@@ -2451,16 +2451,16 @@ class VendorService:
         except HTTPException:
             raise
         except ValueError as e:
-            logger.warning(f"Invalid filter parameters: {str(e)}")
+            logger.warning(f"Invalid filter parameters: {e!s}")
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            logger.error(f"Failed to fetch contracts: {str(e)}")
+            logger.error(f"Failed to fetch contracts: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to fetch contracts")
 
     async def get_contract(
         self,
         contract_id: str,
-        created_by: Optional[str] = None,
+        created_by: str | None = None,
         include_couple_contact: bool = False,
     ) -> dict:
         """
@@ -2478,7 +2478,7 @@ class VendorService:
         try:
             obj_id = validate_object_id(contract_id, "contract ID")
 
-            query: Dict[str, Any] = {
+            query: dict[str, Any] = {
                 "_id": obj_id,
                 "is_soft_deleted": {"$ne": True},
             }
@@ -2522,10 +2522,10 @@ class VendorService:
         except HTTPException:
             raise
         except ValueError as e:
-            logger.warning(f"Invalid contract ID format: {str(e)}")
+            logger.warning(f"Invalid contract ID format: {e!s}")
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            logger.error(f"Failed to fetch contract: {str(e)}")
+            logger.error(f"Failed to fetch contract: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to fetch contract")
 
     async def _validate_contract_public_token(
@@ -2546,7 +2546,7 @@ class VendorService:
             )
 
         token_expires_at = contract.get("token_expires_at")
-        if token_expires_at and token_expires_at < datetime.now(timezone.utc):
+        if token_expires_at and token_expires_at < datetime.now(UTC):
             raise HTTPException(status_code=403, detail="Contract link has expired")
 
         stored_hash = contract.get("access_token_hash")
@@ -2564,10 +2564,10 @@ class VendorService:
         """Get contract for vendor access (public endpoint)"""
         try:
             contract = await self._validate_contract_public_token(contract_id, token)
-            viewed_at = datetime.now(timezone.utc)
+            viewed_at = datetime.now(UTC)
             first_view = not contract.get("viewed_at")
 
-            view_update: Dict[str, Any] = {
+            view_update: dict[str, Any] = {
                 "token_last_viewed_at": viewed_at,
             }
             if first_view:
@@ -2606,7 +2606,7 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error fetching contract by token: {str(e)}")
+            logger.error(f"Error fetching contract by token: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to fetch contract")
 
     async def create_contract_revision(
@@ -2614,7 +2614,7 @@ class VendorService:
         contract_id: str,
         created_by: str,
         revision_kind: str,
-        reason: Optional[str] = None,
+        reason: str | None = None,
         copy_sections: bool = True,
         copy_terms_and_conditions: bool = True,
         copy_cancellation_policy: bool = True,
@@ -2700,7 +2700,7 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error creating contract revision: {str(e)}")
+            logger.error(f"Error creating contract revision: {e!s}")
             raise HTTPException(
                 status_code=500, detail="Failed to create contract revision"
             )
@@ -2709,9 +2709,9 @@ class VendorService:
         self,
         contract_id: str,
         created_by: str,
-        new_contract_title: Optional[str] = None,
-        target_wedding_id: Optional[str] = None,
-        target_vendor_profile_id: Optional[str] = None,
+        new_contract_title: str | None = None,
+        target_wedding_id: str | None = None,
+        target_vendor_profile_id: str | None = None,
         copy_sections: bool = True,
         copy_terms_and_conditions: bool = True,
         copy_cancellation_policy: bool = True,
@@ -2768,7 +2768,7 @@ class VendorService:
                 custom_service_category = source_contract.get("custom_service_category")
 
             new_contract_id = ObjectId()
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             source_contract_id = self._stringify_id(
                 source_contract.get("_id") or source_contract.get("id")
             )
@@ -2920,7 +2920,7 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error duplicating contract: {str(e)}")
+            logger.error(f"Error duplicating contract: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to duplicate contract")
 
     async def get_contract_revision_history(
@@ -2979,7 +2979,7 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error getting contract revision history: {str(e)}")
+            logger.error(f"Error getting contract revision history: {e!s}")
             raise HTTPException(
                 status_code=500, detail="Failed to fetch contract revision history"
             )
@@ -2988,8 +2988,8 @@ class VendorService:
         self,
         contract_id: str,
         created_by: str,
-        message: Optional[str] = None,
-        cc_emails: Optional[List[str]] = None,
+        message: str | None = None,
+        cc_emails: list[str] | None = None,
     ) -> dict:
         """Send contract to vendor via email"""
         try:
@@ -3013,7 +3013,7 @@ class VendorService:
                     status_code=400, detail="Contract has already been sent"
                 )
 
-            superseded_contract: Optional[Dict[str, Any]] = None
+            superseded_contract: dict[str, Any] | None = None
             if contract.get("contract_kind") in {
                 ContractKind.REVISION.value,
                 ContractKind.AMENDMENT.value,
@@ -3133,7 +3133,7 @@ class VendorService:
 
             now = token_update["token_last_sent_at"]
 
-            send_update: Dict[str, Any] = {
+            send_update: dict[str, Any] = {
                 "status": ContractStatus.SENT.value,
                 "sent_at": now,
                 "updated_at": now,
@@ -3213,7 +3213,7 @@ class VendorService:
                     created_at=now,
                 )
 
-            email_warning: Optional[str] = None
+            email_warning: str | None = None
             try:
                 email_result = await self.email_service.send_email(
                     to_email=contract["vendor_email"],
@@ -3253,9 +3253,9 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error sending contract: {str(e)}")
+            logger.error(f"Error sending contract: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Failed to send contract: {str(e)}"
+                status_code=500, detail=f"Failed to send contract: {e!s}"
             )
 
     async def sign_contract(
@@ -3264,7 +3264,7 @@ class VendorService:
         token: str,
         signer_name: str,
         signer_email: str,
-        signature_ip: Optional[str] = None,
+        signature_ip: str | None = None,
     ) -> dict:
         """Sign a contract (vendor action)."""
         try:
@@ -3283,7 +3283,7 @@ class VendorService:
                     status_code=400, detail="Contract cannot be signed in current state"
                 )
 
-            signed_at = datetime.now(timezone.utc)
+            signed_at = datetime.now(UTC)
             signature_update = {
                 "status": ContractStatus.SIGNED.value,
                 "signed_at": signed_at,
@@ -3441,7 +3441,7 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error signing contract: {str(e)}")
+            logger.error(f"Error signing contract: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to sign contract")
 
     # =========================================================================
@@ -3502,7 +3502,7 @@ class VendorService:
                     detail="Deposit amount cannot exceed total amount",
                 )
 
-            update_data["updated_at"] = datetime.now(timezone.utc)
+            update_data["updated_at"] = datetime.now(UTC)
 
             await self.vendor_contracts.update_one(
                 {
@@ -3512,9 +3512,7 @@ class VendorService:
                 {"$set": update_data},
             )
 
-            changed_fields = sorted(
-                key for key in update_data.keys() if key != "updated_at"
-            )
+            changed_fields = sorted(key for key in update_data if key != "updated_at")
             if changed_fields:
                 await self._log_contract_activity(
                     contract_id=contract_id,
@@ -3538,17 +3536,17 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error updating contract: {str(e)}")
+            logger.error(f"Error updating contract: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to update contract")
 
     async def update_contract_sections(
         self,
         contract_id: str,
-        sections: List[Dict[str, Any]],
+        sections: list[dict[str, Any]],
         updated_by: str,
-        terms_and_conditions: Optional[str] = None,
-        cancellation_policy: Optional[str] = None,
-        custom_clauses: Optional[str] = None,
+        terms_and_conditions: str | None = None,
+        cancellation_policy: str | None = None,
+        custom_clauses: str | None = None,
     ) -> dict:
         """Update contract sections - add, modify, or remove sections"""
         try:
@@ -3571,9 +3569,9 @@ class VendorService:
             # Sort by order
             processed_sections.sort(key=lambda x: x["order"])
 
-            update_data: Dict[str, Any] = {
+            update_data: dict[str, Any] = {
                 "sections": processed_sections,
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(UTC),
             }
             if terms_and_conditions is not None:
                 update_data["terms_and_conditions"] = terms_and_conditions
@@ -3619,7 +3617,7 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error updating contract sections: {str(e)}")
+            logger.error(f"Error updating contract sections: {e!s}")
             raise HTTPException(
                 status_code=500, detail="Failed to update contract sections"
             )
@@ -3629,7 +3627,7 @@ class VendorService:
     # =========================================================================
 
     async def get_form_data_for_contract(
-        self, contract_id: str, created_by: Optional[str] = None
+        self, contract_id: str, created_by: str | None = None
     ) -> dict:
         """
         Get vendor form submissions that can be used to populate contract fields.
@@ -3655,7 +3653,7 @@ class VendorService:
             # matching the convention used by every _get_owned_* helper above.
             normalized_actor = normalize_planner_email(created_by)
 
-            forms_filter: Dict[str, Any] = {"vendor_email": vendor_email}
+            forms_filter: dict[str, Any] = {"vendor_email": vendor_email}
             if normalized_actor is not None:
                 forms_filter["created_by"] = normalized_actor
 
@@ -3668,7 +3666,7 @@ class VendorService:
                 f for f in owned_forms_for_scope if f.get("status") == "submitted"
             ][:20]
 
-            submissions_filter: Dict[str, Any] = {"vendor_email": vendor_email}
+            submissions_filter: dict[str, Any] = {"vendor_email": vendor_email}
             if normalized_actor is not None:
                 # vendor_submissions.form_id storage is inconsistent across the
                 # codebase: the public-vendor-form submit path writes it as a
@@ -3707,7 +3705,7 @@ class VendorService:
                     )
 
             # Extract available fields that could populate contract
-            available_fields: Dict[str, Dict[str, Any]] = {}
+            available_fields: dict[str, dict[str, Any]] = {}
             for sub in submissions:
                 data = sub.get("data", {})
                 if isinstance(data, dict):
@@ -3729,7 +3727,7 @@ class VendorService:
             }
 
         except Exception as e:
-            logger.error(f"Error getting form data for contract: {str(e)}")
+            logger.error(f"Error getting form data for contract: {e!s}")
             return {
                 "vendor_submissions": [],
                 "available_fields": {},
@@ -3737,8 +3735,8 @@ class VendorService:
             }
 
     def _summarize_contract_form_submission(
-        self, submission: Dict[str, Any], source: str
-    ) -> Dict[str, Any]:
+        self, submission: dict[str, Any], source: str
+    ) -> dict[str, Any]:
         """Normalize vendor form documents into a stable contract form-data summary."""
         raw_id = submission.get("_id")
         submission_data = submission.get("submission_data", {})
@@ -3763,10 +3761,10 @@ class VendorService:
         }
 
     def _suggest_field_mappings(
-        self, available_fields: Dict[str, Dict[str, Any]]
-    ) -> Dict[str, Dict[str, Any]]:
+        self, available_fields: dict[str, dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
         """Suggest mappings from form fields to contract placeholders"""
-        mappings: Dict[str, Dict[str, Any]] = {}
+        mappings: dict[str, dict[str, Any]] = {}
 
         # Common field name patterns to contract placeholders
         patterns = {
@@ -3800,8 +3798,8 @@ class VendorService:
         return mappings
 
     def _apply_placeholder_replacements(
-        self, content: Optional[str], replacements: Dict[str, str]
-    ) -> Optional[str]:
+        self, content: str | None, replacements: dict[str, str]
+    ) -> str | None:
         """Apply placeholder replacements to an optional string field."""
         if content is None:
             return None
@@ -3815,8 +3813,8 @@ class VendorService:
         self,
         contract_id: str,
         form_submission_id: str,
-        field_mappings: Optional[Dict[str, str]] = None,
-        applied_by: Optional[str] = None,
+        field_mappings: dict[str, str] | None = None,
+        applied_by: str | None = None,
     ) -> dict:
         """Apply data from a vendor form submission to populate contract sections.
 
@@ -3875,8 +3873,8 @@ class VendorService:
                 )
 
             # Build placeholder replacements
-            replacements: Dict[str, str] = {}
-            normalized_mappings: Dict[str, str] = {}
+            replacements: dict[str, str] = {}
+            normalized_mappings: dict[str, str] = {}
 
             # Default mappings from submission data
             for key, value in submission_data.items():
@@ -3935,12 +3933,12 @@ class VendorService:
                         "form_submission_id": form_submission_id,
                         "form_submission_ids": updated_submission_ids,
                         "form_data_mappings": normalized_mappings,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
 
-            applied_at = datetime.now(timezone.utc)
+            applied_at = datetime.now(UTC)
             # AR-final audit fields: capture the resolved (planner-owned)
             # source IDs on the activity row so the audit trail records
             # exactly which form submission and vendor profile were
@@ -3977,7 +3975,7 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error applying form data to contract: {str(e)}")
+            logger.error(f"Error applying form data to contract: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to apply form data")
 
     # =========================================================================
@@ -3985,8 +3983,8 @@ class VendorService:
     # =========================================================================
 
     async def create_payment_milestones(
-        self, contract_id: str, milestones: List[Dict], created_by: str
-    ) -> List[dict]:
+        self, contract_id: str, milestones: list[dict], created_by: str
+    ) -> list[dict]:
         """Create payment milestones for a contract"""
         try:
             # Authorization: verify contract belongs to this user
@@ -4017,8 +4015,8 @@ class VendorService:
                     "vendor_name": contract["vendor_name"],
                     "vendor_email": contract["vendor_email"],
                     "created_by": created_by,
-                    "created_at": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc),
+                    "created_at": datetime.now(UTC),
+                    "updated_at": datetime.now(UTC),
                 }
 
                 result = await self.payment_milestones.insert_one(milestone)
@@ -4044,18 +4042,18 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error creating milestones: {str(e)}")
+            logger.error(f"Error creating milestones: {e!s}")
             raise HTTPException(
                 status_code=500, detail="Failed to create payment milestones"
             )
 
     async def get_payment_milestones(
         self,
-        contract_id: Optional[str] = None,
-        wedding_id: Optional[str] = None,
-        status: Optional[str] = None,
-        created_by: Optional[str] = None,
-    ) -> List[dict]:
+        contract_id: str | None = None,
+        wedding_id: str | None = None,
+        status: str | None = None,
+        created_by: str | None = None,
+    ) -> list[dict]:
         """Get payment milestones.
 
         Tenant scope: when ``created_by`` is provided, the find query is
@@ -4073,7 +4071,7 @@ class VendorService:
         Tenant Boundary Rule.
         """
         try:
-            query: Dict[str, Any] = {}
+            query: dict[str, Any] = {}
 
             if contract_id and created_by:
                 await self.get_contract(contract_id, created_by=created_by)
@@ -4092,7 +4090,7 @@ class VendorService:
 
             # Track IDs of milestones that need status update
             overdue_milestone_ids = []
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             for m in milestones:
                 m["_id"] = str(m["_id"])
@@ -4106,7 +4104,7 @@ class VendorService:
             # planner ``created_by`` filter so the write is scoped at
             # the Mongo layer, not just by the in-memory ``$in`` set.
             if overdue_milestone_ids:
-                update_filter: Dict[str, Any] = {"_id": {"$in": overdue_milestone_ids}}
+                update_filter: dict[str, Any] = {"_id": {"$in": overdue_milestone_ids}}
                 if created_by is not None:
                     update_filter["created_by"] = created_by
                 await self.payment_milestones.update_many(
@@ -4125,12 +4123,12 @@ class VendorService:
             return milestones
 
         except Exception as e:
-            logger.error(f"Error fetching milestones: {str(e)}")
+            logger.error(f"Error fetching milestones: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to fetch milestones")
 
     async def _get_owned_payment_milestone(
         self, milestone_id: str, created_by: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Fetch one milestone and fail closed if it is not owned by this planner scope."""
         milestone_object_id = validate_object_id(milestone_id, "milestone ID")
         milestone = await self.payment_milestones.find_one({"_id": milestone_object_id})
@@ -4156,10 +4154,10 @@ class VendorService:
         amount: float,
         payment_method: str,
         created_by: str,
-        payment_date: Optional[datetime] = None,
-        notes: Optional[str] = None,
-        receipt_url: Optional[str] = None,
-        stripe_payment_intent_id: Optional[str] = None,
+        payment_date: datetime | None = None,
+        notes: str | None = None,
+        receipt_url: str | None = None,
+        stripe_payment_intent_id: str | None = None,
     ) -> dict:
         """Record a payment against a milestone."""
         try:
@@ -4254,10 +4252,10 @@ class VendorService:
                 "paid_amount": new_paid_amount,
                 "status": new_status,
                 "payment_method": payment_method,
-                "paid_at": payment_date or datetime.now(timezone.utc),
+                "paid_at": payment_date or datetime.now(UTC),
                 "notes": notes,
                 "receipt_url": receipt_url,
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(UTC),
             }
 
             if stripe_payment_intent_id:
@@ -4344,7 +4342,7 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error recording payment: {str(e)}")
+            logger.error(f"Error recording payment: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to record payment")
 
     async def get_contract_activity(self, contract_id: str, created_by: str) -> dict:
@@ -4379,7 +4377,7 @@ class VendorService:
             items = [*serialized_items, *synthesized_items]
             items.sort(
                 key=lambda item: (
-                    item.get("created_at") or datetime.min.replace(tzinfo=timezone.utc)
+                    item.get("created_at") or datetime.min.replace(tzinfo=UTC)
                 ),
                 reverse=True,
             )
@@ -4393,7 +4391,7 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error fetching contract activity: {str(e)}")
+            logger.error(f"Error fetching contract activity: {e!s}")
             raise HTTPException(
                 status_code=500, detail="Failed to fetch contract activity"
             )
@@ -4407,7 +4405,7 @@ class VendorService:
         contract_id: str,
         file: UploadFile,
         document_type: str = "signed",
-        created_by: Optional[str] = None,
+        created_by: str | None = None,
     ) -> dict:
         """Upload a contract document to S3.
 
@@ -4431,7 +4429,7 @@ class VendorService:
                 raise HTTPException(status_code=404, detail="Contract not found")
 
             # Generate unique key
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
             filename = (
                 f"contracts/{contract_id}/{document_type}_{timestamp}_{file.filename}"
             )
@@ -4451,7 +4449,7 @@ class VendorService:
             # to the owner so a TOCTOU swap between the ownership check
             # and the write cannot smuggle in a foreign contract.
             field = f"{document_type}_document_url"
-            update_query: Dict[str, Any] = {
+            update_query: dict[str, Any] = {
                 "_id": ObjectId(contract_id),
                 "is_soft_deleted": {"$ne": True},
             }
@@ -4460,7 +4458,7 @@ class VendorService:
                 update_query["created_by"] = normalized_actor
             await self.vendor_contracts.update_one(
                 update_query,
-                {"$set": {field: file_url, "updated_at": datetime.now(timezone.utc)}},
+                {"$set": {field: file_url, "updated_at": datetime.now(UTC)}},
             )
 
             return {"url": file_url, "key": filename}
@@ -4468,10 +4466,10 @@ class VendorService:
         except HTTPException:
             raise
         except ClientError as e:
-            logger.error(f"S3 upload error: {str(e)}")
+            logger.error(f"S3 upload error: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to upload document")
         except Exception as e:
-            logger.error(f"Error uploading document: {str(e)}")
+            logger.error(f"Error uploading document: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to upload document")
 
     # =========================================================================
@@ -4481,10 +4479,10 @@ class VendorService:
     async def get_vendor_communications(
         self,
         vendor_profile_id: str,
-        wedding_id: Optional[str] = None,
+        wedding_id: str | None = None,
         limit: int = 50,
-        created_by: Optional[str] = None,
-    ) -> List[dict]:
+        created_by: str | None = None,
+    ) -> list[dict]:
         """Get communication history with a vendor"""
         try:
             query = {"vendor_profile_id": vendor_profile_id}
@@ -4507,7 +4505,7 @@ class VendorService:
             return communications
 
         except Exception as e:
-            logger.error(f"Error fetching communications: {str(e)}")
+            logger.error(f"Error fetching communications: {e!s}")
             raise HTTPException(
                 status_code=500, detail="Failed to fetch communications"
             )
@@ -4523,11 +4521,11 @@ class VendorService:
         vendor_profile_id: str,
         contract_title: str,
         total_amount: float,
-        created_by: Optional[str] = None,
-        deposit_amount: Optional[float] = None,
-        service_date: Optional[datetime] = None,
-        service_location: Optional[str] = None,
-        notes: Optional[str] = None,
+        created_by: str | None = None,
+        deposit_amount: float | None = None,
+        service_date: datetime | None = None,
+        service_location: str | None = None,
+        notes: str | None = None,
     ) -> dict:
         """
         Create a contract by uploading an existing PDF.
@@ -4566,7 +4564,7 @@ class VendorService:
                 )
 
             # Generate unique filename
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+            timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
             safe_filename = f"contracts/{wedding_id}/{timestamp}_{file.filename}"
 
             # Upload to S3
@@ -4579,14 +4577,14 @@ class VendorService:
                 )
                 pdf_url = f"{self.media_domain}/{safe_filename}"
             except ClientError as e:
-                logger.error(f"S3 upload error: {str(e)}")
+                logger.error(f"S3 upload error: {e!s}")
                 raise HTTPException(
                     status_code=500, detail="Failed to upload contract PDF"
                 )
 
             # Create contract record
             contract_id = ObjectId()
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             contract_doc = {
                 "_id": contract_id,
                 "wedding_id": wedding_id,
@@ -4640,9 +4638,9 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error uploading contract PDF: {str(e)}")
+            logger.error(f"Error uploading contract PDF: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Failed to upload contract: {str(e)}"
+                status_code=500, detail=f"Failed to upload contract: {e!s}"
             )
 
     # =========================================================================
@@ -4661,14 +4659,14 @@ class VendorService:
         description: str,
         created_by: str,
         currency: str = "USD",
-        due_date: Optional[datetime] = None,
-        wedding_id: Optional[str] = None,
-        contract_id: Optional[str] = None,
-        milestone_id: Optional[str] = None,
-        vendor_profile_id: Optional[str] = None,
-        email_subject: Optional[str] = None,
-        email_message: Optional[str] = None,
-        payer_phone: Optional[str] = None,
+        due_date: datetime | None = None,
+        wedding_id: str | None = None,
+        contract_id: str | None = None,
+        milestone_id: str | None = None,
+        vendor_profile_id: str | None = None,
+        email_subject: str | None = None,
+        email_message: str | None = None,
+        payer_phone: str | None = None,
     ) -> dict:
         """
         Create a payment link that can be sent to vendors or couples.
@@ -4718,18 +4716,16 @@ class VendorService:
                 stripe_payment_link_url = payment_link.url
 
             except stripe.StripeError as e:
-                logger.error(f"Stripe error creating payment link: {str(e)}")
+                logger.error(f"Stripe error creating payment link: {e!s}")
                 raise HTTPException(
-                    status_code=500, detail=f"Payment link creation failed: {str(e)}"
+                    status_code=500, detail=f"Payment link creation failed: {e!s}"
                 )
 
             # Calculate expiration date (due_date + 7 days buffer, or 30 days from now)
             if due_date:
                 expires_at = due_date + timedelta(days=7)
             else:
-                expires_at = datetime.now(timezone.utc) + timedelta(
-                    days=TOKEN_EXPIRY_DAYS
-                )
+                expires_at = datetime.now(UTC) + timedelta(days=TOKEN_EXPIRY_DAYS)
 
             # Create payment link record
             payment_link_doc = {
@@ -4756,8 +4752,8 @@ class VendorService:
                 "email_message": email_message,
                 "access_token": self._generate_token(),
                 "created_by": created_by,
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
                 "reminder_sent_count": 0,
             }
 
@@ -4772,16 +4768,16 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error creating payment link: {str(e)}")
+            logger.error(f"Error creating payment link: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Failed to create payment link: {str(e)}"
+                status_code=500, detail=f"Failed to create payment link: {e!s}"
             )
 
     async def send_payment_link(
         self,
         payment_link_id: str,
         planner_email: str,
-        custom_message: Optional[str] = None,
+        custom_message: str | None = None,
     ) -> dict:
         """
         Send a payment link to the payer via email.
@@ -4891,8 +4887,8 @@ class VendorService:
                 {
                     "$set": {
                         "status": PaymentLinkStatus.SENT.value,
-                        "sent_at": datetime.now(timezone.utc),
-                        "updated_at": datetime.now(timezone.utc),
+                        "sent_at": datetime.now(UTC),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -4908,19 +4904,19 @@ class VendorService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error sending payment link: {str(e)}")
+            logger.error(f"Error sending payment link: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Failed to send payment link: {str(e)}"
+                status_code=500, detail=f"Failed to send payment link: {e!s}"
             )
 
     async def get_payment_links(
         self,
         planner_email: str,
-        wedding_id: Optional[str] = None,
-        status: Optional[str] = None,
+        wedding_id: str | None = None,
+        status: str | None = None,
         skip: int = 0,
         limit: int = 50,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Get payment links created by a planner"""
         try:
             query = {"created_by": planner_email}
@@ -4943,7 +4939,7 @@ class VendorService:
             return links
 
         except Exception as e:
-            logger.error(f"Error fetching payment links: {str(e)}")
+            logger.error(f"Error fetching payment links: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to fetch payment links")
 
     async def handle_payment_link_webhook(self, stripe_event: dict) -> dict:
@@ -4980,7 +4976,7 @@ class VendorService:
             Stripe stops retrying. Ops finds the orphan via the log.
         """
         # Pull these out early so the outer except can reference them.
-        payment_link_id: Optional[str] = None
+        payment_link_id: str | None = None
         event_id = stripe_event.get("id") if isinstance(stripe_event, dict) else None
         try:
             event_type = stripe_event.get("type")
@@ -4989,11 +4985,11 @@ class VendorService:
             # Authoritative settlement time from Stripe — falls back to None
             # (record_payment defaults to now) if absent.
             event_created = stripe_event.get("created")
-            event_payment_date: Optional[datetime] = None
+            event_payment_date: datetime | None = None
             if event_created is not None:
                 try:
                     event_payment_date = datetime.fromtimestamp(
-                        int(event_created), tz=timezone.utc
+                        int(event_created), tz=UTC
                     )
                 except (TypeError, ValueError, OSError):
                     event_payment_date = None
@@ -5052,7 +5048,7 @@ class VendorService:
                         # receipt URL. Fetch the PI and pull `latest_charge`.
                         # This is best-effort — failures here must NOT prevent
                         # the milestone credit from being recorded.
-                        receipt_url: Optional[str] = None
+                        receipt_url: str | None = None
                         if payment_intent_id:
                             try:
                                 pi = stripe.PaymentIntent.retrieve(
@@ -5212,12 +5208,12 @@ class VendorService:
                             {
                                 "$set": {
                                     "status": PaymentLinkStatus.PAID.value,
-                                    "paid_at": datetime.now(timezone.utc),
+                                    "paid_at": datetime.now(UTC),
                                     "stripe_checkout_session_id": data.get("id"),
                                     "stripe_payment_intent_id": data.get(
                                         "payment_intent"
                                     ),
-                                    "updated_at": datetime.now(timezone.utc),
+                                    "updated_at": datetime.now(UTC),
                                 }
                             },
                         )
@@ -5260,15 +5256,15 @@ class VendorService:
                                         "stripe_payment_intent_id": data.get(
                                             "payment_intent"
                                         ),
-                                        "updated_at": datetime.now(timezone.utc),
+                                        "updated_at": datetime.now(UTC),
                                     }
                                 },
                             )
 
                         # Structured success log so dashboards / alerts can
                         # filter on stable keys.
-                        milestone_log_id: Optional[str] = None
-                        amount_log: Optional[float] = None
+                        milestone_log_id: str | None = None
+                        amount_log: float | None = None
                         if payment_link and payment_link.get("milestone_id"):
                             milestone_log_id = str(payment_link["milestone_id"])
                             amount_log = float(payment_link.get("amount") or 0)

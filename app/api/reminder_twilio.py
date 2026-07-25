@@ -3,8 +3,7 @@
 import asyncio
 import logging
 import os
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -27,16 +26,16 @@ from app.services.reminder_service_twilio import (
 )
 from app.services.sse_manager import sse_manager
 from app.services.wedding_service import WeddingService
-from app.utils.contact_sanitizer import normalize_phone_e164
 from app.utils.communication_access import CommunicationCapability
+from app.utils.contact_sanitizer import normalize_phone_e164
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 wedding_service = WeddingService()
 
 # Initialize services only if Twilio is configured
-twilio_reminder_service: Optional[TwilioReminderService] = None
-twilio_helper: Optional[TwilioRSVPReminderHelper] = None
+twilio_reminder_service: TwilioReminderService | None = None
+twilio_helper: TwilioRSVPReminderHelper | None = None
 
 if twilio_configured:
     twilio_reminder_service = TwilioReminderService()
@@ -45,20 +44,20 @@ if twilio_configured:
 
 class SlugModel(BaseModel):
     slug: str
-    custom_message: Optional[str] = None
+    custom_message: str | None = None
 
 
 class IndividualReminderRequest(BaseModel):
     """Request model for sending reminders to specific guests by their tokens"""
 
-    guest_tokens: List[str]
+    guest_tokens: list[str]
     message: str
 
 
 class IndividualPlusOneReminderRequest(BaseModel):
     """Request model for sending reminders to specific plus-ones by their IDs"""
 
-    plus_one_ids: List[str]
+    plus_one_ids: list[str]
     message: str
     wedding_id: str
 
@@ -177,7 +176,7 @@ async def send_individual_reminders(
     failed_count = 0
     failure_reasons = []
     logs = []
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     from_number = os.getenv("TWILIO_FROM_NUMBER") or os.getenv("TWILIO_PHONE_NUMBER")
     status_callback_url = os.getenv("TWILIO_STATUS_CALLBACK_URL")
@@ -274,8 +273,8 @@ async def send_individual_reminders(
         except Exception as e:
             logger.error(f"Failed to send SMS to {phone}: {e}")
             failed_count += 1
-            status = f"failed: {str(e)}"
-            failure_reasons.append(f"SMS to {guest_name} failed: {str(e)}")
+            status = f"failed: {e!s}"
+            failure_reasons.append(f"SMS to {guest_name} failed: {e!s}")
 
         # Log the attempt with delivery tracking fields
         log_record = {
@@ -398,7 +397,7 @@ async def send_plus_one_reminders(
     failed_count = 0
     failure_reasons = []
     logs = []
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     from_number = os.getenv("TWILIO_FROM_NUMBER") or os.getenv("TWILIO_PHONE_NUMBER")
     status_callback_url = os.getenv("TWILIO_STATUS_CALLBACK_URL")
@@ -470,8 +469,8 @@ async def send_plus_one_reminders(
         except Exception as e:
             logger.error(f"Failed to send SMS to plus-one {po_name} at {phone}: {e}")
             failed_count += 1
-            status = f"failed: {str(e)}"
-            failure_reasons.append(f"SMS to {po_name} failed: {str(e)}")
+            status = f"failed: {e!s}"
+            failure_reasons.append(f"SMS to {po_name} failed: {e!s}")
 
         # Log the attempt
         log_record = {
@@ -606,7 +605,7 @@ async def _create_bulk_send_summary(
         )
 
     except Exception as e:
-        logger.warning(f"Failed to create bulk send summary notification: {str(e)}")
+        logger.warning(f"Failed to create bulk send summary notification: {e!s}")
 
 
 @router.get("/reminders/logs", tags=["Admin"])

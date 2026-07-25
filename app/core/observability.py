@@ -6,10 +6,11 @@ import asyncio
 import logging
 import platform
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List
+from typing import Any
 
 import psutil
 
@@ -35,9 +36,9 @@ class HealthCheck:
     name: str
     status: HealthStatus
     message: str
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
     response_time_ms: float = 0
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass
@@ -46,8 +47,8 @@ class MetricData:
 
     name: str
     value: float
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    tags: Dict[str, str] = field(default_factory=dict)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
+    tags: dict[str, str] = field(default_factory=dict)
     metric_type: str = "gauge"  # gauge, counter, histogram
 
 
@@ -55,14 +56,14 @@ class MetricsCollector:
     """Collect and manage application metrics"""
 
     def __init__(self):
-        self.metrics: Dict[str, List[MetricData]] = {}
-        self.counters: Dict[str, float] = {}
-        self.gauges: Dict[str, float] = {}
-        self.histograms: Dict[str, List[float]] = {}
+        self.metrics: dict[str, list[MetricData]] = {}
+        self.counters: dict[str, float] = {}
+        self.gauges: dict[str, float] = {}
+        self.histograms: dict[str, list[float]] = {}
         self.max_data_points = 1000
 
     def increment_counter(
-        self, name: str, value: float = 1.0, tags: Dict[str, str] = None
+        self, name: str, value: float = 1.0, tags: dict[str, str] = None
     ):
         """Increment a counter metric"""
         if name not in self.counters:
@@ -76,7 +77,7 @@ class MetricsCollector:
 
         self._store_metric(metric)
 
-    def set_gauge(self, name: str, value: float, tags: Dict[str, str] = None):
+    def set_gauge(self, name: str, value: float, tags: dict[str, str] = None):
         """Set a gauge metric value"""
         self.gauges[name] = value
 
@@ -86,7 +87,7 @@ class MetricsCollector:
 
         self._store_metric(metric)
 
-    def record_histogram(self, name: str, value: float, tags: Dict[str, str] = None):
+    def record_histogram(self, name: str, value: float, tags: dict[str, str] = None):
         """Record a histogram value"""
         if name not in self.histograms:
             self.histograms[name] = []
@@ -124,7 +125,7 @@ class MetricsCollector:
         """Get current gauge value"""
         return self.gauges.get(name, 0)
 
-    def get_histogram_stats(self, name: str) -> Dict[str, float]:
+    def get_histogram_stats(self, name: str) -> dict[str, float]:
         """Get histogram statistics"""
         if name not in self.histograms or not self.histograms[name]:
             return {}
@@ -142,7 +143,7 @@ class MetricsCollector:
             "p99": values[int(len(values) * 0.99)],
         }
 
-    async def export_metrics(self) -> Dict[str, Any]:
+    async def export_metrics(self) -> dict[str, Any]:
         """Export all metrics"""
         return {
             "counters": self.counters,
@@ -150,7 +151,7 @@ class MetricsCollector:
             "histograms": {
                 name: self.get_histogram_stats(name) for name in self.histograms.keys()
             },
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
 
@@ -158,8 +159,8 @@ class HealthMonitor:
     """Monitor system health"""
 
     def __init__(self):
-        self.health_checks: Dict[str, Callable] = {}
-        self.last_check_results: Dict[str, HealthCheck] = {}
+        self.health_checks: dict[str, Callable] = {}
+        self.last_check_results: dict[str, HealthCheck] = {}
 
     def register_health_check(self, name: str, check_func: Callable):
         """Register a health check function"""
@@ -209,11 +210,11 @@ class HealthMonitor:
             return HealthCheck(
                 name=name,
                 status=HealthStatus.UNHEALTHY,
-                message=f"Health check failed: {str(e)}",
+                message=f"Health check failed: {e!s}",
                 response_time_ms=response_time,
             )
 
-    async def run_all_health_checks(self) -> Dict[str, HealthCheck]:
+    async def run_all_health_checks(self) -> dict[str, HealthCheck]:
         """Run all registered health checks"""
         results = {}
 
@@ -230,7 +231,7 @@ class HealthMonitor:
                     results[name] = HealthCheck(
                         name=name,
                         status=HealthStatus.UNHEALTHY,
-                        message=f"Health check error: {str(result)}",
+                        message=f"Health check error: {result!s}",
                     )
                 else:
                     results[name] = result
@@ -257,9 +258,9 @@ class SystemMonitor:
     """Monitor system resources"""
 
     def __init__(self):
-        self.start_time = datetime.now(timezone.utc)
+        self.start_time = datetime.now(UTC)
 
-    async def get_system_metrics(self) -> Dict[str, Any]:
+    async def get_system_metrics(self) -> dict[str, Any]:
         """Get system resource metrics"""
         try:
             # CPU metrics
@@ -290,9 +291,7 @@ class SystemMonitor:
             process_memory = process.memory_info()
 
             return {
-                "uptime_seconds": (
-                    datetime.now(timezone.utc) - self.start_time
-                ).total_seconds(),
+                "uptime_seconds": (datetime.now(UTC) - self.start_time).total_seconds(),
                 "cpu": {"percent": cpu_percent, "count": cpu_count},
                 "memory": {
                     "total": memory.total,
@@ -321,7 +320,7 @@ class SystemMonitor:
                 },
             }
         except Exception as e:
-            logger.error(f"Failed to collect system metrics: {str(e)}")
+            logger.error(f"Failed to collect system metrics: {e!s}")
             return {"error": str(e)}
 
 
@@ -352,7 +351,7 @@ class ObservabilityManager:
                 return HealthCheck(
                     name="database",
                     status=HealthStatus.UNHEALTHY,
-                    message=f"Database connection failed: {str(e)}",
+                    message=f"Database connection failed: {e!s}",
                 )
 
         async def cache_health():
@@ -372,7 +371,7 @@ class ObservabilityManager:
                 return HealthCheck(
                     name="cache",
                     status=HealthStatus.DEGRADED,
-                    message=f"Cache connection failed: {str(e)}",
+                    message=f"Cache connection failed: {e!s}",
                 )
 
         def memory_health():
@@ -468,14 +467,14 @@ class ObservabilityManager:
                     await cache.set("system_metrics", system_metrics, expire=300)
 
                 except Exception as e:
-                    logger.error(f"Error collecting system metrics: {str(e)}")
+                    logger.error(f"Error collecting system metrics: {e!s}")
 
                 await asyncio.sleep(60)  # Collect every minute
 
         # Start the background task
         asyncio.create_task(collect_system_metrics())
 
-    async def get_full_health_report(self) -> Dict[str, Any]:
+    async def get_full_health_report(self) -> dict[str, Any]:
         """Get comprehensive health report"""
         health_checks = await self.health_monitor.run_all_health_checks()
         overall_status = self.health_monitor.get_overall_health()
@@ -483,7 +482,7 @@ class ObservabilityManager:
         app_metrics = await self.metrics.export_metrics()
         return {
             "status": overall_status.value,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "health_checks": {
                 name: {
                     "status": check.status.value,

@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Optional
 
 from fastapi import HTTPException, Request, Response, status
 
@@ -19,7 +18,7 @@ GUEST_ACCESS_COOKIE_NAME = "guest_access_session"
 class GuestAccessSession:
     wedding_slug: str
     wedding_id: str
-    guest_id: Optional[str]
+    guest_id: str | None
     auth_method: str
     otp_verified: bool = False
 
@@ -33,7 +32,7 @@ def create_guest_access_session_token(
     wedding_slug: str,
     wedding_id: str,
     auth_method: str,
-    guest_id: Optional[str] = None,
+    guest_id: str | None = None,
     otp_verified: bool = False,
 ) -> str:
     session_subject = guest_id or f"guest-access:{wedding_slug}"
@@ -58,7 +57,7 @@ def set_guest_access_session(
     wedding_slug: str,
     wedding_id: str,
     auth_method: str,
-    guest_id: Optional[str] = None,
+    guest_id: str | None = None,
     otp_verified: bool = False,
 ) -> None:
     token = create_guest_access_session_token(
@@ -83,11 +82,11 @@ def clear_guest_access_session(response: Response) -> None:
 def get_guest_access_session(
     request: Request,
     *,
-    slug: Optional[str] = None,
+    slug: str | None = None,
     required: bool = True,
     require_guest: bool = False,
     require_otp_verified: bool = False,
-) -> Optional[GuestAccessSession]:
+) -> GuestAccessSession | None:
     session_token = request.cookies.get(GUEST_ACCESS_COOKIE_NAME)
 
     if not session_token:

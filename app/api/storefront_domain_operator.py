@@ -15,7 +15,6 @@ from app.services.storefront_domain_operator_service import (
     storefront_domain_operator_service,
 )
 
-
 router = APIRouter(prefix="/storefront/custom-domain/operator")
 
 

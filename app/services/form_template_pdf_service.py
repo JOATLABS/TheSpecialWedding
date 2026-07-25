@@ -34,8 +34,9 @@ from __future__ import annotations
 
 import html
 import logging
+from collections.abc import Iterable, Mapping
 from functools import lru_cache
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -288,7 +289,7 @@ def _cached_pdf_for_template(template_id: str, _content_signature: str) -> bytes
     return _render_pdf_bytes(template)
 
 
-def _resolve_template(template_id: str) -> Optional[Mapping[str, Any]]:
+def _resolve_template(template_id: str) -> Mapping[str, Any] | None:
     # Imported lazily so a circular import via app.api.forms is impossible.
     from app.services.form_template_catalog import FORM_TEMPLATES
 
@@ -336,6 +337,6 @@ def clear_pdf_cache() -> None:
 
 
 __all__ = [
-    "render_form_template_pdf",
     "clear_pdf_cache",
+    "render_form_template_pdf",
 ]

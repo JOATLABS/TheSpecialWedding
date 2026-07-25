@@ -8,8 +8,8 @@ Reduces costs by avoiding redundant AI calls for identical inputs.
 import hashlib
 import json
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from app.core.database import mongo
 
@@ -37,7 +37,7 @@ class AICacheService:
         self.cache = mongo.db["ai_cache"]
 
     @staticmethod
-    def _normalize_plan(plan: Optional[str]) -> str:
+    def _normalize_plan(plan: str | None) -> str:
         if not plan:
             return AICacheService.UNKNOWN_PLAN
         normalized = plan.strip().lower()
@@ -47,9 +47,9 @@ class AICacheService:
         self,
         feature: str,
         tenant_id: str,
-        context: Dict,
+        context: dict,
         *,
-        subscription_plan: Optional[str] = None,
+        subscription_plan: str | None = None,
     ) -> str:
         """Generate content-addressed cache key from input data.
 
@@ -67,10 +67,10 @@ class AICacheService:
         self,
         feature: str,
         tenant_id: str,
-        context: Dict,
+        context: dict,
         *,
-        subscription_plan: Optional[str] = None,
-    ) -> Optional[Dict]:
+        subscription_plan: str | None = None,
+    ) -> dict | None:
         """
         Get cached AI response if valid.
 
@@ -88,7 +88,7 @@ class AICacheService:
             )
 
             cached = await self.cache.find_one(
-                {"_id": cache_key, "expires_at": {"$gt": datetime.now(timezone.utc)}}
+                {"_id": cache_key, "expires_at": {"$gt": datetime.now(UTC)}}
             )
 
             if cached:
@@ -102,18 +102,18 @@ class AICacheService:
             return None
 
         except Exception as e:
-            logger.error(f"Cache get error: {str(e)}")
+            logger.error(f"Cache get error: {e!s}")
             return None
 
     async def cache_response(
         self,
         feature: str,
         tenant_id: str,
-        context: Dict,
-        response: Dict,
+        context: dict,
+        response: dict,
         ttl_hours: int,
         *,
-        subscription_plan: Optional[str] = None,
+        subscription_plan: str | None = None,
     ) -> bool:
         """
         Cache AI response with TTL.
@@ -143,8 +143,8 @@ class AICacheService:
                     json.dumps(context, sort_keys=True, default=str).encode()
                 ).hexdigest(),
                 "response": response,
-                "created_at": datetime.now(timezone.utc),
-                "expires_at": datetime.now(timezone.utc) + timedelta(hours=ttl_hours),
+                "created_at": datetime.now(UTC),
+                "expires_at": datetime.now(UTC) + timedelta(hours=ttl_hours),
                 "hit_count": 0,
             }
 
@@ -156,7 +156,7 @@ class AICacheService:
             return True
 
         except Exception as e:
-            logger.error(f"Cache set error: {str(e)}")
+            logger.error(f"Cache set error: {e!s}")
             return False
 
     async def invalidate_by_feature(self, feature: str, tenant_id: str) -> int:
@@ -179,7 +179,7 @@ class AICacheService:
             return result.deleted_count
 
         except Exception as e:
-            logger.error(f"Cache invalidation error: {str(e)}")
+            logger.error(f"Cache invalidation error: {e!s}")
             return 0
 
     async def invalidate_by_tenant(self, tenant_id: str) -> int:
@@ -200,7 +200,7 @@ class AICacheService:
             return result.deleted_count
 
         except Exception as e:
-            logger.error(f"Cache invalidation error: {str(e)}")
+            logger.error(f"Cache invalidation error: {e!s}")
             return 0
 
     async def get_latest_cached_response(
@@ -208,8 +208,8 @@ class AICacheService:
         feature: str,
         tenant_id: str,
         *,
-        subscription_plan: Optional[str] = None,
-    ) -> Optional[Dict]:
+        subscription_plan: str | None = None,
+    ) -> dict | None:
         """
         Get the most recent cached response for a feature+tenant regardless of context hash.
 
@@ -233,7 +233,7 @@ class AICacheService:
             Most recent cached response dict or None if nothing cached
         """
         try:
-            base_query: Dict[str, Any] = {
+            base_query: dict[str, Any] = {
                 "feature": feature,
                 "tenant_id": tenant_id,
             }
@@ -246,7 +246,7 @@ class AICacheService:
             else:
                 plan_label = "any"
             cached = await self.cache.find_one(
-                {**base_query, "expires_at": {"$gt": datetime.now(timezone.utc)}},
+                {**base_query, "expires_at": {"$gt": datetime.now(UTC)}},
                 sort=[("created_at", -1)],
             )
 
@@ -269,7 +269,7 @@ class AICacheService:
             return None
 
         except Exception as e:
-            logger.error(f"Fallback cache get error: {str(e)}")
+            logger.error(f"Fallback cache get error: {e!s}")
             return None
 
     async def cleanup_expired(self) -> int:
@@ -283,7 +283,7 @@ class AICacheService:
         """
         try:
             result = await self.cache.delete_many(
-                {"expires_at": {"$lt": datetime.now(timezone.utc)}}
+                {"expires_at": {"$lt": datetime.now(UTC)}}
             )
 
             if result.deleted_count > 0:
@@ -291,10 +291,10 @@ class AICacheService:
             return result.deleted_count
 
         except Exception as e:
-            logger.error(f"Cache cleanup error: {str(e)}")
+            logger.error(f"Cache cleanup error: {e!s}")
             return 0
 
-    async def get_cache_stats(self, tenant_id: Optional[str] = None) -> Dict[str, Any]:
+    async def get_cache_stats(self, tenant_id: str | None = None) -> dict[str, Any]:
         """
         Get cache statistics for monitoring.
 
@@ -330,7 +330,7 @@ class AICacheService:
             }
 
         except Exception as e:
-            logger.error(f"Error getting cache stats: {str(e)}")
+            logger.error(f"Error getting cache stats: {e!s}")
             return {"error": str(e)}
 
 

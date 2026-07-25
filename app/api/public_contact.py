@@ -1,7 +1,6 @@
 import logging
 import os
 from html import escape
-from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
@@ -20,14 +19,14 @@ notification_service = NotificationService()
 class ContactSalesRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     email: EmailStr
-    company: Optional[str] = Field(None, max_length=200)
-    phone: Optional[str] = Field(None, max_length=50)
+    company: str | None = Field(None, max_length=200)
+    phone: str | None = Field(None, max_length=50)
     message: str = Field(..., min_length=10, max_length=2000)
 
 
 class ContactSalesResponse(BaseModel):
     message: str
-    notification_id: Optional[str]
+    notification_id: str | None
     email_sent: bool
 
 

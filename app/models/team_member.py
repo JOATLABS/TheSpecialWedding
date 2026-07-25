@@ -8,7 +8,6 @@ and wedding-scoped access control.
 
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -41,7 +40,7 @@ class WeddingAccessType(str, Enum):
 # Defined in code, not in DB. Used as defaults when a role is selected;
 # planners can override individual permissions via custom_permissions.
 
-ROLE_PRESETS: Dict[str, Dict[str, bool]] = {
+ROLE_PRESETS: dict[str, dict[str, bool]] = {
     "admin": {
         "manage_guests": True,
         "manage_budget": True,
@@ -133,8 +132,8 @@ ROLE_PRESETS: Dict[str, Dict[str, bool]] = {
 
 
 def resolve_team_permissions(
-    role: str, custom_permissions: Optional[Dict[str, bool]] = None
-) -> Dict[str, bool]:
+    role: str, custom_permissions: dict[str, bool] | None = None
+) -> dict[str, bool]:
     """Merge a stored permission blob with the current role preset."""
     base = dict(ROLE_PRESETS.get(role, ROLE_PRESETS["viewer"]))
     if custom_permissions:
@@ -179,7 +178,7 @@ class TeamPermissions(BaseModel):
     couple_bookable: bool = False
     approve_couple_bookings: bool = False
 
-    def to_dict(self) -> Dict[str, bool]:
+    def to_dict(self) -> dict[str, bool]:
         """Convert to plain dict for MongoDB storage"""
         return self.model_dump()
 
@@ -213,13 +212,13 @@ class InviteTeamMemberRequest(BaseModel):
     role: TeamMemberRole = Field(
         TeamMemberRole.VIEWER, description="Role preset (admin, editor, viewer)"
     )
-    custom_permissions: Optional[Dict[str, bool]] = Field(
+    custom_permissions: dict[str, bool] | None = Field(
         None, description="Override individual permissions from the role preset"
     )
     wedding_access: WeddingAccessType = Field(
         WeddingAccessType.ALL, description="Wedding access scope: 'all' or 'assigned'"
     )
-    assigned_wedding_ids: Optional[List[str]] = Field(
+    assigned_wedding_ids: list[str] | None = Field(
         None,
         description="Wedding IDs to grant access to (only when wedding_access='assigned')",
     )
@@ -254,16 +253,16 @@ class InviteTeamMemberRequest(BaseModel):
 class UpdateTeamMemberRequest(BaseModel):
     """Request body for updating an existing team member"""
 
-    role: Optional[TeamMemberRole] = Field(
+    role: TeamMemberRole | None = Field(
         None, description="New role preset (resets permissions to preset defaults)"
     )
-    custom_permissions: Optional[Dict[str, bool]] = Field(
+    custom_permissions: dict[str, bool] | None = Field(
         None, description="Override individual permissions"
     )
-    wedding_access: Optional[WeddingAccessType] = Field(
+    wedding_access: WeddingAccessType | None = Field(
         None, description="Wedding access scope"
     )
-    assigned_wedding_ids: Optional[List[str]] = Field(
+    assigned_wedding_ids: list[str] | None = Field(
         None, description="Wedding IDs to grant access to"
     )
 
@@ -311,22 +310,22 @@ class TeamMemberResponse(BaseModel):
     id: str = Field(..., description="Team member document ID")
     owner_id: str = Field(..., description="Planner (account owner) user ID")
     email: str = Field(..., description="Team member email")
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
+    first_name: str | None = None
+    last_name: str | None = None
     status: TeamMemberStatus = Field(..., description="pending, active, or deactivated")
     role: TeamMemberRole = Field(..., description="admin, editor, or viewer")
-    permissions: Dict[str, bool] = Field(default_factory=dict)
+    permissions: dict[str, bool] = Field(default_factory=dict)
     wedding_access: WeddingAccessType = Field(..., description="all or assigned")
-    assigned_wedding_ids: List[str] = Field(default_factory=list)
-    invited_at: Optional[datetime] = None
-    accepted_at: Optional[datetime] = None
-    deactivated_at: Optional[datetime] = None
-    last_active_at: Optional[datetime] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    user_id: Optional[str] = Field(None, description="Linked user account ID")
+    assigned_wedding_ids: list[str] = Field(default_factory=list)
+    invited_at: datetime | None = None
+    accepted_at: datetime | None = None
+    deactivated_at: datetime | None = None
+    last_active_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    user_id: str | None = Field(None, description="Linked user account ID")
     owner_email: str = Field(..., description="Planner's email address")
-    invite_token_expires_at: Optional[datetime] = Field(
+    invite_token_expires_at: datetime | None = Field(
         None, description="When the invite token expires"
     )
 
@@ -342,7 +341,7 @@ class TeamSeatsResponse(BaseModel):
     total_seats: int = Field(..., description="Total seats in the plan")
     used_seats: int = Field(..., description="Currently used seats")
     available_seats: int = Field(..., description="Remaining available seats")
-    members_by_status: Dict[str, int] = Field(
+    members_by_status: dict[str, int] = Field(
         default_factory=dict, description="Count of members by status"
     )
 
@@ -352,10 +351,10 @@ class TeamPermissionsResponse(BaseModel):
 
     is_team_member: bool = False
     is_owner: bool = False
-    role: Optional[str] = None
-    permissions: Dict[str, bool] = Field(default_factory=dict)
-    wedding_access: Optional[str] = None
-    assigned_wedding_ids: List[str] = Field(default_factory=list)
+    role: str | None = None
+    permissions: dict[str, bool] = Field(default_factory=dict)
+    wedding_access: str | None = None
+    assigned_wedding_ids: list[str] = Field(default_factory=list)
 
 
 class InviteInfoResponse(BaseModel):
@@ -363,7 +362,7 @@ class InviteInfoResponse(BaseModel):
 
     email: str
     role: str
-    permissions: Dict[str, bool] = Field(default_factory=dict)
-    company_name: Optional[str] = None
-    planner_name: Optional[str] = None
+    permissions: dict[str, bool] = Field(default_factory=dict)
+    company_name: str | None = None
+    planner_name: str | None = None
     is_expired: bool = False

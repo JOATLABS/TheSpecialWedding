@@ -8,7 +8,6 @@ States are loaded from states.json — edit that file to change target states.
 import json
 import logging
 import os
-from typing import List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +19,10 @@ _STATES_FILE = os.path.join(os.path.dirname(__file__), "states.json")
 # Required keys for each state entry
 _REQUIRED_KEYS = {"state", "state_full", "country"}
 
-_states_cache: List[Tuple[str, str, str]] | None = None
+_states_cache: list[tuple[str, str, str]] | None = None
 
 
-def get_states() -> List[Tuple[str, str, str]]:
+def get_states() -> list[tuple[str, str, str]]:
     """
     Load and validate states from the JSON config file.
 

@@ -32,8 +32,8 @@ Auth model:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -52,7 +52,7 @@ router = APIRouter()
 # in `app/utils/umami.ts` consumers (PricingSignupSection, SignupModal,
 # IntegratedHeroSection). Order matters: each entry should be a downstream
 # step relative to the one above so the UI can render conversion ratios.
-FUNNEL_EVENTS: Tuple[str, ...] = (
+FUNNEL_EVENTS: tuple[str, ...] = (
     "hero_cta_clicked",
     "pricing_viewed",
     "pricing_cta_clicked",
@@ -64,7 +64,7 @@ FUNNEL_EVENTS: Tuple[str, ...] = (
 
 # Supported window labels and their durations in seconds. The frontend selector
 # offers exactly these three; anything else is rejected at the query layer.
-WINDOWS: Dict[str, int] = {
+WINDOWS: dict[str, int] = {
     "24h": 24 * 60 * 60,
     "7d": 7 * 24 * 60 * 60,
     "30d": 30 * 24 * 60 * 60,
@@ -97,7 +97,7 @@ def _require_umami_configured() -> None:
     misconfiguration.
     """
 
-    missing: List[str] = []
+    missing: list[str] = []
     if not settings.UMAMI_API_BASE:
         missing.append("UMAMI_API_BASE")
     if not settings.UMAMI_WEBSITE_ID:
@@ -195,7 +195,7 @@ async def _get_umami_token(
     return token
 
 
-def _window_bounds_ms(window: str) -> Tuple[int, int]:
+def _window_bounds_ms(window: str) -> tuple[int, int]:
     """Translate a window label into Umami's `startAt`/`endAt` millisecond pair."""
 
     seconds = WINDOWS.get(window)
@@ -205,7 +205,7 @@ def _window_bounds_ms(window: str) -> Tuple[int, int]:
             status_code=400,
             detail=f"Unsupported window '{window}'. Use 24h, 7d, or 30d.",
         )
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     end = int(now.timestamp() * 1000)
     start = int((now - timedelta(seconds=seconds)).timestamp() * 1000)
     return start, end
@@ -214,7 +214,7 @@ def _window_bounds_ms(window: str) -> Tuple[int, int]:
 async def _umami_get(
     client: httpx.AsyncClient,
     path: str,
-    params: Dict[str, Any],
+    params: dict[str, Any],
 ) -> Any:
     """GET a Umami endpoint, normalising auth + error handling.
 
@@ -289,7 +289,7 @@ async def _umami_get(
         ) from exc
 
 
-def _top_entry(rows: Any) -> Optional[Dict[str, Any]]:
+def _top_entry(rows: Any) -> dict[str, Any] | None:
     """Pick the highest-`value` row out of a Umami `/metrics` response.
 
     The response is a list of `{x: ..., y: ...}` objects in v3. We tolerate the
@@ -300,7 +300,7 @@ def _top_entry(rows: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(rows, list) or not rows:
         return None
 
-    def _name(row: Any) -> Optional[str]:
+    def _name(row: Any) -> str | None:
         if not isinstance(row, dict):
             return None
         return row.get("x") if "x" in row else row.get("name")
@@ -321,14 +321,14 @@ def _top_entry(rows: Any) -> Optional[Dict[str, Any]]:
     return {"name": name, "value": _value(best)}
 
 
-def _events_to_funnel(rows: Any) -> Dict[str, int]:
+def _events_to_funnel(rows: Any) -> dict[str, int]:
     """Project Umami's event-metrics rows into our fixed funnel keys.
 
     Any funnel event Umami hasn't seen yet defaults to 0 — the frontend renders
     those as `—` so the operator can immediately tell signal-vs-no-signal.
     """
 
-    counts: Dict[str, int] = {event: 0 for event in FUNNEL_EVENTS}
+    counts: dict[str, int] = {event: 0 for event in FUNNEL_EVENTS}
     if not isinstance(rows, list):
         return counts
     for row in rows:
@@ -345,7 +345,7 @@ def _events_to_funnel(rows: Any) -> Dict[str, int]:
     return counts
 
 
-def _summary_from_stats(stats: Any) -> Dict[str, Any]:
+def _summary_from_stats(stats: Any) -> dict[str, Any]:
     """Reshape Umami's stats payload into the dashboard summary fields.
 
     Umami v3 returns each metric as `{value, prev}`; we only surface the
@@ -387,7 +387,7 @@ def _summary_from_stats(stats: Any) -> Dict[str, Any]:
 
 
 async def _safe_umami_get(
-    client: httpx.AsyncClient, path: str, params: Dict[str, Any]
+    client: httpx.AsyncClient, path: str, params: dict[str, Any]
 ) -> Any:
     """Call _umami_get but swallow 503 — return None instead.
 
@@ -403,7 +403,7 @@ async def _safe_umami_get(
         return None
 
 
-async def _fetch_funnel_payload(window: str) -> Dict[str, Any]:
+async def _fetch_funnel_payload(window: str) -> dict[str, Any]:
     """Top-level fetch + aggregation. Caller is responsible for caching."""
 
     start_ms, end_ms = _window_bounds_ms(window)
@@ -447,7 +447,7 @@ async def _fetch_funnel_payload(window: str) -> Dict[str, Any]:
 
     return {
         "window": window,
-        "generated_at": datetime.now(timezone.utc).isoformat() + "Z",
+        "generated_at": datetime.now(UTC).isoformat() + "Z",
         "summary": _summary_from_stats(stats),
         "top_referrer": _top_entry(referrers),
         "top_page": _top_entry(urls),

@@ -1,10 +1,10 @@
-from datetime import date, datetime, time, timezone
-from typing import Any, Optional, Union
+from datetime import UTC, date, datetime, time
+from typing import Any
 
-MongoDateLike = Optional[Union[date, datetime]]
+MongoDateLike = date | datetime | None
 
 
-def to_mongo_datetime(value: MongoDateLike) -> Optional[datetime]:
+def to_mongo_datetime(value: MongoDateLike) -> datetime | None:
     """
     Normalize date-like values into Mongo-safe UTC datetimes.
 
@@ -17,13 +17,13 @@ def to_mongo_datetime(value: MongoDateLike) -> Optional[datetime]:
 
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
-    return datetime.combine(value, time.min, tzinfo=timezone.utc)
+    return datetime.combine(value, time.min, tzinfo=UTC)
 
 
-def to_utc_datetime(value: Any) -> Optional[datetime]:
+def to_utc_datetime(value: Any) -> datetime | None:
     """
     Normalize datetime-like values into timezone-aware UTC datetimes.
 
@@ -36,8 +36,8 @@ def to_utc_datetime(value: Any) -> Optional[datetime]:
 
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
     if isinstance(value, str):
         normalized = value.strip()

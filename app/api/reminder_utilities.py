@@ -1,6 +1,5 @@
 # app/api/reminder_utilities.py
 
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -24,15 +23,15 @@ wedding_service = WeddingService()
 
 class RSVPRequestModel(BaseModel):
     token: str
-    attending: List[str] = Field(default_factory=lambda: ["traditional"])
-    dietary: Optional[str] = None
-    phone: Optional[str] = None
-    plus_one: Optional[dict] = None
+    attending: list[str] = Field(default_factory=lambda: ["traditional"])
+    dietary: str | None = None
+    phone: str | None = None
+    plus_one: dict | None = None
 
 
 class SlugModel(BaseModel):
     slug: str
-    custom_message: Optional[str] = None
+    custom_message: str | None = None
 
 
 @router.post("/reminders/send-personalized-links", tags=["Admin"])

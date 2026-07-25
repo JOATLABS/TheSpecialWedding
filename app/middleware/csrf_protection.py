@@ -5,7 +5,6 @@ CSRF Protection Middleware
 import hashlib
 import secrets
 import time
-from typing import Dict, Optional
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -24,8 +23,8 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         secret_key: str,
         cookie_name: str = "csrf_token",
         header_name: str = "X-CSRF-Token",
-        safe_methods: Optional[list] = None,
-        exclude_paths: Optional[list] = None,
+        safe_methods: list | None = None,
+        exclude_paths: list | None = None,
     ):
         super().__init__(app)
         self.secret_key = secret_key
@@ -55,7 +54,7 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         ]
 
         # Store tokens with expiration
-        self.token_store: Dict[str, float] = {}
+        self.token_store: dict[str, float] = {}
         self.token_lifetime = 3600  # 1 hour
 
     def _generate_csrf_token(self, session_id: str) -> str:

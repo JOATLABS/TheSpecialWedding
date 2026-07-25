@@ -8,11 +8,11 @@ Usage:
 import asyncio
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from app.core.database import init_database, mongo  # noqa: E402
+from app.core.database import init_database, mongo
 
 
 async def force_expire(email: str):
@@ -23,7 +23,7 @@ async def force_expire(email: str):
     subs_col = db["user_subscriptions"]
 
     # Set trial_end_date to 1 hour ago
-    past_date = datetime.now(timezone.utc) - timedelta(hours=1)
+    past_date = datetime.now(UTC) - timedelta(hours=1)
 
     user = await users_col.find_one({"email": email})
     if not user:
@@ -46,7 +46,7 @@ async def force_expire(email: str):
                 "trial_end_date": past_date,
                 "is_active": True,
                 "subscription_status": "trial",
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(UTC),
             }
         },
     )
@@ -58,7 +58,7 @@ async def force_expire(email: str):
             "$set": {
                 "trial_end_date": past_date,
                 "current_period_end": past_date,
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(UTC),
             }
         },
     )

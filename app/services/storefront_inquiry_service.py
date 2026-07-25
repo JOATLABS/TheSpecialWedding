@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import hashlib
-from html import escape
 import json
 import logging
+from datetime import UTC, datetime, timedelta
+from html import escape
 from typing import Any
 from uuid import uuid4
 
@@ -24,6 +24,8 @@ from app.models.storefront import StorefrontInquiryRequest, StorefrontInquiryRes
 from app.services.email_service_resend import ResendEmailService
 from app.services.storefront_service import (
     StorefrontService,
+)
+from app.services.storefront_service import (
     storefront_service as default_storefront_service,
 )
 from app.utils.planner_ownership import normalize_query_id
@@ -32,7 +34,6 @@ from app.utils.rate_limiter import (
     SharedRateLimiterUnavailable,
     create_rate_limiter,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,7 @@ class StorefrontInquiryService:
         notification = inquiry.get("notification")
         if not isinstance(notification, dict):
             return False
-        current_time = now or datetime.now(timezone.utc)
+        current_time = now or datetime.now(UTC)
         notification_status = notification.get("status")
         if notification_status == "pending":
             return True
@@ -202,7 +203,7 @@ class StorefrontInquiryService:
     @staticmethod
     def _operator_alert_id(inquiry_id: Any) -> ObjectId:
         digest = hashlib.sha256(
-            f"storefront-inquiry-alert/{inquiry_id}".encode("utf-8")
+            f"storefront-inquiry-alert/{inquiry_id}".encode()
         ).hexdigest()
         return ObjectId(digest[:24])
 
@@ -266,7 +267,7 @@ class StorefrontInquiryService:
         if intended_email:
             return intended_email
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         stored = await inquiries.update_one(
             self._operator_alert_transition_filter(inquiry),
             {
@@ -334,7 +335,7 @@ class StorefrontInquiryService:
             else 0
         )
         next_attempt = attempts + 1
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         retry_fields: dict[str, Any] = {
             "notification.operator_alert.status": "retry_pending",
             "notification.operator_alert.error": error[:500],
@@ -535,7 +536,7 @@ class StorefrontInquiryService:
                         "Operator alert recipient changed during reconciliation",
                     )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         try:
             visible = await inquiries.update_one(
                 self._operator_alert_transition_filter(inquiry),
@@ -614,7 +615,7 @@ class StorefrontInquiryService:
         inquiry_id = inquiry.get("_id")
         if inquiry_id is None:
             return False
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result = await inquiries.update_one(
             {
                 "_id": inquiry_id,
@@ -677,7 +678,7 @@ class StorefrontInquiryService:
         if inquiry_id is None:
             return None
         claim_token = uuid4().hex
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         notification = inquiry.get("notification")
         if not isinstance(notification, dict):
             return None
@@ -748,7 +749,7 @@ class StorefrontInquiryService:
         inquiry_id = inquiry.get("_id")
         if inquiry_id is None:
             return False
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         outcome = await inquiries.update_one(
             {
                 "_id": inquiry_id,
@@ -791,7 +792,7 @@ class StorefrontInquiryService:
         inquiry_id = inquiry.get("_id")
         if inquiry_id is None:
             return False
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if self._ambiguous_retry_is_unsafe(inquiry, now):
             marked = await self._mark_delivery_unknown(
                 inquiries,
@@ -854,7 +855,7 @@ class StorefrontInquiryService:
                 provider_idempotency_key=provider_idempotency_key,
             )
 
-        attempted_at = datetime.now(timezone.utc)
+        attempted_at = datetime.now(UTC)
         notification_status = str(notification["status"])
         stored_notification = inquiry.get("notification")
         previous_attempts = (
@@ -939,7 +940,7 @@ class StorefrontInquiryService:
     async def process_pending_notifications(self, *, limit: int = 10) -> int:
         """Recover pending or abandoned inquiry notifications without double-send."""
         bounded_limit = max(1, min(int(limit), 50))
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         inquiries = self._mongo.db["storefront_inquiries"]
         cursor = (
             inquiries.find(
@@ -1171,7 +1172,7 @@ class StorefrontInquiryService:
             slug=slug,
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         inquiry = {
             "planner_id": owner_id,
             "storefront_slug": slug,
