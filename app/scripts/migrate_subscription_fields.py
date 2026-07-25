@@ -14,12 +14,12 @@ Safe to run multiple times (idempotent).
 import asyncio
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # Ensure project root is importable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from app.core.database import init_database, mongo  # noqa: E402
+from app.core.database import init_database, mongo
 
 
 async def migrate():
@@ -81,7 +81,7 @@ async def migrate():
             updates["start_date"] = (
                 sub.get("current_period_start")
                 or sub.get("created_at")
-                or datetime.now(timezone.utc)
+                or datetime.now(UTC)
             )
 
         # Backfill created_by
@@ -89,7 +89,7 @@ async def migrate():
             updates["created_by"] = "system:migration_backfill"
 
         if updates:
-            updates["updated_at"] = datetime.now(timezone.utc)
+            updates["updated_at"] = datetime.now(UTC)
             await subs_col.update_one({"_id": sub["_id"]}, {"$set": updates})
             subs_patched += 1
         else:

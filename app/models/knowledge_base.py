@@ -3,8 +3,7 @@ Knowledge Base Models for Community-Driven Documentation System
 Provides Pydantic models with validation for KB articles
 """
 
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -44,10 +43,10 @@ class ArticleFeedbackModel(BaseModel):
     )
     helpful: bool = Field(..., description="Whether the article was helpful")
     feedback_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="When feedback was given",
     )
-    comment: Optional[str] = Field(
+    comment: str | None = Field(
         None, max_length=500, description="Optional feedback comment"
     )
 
@@ -81,7 +80,7 @@ class KnowledgeBaseArticleModel(UserRelatedModel):
 
     # Classification
     category: str = Field(default="general", description="Article category")
-    tags: List[str] = Field(default_factory=list, description="Article tags for search")
+    tags: list[str] = Field(default_factory=list, description="Article tags for search")
 
     # Status & Visibility
     status: str = Field(
@@ -110,7 +109,7 @@ class KnowledgeBaseArticleModel(UserRelatedModel):
     )
 
     # Feedback History (embedded documents)
-    feedback: List[ArticleFeedbackModel] = Field(
+    feedback: list[ArticleFeedbackModel] = Field(
         default_factory=list, description="User feedback entries"
     )
 
@@ -118,10 +117,10 @@ class KnowledgeBaseArticleModel(UserRelatedModel):
     order: int = Field(default=0, description="Manual sort order within category")
 
     # Images (stored on R2 blog-assets bucket)
-    card_image: Optional[str] = Field(
+    card_image: str | None = Field(
         None, max_length=500, description="Card/thumbnail image URL"
     )
-    og_image: Optional[str] = Field(
+    og_image: str | None = Field(
         None, max_length=500, description="OG/social share image URL"
     )
 
@@ -177,10 +176,10 @@ class KnowledgeBaseArticleCreateModel(BaseModel):
     content: str = Field(..., min_length=50, max_length=50000)
     excerpt: str = Field(..., min_length=20, max_length=500)
     category: str = Field(default="general")
-    tags: List[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
     status: str = Field(default="published")
-    card_image: Optional[str] = Field(None, max_length=500)
-    og_image: Optional[str] = Field(None, max_length=500)
+    card_image: str | None = Field(None, max_length=500)
+    og_image: str | None = Field(None, max_length=500)
 
     @field_validator("category")
     @classmethod
@@ -200,16 +199,16 @@ class KnowledgeBaseArticleCreateModel(BaseModel):
 class KnowledgeBaseArticleUpdateModel(BaseModel):
     """Model for updating a KB article (partial update)"""
 
-    title: Optional[str] = Field(None, min_length=5, max_length=200)
-    content: Optional[str] = Field(None, min_length=50, max_length=50000)
-    excerpt: Optional[str] = Field(None, min_length=20, max_length=500)
-    category: Optional[str] = Field(None)
-    tags: Optional[List[str]] = Field(None)
-    status: Optional[str] = Field(None)
-    featured: Optional[bool] = Field(None)
-    order: Optional[int] = Field(None)
-    card_image: Optional[str] = Field(None, max_length=500)
-    og_image: Optional[str] = Field(None, max_length=500)
+    title: str | None = Field(None, min_length=5, max_length=200)
+    content: str | None = Field(None, min_length=50, max_length=50000)
+    excerpt: str | None = Field(None, min_length=20, max_length=500)
+    category: str | None = Field(None)
+    tags: list[str] | None = Field(None)
+    status: str | None = Field(None)
+    featured: bool | None = Field(None)
+    order: int | None = Field(None)
+    card_image: str | None = Field(None, max_length=500)
+    og_image: str | None = Field(None, max_length=500)
 
     @field_validator("category")
     @classmethod
@@ -230,7 +229,7 @@ class ArticleFeedbackRequest(BaseModel):
     """Request model for submitting article feedback"""
 
     helpful: bool = Field(..., description="Was the article helpful?")
-    comment: Optional[str] = Field(
+    comment: str | None = Field(
         None, max_length=500, description="Optional feedback comment"
     )
 
@@ -241,7 +240,7 @@ class KnowledgeBaseCategoryStats(BaseModel):
     category: str
     display_name: str
     article_count: int
-    icon: Optional[str] = None
+    icon: str | None = None
 
 
 # Helper function to generate slug from title

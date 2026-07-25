@@ -13,8 +13,8 @@ import argparse
 import asyncio
 import logging
 from collections import Counter
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import UpdateOne
@@ -36,12 +36,12 @@ logger = logging.getLogger(__name__)
 class OwnerResolver:
     def __init__(self, db):
         self.users = db["users"]
-        self._email_to_id: dict[str, Optional[str]] = {}
-        self._id_to_email: dict[str, Optional[str]] = {}
+        self._email_to_id: dict[str, str | None] = {}
+        self._id_to_email: dict[str, str | None] = {}
 
     async def resolve(
         self, planner_id: Any = None, planner_email: Any = None
-    ) -> tuple[Optional[str], Optional[str]]:
+    ) -> tuple[str | None, str | None]:
         normalized_id = normalize_planner_id(planner_id)
         normalized_email = normalize_planner_email(planner_email)
 
@@ -52,7 +52,7 @@ class OwnerResolver:
 
         return normalized_id, normalized_email
 
-    async def id_for_email(self, email: str) -> Optional[str]:
+    async def id_for_email(self, email: str) -> str | None:
         normalized_email = normalize_planner_email(email)
         if not normalized_email:
             return None
@@ -63,7 +63,7 @@ class OwnerResolver:
             )
         return self._email_to_id[normalized_email]
 
-    async def email_for_id(self, planner_id: str) -> Optional[str]:
+    async def email_for_id(self, planner_id: str) -> str | None:
         normalized_id = normalize_planner_id(planner_id)
         if not normalized_id:
             return None
@@ -83,7 +83,7 @@ async def build_wedding_owner_map(
 ):
     weddings = db["weddings"]
     counters = Counter()
-    wedding_owner_map: dict[str, tuple[Optional[str], Optional[str]]] = {}
+    wedding_owner_map: dict[str, tuple[str | None, str | None]] = {}
     updates: list[UpdateOne] = []
 
     async for wedding in weddings.find(
@@ -144,7 +144,7 @@ async def build_wedding_owner_map(
 
 async def sync_couples(
     db,
-    wedding_owner_map: dict[str, tuple[Optional[str], Optional[str]]],
+    wedding_owner_map: dict[str, tuple[str | None, str | None]],
     apply: bool,
     verbose: bool,
 ):
@@ -187,7 +187,7 @@ async def sync_couples(
                     {k: v for k, v in set_fields.items() if k != "updated_at"},
                 )
             if apply:
-                set_fields["updated_at"] = datetime.now(timezone.utc)
+                set_fields["updated_at"] = datetime.now(UTC)
                 updates.append(
                     UpdateOne(
                         {"_id": couple["_id"]},

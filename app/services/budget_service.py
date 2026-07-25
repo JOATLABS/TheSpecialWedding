@@ -1,6 +1,6 @@
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from app.core.database import mongo
 from app.models.budget import (
@@ -57,13 +57,13 @@ class BudgetService:
             logger.debug(f"Invalidated budget_insights cache for wedding {wedding_id}")
         except Exception as e:
             # Cache invalidation failures should not break main operations
-            logger.warning(f"Failed to invalidate budget cache: {str(e)}")
+            logger.warning(f"Failed to invalidate budget cache: {e!s}")
 
     # ===== BUDGET CATEGORY MANAGEMENT =====
 
     async def create_budget_category(
-        self, wedding_id: str, category_data: Dict
-    ) -> Dict:
+        self, wedding_id: str, category_data: dict
+    ) -> dict:
         """Create a new budget category for a wedding"""
         try:
             # Validate wedding exists and user has access
@@ -124,10 +124,10 @@ class BudgetService:
             return category.model_dump(mode="json")
 
         except Exception as e:
-            logger.error(f"Failed to create budget category: {str(e)}")
+            logger.error(f"Failed to create budget category: {e!s}")
             raise
 
-    async def get_wedding_budget(self, wedding_id: str) -> Dict:
+    async def get_wedding_budget(self, wedding_id: str) -> dict:
         """Get complete budget for a wedding"""
         try:
             # Get all categories for this wedding (safety cap applied)
@@ -170,14 +170,14 @@ class BudgetService:
                 "summary": summary.model_dump(),
                 "categories": serialized_categories,
                 "alerts": serialized_alerts,
-                "last_updated": datetime.now(timezone.utc).isoformat(),
+                "last_updated": datetime.now(UTC).isoformat(),
             }
 
         except Exception as e:
-            logger.error(f"Failed to get wedding budget: {str(e)}")
+            logger.error(f"Failed to get wedding budget: {e!s}")
             raise
 
-    async def update_budget_category(self, category_id: str, update_data: Dict) -> Dict:
+    async def update_budget_category(self, category_id: str, update_data: dict) -> dict:
         """Update an existing budget category"""
         try:
             # Standardize ID to PyObjectId (compatible with to_object_id)
@@ -217,7 +217,7 @@ class BudgetService:
                         # Still allow update but alert will be triggered
 
             # Update timestamp
-            update_data["updated_at"] = datetime.now(timezone.utc)
+            update_data["updated_at"] = datetime.now(UTC)
 
             # Update category
             result = await self.budget_categories.update_one(
@@ -247,7 +247,7 @@ class BudgetService:
             return serialize_mongo_doc(updated_category)
 
         except Exception as e:
-            logger.error(f"Failed to update budget category: {str(e)}")
+            logger.error(f"Failed to update budget category: {e!s}")
             raise
 
     async def delete_budget_category(self, category_id: str) -> bool:
@@ -287,12 +287,12 @@ class BudgetService:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to delete budget category: {str(e)}")
+            logger.error(f"Failed to delete budget category: {e!s}")
             raise
 
     # ===== VENDOR QUOTE MANAGEMENT =====
 
-    async def create_vendor_quote(self, wedding_id: str, quote_data: Dict) -> Dict:
+    async def create_vendor_quote(self, wedding_id: str, quote_data: dict) -> dict:
         """Create a new vendor quote"""
         try:
             quote = VendorQuote(wedding_id=wedding_id, **quote_data)
@@ -307,12 +307,12 @@ class BudgetService:
             return quote.model_dump(mode="json")
 
         except Exception as e:
-            logger.error(f"Failed to create vendor quote: {str(e)}")
+            logger.error(f"Failed to create vendor quote: {e!s}")
             raise
 
     async def get_vendor_quotes(
-        self, wedding_id: str, service_category: Optional[str] = None
-    ) -> List[Dict]:
+        self, wedding_id: str, service_category: str | None = None
+    ) -> list[dict]:
         """Get vendor quotes for a wedding, optionally filtered by category"""
         try:
             query = {"wedding_id": wedding_id}
@@ -325,12 +325,12 @@ class BudgetService:
             return [serialize_mongo_doc(quote) for quote in quotes]
 
         except Exception as e:
-            logger.error(f"Failed to get vendor quotes: {str(e)}")
+            logger.error(f"Failed to get vendor quotes: {e!s}")
             raise
 
     async def compare_vendor_quotes(
         self, wedding_id: str, service_category: str
-    ) -> Dict:
+    ) -> dict:
         """Compare vendor quotes for a specific service category"""
         try:
             quotes = await self.get_vendor_quotes(wedding_id, service_category)
@@ -340,7 +340,7 @@ class BudgetService:
 
             # Calculate comparison metrics
             quote_amounts = [q["quote_amount"] for q in quotes]
-            comparison: Dict[str, Any] = {
+            comparison: dict[str, Any] = {
                 "service_category": service_category,
                 "quotes": quotes,
                 "statistics": {
@@ -377,10 +377,10 @@ class BudgetService:
             return comparison
 
         except Exception as e:
-            logger.error(f"Failed to compare vendor quotes: {str(e)}")
+            logger.error(f"Failed to compare vendor quotes: {e!s}")
             raise
 
-    async def get_vendor_quote(self, quote_id: str) -> Optional[Dict]:
+    async def get_vendor_quote(self, quote_id: str) -> dict | None:
         """Fetch a single vendor quote by its identifier."""
         try:
             quote = await self.vendor_quotes.find_one({"_id": PyObjectId(quote_id)})
@@ -388,15 +388,15 @@ class BudgetService:
                 return None
             return serialize_mongo_doc(quote)
         except Exception as e:
-            logger.error(f"Failed to fetch vendor quote: {str(e)}")
+            logger.error(f"Failed to fetch vendor quote: {e!s}")
             raise
 
     async def update_quote_status(
-        self, quote_id: str, status: str, notes: Optional[str] = None
-    ) -> Dict:
+        self, quote_id: str, status: str, notes: str | None = None
+    ) -> dict:
         """Update vendor quote status (accept/reject)"""
         try:
-            update_data = {"status": status, "updated_at": datetime.now(timezone.utc)}
+            update_data = {"status": status, "updated_at": datetime.now(UTC)}
             if notes:
                 update_data["notes"] = notes
             result = await self.vendor_quotes.update_one(
@@ -421,17 +421,17 @@ class BudgetService:
             return serialize_mongo_doc(updated_quote)
 
         except Exception as e:
-            logger.error(f"Failed to update quote status: {str(e)}")
+            logger.error(f"Failed to update quote status: {e!s}")
             raise
 
     async def rate_vendor_quote(
-        self, quote_id: str, rating: int, notes: Optional[str] = None
-    ) -> Dict:
+        self, quote_id: str, rating: int, notes: str | None = None
+    ) -> dict:
         """Rate a vendor quote (1-5 stars)"""
         try:
-            update_data: Dict[str, Any] = {
+            update_data: dict[str, Any] = {
                 "rating": rating,
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(UTC),
             }
             if notes is not None:
                 update_data["rating_notes"] = notes
@@ -453,17 +453,15 @@ class BudgetService:
             return serialize_mongo_doc(updated_quote)
 
         except Exception as e:
-            logger.error(f"Failed to rate vendor quote: {str(e)}")
+            logger.error(f"Failed to rate vendor quote: {e!s}")
             raise
 
     # ===== BUDGET TEMPLATES =====
 
-    async def get_budget_templates(
-        self, wedding_type: Optional[str] = None
-    ) -> List[Dict]:
+    async def get_budget_templates(self, wedding_type: str | None = None) -> list[dict]:
         """Get available budget templates"""
         try:
-            query: Dict[str, Any] = {"is_public": True}
+            query: dict[str, Any] = {"is_public": True}
             if wedding_type:
                 query["wedding_type"] = wedding_type
 
@@ -475,12 +473,12 @@ class BudgetService:
             ]
 
         except Exception as e:
-            logger.error(f"Failed to get budget templates: {str(e)}")
+            logger.error(f"Failed to get budget templates: {e!s}")
             raise
 
     async def create_budget_template(
-        self, template_data: Dict, created_by: Optional[str] = None
-    ) -> Dict:
+        self, template_data: dict, created_by: str | None = None
+    ) -> dict:
         """Create a custom budget template"""
         try:
             categories = template_data.get("categories", [])
@@ -557,12 +555,12 @@ class BudgetService:
             return self._serialize_template(stored_template)
 
         except Exception as e:
-            logger.error(f"Failed to create budget template: {str(e)}")
+            logger.error(f"Failed to create budget template: {e!s}")
             raise
 
     async def apply_budget_template(
         self, wedding_id: str, template_id: str, total_budget: float
-    ) -> Dict:
+    ) -> dict:
         """Apply a budget template to a wedding"""
         try:
             # Get template
@@ -614,10 +612,10 @@ class BudgetService:
             }
 
         except Exception as e:
-            logger.error(f"Failed to apply budget template: {str(e)}")
+            logger.error(f"Failed to apply budget template: {e!s}")
             raise
 
-    def _serialize_template(self, template_doc: Dict[str, Any]) -> Dict[str, Any]:
+    def _serialize_template(self, template_doc: dict[str, Any]) -> dict[str, Any]:
         """Normalize template documents for API responses"""
         if not template_doc:
             raise ValueError("Template not found")
@@ -661,7 +659,7 @@ class BudgetService:
 
     # ===== PAYMENT TRACKING =====
 
-    async def get_budget_category(self, category_id: str) -> Optional[Dict]:
+    async def get_budget_category(self, category_id: str) -> dict | None:
         """Fetch a single budget category by its identifier."""
         try:
             category = await self.budget_categories.find_one(
@@ -672,13 +670,13 @@ class BudgetService:
 
             return serialize_mongo_doc(category)
         except ValueError as e:
-            logger.error(f"Invalid category id provided: {str(e)}")
+            logger.error(f"Invalid category id provided: {e!s}")
             raise
         except Exception as e:
-            logger.error(f"Failed to fetch budget category: {str(e)}")
+            logger.error(f"Failed to fetch budget category: {e!s}")
             raise
 
-    async def record_payment(self, category_id: str, payment_data: Dict) -> Dict:
+    async def record_payment(self, category_id: str, payment_data: dict) -> dict:
         """Record a payment for a budget category"""
         try:
             category = await self.budget_categories.find_one(
@@ -699,7 +697,7 @@ class BudgetService:
                 {
                     "$set": {
                         "actual_spent": new_actual_spent,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -730,10 +728,10 @@ class BudgetService:
             return payment_dict
 
         except Exception as e:
-            logger.error(f"Failed to record payment: {str(e)}")
+            logger.error(f"Failed to record payment: {e!s}")
             raise
 
-    async def get_payment_history(self, wedding_id: str) -> List[Dict]:
+    async def get_payment_history(self, wedding_id: str) -> list[dict]:
         """Get payment history for a wedding"""
         try:
             # Get all categories for this wedding (safety cap applied)
@@ -757,12 +755,12 @@ class BudgetService:
             return [serialize_mongo_doc(payment) for payment in payments]
 
         except Exception as e:
-            logger.error(f"Failed to get payment history: {str(e)}")
+            logger.error(f"Failed to get payment history: {e!s}")
             raise
 
     async def get_outgoing_payments_overview(
-        self, weddings: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        self, weddings: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         """
         Get aggregated outgoing payment data for the admin money dashboard.
 
@@ -770,7 +768,7 @@ class BudgetService:
         rolled-up payment row per budget category with spend.
         """
         try:
-            wedding_lookup: Dict[str, Dict[str, str]] = {}
+            wedding_lookup: dict[str, dict[str, str]] = {}
             for wedding in weddings:
                 wedding_id = str(wedding.get("_id") or wedding.get("id") or "")
                 if not wedding_id:
@@ -798,7 +796,7 @@ class BudgetService:
             )
             categories = await categories_cursor.to_list(length=self.MAX_CATEGORIES)
 
-            latest_payment_by_category: Dict[str, Dict[str, Any]] = {}
+            latest_payment_by_category: dict[str, dict[str, Any]] = {}
             category_ids = [
                 str(category["_id"])
                 for category in categories
@@ -823,7 +821,7 @@ class BudgetService:
                     str(payment["_id"]): payment for payment in latest_payments
                 }
 
-            payments: List[Dict[str, Any]] = []
+            payments: list[dict[str, Any]] = []
             for category in categories:
                 category_id = str(category["_id"])
                 wedding_id = str(category.get("wedding_id") or "")
@@ -867,10 +865,10 @@ class BudgetService:
             }
 
         except Exception as e:
-            logger.error(f"Failed to get outgoing payments overview: {str(e)}")
+            logger.error(f"Failed to get outgoing payments overview: {e!s}")
             raise
 
-    async def get_payment(self, payment_id: str) -> Optional[Dict]:
+    async def get_payment(self, payment_id: str) -> dict | None:
         """Fetch a single payment by ID"""
         try:
             payment = await self.payment_records.find_one(
@@ -880,10 +878,10 @@ class BudgetService:
                 return None
             return serialize_mongo_doc(payment)
         except Exception as e:
-            logger.error(f"Failed to fetch payment: {str(e)}")
+            logger.error(f"Failed to fetch payment: {e!s}")
             raise
 
-    async def update_payment(self, payment_id: str, update_data: Dict) -> Dict:
+    async def update_payment(self, payment_id: str, update_data: dict) -> dict:
         """Update a payment record and adjust category spending"""
         try:
             original = await self.payment_records.find_one(
@@ -897,7 +895,7 @@ class BudgetService:
             if "amount" in update_data:
                 amount_diff = update_data["amount"] - original.get("amount", 0)
 
-            update_data["updated_at"] = datetime.now(timezone.utc)
+            update_data["updated_at"] = datetime.now(UTC)
 
             await self.payment_records.update_one(
                 {"_id": PyObjectId(payment_id)}, {"$set": update_data}
@@ -921,7 +919,7 @@ class BudgetService:
         except ValueError:
             raise
         except Exception as e:
-            logger.error(f"Failed to update payment: {str(e)}")
+            logger.error(f"Failed to update payment: {e!s}")
             raise
 
     async def delete_payment(self, payment_id: str) -> bool:
@@ -956,12 +954,12 @@ class BudgetService:
         except ValueError:
             raise
         except Exception as e:
-            logger.error(f"Failed to delete payment: {str(e)}")
+            logger.error(f"Failed to delete payment: {e!s}")
             raise
 
     # ===== FINANCIAL REPORTING =====
 
-    async def generate_financial_report(self, wedding_id: str) -> Dict:
+    async def generate_financial_report(self, wedding_id: str) -> dict:
         """Generate comprehensive financial report"""
         try:
             # Get budget summary
@@ -982,7 +980,7 @@ class BudgetService:
 
             report = {
                 "wedding_id": wedding_id,
-                "report_date": datetime.now(timezone.utc),
+                "report_date": datetime.now(UTC),
                 "summary": summary.model_dump(),
                 "categories": categories,
                 "payment_history": payments[-10:],  # Last 10 payments
@@ -996,7 +994,7 @@ class BudgetService:
             return report
 
         except Exception as e:
-            logger.error(f"Failed to generate financial report: {str(e)}")
+            logger.error(f"Failed to generate financial report: {e!s}")
             raise
 
     # ===== COST ESTIMATION =====
@@ -1006,7 +1004,7 @@ class BudgetService:
         guest_count: int,
         wedding_type: str = "traditional",
         region: str = "national",
-    ) -> Dict:
+    ) -> dict:
         """Estimate wedding costs based on guest count and type"""
         try:
             # Base cost per guest by region (these would ideally come from a database)
@@ -1063,7 +1061,7 @@ class BudgetService:
             }
 
         except Exception as e:
-            logger.error(f"Failed to estimate costs: {str(e)}")
+            logger.error(f"Failed to estimate costs: {e!s}")
             raise
 
     # ===== PRIVATE HELPER METHODS =====
@@ -1209,7 +1207,7 @@ class BudgetService:
                 {
                     "$set": {
                         "is_resolved": True,
-                        "resolved_at": datetime.now(timezone.utc),
+                        "resolved_at": datetime.now(UTC),
                     }
                 },
             )
@@ -1219,7 +1217,7 @@ class BudgetService:
             spent = category.get("actual_spent", 0)
 
             # Over budget alert
-            if spent > budgeted and budgeted > 0:
+            if spent > budgeted > 0:
                 overage = spent - budgeted
                 alert = BudgetAlert(
                     wedding_id=wedding_id,
@@ -1273,7 +1271,7 @@ class BudgetService:
 
     async def get_budget_alerts(
         self, wedding_id: str, include_resolved: bool = False
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Get budget alerts for a wedding"""
         query = {"wedding_id": wedding_id}
         if not include_resolved:
@@ -1285,7 +1283,7 @@ class BudgetService:
 
         return [serialize_mongo_doc(alert) for alert in alerts]
 
-    async def mark_alert_as_read(self, alert_id: str) -> Dict:
+    async def mark_alert_as_read(self, alert_id: str) -> dict:
         """Mark a budget alert as read"""
         result = await self.budget_alerts.update_one(
             {"_id": PyObjectId(alert_id)}, {"$set": {"is_read": True}}
@@ -1294,17 +1292,17 @@ class BudgetService:
             raise ValueError("Alert not found")
         return {"message": "Alert marked as read"}
 
-    async def resolve_alert(self, alert_id: str) -> Dict:
+    async def resolve_alert(self, alert_id: str) -> dict:
         """Resolve a budget alert"""
         result = await self.budget_alerts.update_one(
             {"_id": PyObjectId(alert_id)},
-            {"$set": {"is_resolved": True, "resolved_at": datetime.now(timezone.utc)}},
+            {"$set": {"is_resolved": True, "resolved_at": datetime.now(UTC)}},
         )
         if result.matched_count == 0:
             raise ValueError("Alert not found")
         return {"message": "Alert resolved"}
 
-    async def _update_category_from_accepted_quote(self, quote: Dict):
+    async def _update_category_from_accepted_quote(self, quote: dict):
         """Update category spending when a quote is accepted"""
         category_id = quote.get("category_id")
         if quote.get("status") == "accepted" and category_id:
@@ -1313,7 +1311,7 @@ class BudgetService:
                 {"$inc": {"actual_spent": quote["quote_amount"]}},
             )
 
-    async def _get_quotes_summary(self, wedding_id: str) -> Dict:
+    async def _get_quotes_summary(self, wedding_id: str) -> dict:
         """Get summary of vendor quotes for a wedding"""
         cursor = self.vendor_quotes.find({"wedding_id": wedding_id})
         # Safety cap for quotes (safety cap applied)
@@ -1345,8 +1343,8 @@ class BudgetService:
         }
 
     def _calculate_budget_insights(
-        self, wedding_id: str, categories: List[Dict], payments: List[Dict]
-    ) -> Dict:
+        self, wedding_id: str, categories: list[dict], payments: list[dict]
+    ) -> dict:
         """Calculate insights and trends for the budget"""
         if not categories:
             return {}
@@ -1373,9 +1371,7 @@ class BudgetService:
         # Payment frequency
         payment_frequency = {}
         for payment in payments[-30:]:  # Last 30 payments
-            month = payment.get("payment_date", datetime.now(timezone.utc)).strftime(
-                "%Y-%m"
-            )
+            month = payment.get("payment_date", datetime.now(UTC)).strftime("%Y-%m")
             payment_frequency[month] = payment_frequency.get(month, 0) + 1
         return {
             "budget_utilization": (
@@ -1421,7 +1417,7 @@ class BudgetService:
         amount: float,
         category_name: str = "Wedding Planner",
         payment_method: str = "card",
-    ) -> Optional[Dict]:
+    ) -> dict | None:
         """
         Record a contract payment in the budget module.
 
@@ -1463,8 +1459,8 @@ class BudgetService:
                     "subcategories": [],
                     "vendor_quotes": [],
                     "payments": [],
-                    "created_at": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc),
+                    "created_at": datetime.now(UTC),
+                    "updated_at": datetime.now(UTC),
                 }
                 result = await self.budget_categories.insert_one(
                     {"wedding_id": wedding_id, **category_data}
@@ -1486,7 +1482,7 @@ class BudgetService:
                 "vendor_name": category_name,
                 "amount": amount,
                 "payment_method": payment_method,
-                "payment_date": datetime.now(timezone.utc),
+                "payment_date": datetime.now(UTC),
                 "description": payment_name,
                 "status": "completed",
                 "notes": f"From contract: {contract_id}",
@@ -1504,7 +1500,7 @@ class BudgetService:
                 {
                     "$set": {
                         "actual_spent": new_actual_spent,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -1530,12 +1526,12 @@ class BudgetService:
             return payment.model_dump(mode="json")
 
         except Exception as e:
-            logger.error(f"Failed to record contract payment in budget: {str(e)}")
+            logger.error(f"Failed to record contract payment in budget: {e!s}")
             return None
 
     def _generate_budget_recommendations(
-        self, wedding_id: str, summary: BudgetSummary, categories: List[Dict]
-    ) -> List[Dict]:
+        self, wedding_id: str, summary: BudgetSummary, categories: list[dict]
+    ) -> list[dict]:
         """Generate actionable budget recommendations"""
         recommendations = []
 

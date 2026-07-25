@@ -4,13 +4,13 @@ import logging
 import os
 import secrets
 import string
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from bson import ObjectId
 from fastapi import HTTPException, UploadFile
 
-from app.core.database import mongo
+from app.constants.roles import ROLE_ROOT_ADMIN
 from app.constants.support_conversations import (
     CONVERSATION_KIND_FIELD,
     PLATFORM_SUPPORT_KIND,
@@ -20,7 +20,7 @@ from app.constants.support_conversations import (
     support_actor_key,
     support_ticket_owner_scope,
 )
-from app.constants.roles import ROLE_ROOT_ADMIN
+from app.core.database import mongo
 from app.utils.serializers import serialize_mongo_doc
 from app.utils.support_inbox_links import (
     build_support_inbox_path,
@@ -43,14 +43,14 @@ class SupportService:
     def generate_ticket_number(self) -> str:
         """Generate a unique ticket number"""
         prefix = "TKT"
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d")
         random_suffix = "".join(secrets.choice(string.digits) for _ in range(4))
         return f"{prefix}-{timestamp}-{random_suffix}"
 
     async def _mark_ticket_read(self, ticket_id: str, current_user) -> None:
         try:
             actor_key = support_actor_key(current_user)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             await self.read_states_collection.update_one(
                 {"ticket_id": ticket_id, "actor_key": actor_key},
                 {
@@ -87,9 +87,9 @@ class SupportService:
             return True
         last_read_at = state["last_read_at"]
         if last_read_at.tzinfo is None:
-            last_read_at = last_read_at.replace(tzinfo=timezone.utc)
+            last_read_at = last_read_at.replace(tzinfo=UTC)
         if activity_at.tzinfo is None:
-            activity_at = activity_at.replace(tzinfo=timezone.utc)
+            activity_at = activity_at.replace(tzinfo=UTC)
         return last_read_at >= activity_at
 
     async def create_ticket(self, ticket_data: dict, current_user) -> dict:
@@ -131,8 +131,8 @@ class SupportService:
                 "assigned_to": None,
                 "wedding_id": ticket_data.get("wedding_id"),
                 "attachments": ticket_data.get("attachments", []),
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
                 "resolved_at": None,
                 "comments": [],
                 "tags": [],
@@ -158,8 +158,8 @@ class SupportService:
                     {
                         "type": "support_ticket_created",
                         "message": f"Support ticket created: {ticket['subject'][:50]}",
-                        "timestamp": datetime.now(timezone.utc),
-                        "created_at": datetime.now(timezone.utc),
+                        "timestamp": datetime.now(UTC),
+                        "created_at": datetime.now(UTC),
                         "planner_email": created_by,
                         "actor_email": created_by,
                         "metadata": {
@@ -173,7 +173,7 @@ class SupportService:
                 logger.info(f"Activity logged for support ticket {ticket_number}")
             except Exception as activity_error:
                 logger.error(
-                    f"Failed to log activity for ticket {ticket_number}: {str(activity_error)}"
+                    f"Failed to log activity for ticket {ticket_number}: {activity_error!s}"
                 )
                 # Don't fail ticket creation if activity logging fails
 
@@ -206,7 +206,7 @@ class SupportService:
                 )
             except Exception as notif_error:
                 logger.error(
-                    f"Failed to create notification for ticket {ticket_number}: {str(notif_error)}"
+                    f"Failed to create notification for ticket {ticket_number}: {notif_error!s}"
                 )
                 # Don't fail ticket creation if notification fails
 
@@ -215,7 +215,7 @@ class SupportService:
                 await self._send_new_ticket_notification(ticket, created_by)
             except Exception as email_error:
                 logger.error(
-                    f"Failed to send email notification for ticket {ticket_number}: {str(email_error)}"
+                    f"Failed to send email notification for ticket {ticket_number}: {email_error!s}"
                 )
                 # Don't fail the ticket creation if email fails
 
@@ -229,19 +229,17 @@ class SupportService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error creating ticket: {str(e)}")
-            raise HTTPException(
-                status_code=500, detail=f"Error creating ticket: {str(e)}"
-            )
+            logger.error(f"Error creating ticket: {e!s}")
+            raise HTTPException(status_code=500, detail=f"Error creating ticket: {e!s}")
 
     async def get_tickets(
         self,
         page: int = 1,
         limit: int = 20,
-        filters: Optional[Dict[str, Any]] = None,
+        filters: dict[str, Any] | None = None,
         *,
         platform_support_only: bool = False,
-        active_statuses: Optional[list[str]] = None,
+        active_statuses: list[str] | None = None,
         current_user=None,
         include_internal_comments: bool = False,
     ) -> dict:
@@ -330,9 +328,9 @@ class SupportService:
             )
 
         except Exception as e:
-            logger.error(f"Error getting tickets: {str(e)}")
+            logger.error(f"Error getting tickets: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving tickets: {str(e)}"
+                status_code=500, detail=f"Error retrieving tickets: {e!s}"
             )
 
     async def get_ticket(self, ticket_id: str, current_user) -> dict:
@@ -398,9 +396,9 @@ class SupportService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error getting ticket: {str(e)}")
+            logger.error(f"Error getting ticket: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving ticket: {str(e)}"
+                status_code=500, detail=f"Error retrieving ticket: {e!s}"
             )
 
     async def update_ticket(
@@ -435,18 +433,18 @@ class SupportService:
                     raise HTTPException(status_code=403, detail="Access denied")
 
                 allowed_fields = {"subject", "description"}
-                if not all(field in allowed_fields for field in update_data.keys()):
+                if not all(field in allowed_fields for field in update_data):
                     raise HTTPException(status_code=403, detail="Access denied")
 
             # Prepare update data
-            update_data["updated_at"] = datetime.now(timezone.utc)
+            update_data["updated_at"] = datetime.now(UTC)
 
             # Handle status changes
             if "status" in update_data:
                 if update_data["status"] in ["resolved", "closed"] and not existing.get(
                     "resolved_at"
                 ):
-                    update_data["resolved_at"] = datetime.now(timezone.utc)
+                    update_data["resolved_at"] = datetime.now(UTC)
                 elif update_data["status"] not in [
                     "resolved",
                     "closed",
@@ -475,10 +473,8 @@ class SupportService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error updating ticket: {str(e)}")
-            raise HTTPException(
-                status_code=500, detail=f"Error updating ticket: {str(e)}"
-            )
+            logger.error(f"Error updating ticket: {e!s}")
+            raise HTTPException(status_code=500, detail=f"Error updating ticket: {e!s}")
 
     async def add_comment(
         self, ticket_id: str, comment_data: dict, current_user
@@ -518,12 +514,12 @@ class SupportService:
                 "id": str(ObjectId()),
                 "user_id": current_user.email,
                 "message": comment_data["message"],
-                "created_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
                 "is_internal": comment_data.get("is_internal", False),
             }
 
             # Add comment to ticket
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             update: dict[str, Any] = {
                 "$push": {"comments": comment},
                 "$set": {"updated_at": now},
@@ -555,7 +551,7 @@ class SupportService:
                         )
                     except Exception as notif_error:
                         logger.error(
-                            f"Failed to send ticket response notification: {str(notif_error)}"
+                            f"Failed to send ticket response notification: {notif_error!s}"
                         )
                         # Don't fail the comment if notification fails
 
@@ -579,9 +575,7 @@ class SupportService:
                     }
                 )
             except Exception as activity_error:
-                logger.error(
-                    f"Failed to log activity for comment: {str(activity_error)}"
-                )
+                logger.error(f"Failed to log activity for comment: {activity_error!s}")
                 # Don't fail the comment if activity logging fails
 
             return {
@@ -592,10 +586,8 @@ class SupportService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error adding comment: {str(e)}")
-            raise HTTPException(
-                status_code=500, detail=f"Error adding comment: {str(e)}"
-            )
+            logger.error(f"Error adding comment: {e!s}")
+            raise HTTPException(status_code=500, detail=f"Error adding comment: {e!s}")
 
     async def get_comments(
         self, ticket_id: str, current_user, include_internal: bool = False
@@ -633,9 +625,9 @@ class SupportService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error getting comments: {str(e)}")
+            logger.error(f"Error getting comments: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving comments: {str(e)}"
+                status_code=500, detail=f"Error retrieving comments: {e!s}"
             )
 
     async def assign_ticket(
@@ -678,7 +670,7 @@ class SupportService:
                 {
                     "$set": {
                         "assigned_to": agent_email,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                         "status": new_status,
                     }
                 },
@@ -694,15 +686,15 @@ class SupportService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error assigning ticket: {str(e)}")
+            logger.error(f"Error assigning ticket: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error assigning ticket: {str(e)}"
+                status_code=500, detail=f"Error assigning ticket: {e!s}"
             )
 
     async def get_analytics(self, period: str = "30d") -> dict:
         """Get support analytics"""
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             if period == "7d":
                 start_date = now - timedelta(days=7)
             elif period == "30d":
@@ -781,9 +773,9 @@ class SupportService:
             return analytics
 
         except Exception as e:
-            logger.error(f"Error getting analytics: {str(e)}")
+            logger.error(f"Error getting analytics: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving analytics: {str(e)}"
+                status_code=500, detail=f"Error retrieving analytics: {e!s}"
             )
 
     async def get_support_agents(self) -> dict:
@@ -811,19 +803,17 @@ class SupportService:
             return serialize_mongo_doc({"agents": agents})
 
         except Exception as e:
-            logger.error(f"Error getting support agents: {str(e)}")
+            logger.error(f"Error getting support agents: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving support agents: {str(e)}"
+                status_code=500, detail=f"Error retrieving support agents: {e!s}"
             )
 
     async def get_dashboard_metrics(self) -> dict:
         """Get support dashboard metrics"""
         try:
-            today = datetime.now(timezone.utc).replace(
-                hour=0, minute=0, second=0, microsecond=0
-            )
+            today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
 
-            metrics: Dict[str, Any] = {
+            metrics: dict[str, Any] = {
                 "open_tickets": await self.tickets_collection.count_documents(
                     platform_support_ticket_scope({"status": "open"})
                 ),
@@ -866,9 +856,9 @@ class SupportService:
             return metrics
 
         except Exception as e:
-            logger.error(f"Error getting dashboard metrics: {str(e)}")
+            logger.error(f"Error getting dashboard metrics: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving dashboard metrics: {str(e)}"
+                status_code=500, detail=f"Error retrieving dashboard metrics: {e!s}"
             )
 
     async def upload_attachment(
@@ -906,7 +896,7 @@ class SupportService:
             )
             os.makedirs(upload_dir, exist_ok=True)
 
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
             safe_name = os.path.basename(file.filename or "attachment")
             stored_filename = f"{ticket_id}_{timestamp}_{safe_name}"
             file_path = os.path.join(upload_dir, stored_filename)
@@ -934,12 +924,12 @@ class SupportService:
                             "path": file_path,
                             "url": file_url,
                             "uploaded_by": current_user.email,
-                            "uploaded_at": datetime.now(timezone.utc),
+                            "uploaded_at": datetime.now(UTC),
                             "file_size": file_size,
                             "content_type": file.content_type,
                         }
                     },
-                    "$set": {"updated_at": datetime.now(timezone.utc)},
+                    "$set": {"updated_at": datetime.now(UTC)},
                 },
             )
 
@@ -955,15 +945,15 @@ class SupportService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error uploading attachment: {str(e)}")
+            logger.error(f"Error uploading attachment: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error uploading attachment: {str(e)}"
+                status_code=500, detail=f"Error uploading attachment: {e!s}"
             )
 
     def _is_ticket_overdue(self, ticket: dict) -> bool:
         """Check if ticket is overdue based on priority and creation time"""
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             created = ticket["created_at"]
             priority = ticket.get("priority", "medium")
 
@@ -1132,7 +1122,7 @@ class SupportService:
             )
 
         except Exception as e:
-            logger.error(f"Failed to send support ticket notification: {str(e)}")
+            logger.error(f"Failed to send support ticket notification: {e!s}")
             raise
 
     async def _notify_planner_ticket_response(
@@ -1181,7 +1171,7 @@ class SupportService:
             )
 
         except Exception as e:
-            logger.error(f"Failed to notify planner about ticket response: {str(e)}")
+            logger.error(f"Failed to notify planner about ticket response: {e!s}")
             raise
 
     async def _send_ticket_response_email(
@@ -1287,4 +1277,4 @@ class SupportService:
             )
 
         except Exception as e:
-            logger.error(f"Failed to send ticket response email: {str(e)}")
+            logger.error(f"Failed to send ticket response email: {e!s}")

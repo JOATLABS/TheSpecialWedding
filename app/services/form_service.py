@@ -6,8 +6,8 @@ import os
 import secrets
 import uuid
 from copy import deepcopy
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import HTTPException
 
@@ -78,12 +78,12 @@ class FormService:
     def _issue_form_access_token(self) -> tuple[str, str, datetime]:
         raw_token = secrets.token_urlsafe(32)
         token_hash = self._hash_form_access_token(raw_token)
-        expires_at = datetime.now(timezone.utc) + timedelta(
+        expires_at = datetime.now(UTC) + timedelta(
             days=self.DEFAULT_FORM_TOKEN_TTL_DAYS
         )
         return raw_token, token_hash, expires_at
 
-    async def backfill_form_type_from_template_type(self) -> Dict[str, int]:
+    async def backfill_form_type_from_template_type(self) -> dict[str, int]:
         """T1 migration: copy ``template_type`` to ``form_type`` for any
         document missing the canonical discriminator.
 
@@ -118,7 +118,7 @@ class FormService:
 
     async def seed_catalog_templates_for_planner(
         self, planner_email: str
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """Phase D: Auto-load the static template catalog into a planner's
         workspace on first verification.
 
@@ -168,7 +168,7 @@ class FormService:
                 exc,
             )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         planner_state_key = self._planner_state_key(normalized_email)
         seeded = 0
         skipped = 0
@@ -200,7 +200,7 @@ class FormService:
                 continue
 
             form_id = f"form_seed_{template_id}_{uuid.uuid4().hex[:12]}"
-            form_doc: Dict[str, Any] = {
+            form_doc: dict[str, Any] = {
                 "_id": form_id,
                 "name": template.get("name") or template_id,
                 "form_type": template.get("category") or FormType.GENERAL.value,
@@ -267,8 +267,8 @@ class FormService:
         catalog_template_id: str,
         *,
         created_by: str,
-        owner_alias_emails: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        owner_alias_emails: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Resolve the planner's catalog-seeded form id for a given
         catalog template (Chunk 4 of the wedding-checklist nudge).
 
@@ -296,7 +296,7 @@ class FormService:
             )
 
         creator_query = self._build_creator_query(created_by, owner_alias_emails)
-        query: Dict[str, Any] = dict(creator_query)
+        query: dict[str, Any] = dict(creator_query)
         query["seeded_from_catalog"] = True
         query["catalog_template_id"] = catalog_template_id
 
@@ -332,8 +332,8 @@ class FormService:
         return email.replace(".", "_")
 
     def _read_planner_state(
-        self, planner_state: Dict[str, Any], email: str
-    ) -> Dict[str, Any]:
+        self, planner_state: dict[str, Any], email: str
+    ) -> dict[str, Any]:
         """Read a planner's state entry, transparently falling back to
         legacy key shapes for un-migrated docs.
 
@@ -359,8 +359,8 @@ class FormService:
 
     @staticmethod
     def _normalize_owner_alias_emails(
-        owner_alias_emails: Optional[List[str]],
-    ) -> List[str]:
+        owner_alias_emails: list[str] | None,
+    ) -> list[str]:
         normalized: list[str] = []
         for email in owner_alias_emails or []:
             if not email:
@@ -372,8 +372,8 @@ class FormService:
 
     def _build_creator_query(
         self,
-        created_by: Optional[str],
-        owner_alias_emails: Optional[List[str]] = None,
+        created_by: str | None,
+        owner_alias_emails: list[str] | None = None,
     ) -> dict[str, Any]:
         if created_by is None:
             return {}
@@ -391,8 +391,8 @@ class FormService:
         form_data: CreateFormRequest,
         created_by: str,
         *,
-        actor_email: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        actor_email: str | None = None,
+    ) -> dict[str, Any]:
         """Create a new form with enhanced security validation"""
         try:
             # Rate limiting check
@@ -410,9 +410,7 @@ class FormService:
                     form_data.dict()
                 )
             except ValueError as e:
-                logger.warning(
-                    f"Form validation failed for user {created_by}: {str(e)}"
-                )
+                logger.warning(f"Form validation failed for user {created_by}: {e!s}")
                 raise HTTPException(status_code=400, detail=str(e))
 
             # Generate unique form ID
@@ -458,8 +456,8 @@ class FormService:
                     or FormType.GENERAL.value
                 ),
                 "is_active": True,
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
                 "submission_count": 0,
                 "planner_state": planner_state,
             }
@@ -490,10 +488,8 @@ class FormService:
         except HTTPException:
             raise
         except Exception as e:
-            logging.error(f"Error creating form: {str(e)}")
-            raise HTTPException(
-                status_code=500, detail=f"Failed to create form: {str(e)}"
-            )
+            logging.error(f"Error creating form: {e!s}")
+            raise HTTPException(status_code=500, detail=f"Failed to create form: {e!s}")
 
     async def duplicate_form(
         self,
@@ -501,9 +497,9 @@ class FormService:
         payload: DuplicateFormRequest,
         created_by: str,
         *,
-        owner_alias_emails: Optional[List[str]] = None,
-        actor_email: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        owner_alias_emails: list[str] | None = None,
+        actor_email: str | None = None,
+    ) -> dict[str, Any]:
         """Create a copy of an existing form for the same planner."""
         try:
             # Ensure the user can access the source form
@@ -545,16 +541,16 @@ class FormService:
     async def get_forms(
         self,
         created_by: str,
-        wedding_id: Optional[str] = None,
+        wedding_id: str | None = None,
         is_root_admin: bool = False,
         *,
-        viewer_email: Optional[str] = None,
-        owner_alias_emails: Optional[List[str]] = None,
-    ) -> List[Dict[str, Any]]:
+        viewer_email: str | None = None,
+        owner_alias_emails: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """Get forms for a user"""
         try:
             # ROOT_ADMIN can see all forms, others see only their own
-            query: Dict[str, Any] = {"is_active": True}
+            query: dict[str, Any] = {"is_active": True}
             if not is_root_admin:
                 query.update(self._build_creator_query(created_by, owner_alias_emails))
             if wedding_id:
@@ -599,18 +595,16 @@ class FormService:
             return forms
 
         except Exception as e:
-            logging.error(f"Error fetching forms: {str(e)}")
-            raise HTTPException(
-                status_code=500, detail=f"Failed to fetch forms: {str(e)}"
-            )
+            logging.error(f"Error fetching forms: {e!s}")
+            raise HTTPException(status_code=500, detail=f"Failed to fetch forms: {e!s}")
 
     async def get_form(
         self,
         form_id: str,
-        created_by: Optional[str] = None,
+        created_by: str | None = None,
         *,
-        owner_alias_emails: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        owner_alias_emails: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Get a specific form with security validation"""
         try:
             logger.info(f"get_form called: form_id={form_id}, created_by={created_by}")
@@ -672,10 +666,8 @@ class FormService:
         except HTTPException:
             raise
         except Exception as e:
-            logging.error(f"Error fetching form: {str(e)}")
-            raise HTTPException(
-                status_code=500, detail=f"Failed to fetch form: {str(e)}"
-            )
+            logging.error(f"Error fetching form: {e!s}")
+            raise HTTPException(status_code=500, detail=f"Failed to fetch form: {e!s}")
 
     async def update_form(
         self,
@@ -683,8 +675,8 @@ class FormService:
         form_data: UpdateFormRequest,
         created_by: str,
         *,
-        owner_alias_emails: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        owner_alias_emails: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Update an existing form with security validation"""
         try:
             # Validate inputs
@@ -713,7 +705,7 @@ class FormService:
                 raise HTTPException(status_code=404, detail="Form not found")
 
             # Build update document with sanitization
-            update_doc: Dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
+            update_doc: dict[str, Any] = {"updated_at": datetime.now(UTC)}
 
             if form_data.name is not None:
                 sanitized_name = InputSanitizer.sanitize_text(form_data.name, 100)
@@ -770,10 +762,8 @@ class FormService:
         except HTTPException:
             raise
         except Exception as e:
-            logging.error(f"Error updating form: {str(e)}")
-            raise HTTPException(
-                status_code=500, detail=f"Failed to update form: {str(e)}"
-            )
+            logging.error(f"Error updating form: {e!s}")
+            raise HTTPException(status_code=500, detail=f"Failed to update form: {e!s}")
 
     async def delete_form(
         self,
@@ -781,8 +771,8 @@ class FormService:
         created_by: str,
         is_root_admin: bool = False,
         *,
-        owner_alias_emails: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        owner_alias_emails: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Soft delete a form"""
         try:
             logger.info(
@@ -810,7 +800,7 @@ class FormService:
                 {
                     "$set": {
                         "is_active": False,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -830,13 +820,11 @@ class FormService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error deleting form: {str(e)}")
+            logger.error(f"Error deleting form: {e!s}")
             import traceback
 
             logger.error(f"Traceback: {traceback.format_exc()}")
-            raise HTTPException(
-                status_code=500, detail=f"Failed to delete form: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to delete form: {e!s}")
 
     async def send_form(
         self,
@@ -844,8 +832,8 @@ class FormService:
         send_data: SendFormRequest,
         created_by: str,
         *,
-        owner_alias_emails: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        owner_alias_emails: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Send form to recipients via email"""
         try:
             # Get form
@@ -867,7 +855,7 @@ class FormService:
             # Per-recipient detail (Batch 4 — P6 audit fix). Lets the
             # planner UI render a "3 of 50 bounced — see which" view
             # instead of just an aggregate count.
-            per_recipient: List[Dict[str, Any]] = []
+            per_recipient: list[dict[str, Any]] = []
 
             for recipient_email in send_data.recipient_emails:
                 try:
@@ -902,10 +890,8 @@ class FormService:
                         token_live = False
                         if token_expires_at is not None:
                             if token_expires_at.tzinfo is None:
-                                token_expires_at = token_expires_at.replace(
-                                    tzinfo=timezone.utc
-                                )
-                            token_live = token_expires_at > datetime.now(timezone.utc)
+                                token_expires_at = token_expires_at.replace(tzinfo=UTC)
+                            token_live = token_expires_at > datetime.now(UTC)
                         if delivered and token_live:
                             skipped_count += 1
                             per_recipient.append(
@@ -930,7 +916,7 @@ class FormService:
                         "form_id": form_id,
                         "recipient_email": normalized_recipient,
                         "wedding_id": send_data.wedding_id,
-                        "sent_at": datetime.now(timezone.utc),
+                        "sent_at": datetime.now(UTC),
                         "status": FormDistributionStatus.SENDING.value,
                         "access_token_hash": token_hash,
                         "token_expires_at": token_expires_at,
@@ -966,7 +952,7 @@ class FormService:
                     )
 
                     # Send email
-                    delivery_error: Optional[str] = None
+                    delivery_error: str | None = None
                     if self.email_service.configured:
                         email_result = await self.email_service.send_email(
                             to_email=normalized_recipient,
@@ -1014,7 +1000,7 @@ class FormService:
 
                 except Exception as email_error:
                     logging.error(
-                        f"Failed to send form to {recipient_email}: {str(email_error)}"
+                        f"Failed to send form to {recipient_email}: {email_error!s}"
                     )
                     failed_count += 1
                     per_recipient.append(
@@ -1040,10 +1026,8 @@ class FormService:
         except HTTPException:
             raise
         except Exception as e:
-            logging.error(f"Error sending form: {str(e)}")
-            raise HTTPException(
-                status_code=500, detail=f"Failed to send form: {str(e)}"
-            )
+            logging.error(f"Error sending form: {e!s}")
+            raise HTTPException(status_code=500, detail=f"Failed to send form: {e!s}")
 
     async def _planner_subscription_active(self, planner_email: str) -> bool:
         """Return True if the planner's subscription is in the active
@@ -1075,8 +1059,8 @@ class FormService:
             return False
 
     async def send_form_reminders(
-        self, *, now: Optional[datetime] = None
-    ) -> Dict[str, int]:
+        self, *, now: datetime | None = None
+    ) -> dict[str, int]:
         """Send a one-shot reminder email per overdue, unsubmitted distribution.
 
         A distribution is eligible iff its snapshot at send-time enabled
@@ -1090,7 +1074,7 @@ class FormService:
         ``{sent, skipped, failed}`` summary for logging.
         """
         if now is None:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
         frontend_url = os.getenv("FRONTEND_URL")
         if not frontend_url:
@@ -1123,7 +1107,7 @@ class FormService:
         # ``REMINDER_BUDGET_PER_PLANNER`` keeps a single planner from
         # monopolising the tick. Overflow is logged and deferred — the
         # next daily scheduler run picks up the remaining candidates.
-        sent_per_planner: Dict[str, int] = {}
+        sent_per_planner: dict[str, int] = {}
         deferred_for_budget = 0
 
         # Per-tick cache: a single planner with N due distributions only
@@ -1131,7 +1115,7 @@ class FormService:
         # synchronous pass — the planner's subscription state can't change
         # between rows — so caching is safe and bounded by distinct
         # planners on the page.
-        subscription_cache: Dict[str, bool] = {}
+        subscription_cache: dict[str, bool] = {}
 
         async def _is_subscription_active(email: str) -> bool:
             cached = subscription_cache.get(email)
@@ -1154,7 +1138,7 @@ class FormService:
                     skipped += 1
                     continue
                 if sent_at.tzinfo is None:
-                    sent_at = sent_at.replace(tzinfo=timezone.utc)
+                    sent_at = sent_at.replace(tzinfo=UTC)
                 reminder_days = int(distribution.get("reminder_days", 7))
                 if (now - sent_at) < timedelta(days=reminder_days):
                     skipped += 1
@@ -1165,7 +1149,7 @@ class FormService:
                 token_expires_at = distribution.get("token_expires_at")
                 if token_expires_at:
                     if token_expires_at.tzinfo is None:
-                        token_expires_at = token_expires_at.replace(tzinfo=timezone.utc)
+                        token_expires_at = token_expires_at.replace(tzinfo=UTC)
                     if token_expires_at < now:
                         skipped += 1
                         continue
@@ -1282,9 +1266,9 @@ class FormService:
         self,
         form_id: str,
         response_data: SubmitFormRequest,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> dict[str, Any]:
         """Submit a form response with security validation"""
         try:
             # Rate limiting for form submissions
@@ -1320,7 +1304,7 @@ class FormService:
                     response_data.responses, form["fields"]
                 )
             except ValueError as e:
-                logger.warning(f"Invalid form response for form {form_id}: {str(e)}")
+                logger.warning(f"Invalid form response for form {form_id}: {e!s}")
                 raise HTTPException(status_code=400, detail="Invalid response data")
 
             # Drop values for fields hidden by conditional_logic so stale data
@@ -1423,7 +1407,7 @@ class FormService:
             #   2. Hint-only path (distribution_id only, no token):
             #      kept for the Item 3 query-param flow; bad ids silently
             #      dropped without penalty so the submission still proceeds.
-            resolved_distribution_id: Optional[str] = None
+            resolved_distribution_id: str | None = None
             if response_data.distribution_id:
                 distribution_match = await self.distributions_collection.find_one(
                     {"_id": response_data.distribution_id, "form_id": form_id}
@@ -1465,10 +1449,8 @@ class FormService:
                         if token_expires_at:
                             # Mongo can return naive datetimes; assume UTC.
                             if token_expires_at.tzinfo is None:
-                                token_expires_at = token_expires_at.replace(
-                                    tzinfo=timezone.utc
-                                )
-                            if token_expires_at < datetime.now(timezone.utc):
+                                token_expires_at = token_expires_at.replace(tzinfo=UTC)
+                            if token_expires_at < datetime.now(UTC):
                                 raise HTTPException(
                                     status_code=410,
                                     detail="This form access link has expired",
@@ -1546,10 +1528,10 @@ class FormService:
                 "wedding_id": form.get("wedding_id"),
                 "ip_address": safe_ip,
                 "user_agent": safe_user_agent,
-                "submitted_at": datetime.now(timezone.utc),
+                "submitted_at": datetime.now(UTC),
                 "metadata": {
                     "security_validated": True,
-                    "sanitized_at": datetime.now(timezone.utc),
+                    "sanitized_at": datetime.now(UTC),
                 },
             }
 
@@ -1562,14 +1544,14 @@ class FormService:
                     {"_id": form_id},
                     {
                         "$inc": {"submission_count": 1},
-                        "$set": {"updated_at": datetime.now(timezone.utc)},
+                        "$set": {"updated_at": datetime.now(UTC)},
                     },
                 )
 
                 # Update distribution status. Prefer the explicit
                 # distribution_id from the per-recipient link; fall back to
                 # email-match for legacy / non-tokenized flows.
-                distribution_query: Optional[Dict[str, Any]] = None
+                distribution_query: dict[str, Any] | None = None
                 if resolved_distribution_id:
                     distribution_query = {
                         "_id": resolved_distribution_id,
@@ -1586,7 +1568,7 @@ class FormService:
                         distribution_query,
                         {
                             "$set": {
-                                "submitted_at": datetime.now(timezone.utc),
+                                "submitted_at": datetime.now(UTC),
                                 "status": FormDistributionStatus.SUBMITTED.value,
                             }
                         },
@@ -1633,9 +1615,9 @@ class FormService:
         except HTTPException:
             raise
         except Exception as e:
-            logging.error(f"Error submitting form response: {str(e)}")
+            logging.error(f"Error submitting form response: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Failed to submit response: {str(e)}"
+                status_code=500, detail=f"Failed to submit response: {e!s}"
             )
 
     # Hard ceiling on a single page so a buggy ``limit=999999999`` still
@@ -1648,10 +1630,10 @@ class FormService:
         form_id: str,
         created_by: str,
         *,
-        owner_alias_emails: Optional[List[str]] = None,
+        owner_alias_emails: list[str] | None = None,
         skip: int = 0,
-        limit: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        limit: int | None = None,
+    ) -> dict[str, Any]:
         """Get a page of responses for a form, with total count.
 
         Pagination is required at scale: a viral RSVP with 50k responses
@@ -1675,7 +1657,7 @@ class FormService:
             )
             effective_limit = max(1, min(requested_limit, self.RESPONSE_PAGE_MAX_LIMIT))
 
-            query: Dict[str, Any] = {"form_id": form_id}
+            query: dict[str, Any] = {"form_id": form_id}
             total = await self.responses_collection.count_documents(query)
 
             responses = (
@@ -1701,19 +1683,19 @@ class FormService:
         except HTTPException:
             raise
         except Exception as e:
-            logging.error(f"Error fetching form responses: {str(e)}")
+            logging.error(f"Error fetching form responses: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Failed to fetch responses: {str(e)}"
+                status_code=500, detail=f"Failed to fetch responses: {e!s}"
             )
 
     async def iter_form_responses(
         self,
         form_id: str,
         *,
-        max_total: Optional[int] = None,
+        max_total: int | None = None,
         page_size: int = 500,
-        submitted_from: Optional[datetime] = None,
-        submitted_to: Optional[datetime] = None,
+        submitted_from: datetime | None = None,
+        submitted_to: datetime | None = None,
     ):
         """Async-iterate every response for a form in bounded pages.
 
@@ -1735,9 +1717,9 @@ class FormService:
         yielded = 0
         page_size = max(1, min(int(page_size), self.RESPONSE_PAGE_MAX_LIMIT))
 
-        query: Dict[str, Any] = {"form_id": form_id}
+        query: dict[str, Any] = {"form_id": form_id}
         if submitted_from or submitted_to:
-            range_clause: Dict[str, Any] = {}
+            range_clause: dict[str, Any] = {}
             if submitted_from is not None:
                 range_clause["$gte"] = submitted_from
             if submitted_to is not None:
@@ -1770,7 +1752,7 @@ class FormService:
         form_id: str,
         distribution_id: str,
         access_token: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Public, unauthenticated check for a per-recipient form link.
 
         Returns ``{valid, expired, already_submitted, recipient_name}`` so
@@ -1798,8 +1780,8 @@ class FormService:
         token_expires_at = distribution.get("token_expires_at")
         if token_expires_at:
             if token_expires_at.tzinfo is None:
-                token_expires_at = token_expires_at.replace(tzinfo=timezone.utc)
-            expired = token_expires_at < datetime.now(timezone.utc)
+                token_expires_at = token_expires_at.replace(tzinfo=UTC)
+            expired = token_expires_at < datetime.now(UTC)
 
         already_submitted = distribution.get("submitted_at") is not None
 
@@ -1809,7 +1791,7 @@ class FormService:
                 {"_id": distribution_id, "form_id": form_id},
                 {
                     "$set": {
-                        "clicked_at": datetime.now(timezone.utc),
+                        "clicked_at": datetime.now(UTC),
                         "status": FormDistributionStatus.CLICKED.value,
                     }
                 },
@@ -1828,9 +1810,9 @@ class FormService:
         form_id: str,
         created_by: str,
         *,
-        owner_alias_emails: Optional[List[str]] = None,
-        status: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        owner_alias_emails: list[str] | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
         """List distribution rows for a form with their submission state.
 
         Powers the "who has not responded" surface: each row carries the
@@ -1845,7 +1827,7 @@ class FormService:
                 owner_alias_emails=owner_alias_emails,
             )
 
-            query: Dict[str, Any] = {"form_id": form_id}
+            query: dict[str, Any] = {"form_id": form_id}
             if status:
                 try:
                     # Single source of truth for the status vocabulary —
@@ -1872,7 +1854,7 @@ class FormService:
         except HTTPException:
             raise
         except Exception as e:
-            logging.error(f"Error fetching form distributions: {str(e)}")
+            logging.error(f"Error fetching form distributions: {e!s}")
             raise HTTPException(status_code=500, detail="Failed to fetch distributions")
 
     async def mark_form_viewed(
@@ -1880,11 +1862,11 @@ class FormService:
         form_id: str,
         viewer_email: str,
         scope: str,
-        submission_count: Optional[int] = None,
+        submission_count: int | None = None,
         *,
-        owner_alias_emails: Optional[List[str]] = None,
+        owner_alias_emails: list[str] | None = None,
         is_root_admin: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Persist when a planner last viewed responses or analytics for a form."""
 
         if not InputSanitizer.validate_email(viewer_email):
@@ -1936,8 +1918,8 @@ class FormService:
         if not form.get("is_active", True) and not is_root_admin:
             raise HTTPException(status_code=404, detail="Form not found")
 
-        now = datetime.now(timezone.utc)
-        update_fields: Dict[str, Any] = {}
+        now = datetime.now(UTC)
+        update_fields: dict[str, Any] = {}
 
         total_submissions = int(form.get("submission_count", 0) or 0)
         planner_state = form.get("planner_state", {}) or {}
@@ -1966,7 +1948,7 @@ class FormService:
         # Tombstone the legacy key if we read state from it. We avoid
         # repeated $unset for already-migrated docs by guarding on the
         # presence of the legacy key in the loaded planner_state.
-        update_payload: Dict[str, Any] = {"$set": update_fields}
+        update_payload: dict[str, Any] = {"$set": update_fields}
         legacy_key = self._legacy_planner_state_key(normalized_email)
         if legacy_key != state_key and legacy_key in planner_state:
             update_payload["$unset"] = {f"planner_state.{legacy_key}": ""}
@@ -1985,8 +1967,8 @@ class FormService:
         form_id: str,
         created_by: str,
         *,
-        owner_alias_emails: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        owner_alias_emails: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Get analytics for a form"""
         try:
             # Verify user owns the form
@@ -2041,9 +2023,9 @@ class FormService:
         except HTTPException:
             raise
         except Exception as e:
-            logging.error(f"Error fetching form analytics: {str(e)}")
+            logging.error(f"Error fetching form analytics: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Failed to fetch analytics: {str(e)}"
+                status_code=500, detail=f"Failed to fetch analytics: {e!s}"
             )
 
     async def _get_last_response_time(self, form_id: str):
@@ -2128,13 +2110,13 @@ class FormService:
         self,
         form_id: str,
         created_by: str,
-        date_from: Optional[str] = None,
-        date_to: Optional[str] = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
         include_metadata: bool = True,
         *,
-        owner_alias_emails: Optional[List[str]] = None,
-        exported_by: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        owner_alias_emails: list[str] | None = None,
+        exported_by: str | None = None,
+    ) -> dict[str, Any]:
         """
         Export form responses to CSV format with enhanced security validation.
 
@@ -2235,9 +2217,9 @@ class FormService:
             # filter so total_response_count reflects what the user
             # actually requested, not the full collection.
             max_export_size = 10000
-            count_query: Dict[str, Any] = {"form_id": form_id}
+            count_query: dict[str, Any] = {"form_id": form_id}
             if parsed_date_from or parsed_date_to:
-                range_clause: Dict[str, Any] = {}
+                range_clause: dict[str, Any] = {}
                 if parsed_date_from is not None:
                     range_clause["$gte"] = parsed_date_from
                 if parsed_date_to is not None:
@@ -2246,7 +2228,7 @@ class FormService:
             total_response_count = await self.responses_collection.count_documents(
                 count_query
             )
-            responses: List[Dict[str, Any]] = []
+            responses: list[dict[str, Any]] = []
             async for row in self.iter_form_responses(
                 form_id,
                 max_total=max_export_size,
@@ -2331,17 +2313,17 @@ class FormService:
         except HTTPException:
             raise
         except CSVSecurityError as e:
-            logger.error(f"CSV security error in export: {str(e)}")
-            raise HTTPException(status_code=400, detail=f"Export failed: {str(e)}")
+            logger.error(f"CSV security error in export: {e!s}")
+            raise HTTPException(status_code=400, detail=f"Export failed: {e!s}")
         except Exception as e:
-            logger.error(f"Error exporting form responses to CSV: {str(e)}")
+            logger.error(f"Error exporting form responses to CSV: {e!s}")
             raise HTTPException(
                 status_code=500,
                 detail="Failed to export form responses. Please try again later.",
             )
 
     async def _notify_planner_form_submission(
-        self, form: Dict[str, Any], submitter_name: str, form_id: str
+        self, form: dict[str, Any], submitter_name: str, form_id: str
     ):
         """Notify the planner about a form submission"""
         try:
@@ -2382,4 +2364,4 @@ class FormService:
 
         except Exception as e:
             # Don't fail the form submission if notification fails
-            logger.error(f"Failed to send form submission notification: {str(e)}")
+            logger.error(f"Failed to send form submission notification: {e!s}")

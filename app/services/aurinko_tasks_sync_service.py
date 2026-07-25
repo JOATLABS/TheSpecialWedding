@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -85,11 +85,11 @@ class AurinkoTasksSyncService:
             body["startDateTime"] = str(start)
         return body
 
-    def _external_id(self, payload: dict[str, Any]) -> Optional[str]:
+    def _external_id(self, payload: dict[str, Any]) -> str | None:
         value = payload.get("id") or payload.get("taskId")
         return str(value) if value else None
 
-    def _external_etag(self, payload: dict[str, Any]) -> Optional[str]:
+    def _external_etag(self, payload: dict[str, Any]) -> str | None:
         value = payload.get("etag") or payload.get("changeKey")
         return str(value) if value else None
 
@@ -163,7 +163,7 @@ class AurinkoTasksSyncService:
 
     async def _connection_for_sync_doc(
         self, sync_doc: dict[str, Any]
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         connection_id = str(sync_doc.get("connection_id") or "")
         if not ObjectId.is_valid(connection_id):
             return None
@@ -213,7 +213,7 @@ class AurinkoTasksSyncService:
     async def _eligible_connections(
         self,
         task: dict[str, Any],
-        connection_id: Optional[str] = None,
+        connection_id: str | None = None,
     ) -> list[dict[str, Any]]:
         query: dict[str, Any] = {
             "connection_status": CalendarConnectionStatus.ACTIVE.value,
@@ -234,7 +234,7 @@ class AurinkoTasksSyncService:
     async def mirror_planner_task_to_aurinko(
         self,
         planner_task_id: str,
-        connection_id: Optional[str] = None,
+        connection_id: str | None = None,
     ) -> list[dict[str, Any]]:
         task = await self.tasks_collection.find_one(
             {"_id": self._coerce_task_oid(planner_task_id)}
@@ -398,7 +398,7 @@ class AurinkoTasksSyncService:
     async def unmirror_planner_task(
         self,
         planner_task_id: str,
-        connection_id: Optional[str] = None,
+        connection_id: str | None = None,
     ) -> None:
         query: dict[str, Any] = {"planner_task_id": planner_task_id}
         if connection_id:
@@ -464,7 +464,7 @@ class AurinkoTasksSyncService:
         connection_id: str,
         aurinko_task_id: str,
         change_type: str,
-        snapshot: Optional[dict[str, Any]] = None,
+        snapshot: dict[str, Any] | None = None,
     ) -> None:
         sync_doc = await self.syncs_collection.find_one(
             {"connection_id": connection_id, "aurinko_task_id": aurinko_task_id}

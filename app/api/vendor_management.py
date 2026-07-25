@@ -10,7 +10,6 @@ Couple/planner client contracts are handled separately under `/admin/client-cont
 
 import logging
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
@@ -53,14 +52,10 @@ router = APIRouter()
 
 @router.get("/directory", tags=["Vendor Directory"])
 async def list_vendor_directory(
-    category: Optional[str] = Query(None, description="Filter by service category"),
-    is_preferred: Optional[bool] = Query(
-        None, description="Filter by preferred status"
-    ),
-    search: Optional[str] = Query(
-        None, description="Search by name, email, description"
-    ),
-    tags: Optional[str] = Query(None, description="Comma-separated tags"),
+    category: str | None = Query(None, description="Filter by service category"),
+    is_preferred: bool | None = Query(None, description="Filter by preferred status"),
+    search: str | None = Query(None, description="Search by name, email, description"),
+    tags: str | None = Query(None, description="Comma-separated tags"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
@@ -267,7 +262,6 @@ async def delete_vendor_assignment(
     await vendor_service.soft_delete_assignment(
         assignment_id=assignment_id, created_by=owner_email
     )
-    return None
 
 
 # =============================================================================
@@ -277,7 +271,7 @@ async def delete_vendor_assignment(
 
 @router.get("/templates", tags=["Contract Templates"])
 async def list_contract_templates(
-    category: Optional[str] = Query(None, description="Filter by service category"),
+    category: str | None = Query(None, description="Filter by service category"),
     include_system: bool = Query(True, description="Include system templates"),
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
@@ -337,9 +331,9 @@ async def create_contract(
 
 @router.get("/contracts", tags=["Contracts"])
 async def list_contracts(
-    wedding_id: Optional[str] = Query(None),
-    vendor_profile_id: Optional[str] = Query(None),
-    status: Optional[str] = Query(None),
+    wedding_id: str | None = Query(None),
+    vendor_profile_id: str | None = Query(None),
+    status: str | None = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
@@ -586,9 +580,9 @@ async def create_payment_milestones(
 
 @router.get("/milestones", tags=["Payment Milestones"])
 async def list_payment_milestones(
-    contract_id: Optional[str] = Query(None),
-    wedding_id: Optional[str] = Query(None),
-    status: Optional[str] = Query(
+    contract_id: str | None = Query(None),
+    wedding_id: str | None = Query(None),
+    status: str | None = Query(
         None, description="pending, due, overdue, paid, partial"
     ),
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
@@ -655,7 +649,7 @@ async def get_contract_activity(
 @router.get("/vendors/{vendor_id}/communications", tags=["Communication"])
 async def get_vendor_communication_history(
     vendor_id: str,
-    wedding_id: Optional[str] = Query(None),
+    wedding_id: str | None = Query(None),
     limit: int = Query(50, ge=1, le=100),
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
@@ -676,7 +670,7 @@ async def get_vendor_communication_history(
 
 @router.get("/dashboard", tags=["Vendor Dashboard"])
 async def get_vendor_management_dashboard(
-    wedding_id: Optional[str] = Query(None, description="Filter by wedding"),
+    wedding_id: str | None = Query(None, description="Filter by wedding"),
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
@@ -735,10 +729,10 @@ async def upload_contract_pdf(
     vendor_profile_id: str = Query(..., description="Vendor profile ID"),
     contract_title: str = Query(..., description="Contract title"),
     total_amount: float = Query(..., description="Total contract amount"),
-    deposit_amount: Optional[float] = Query(None, description="Deposit amount"),
-    service_date: Optional[str] = Query(None, description="Service date (ISO format)"),
-    service_location: Optional[str] = Query(None, description="Service location"),
-    notes: Optional[str] = Query(None, description="Internal notes"),
+    deposit_amount: float | None = Query(None, description="Deposit amount"),
+    service_date: str | None = Query(None, description="Service date (ISO format)"),
+    service_location: str | None = Query(None, description="Service location"),
+    notes: str | None = Query(None, description="Internal notes"),
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
@@ -815,7 +809,7 @@ async def create_payment_link(
 @router.post("/payment-links/{payment_link_id}/send", tags=["Payment Links"])
 async def send_payment_link(
     payment_link_id: str,
-    custom_message: Optional[str] = Query(
+    custom_message: str | None = Query(
         None, description="Custom message for the email"
     ),
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
@@ -833,8 +827,8 @@ async def send_payment_link(
 
 @router.get("/payment-links", tags=["Payment Links"])
 async def list_payment_links(
-    wedding_id: Optional[str] = Query(None, description="Filter by wedding"),
-    status: Optional[str] = Query(None, description="Filter by status"),
+    wedding_id: str | None = Query(None, description="Filter by wedding"),
+    status: str | None = Query(None, description="Filter by status"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),

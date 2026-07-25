@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
@@ -21,17 +21,15 @@ verification_service = GuestVerificationService()
 
 
 class GuestVerificationRequest(BaseModel):
-    token: Optional[str] = Field(None, description="Guest invitation token")
-    name: Optional[str] = Field(None, description="Guest name for verification")
-    phone: Optional[str] = Field(
-        None, description="Guest phone number for verification"
-    )
-    email: Optional[str] = Field(None, description="Guest email for verification")
-    password: Optional[str] = Field(
+    token: str | None = Field(None, description="Guest invitation token")
+    name: str | None = Field(None, description="Guest name for verification")
+    phone: str | None = Field(None, description="Guest phone number for verification")
+    email: str | None = Field(None, description="Guest email for verification")
+    password: str | None = Field(
         None, description="Password for password-protected weddings"
     )
-    otp_code: Optional[str] = Field(None, description="OTP verification code")
-    contact: Optional[str] = Field(
+    otp_code: str | None = Field(None, description="OTP verification code")
+    contact: str | None = Field(
         None, description="Contact (phone/email) for OTP verification"
     )
 
@@ -41,7 +39,7 @@ class PrivacySettingsUpdate(BaseModel):
         ..., description="Privacy mode: public, password, private"
     )
     guest_auth_required: bool = Field(default=True)
-    password_protection: Optional[str] = Field(
+    password_protection: str | None = Field(
         None, description="Password for password mode"
     )
     allow_guest_sharing: bool = Field(default=False)
@@ -115,7 +113,7 @@ async def verify_guest_access(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Verification error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Verification error: {e!s}")
 
 
 @router.get("/weddings/privacy-info/{slug}", tags=["Guest"])
@@ -130,7 +128,7 @@ async def get_wedding_privacy_info(slug: str):
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error getting privacy info: {str(e)}"
+            status_code=500, detail=f"Error getting privacy info: {e!s}"
         )
 
 
@@ -162,7 +160,7 @@ async def get_wedding_with_session_access(slug: str, request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Guest session error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Guest session error: {e!s}")
 
 
 @router.get("/weddings/guest-access/{slug}/{token}", tags=["Guest"])
@@ -191,9 +189,7 @@ async def get_wedding_with_token_access(slug: str, token: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Token verification error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Token verification error: {e!s}")
 
 
 @router.post("/weddings/guest-access/{slug}/{token}/exchange", tags=["Guest"])
@@ -229,7 +225,7 @@ async def exchange_wedding_token_access(slug: str, token: str, response: Respons
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Token exchange error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Token exchange error: {e!s}")
 
 
 @router.post("/guests/request-rsvp-link", tags=["Guest"])
@@ -289,7 +285,7 @@ async def update_wedding_privacy_settings(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error updating privacy settings: {str(e)}"
+            status_code=500, detail=f"Error updating privacy settings: {e!s}"
         )
 
 
@@ -317,6 +313,4 @@ async def get_wedding_access_logs(
         return {"logs": logs}
 
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error getting access logs: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error getting access logs: {e!s}")

@@ -1,7 +1,7 @@
 # File: app/services/import_service.py
 
 import csv
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, UploadFile
 
@@ -85,8 +85,8 @@ class GuestImportService:
                 "plus_one_submitted": False,
                 "sms_opt_in": True,  # Default to opted-in, guest can opt-out later
                 "email_opt_in": True,  # Default to opted-in, guest can opt-out later
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
             }
 
             try:

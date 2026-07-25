@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter
 
@@ -61,7 +61,7 @@ async def readiness():
         status_code=200 if ready else 503,
         content={
             "status": "ready" if ready else "not_ready",
-            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+            "timestamp": datetime.now(UTC).isoformat() + "Z",
             "checks": checks,
         },
     )
@@ -97,7 +97,7 @@ async def health_check():
         status_code=status_code,
         content={
             "status": overall_status,
-            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+            "timestamp": datetime.now(UTC).isoformat() + "Z",
             "checks": checks,
         },
     )

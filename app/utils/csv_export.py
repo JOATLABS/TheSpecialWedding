@@ -9,16 +9,14 @@ import csv
 import io
 import logging
 import re
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
 class CSVSecurityError(Exception):
     """Raised when CSV data contains potential security issues"""
-
-    pass
 
 
 class CSVExportUtils:
@@ -96,7 +94,7 @@ class CSVExportUtils:
 
     @classmethod
     def generate_csv_content(
-        cls, headers: List[str], data_rows: List[List[Any]], include_bom: bool = True
+        cls, headers: list[str], data_rows: list[list[Any]], include_bom: bool = True
     ) -> str:
         """
         Generate CSV content with proper sanitization.
@@ -131,17 +129,17 @@ class CSVExportUtils:
             return content
 
         except Exception as e:
-            logger.error(f"Error generating CSV content: {str(e)}")
-            raise CSVSecurityError(f"Failed to generate CSV: {str(e)}")
+            logger.error(f"Error generating CSV content: {e!s}")
+            raise CSVSecurityError(f"Failed to generate CSV: {e!s}")
 
     @classmethod
     def generate_form_response_csv(
         cls,
-        form_data: Dict[str, Any],
-        responses: List[Dict[str, Any]],
+        form_data: dict[str, Any],
+        responses: list[dict[str, Any]],
         include_metadata: bool = True,
-        date_from: Optional[datetime] = None,
-        date_to: Optional[datetime] = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
     ) -> str:
         """
         Generate CSV content for form responses.
@@ -192,13 +190,13 @@ class CSVExportUtils:
             return cls.generate_csv_content(headers, data_rows)
 
         except Exception as e:
-            logger.error(f"Error generating form response CSV: {str(e)}")
-            raise CSVSecurityError(f"Failed to generate form CSV: {str(e)}")
+            logger.error(f"Error generating form response CSV: {e!s}")
+            raise CSVSecurityError(f"Failed to generate form CSV: {e!s}")
 
     @classmethod
     def _build_csv_headers(
-        cls, form_data: Dict[str, Any], include_metadata: bool
-    ) -> List[str]:
+        cls, form_data: dict[str, Any], include_metadata: bool
+    ) -> list[str]:
         """Build CSV headers based on form structure"""
         headers = []
         if include_metadata:
@@ -222,8 +220,8 @@ class CSVExportUtils:
 
     @classmethod
     def _build_csv_row(
-        cls, form_data: Dict[str, Any], response: Dict[str, Any], include_metadata: bool
-    ) -> List[Any]:
+        cls, form_data: dict[str, Any], response: dict[str, Any], include_metadata: bool
+    ) -> list[Any]:
         """Build a CSV row for a single response"""
         row = []
         if include_metadata:
@@ -253,7 +251,7 @@ class CSVExportUtils:
 
     @classmethod
     def _format_field_value(
-        cls, field_type: str, value: Any, field_config: Dict[str, Any]
+        cls, field_type: str, value: Any, field_config: dict[str, Any]
     ) -> Any:
         """Format a field value based on its type"""
         if value is None or value == "":
@@ -294,7 +292,7 @@ class CSVExportUtils:
 
     @classmethod
     def _calculate_completion_status(
-        cls, form_data: Dict[str, Any], response: Dict[str, Any]
+        cls, form_data: dict[str, Any], response: dict[str, Any]
     ) -> str:
         """Calculate completion status for a response"""
         required_fields = [
@@ -327,7 +325,7 @@ class CSVExportUtils:
         cls,
         form_name: str,
         export_type: str = "responses",
-        timestamp: Optional[datetime] = None,
+        timestamp: datetime | None = None,
     ) -> str:
         """
         Generate a safe filename for CSV export.
@@ -341,7 +339,7 @@ class CSVExportUtils:
             str: Safe filename for the CSV export
         """
         if timestamp is None:
-            timestamp = datetime.now(timezone.utc)
+            timestamp = datetime.now(UTC)
         # Sanitize form name for filename
         safe_name = re.sub(r"[^\w\-_\. ]", "", form_name)
         safe_name = safe_name.strip()[:50]  # Limit length
@@ -364,10 +362,10 @@ class FormResponseCSVExporter:
 
     def export_responses(
         self,
-        form_data: Dict[str, Any],
-        responses: List[Dict[str, Any]],
-        options: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        form_data: dict[str, Any],
+        responses: list[dict[str, Any]],
+        options: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Export form responses to CSV format.
         Args:
@@ -428,19 +426,19 @@ class FormResponseCSVExporter:
                 "size": len(csv_content.encode("utf-8")),
                 "total_responses": total_responses,
                 "exported_count": filtered_count,
-                "export_timestamp": datetime.now(timezone.utc).isoformat(),
+                "export_timestamp": datetime.now(UTC).isoformat(),
                 "options": options,
             }
 
         except Exception as e:
-            logger.error(f"Error exporting form responses: {str(e)}")
-            raise CSVSecurityError(f"Export failed: {str(e)}")
+            logger.error(f"Error exporting form responses: {e!s}")
+            raise CSVSecurityError(f"Export failed: {e!s}")
 
     @staticmethod
     def _passes_date_filter(
-        response: Dict[str, Any],
-        date_from: Optional[datetime],
-        date_to: Optional[datetime],
+        response: dict[str, Any],
+        date_from: datetime | None,
+        date_to: datetime | None,
     ) -> bool:
         """Check if response passes date filter"""
         if not date_from and not date_to:
@@ -466,8 +464,8 @@ class FormResponseCSVExporter:
 
 # Convenience function for quick exports
 def export_form_responses_to_csv(
-    form_data: Dict[str, Any], responses: List[Dict[str, Any]], **options
-) -> Dict[str, Any]:
+    form_data: dict[str, Any], responses: list[dict[str, Any]], **options
+) -> dict[str, Any]:
     """
     Convenience function to export form responses to CSV.
     Args:

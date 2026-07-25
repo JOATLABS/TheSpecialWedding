@@ -63,7 +63,7 @@ async def get_user_plan_features(user_email: str) -> dict:
         return plan.get("features", {})
 
     except Exception as e:
-        logger.error(f"Error getting user plan features: {str(e)}")
+        logger.error(f"Error getting user plan features: {e!s}")
         return {}
 
 

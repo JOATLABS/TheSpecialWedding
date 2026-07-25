@@ -15,12 +15,11 @@ from app.constants.storefront import (
 )
 from app.dependencies.auth_extended import ExtendedAuthUser, get_current_user_extended
 from app.services.storefront_entitlement_service import (
-    StorefrontEntitlements,
     StorefrontEntitlementResolutionError,
+    StorefrontEntitlements,
     storefront_entitlement_service,
 )
 from app.utils.planner_ownership import normalize_planner_id
-
 
 _storefront_bearer = HTTPBearer(auto_error=False)
 

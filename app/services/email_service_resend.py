@@ -3,8 +3,8 @@
 import asyncio
 import logging
 import os
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, cast
+from datetime import UTC, datetime
+from typing import Any, cast
 
 import resend
 
@@ -12,8 +12,8 @@ from app.constants.storefront_domain import (
     STOREFRONT_DOMAIN_INSTRUCTIONS_EMAIL_TYPE,
 )
 from app.core.database import mongo
-from app.utils.rsvp_links import build_guest_otp_url
 from app.utils.contact_sanitizer import sanitize_email, validate_email_format
+from app.utils.rsvp_links import build_guest_otp_url
 from app.utils.wedding_event_types import (
     attending_matches_reminder_event,
     is_all_wedding_events,
@@ -57,7 +57,7 @@ class ResendEmailService:
         self.wedding_collection = mongo.db["weddings"]
 
     def _generate_reply_to_address(
-        self, wedding_slug: str, guest_id: Optional[str] = None
+        self, wedding_slug: str, guest_id: str | None = None
     ) -> str:
         """
         Generate a routable reply-to address that encodes thread context.
@@ -78,16 +78,16 @@ class ResendEmailService:
         to_email: str,
         subject: str,
         html_content: str,
-        from_email: Optional[str] = None,
-        from_name: Optional[str] = None,
-        attachments: Optional[List[Dict[str, Any]]] = None,
-        reply_to: Optional[str] = None,
-        wedding_id: Optional[str] = None,
-        email_type: Optional[str] = None,
-        wedding_slug: Optional[str] = None,
-        guest_id: Optional[str] = None,
-        idempotency_key: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        from_email: str | None = None,
+        from_name: str | None = None,
+        attachments: list[dict[str, Any]] | None = None,
+        reply_to: str | None = None,
+        wedding_id: str | None = None,
+        email_type: str | None = None,
+        wedding_slug: str | None = None,
+        guest_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
         """Send a single email using Resend"""
         is_storefront_domain_instruction = (
             email_type == STOREFRONT_DOMAIN_INSTRUCTIONS_EMAIL_TYPE
@@ -122,7 +122,7 @@ class ResendEmailService:
                 from_address = from_email
 
             # Prepare email parameters
-            params: Dict[str, Any] = {
+            params: dict[str, Any] = {
                 "from": from_address,
                 "to": [to_email],
                 "subject": subject,
@@ -177,7 +177,7 @@ class ResendEmailService:
                 "reply_to": reply_to,
                 "email_type": email_type,
                 "idempotency_key": idempotency_key,
-                "sent_at": datetime.now(timezone.utc),
+                "sent_at": datetime.now(UTC),
                 "status": "success",
                 "resend_id": provider_message_id,
                 "provider": "resend",
@@ -220,7 +220,7 @@ class ResendEmailService:
                 # DNS contact address or raw provider error in application logs.
                 logger.error("Storefront DNS instruction email delivery failed")
             else:
-                logger.error(f"Failed to send email to {to_email}: {str(e)}")
+                logger.error(f"Failed to send email to {to_email}: {e!s}")
 
             # Log the failure
             log_entry = {
@@ -230,7 +230,7 @@ class ResendEmailService:
                 "wedding_id": wedding_id,
                 "email_type": email_type,
                 "idempotency_key": idempotency_key,
-                "sent_at": datetime.now(timezone.utc),
+                "sent_at": datetime.now(UTC),
                 "status": "failed",
                 "provider": "resend",
             }
@@ -268,10 +268,10 @@ class ResendEmailService:
     async def send_rsvp_invitations(
         self,
         wedding_slug: str,
-        custom_html: Optional[str] = None,
-        custom_subject: Optional[str] = None,
-        attachments: Optional[List[Dict[str, Any]]] = None,
-    ) -> Dict[str, Any]:
+        custom_html: str | None = None,
+        custom_subject: str | None = None,
+        attachments: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         """Send RSVP invitation emails to guests with email addresses"""
         # Get wedding details
         wedding = await self.wedding_collection.find_one({"slug": wedding_slug})
@@ -377,7 +377,7 @@ class ResendEmailService:
                         {
                             "$set": {
                                 "invite_sent": True,
-                                "invite_sent_date": datetime.now(timezone.utc),
+                                "invite_sent_date": datetime.now(UTC),
                             }
                         },
                     )
@@ -403,10 +403,10 @@ class ResendEmailService:
         self,
         wedding_slug: str,
         event_type: str,
-        custom_html: Optional[str] = None,
-        custom_subject: Optional[str] = None,
+        custom_html: str | None = None,
+        custom_subject: str | None = None,
         target_group: str = "all",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Send reminder emails to guests who have RSVP'd"""
         try:
             event_type = normalize_reminder_event_type(event_type)
@@ -633,8 +633,8 @@ class ResendEmailService:
         }
 
     async def get_email_logs(
-        self, wedding_id: Optional[str] = None, limit: int = 100
-    ) -> List[Dict]:
+        self, wedding_id: str | None = None, limit: int = 100
+    ) -> list[dict]:
         """Get email logs, optionally filtered by wedding"""
         query = {}
         if wedding_id:
@@ -650,8 +650,8 @@ class ResendEmailService:
         return logs
 
     async def get_email_logs_for_weddings(
-        self, wedding_ids: List[str], limit: int = 100
-    ) -> List[Dict]:
+        self, wedding_ids: list[str], limit: int = 100
+    ) -> list[dict]:
         """Get email logs for multiple weddings (for planners)"""
         if not wedding_ids:
             return []
@@ -673,7 +673,7 @@ class ResendEmailService:
         couple_names: str,
         wedding_date: str,
         rsvp_url: str,
-        plus_ones: Optional[List[Any]] = None,
+        plus_ones: list[Any] | None = None,
     ) -> str:
         """Generate default RSVP invitation HTML"""
         return f"""
@@ -744,7 +744,7 @@ class ResendEmailService:
         </html>
         """
 
-    def _generate_plus_ones_section(self, plus_ones: Optional[List[Any]] = None) -> str:
+    def _generate_plus_ones_section(self, plus_ones: list[Any] | None = None) -> str:
         """Generate HTML section for plus-ones information"""
         if not plus_ones:
             return ""
@@ -774,7 +774,7 @@ class ResendEmailService:
         event_date: str,
         event_details: dict,
         couple_names: str,
-        plus_ones: Optional[List[Any]] = None,
+        plus_ones: list[Any] | None = None,
     ) -> str:
         """Generate default reminder HTML"""
         event_title = (
@@ -920,7 +920,7 @@ class ResendEmailService:
 
         except Exception as e:
             logger.error(
-                f"Error sending subscription cancellation email to {user.get('email', 'unknown')}: {str(e)}"
+                f"Error sending subscription cancellation email to {user.get('email', 'unknown')}: {e!s}"
             )
             return False
 
@@ -983,7 +983,7 @@ class ResendEmailService:
 
         except Exception as e:
             logger.error(
-                f"Error sending couple cancellation notification to {couple.get('email', 'unknown')}: {str(e)}"
+                f"Error sending couple cancellation notification to {couple.get('email', 'unknown')}: {e!s}"
             )
             return False
 

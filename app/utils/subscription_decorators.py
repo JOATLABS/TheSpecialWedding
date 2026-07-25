@@ -64,7 +64,7 @@ def enforce_subscription_limit(resource_type: str, amount: int = 1):
             except Exception as e:
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Error checking subscription limits: {str(e)}",
+                    detail=f"Error checking subscription limits: {e!s}",
                 )
 
         return wrapper
@@ -118,7 +118,7 @@ def check_feature_access(feature_name: str):
                 raise
             except Exception as e:
                 raise HTTPException(
-                    status_code=500, detail=f"Error checking feature access: {str(e)}"
+                    status_code=500, detail=f"Error checking feature access: {e!s}"
                 )
 
         return wrapper

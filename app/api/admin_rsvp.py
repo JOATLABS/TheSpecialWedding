@@ -1,5 +1,3 @@
-from typing import List, Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
@@ -22,17 +20,17 @@ guest_service = GuestService()
 class AdminRSVPUpdateRequest(BaseModel):
     """Request model for admin to update or create an RSVP"""
 
-    attending: List[str] = []
-    dietary: Optional[str] = None
-    phone: Optional[str] = None
-    email: Optional[str] = None
+    attending: list[str] = []
+    dietary: str | None = None
+    phone: str | None = None
+    email: str | None = None
     confirmed_by_admin: bool = True
 
 
 @router.get("/rsvps", tags=["Admin"])
 async def get_rsvps(
-    wedding_id: Optional[str] = Query(None),
-    guest_ids: Optional[str] = Query(None, description="Comma-separated guest IDs"),
+    wedding_id: str | None = Query(None),
+    guest_ids: str | None = Query(None, description="Comma-separated guest IDs"),
     current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
 ):
     # Check wedding access if wedding_id is provided
@@ -50,7 +48,7 @@ async def get_rsvps(
 
 @router.get("/rsvps/export", tags=["Admin"])
 async def export_rsvps(
-    wedding_id: Optional[str] = Query(None),
+    wedding_id: str | None = Query(None),
     current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
 ):
     # Check wedding access if wedding_id is provided
@@ -108,9 +106,7 @@ async def admin_update_rsvp(
     except HTTPException as e:
         raise e
     except Exception as err:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to update RSVP: {str(err)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to update RSVP: {err!s}")
 
 
 @router.delete("/rsvps/{guest_id}", tags=["Admin"])
@@ -140,6 +136,4 @@ async def admin_delete_rsvp(
     except HTTPException as e:
         raise e
     except Exception as err:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to delete RSVP: {str(err)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to delete RSVP: {err!s}")

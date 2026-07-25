@@ -15,8 +15,8 @@ import hmac
 import logging
 import os
 import shutil
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
@@ -62,7 +62,7 @@ BACKUP_MAX_SECONDS = _parse_backup_max_seconds()
 @router.post("/trigger")
 async def trigger_backup(
     authorization: str = Header(None, description="Bearer token for authentication"),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Trigger MongoDB backup and upload to R2
 
@@ -105,7 +105,7 @@ async def trigger_backup(
         logger.info("Starting database backup...")
 
         # Create backup filename with timestamp
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         backup_filename = f"mongodb-backup-{timestamp}.gz"
         backup_path = f"/tmp/{backup_filename}"  # nosec B108
 
@@ -136,7 +136,7 @@ async def trigger_backup(
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(), timeout=BACKUP_MAX_SECONDS
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error(
                 f"mongodump exceeded {BACKUP_MAX_SECONDS}s timeout; killing process"
             )
@@ -192,7 +192,7 @@ async def trigger_backup(
             logger.info("Upload to R2 completed successfully")
 
         except Exception as upload_error:
-            logger.error(f"Failed to upload to R2: {str(upload_error)}")
+            logger.error(f"Failed to upload to R2: {upload_error!s}")
             # Clean up local file
             if os.path.exists(backup_path):
                 os.remove(backup_path)
@@ -206,7 +206,7 @@ async def trigger_backup(
         # Save backup record to database
         backup_record = {
             "backup_id": timestamp,
-            "backup_date": datetime.now(timezone.utc),
+            "backup_date": datetime.now(UTC),
             "filename": backup_filename,
             "file_size_bytes": file_size,
             "file_size_mb": file_size_mb,
@@ -223,7 +223,7 @@ async def trigger_backup(
 
         return {
             "status": "success",
-            "backup_date": datetime.now(timezone.utc).isoformat(),
+            "backup_date": datetime.now(UTC).isoformat(),
             "filename": backup_filename,
             "file_size_mb": round(file_size_mb, 2),
             "storage_location": "R2",
@@ -235,7 +235,7 @@ async def trigger_backup(
         try:
             await mongo.db["backup_history"].insert_one(
                 {
-                    "backup_date": datetime.now(timezone.utc),
+                    "backup_date": datetime.now(UTC),
                     "status": "failed",
                     "error": str(http_exc.detail),
                 }
@@ -245,13 +245,13 @@ async def trigger_backup(
         raise
 
     except Exception as e:
-        logger.error(f"Backup failed: {str(e)}", exc_info=True)
+        logger.error(f"Backup failed: {e!s}", exc_info=True)
 
         # Log failure to database
         try:
             await mongo.db["backup_history"].insert_one(
                 {
-                    "backup_date": datetime.now(timezone.utc),
+                    "backup_date": datetime.now(UTC),
                     "status": "failed",
                     "error": str(e),
                 }
@@ -259,7 +259,7 @@ async def trigger_backup(
         except Exception:
             pass
 
-        raise HTTPException(status_code=500, detail=f"Backup failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Backup failed: {e!s}")
 
 
 async def cleanup_old_backups(days: int, s3_client, bucket_name: str):
@@ -272,7 +272,7 @@ async def cleanup_old_backups(days: int, s3_client, bucket_name: str):
         bucket_name: R2 bucket name
     """
     try:
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff_date = datetime.now(UTC) - timedelta(days=days)
         logger.info(f"Cleaning up backups older than {cutoff_date.isoformat()}")
 
         # List all backups in R2
@@ -306,26 +306,26 @@ async def cleanup_old_backups(days: int, s3_client, bucket_name: str):
                             {"storage_key": obj["Key"]},
                             {
                                 "$set": {
-                                    "deleted_at": datetime.now(timezone.utc),
+                                    "deleted_at": datetime.now(UTC),
                                     "status": "deleted",
                                 }
                             },
                         )
 
                 except Exception as e:
-                    logger.error(f"Failed to process backup {obj['Key']}: {str(e)}")
+                    logger.error(f"Failed to process backup {obj['Key']}: {e!s}")
 
         logger.info(f"Cleanup complete. Deleted {deleted_count} old backups")
 
     except Exception as e:
-        logger.error(f"Failed to cleanup old backups: {str(e)}")
+        logger.error(f"Failed to cleanup old backups: {e!s}")
         # Don't raise - cleanup failure shouldn't fail the backup
 
 
 @router.get("/history")
 async def get_backup_history(
     limit: int = 30, current_user: ExtendedAuthUser = Depends(require_root_admin)
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get backup history
 
@@ -360,7 +360,7 @@ async def get_backup_history(
 @router.get("/latest")
 async def get_latest_backup(
     current_user: ExtendedAuthUser = Depends(require_root_admin),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Get information about the most recent backup"""
 
     backup = await mongo.db["backup_history"].find_one(
@@ -375,9 +375,7 @@ async def get_latest_backup(
         backup["_id"] = str(backup["_id"])
 
     # Calculate age
-    age_hours = (
-        datetime.now(timezone.utc) - backup["backup_date"]
-    ).total_seconds() / 3600
+    age_hours = (datetime.now(UTC) - backup["backup_date"]).total_seconds() / 3600
 
     return {
         **backup,
@@ -390,7 +388,7 @@ async def get_latest_backup(
 @router.post("/restore-info/{backup_id}")
 async def get_restore_info(
     backup_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get restore instructions for a specific backup
 
@@ -463,7 +461,7 @@ docker-compose up -d
 @router.delete("/cleanup-old")
 async def manual_cleanup_old_backups(
     days: int = 30, current_user: ExtendedAuthUser = Depends(require_root_admin)
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Manually trigger cleanup of old backups
 
@@ -487,5 +485,5 @@ async def manual_cleanup_old_backups(
         }
 
     except Exception as e:
-        logger.error(f"Manual cleanup failed: {str(e)}")
+        logger.error(f"Manual cleanup failed: {e!s}")
         raise HTTPException(status_code=500, detail=str(e))

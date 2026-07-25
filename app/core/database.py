@@ -30,7 +30,7 @@ class MongoConnector:
             self.db = self.client[db_name]
             logger.info(f"Initialized Motor async client for database: {db_name}")
         except Exception as e:
-            logger.error(f"Failed to initialize MongoDB client: {str(e)}")
+            logger.error(f"Failed to initialize MongoDB client: {e!s}")
             raise
 
     def get_guest_collection(self):
@@ -219,7 +219,7 @@ class MongoConnector:
             logger.info("MongoDB connection test successful")
             return True
         except Exception as e:
-            logger.error(f"MongoDB connection test failed: {str(e)}")
+            logger.error(f"MongoDB connection test failed: {e!s}")
             return False
 
     def close(self):

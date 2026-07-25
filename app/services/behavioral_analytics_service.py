@@ -14,8 +14,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Sequence
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from bson import ObjectId
 
@@ -41,7 +42,7 @@ class BehavioralAnalyticsService:
 
     async def compile_behavioral_metrics(
         self, timeframe: str = "30d"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Return the full behavioral analytics payload."""
         cache_key = self._behavioral_metrics_cache_key(timeframe)
         cached_payload = await cache.get(cache_key)
@@ -49,7 +50,7 @@ class BehavioralAnalyticsService:
             return cached_payload
 
         period_days = self._resolve_timeframe(timeframe)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Run all analyses concurrently
         wau_task = asyncio.create_task(self._compute_wau(now))
@@ -102,7 +103,7 @@ class BehavioralAnalyticsService:
     #  We also check last_login from the users collection as a
     #  secondary signal.
 
-    async def _compute_wau(self, now: datetime) -> Dict[str, Any]:
+    async def _compute_wau(self, now: datetime) -> dict[str, Any]:
         seven_days_ago = now - timedelta(days=7)
         fourteen_days_ago = now - timedelta(days=14)
 
@@ -186,7 +187,7 @@ class BehavioralAnalyticsService:
     #  We measure: last 30 days of signups and how far they've progressed.
     #  This uses actual data relationships, not synthetic events.
 
-    async def _compute_activation_funnel(self, now: datetime) -> Dict[str, Any]:
+    async def _compute_activation_funnel(self, now: datetime) -> dict[str, Any]:
         thirty_days_ago = now - timedelta(days=30)
         ninety_days_ago = now - timedelta(days=90)
 
@@ -198,7 +199,7 @@ class BehavioralAnalyticsService:
         # Step 1: New planner signups (last 30d)
         total_signups = 0
         onboarded = 0
-        planner_emails: List[str] = []
+        planner_emails: list[str] = []
         async for planner in users_col.find(
             {
                 "created_at": {"$gte": thirty_days_ago},
@@ -244,7 +245,7 @@ class BehavioralAnalyticsService:
             )
 
             # Map wedding_id -> planner_email
-            wedding_to_planner: Dict[str, str] = {}
+            wedding_to_planner: dict[str, str] = {}
             for doc in wedding_docs:
                 wid = str(doc["_id"])
                 wedding_to_planner[wid] = doc["assigned_planner_email"]
@@ -358,7 +359,7 @@ class BehavioralAnalyticsService:
     #
     #  We generate cohorts for the last 4 months of signups.
 
-    async def _compute_retention_cohorts(self, now: datetime) -> Dict[str, Any]:
+    async def _compute_retention_cohorts(self, now: datetime) -> dict[str, Any]:
         users_col = self._mongo.get_users_collection()
         activity_col = self._mongo.db.get_collection("activity_logs")
 
@@ -372,7 +373,7 @@ class BehavioralAnalyticsService:
 
             # Get planners who signed up in this month
             cohort_size = 0
-            cohort_emails: List[str] = []
+            cohort_emails: list[str] = []
             async for user in users_col.find(
                 {
                     "created_at": {"$gte": cohort_start, "$lt": cohort_end},
@@ -400,7 +401,7 @@ class BehavioralAnalyticsService:
 
             # For each retention window, check if user was active after that threshold
             retention_windows = {"d7": 7, "d30": 30, "d60": 60, "d90": 90}
-            retention_data: Dict[str, Optional[float]] = {}
+            retention_data: dict[str, float | None] = {}
 
             for label, days in retention_windows.items():
                 threshold = cohort_start + timedelta(days=days)
@@ -466,7 +467,7 @@ class BehavioralAnalyticsService:
     #  - Average message response time
     #  - RSVP velocity (RSVPs per day, last 7 days)
 
-    async def _compute_engagement_signals(self, now: datetime) -> Dict[str, Any]:
+    async def _compute_engagement_signals(self, now: datetime) -> dict[str, Any]:
         seven_days_ago = now - timedelta(days=7)
         fourteen_days_ago = now - timedelta(days=14)
 
@@ -558,14 +559,14 @@ class BehavioralAnalyticsService:
     #  Trial conversion is derived from subscriptions whose trial_end_date
     #  falls inside the reporting window and whose current status is active.
 
-    async def _compute_mrr_movement(self, now: datetime) -> Dict[str, Any]:
+    async def _compute_mrr_movement(self, now: datetime) -> dict[str, Any]:
         thirty_days_ago = now - timedelta(days=30)
 
         subs_col = self._mongo.db.get_collection("user_subscriptions")
         plans_col = self._mongo.get_subscription_plans_collection()
 
         # Build plan price lookup
-        plans_lookup: Dict[str, Dict[str, float]] = {}
+        plans_lookup: dict[str, dict[str, float]] = {}
         plans_cursor = plans_col.find(
             {}, {"_id": 1, "price_monthly": 1, "price_yearly": 1}
         )
@@ -650,7 +651,7 @@ class BehavioralAnalyticsService:
 
     async def _compute_wow_changes(
         self, now: datetime, period_days: int
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         current_start = now - timedelta(days=period_days)
         previous_start = now - timedelta(days=period_days * 2)
 
@@ -703,7 +704,7 @@ class BehavioralAnalyticsService:
             },
         )
 
-        def _change(current: int, previous: int) -> Dict[str, Any]:
+        def _change(current: int, previous: int) -> dict[str, Any]:
             delta = current - previous
             pct = round(delta / previous * 100, 1) if previous > 0 else 0.0
             trend = "up" if delta > 0 else ("down" if delta < 0 else "flat")
@@ -728,9 +729,9 @@ class BehavioralAnalyticsService:
 
     async def get_planner_engagement_signals(
         self,
-        planner_email: Optional[str] = None,
-        accessible_wedding_ids: Optional[Sequence[str]] = None,
-    ) -> List[Dict[str, Any]]:
+        planner_email: str | None = None,
+        accessible_wedding_ids: Sequence[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """Return per-wedding engagement signals for a specific planner.
 
         Includes: couple last activity, form completion status,
@@ -743,7 +744,7 @@ class BehavioralAnalyticsService:
         if isinstance(cached_signals, list):
             return cached_signals
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         seven_days_ago = now - timedelta(days=7)
 
         weddings_col = self._mongo.get_weddings_collection()
@@ -753,7 +754,7 @@ class BehavioralAnalyticsService:
         forms_col = self._mongo.get_forms_collection()
         form_responses_col = self._mongo.get_form_responses_collection()
 
-        wedding_query: Dict[str, Any] = {"status": {"$ne": "deleted"}}
+        wedding_query: dict[str, Any] = {"status": {"$ne": "deleted"}}
         if planner_email:
             wedding_query["assigned_planner_email"] = planner_email
 
@@ -918,9 +919,9 @@ class BehavioralAnalyticsService:
     #  COUPLE PORTAL: Non-responders list
     # ──────────────────────────────────────────────
 
-    async def get_non_responders(self, wedding_id: str) -> List[Dict[str, Any]]:
+    async def get_non_responders(self, wedding_id: str) -> list[dict[str, Any]]:
         """Return guests who haven't RSVP'd, sorted by days since invite sent."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         guests_col = self._mongo.get_guest_collection()
         rsvps_col = self._mongo.get_rsvps_collection()
 
@@ -989,7 +990,7 @@ class BehavioralAnalyticsService:
     #  COUPLE PORTAL: Budget category breakdown
     # ──────────────────────────────────────────────
 
-    async def get_budget_breakdown(self, wedding_id: str) -> Dict[str, Any]:
+    async def get_budget_breakdown(self, wedding_id: str) -> dict[str, Any]:
         """Return per-category budget allocation and spend."""
         budget_col = self._mongo.db.get_collection("budget_categories")
 
@@ -1053,7 +1054,7 @@ class BehavioralAnalyticsService:
     #  HELPERS
     # ──────────────────────────────────────────────
 
-    def _empty_funnel(self) -> Dict[str, Any]:
+    def _empty_funnel(self) -> dict[str, Any]:
         return {
             "period": "last_30_days",
             "steps": [
@@ -1068,7 +1069,7 @@ class BehavioralAnalyticsService:
         }
 
     @staticmethod
-    def _monthly_value(plan_prices: Dict[str, float], interval: Optional[str]) -> float:
+    def _monthly_value(plan_prices: dict[str, float], interval: str | None) -> float:
         """Calculate monthly equivalent revenue from plan prices and billing interval."""
         interval_norm = (interval or "").lower()
         monthly = plan_prices.get("monthly", 0)
@@ -1088,8 +1089,8 @@ class BehavioralAnalyticsService:
 
     @staticmethod
     def _planner_engagement_cache_key(
-        planner_email: Optional[str],
-        accessible_wedding_ids: Optional[Sequence[str]],
+        planner_email: str | None,
+        accessible_wedding_ids: Sequence[str] | None,
     ) -> str:
         scope_email = planner_email or "root_admin"
         if accessible_wedding_ids is None:
@@ -1117,15 +1118,15 @@ class BehavioralAnalyticsService:
     def _trial_conversion_queries(
         period_start: datetime,
         period_end: datetime,
-    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         base_query = {
             "trial_end_date": {"$gte": period_start, "$lte": period_end},
         }
         return {**base_query, "status": "active"}, base_query
 
     @staticmethod
-    def _normalize_wedding_ids(wedding_ids: Sequence[str]) -> List[Any]:
-        normalized: List[Any] = []
+    def _normalize_wedding_ids(wedding_ids: Sequence[str]) -> list[Any]:
+        normalized: list[Any] = []
         for wedding_id in wedding_ids:
             if not wedding_id:
                 continue
@@ -1136,10 +1137,10 @@ class BehavioralAnalyticsService:
 
     @staticmethod
     def _count_map(
-        docs: Sequence[Dict[str, Any]],
+        docs: Sequence[dict[str, Any]],
         value_key: str = "count",
-    ) -> Dict[str, int]:
-        result: Dict[str, int] = {}
+    ) -> dict[str, int]:
+        result: dict[str, int] = {}
         for doc in docs:
             doc_id = doc.get("_id")
             if doc_id is None:
@@ -1148,28 +1149,28 @@ class BehavioralAnalyticsService:
         return result
 
     @staticmethod
-    def _as_datetime(value: Any) -> Optional[datetime]:
+    def _as_datetime(value: Any) -> datetime | None:
         if isinstance(value, datetime):
             if value.tzinfo is None:
-                return value.replace(tzinfo=timezone.utc)
+                return value.replace(tzinfo=UTC)
             return value
         return None
 
     @classmethod
-    def _serialize_datetime(cls, value: Any) -> Optional[str]:
+    def _serialize_datetime(cls, value: Any) -> str | None:
         if isinstance(value, str):
             return value
         dt = cls._as_datetime(value)
         if not dt:
             return None
-        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        return dt.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
     @staticmethod
     def _resolve_timeframe(timeframe: str) -> int:
         mapping = {"7d": 7, "30d": 30, "90d": 90, "1y": 365}
         return mapping.get(timeframe.lower(), 30)
 
-    async def _count_documents(self, collection: Any, query: Dict[str, Any]) -> int:
+    async def _count_documents(self, collection: Any, query: dict[str, Any]) -> int:
         try:
             return await collection.count_documents(query)
         except Exception as exc:
@@ -1177,8 +1178,8 @@ class BehavioralAnalyticsService:
             return 0
 
     async def _safe_aggregate(
-        self, collection: Any, pipeline: Sequence[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, collection: Any, pipeline: Sequence[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         try:
             cursor = collection.aggregate(pipeline)
             return [doc async for doc in cursor]

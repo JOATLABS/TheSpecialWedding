@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -36,18 +35,18 @@ class MeetingInviteModel(BaseModel):
     owner_planner_id: str
     owner_planner_email: str
     recipient_email: str
-    recipient_name: Optional[str] = None
+    recipient_name: str | None = None
     delivery_mode: str
     delivery_status: str = Field(default=MeetingInviteDeliveryStatus.QUEUED.value)
     response_status: str = Field(default=MeetingInviteResponseStatus.PENDING.value)
-    response_source: Optional[str] = None
-    message_id: Optional[str] = None
-    ics_uid: Optional[str] = None
-    last_sent_at: Optional[datetime] = None
-    response_at: Optional[datetime] = None
-    last_error: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    response_source: str | None = None
+    message_id: str | None = None
+    ics_uid: str | None = None
+    last_sent_at: datetime | None = None
+    response_at: datetime | None = None
+    last_error: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     class Config:
         populate_by_name = True

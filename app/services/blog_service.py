@@ -7,8 +7,8 @@ Blog articles are PUBLIC (no auth to read), admin-only to write.
 import logging
 import math
 import re
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -34,13 +34,13 @@ class BlogService:
         self,
         page: int = 1,
         limit: int = 20,
-        category: Optional[str] = None,
-        search: Optional[str] = None,
+        category: str | None = None,
+        search: str | None = None,
         featured_only: bool = False,
     ) -> dict:
         """Get published blog articles (public, no auth)"""
         try:
-            query: Dict[str, Any] = {"status": "published"}
+            query: dict[str, Any] = {"status": "published"}
 
             if category and category != "all":
                 query["category"] = category
@@ -92,9 +92,9 @@ class BlogService:
             }
 
         except Exception as e:
-            logger.error(f"Error getting blog articles: {str(e)}")
+            logger.error(f"Error getting blog articles: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving articles: {str(e)}"
+                status_code=500, detail=f"Error retrieving articles: {e!s}"
             )
 
     async def get_article_by_slug(self, slug: str, increment_view: bool = True) -> dict:
@@ -122,12 +122,12 @@ class BlogService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error getting blog article by slug: {str(e)}")
+            logger.error(f"Error getting blog article by slug: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving article: {str(e)}"
+                status_code=500, detail=f"Error retrieving article: {e!s}"
             )
 
-    async def get_slugs(self) -> List[str]:
+    async def get_slugs(self) -> list[str]:
         """Return all published slugs (for sitemap)"""
         try:
             cursor = self.collection.find(
@@ -139,7 +139,7 @@ class BlogService:
                 slugs.append(doc["slug"])
             return slugs
         except Exception as e:
-            logger.error(f"Error getting blog slugs: {str(e)}")
+            logger.error(f"Error getting blog slugs: {e!s}")
             return []
 
     # ───────────────── ADMIN CRUD ─────────────────
@@ -167,7 +167,7 @@ class BlogService:
             word_count = blog_content_word_count(sanitized_content)
             estimated_read_minutes = max(1, math.ceil(word_count / 200))
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             article = {
                 "_id": ObjectId(),
@@ -208,9 +208,9 @@ class BlogService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error creating blog article: {str(e)}")
+            logger.error(f"Error creating blog article: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error creating article: {str(e)}"
+                status_code=500, detail=f"Error creating article: {e!s}"
             )
 
     async def update_article(
@@ -262,9 +262,9 @@ class BlogService:
             if update_dict.get("status") == "published" and not existing.get(
                 "published_at"
             ):
-                update_dict["published_at"] = datetime.now(timezone.utc)
+                update_dict["published_at"] = datetime.now(UTC)
 
-            update_dict["updated_at"] = datetime.now(timezone.utc)
+            update_dict["updated_at"] = datetime.now(UTC)
 
             await self.collection.update_one({"_id": obj_id}, {"$set": update_dict})
 
@@ -278,9 +278,9 @@ class BlogService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error updating blog article: {str(e)}")
+            logger.error(f"Error updating blog article: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error updating article: {str(e)}"
+                status_code=500, detail=f"Error updating article: {e!s}"
             )
 
     async def delete_article(self, article_id: str) -> dict:
@@ -303,9 +303,9 @@ class BlogService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error deleting blog article: {str(e)}")
+            logger.error(f"Error deleting blog article: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error deleting article: {str(e)}"
+                status_code=500, detail=f"Error deleting article: {e!s}"
             )
 
     async def get_article_by_id(self, article_id: str) -> dict:
@@ -327,22 +327,22 @@ class BlogService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error getting blog article: {str(e)}")
+            logger.error(f"Error getting blog article: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving article: {str(e)}"
+                status_code=500, detail=f"Error retrieving article: {e!s}"
             )
 
     async def get_all_articles_admin(
         self,
         page: int = 1,
         limit: int = 20,
-        status: Optional[str] = None,
-        category: Optional[str] = None,
-        search: Optional[str] = None,
+        status: str | None = None,
+        category: str | None = None,
+        search: str | None = None,
     ) -> dict:
         """Get all articles regardless of status (admin only)"""
         try:
-            query: Dict[str, Any] = {}
+            query: dict[str, Any] = {}
 
             if status:
                 query["status"] = status
@@ -392,9 +392,9 @@ class BlogService:
             }
 
         except Exception as e:
-            logger.error(f"Error getting admin blog articles: {str(e)}")
+            logger.error(f"Error getting admin blog articles: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving articles: {str(e)}"
+                status_code=500, detail=f"Error retrieving articles: {e!s}"
             )
 
 

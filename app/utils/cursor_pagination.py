@@ -37,7 +37,7 @@ Usage:
 import base64
 import logging
 from datetime import datetime
-from typing import Any, Generic, List, Optional, Tuple, TypeVar
+from typing import Any, Generic, TypeVar
 
 from bson import ObjectId
 from fastapi import HTTPException, Query
@@ -59,8 +59,8 @@ class CursorPage(BaseModel, Generic[T]):
         has_more: Boolean indicating if more items exist beyond this page
     """
 
-    items: List[T]
-    cursor: Optional[str] = None
+    items: list[T]
+    cursor: str | None = None
     has_more: bool = False
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -196,9 +196,9 @@ async def cursor_paginate(
     filter_dict: dict,
     sort_field: str,
     limit: int,
-    cursor: Optional[str] = None,
+    cursor: str | None = None,
     sort_direction: int = 1,
-) -> Tuple[List[dict], Optional[str], bool]:
+) -> tuple[list[dict], str | None, bool]:
     """
     Perform cursor-based pagination on a MongoDB collection.
 
@@ -280,8 +280,8 @@ async def cursor_paginate(
 
 
 def validated_cursor(
-    cursor: Optional[str] = Query(None, description="Cursor for pagination"),
-) -> Optional[str]:
+    cursor: str | None = Query(None, description="Cursor for pagination"),
+) -> str | None:
     """
     FastAPI dependency to validate and sanitize cursor parameter.
 

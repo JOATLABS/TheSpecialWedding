@@ -27,7 +27,7 @@ import hashlib
 import hmac
 import logging
 from datetime import UTC, datetime
-from typing import Any, Optional
+from typing import Any
 
 from bson import ObjectId
 
@@ -42,7 +42,7 @@ from app.services.calendar_idempotency_service import calendar_idempotency_servi
 logger = logging.getLogger(__name__)
 
 
-def _coerce_datetime(value: Any) -> Optional[datetime]:
+def _coerce_datetime(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         return value
     if isinstance(value, str):
@@ -96,8 +96,8 @@ class CalendarWebhookService:
     def verify_signature(
         self,
         raw_body: bytes,
-        signature_header: Optional[str],
-        timestamp_header: Optional[str] = None,
+        signature_header: str | None,
+        timestamp_header: str | None = None,
     ) -> bool:
         """Verify Aurinko signature on a webhook delivery.
 
@@ -125,7 +125,7 @@ class CalendarWebhookService:
         )
 
     def is_within_replay_window(
-        self, delivery_timestamp: Optional[datetime | int | str]
+        self, delivery_timestamp: datetime | int | str | None
     ) -> bool:
         """Reject deliveries older than CALENDAR_WEBHOOK_REPLAY_WINDOW_SECONDS.
 
@@ -141,7 +141,7 @@ class CalendarWebhookService:
         """
         if delivery_timestamp is None:
             return True
-        ts: Optional[datetime]
+        ts: datetime | None
         if isinstance(delivery_timestamp, datetime):
             ts = delivery_timestamp
         elif isinstance(delivery_timestamp, (int, float)):

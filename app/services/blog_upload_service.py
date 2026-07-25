@@ -1,11 +1,11 @@
 import asyncio
-import ipaddress
 import io
+import ipaddress
 import logging
 import os
 import re
 import socket
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -75,7 +75,7 @@ class BlogUploadService:
             )
 
         try:
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
             safe_filename = os.path.basename(filename)
             key = f"{folder}/{timestamp}_{safe_filename}"
             url = self.storage.generate_presigned_put_url(
@@ -93,7 +93,7 @@ class BlogUploadService:
             raise HTTPException(status_code=503, detail=str(exc))
         except ClientError as exc:
             raise HTTPException(
-                status_code=500, detail=f"Error creating blog upload URL: {str(exc)}"
+                status_code=500, detail=f"Error creating blog upload URL: {exc!s}"
             )
 
     def delete_blog_file(self, key: str):
@@ -106,7 +106,7 @@ class BlogUploadService:
             error_code = exc.response.get("Error", {}).get("Code", "Unknown")
             raise HTTPException(
                 status_code=500,
-                detail=f"Error deleting blog file ({error_code}): {str(exc)}",
+                detail=f"Error deleting blog file ({error_code}): {exc!s}",
             )
 
     async def upload_from_url(
@@ -335,7 +335,7 @@ class BlogUploadService:
         encoding surprises. If the URL has no extension, append one
         derived from the content-type.
         """
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         extension = _CONTENT_TYPE_TO_EXTENSION.get(content_type, "")
         raw_basename = os.path.basename(remote_url.split("?")[0]) or f"image{extension}"
         safe_basename = re.sub(r"[^A-Za-z0-9._-]", "_", raw_basename)

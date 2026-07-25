@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -76,10 +75,10 @@ class CalendarConnectionModel(BaseModel):
     # placeholder rows.
     provider: str = Field(default=CalendarProvider.UNKNOWN.value)
     provider_account_email: str
-    provider_account_name: Optional[str] = None
+    provider_account_name: str | None = None
     calendar_id: str
     calendar_name: str
-    access_role: Optional[str] = None
+    access_role: str | None = None
     is_writable: bool = False
     is_primary: bool = False
     is_default_write_target: bool = False
@@ -97,15 +96,15 @@ class CalendarConnectionModel(BaseModel):
     details_visibility: str = Field(default=VisibilityMode.BUSY_ONLY.value)
     sync_enabled: bool = True
     task_sync_enabled: bool = False
-    task_sync_tasklist_id: Optional[str] = None
-    task_sync_tasklist_name: Optional[str] = None
-    task_sync_subscription_id: Optional[str] = None
+    task_sync_tasklist_id: str | None = None
+    task_sync_tasklist_name: str | None = None
+    task_sync_subscription_id: str | None = None
     contact_sync_enabled: bool = False
-    contact_sync_book_id: Optional[str] = None
-    contact_sync_book_name: Optional[str] = None
-    contact_sync_group_id: Optional[str] = None
-    contact_sync_group_name: Optional[str] = None
-    contact_sync_subscription_id: Optional[str] = None
+    contact_sync_book_id: str | None = None
+    contact_sync_book_name: str | None = None
+    contact_sync_group_id: str | None = None
+    contact_sync_group_name: str | None = None
+    contact_sync_subscription_id: str | None = None
     connection_scopes: list[str] = Field(default_factory=list)
     couple_booking_auto_confirm: bool = True
     # Per-calendar default conferencing provider for couple bookings.
@@ -113,21 +112,21 @@ class CalendarConnectionModel(BaseModel):
     # the input; the model does not enum-enforce it. None means calendar-only;
     # planner explicitly opts in to per-meeting conference auto-create via
     # Aurinko ``startConference=true`` at booking time.
-    conference_provider_default: Optional[str] = None
+    conference_provider_default: str | None = None
     connection_status: str = Field(default=CalendarConnectionStatus.ACTIVE.value)
     # Legacy Google-only field. Aurinko-shape rows carry the equivalent on
     # ``aurinko_access_token_encrypted`` instead; Google rows continue to
     # populate this one. Optional so multi-provider rows validate cleanly
     # without supplying a legacy field that's no longer their token home.
-    access_token_encrypted: Optional[str] = None
-    refresh_token_encrypted: Optional[str] = None
-    token_expiry: Optional[datetime] = None
-    scope_version: Optional[str] = None
-    last_sync_at: Optional[datetime] = None
-    last_healthcheck_at: Optional[datetime] = None
-    last_error: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    access_token_encrypted: str | None = None
+    refresh_token_encrypted: str | None = None
+    token_expiry: datetime | None = None
+    scope_version: str | None = None
+    last_sync_at: datetime | None = None
+    last_healthcheck_at: datetime | None = None
+    last_error: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     class Config:
         populate_by_name = True
@@ -136,29 +135,29 @@ class CalendarConnectionModel(BaseModel):
 class CalendarConnectionUpdateRequest(BaseModel):
     """Allowed mutable fields for a calendar connection."""
 
-    is_default_write_target: Optional[bool] = None
-    scheduler_access_mode: Optional[str] = None
-    sync_targeting_mode: Optional[str] = None
-    allowed_scheduler_user_ids: Optional[list[str]] = None
-    allowed_scheduler_roles: Optional[list[str]] = None
-    allowed_schedule_item_types: Optional[list[str]] = None
-    allowed_wedding_ids: Optional[list[str]] = None
-    is_shared_in_team_view: Optional[bool] = None
-    details_visibility: Optional[str] = None
-    sync_enabled: Optional[bool] = None
-    task_sync_enabled: Optional[bool] = None
-    task_sync_tasklist_id: Optional[str] = None
-    task_sync_tasklist_name: Optional[str] = None
-    task_sync_subscription_id: Optional[str] = None
-    contact_sync_enabled: Optional[bool] = None
-    contact_sync_book_id: Optional[str] = None
-    contact_sync_book_name: Optional[str] = None
-    contact_sync_group_id: Optional[str] = None
-    contact_sync_group_name: Optional[str] = None
-    contact_sync_subscription_id: Optional[str] = None
-    connection_scopes: Optional[list[str]] = None
-    couple_booking_auto_confirm: Optional[bool] = None
+    is_default_write_target: bool | None = None
+    scheduler_access_mode: str | None = None
+    sync_targeting_mode: str | None = None
+    allowed_scheduler_user_ids: list[str] | None = None
+    allowed_scheduler_roles: list[str] | None = None
+    allowed_schedule_item_types: list[str] | None = None
+    allowed_wedding_ids: list[str] | None = None
+    is_shared_in_team_view: bool | None = None
+    details_visibility: str | None = None
+    sync_enabled: bool | None = None
+    task_sync_enabled: bool | None = None
+    task_sync_tasklist_id: str | None = None
+    task_sync_tasklist_name: str | None = None
+    task_sync_subscription_id: str | None = None
+    contact_sync_enabled: bool | None = None
+    contact_sync_book_id: str | None = None
+    contact_sync_book_name: str | None = None
+    contact_sync_group_id: str | None = None
+    contact_sync_group_name: str | None = None
+    contact_sync_subscription_id: str | None = None
+    connection_scopes: list[str] | None = None
+    couple_booking_auto_confirm: bool | None = None
     # None means calendar-only; planner explicitly opts in to per-meeting
     # conference auto-create via Aurinko ``startConference=true`` at booking
     # time. Valid values: "zoom" | "teams" | "webex" | None (UI-restricted).
-    conference_provider_default: Optional[str] = None
+    conference_provider_default: str | None = None

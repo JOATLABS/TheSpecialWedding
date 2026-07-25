@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from bson import ObjectId
 
 from app.core.database import mongo
 
 
-def normalize_planner_id(planner_id: Any) -> Optional[str]:
+def normalize_planner_id(planner_id: Any) -> str | None:
     """Normalize planner/user identifiers to a comparable string form."""
     if planner_id is None:
         return None
@@ -15,7 +16,7 @@ def normalize_planner_id(planner_id: Any) -> Optional[str]:
     return value or None
 
 
-def normalize_planner_email(planner_email: Any) -> Optional[str]:
+def normalize_planner_email(planner_email: Any) -> str | None:
     """Normalize planner email values for consistent comparisons."""
     if planner_email is None:
         return None
@@ -41,8 +42,8 @@ def normalize_wedding_query_id(value: Any) -> Any:
 
 
 def extract_wedding_owner_identity(
-    wedding: Optional[dict],
-) -> tuple[Optional[str], Optional[str]]:
+    wedding: dict | None,
+) -> tuple[str | None, str | None]:
     """Return the planner owner identity mirrored onto a wedding document."""
     if not wedding:
         return None, None
@@ -90,7 +91,7 @@ def build_team_owner_query(owner_id: Any = None, owner_email: Any = None) -> dic
     return {"$or": clauses}
 
 
-def combine_mongo_filters(*filters: Optional[dict]) -> dict:
+def combine_mongo_filters(*filters: dict | None) -> dict:
     """Combine optional Mongo filters without losing existing $or clauses."""
     active_filters = [query for query in filters if query]
     if not active_filters:
@@ -101,7 +102,7 @@ def combine_mongo_filters(*filters: Optional[dict]) -> dict:
 
 
 def wedding_belongs_to_owner(
-    wedding: Optional[dict], planner_id: Any = None, planner_email: Any = None
+    wedding: dict | None, planner_id: Any = None, planner_email: Any = None
 ) -> bool:
     """Check whether a wedding document belongs to the given planner identity."""
     owner_id, owner_email = extract_wedding_owner_identity(wedding)
@@ -116,7 +117,7 @@ def wedding_belongs_to_owner(
 
 async def resolve_planner_email(
     planner_id: Any = None, planner_email: Any = None
-) -> Optional[str]:
+) -> str | None:
     """Resolve a planner email, preferring the provided email before a user lookup."""
     normalized_email = normalize_planner_email(planner_email)
     if normalized_email:
@@ -135,7 +136,7 @@ async def resolve_planner_email(
 
 async def resolve_planner_id(
     planner_id: Any = None, planner_email: Any = None
-) -> Optional[str]:
+) -> str | None:
     """Resolve a planner id, preferring the provided id before an email lookup."""
     normalized_id = normalize_planner_id(planner_id)
     if normalized_id:
@@ -166,7 +167,7 @@ async def resolve_planner_identity(
 
 async def get_wedding_owner_identity(
     wedding_id: Any, weddings_collection=None
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[str | None, str | None]:
     """Load the planner owner identity for a wedding."""
     collection = weddings_collection or mongo.get_weddings_collection()
     wedding = await collection.find_one(
@@ -176,7 +177,7 @@ async def get_wedding_owner_identity(
     return extract_wedding_owner_identity(wedding)
 
 
-async def resolve_wedding_owner_identity(wedding: Optional[dict]) -> dict:
+async def resolve_wedding_owner_identity(wedding: dict | None) -> dict:
     """Resolve a canonical planner identity payload from a wedding document."""
     planner_id, planner_email = extract_wedding_owner_identity(wedding)
     return await resolve_planner_identity(planner_id, planner_email)
@@ -185,7 +186,7 @@ async def resolve_wedding_owner_identity(wedding: Optional[dict]) -> dict:
 async def list_wedding_ids_for_owner(
     planner_id: Any = None,
     planner_email: Any = None,
-    accessible_wedding_ids: Optional[Sequence[str]] = None,
+    accessible_wedding_ids: Sequence[str] | None = None,
     weddings_collection=None,
 ) -> list[str]:
     """Return wedding ids owned by a planner, optionally narrowed to an access list."""

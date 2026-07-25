@@ -36,7 +36,7 @@ async def _event_stream(couple_id: str, request: Request):
                 event = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT_INTERVAL)
                 if event["type"] == "data-change":
                     yield f"event: data-change\ndata: {json.dumps(event['data'])}\n\n"
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 yield ": heartbeat\n\n"
     except asyncio.CancelledError:
         pass

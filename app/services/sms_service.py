@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Any, Dict
+from typing import Any
 
 from app.core.sms_config import SMSProvider, get_active_sms_provider
 
@@ -49,7 +49,7 @@ class SMSService:
         except ImportError:
             logger.error("Twilio not installed. Install with: pip install twilio")
         except Exception as e:
-            logger.error(f"Failed to initialize Twilio SMS service: {str(e)}")
+            logger.error(f"Failed to initialize Twilio SMS service: {e!s}")
 
     def _init_telnyx(self):
         """Initialize Telnyx client"""
@@ -73,9 +73,9 @@ class SMSService:
         except ImportError:
             logger.error("Telnyx not installed. Install with: pip install telnyx")
         except Exception as e:
-            logger.error(f"Failed to initialize Telnyx SMS service: {str(e)}")
+            logger.error(f"Failed to initialize Telnyx SMS service: {e!s}")
 
-    def send_sms(self, to_phone: str, message: str) -> Dict[str, Any]:
+    def send_sms(self, to_phone: str, message: str) -> dict[str, Any]:
         """
         Send SMS message via the configured provider
 
@@ -106,10 +106,10 @@ class SMSService:
                 }
 
         except Exception as e:
-            logger.error(f"SMS send failed via {self.provider.value}: {str(e)}")
+            logger.error(f"SMS send failed via {self.provider.value}: {e!s}")
             return {"success": False, "error": str(e), "provider": self.provider.value}
 
-    def _send_twilio(self, to_phone: str, message: str) -> Dict[str, Any]:
+    def _send_twilio(self, to_phone: str, message: str) -> dict[str, Any]:
         """Send SMS via Twilio"""
         try:
             message_obj = self.client.messages.create(
@@ -126,10 +126,10 @@ class SMSService:
             }
 
         except Exception as e:
-            logger.error(f"Twilio SMS failed: {str(e)}")
+            logger.error(f"Twilio SMS failed: {e!s}")
             raise
 
-    def _send_telnyx(self, to_phone: str, message: str) -> Dict[str, Any]:
+    def _send_telnyx(self, to_phone: str, message: str) -> dict[str, Any]:
         """Send SMS via Telnyx"""
         try:
             response = self.client.Message.create(
@@ -146,7 +146,7 @@ class SMSService:
             }
 
         except Exception as e:
-            logger.error(f"Telnyx SMS failed: {str(e)}")
+            logger.error(f"Telnyx SMS failed: {e!s}")
             raise
 
     def get_provider_name(self) -> str:

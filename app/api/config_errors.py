@@ -9,8 +9,8 @@ import hashlib
 import logging
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, field_validator
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Deduplication: track recent error hashes (in-memory)
-_recent_errors: Dict[str, datetime] = {}
+_recent_errors: dict[str, datetime] = {}
 DEDUP_WINDOW = 300  # 5 minutes
 
 _web_push_service = None
@@ -47,7 +47,7 @@ def _get_web_push_service():
     return _web_push_service
 
 
-def _sanitize(value: Optional[str], max_len: int = 500) -> Optional[str]:
+def _sanitize(value: str | None, max_len: int = 500) -> str | None:
     if not value:
         return None
     value = re.sub(r"<[^>]+>", "", value)
@@ -57,10 +57,10 @@ def _sanitize(value: Optional[str], max_len: int = 500) -> Optional[str]:
 class ConfigErrorReport(BaseModel):
     error_type: str
     message: str
-    variable_name: Optional[str] = None
-    current_value: Optional[str] = None
-    hostname: Optional[str] = None
-    user_agent: Optional[str] = None
+    variable_name: str | None = None
+    current_value: str | None = None
+    hostname: str | None = None
+    user_agent: str | None = None
 
     @field_validator(
         "error_type", "message", "variable_name", "hostname", mode="before"
@@ -80,7 +80,7 @@ class ConfigErrorReport(BaseModel):
 
 
 def _is_duplicate(report: ConfigErrorReport) -> bool:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cutoff = now - timedelta(seconds=DEDUP_WINDOW)
 
     expired = [k for k, v in _recent_errors.items() if v < cutoff]
@@ -115,7 +115,7 @@ async def report_config_error(report: ConfigErrorReport, request: Request):
         return {"error_id": None, "reported": False, "reason": "duplicate"}
 
     error_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Check for existing unacknowledged error
     existing = await mongo.db["errors"].find_one(
@@ -185,7 +185,7 @@ async def _create_notification(
             )
             return
 
-        notification: Dict[str, Any] = {
+        notification: dict[str, Any] = {
             "title": f"CRITICAL: {_sanitize(report.error_type, 50)}",
             "message": _sanitize(report.message, 500),
             "type": "system_config",

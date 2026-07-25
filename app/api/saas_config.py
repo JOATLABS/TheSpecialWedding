@@ -1,6 +1,6 @@
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -11,10 +11,10 @@ from app.models.subscription import (
     ACTIVE_SUBSCRIPTION_STATUSES,
     normalize_subscription_status,
 )
-from app.services.platform_metrics_service import PlatformMetricsService
 from app.services.planner_access_lifecycle_service import (
     planner_access_lifecycle_service,
 )
+from app.services.platform_metrics_service import PlatformMetricsService
 from app.utils.pydantic_objectid import PyObjectId
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _normalize_datetime(value: Any) -> Optional[datetime]:
+def _normalize_datetime(value: Any) -> datetime | None:
     """Convert supported datetime representations to datetime objects."""
     if isinstance(value, datetime):
         return value
@@ -345,13 +345,13 @@ async def get_saas_config(current_user: ExtendedAuthUser = Depends(require_root_
 
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error fetching SAAS config: {str(e)}"
+            status_code=500, detail=f"Error fetching SAAS config: {e!s}"
         )
 
 
 @router.put("/saas-config", tags=["ROOT_ADMIN"])
 async def update_saas_config(
-    config_data: Dict[str, Any],
+    config_data: dict[str, Any],
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """Update SAAS configuration - ROOT_ADMIN only"""
@@ -359,7 +359,7 @@ async def update_saas_config(
         # Add metadata
         config_data["type"] = "main_config"
         config_data["updated_by"] = current_user.email
-        config_data["updated_at"] = datetime.now(timezone.utc)
+        config_data["updated_at"] = datetime.now(UTC)
         # Update or insert configuration
         await mongo.db["saas_config"].update_one(
             {"type": "main_config"}, {"$set": config_data}, upsert=True
@@ -369,7 +369,7 @@ async def update_saas_config(
 
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error updating SAAS config: {str(e)}"
+            status_code=500, detail=f"Error updating SAAS config: {e!s}"
         )
 
 
@@ -405,7 +405,7 @@ async def get_content_sections(
                     "is_active": True,
                     "display_order": 1,
                     "updated_by": "system",
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(UTC).isoformat(),
                 },
                 {
                     "id": "features_section",
@@ -417,7 +417,7 @@ async def get_content_sections(
                     "is_active": True,
                     "display_order": 2,
                     "updated_by": "system",
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(UTC).isoformat(),
                 },
             ]
 
@@ -425,21 +425,21 @@ async def get_content_sections(
 
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error fetching content sections: {str(e)}"
+            status_code=500, detail=f"Error fetching content sections: {e!s}"
         )
 
 
 @router.put("/content-sections/{section_id}", tags=["ROOT_ADMIN"])
 async def update_content_section(
     section_id: str,
-    section_data: Dict[str, Any],
+    section_data: dict[str, Any],
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """Update a content section - ROOT_ADMIN only"""
     try:
         # Add metadata
         section_data["updated_by"] = current_user.email
-        section_data["updated_at"] = datetime.now(timezone.utc)
+        section_data["updated_at"] = datetime.now(UTC)
         # Update section
         await mongo.db["content_sections"].update_one(
             {"section": section_id}, {"$set": section_data}, upsert=True
@@ -449,7 +449,7 @@ async def update_content_section(
 
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error updating content section: {str(e)}"
+            status_code=500, detail=f"Error updating content section: {e!s}"
         )
 
 
@@ -484,9 +484,7 @@ async def get_wedding_planners(
                 "max_weddings": planner.get("max_weddings", 0),
                 "assigned_weddings_count": weddings_count,
                 "is_active": planner.get("is_active", True),
-                "created_at": planner.get(
-                    "created_at", datetime.now(timezone.utc)
-                ).isoformat(),
+                "created_at": planner.get("created_at", datetime.now(UTC)).isoformat(),
                 "last_login": (
                     planner.get("last_login").isoformat()
                     if planner.get("last_login")
@@ -499,13 +497,13 @@ async def get_wedding_planners(
 
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error fetching wedding planners: {str(e)}"
+            status_code=500, detail=f"Error fetching wedding planners: {e!s}"
         )
 
 
 @router.post("/wedding-planners", tags=["ROOT_ADMIN"])
 async def create_wedding_planner(
-    planner_data: Dict[str, Any],
+    planner_data: dict[str, Any],
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """Create a new wedding planner - ROOT_ADMIN only"""
@@ -530,7 +528,7 @@ async def create_wedding_planner(
             "subscription_status": "inactive",
             "is_active": True,
             "created_by": current_user.email,
-            "created_at": datetime.now(timezone.utc),
+            "created_at": datetime.now(UTC),
         }
 
         # Insert user
@@ -573,7 +571,7 @@ async def create_wedding_planner(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error creating wedding planner: {str(e)}"
+            status_code=500, detail=f"Error creating wedding planner: {e!s}"
         )
 
 
@@ -592,7 +590,7 @@ async def toggle_planner_status(
 
         new_status = not planner.get("is_active", True)
         planner_email = planner.get("email", "")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Update status
         await mongo.get_users_collection().update_one(
@@ -641,7 +639,7 @@ async def toggle_planner_status(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error updating planner status: {str(e)}"
+            status_code=500, detail=f"Error updating planner status: {e!s}"
         )
 
 
@@ -672,7 +670,7 @@ async def get_public_saas_config():
 
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error fetching public SAAS config: {str(e)}"
+            status_code=500, detail=f"Error fetching public SAAS config: {e!s}"
         )
 
 
@@ -736,7 +734,7 @@ async def get_overview_analytics(
         }
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error fetching overview analytics: {str(e)}"
+            status_code=500, detail=f"Error fetching overview analytics: {e!s}"
         )
 
 
@@ -811,11 +809,11 @@ async def get_revenue_analytics(
                 "arpu_yearly": arpu_yearly,
             },
             "plan_breakdown": plan_revenue,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
         }
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error fetching revenue analytics: {str(e)}"
+            status_code=500, detail=f"Error fetching revenue analytics: {e!s}"
         )
 
 
@@ -839,7 +837,7 @@ async def get_platform_metrics(
     except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=f"Error compiling platform metrics: {str(exc)}",
+            detail=f"Error compiling platform metrics: {exc!s}",
         )
 
 

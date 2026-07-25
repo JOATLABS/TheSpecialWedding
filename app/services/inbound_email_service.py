@@ -16,8 +16,9 @@ import asyncio
 import logging
 import os
 import re
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Sequence
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from typing import Any
 
 import aiohttp
 import bleach
@@ -87,7 +88,7 @@ class InboundEmailService:
     # ==================== WEBHOOK HANDLING ====================
 
     async def handle_email_received_webhook(
-        self, payload: dict, svix_id: Optional[str] = None
+        self, payload: dict, svix_id: str | None = None
     ) -> dict:
         """
         Handle email.received webhook from Resend.
@@ -193,7 +194,7 @@ class InboundEmailService:
             }
 
         except Exception as e:
-            logger.error(f"❌ Error handling email.received: {str(e)}")
+            logger.error(f"❌ Error handling email.received: {e!s}")
             return {"status": "error", "message": str(e)}
 
     # ==================== CONTENT FETCHING ====================
@@ -248,10 +249,8 @@ class InboundEmailService:
                                     "$set": {
                                         "content": content,
                                         "status": "content_fetched",
-                                        "content_fetched_at": datetime.now(
-                                            timezone.utc
-                                        ),
-                                        "updated_at": datetime.now(timezone.utc),
+                                        "content_fetched_at": datetime.now(UTC),
+                                        "updated_at": datetime.now(UTC),
                                     }
                                 },
                             )
@@ -273,13 +272,13 @@ class InboundEmailService:
                                 f"HTTP {response.status} - {error_text}"
                             )
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning(
                     f"Timeout fetching email content (attempt {attempt + 1})"
                 )
             except Exception as e:
                 logger.error(
-                    f"Error fetching email content (attempt {attempt + 1}): {str(e)}"
+                    f"Error fetching email content (attempt {attempt + 1}): {e!s}"
                 )
 
             # Wait before retry (exponential backoff)
@@ -294,7 +293,7 @@ class InboundEmailService:
                 "$set": {
                     "content_fetch_last_error": "Max retries exhausted",
                     "status": "error",
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 },
             },
         )
@@ -406,7 +405,7 @@ class InboundEmailService:
     async def _notify_planner(
         self,
         planner_id: str,
-        wedding_id: Optional[str],
+        wedding_id: str | None,
         guest_name: str,
         subject: str,
         email_id: str,
@@ -436,7 +435,7 @@ class InboundEmailService:
     @staticmethod
     def _planner_scope(
         planner_email: str,
-        accessible_wedding_ids: Optional[Sequence[str]] = None,
+        accessible_wedding_ids: Sequence[str] | None = None,
     ) -> dict[str, Any]:
         """Scope inbox rows to their planner owner and optional team assignments."""
         owner_scope: dict[str, Any] = {
@@ -467,14 +466,14 @@ class InboundEmailService:
     async def get_inbox(
         self,
         planner_id: str,
-        wedding_id: Optional[str] = None,
+        wedding_id: str | None = None,
         page: int = 1,
         limit: int = 20,
         unread_only: bool = False,
-        accessible_wedding_ids: Optional[Sequence[str]] = None,
+        accessible_wedding_ids: Sequence[str] | None = None,
     ) -> dict:
         """Get paginated inbox for a planner"""
-        query: Dict[str, Any] = self._planner_scope(planner_id, accessible_wedding_ids)
+        query: dict[str, Any] = self._planner_scope(planner_id, accessible_wedding_ids)
         if wedding_id:
             query["thread_context.wedding_id"] = wedding_id
         if unread_only:
@@ -509,7 +508,7 @@ class InboundEmailService:
     async def get_unread_count(
         self,
         planner_id: str,
-        accessible_wedding_ids: Optional[Sequence[str]] = None,
+        accessible_wedding_ids: Sequence[str] | None = None,
     ) -> dict:
         """Get unread email count for badge display"""
         count = await self.collection.count_documents(
@@ -524,7 +523,7 @@ class InboundEmailService:
         self,
         email_id: str,
         planner_id: str,
-        accessible_wedding_ids: Optional[Sequence[str]] = None,
+        accessible_wedding_ids: Sequence[str] | None = None,
     ) -> dict:
         """Get single email with full content, auto-marks as read"""
         doc = await self.collection.find_one(
@@ -547,8 +546,8 @@ class InboundEmailService:
                 {
                     "$set": {
                         "is_read": True,
-                        "read_at": datetime.now(timezone.utc),
-                        "updated_at": datetime.now(timezone.utc),
+                        "read_at": datetime.now(UTC),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -559,7 +558,7 @@ class InboundEmailService:
         self,
         thread_id: str,
         planner_id: str,
-        accessible_wedding_ids: Optional[Sequence[str]] = None,
+        accessible_wedding_ids: Sequence[str] | None = None,
     ) -> dict:
         """
         Get full conversation thread — both inbound and outbound emails.
@@ -638,7 +637,7 @@ class InboundEmailService:
         self,
         email_id: str,
         planner_id: str,
-        accessible_wedding_ids: Optional[Sequence[str]] = None,
+        accessible_wedding_ids: Sequence[str] | None = None,
     ) -> dict:
         """Mark a single email as read"""
         result = await self.collection.update_one(
@@ -649,8 +648,8 @@ class InboundEmailService:
             {
                 "$set": {
                     "is_read": True,
-                    "read_at": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc),
+                    "read_at": datetime.now(UTC),
+                    "updated_at": datetime.now(UTC),
                 }
             },
         )
@@ -661,10 +660,10 @@ class InboundEmailService:
     async def mark_all_as_read(
         self,
         planner_id: str,
-        accessible_wedding_ids: Optional[Sequence[str]] = None,
+        accessible_wedding_ids: Sequence[str] | None = None,
     ) -> dict:
         """Mark all emails as read for a planner"""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result = await self.collection.update_many(
             {
                 **self._planner_scope(planner_id, accessible_wedding_ids),
@@ -679,8 +678,8 @@ class InboundEmailService:
         email_id: str,
         planner_id: str,
         reply_html: str,
-        reply_text: Optional[str] = None,
-        accessible_wedding_ids: Optional[Sequence[str]] = None,
+        reply_text: str | None = None,
+        accessible_wedding_ids: Sequence[str] | None = None,
     ) -> dict:
         """Send a reply to an inbound email via Resend"""
         # Get original email
@@ -753,7 +752,7 @@ class InboundEmailService:
             {
                 "$set": {
                     "planner_response_sent": True,
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }
             },
         )

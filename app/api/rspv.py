@@ -23,7 +23,7 @@ async def submit_rsvp(
         raise e
     except Exception as e:
         logger.error(
-            f"Unexpected RSVP error for token {token[:8]}...: {str(e)}", exc_info=True
+            f"Unexpected RSVP error for token {token[:8]}...: {e!s}", exc_info=True
         )
         raise HTTPException(status_code=500, detail="Unexpected error occurred")
 
@@ -46,7 +46,7 @@ async def submit_rsvp_from_guest_session(
         raise e
     except Exception as e:
         logger.error(
-            f"Unexpected session RSVP error for slug {slug}: {str(e)}",
+            f"Unexpected session RSVP error for slug {slug}: {e!s}",
             exc_info=True,
         )
         raise HTTPException(status_code=500, detail="Unexpected error occurred")

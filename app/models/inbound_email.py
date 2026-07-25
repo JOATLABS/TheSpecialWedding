@@ -8,8 +8,8 @@ Threading: Emails are linked via reply-to address encoding:
   reply+{wedding_slug}--{guest_id}@thespecialwedding.io
 """
 
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from bson import ObjectId
 from pydantic import BaseModel, Field
@@ -20,42 +20,38 @@ class EmailAttachmentMetadata(BaseModel):
 
     filename: str = Field(..., max_length=255)
     content_type: str = Field(..., max_length=100)
-    size: Optional[int] = Field(None, ge=0)
-    content_disposition: Optional[str] = None
+    size: int | None = Field(None, ge=0)
+    content_disposition: str | None = None
 
 
 class InboundEmailContent(BaseModel):
     """Full email content retrieved from Resend API after webhook"""
 
-    html_body: Optional[str] = None
-    text_body: Optional[str] = None
-    headers: Dict[str, Any] = Field(default_factory=dict)
-    reply_to: Optional[List[str]] = None
-    cc: List[str] = Field(default_factory=list)
-    bcc: List[str] = Field(default_factory=list)
-    attachments: List[Dict[str, Any]] = Field(default_factory=list)
-    message_id: Optional[str] = None
-    raw_download_url: Optional[str] = None
+    html_body: str | None = None
+    text_body: str | None = None
+    headers: dict[str, Any] = Field(default_factory=dict)
+    reply_to: list[str] | None = None
+    cc: list[str] = Field(default_factory=list)
+    bcc: list[str] = Field(default_factory=list)
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+    message_id: str | None = None
+    raw_download_url: str | None = None
 
 
 class InboundEmailThreadContext(BaseModel):
     """Context linking an inbound email to a wedding, planner, and guest"""
 
-    wedding_id: Optional[str] = Field(None, description="ObjectId of wedding")
-    wedding_slug: Optional[str] = Field(None, description="Wedding URL slug")
-    assigned_planner_id: Optional[str] = Field(
+    wedding_id: str | None = Field(None, description="ObjectId of wedding")
+    wedding_slug: str | None = Field(None, description="Wedding URL slug")
+    assigned_planner_id: str | None = Field(
         None, description="Canonical planner user ID"
     )
-    assigned_planner_email: Optional[str] = Field(
+    assigned_planner_email: str | None = Field(
         None, description="Canonical planner email snapshot"
     )
-    thread_id: Optional[str] = Field(
-        None, description="Thread identifier: wedding-{slug}"
-    )
-    guest_id: Optional[str] = Field(
-        None, description="ObjectId of guest if identifiable"
-    )
-    guest_name: Optional[str] = Field(None, description="Guest name for quick display")
+    thread_id: str | None = Field(None, description="Thread identifier: wedding-{slug}")
+    guest_id: str | None = Field(None, description="ObjectId of guest if identifiable")
+    guest_name: str | None = Field(None, description="Guest name for quick display")
 
 
 class InboundEmailResponse(BaseModel):
@@ -63,13 +59,13 @@ class InboundEmailResponse(BaseModel):
 
     id: str
     from_address: str
-    from_name: Optional[str] = None
+    from_name: str | None = None
     subject: str
     preview: str
-    thread_id: Optional[str] = None
-    guest_name: Optional[str] = None
-    wedding_slug: Optional[str] = None
-    wedding_id: Optional[str] = None
+    thread_id: str | None = None
+    guest_name: str | None = None
+    wedding_slug: str | None = None
+    wedding_id: str | None = None
     is_read: bool
     planner_response_sent: bool
     created_at: str
@@ -80,16 +76,16 @@ class InboundEmailResponse(BaseModel):
 class InboundEmailDetailResponse(InboundEmailResponse):
     """API response model for single email with full content"""
 
-    html_body: Optional[str] = None
-    text_body: Optional[str] = None
-    attachments: List[Dict[str, Any]] = Field(default_factory=list)
+    html_body: str | None = None
+    text_body: str | None = None
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ReplyModel(BaseModel):
     """Request model for sending a reply to an inbound email"""
 
     html_content: str = Field(..., min_length=1, max_length=50000)
-    text_content: Optional[str] = Field(None, max_length=50000)
+    text_content: str | None = Field(None, max_length=50000)
 
 
 def create_inbound_email_document(
@@ -97,10 +93,10 @@ def create_inbound_email_document(
     from_address: str,
     to_address: str,
     subject: str,
-    from_name: Optional[str] = None,
-    attachments_metadata: Optional[List[Dict]] = None,
-    thread_context: Optional[Dict] = None,
-    svix_id: Optional[str] = None,
+    from_name: str | None = None,
+    attachments_metadata: list[dict] | None = None,
+    thread_context: dict | None = None,
+    svix_id: str | None = None,
 ) -> dict:
     """
     Create an inbound email document for MongoDB insertion.
@@ -108,7 +104,7 @@ def create_inbound_email_document(
     Called when email.received webhook fires. Content is fetched
     separately and updated later.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     return {
         "_id": ObjectId(),

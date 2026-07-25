@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 BILLING_MODEL_FLAT_RATE = "flat_rate"
 BILLING_MODEL_METERED = "metered"

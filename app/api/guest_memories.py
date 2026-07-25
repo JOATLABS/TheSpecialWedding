@@ -1,7 +1,7 @@
 import hashlib
 import logging
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from fastapi import (
     APIRouter,
@@ -66,12 +66,12 @@ class GuestMediaPlanFileRequest(BaseModel):
     filename: str = Field(..., min_length=1, max_length=255)
     content_type: str = Field(..., min_length=1, max_length=100)
     size_bytes: int = Field(..., gt=0)
-    event_type: Optional[str] = Field(default=None, max_length=100)
+    event_type: str | None = Field(default=None, max_length=100)
 
 
 class GuestMediaUploadPlanRequest(BaseModel):
     uploader_name: str = Field(..., min_length=1, max_length=120)
-    batch_event_type: Optional[str] = Field(default=None, max_length=100)
+    batch_event_type: str | None = Field(default=None, max_length=100)
     files: list[GuestMediaPlanFileRequest] = Field(..., min_length=1, max_length=25)
 
 
@@ -81,8 +81,8 @@ class GuestMediaFinalizeRequest(BaseModel):
 
 
 class CoupleGuestMediaSettingsUpdateRequest(BaseModel):
-    enabled: Optional[bool] = Field(default=None)
-    upload_closes_at: Optional[datetime] = Field(default=None)
+    enabled: bool | None = Field(default=None)
+    upload_closes_at: datetime | None = Field(default=None)
 
 
 class CoupleGuestMediaReviewRequest(BaseModel):
@@ -316,7 +316,7 @@ async def list_couple_guest_media(
     event_type: str = Query(
         "all", description=f"Wedding event type filter or {NOT_SURE_EVENT}"
     ),
-    uploader_query: Optional[str] = Query(default=None, max_length=120),
+    uploader_query: str | None = Query(default=None, max_length=120),
     page: int = Query(1, ge=1),
     limit: int = Query(24, ge=1, le=60),
     couple: dict = Depends(require_couple_auth),

@@ -3,13 +3,13 @@ import logging
 import os
 import secrets
 import string
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import HTTPException
 
-from app.constants.roles import is_wedding_planner_role
 from app.constants.registration_sources import REGISTRATION_SOURCE_PUBLIC_SIGNUP
+from app.constants.roles import is_wedding_planner_role
 from app.core.database import mongo
 from app.core.events import EventFactory, event_bus
 from app.dependencies.auth_extended import invalidate_auth_cache
@@ -30,7 +30,6 @@ from app.utils.planner_ownership import (
     wedding_belongs_to_owner,
 )
 from app.utils.serializers import serialize_mongo_doc
-
 
 # Collections + fields where the planner's email is denormalized as a
 # foreign key. When a user verifies an email change, every matching row in
@@ -109,7 +108,7 @@ class UserManagementService:
             self._pending_ttl_index_created = True
         except Exception as e:
             # Non-fatal: log and continue
-            self.logger.error(f"Failed to ensure pending TTL index: {str(e)}")
+            self.logger.error(f"Failed to ensure pending TTL index: {e!s}")
 
     def generate_invitation_token(self) -> str:
         """Generate a secure invitation token"""
@@ -209,9 +208,9 @@ class UserManagementService:
 
     def _build_user_query(
         self,
-        role_filter: Optional[str] = None,
-        status_filter: Optional[str] = None,
-        search: Optional[str] = None,
+        role_filter: str | None = None,
+        status_filter: str | None = None,
+        search: str | None = None,
     ) -> dict:
         """Build a Mongo query for user directory filters."""
         clauses: list[dict[str, Any]] = []
@@ -313,7 +312,7 @@ class UserManagementService:
                 {
                     "email": email,
                     "status": "pending",
-                    "expires_at": {"$gt": datetime.now(timezone.utc)},
+                    "expires_at": {"$gt": datetime.now(UTC)},
                 }
             )
             if existing_invitation:
@@ -352,7 +351,7 @@ class UserManagementService:
                 except Exception as stripe_error:
                     # Log but don't fail invitation if Stripe customer creation fails
                     self.logger.warning(
-                        f"Failed to pre-create Stripe customer for {email}: {str(stripe_error)}"
+                        f"Failed to pre-create Stripe customer for {email}: {stripe_error!s}"
                     )
 
             # Create invitation record
@@ -363,8 +362,8 @@ class UserManagementService:
                 "token": invitation_token,
                 "invite_data": invite_data,
                 "invited_by": inviter_email,
-                "created_at": datetime.now(timezone.utc),
-                "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+                "created_at": datetime.now(UTC),
+                "expires_at": datetime.now(UTC) + timedelta(days=7),
                 "status": "pending",
                 # Store Stripe customer ID for use during account setup
                 "stripe_customer_id": stripe_customer_id,
@@ -390,7 +389,7 @@ class UserManagementService:
                                 "stripe_customer_id": stripe_customer_id,
                                 "user_id": f"invitation_{invitation_token}",
                                 "email": email,
-                                "created_at": datetime.now(timezone.utc),
+                                "created_at": datetime.now(UTC),
                                 "source": "invitation",
                             }
                         },
@@ -421,9 +420,7 @@ class UserManagementService:
                 {
                     "$set": {
                         "email_status": email_status,
-                        "email_sent_at": (
-                            datetime.now(timezone.utc) if email_success else None
-                        ),
+                        "email_sent_at": (datetime.now(UTC) if email_success else None),
                     }
                 },
             )
@@ -450,9 +447,7 @@ class UserManagementService:
                     invitation_id=invitation_id,
                 )
             except Exception as log_error:
-                self.logger.warning(
-                    f"Failed to log invitation activity: {str(log_error)}"
-                )
+                self.logger.warning(f"Failed to log invitation activity: {log_error!s}")
 
             return {
                 "message": f"Invitation sent to {email}{trial_info}",
@@ -466,7 +461,7 @@ class UserManagementService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error sending invitation: {str(e)}"
+                status_code=500, detail=f"Error sending invitation: {e!s}"
             )
 
     async def send_invitation_email(
@@ -475,7 +470,7 @@ class UserManagementService:
         token: str,
         role: str,
         invited_by: str,
-        company_name: Optional[str] = None,
+        company_name: str | None = None,
         trial_days: int = 0,
     ):
         """Send invitation email to user with optional trial information"""
@@ -522,11 +517,11 @@ class UserManagementService:
 
     async def list_users(
         self,
-        role_filter: Optional[str] = None,
+        role_filter: str | None = None,
         page: int = 1,
         limit: int = 50,
-        search: Optional[str] = None,
-        status_filter: Optional[str] = None,
+        search: str | None = None,
+        status_filter: str | None = None,
     ) -> dict:
         """List all users with optional role filter, pagination, and search"""
         try:
@@ -620,9 +615,7 @@ class UserManagementService:
                 "role_breakdown": role_breakdown,
             }
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error listing users: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Error listing users: {e!s}")
 
     async def get_user(self, user_id: str) -> dict:
         """Get user by ID"""
@@ -645,9 +638,7 @@ class UserManagementService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error retrieving user: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Error retrieving user: {e!s}")
 
     async def update_user(self, user_id: str, update_data: dict) -> dict:
         """Update user details"""
@@ -666,7 +657,7 @@ class UserManagementService:
                 update_data.pop(field, None)
 
             # Add update timestamp
-            update_data["updated_at"] = datetime.now(timezone.utc)
+            update_data["updated_at"] = datetime.now(UTC)
 
             result = await self.users_collection.update_one(
                 {"_id": obj_id}, {"$set": update_data}
@@ -680,13 +671,9 @@ class UserManagementService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error updating user: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Error updating user: {e!s}")
 
-    async def delete_user(
-        self, user_id: str, actor_email: Optional[str] = None
-    ) -> dict:
+    async def delete_user(self, user_id: str, actor_email: str | None = None) -> dict:
         """Delete user"""
         try:
             from bson import ObjectId
@@ -733,9 +720,7 @@ class UserManagementService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error deleting user: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Error deleting user: {e!s}")
 
     async def _load_planner_assignment_target(self, user_id: str) -> dict:
         """Resolve one root-managed planner assignment target."""
@@ -769,7 +754,7 @@ class UserManagementService:
 
         planner_id, planner_email = extract_wedding_owner_identity(wedding)
         update: dict[str, Any] = {
-            "$set": {"updated_at": datetime.now(timezone.utc)},
+            "$set": {"updated_at": datetime.now(UTC)},
         }
         if planner_id and planner_email:
             update["$set"].update(
@@ -824,7 +809,7 @@ class UserManagementService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error assigning wedding: {str(e)}"
+                status_code=500, detail=f"Error assigning wedding: {e!s}"
             )
 
     async def unassign_wedding_from_planner(
@@ -881,12 +866,10 @@ class UserManagementService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error unassigning wedding: {str(e)}"
+                status_code=500, detail=f"Error unassigning wedding: {e!s}"
             )
 
-    async def suspend_user(
-        self, user_id: str, actor_email: Optional[str] = None
-    ) -> dict:
+    async def suspend_user(self, user_id: str, actor_email: str | None = None) -> dict:
         """Suspend user account"""
         try:
             from bson import ObjectId
@@ -919,7 +902,7 @@ class UserManagementService:
                     "$set": {
                         "is_active": False,
                         "is_suspended": True,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -929,9 +912,7 @@ class UserManagementService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error suspending user: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Error suspending user: {e!s}")
 
     async def activate_user(self, user_id: str) -> dict:
         """Activate user account"""
@@ -950,7 +931,7 @@ class UserManagementService:
                     "$set": {
                         "is_active": True,
                         "is_suspended": False,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -963,9 +944,7 @@ class UserManagementService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error activating user: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Error activating user: {e!s}")
 
     async def validate_invitation_token(self, token: str) -> dict:
         """Validate invitation token and return invitation details"""
@@ -974,7 +953,7 @@ class UserManagementService:
                 {
                     "token": token,
                     "status": "pending",
-                    "expires_at": {"$gt": datetime.now(timezone.utc)},
+                    "expires_at": {"$gt": datetime.now(UTC)},
                 }
             )
 
@@ -993,7 +972,7 @@ class UserManagementService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error validating token: {str(e)}"
+                status_code=500, detail=f"Error validating token: {e!s}"
             )
 
     async def complete_account_setup(
@@ -1014,7 +993,7 @@ class UserManagementService:
                 {
                     "token": token,
                     "status": "pending",
-                    "expires_at": {"$gt": datetime.now(timezone.utc)},
+                    "expires_at": {"$gt": datetime.now(UTC)},
                 }
             )
 
@@ -1045,7 +1024,7 @@ class UserManagementService:
             # accessible unpaid planners.
             subscription_status = "trial" if trial_days > 0 else "pending_payment"
             trial_end_date = (
-                datetime.now(timezone.utc) + timedelta(days=trial_days)
+                datetime.now(UTC) + timedelta(days=trial_days)
                 if trial_days > 0
                 else None
             )
@@ -1120,11 +1099,9 @@ class UserManagementService:
                                     "$set": {
                                         "stripe_customer_id": stripe_customer_id,
                                         "email": invitation["email"],
-                                        "updated_at": datetime.now(timezone.utc),
+                                        "updated_at": datetime.now(UTC),
                                     },
-                                    "$setOnInsert": {
-                                        "created_at": datetime.now(timezone.utc)
-                                    },
+                                    "$setOnInsert": {"created_at": datetime.now(UTC)},
                                 },
                                 upsert=True,
                             )
@@ -1138,7 +1115,7 @@ class UserManagementService:
                     # Log but don't fail account setup if Stripe subscription creation fails
                     # User will still get local trial, just won't have Stripe integration
                     self.logger.error(
-                        f"Failed to create Stripe subscription for {invitation['email']}: {str(stripe_error)}"
+                        f"Failed to create Stripe subscription for {invitation['email']}: {stripe_error!s}"
                     )
 
             # Create user account
@@ -1159,8 +1136,8 @@ class UserManagementService:
                 "email_verified": True,  # Invited users are pre-verified by admin
                 "invited_by": invitation.get("invited_by"),
                 "admin_notes": invite_data.get("admin_notes"),
-                "created_at": datetime.now(timezone.utc),
-                "setup_completed_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
+                "setup_completed_at": datetime.now(UTC),
             }
 
             result = await self.users_collection.insert_one(user_data)
@@ -1177,7 +1154,7 @@ class UserManagementService:
                         {
                             "$set": {
                                 "user_id": user_id,
-                                "updated_at": datetime.now(timezone.utc),
+                                "updated_at": datetime.now(UTC),
                             }
                         },
                     )
@@ -1205,7 +1182,7 @@ class UserManagementService:
                     )
                 except Exception as sub_error:
                     self.logger.error(
-                        f"Failed to create subscription record: {str(sub_error)}"
+                        f"Failed to create subscription record: {sub_error!s}"
                     )
                     # ROLLBACK: Delete the user document since subscription failed
                     await self.users_collection.delete_one({"_id": result.inserted_id})
@@ -1228,7 +1205,7 @@ class UserManagementService:
                 {
                     "$set": {
                         "status": "completed",
-                        "completed_at": datetime.now(timezone.utc),
+                        "completed_at": datetime.now(UTC),
                     },
                     "$unset": {"expires_at": ""},
                 },
@@ -1263,7 +1240,7 @@ class UserManagementService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error completing account setup: {str(e)}"
+                status_code=500, detail=f"Error completing account setup: {e!s}"
             )
 
     async def register_wedding_planner(self, registration_data: dict) -> dict:
@@ -1291,13 +1268,13 @@ class UserManagementService:
 
             # Generate email verification token
             verification_token = self.generate_invitation_token()
-            verification_expires = datetime.now(timezone.utc) + timedelta(
+            verification_expires = datetime.now(UTC) + timedelta(
                 hours=48
             )  # 48 hours to verify
 
             # Create user account (pending until Stripe checkout + verification)
             password_hash = get_password_hash(registration_data["password"])
-            pending_expires_at = datetime.now(timezone.utc) + timedelta(hours=48)
+            pending_expires_at = datetime.now(UTC) + timedelta(hours=48)
             user_data = {
                 "email": email,
                 "password_hash": password_hash,
@@ -1314,7 +1291,7 @@ class UserManagementService:
                 "email_verification_token": verification_token,
                 "verification_token_expires": verification_expires,
                 "pending_expires_at": pending_expires_at,
-                "created_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
                 "registration_source": REGISTRATION_SOURCE_PUBLIC_SIGNUP,
             }
 
@@ -1331,7 +1308,7 @@ class UserManagementService:
                         {
                             "$set": {
                                 "status": "completed",
-                                "completed_at": datetime.now(timezone.utc),
+                                "completed_at": datetime.now(UTC),
                                 "completion_method": "public_registration",
                             }
                         },
@@ -1379,7 +1356,7 @@ class UserManagementService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error during registration: {str(e)}"
+                status_code=500, detail=f"Error during registration: {e!s}"
             )
 
     async def verify_email(self, token: str) -> dict:
@@ -1411,7 +1388,7 @@ class UserManagementService:
                     return {
                         "message": "Email verified successfully! Your account is now active. You can log in.",
                         "email": already_verified["email"],
-                        "verified_at": datetime.now(timezone.utc).isoformat(),
+                        "verified_at": datetime.now(UTC).isoformat(),
                     }
                 raise HTTPException(
                     status_code=400, detail="Invalid or expired verification token"
@@ -1422,7 +1399,7 @@ class UserManagementService:
             if (
                 token_expires
                 and isinstance(token_expires, datetime)
-                and token_expires < datetime.now(timezone.utc)
+                and token_expires < datetime.now(UTC)
             ):
                 raise HTTPException(
                     status_code=400,
@@ -1436,7 +1413,7 @@ class UserManagementService:
                     "$set": {
                         "email_verified": True,
                         "is_active": True,
-                        "verified_at": datetime.now(timezone.utc),
+                        "verified_at": datetime.now(UTC),
                     },
                     "$unset": {
                         "email_verification_token": "",
@@ -1480,20 +1457,18 @@ class UserManagementService:
             return {
                 "message": "Email verified successfully! Your account is now active. You can log in.",
                 "email": user["email"],
-                "verified_at": datetime.now(timezone.utc).isoformat(),
+                "verified_at": datetime.now(UTC).isoformat(),
             }
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error verifying email: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Error verifying email: {e!s}")
 
     def _generate_invitation_email_html(
         self,
         email: str,
         role: str,
-        company_name: Optional[str],
+        company_name: str | None,
         setup_url: str,
         invited_by: str,
     ) -> str:
@@ -1730,7 +1705,7 @@ class UserManagementService:
                 {
                     "$set": {
                         "password_hash": new_password_hash,
-                        "password_changed_at": datetime.now(timezone.utc),
+                        "password_changed_at": datetime.now(UTC),
                     }
                 },
             )
@@ -1749,13 +1724,13 @@ class UserManagementService:
                 print(f"Failed to publish password change event: {e}")
             return {
                 "message": "Password changed successfully",
-                "changed_at": datetime.now(timezone.utc).isoformat(),
+                "changed_at": datetime.now(UTC).isoformat(),
             }
         except HTTPException:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error changing password: {str(e)}"
+                status_code=500, detail=f"Error changing password: {e!s}"
             )
 
     async def change_email(
@@ -1807,7 +1782,7 @@ class UserManagementService:
 
             # Generate email verification token for new email
             verification_token = self.generate_invitation_token()
-            verification_expires = datetime.now(timezone.utc) + timedelta(
+            verification_expires = datetime.now(UTC) + timedelta(
                 hours=24
             )  # 24 hours to verify
 
@@ -1820,7 +1795,7 @@ class UserManagementService:
                         "pending_email": new_email,
                         "email_change_token": verification_token,
                         "email_change_token_expires": verification_expires,
-                        "email_change_requested_at": datetime.now(timezone.utc),
+                        "email_change_requested_at": datetime.now(UTC),
                     }
                 },
             )
@@ -1881,9 +1856,7 @@ class UserManagementService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error changing email: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Error changing email: {e!s}")
 
     async def verify_email_change(self, token: str) -> dict:
         """Verify email change using verification token.
@@ -1908,7 +1881,7 @@ class UserManagementService:
             # Check if token has expired
             if user.get("email_change_token_expires") and user[
                 "email_change_token_expires"
-            ] < datetime.now(timezone.utc):
+            ] < datetime.now(UTC):
                 raise HTTPException(
                     status_code=400,
                     detail="Verification token has expired. Please request a new email change.",
@@ -1939,7 +1912,7 @@ class UserManagementService:
                 {
                     "$set": {
                         "email": new_email,
-                        "email_changed_at": datetime.now(timezone.utc),
+                        "email_changed_at": datetime.now(UTC),
                     },
                     "$unset": {
                         "pending_email": "",
@@ -2013,13 +1986,13 @@ class UserManagementService:
                 "new_email": new_email,
                 "user_role": user.get("role"),
                 "cascade": cascade_summary,
-                "changed_at": datetime.now(timezone.utc).isoformat(),
+                "changed_at": datetime.now(UTC).isoformat(),
             }
         except HTTPException:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error verifying email change: {str(e)}"
+                status_code=500, detail=f"Error verifying email change: {e!s}"
             )
 
     async def cancel_pending_email_change(self, current_email: str) -> dict:
@@ -2200,7 +2173,7 @@ class UserManagementService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving user profile: {str(e)}"
+                status_code=500, detail=f"Error retrieving user profile: {e!s}"
             )
 
     async def update_profile_info(self, user_email: str, profile_data: dict) -> dict:
@@ -2263,7 +2236,7 @@ class UserManagementService:
                 )
 
             # Add updated timestamp
-            update_data["updated_at"] = datetime.now(timezone.utc)
+            update_data["updated_at"] = datetime.now(UTC)
 
             # Update user profile
             result = await self.users_collection.update_one(
@@ -2291,13 +2264,13 @@ class UserManagementService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error updating profile: {str(e)}"
+                status_code=500, detail=f"Error updating profile: {e!s}"
             )
 
     # ==================== INVITATION MANAGEMENT ====================
 
     async def list_invitations(
-        self, status: Optional[str] = None, page: int = 1, limit: int = 20
+        self, status: str | None = None, page: int = 1, limit: int = 20
     ) -> dict:
         """
         List invitations with optional status filter.
@@ -2308,17 +2281,17 @@ class UserManagementService:
             limit: Items per page
         """
         try:
-            query: Dict[str, Any] = {}
+            query: dict[str, Any] = {}
 
             if status:
                 if status == "expired":
                     # Expired = pending but past expires_at
                     query["status"] = "pending"
-                    query["expires_at"] = {"$lt": datetime.now(timezone.utc)}
+                    query["expires_at"] = {"$lt": datetime.now(UTC)}
                 elif status == "pending":
                     # Pending = status pending AND not expired
                     query["status"] = "pending"
-                    query["expires_at"] = {"$gt": datetime.now(timezone.utc)}
+                    query["expires_at"] = {"$gt": datetime.now(UTC)}
                 else:
                     query["status"] = status
 
@@ -2348,8 +2321,8 @@ class UserManagementService:
                 # Determine actual status (check if expired)
                 actual_status = doc.get("status", "pending")
                 if actual_status == "pending" and doc.get(
-                    "expires_at", datetime.now(timezone.utc)
-                ) < datetime.now(timezone.utc):
+                    "expires_at", datetime.now(UTC)
+                ) < datetime.now(UTC):
                     actual_status = "expired"
 
                 invitations.append(
@@ -2410,15 +2383,15 @@ class UserManagementService:
             }
 
         except Exception as e:
-            self.logger.error(f"Error listing invitations: {str(e)}")
+            self.logger.error(f"Error listing invitations: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error listing invitations: {str(e)}"
+                status_code=500, detail=f"Error listing invitations: {e!s}"
             )
 
     async def get_invitation_stats(self) -> dict:
         """Get invitation counts by status"""
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Pending (not expired)
             pending = await self.invitations_collection.count_documents(
@@ -2449,9 +2422,9 @@ class UserManagementService:
             }
 
         except Exception as e:
-            self.logger.error(f"Error getting invitation stats: {str(e)}")
+            self.logger.error(f"Error getting invitation stats: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error getting invitation stats: {str(e)}"
+                status_code=500, detail=f"Error getting invitation stats: {e!s}"
             )
 
     async def resend_invitation(self, invitation_id: str, resent_by: str) -> dict:
@@ -2488,7 +2461,7 @@ class UserManagementService:
 
             # Generate new token and reset expiration
             new_token = self.generate_invitation_token()
-            new_expires = datetime.now(timezone.utc) + timedelta(days=7)
+            new_expires = datetime.now(UTC) + timedelta(days=7)
 
             # Send new email
             invite_data = invitation.get("invite_data", {})
@@ -2507,7 +2480,7 @@ class UserManagementService:
                 "expires_at": new_expires,
                 "status": "pending",
                 "email_status": "sent" if email_success else "failed",
-                "last_resent_at": datetime.now(timezone.utc),
+                "last_resent_at": datetime.now(UTC),
                 "resent_by": resent_by,
             }
 
@@ -2526,7 +2499,7 @@ class UserManagementService:
                 )
             except Exception as log_error:
                 self.logger.warning(
-                    f"Failed to log invitation resent activity: {str(log_error)}"
+                    f"Failed to log invitation resent activity: {log_error!s}"
                 )
 
             return {
@@ -2539,13 +2512,13 @@ class UserManagementService:
         except HTTPException:
             raise
         except Exception as e:
-            self.logger.error(f"Error resending invitation: {str(e)}")
+            self.logger.error(f"Error resending invitation: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error resending invitation: {str(e)}"
+                status_code=500, detail=f"Error resending invitation: {e!s}"
             )
 
     async def cancel_invitation(
-        self, invitation_id: str, cancelled_by: str, reason: Optional[str] = None
+        self, invitation_id: str, cancelled_by: str, reason: str | None = None
     ) -> dict:
         """
         Cancel a pending invitation.
@@ -2585,7 +2558,7 @@ class UserManagementService:
                 {
                     "$set": {
                         "status": "cancelled",
-                        "cancelled_at": datetime.now(timezone.utc),
+                        "cancelled_at": datetime.now(UTC),
                         "cancelled_by": cancelled_by,
                         "cancellation_reason": reason,
                     }
@@ -2607,12 +2580,12 @@ class UserManagementService:
                             stripe_customer_id,
                             metadata={
                                 "invitation_cancelled": "true",
-                                "cancelled_at": datetime.now(timezone.utc).isoformat(),
+                                "cancelled_at": datetime.now(UTC).isoformat(),
                             },
                         )
                 except Exception as stripe_error:
                     self.logger.warning(
-                        f"Failed to update Stripe customer for cancelled invitation: {str(stripe_error)}"
+                        f"Failed to update Stripe customer for cancelled invitation: {stripe_error!s}"
                     )
 
             # Log activity
@@ -2627,21 +2600,21 @@ class UserManagementService:
                 )
             except Exception as log_error:
                 self.logger.warning(
-                    f"Failed to log invitation cancelled activity: {str(log_error)}"
+                    f"Failed to log invitation cancelled activity: {log_error!s}"
                 )
 
             return {
                 "message": f"Invitation for {invitation['email']} cancelled",
                 "invitation_id": invitation_id,
-                "cancelled_at": datetime.now(timezone.utc).isoformat(),
+                "cancelled_at": datetime.now(UTC).isoformat(),
             }
 
         except HTTPException:
             raise
         except Exception as e:
-            self.logger.error(f"Error cancelling invitation: {str(e)}")
+            self.logger.error(f"Error cancelling invitation: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error cancelling invitation: {str(e)}"
+                status_code=500, detail=f"Error cancelling invitation: {e!s}"
             )
 
     # ==================== PASSWORD RESET ====================
@@ -2676,9 +2649,7 @@ class UserManagementService:
 
             # Generate reset token
             reset_token = self.generate_invitation_token()
-            reset_expires = datetime.now(timezone.utc) + timedelta(
-                hours=1
-            )  # 1 hour expiry
+            reset_expires = datetime.now(UTC) + timedelta(hours=1)  # 1 hour expiry
 
             # Store reset token in user document
             await self.users_collection.update_one(
@@ -2687,7 +2658,7 @@ class UserManagementService:
                     "$set": {
                         "password_reset_token": reset_token,
                         "password_reset_expires": reset_expires,
-                        "password_reset_requested_at": datetime.now(timezone.utc),
+                        "password_reset_requested_at": datetime.now(UTC),
                     }
                 },
             )
@@ -2721,7 +2692,7 @@ class UserManagementService:
             return success_message
 
         except Exception as e:
-            self.logger.error(f"Error requesting password reset: {str(e)}")
+            self.logger.error(f"Error requesting password reset: {e!s}")
             # Still return success message for security
             return {
                 "message": "If an account with this email exists, you will receive a password reset link shortly.",
@@ -2751,7 +2722,7 @@ class UserManagementService:
             # Check if token has expired
             if user.get("password_reset_expires") and user[
                 "password_reset_expires"
-            ] < datetime.now(timezone.utc):
+            ] < datetime.now(UTC):
                 # Clean up expired token
                 await self.users_collection.update_one(
                     {"_id": user["_id"]},
@@ -2777,7 +2748,7 @@ class UserManagementService:
                 {
                     "$set": {
                         "password_hash": new_password_hash,
-                        "password_changed_at": datetime.now(timezone.utc),
+                        "password_changed_at": datetime.now(UTC),
                     },
                     "$unset": {
                         "password_reset_token": "",
@@ -2818,9 +2789,9 @@ class UserManagementService:
         except HTTPException:
             raise
         except Exception as e:
-            self.logger.error(f"Error resetting password: {str(e)}")
+            self.logger.error(f"Error resetting password: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error resetting password: {str(e)}"
+                status_code=500, detail=f"Error resetting password: {e!s}"
             )
 
     async def validate_password_reset_token(self, token: str) -> dict:
@@ -2844,7 +2815,7 @@ class UserManagementService:
             # Check if token has expired
             if user.get("password_reset_expires") and user[
                 "password_reset_expires"
-            ] < datetime.now(timezone.utc):
+            ] < datetime.now(UTC):
                 raise HTTPException(
                     status_code=400,
                     detail="Password reset token has expired. Please request a new one.",
@@ -2867,9 +2838,9 @@ class UserManagementService:
         except HTTPException:
             raise
         except Exception as e:
-            self.logger.error(f"Error validating reset token: {str(e)}")
+            self.logger.error(f"Error validating reset token: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error validating reset token: {str(e)}"
+                status_code=500, detail=f"Error validating reset token: {e!s}"
             )
 
     def _generate_password_reset_email_html(

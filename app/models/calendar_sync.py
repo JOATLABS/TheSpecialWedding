@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -36,29 +35,29 @@ class CalendarEventSyncModel(BaseModel):
     task_id: str
     owner_planner_id: str
     owner_planner_email: str
-    target_user_id: Optional[str] = None
-    target_user_email: Optional[str] = None
-    calendar_connection_id: Optional[str] = None
+    target_user_id: str | None = None
+    target_user_email: str | None = None
+    calendar_connection_id: str | None = None
     # Default to UNKNOWN, not GOOGLE — Aurinko fans out to four+ providers and
     # a sync row may be written before the provider id is known. The drift-
     # check job backfills the real provider id from the owning connection.
     provider: str = Field(default=CalendarProvider.UNKNOWN.value)
-    calendar_id: Optional[str] = None
-    external_event_id: Optional[str] = None
+    calendar_id: str | None = None
+    external_event_id: str | None = None
     sync_direction: str = Field(default=CalendarSyncDirection.OUTBOUND.value)
     sync_status: str = Field(default=CalendarSyncStatusValue.PENDING.value)
-    last_sync_at: Optional[datetime] = None
-    last_error: Optional[str] = None
-    last_error_category: Optional[str] = None
+    last_sync_at: datetime | None = None
+    last_error: str | None = None
+    last_error_category: str | None = None
     retryable_error: bool = False
     retry_count: int = 0
-    next_retry_at: Optional[datetime] = None
-    last_retry_at: Optional[datetime] = None
-    last_drift_check_at: Optional[datetime] = None
-    etag: Optional[str] = None
-    external_updated_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    next_retry_at: datetime | None = None
+    last_retry_at: datetime | None = None
+    last_drift_check_at: datetime | None = None
+    etag: str | None = None
+    external_updated_at: datetime | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     class Config:
         populate_by_name = True

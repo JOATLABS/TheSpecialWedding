@@ -1,6 +1,6 @@
 import re
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Union
+from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -32,7 +32,7 @@ class WeddingService:
         slug = re.sub(r"\s+", "-", slug).strip("-")
         return slug[:50] or "wedding"
 
-    def _normalize_event_times(self, wedding_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_event_times(self, wedding_data: dict[str, Any]) -> dict[str, Any]:
         events = wedding_data.get("events")
         if not isinstance(events, list):
             return wedding_data
@@ -73,13 +73,13 @@ class WeddingService:
             # Safety limit to prevent infinite loops
             if counter > 100:
                 # Use timestamp as fallback
-                slug = f"{base_slug}-{int(datetime.now(timezone.utc).timestamp())}"
+                slug = f"{base_slug}-{int(datetime.now(UTC).timestamp())}"
                 break
 
         return slug
 
     async def create_wedding(
-        self, wedding: Union[WeddingCreateModel, WeddingModel, Dict[str, Any]]
+        self, wedding: WeddingCreateModel | WeddingModel | dict[str, Any]
     ):
         """Create a new wedding"""
         try:
@@ -116,10 +116,10 @@ class WeddingService:
                     str(wedding_dict.get("couple_names") or "")
                 )
             if not wedding_dict.get("created_at"):
-                wedding_dict["created_at"] = datetime.now(timezone.utc)
+                wedding_dict["created_at"] = datetime.now(UTC)
             # Track billing period marker
             if "billed_period" not in wedding_dict:
-                current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+                current_month = datetime.now(UTC).strftime("%Y-%m")
                 wedding_dict["billed_period"] = current_month
             wedding_dict.setdefault("meter_pending", False)
 
@@ -129,7 +129,7 @@ class WeddingService:
                 raise HTTPException(status_code=400, detail="Wedding ID already exists")
 
             # Ensure slug is unique (prevent collisions across planners)
-            if "slug" in wedding_dict and wedding_dict["slug"]:
+            if wedding_dict.get("slug"):
                 wedding_dict["slug"] = await self._ensure_unique_slug(
                     wedding_dict["slug"]
                 )
@@ -154,7 +154,7 @@ class WeddingService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error creating wedding: {str(e)}"
+                status_code=500, detail=f"Error creating wedding: {e!s}"
             )
 
     async def get_wedding(self, wedding_id: str):
@@ -169,7 +169,7 @@ class WeddingService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving wedding: {str(e)}"
+                status_code=500, detail=f"Error retrieving wedding: {e!s}"
             )
 
     async def get_wedding_by_slug(self, slug: str):
@@ -184,10 +184,10 @@ class WeddingService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving wedding: {str(e)}"
+                status_code=500, detail=f"Error retrieving wedding: {e!s}"
             )
 
-    async def list_weddings(self) -> List[dict]:
+    async def list_weddings(self) -> list[dict]:
         """List all weddings"""
         try:
             weddings = await self.collection.find().to_list(length=None)
@@ -196,17 +196,17 @@ class WeddingService:
             return serialize_mongo_doc(weddings)
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error listing weddings: {str(e)}"
+                status_code=500, detail=f"Error listing weddings: {e!s}"
             )
 
     async def list_weddings_for_planner(
         self,
-        planner_id: Optional[str],
-        planner_email: Optional[str],
-        accessible_ids: Optional[List[str]] = None,
+        planner_id: str | None,
+        planner_email: str | None,
+        accessible_ids: list[str] | None = None,
         page: int = 1,
         limit: int = 50,
-        search: Optional[str] = None,
+        search: str | None = None,
     ) -> dict:
         """
         List weddings assigned to a specific planner with pagination.
@@ -232,7 +232,7 @@ class WeddingService:
                     "limit": limit,
                 }
 
-            filters: List[Dict[str, Any]] = [owner_query]
+            filters: list[dict[str, Any]] = [owner_query]
             if accessible_ids is not None:
                 filters.append(
                     {"_id": {"$in": [normalize_query_id(id) for id in accessible_ids]}}
@@ -276,11 +276,11 @@ class WeddingService:
             }
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error listing weddings for planner: {str(e)}"
+                status_code=500, detail=f"Error listing weddings for planner: {e!s}"
             )
 
     async def list_weddings_with_planner_info(
-        self, page: int = 1, limit: int = 50, search: Optional[str] = None
+        self, page: int = 1, limit: int = 50, search: str | None = None
     ) -> dict:
         """List all weddings with enhanced planner information for admin interface and pagination"""
         try:
@@ -337,7 +337,7 @@ class WeddingService:
             }
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error listing weddings: {str(e)}"
+                status_code=500, detail=f"Error listing weddings: {e!s}"
             )
 
     async def update_wedding(self, wedding_id: str, wedding_data: dict):
@@ -382,7 +382,7 @@ class WeddingService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error updating wedding: {str(e)}"
+                status_code=500, detail=f"Error updating wedding: {e!s}"
             )
 
     async def delete_wedding(self, wedding_id: str):
@@ -409,5 +409,5 @@ class WeddingService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error deleting wedding: {str(e)}"
+                status_code=500, detail=f"Error deleting wedding: {e!s}"
             )

@@ -11,8 +11,7 @@ import asyncio
 import logging
 import os
 import re
-from datetime import datetime, timezone
-from typing import Dict, List
+from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
 from cryptography.exceptions import UnsupportedAlgorithm
@@ -103,8 +102,8 @@ _DOMAIN_CONNECT_KEY_ID_PATTERN = re.compile(r"_[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9
 
 def _collect_storage_target_health_recommendations(
     storage: MediaStorage,
-) -> List[str]:
-    recommendations: List[str] = []
+) -> list[str]:
+    recommendations: list[str] = []
     for target, env_name in STORAGE_TARGET_ENV_MAP.items():
         health = storage.target_health(target)
         if health.bucket_name and health.status == "unavailable":
@@ -118,8 +117,8 @@ def _collect_storage_recommendations(
     storage: MediaStorage | None = None,
     *,
     include_target_health: bool = True,
-) -> List[str]:
-    recommended: List[str] = []
+) -> list[str]:
+    recommended: list[str] = []
 
     if not settings.s3_endpoint_url:
         recommended.append(
@@ -168,8 +167,8 @@ def _collect_storage_recommendations(
     return recommended
 
 
-async def _collect_browser_upload_recommendations(storage: MediaStorage) -> List[str]:
-    recommendations: List[str] = []
+async def _collect_browser_upload_recommendations(storage: MediaStorage) -> list[str]:
+    recommendations: list[str] = []
     browser_origins = settings.browser_upload_origins
     if not browser_origins:
         return recommendations
@@ -247,10 +246,10 @@ def _domain_connect_callback_is_safe(value: object, public_key_domain: object) -
     )
 
 
-def _collect_storefront_configuration_recommendations() -> List[str]:
+def _collect_storefront_configuration_recommendations() -> list[str]:
     """Validate optional storefront capabilities from canonical loaded settings."""
 
-    recommendations: List[str] = []
+    recommendations: list[str] = []
     upload_configured = bool(settings.storefront_staging_bucket_name)
     custom_domains_enabled = bool(settings.storefront_custom_domains_enabled)
     discovery_enabled = bool(
@@ -475,13 +474,13 @@ def _collect_storefront_configuration_recommendations() -> List[str]:
     return list(dict.fromkeys(recommendations))
 
 
-def _collect_storefront_inquiry_protection_recommendations() -> List[str]:
+def _collect_storefront_inquiry_protection_recommendations() -> list[str]:
     """Report production inquiry-protection gaps without exposing Redis secrets."""
 
     if not settings.is_production():
         return []
 
-    recommendations: List[str] = []
+    recommendations: list[str] = []
     redis_enabled = bool(getattr(settings, "redis_enabled", False))
     if not redis_enabled:
         recommendations.append(
@@ -629,10 +628,10 @@ async def _collect_storefront_infrastructure_recommendations(
     storage: MediaStorage | None,
     *,
     timeout_seconds: float = 3.0,
-) -> List[str]:
+) -> list[str]:
     """Preflight optional storefront infrastructure without mutating provider state."""
 
-    recommendations: List[str] = []
+    recommendations: list[str] = []
     if not (
         storage
         and settings.storefront_staging_bucket_name
@@ -677,7 +676,7 @@ async def _collect_external_storage_recommendations(
     storage: MediaStorage,
     *,
     timeout_seconds: float = 3.0,
-) -> List[str]:
+) -> list[str]:
     """Bound all optional Cloudflare/R2 startup reads to one short deadline."""
 
     try:
@@ -703,7 +702,7 @@ async def _collect_external_storage_recommendations(
     return list(dict.fromkeys([*target_health, *browser, *storefront]))
 
 
-async def validate_environment_and_notify() -> Dict[str, List[str]]:
+async def validate_environment_and_notify() -> dict[str, list[str]]:
     """
     Validate environment variables and create root admin notification if any are missing.
 
@@ -762,7 +761,7 @@ async def validate_environment_and_notify() -> Dict[str, List[str]]:
     }
 
 
-def _build_notification_message(critical: List[str], recommended: List[str]) -> str:
+def _build_notification_message(critical: list[str], recommended: list[str]) -> str:
     """Build a detailed notification message"""
     parts = []
 
@@ -819,7 +818,7 @@ async def _create_root_admin_notification(
                 {
                     "$set": {
                         "message": message,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -833,8 +832,8 @@ async def _create_root_admin_notification(
             "type": "system_config",
             "target_audience": "root_admin",
             "created_by": "system",
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
             "is_dismissible": True,
             "priority": priority,
             "status": "active",
@@ -850,7 +849,7 @@ async def _create_root_admin_notification(
         # If we can't create the notification, at least log it prominently
         logger.critical(f"FAILED TO NOTIFY ROOT ADMIN: {title}")
         logger.critical(f"Message: {message}")
-        logger.critical(f"Error: {str(e)}")
+        logger.critical(f"Error: {e!s}")
 
 
 async def _send_push_alert(title: str, message: str, priority: str):
@@ -882,11 +881,11 @@ async def clear_config_notifications():
         notifications_collection = mongo.db["notifications"]
         result = await notifications_collection.update_many(
             {"type": "system_config", "status": "active"},
-            {"$set": {"status": "resolved", "resolved_at": datetime.now(timezone.utc)}},
+            {"$set": {"status": "resolved", "resolved_at": datetime.now(UTC)}},
         )
         if result.modified_count > 0:
             logger.info(
                 f"Cleared {result.modified_count} resolved config notifications"
             )
     except Exception as e:
-        logger.error(f"Error clearing config notifications: {str(e)}")
+        logger.error(f"Error clearing config notifications: {e!s}")

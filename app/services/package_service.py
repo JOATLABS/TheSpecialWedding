@@ -7,8 +7,8 @@ Handles package lifecycle from creation to sending to couples.
 
 import logging
 import secrets
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import stripe
 from bson import ObjectId
@@ -49,8 +49,8 @@ class PackageService:
 
     @staticmethod
     def _build_planner_snapshot(
-        planner: Optional[Dict[str, Any]],
-    ) -> Dict[str, Optional[str]]:
+        planner: dict[str, Any] | None,
+    ) -> dict[str, str | None]:
         planner = planner or {}
         planner_name = (
             planner.get("company_name")
@@ -74,7 +74,7 @@ class PackageService:
             or planner.get("avatar_url"),
         }
 
-    async def create_package(self, planner_id: str, package_data: Dict) -> Dict:
+    async def create_package(self, planner_id: str, package_data: dict) -> dict:
         """
         Create a new package for a planner.
 
@@ -106,12 +106,12 @@ class PackageService:
             return self._serialize_package(created)
 
         except Exception as e:
-            logger.error(f"Failed to create package: {str(e)}")
+            logger.error(f"Failed to create package: {e!s}")
             raise
 
     async def get_package(
-        self, package_id: str, planner_id: Optional[str] = None
-    ) -> Optional[Dict]:
+        self, package_id: str, planner_id: str | None = None
+    ) -> dict | None:
         """
         Get a package by ID.
 
@@ -131,17 +131,17 @@ class PackageService:
             return self._serialize_package(package) if package else None
 
         except Exception as e:
-            logger.error(f"Failed to get package: {str(e)}")
+            logger.error(f"Failed to get package: {e!s}")
             raise
 
     async def list_packages(
         self,
         planner_id: str,
         include_templates: bool = False,
-        status: Optional[str] = None,
+        status: str | None = None,
         limit: int = 50,
         skip: int = 0,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         List packages for a planner.
 
@@ -172,12 +172,12 @@ class PackageService:
             return [self._serialize_package(p) for p in packages]
 
         except Exception as e:
-            logger.error(f"Failed to list packages: {str(e)}")
+            logger.error(f"Failed to list packages: {e!s}")
             raise
 
     async def update_package(
-        self, package_id: str, planner_id: str, update_data: Dict
-    ) -> Dict:
+        self, package_id: str, planner_id: str, update_data: dict
+    ) -> dict:
         """
         Update an existing package.
 
@@ -216,7 +216,7 @@ class PackageService:
             if "total_amount" in update_data:
                 update_data["total_amount"] = float(update_data["total_amount"])
 
-            update_data["updated_at"] = datetime.now(timezone.utc)
+            update_data["updated_at"] = datetime.now(UTC)
 
             await self.packages.update_one(
                 {"_id": ObjectId(package_id)}, {"$set": update_data}
@@ -227,7 +227,7 @@ class PackageService:
             return self._serialize_package(updated)
 
         except Exception as e:
-            logger.error(f"Failed to update package: {str(e)}")
+            logger.error(f"Failed to update package: {e!s}")
             raise
 
     async def delete_package(self, package_id: str, planner_id: str) -> bool:
@@ -266,16 +266,16 @@ class PackageService:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to delete package: {str(e)}")
+            logger.error(f"Failed to delete package: {e!s}")
             raise
 
     async def duplicate_package(
         self,
         package_id: str,
         planner_id: str,
-        new_name: Optional[str] = None,
+        new_name: str | None = None,
         as_template: bool = True,
-    ) -> Dict:
+    ) -> dict:
         """
         Duplicate a package as a template.
 
@@ -317,17 +317,17 @@ class PackageService:
             return await self.create_package(planner_id, new_package_data)
 
         except Exception as e:
-            logger.error(f"Failed to duplicate package: {str(e)}")
+            logger.error(f"Failed to duplicate package: {e!s}")
             raise
 
     async def send_to_couple(
         self,
         package_id: str,
         planner_id: str,
-        couple_data: Dict,
-        wedding_date: Optional[str] = None,
-        wedding_id: Optional[str] = None,
-    ) -> Dict:
+        couple_data: dict,
+        wedding_date: str | None = None,
+        wedding_id: str | None = None,
+    ) -> dict:
         """
         Send a package to a couple, creating a contract.
 
@@ -428,7 +428,7 @@ class PackageService:
                 planner_logo=planner_snapshot.get("planner_logo"),
                 package_snapshot=package_snapshot,
                 status="sent",
-                sent_at=datetime.now(timezone.utc),
+                sent_at=datetime.now(UTC),
             )
 
             contract_dict = contract.model_dump(by_alias=True)
@@ -460,10 +460,10 @@ class PackageService:
             return serialized_contract
 
         except Exception as e:
-            logger.error(f"Failed to send package: {str(e)}")
+            logger.error(f"Failed to send package: {e!s}")
             raise
 
-    async def get_package_stats(self, planner_id: str) -> Dict[str, Any]:
+    async def get_package_stats(self, planner_id: str) -> dict[str, Any]:
         """
         Get package statistics for a planner.
 
@@ -491,10 +491,10 @@ class PackageService:
             }
 
         except Exception as e:
-            logger.error(f"Failed to get package stats: {str(e)}")
+            logger.error(f"Failed to get package stats: {e!s}")
             raise
 
-    def _serialize_package(self, package: Dict) -> Optional[Dict]:
+    def _serialize_package(self, package: dict) -> dict | None:
         """Serialize package for API response."""
         if not package:
             return None
@@ -510,7 +510,7 @@ class PackageService:
 
         return serialized
 
-    def _serialize_contract(self, contract: Dict) -> Optional[Dict]:
+    def _serialize_contract(self, contract: dict) -> dict | None:
         """Serialize contract for API response."""
         if not contract:
             return None
@@ -548,7 +548,7 @@ class PackageService:
 
     async def pause_planner_payment_links(
         self, planner_id: str, planner_email: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Pause all active payment links AND scheduled payments for a planner
         when their subscription is cancelled.
@@ -569,7 +569,7 @@ class PackageService:
         from app.core.database import mongo
 
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             links_deactivated = 0
             scheduled_paused = 0
             contracts_paused = set()
@@ -625,7 +625,7 @@ class PackageService:
                         }
                     )
                 except stripe.error.StripeError as e:
-                    error_msg = f"Stripe API error deactivating PaymentLink {stripe_pl_id}: {str(e)}"
+                    error_msg = f"Stripe API error deactivating PaymentLink {stripe_pl_id}: {e!s}"
                     logger.warning(error_msg)
                     errors.append(
                         {
@@ -635,7 +635,7 @@ class PackageService:
                         }
                     )
                 except Exception as e:
-                    error_msg = f"Unexpected error deactivating PaymentLink {stripe_pl_id}: {str(e)}"
+                    error_msg = f"Unexpected error deactivating PaymentLink {stripe_pl_id}: {e!s}"
                     logger.error(error_msg)
                     errors.append(
                         {
@@ -706,12 +706,12 @@ class PackageService:
             }
 
         except Exception as e:
-            logger.error(f"Failed to pause planner payment links: {str(e)}")
+            logger.error(f"Failed to pause planner payment links: {e!s}")
             raise
 
     async def resume_planner_payment_links(
         self, planner_id: str, planner_email: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Resume all paused payment links AND scheduled payments for a planner
         when their subscription is reactivated.
@@ -728,7 +728,7 @@ class PackageService:
         from app.core.database import mongo
 
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             links_reactivated = 0
             scheduled_resumed = 0
             errors = []
@@ -779,7 +779,7 @@ class PackageService:
                         }
                     )
                 except stripe.error.StripeError as e:
-                    error_msg = f"Stripe API error reactivating PaymentLink {stripe_pl_id}: {str(e)}"
+                    error_msg = f"Stripe API error reactivating PaymentLink {stripe_pl_id}: {e!s}"
                     logger.warning(error_msg)
                     errors.append(
                         {
@@ -789,7 +789,7 @@ class PackageService:
                         }
                     )
                 except Exception as e:
-                    error_msg = f"Unexpected error reactivating PaymentLink {stripe_pl_id}: {str(e)}"
+                    error_msg = f"Unexpected error reactivating PaymentLink {stripe_pl_id}: {e!s}"
                     logger.error(error_msg)
                     errors.append(
                         {
@@ -837,7 +837,7 @@ class PackageService:
             }
 
         except Exception as e:
-            logger.error(f"Failed to resume planner payment links: {str(e)}")
+            logger.error(f"Failed to resume planner payment links: {e!s}")
             raise
 
 

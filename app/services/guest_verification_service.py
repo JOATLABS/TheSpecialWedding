@@ -3,16 +3,16 @@ import logging
 import os
 import re
 import secrets
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from urllib.parse import quote
 
 from bson.objectid import ObjectId
 from fastapi import HTTPException
 
 from app.constants.marketing_capture_media import MARKETING_CAPTURE_GALLERY_URLS
-from app.core.database import mongo
 from app.core.cache import CacheKeys, cache
+from app.core.database import mongo
 from app.services.gallery_media_service import GalleryUploadService
 from app.services.guest_service import GuestService
 from app.services.otp_service import OTPService
@@ -96,8 +96,8 @@ class GuestVerificationService:
         "sms_opt_in": bool,
         "email_opt_in": bool,
     }
-    _failed_attempts: Dict[str, Dict[str, Any]] = {}
-    _attempt_locks: Dict[str, Dict[str, Any]] = {}
+    _failed_attempts: dict[str, dict[str, Any]] = {}
+    _attempt_locks: dict[str, dict[str, Any]] = {}
     _default_max_attempts = 5
     _default_lockout_duration = 300  # 5 minutes
     _rsvp_link_max_attempts = 3
@@ -144,7 +144,7 @@ class GuestVerificationService:
 
         return self._get_gallery_service().build_public_url(normalized.lstrip("/"))
 
-    def _normalize_guest_media_fields(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_guest_media_fields(self, payload: dict[str, Any]) -> dict[str, Any]:
         normalized_payload = {**payload}
         if "featured_image" in normalized_payload:
             normalized_payload["featured_image"] = self._resolve_guest_media_url(
@@ -175,8 +175,8 @@ class GuestVerificationService:
     @staticmethod
     def _project_typed_fields(
         value: Any,
-        allowed_fields: Dict[str, type],
-    ) -> Optional[Dict[str, Any]]:
+        allowed_fields: dict[str, type],
+    ) -> dict[str, Any] | None:
         if not isinstance(value, dict):
             return None
 
@@ -186,7 +186,7 @@ class GuestVerificationService:
             if field in value and isinstance(value[field], expected_type)
         }
 
-    def _project_public_events(self, value: Any) -> list[Dict[str, Any]]:
+    def _project_public_events(self, value: Any) -> list[dict[str, Any]]:
         if not isinstance(value, list):
             return []
 
@@ -211,7 +211,7 @@ class GuestVerificationService:
 
         return projected_events
 
-    def _project_public_rsvp_config(self, value: Any) -> Optional[Dict[str, Any]]:
+    def _project_public_rsvp_config(self, value: Any) -> dict[str, Any] | None:
         projected = self._project_typed_fields(value, self._public_rsvp_fields)
         if projected is None:
             return None
@@ -232,8 +232,8 @@ class GuestVerificationService:
     def _project_public_dict_list(
         self,
         value: Any,
-        allowed_fields: Dict[str, type],
-    ) -> list[Dict[str, Any]]:
+        allowed_fields: dict[str, type],
+    ) -> list[dict[str, Any]]:
         if not isinstance(value, list):
             return []
 
@@ -246,8 +246,8 @@ class GuestVerificationService:
 
     def _project_guest_facing_wedding(
         self,
-        wedding: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        wedding: dict[str, Any],
+    ) -> dict[str, Any]:
         """Build the explicit wedding contract used by every guest access path."""
 
         projected = (
@@ -309,13 +309,13 @@ class GuestVerificationService:
         projected["privacy_mode"] = self._resolve_privacy_mode(wedding)
         return projected
 
-    def _serialize_wedding_response(self, wedding: Dict[str, Any]) -> Dict[str, Any]:
+    def _serialize_wedding_response(self, wedding: dict[str, Any]) -> dict[str, Any]:
         return self._normalize_guest_media_fields(
             self._project_guest_facing_wedding(wedding)
         )
 
     @staticmethod
-    def _resolve_privacy_mode(wedding: Dict[str, Any]) -> str:
+    def _resolve_privacy_mode(wedding: dict[str, Any]) -> str:
         """Resolve one fail-closed mode for serialization and authorization."""
 
         privacy_settings = wedding.get("privacy_settings")
@@ -333,8 +333,8 @@ class GuestVerificationService:
     @classmethod
     def _serialize_guest_response(
         cls,
-        guest: Optional[Dict[str, Any]],
-    ) -> Optional[Dict[str, Any]]:
+        guest: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
         if not guest:
             return None
 
@@ -363,7 +363,7 @@ class GuestVerificationService:
             variants.append(ObjectId(normalized))
         return variants
 
-    def _serialize_rsvp_plus_one(self, plus_one: Dict[str, Any]) -> Dict[str, Any]:
+    def _serialize_rsvp_plus_one(self, plus_one: dict[str, Any]) -> dict[str, Any]:
         projected = (
             self._project_typed_fields(plus_one, self._rsvp_plus_one_fields) or {}
         )
@@ -375,7 +375,7 @@ class GuestVerificationService:
         )
         return projected
 
-    async def invalidate_wedding_privacy_info(self, slug: Optional[str]) -> None:
+    async def invalidate_wedding_privacy_info(self, slug: str | None) -> None:
         """Invalidate cached privacy bootstrap data for a wedding slug."""
         normalized_slug = self._sanitize_input(slug or "", "slug", max_length=100)
         if not normalized_slug:
@@ -387,7 +387,7 @@ class GuestVerificationService:
         self,
         guest_id: str,
         wedding_id: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         guest_id_variants = self._mongo_identifier_variants(guest_id)
         wedding_id_variants = self._mongo_identifier_variants(wedding_id)
         existing_rsvp = await self.rsvp_collection.find_one(
@@ -419,7 +419,7 @@ class GuestVerificationService:
         ]
         attending = existing_rsvp.get("attending")
 
-        response: Dict[str, Any] = {
+        response: dict[str, Any] = {
             "has_rsvp": True,
             "attending": (
                 [event for event in attending if isinstance(event, str)]
@@ -441,9 +441,9 @@ class GuestVerificationService:
         slug: str,
         wedding_id: str,
         auth_method: str,
-        guest_id: Optional[str] = None,
+        guest_id: str | None = None,
         otp_verified: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         slug = self._sanitize_input(slug, "slug", max_length=100)
 
         wedding = await self.wedding_service.get_wedding_by_slug(slug)
@@ -526,7 +526,7 @@ class GuestVerificationService:
     def _build_verification_identifiers(
         self,
         slug: str,
-        verification_data: Dict[str, Any],
+        verification_data: dict[str, Any],
     ) -> tuple[str, str]:
         rate_limit_identifier = (
             verification_data.get("phone")
@@ -547,7 +547,7 @@ class GuestVerificationService:
     def _check_memory_rate_limit(
         self, rate_limit_key: str, max_attempts: int, window_seconds: int
     ) -> bool:
-        current_time = datetime.now(timezone.utc)
+        current_time = datetime.now(UTC)
         attempts = self.__class__._failed_attempts
         attempt_data = attempts.get(rate_limit_key)
 
@@ -569,7 +569,7 @@ class GuestVerificationService:
         return True
 
     def _record_memory_failed_attempt(self, rate_limit_key: str, window_seconds: int):
-        current_time = datetime.now(timezone.utc)
+        current_time = datetime.now(UTC)
         attempts = self.__class__._failed_attempts
         attempt_data = attempts.get(rate_limit_key)
 
@@ -589,7 +589,7 @@ class GuestVerificationService:
     def _acquire_memory_lock(
         self, lock_key: str, lock_token: str, lock_seconds: int
     ) -> bool:
-        current_time = datetime.now(timezone.utc)
+        current_time = datetime.now(UTC)
         locks = self.__class__._attempt_locks
         lock_data = locks.get(lock_key)
 
@@ -603,7 +603,7 @@ class GuestVerificationService:
         return True
 
     def _release_memory_lock(self, lock_key: str, lock_token: str):
-        current_time = datetime.now(timezone.utc)
+        current_time = datetime.now(UTC)
         lock_data = self.__class__._attempt_locks.get(lock_key)
 
         if not lock_data:
@@ -617,7 +617,7 @@ class GuestVerificationService:
         identifier: str,
         namespace: str = "guest_access",
         lock_seconds: int = 0,
-    ) -> Optional[str]:
+    ) -> str | None:
         duration = lock_seconds or self._attempt_lock_duration
         lock_key = self._build_attempt_lock_key(namespace, identifier)
         lock_token = secrets.token_hex(16)
@@ -653,8 +653,8 @@ class GuestVerificationService:
         self,
         identifier: str,
         namespace: str = "guest_access",
-        max_attempts: Optional[int] = None,
-        window_seconds: Optional[int] = None,
+        max_attempts: int | None = None,
+        window_seconds: int | None = None,
     ) -> bool:
         """Check if request is rate limited. Returns True if allowed."""
         limit = max_attempts or self._default_max_attempts
@@ -681,8 +681,8 @@ class GuestVerificationService:
         self,
         identifier: str,
         namespace: str = "guest_access",
-        max_attempts: Optional[int] = None,
-        window_seconds: Optional[int] = None,
+        max_attempts: int | None = None,
+        window_seconds: int | None = None,
     ):
         """Record a failed authentication attempt"""
         window = window_seconds or self._default_lockout_duration
@@ -706,12 +706,12 @@ class GuestVerificationService:
 
         self.__class__._failed_attempts.pop(rate_limit_key, None)
 
-    async def _log_security_event(self, event_type: str, details: Dict[str, Any]):
+    async def _log_security_event(self, event_type: str, details: dict[str, Any]):
         """Log security events for monitoring - database only, no console logging of sensitive data"""
         try:
             log_entry = {
                 "event_type": event_type,
-                "timestamp": datetime.now(timezone.utc),
+                "timestamp": datetime.now(UTC),
                 "details": details,
             }
             # Only log event type to console, not the sensitive details
@@ -732,7 +732,7 @@ class GuestVerificationService:
         self,
         slug: str,
         token: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get wedding and guest data for RSVP using invite token.
 
@@ -837,8 +837,8 @@ class GuestVerificationService:
     async def verify_wedding_page_access(
         self,
         slug: str,
-        verification_data: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        verification_data: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Verify visitor access to view a wedding page based on privacy settings.
 
@@ -1045,7 +1045,7 @@ class GuestVerificationService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error verifying guest access: {str(e)}"
+                status_code=500, detail=f"Error verifying guest access: {e!s}"
             )
         finally:
             await self._release_attempt_lock(
@@ -1053,8 +1053,8 @@ class GuestVerificationService:
             )
 
     def _find_guest_by_verification(
-        self, wedding_id: str, name: str, phone: str, privacy_settings: Dict
-    ) -> Optional[Dict]:
+        self, wedding_id: str, name: str, phone: str, privacy_settings: dict
+    ) -> dict | None:
         """
         DEPRECATED: This method is replaced by OTP verification.
         Keeping for backward compatibility but should not be used for new implementations.
@@ -1075,9 +1075,12 @@ class GuestVerificationService:
         # Handle US phone numbers
         if len(digits_only) == 10:
             return f"+1{digits_only}"
-        elif len(digits_only) == 11 and digits_only.startswith("1"):
-            return f"+{digits_only}"
-        elif digits_only.startswith("1") and len(digits_only) > 11:
+        elif (
+            len(digits_only) == 11
+            and digits_only.startswith("1")
+            or digits_only.startswith("1")
+            and len(digits_only) > 11
+        ):
             return f"+{digits_only}"
 
         # For other formats, just prepend + if not present
@@ -1095,7 +1098,7 @@ class GuestVerificationService:
                 "wedding_id": wedding_id,
                 "guest_id": guest_id,
                 "verification_method": method,
-                "timestamp": datetime.now(timezone.utc),
+                "timestamp": datetime.now(UTC),
                 "type": "guest_verification",
             }
             await mongo.db["access_logs"].insert_one(log_entry)
@@ -1103,7 +1106,7 @@ class GuestVerificationService:
             # Silently fail - logging shouldn't break the main flow
             pass
 
-    async def get_wedding_privacy_info(self, slug: str) -> Dict[str, Any]:
+    async def get_wedding_privacy_info(self, slug: str) -> dict[str, Any]:
         """Get privacy information about a wedding without granting access"""
         try:
             cache_key = CacheKeys.wedding_privacy_info(slug)
@@ -1193,12 +1196,12 @@ class GuestVerificationService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error getting wedding privacy info: {str(e)}"
+                status_code=500, detail=f"Error getting wedding privacy info: {e!s}"
             )
 
     async def update_wedding_privacy_settings(
-        self, wedding_id: str, privacy_settings: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, wedding_id: str, privacy_settings: dict[str, Any]
+    ) -> dict[str, Any]:
         """Update privacy settings for a wedding (admin only)"""
         try:
             # Validate privacy mode
@@ -1229,7 +1232,7 @@ class GuestVerificationService:
                 {
                     "$set": {
                         "privacy_settings": privacy_settings,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -1250,7 +1253,7 @@ class GuestVerificationService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Error updating privacy settings: {str(e)}"
+                status_code=500, detail=f"Error updating privacy settings: {e!s}"
             )
 
     # =========================================================================
@@ -1263,7 +1266,7 @@ class GuestVerificationService:
         slug: str,
         contact: str,
         contact_type: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Look up guest by contact (phone or email) and send their RSVP link.
 
@@ -1424,7 +1427,7 @@ class GuestVerificationService:
                     result = twilio_service._send_sms(digits_only, message)
                     send_success = result.get("status") == "success"
                 except Exception as e:
-                    security_logger.error(f"Failed to send SMS: {str(e)}")
+                    security_logger.error(f"Failed to send SMS: {e!s}")
             else:
                 try:
                     from app.services.email_service_resend import ResendEmailService
@@ -1444,7 +1447,7 @@ class GuestVerificationService:
                     )
                     send_success = result.get("success", False)
                 except Exception as e:
-                    security_logger.error(f"Failed to send email: {str(e)}")
+                    security_logger.error(f"Failed to send email: {e!s}")
 
             # Log success/failure
             if send_success:
@@ -1470,7 +1473,7 @@ class GuestVerificationService:
             }
 
         except Exception as e:
-            security_logger.error(f"Error in request_and_send_rsvp_link: {str(e)}")
+            security_logger.error(f"Error in request_and_send_rsvp_link: {e!s}")
             return {
                 "success": True,
                 "message": "If you're on the guest list, you'll receive your RSVP link shortly.",
@@ -1541,8 +1544,8 @@ class GuestVerificationService:
     # Routes to appropriate method based on whether token is provided
     # =========================================================================
     async def verify_guest_access(
-        self, slug: str, verification_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, slug: str, verification_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         DEPRECATED: Use get_rsvp_access_by_token() for RSVP or
         verify_wedding_page_access() for wedding page viewing.

@@ -2,8 +2,8 @@ import asyncio
 import logging
 import os
 import time
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
+from typing import Optional
 
 from bson import ObjectId
 from fastapi import Depends, HTTPException, Request, status
@@ -18,6 +18,7 @@ from app.models.subscription import (
     normalize_subscription_status,
 )
 from app.models.team_member import resolve_team_permissions
+from app.utils import team_subscription_gate
 from app.utils.auth_utils import verify_token
 from app.utils.communication_access import (
     CommunicationCapability,
@@ -29,7 +30,6 @@ from app.utils.planner_ownership import (
     normalize_wedding_query_id,
     wedding_belongs_to_owner,
 )
-import app.utils.team_subscription_gate as team_subscription_gate
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ _DEFAULT_SUB_BLOCK_REASON = "Subscription issue. Please contact support."
 
 
 def _build_team_member_block_reason(
-    owner_sub_status: Optional[str], owner_email: Optional[str]
+    owner_sub_status: str | None, owner_email: str | None
 ) -> str:
     """Compatibility wrapper around the shared team-member billing helper.
 
@@ -68,7 +68,7 @@ _team_cache: dict = {}
 _team_cache_lock = asyncio.Lock()
 
 
-async def _get_cached_team_data(user_id: str) -> Optional[dict]:
+async def _get_cached_team_data(user_id: str) -> dict | None:
     """Get cached team data if not expired (thread-safe)"""
     async with _team_cache_lock:
         entry = _team_cache.get(user_id)
@@ -236,7 +236,7 @@ async def invalidate_auth_cache(email: str) -> None:
         logger.debug(f"Auth cache invalidate failed for {email}: {e}")
 
 
-async def invalidate_auth_cache_by_user_id(user_id: Optional[str]) -> None:
+async def invalidate_auth_cache_by_user_id(user_id: str | None) -> None:
     """Bust the auth cache for a user identified by Mongo ``_id``.
 
     Useful for callers that have ``user_id`` but not email — most
@@ -261,7 +261,7 @@ async def invalidate_auth_cache_by_user_id(user_id: Optional[str]) -> None:
 
 
 def _apply_subscription_gate(
-    auth_user: "ExtendedAuthUser", request: Optional[Request]
+    auth_user: "ExtendedAuthUser", request: Request | None
 ) -> None:
     """Re-evaluate the 402 subscription gate against ``request.url.path``.
 
@@ -296,8 +296,8 @@ def _apply_subscription_gate(
 
 
 async def compute_owner_subscription_block(
-    owner_id: Optional[str], owner_email: Optional[str]
-) -> tuple[bool, Optional[str]]:
+    owner_id: str | None, owner_email: str | None
+) -> tuple[bool, str | None]:
     """Compatibility wrapper around the shared helper.
 
     auth_extended tests patch this module's ``mongo`` handle directly. Route
@@ -332,11 +332,11 @@ def should_backfill_vendor_email_verification(user_data: dict, role: str) -> boo
 class ExtendedAuthUser:
     """Extended auth user supporting multiple roles including team members"""
 
-    def __init__(self, email: str, role: str, user_data: Optional[dict] = None):
+    def __init__(self, email: str, role: str, user_data: dict | None = None):
         self.email = email
         self.role = role
         self.user_data = user_data or {}
-        self.subscription_status: Optional[str] = (
+        self.subscription_status: str | None = (
             self.user_data.get("subscription_status") if self.user_data else None
         )
         # Role-specific properties
@@ -350,31 +350,29 @@ class ExtendedAuthUser:
         self.is_advertising_vendor = role == "advertising_vendor"
 
         # Team member properties (populated by get_current_user_extended for team members)
-        self.parent_planner_id: Optional[str] = (
+        self.parent_planner_id: str | None = (
             user_data.get("parent_planner_id") if user_data else None
         )
-        self.team_member_id: Optional[str] = (
+        self.team_member_id: str | None = (
             user_data.get("team_member_id") if user_data else None
         )
-        self.team_role: Optional[str] = (
-            user_data.get("team_role") if user_data else None
-        )
-        self.team_permissions: Optional[dict] = None
-        self.team_wedding_access: Optional[str] = None  # "all" or "assigned"
-        self.team_assigned_wedding_ids: List[str] = []
-        self.team_owner_email: Optional[str] = None
+        self.team_role: str | None = user_data.get("team_role") if user_data else None
+        self.team_permissions: dict | None = None
+        self.team_wedding_access: str | None = None  # "all" or "assigned"
+        self.team_assigned_wedding_ids: list[str] = []
+        self.team_owner_email: str | None = None
 
 
 class CalendarOwnerScope(TypedDict):
-    owner_id: Optional[str]
-    owner_email: Optional[str]
-    accessible_wedding_ids: Optional[List[str]]
+    owner_id: str | None
+    owner_email: str | None
+    accessible_wedding_ids: list[str] | None
     is_owner: bool
     is_team_member: bool
 
 
 async def get_current_user_extended(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     request: Request = None,  # type: ignore[assignment]
 ) -> ExtendedAuthUser:
     """Get current authenticated user supporting both legacy and new auth systems"""
@@ -457,9 +455,7 @@ async def get_current_user_extended(
             # Check email verification for new accounts
             if not user_data.get("email_verified"):
                 if should_backfill_vendor_email_verification(user_data, role):
-                    verified_at = user_data.get("approved_at") or datetime.now(
-                        timezone.utc
-                    )
+                    verified_at = user_data.get("approved_at") or datetime.now(UTC)
                     await mongo.get_users_collection().update_one(
                         {"email": email},
                         {
@@ -540,16 +536,16 @@ async def get_current_user_extended(
                             # Parse and assume UTC if no timezone info
                             trial_end_date = datetime.fromisoformat(
                                 trial_end_date
-                            ).replace(tzinfo=timezone.utc)
+                            ).replace(tzinfo=UTC)
                     elif (
                         isinstance(trial_end_date, datetime)
                         and trial_end_date.tzinfo is None
                     ):
                         # Handle naive datetime objects from MongoDB
-                        trial_end_date = trial_end_date.replace(tzinfo=timezone.utc)
-                    if datetime.now(timezone.utc) > trial_end_date:
+                        trial_end_date = trial_end_date.replace(tzinfo=UTC)
+                    if datetime.now(UTC) > trial_end_date:
                         # Auto-expire the trial — update BOTH users and user_subscriptions
-                        expire_time = datetime.now(timezone.utc)
+                        expire_time = datetime.now(UTC)
                         await mongo.get_users_collection().update_one(
                             {"email": email},
                             {
@@ -656,27 +652,23 @@ async def get_current_user_extended(
                             isinstance(last_active, datetime)
                             and last_active.tzinfo is None
                         ):
-                            last_active = last_active.replace(tzinfo=timezone.utc)
+                            last_active = last_active.replace(tzinfo=UTC)
                         should_update = (
-                            datetime.now(timezone.utc) - last_active
+                            datetime.now(UTC) - last_active
                         ).total_seconds() > 300
                     if should_update:
                         try:
                             asyncio.create_task(
                                 mongo.db["team_members"].update_one(
                                     {"_id": ObjectId(team_member_id)},
-                                    {
-                                        "$set": {
-                                            "last_active_at": datetime.now(timezone.utc)
-                                        }
-                                    },
+                                    {"$set": {"last_active_at": datetime.now(UTC)}},
                                 )
                             )
                         except Exception as e:
                             logger.debug(
                                 f"Failed to update team member last_active_at: {e}"
                             )
-                            pass  # Non-critical
+                            # Non-critical
                 else:
                     # Team membership revoked or deactivated
                     raise HTTPException(
@@ -689,7 +681,6 @@ async def get_current_user_extended(
             except Exception as e:
                 logger.error(f"Error loading team member data for {email}: {e}")
                 # Non-fatal: allow login but without team permissions
-                pass
 
         # ── Cache the assembled auth user ────────────────────────────
         # ROOT_ADMIN is never cached (low frequency, sensitive).  For
@@ -960,7 +951,7 @@ def require_team_permission(permission_name: str):
     return _check_permission
 
 
-def get_accessible_wedding_ids(user: ExtendedAuthUser) -> Optional[List[str]]:
+def get_accessible_wedding_ids(user: ExtendedAuthUser) -> list[str] | None:
     """
     Utility: determine which wedding IDs a user can access.
 
@@ -977,7 +968,7 @@ def get_accessible_wedding_ids(user: ExtendedAuthUser) -> Optional[List[str]]:
     return []  # No access
 
 
-def get_owner_identity(user: ExtendedAuthUser) -> tuple[Optional[str], Optional[str]]:
+def get_owner_identity(user: ExtendedAuthUser) -> tuple[str | None, str | None]:
     """Return the planner owner identity behind a planner or team-member session."""
     if user.is_wedding_planner:
         return (
@@ -992,7 +983,7 @@ def get_owner_identity(user: ExtendedAuthUser) -> tuple[Optional[str], Optional[
     return None, None
 
 
-def get_calendar_owner_identity(user: ExtendedAuthUser) -> dict[str, Optional[str]]:
+def get_calendar_owner_identity(user: ExtendedAuthUser) -> dict[str, str | None]:
     """Return owner identity payload for calendar-scoped routes."""
     owner_id, owner_email = get_owner_identity(user)
     return {
@@ -1004,10 +995,10 @@ def get_calendar_owner_identity(user: ExtendedAuthUser) -> dict[str, Optional[st
 
 
 async def resolve_owner_scoped_user_assignments(
-    owner_id: Optional[str],
-    owner_email: Optional[str],
-    user_ids: List[str],
-) -> tuple[List[str], List[str]]:
+    owner_id: str | None,
+    owner_email: str | None,
+    user_ids: list[str],
+) -> tuple[list[str], list[str]]:
     """Resolve assignee ids/emails and reject users outside the planner-owner scope."""
     if not user_ids:
         return [], []
@@ -1016,9 +1007,9 @@ async def resolve_owner_scoped_user_assignments(
     normalized_owner_email = normalize_planner_email(owner_email)
     users_collection = mongo.get_users_collection()
 
-    resolved_ids: List[str] = []
-    resolved_emails: List[str] = []
-    invalid_user_ids: List[str] = []
+    resolved_ids: list[str] = []
+    resolved_emails: list[str] = []
+    invalid_user_ids: list[str] = []
 
     for user_id in user_ids:
         try:
@@ -1044,15 +1035,17 @@ async def resolve_owner_scoped_user_assignments(
         user_role = user_doc.get("role")
         belongs_to_owner_scope = False
 
-        if normalized_owner_id and resolved_user_id == normalized_owner_id:
-            belongs_to_owner_scope = True
-        elif normalized_owner_email and resolved_user_email == normalized_owner_email:
-            belongs_to_owner_scope = True
-        elif (
-            user_role == "team_member"
-            and normalized_owner_id
-            and normalize_planner_id(user_doc.get("parent_planner_id"))
-            == normalized_owner_id
+        if (
+            normalized_owner_id
+            and resolved_user_id == normalized_owner_id
+            or normalized_owner_email
+            and resolved_user_email == normalized_owner_email
+            or (
+                user_role == "team_member"
+                and normalized_owner_id
+                and normalize_planner_id(user_doc.get("parent_planner_id"))
+                == normalized_owner_id
+            )
         ):
             belongs_to_owner_scope = True
 

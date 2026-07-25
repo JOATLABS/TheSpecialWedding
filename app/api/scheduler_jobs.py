@@ -17,8 +17,7 @@ import hmac
 import logging
 import os
 import time
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query, Request
 
@@ -47,8 +46,8 @@ _HMAC_MAX_SKEW_SECONDS = 300
 
 def _verify_hmac(
     request: Request,
-    x_scheduler_signature: Optional[str],
-    x_scheduler_timestamp: Optional[str],
+    x_scheduler_signature: str | None,
+    x_scheduler_timestamp: str | None,
 ):
     """Verify HMAC-SHA256 request signature with timestamp replay protection.
 
@@ -94,9 +93,9 @@ def _verify_hmac(
 
 def verify_scheduler_key(
     request: Request,
-    x_scheduler_key: Optional[str] = Header(None),
-    x_scheduler_signature: Optional[str] = Header(None),
-    x_scheduler_timestamp: Optional[str] = Header(None),
+    x_scheduler_key: str | None = Header(None),
+    x_scheduler_signature: str | None = Header(None),
+    x_scheduler_timestamp: str | None = Header(None),
 ):
     """Verify scheduler authentication.
 
@@ -136,9 +135,9 @@ def verify_scheduler_key(
 async def process_task_reminders(
     request: Request,
     background_tasks: BackgroundTasks,
-    x_scheduler_key: Optional[str] = Header(None),
-    x_scheduler_signature: Optional[str] = Header(None),
-    x_scheduler_timestamp: Optional[str] = Header(None),
+    x_scheduler_key: str | None = Header(None),
+    x_scheduler_signature: str | None = Header(None),
+    x_scheduler_timestamp: str | None = Header(None),
     dry_run: bool = Query(False, description="If true, only report what would be sent"),
     sync: bool = Query(
         False, description="If true, run synchronously instead of in background"
@@ -186,16 +185,16 @@ async def process_task_reminders(
     return {
         "status": "accepted",
         "message": "Task reminder processing started in background",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
 @router.post("/cleanup-reminders", tags=["Scheduler"])
 async def cleanup_old_reminders(
     request: Request,
-    x_scheduler_key: Optional[str] = Header(None),
-    x_scheduler_signature: Optional[str] = Header(None),
-    x_scheduler_timestamp: Optional[str] = Header(None),
+    x_scheduler_key: str | None = Header(None),
+    x_scheduler_signature: str | None = Header(None),
+    x_scheduler_timestamp: str | None = Header(None),
     days_old: int = Query(7, description="Remove records older than this many days"),
 ):
     """
@@ -218,7 +217,7 @@ async def cleanup_old_reminders(
     return {
         "status": "success",
         "deleted_count": deleted_count,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -242,7 +241,7 @@ async def scheduler_health():
         "status": "healthy",
         "scheduler_configured": scheduler_configured,
         "auth_mode": auth_mode,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -250,9 +249,9 @@ async def scheduler_health():
 async def process_planner_onboarding_emails(
     request: Request,
     background_tasks: BackgroundTasks,
-    x_scheduler_key: Optional[str] = Header(None),
-    x_scheduler_signature: Optional[str] = Header(None),
-    x_scheduler_timestamp: Optional[str] = Header(None),
+    x_scheduler_key: str | None = Header(None),
+    x_scheduler_signature: str | None = Header(None),
+    x_scheduler_timestamp: str | None = Header(None),
     dry_run: bool = Query(
         False, description="If true, report what would be sent without sending"
     ),
@@ -290,7 +289,7 @@ async def process_planner_onboarding_emails(
     return {
         "status": "accepted",
         "message": "Planner onboarding email processing started in background",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -298,9 +297,9 @@ async def process_planner_onboarding_emails(
 async def process_calendar_invite_jobs(
     request: Request,
     background_tasks: BackgroundTasks,
-    x_scheduler_key: Optional[str] = Header(None),
-    x_scheduler_signature: Optional[str] = Header(None),
-    x_scheduler_timestamp: Optional[str] = Header(None),
+    x_scheduler_key: str | None = Header(None),
+    x_scheduler_signature: str | None = Header(None),
+    x_scheduler_timestamp: str | None = Header(None),
     limit: int = Query(25, ge=1, le=200),
     sync: bool = Query(
         False, description="If true, run synchronously and return processing results"
@@ -320,7 +319,7 @@ async def process_calendar_invite_jobs(
         return {
             "status": "success",
             "results": results,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
     async def _tracked_calendar_invite_jobs() -> None:
@@ -331,7 +330,7 @@ async def process_calendar_invite_jobs(
     return {
         "status": "accepted",
         "message": "Calendar invite job processing started in background",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -339,9 +338,9 @@ async def process_calendar_invite_jobs(
 async def process_calendar_maintenance(
     request: Request,
     background_tasks: BackgroundTasks,
-    x_scheduler_key: Optional[str] = Header(None),
-    x_scheduler_signature: Optional[str] = Header(None),
-    x_scheduler_timestamp: Optional[str] = Header(None),
+    x_scheduler_key: str | None = Header(None),
+    x_scheduler_signature: str | None = Header(None),
+    x_scheduler_timestamp: str | None = Header(None),
     retry_limit: int = Query(50, ge=1, le=200),
     drift_limit: int = Query(50, ge=1, le=200),
     sync: bool = Query(
@@ -374,7 +373,7 @@ async def process_calendar_maintenance(
         return {
             "status": "success",
             "results": results,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
     async def _tracked_maintenance() -> None:
@@ -388,5 +387,5 @@ async def process_calendar_maintenance(
     return {
         "status": "accepted",
         "message": "Calendar maintenance started in background",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }

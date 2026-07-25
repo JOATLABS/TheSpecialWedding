@@ -20,9 +20,9 @@ import logging
 import re
 import uuid
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from io import BytesIO
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import HTTPException
 
@@ -70,7 +70,7 @@ ALLOWED_MIME_TYPES: frozenset[str] = frozenset(
 _FILENAME_SANITIZE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
-def _normalize_content_type(content_type: Optional[str]) -> Optional[str]:
+def _normalize_content_type(content_type: str | None) -> str | None:
     if not content_type:
         return None
     return content_type.split(";", 1)[0].strip().lower() or None
@@ -148,7 +148,7 @@ def detect_upload_mime_types(contents: bytes) -> frozenset[str]:
     return frozenset(detected)
 
 
-def sanitize_filename(filename: Optional[str]) -> str:
+def sanitize_filename(filename: str | None) -> str:
     """Reduce arbitrary uploaded filenames to a safe S3-key suffix.
 
     Strips path separators and unusual characters, caps the length, and
@@ -172,7 +172,7 @@ def sanitize_filename(filename: Optional[str]) -> str:
 
 
 class FormUploadService:
-    def __init__(self, storage: Optional[MediaStorage] = None) -> None:
+    def __init__(self, storage: MediaStorage | None = None) -> None:
         self.uploads_collection = mongo.db["form_uploads"]
         self._storage = storage
 
@@ -185,7 +185,7 @@ class FormUploadService:
         return self._storage
 
     @staticmethod
-    def _validate_field_is_file_upload(form: Dict[str, Any], field_id: str) -> None:
+    def _validate_field_is_file_upload(form: dict[str, Any], field_id: str) -> None:
         for field in form.get("fields", []):
             if field.get("id") == field_id:
                 if field.get("type") != "file_upload":
@@ -199,13 +199,13 @@ class FormUploadService:
     async def store_upload(
         self,
         *,
-        form: Dict[str, Any],
-        distribution: Dict[str, Any],
+        form: dict[str, Any],
+        distribution: dict[str, Any],
         field_id: str,
-        filename: Optional[str],
-        content_type: Optional[str],
+        filename: str | None,
+        content_type: str | None,
         contents: bytes,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Persist an uploaded file to the form-uploads bucket and Mongo.
 
         Caller is responsible for verifying (form_id, distribution_id,
@@ -318,7 +318,7 @@ class FormUploadService:
             "s3_bucket": target.bucket_name,
             "s3_key": key,
             "url": public_url,
-            "uploaded_at": datetime.now(timezone.utc),
+            "uploaded_at": datetime.now(UTC),
         }
         try:
             await self.uploads_collection.insert_one(record)
@@ -386,7 +386,7 @@ class FormUploadService:
         file_id: str,
         form_id: str,
         distribution_id: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Return the upload row iff it exists AND is scoped to the form+distribution.
 
         Used by submit_form_response to verify that any FILE_UPLOAD value
@@ -406,10 +406,10 @@ class FormUploadService:
 
 __all__ = [
     "ALLOWED_MIME_TYPES",
-    "FormUploadService",
+    "MAX_UPLOADS_PER_DISTRIBUTION",
     "MAX_UPLOAD_BYTES",
     "MAX_UPLOAD_BYTES_PER_DISTRIBUTION",
-    "MAX_UPLOADS_PER_DISTRIBUTION",
+    "FormUploadService",
     "detect_upload_mime_types",
     "sanitize_filename",
 ]

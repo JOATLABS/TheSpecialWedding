@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -25,11 +25,11 @@ class CalendarIdempotencyModel(BaseModel):
     idempotency_key: str
     request_hash: str
     status: str = Field(default=CalendarIdempotencyStatus.IN_PROGRESS.value)
-    response_payload: Optional[dict[str, Any]] = None
-    response_status_code: Optional[int] = None
-    error_detail: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    response_payload: dict[str, Any] | None = None
+    response_status_code: int | None = None
+    error_detail: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime
 
     class Config:

@@ -1,8 +1,6 @@
 import os
-from datetime import datetime
-from typing import Any, List, Optional
-
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import (
     APIRouter,
@@ -47,10 +45,10 @@ _unsubscribe_limiter = create_rate_limiter(
 class UserInviteModel(BaseModel):
     email: str
     role: str  # wedding_planner, vendor
-    company_name: Optional[str] = None
-    plan_id: Optional[str] = None
-    service_type: Optional[str] = None  # For vendors
-    assigned_wedding_ids: List[str] = []  # For vendors
+    company_name: str | None = None
+    plan_id: str | None = None
+    service_type: str | None = None  # For vendors
+    assigned_wedding_ids: list[str] = []  # For vendors
 
     # Trial configuration (Option B: Full Stripe Integration)
     trial_days: int = Field(
@@ -63,7 +61,7 @@ class UserInviteModel(BaseModel):
         default="pause",
         description="What happens when trial ends without payment method: 'pause' or 'cancel'",
     )
-    admin_notes: Optional[str] = Field(
+    admin_notes: str | None = Field(
         default=None,
         max_length=500,
         description="Internal notes about this invitation (not shown to user)",
@@ -77,13 +75,13 @@ class UserInviteModel(BaseModel):
 
 
 class UserUpdateModel(BaseModel):
-    company_name: Optional[str] = None
-    plan_id: Optional[str] = None
-    subscription_status: Optional[str] = None
-    trial_end_date: Optional[datetime] = None
-    max_weddings: Optional[int] = None
-    is_active: Optional[bool] = None
-    role: Optional[str] = None
+    company_name: str | None = None
+    plan_id: str | None = None
+    subscription_status: str | None = None
+    trial_end_date: datetime | None = None
+    max_weddings: int | None = None
+    is_active: bool | None = None
+    role: str | None = None
 
 
 class AccountSetupModel(BaseModel):
@@ -130,7 +128,7 @@ class PublicRegistrationModel(BaseModel):
     first_name: str
     last_name: str
     company_name: str
-    selected_plan_id: Optional[str] = None
+    selected_plan_id: str | None = None
     role: str = "wedding_planner"
 
     @validator("password")
@@ -180,21 +178,19 @@ class ChangeEmailModel(BaseModel):
 
 
 class ProfileInfoModel(BaseModel):
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    company_name: Optional[str] = None
-    phone: Optional[str] = None
-    support_phone: Optional[str] = None  # Phone number guests see when they text HELP
-    push_notifications_enabled: Optional[bool] = (
-        None  # Enable/disable push notifications
-    )
+    first_name: str | None = None
+    last_name: str | None = None
+    company_name: str | None = None
+    phone: str | None = None
+    support_phone: str | None = None  # Phone number guests see when they text HELP
+    push_notifications_enabled: bool | None = None  # Enable/disable push notifications
 
 
 class OnboardingUpdateModel(BaseModel):
     """Model for updating onboarding status"""
 
     completed: bool = Field(..., description="Whether onboarding has been completed")
-    steps_completed: Optional[List[str]] = Field(
+    steps_completed: list[str] | None = Field(
         None, description="List of completed step IDs"
     )
 
@@ -210,11 +206,11 @@ async def invite_user(
 
 @router.get("/users", tags=["ROOT_ADMIN"])
 async def list_users(
-    role: Optional[str] = None,
-    status: Optional[str] = Query(None),
+    role: str | None = None,
+    status: str | None = Query(None),
     page: int = Query(1, ge=1, le=10000),
     limit: int = Query(50, ge=1, le=100),
-    search: Optional[str] = Query(None),
+    search: str | None = Query(None),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """List all users with optional role filter, pagination, and search - ROOT_ADMIN only"""
@@ -295,7 +291,7 @@ async def activate_user(
 
 @router.get("/admin/invitations", tags=["ROOT_ADMIN"])
 async def list_invitations(
-    status: Optional[str] = None,
+    status: str | None = None,
     page: int = 1,
     limit: int = 20,
     current_user: ExtendedAuthUser = Depends(require_root_admin),
@@ -330,13 +326,13 @@ async def resend_invitation(
 
 
 class CancelInvitationModel(BaseModel):
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 @router.post("/admin/invitations/{invitation_id}/cancel", tags=["ROOT_ADMIN"])
 async def cancel_invitation(
     invitation_id: str,
-    cancel_data: Optional[CancelInvitationModel] = None,
+    cancel_data: CancelInvitationModel | None = None,
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """Cancel a pending invitation - ROOT_ADMIN only"""
@@ -558,7 +554,7 @@ async def upload_profile_image(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Upload a profile image for the current user"""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     # Validate file type
     allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
@@ -588,7 +584,7 @@ async def upload_profile_image(
 
     # Generate unique filename using user ID
     user_id = current_user.user_data.get("_id", current_user.email.replace("@", "_at_"))
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     ext = os.path.splitext(file.filename or "image.jpg")[1] or ".jpg"
     key = f"profile-images/{user_id}/{timestamp}{ext}"
 
@@ -613,7 +609,7 @@ async def upload_profile_image(
             "profile_image_url": image_url,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to upload image: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload image: {e!s}")
 
 
 @router.delete("/profile/image", tags=["Profile"])
@@ -658,7 +654,7 @@ async def update_onboarding_status(
     - Called when planner completes or skips the onboarding tour
     - One-time only: once completed, cannot be uncompleted
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     # Build update data with mixed types
     update_data: dict[str, Any] = {}
@@ -666,7 +662,7 @@ async def update_onboarding_status(
 
     # Only set completion timestamp if completing (not when skipping)
     if onboarding_data.completed:
-        update_data["onboarding_completed_at"] = datetime.now(timezone.utc)
+        update_data["onboarding_completed_at"] = datetime.now(UTC)
 
     # Update steps if provided
     if onboarding_data.steps_completed is not None:

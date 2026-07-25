@@ -9,9 +9,9 @@ This module contains all models for the comprehensive vendor management system:
 - VendorAssignment: Links vendors to weddings and budget categories
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from bson import ObjectId
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
@@ -210,110 +210,106 @@ class VendorProfile(BaseModel):
     business_name: str = Field(
         ..., min_length=1, max_length=200, description="Vendor business name"
     )
-    contact_name: Optional[str] = Field(
+    contact_name: str | None = Field(
         None, max_length=100, description="Primary contact person"
     )
     email: str = Field(..., description="Vendor email address")
-    phone: Optional[str] = Field(None, max_length=20, description="Phone number")
-    website: Optional[str] = Field(None, max_length=500, description="Website URL")
-    address: Optional[str] = Field(None, max_length=500, description="Business address")
-    city: Optional[str] = Field(None, max_length=100)
-    state: Optional[str] = Field(None, max_length=100)
-    country: Optional[str] = Field(None, max_length=100)
-    postal_code: Optional[str] = Field(None, max_length=20)
+    phone: str | None = Field(None, max_length=20, description="Phone number")
+    website: str | None = Field(None, max_length=500, description="Website URL")
+    address: str | None = Field(None, max_length=500, description="Business address")
+    city: str | None = Field(None, max_length=100)
+    state: str | None = Field(None, max_length=100)
+    country: str | None = Field(None, max_length=100)
+    postal_code: str | None = Field(None, max_length=20)
 
     # Categorization
     service_category: VendorCategory = Field(
         ..., description="Primary service category"
     )
-    custom_service_category: Optional[str] = Field(
+    custom_service_category: str | None = Field(
         None,
         max_length=100,
         description="Custom service category label when service_category is 'other'",
     )
-    service_subcategories: List[str] = Field(
+    service_subcategories: list[str] = Field(
         default_factory=list, description="Specific services offered"
     )
-    service_description: Optional[str] = Field(
+    service_description: str | None = Field(
         None, max_length=2000, description="Description of services"
     )
 
     # Planner's Notes & Preferences
-    internal_notes: Optional[str] = Field(
+    internal_notes: str | None = Field(
         None, max_length=5000, description="Private planner notes"
     )
-    internal_rating: Optional[int] = Field(
+    internal_rating: int | None = Field(
         None, ge=1, le=5, description="Planner's rating 1-5"
     )
     is_preferred: bool = Field(False, description="Mark as preferred/go-to vendor")
-    tags: List[str] = Field(
+    tags: list[str] = Field(
         default_factory=list, description="Custom tags for filtering"
     )
 
     # Portfolio & Media
-    portfolio_urls: List[str] = Field(
+    portfolio_urls: list[str] = Field(
         default_factory=list, description="Portfolio/sample work URLs"
     )
-    logo_url: Optional[str] = Field(None, description="Vendor logo URL")
+    logo_url: str | None = Field(None, description="Vendor logo URL")
 
     # Pricing Reference (for quick estimates)
-    typical_price_min: Optional[float] = Field(
+    typical_price_min: float | None = Field(
         None, ge=0, description="Typical minimum price"
     )
-    typical_price_max: Optional[float] = Field(
+    typical_price_max: float | None = Field(
         None, ge=0, description="Typical maximum price"
     )
     currency: str = Field("USD", description="Currency code")
-    pricing_notes: Optional[str] = Field(
+    pricing_notes: str | None = Field(
         None, max_length=1000, description="Pricing notes"
     )
 
     # Capacity & Availability
-    max_events_per_day: Optional[int] = Field(
+    max_events_per_day: int | None = Field(
         None, ge=1, description="Max events vendor handles per day"
     )
-    lead_time_days: Optional[int] = Field(
+    lead_time_days: int | None = Field(
         None, ge=0, description="Required booking lead time"
     )
-    service_radius_miles: Optional[int] = Field(None, description="Service area radius")
-    travel_fee_notes: Optional[str] = Field(
+    service_radius_miles: int | None = Field(None, description="Service area radius")
+    travel_fee_notes: str | None = Field(
         None, max_length=500, description="Travel fee policy"
     )
 
     # Business Details
-    business_license: Optional[str] = Field(
+    business_license: str | None = Field(
         None, description="License number if applicable"
     )
-    insurance_info: Optional[str] = Field(
+    insurance_info: str | None = Field(
         None, max_length=500, description="Insurance details"
     )
-    tax_id: Optional[str] = Field(None, description="Tax ID for payments")
+    tax_id: str | None = Field(None, description="Tax ID for payments")
 
     # Usage Stats (auto-updated)
     weddings_count: int = Field(0, description="Number of weddings assigned")
     total_revenue: float = Field(0.0, description="Total paid to this vendor")
-    last_used_at: Optional[datetime] = Field(
-        None, description="Last wedding assignment"
-    )
+    last_used_at: datetime | None = Field(None, description="Last wedding assignment")
 
     # Source / Scraper Metadata
     source: str = Field(
         "manual", description="How vendor was added: manual, scraped, claimed"
     )
-    google_place_id: Optional[str] = Field(
-        None, description="Google Places ID for dedup"
-    )
-    scraped_at: Optional[datetime] = Field(
+    google_place_id: str | None = Field(None, description="Google Places ID for dedup")
+    scraped_at: datetime | None = Field(
         None, description="When vendor was last scraped/refreshed"
     )
-    scraped_from_state: Optional[str] = Field(
+    scraped_from_state: str | None = Field(
         None, description="Which state search discovered this vendor"
     )
 
     # System
     is_active: bool = Field(True, description="Whether vendor is active")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(
         populate_by_name=True, arbitrary_types_allowed=True, str_strip_whitespace=True
@@ -337,10 +333,10 @@ class ContractTemplatePlaceholder(BaseModel):
     source: str = Field(
         ..., description="Data source: vendor, wedding, planner, custom"
     )
-    field_path: Optional[str] = Field(
+    field_path: str | None = Field(
         None, description="Path to auto-populate from source"
     )
-    default_value: Optional[str] = Field(None, description="Default if source is empty")
+    default_value: str | None = Field(None, description="Default if source is empty")
     is_required: bool = Field(True, description="Whether this must be filled")
 
 
@@ -364,10 +360,10 @@ class ContractTemplate(BaseModel):
 
     # Template Info
     name: str = Field(..., min_length=1, max_length=200, description="Template name")
-    description: Optional[str] = Field(
+    description: str | None = Field(
         None, max_length=1000, description="Template description"
     )
-    service_category: Optional[VendorCategory] = Field(
+    service_category: VendorCategory | None = Field(
         None,
         description=(
             "Vendor type this template targets. Leave None to mark the "
@@ -377,26 +373,26 @@ class ContractTemplate(BaseModel):
     )
 
     # Content
-    sections: List[ContractTemplateSection] = Field(
+    sections: list[ContractTemplateSection] = Field(
         default_factory=list, description="Contract sections"
     )
-    terms_and_conditions: Optional[str] = Field(
+    terms_and_conditions: str | None = Field(
         None, description="Standard terms & conditions"
     )
-    cancellation_policy: Optional[str] = Field(
+    cancellation_policy: str | None = Field(
         None, description="Cancellation policy text"
     )
 
     # Placeholders
-    placeholders: List[ContractTemplatePlaceholder] = Field(
+    placeholders: list[ContractTemplatePlaceholder] = Field(
         default_factory=list, description="Available placeholders in this template"
     )
 
     # Default Payment Structure
-    default_deposit_percentage: Optional[float] = Field(
+    default_deposit_percentage: float | None = Field(
         None, ge=0, le=100, description="Default deposit %"
     )
-    default_payment_schedule: List[Dict] = Field(
+    default_payment_schedule: list[dict] = Field(
         default_factory=list,
         description="Default milestones e.g., [{percentage: 50, description: 'Deposit', days_before_event: 90}]",
     )
@@ -409,8 +405,8 @@ class ContractTemplate(BaseModel):
     # System
     is_active: bool = Field(True)
     usage_count: int = Field(0, description="How many times used")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(
         populate_by_name=True, arbitrary_types_allowed=True, str_strip_whitespace=True
@@ -436,26 +432,22 @@ class VendorContract(BaseModel):
 
     # Relationships
     wedding_id: str = Field(..., description="Wedding this contract is for")
-    vendor_profile_id: Optional[str] = Field(
+    vendor_profile_id: str | None = Field(
         None, description="Link to VendorProfile if from directory"
     )
-    vendor_quote_id: Optional[str] = Field(
+    vendor_quote_id: str | None = Field(
         None, description="Link to VendorQuote if converted from quote"
     )
-    budget_category_id: Optional[str] = Field(
-        None, description="Link to BudgetCategory"
-    )
-    template_id: Optional[str] = Field(
-        None, description="Template this was created from"
-    )
+    budget_category_id: str | None = Field(None, description="Link to BudgetCategory")
+    template_id: str | None = Field(None, description="Template this was created from")
 
     # Vendor Info (denormalized for contract record)
     vendor_name: str = Field(..., description="Vendor business name")
     vendor_email: str = Field(..., description="Vendor email")
-    vendor_phone: Optional[str] = Field(None, description="Vendor phone")
-    vendor_address: Optional[str] = Field(None, description="Vendor address")
+    vendor_phone: str | None = Field(None, description="Vendor phone")
+    vendor_address: str | None = Field(None, description="Vendor address")
     service_category: VendorCategory = Field(..., description="Service category")
-    custom_service_category: Optional[str] = Field(
+    custom_service_category: str | None = Field(
         None,
         max_length=100,
         description="Custom service category label when service_category is 'other'",
@@ -465,61 +457,55 @@ class VendorContract(BaseModel):
     contract_title: str = Field(
         ..., min_length=1, max_length=300, description="Contract title"
     )
-    contract_number: Optional[str] = Field(
-        None, description="Contract reference number"
-    )
+    contract_number: str | None = Field(None, description="Contract reference number")
     contract_type: ContractType = Field(
         ContractType.TEMPLATE, description="template, uploaded_pdf, or custom"
     )
 
     # Uploaded PDF (when contract_type is uploaded_pdf)
-    uploaded_pdf_url: Optional[str] = Field(
+    uploaded_pdf_url: str | None = Field(
         None, description="URL of uploaded contract PDF"
     )
-    uploaded_pdf_name: Optional[str] = Field(
+    uploaded_pdf_name: str | None = Field(
         None, description="Original filename of uploaded PDF"
     )
 
     # Form Data Integration
-    form_submission_ids: List[str] = Field(
+    form_submission_ids: list[str] = Field(
         default_factory=list, description="Form submissions used to populate contract"
     )
-    form_data_mappings: Dict[str, Any] = Field(
+    form_data_mappings: dict[str, Any] = Field(
         default_factory=dict, description="Mapping of placeholders to form data"
     )
 
     # Populated Content (with placeholders filled)
-    sections: List[Dict] = Field(
+    sections: list[dict] = Field(
         default_factory=list, description="Contract sections with content"
     )
-    terms_and_conditions: Optional[str] = Field(None)
-    cancellation_policy: Optional[str] = Field(None)
-    custom_clauses: Optional[str] = Field(None, description="Any custom additions")
+    terms_and_conditions: str | None = Field(None)
+    cancellation_policy: str | None = Field(None)
+    custom_clauses: str | None = Field(None, description="Any custom additions")
 
     # Financial
     total_amount: float = Field(..., ge=0, description="Total contract value")
     currency: str = Field("USD", description="Currency code")
-    deposit_amount: Optional[float] = Field(None, ge=0, description="Required deposit")
-    deposit_due_date: Optional[datetime] = Field(
-        None, description="When deposit is due"
-    )
+    deposit_amount: float | None = Field(None, ge=0, description="Required deposit")
+    deposit_due_date: datetime | None = Field(None, description="When deposit is due")
 
     # Status & Workflow
     status: ContractStatus = Field(ContractStatus.DRAFT, description="Current status")
-    sent_at: Optional[datetime] = Field(None, description="When sent to vendor")
-    viewed_at: Optional[datetime] = Field(None, description="When vendor first viewed")
-    signed_at: Optional[datetime] = Field(None, description="When signed")
-    signed_by_name: Optional[str] = Field(None, description="Name of signer")
-    signed_by_email: Optional[str] = Field(None, description="Email of signer")
-    signature_ip: Optional[str] = Field(None, description="IP address of signing")
-    completed_at: Optional[datetime] = Field(
-        None, description="When services completed"
-    )
-    cancelled_at: Optional[datetime] = Field(None, description="When cancelled")
-    cancellation_reason: Optional[str] = Field(None, description="Why cancelled")
+    sent_at: datetime | None = Field(None, description="When sent to vendor")
+    viewed_at: datetime | None = Field(None, description="When vendor first viewed")
+    signed_at: datetime | None = Field(None, description="When signed")
+    signed_by_name: str | None = Field(None, description="Name of signer")
+    signed_by_email: str | None = Field(None, description="Email of signer")
+    signature_ip: str | None = Field(None, description="IP address of signing")
+    completed_at: datetime | None = Field(None, description="When services completed")
+    cancelled_at: datetime | None = Field(None, description="When cancelled")
+    cancellation_reason: str | None = Field(None, description="Why cancelled")
 
     # Lock & Soft-Delete
-    contract_status_locked_at: Optional[datetime] = Field(
+    contract_status_locked_at: datetime | None = Field(
         None,
         description=(
             "Set when the contract is signed; once set the contract is "
@@ -539,16 +525,16 @@ class VendorContract(BaseModel):
 
     # Version Lineage
     version_number: int = Field(1, ge=1, description="Revision number within lineage")
-    root_contract_id: Optional[str] = Field(
+    root_contract_id: str | None = Field(
         None, description="Root/original contract id for this lineage"
     )
-    parent_contract_id: Optional[str] = Field(
+    parent_contract_id: str | None = Field(
         None, description="Direct parent contract id"
     )
-    supersedes_contract_id: Optional[str] = Field(
+    supersedes_contract_id: str | None = Field(
         None, description="Current live contract this version replaces when sent"
     )
-    superseded_by_contract_id: Optional[str] = Field(
+    superseded_by_contract_id: str | None = Field(
         None, description="Newer contract version that replaced this record"
     )
     is_current_version: bool = Field(
@@ -557,52 +543,52 @@ class VendorContract(BaseModel):
     contract_kind: ContractKind = Field(
         ContractKind.ORIGINAL, description="original, revision, or amendment"
     )
-    amendment_reason: Optional[str] = Field(
+    amendment_reason: str | None = Field(
         None, description="Planner-supplied reason for amendment/revision"
     )
-    superseded_at: Optional[datetime] = Field(
+    superseded_at: datetime | None = Field(
         None, description="When this version stopped being the live contract"
     )
 
     # Documents
-    draft_document_url: Optional[str] = Field(None, description="Draft PDF URL")
-    signed_document_url: Optional[str] = Field(None, description="Signed PDF URL")
-    attachments: List[Dict] = Field(
+    draft_document_url: str | None = Field(None, description="Draft PDF URL")
+    signed_document_url: str | None = Field(None, description="Signed PDF URL")
+    attachments: list[dict] = Field(
         default_factory=list,
         description="Additional attachments [{name, url, uploaded_at}]",
     )
 
     # Access Control
-    access_token_hash: Optional[str] = Field(
+    access_token_hash: str | None = Field(
         None, description="Hashed token for vendor access"
     )
-    token_expires_at: Optional[datetime] = Field(None, description="Token expiration")
-    token_revoked_at: Optional[datetime] = Field(
+    token_expires_at: datetime | None = Field(None, description="Token expiration")
+    token_revoked_at: datetime | None = Field(
         None, description="When the current access token was revoked"
     )
-    token_last_sent_at: Optional[datetime] = Field(
+    token_last_sent_at: datetime | None = Field(
         None, description="When the current access token was last emailed"
     )
-    token_last_viewed_at: Optional[datetime] = Field(
+    token_last_viewed_at: datetime | None = Field(
         None, description="When the current access token was last used to view"
     )
 
     # Service Dates
-    service_date: Optional[datetime] = Field(None, description="Primary service date")
-    service_start_time: Optional[str] = Field(None, description="Start time")
-    service_end_time: Optional[str] = Field(None, description="End time")
-    service_location: Optional[str] = Field(None, description="Service location")
+    service_date: datetime | None = Field(None, description="Primary service date")
+    service_start_time: str | None = Field(None, description="Start time")
+    service_end_time: str | None = Field(None, description="End time")
+    service_location: str | None = Field(None, description="Service location")
 
     # Planner
     created_by: str = Field(..., description="Planner email")
 
     # Notes & Communication
-    internal_notes: Optional[str] = Field(None, description="Planner's private notes")
-    vendor_notes: Optional[str] = Field(None, description="Notes from vendor")
+    internal_notes: str | None = Field(None, description="Planner's private notes")
+    vendor_notes: str | None = Field(None, description="Notes from vendor")
 
     # System
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(
         populate_by_name=True, arbitrary_types_allowed=True, str_strip_whitespace=True
@@ -635,8 +621,8 @@ class VendorPaymentMilestone(BaseModel):
     # Relationships
     contract_id: str = Field(..., description="Parent contract ID")
     wedding_id: str = Field(..., description="Wedding ID")
-    vendor_profile_id: Optional[str] = Field(None, description="Vendor profile ID")
-    budget_category_id: Optional[str] = Field(None, description="Budget category ID")
+    vendor_profile_id: str | None = Field(None, description="Vendor profile ID")
+    budget_category_id: str | None = Field(None, description="Budget category ID")
 
     # Milestone Details
     description: str = Field(
@@ -644,13 +630,13 @@ class VendorPaymentMilestone(BaseModel):
     )
     amount: float = Field(..., gt=0, description="Payment amount")
     currency: str = Field("USD", description="Currency code")
-    percentage_of_total: Optional[float] = Field(
+    percentage_of_total: float | None = Field(
         None, ge=0, le=100, description="% of contract total"
     )
 
     # Due Date
     due_date: datetime = Field(..., description="When payment is due")
-    days_before_event: Optional[int] = Field(
+    days_before_event: int | None = Field(
         None, description="Days before wedding (for auto-calculation)"
     )
 
@@ -661,30 +647,30 @@ class VendorPaymentMilestone(BaseModel):
 
     # Payment Details
     paid_amount: float = Field(0.0, ge=0, description="Amount paid so far")
-    paid_at: Optional[datetime] = Field(None, description="When paid")
-    payment_method: Optional[str] = Field(
+    paid_at: datetime | None = Field(None, description="When paid")
+    payment_method: str | None = Field(
         None, description="cash, check, card, bank_transfer, stripe"
     )
 
     # Stripe Integration
-    stripe_payment_intent_id: Optional[str] = Field(
+    stripe_payment_intent_id: str | None = Field(
         None, description="Stripe PaymentIntent ID"
     )
-    stripe_charge_id: Optional[str] = Field(None, description="Stripe Charge ID")
-    stripe_transfer_id: Optional[str] = Field(
+    stripe_charge_id: str | None = Field(None, description="Stripe Charge ID")
+    stripe_transfer_id: str | None = Field(
         None, description="Stripe Transfer ID (to vendor)"
     )
 
     # Receipt/Invoice
-    invoice_number: Optional[str] = Field(None, description="Invoice number")
-    invoice_url: Optional[str] = Field(None, description="Invoice document URL")
-    receipt_url: Optional[str] = Field(None, description="Receipt URL")
+    invoice_number: str | None = Field(None, description="Invoice number")
+    invoice_url: str | None = Field(None, description="Invoice document URL")
+    receipt_url: str | None = Field(None, description="Receipt URL")
 
     # Notes
-    notes: Optional[str] = Field(None, max_length=1000, description="Payment notes")
+    notes: str | None = Field(None, max_length=1000, description="Payment notes")
 
     # Reminders
-    reminder_sent_at: Optional[datetime] = Field(None, description="Last reminder sent")
+    reminder_sent_at: datetime | None = Field(None, description="Last reminder sent")
     reminder_count: int = Field(0, description="Number of reminders sent")
 
     # Vendor Info (denormalized)
@@ -693,8 +679,8 @@ class VendorPaymentMilestone(BaseModel):
 
     # System
     created_by: str = Field(..., description="Planner email")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(
         populate_by_name=True, arbitrary_types_allowed=True, str_strip_whitespace=True
@@ -721,9 +707,7 @@ class VendorAssignment(BaseModel):
     # Relationships
     wedding_id: str = Field(..., description="Wedding ID")
     vendor_profile_id: str = Field(..., description="Vendor from directory")
-    budget_category_id: Optional[str] = Field(
-        None, description="Linked budget category"
-    )
+    budget_category_id: str | None = Field(None, description="Linked budget category")
 
     # Status
     status: VendorAssignmentStatus = Field(
@@ -735,32 +719,32 @@ class VendorAssignment(BaseModel):
     vendor_name: str = Field(..., description="Vendor name")
     vendor_email: str = Field(..., description="Vendor email")
     service_category: VendorCategory = Field(..., description="Service type")
-    custom_service_category: Optional[str] = Field(
+    custom_service_category: str | None = Field(
         None,
         max_length=100,
         description="Custom service category label when service_category is 'other'",
     )
 
     # Linked Records
-    quote_ids: List[str] = Field(
+    quote_ids: list[str] = Field(
         default_factory=list, description="Associated quote IDs"
     )
-    contract_id: Optional[str] = Field(None, description="Associated contract ID")
+    contract_id: str | None = Field(None, description="Associated contract ID")
 
     # Service Details
-    service_date: Optional[datetime] = Field(None, description="Service date")
-    service_notes: Optional[str] = Field(
+    service_date: datetime | None = Field(None, description="Service date")
+    service_notes: str | None = Field(
         None, max_length=2000, description="Service notes"
     )
 
     # Financial Summary
-    quoted_amount: Optional[float] = Field(None, description="Latest quote amount")
-    contracted_amount: Optional[float] = Field(None, description="Contract amount")
+    quoted_amount: float | None = Field(None, description="Latest quote amount")
+    contracted_amount: float | None = Field(None, description="Contract amount")
     paid_amount: float = Field(0.0, description="Total paid")
 
     # Communication
-    last_contacted_at: Optional[datetime] = Field(None, description="Last contact")
-    next_followup_at: Optional[datetime] = Field(None, description="Next followup date")
+    last_contacted_at: datetime | None = Field(None, description="Last contact")
+    next_followup_at: datetime | None = Field(None, description="Next followup date")
 
     # Soft-Delete
     is_deleted: bool = Field(
@@ -774,8 +758,8 @@ class VendorAssignment(BaseModel):
 
     # System
     created_by: str = Field(..., description="Planner email")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(
         populate_by_name=True, arbitrary_types_allowed=True, str_strip_whitespace=True
@@ -803,12 +787,10 @@ class PaymentLink(BaseModel):
     id: PyObjectId = Field(default_factory=generate_object_id, alias="_id")
 
     # Relationships
-    wedding_id: Optional[str] = Field(None, description="Wedding ID if applicable")
-    contract_id: Optional[str] = Field(None, description="Related contract ID")
-    milestone_id: Optional[str] = Field(
-        None, description="Related payment milestone ID"
-    )
-    vendor_profile_id: Optional[str] = Field(None, description="Related vendor ID")
+    wedding_id: str | None = Field(None, description="Wedding ID if applicable")
+    contract_id: str | None = Field(None, description="Related contract ID")
+    milestone_id: str | None = Field(None, description="Related payment milestone ID")
+    vendor_profile_id: str | None = Field(None, description="Related vendor ID")
 
     # Payer Information
     payer_type: PayerType = Field(
@@ -816,7 +798,7 @@ class PaymentLink(BaseModel):
     )
     payer_email: str = Field(..., description="Email of the person paying")
     payer_name: str = Field(..., description="Name of the person paying")
-    payer_phone: Optional[str] = Field(None, description="Phone number of payer")
+    payer_phone: str | None = Field(None, description="Phone number of payer")
 
     # Recipient Information
     recipient_type: RecipientType = Field(
@@ -831,19 +813,19 @@ class PaymentLink(BaseModel):
     description: str = Field(
         ..., min_length=1, max_length=500, description="What this payment is for"
     )
-    due_date: Optional[datetime] = Field(None, description="When payment is due")
+    due_date: datetime | None = Field(None, description="When payment is due")
 
     # Stripe Integration
-    stripe_payment_link_id: Optional[str] = Field(
+    stripe_payment_link_id: str | None = Field(
         None, description="Stripe Payment Link ID"
     )
-    stripe_payment_link_url: Optional[str] = Field(
+    stripe_payment_link_url: str | None = Field(
         None, description="Stripe Payment Link URL"
     )
-    stripe_checkout_session_id: Optional[str] = Field(
+    stripe_checkout_session_id: str | None = Field(
         None, description="Stripe Checkout Session ID"
     )
-    stripe_payment_intent_id: Optional[str] = Field(
+    stripe_payment_intent_id: str | None = Field(
         None, description="Stripe PaymentIntent ID"
     )
 
@@ -851,18 +833,16 @@ class PaymentLink(BaseModel):
     status: PaymentLinkStatus = Field(
         PaymentLinkStatus.DRAFT, description="Link status"
     )
-    sent_at: Optional[datetime] = Field(None, description="When link was sent")
-    clicked_at: Optional[datetime] = Field(
-        None, description="When link was first clicked"
-    )
-    paid_at: Optional[datetime] = Field(None, description="When payment completed")
-    expires_at: Optional[datetime] = Field(None, description="When link expires")
+    sent_at: datetime | None = Field(None, description="When link was sent")
+    clicked_at: datetime | None = Field(None, description="When link was first clicked")
+    paid_at: datetime | None = Field(None, description="When payment completed")
+    expires_at: datetime | None = Field(None, description="When link expires")
 
     # Communication
-    email_subject: Optional[str] = Field(None, description="Custom email subject")
-    email_message: Optional[str] = Field(None, description="Custom email message")
+    email_subject: str | None = Field(None, description="Custom email subject")
+    email_message: str | None = Field(None, description="Custom email message")
     reminder_sent_count: int = Field(0, description="Number of reminders sent")
-    last_reminder_at: Optional[datetime] = Field(
+    last_reminder_at: datetime | None = Field(
         None, description="When last reminder was sent"
     )
 
@@ -871,8 +851,8 @@ class PaymentLink(BaseModel):
 
     # System
     created_by: str = Field(..., description="Planner email who created this")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(
         populate_by_name=True, arbitrary_types_allowed=True, str_strip_whitespace=True
@@ -894,33 +874,33 @@ class VendorCommunication(BaseModel):
     id: PyObjectId = Field(default_factory=generate_object_id, alias="_id")
 
     # Relationships
-    wedding_id: Optional[str] = Field(
+    wedding_id: str | None = Field(
         None, description="Wedding ID (if specific to a wedding)"
     )
     vendor_profile_id: str = Field(..., description="Vendor profile ID")
-    contract_id: Optional[str] = Field(None, description="Related contract ID")
-    assignment_id: Optional[str] = Field(None, description="Related assignment ID")
+    contract_id: str | None = Field(None, description="Related contract ID")
+    assignment_id: str | None = Field(None, description="Related assignment ID")
 
     # Communication Details
     type: str = Field(
         ..., description="email, call, meeting, note, quote_request, contract_sent"
     )
-    subject: Optional[str] = Field(None, max_length=300, description="Subject/title")
+    subject: str | None = Field(None, max_length=300, description="Subject/title")
     content: str = Field(..., description="Communication content")
     direction: str = Field("outgoing", description="outgoing or incoming")
 
     # Metadata
-    sent_to: Optional[str] = Field(None, description="Recipient email if outgoing")
-    received_from: Optional[str] = Field(None, description="Sender email if incoming")
+    sent_to: str | None = Field(None, description="Recipient email if outgoing")
+    received_from: str | None = Field(None, description="Sender email if incoming")
 
     # Attachments
-    attachments: List[Dict] = Field(
+    attachments: list[dict] = Field(
         default_factory=list, description="Attachments [{name, url, type}]"
     )
 
     # System
     created_by: str = Field(..., description="User who logged this")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(
         populate_by_name=True, arbitrary_types_allowed=True, str_strip_whitespace=True
@@ -940,57 +920,57 @@ class CreateVendorProfileRequest(BaseModel):
     """Request to create a vendor in directory"""
 
     business_name: str = Field(..., min_length=1, max_length=200)
-    contact_name: Optional[str] = None
+    contact_name: str | None = None
     email: str
-    phone: Optional[str] = None
-    website: Optional[str] = None
-    address: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    country: Optional[str] = None
-    postal_code: Optional[str] = None
+    phone: str | None = None
+    website: str | None = None
+    address: str | None = None
+    city: str | None = None
+    state: str | None = None
+    country: str | None = None
+    postal_code: str | None = None
     service_category: VendorCategory
-    custom_service_category: Optional[str] = Field(default=None, max_length=100)
-    service_subcategories: List[str] = []
-    service_description: Optional[str] = None
-    internal_notes: Optional[str] = None
-    internal_rating: Optional[int] = None
+    custom_service_category: str | None = Field(default=None, max_length=100)
+    service_subcategories: list[str] = []
+    service_description: str | None = None
+    internal_notes: str | None = None
+    internal_rating: int | None = None
     is_preferred: bool = False
-    tags: List[str] = []
-    portfolio_urls: List[str] = []
-    typical_price_min: Optional[float] = None
-    typical_price_max: Optional[float] = None
+    tags: list[str] = []
+    portfolio_urls: list[str] = []
+    typical_price_min: float | None = None
+    typical_price_max: float | None = None
     currency: str = "USD"
     # Scraper fields (optional, only used by scraper job)
     source: str = "manual"
-    google_place_id: Optional[str] = None
+    google_place_id: str | None = None
 
 
 class UpdateVendorProfileRequest(BaseModel):
     """Request to update a vendor profile"""
 
-    business_name: Optional[str] = None
-    contact_name: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    website: Optional[str] = None
-    address: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    country: Optional[str] = None
-    postal_code: Optional[str] = None
-    service_category: Optional[VendorCategory] = None
-    custom_service_category: Optional[str] = Field(default=None, max_length=100)
-    service_subcategories: Optional[List[str]] = None
-    service_description: Optional[str] = None
-    internal_notes: Optional[str] = None
-    internal_rating: Optional[int] = None
-    is_preferred: Optional[bool] = None
-    tags: Optional[List[str]] = None
-    portfolio_urls: Optional[List[str]] = None
-    typical_price_min: Optional[float] = None
-    typical_price_max: Optional[float] = None
-    is_active: Optional[bool] = None
+    business_name: str | None = None
+    contact_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    website: str | None = None
+    address: str | None = None
+    city: str | None = None
+    state: str | None = None
+    country: str | None = None
+    postal_code: str | None = None
+    service_category: VendorCategory | None = None
+    custom_service_category: str | None = Field(default=None, max_length=100)
+    service_subcategories: list[str] | None = None
+    service_description: str | None = None
+    internal_notes: str | None = None
+    internal_rating: int | None = None
+    is_preferred: bool | None = None
+    tags: list[str] | None = None
+    portfolio_urls: list[str] | None = None
+    typical_price_min: float | None = None
+    typical_price_max: float | None = None
+    is_active: bool | None = None
 
 
 class AssignVendorRequest(BaseModel):
@@ -998,8 +978,8 @@ class AssignVendorRequest(BaseModel):
 
     vendor_profile_id: str
     wedding_id: str
-    budget_category_id: Optional[str] = None
-    service_notes: Optional[str] = None
+    budget_category_id: str | None = None
+    service_notes: str | None = None
 
 
 class UpdateVendorAssignmentRequest(BaseModel):
@@ -1022,8 +1002,8 @@ class UpdateVendorAssignmentRequest(BaseModel):
       the documented status state machine.
     """
 
-    budget_category_id: Optional[str] = None
-    service_notes: Optional[str] = None
+    budget_category_id: str | None = None
+    service_notes: str | None = None
 
 
 class SignContractRequest(BaseModel):
@@ -1031,7 +1011,7 @@ class SignContractRequest(BaseModel):
 
     signer_name: str
     signer_email: str
-    signature_data: Optional[str] = None  # Base64 signature image if needed
+    signature_data: str | None = None  # Base64 signature image if needed
     agreed_to_terms: bool = True
 
 
@@ -1042,7 +1022,7 @@ class CreatePaymentLinkRequest(BaseModel):
     payer_type: PayerType
     payer_email: str
     payer_name: str
-    payer_phone: Optional[str] = None
+    payer_phone: str | None = None
 
     # Recipient info
     recipient_type: RecipientType
@@ -1053,21 +1033,21 @@ class CreatePaymentLinkRequest(BaseModel):
     amount: float
     currency: str = "USD"
     description: str
-    due_date: Optional[datetime] = None
+    due_date: datetime | None = None
 
     # Optional relationships
-    wedding_id: Optional[str] = None
-    contract_id: Optional[str] = None
-    milestone_id: Optional[str] = None
-    vendor_profile_id: Optional[str] = None
+    wedding_id: str | None = None
+    contract_id: str | None = None
+    milestone_id: str | None = None
+    vendor_profile_id: str | None = None
 
     # Email customization
-    email_subject: Optional[str] = None
-    email_message: Optional[str] = None
+    email_subject: str | None = None
+    email_message: str | None = None
 
 
 class SendPaymentLinkRequest(BaseModel):
     """Request to send a payment link"""
 
     payment_link_id: str
-    custom_message: Optional[str] = None
+    custom_message: str | None = None

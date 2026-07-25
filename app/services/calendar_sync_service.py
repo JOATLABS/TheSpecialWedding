@@ -416,11 +416,10 @@ class CalendarSyncService:
             allowed_user_ids = [owner_id] if owner_id else []
         elif policy == CalendarSyncPolicy.ASSIGNED_ONLY.value:
             allowed_user_ids = assigned_user_ids
-        elif policy == CalendarSyncPolicy.OWNER_AND_ASSIGNED.value:
-            allowed_user_ids = [
-                value for value in [owner_id, *assigned_user_ids] if value
-            ]
-        elif policy == CalendarSyncPolicy.CUSTOM.value:
+        elif (
+            policy == CalendarSyncPolicy.OWNER_AND_ASSIGNED.value
+            or policy == CalendarSyncPolicy.CUSTOM.value
+        ):
             allowed_user_ids = [
                 value for value in [owner_id, *assigned_user_ids] if value
             ]

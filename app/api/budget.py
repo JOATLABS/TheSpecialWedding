@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from bson import ObjectId
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -28,35 +28,33 @@ budget_service = BudgetService()
 
 class CreateBudgetCategoryRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    description: Optional[str] = Field(None, max_length=500)
+    description: str | None = Field(None, max_length=500)
     budgeted_amount: float = Field(..., ge=0)
     priority: int = Field(default=3, ge=1, le=5)
-    percentage_of_total: Optional[float] = Field(None, ge=0, le=100)
+    percentage_of_total: float | None = Field(None, ge=0, le=100)
 
 
 class UpdateBudgetCategoryRequest(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    description: Optional[str] = Field(None, max_length=500)
-    budgeted_amount: Optional[float] = Field(None, ge=0)
-    actual_spent: Optional[float] = Field(None, ge=0)
-    priority: Optional[int] = Field(None, ge=1, le=5)
-    payment_status: Optional[str] = Field(
-        None, pattern="^(pending|partial|paid|overdue)$"
-    )
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=500)
+    budgeted_amount: float | None = Field(None, ge=0)
+    actual_spent: float | None = Field(None, ge=0)
+    priority: int | None = Field(None, ge=1, le=5)
+    payment_status: str | None = Field(None, pattern="^(pending|partial|paid|overdue)$")
 
 
 class CreateVendorQuoteRequest(BaseModel):
     vendor_name: str = Field(..., min_length=1, max_length=200)
-    vendor_email: Optional[str] = Field(None, pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$")
-    vendor_phone: Optional[str] = Field(None)
+    vendor_email: str | None = Field(None, pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$")
+    vendor_phone: str | None = Field(None)
     service_category: str = Field(..., min_length=1)
     quote_amount: float = Field(..., ge=0)
-    quote_details: Dict = Field(default_factory=dict)
-    includes: List[str] = Field(default_factory=list)
-    excludes: List[str] = Field(default_factory=list)
-    terms_conditions: Optional[str] = Field(None)
-    valid_until: Optional[str] = Field(None)  # ISO datetime string
-    notes: Optional[str] = Field(None, max_length=1000)
+    quote_details: dict = Field(default_factory=dict)
+    includes: list[str] = Field(default_factory=list)
+    excludes: list[str] = Field(default_factory=list)
+    terms_conditions: str | None = Field(None)
+    valid_until: str | None = Field(None)  # ISO datetime string
+    notes: str | None = Field(None, max_length=1000)
 
 
 class SetTotalBudgetRequest(BaseModel):
@@ -87,12 +85,12 @@ class GuestCountRangeInput(BaseModel):
 
 class CreateBudgetTemplateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    description: Optional[str] = Field(None, max_length=500)
+    description: str | None = Field(None, max_length=500)
     wedding_type: str = Field(..., min_length=1, max_length=50)
     target_budget_min: float = Field(..., ge=0)
     target_budget_max: float = Field(..., ge=0)
     guest_count_range: GuestCountRangeInput
-    categories: List[TemplateCategoryInput] = Field(..., min_length=1)
+    categories: list[TemplateCategoryInput] = Field(..., min_length=1)
     is_public: bool = Field(default=False)
 
     @model_validator(mode="after")
@@ -117,13 +115,13 @@ class CreateBudgetTemplateRequest(BaseModel):
 
 
 class RecordPaymentRequest(BaseModel):
-    vendor_name: Optional[str] = Field(None)
+    vendor_name: str | None = Field(None)
     amount: float = Field(..., gt=0)
     payment_method: str = Field(..., min_length=1)
     payment_date: str = Field(...)  # ISO datetime string
-    description: Optional[str] = Field(None)
-    receipt_url: Optional[str] = Field(None)
-    notes: Optional[str] = Field(None)
+    description: str | None = Field(None)
+    receipt_url: str | None = Field(None)
+    notes: str | None = Field(None)
 
 
 class CostEstimationRequest(BaseModel):
@@ -153,7 +151,7 @@ async def get_wedding_budget(
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to get wedding budget: {str(e)}")
+        logger.error(f"Failed to get wedding budget: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to retrieve budget information"
         )
@@ -165,7 +163,7 @@ async def get_budget_payments_overview(
 ):
     """Get outgoing payment overview for the admin money dashboard."""
     try:
-        weddings_query: Dict[str, Any]
+        weddings_query: dict[str, Any]
         if current_user.is_root_admin:
             weddings_query = {}
         elif current_user.is_team_member:
@@ -192,7 +190,7 @@ async def get_budget_payments_overview(
         return await budget_service.get_outgoing_payments_overview(weddings)
 
     except Exception as e:
-        logger.error(f"Failed to get outgoing payments overview: {str(e)}")
+        logger.error(f"Failed to get outgoing payments overview: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to retrieve outgoing payment overview"
         )
@@ -223,7 +221,7 @@ async def create_budget_category(
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to create budget category: {str(e)}")
+        logger.error(f"Failed to create budget category: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to create budget category")
 
 
@@ -256,7 +254,7 @@ async def update_budget_category(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to update budget category: {str(e)}")
+        logger.error(f"Failed to update budget category: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to update budget category")
 
 
@@ -286,7 +284,7 @@ async def delete_budget_category(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to delete budget category: {str(e)}")
+        logger.error(f"Failed to delete budget category: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to delete budget category")
 
 
@@ -296,7 +294,7 @@ async def delete_budget_category(
 @router.get("/weddings/{wedding_id}/quotes", tags=["Budget", "Vendors"])
 async def get_vendor_quotes(
     wedding_id: str,
-    service_category: Optional[str] = Query(
+    service_category: str | None = Query(
         None, description="Filter by service category"
     ),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
@@ -315,7 +313,7 @@ async def get_vendor_quotes(
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to get vendor quotes: {str(e)}")
+        logger.error(f"Failed to get vendor quotes: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to retrieve vendor quotes")
 
 
@@ -339,7 +337,7 @@ async def create_vendor_quote(
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to create vendor quote: {str(e)}")
+        logger.error(f"Failed to create vendor quote: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to create vendor quote")
 
 
@@ -365,7 +363,7 @@ async def compare_vendor_quotes(
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to compare vendor quotes: {str(e)}")
+        logger.error(f"Failed to compare vendor quotes: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to compare vendor quotes")
 
 
@@ -373,7 +371,7 @@ async def compare_vendor_quotes(
 async def update_quote_status(
     quote_id: str,
     status: str = Body(..., embed=True),
-    notes: Optional[str] = Body(None, embed=True),
+    notes: str | None = Body(None, embed=True),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Update vendor quote status (accept/reject/pending)"""
@@ -401,7 +399,7 @@ async def update_quote_status(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to update quote status: {str(e)}")
+        logger.error(f"Failed to update quote status: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to update quote status")
 
 
@@ -409,7 +407,7 @@ async def update_quote_status(
 async def rate_vendor_quote(
     quote_id: str,
     rating: int = Body(..., embed=True, ge=1, le=5),
-    notes: Optional[str] = Body(None, embed=True),
+    notes: str | None = Body(None, embed=True),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Rate a vendor quote (1-5 stars)"""
@@ -432,7 +430,7 @@ async def rate_vendor_quote(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to rate vendor quote: {str(e)}")
+        logger.error(f"Failed to rate vendor quote: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to rate vendor quote")
 
 
@@ -441,7 +439,7 @@ async def rate_vendor_quote(
 
 @router.get("/budget/templates", tags=["Budget"])
 async def get_budget_templates(
-    wedding_type: Optional[str] = Query(None, description="Filter by wedding type"),
+    wedding_type: str | None = Query(None, description="Filter by wedding type"),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Get available budget templates"""
@@ -453,7 +451,7 @@ async def get_budget_templates(
         return dict_response(data={"templates": templates, "count": len(templates)})
 
     except Exception as e:
-        logger.error(f"Failed to get budget templates: {str(e)}")
+        logger.error(f"Failed to get budget templates: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to retrieve budget templates"
         )
@@ -479,7 +477,7 @@ async def create_budget_template(
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to create budget template: {str(e)}")
+        logger.error(f"Failed to create budget template: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to create budget template")
 
 
@@ -504,7 +502,7 @@ async def apply_budget_template(
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to apply budget template: {str(e)}")
+        logger.error(f"Failed to apply budget template: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to apply budget template")
 
 
@@ -542,7 +540,7 @@ async def record_payment(
             raise HTTPException(status_code=404, detail=detail)
         raise HTTPException(status_code=400, detail=detail)
     except Exception as e:
-        logger.error(f"Failed to record payment: {str(e)}")
+        logger.error(f"Failed to record payment: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to record payment")
 
 
@@ -576,7 +574,7 @@ async def update_payment(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to update payment: {str(e)}")
+        logger.error(f"Failed to update payment: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to update payment")
 
 
@@ -606,7 +604,7 @@ async def delete_payment(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to delete payment: {str(e)}")
+        logger.error(f"Failed to delete payment: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to delete payment")
 
 
@@ -630,7 +628,7 @@ async def get_payment_history(
         raise
     except Exception as e:
         logger.error(
-            f"Failed to get payment history: {type(e).__name__}: {str(e)}",
+            f"Failed to get payment history: {type(e).__name__}: {e!s}",
             exc_info=True,
         )
         # Return JSONResponse directly to avoid middleware converting the error
@@ -667,7 +665,7 @@ async def set_total_budget(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to set total budget: {str(e)}")
+        logger.error(f"Failed to set total budget: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to update total budget")
 
 
@@ -689,7 +687,7 @@ async def generate_financial_report(
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to generate financial report: {str(e)}")
+        logger.error(f"Failed to generate financial report: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to generate financial report"
         )
@@ -712,7 +710,7 @@ def estimate_wedding_costs(
         )
         return estimation
     except Exception as e:
-        logger.error(f"Failed to estimate costs: {str(e)}")
+        logger.error(f"Failed to estimate costs: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to estimate wedding costs")
 
 
@@ -780,7 +778,7 @@ def get_category_suggestions(
         return {"wedding_type": wedding_type, "suggestions": suggestions}
 
     except Exception as e:
-        logger.error(f"Failed to get category suggestions: {str(e)}")
+        logger.error(f"Failed to get category suggestions: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to get category suggestions"
         )
@@ -808,7 +806,7 @@ async def get_budget_alerts(
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to get budget alerts: {str(e)}")
+        logger.error(f"Failed to get budget alerts: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to retrieve budget alerts")
 
 
@@ -822,7 +820,7 @@ async def mark_alert_as_read(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to mark alert as read: {str(e)}")
+        logger.error(f"Failed to mark alert as read: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to mark alert as read")
 
 
@@ -836,5 +834,5 @@ async def resolve_alert(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to resolve alert: {str(e)}")
+        logger.error(f"Failed to resolve alert: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to resolve alert")

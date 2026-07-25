@@ -8,7 +8,7 @@ Pattern: Use to_object_id() when querying, to_str_id() when returning to API.
 """
 
 import logging
-from typing import Any, Optional, Union
+from typing import Any
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -16,7 +16,7 @@ from fastapi import HTTPException
 logger = logging.getLogger(__name__)
 
 
-def to_object_id(id_str: Union[str, ObjectId], field_name: str = "id") -> ObjectId:
+def to_object_id(id_str: str | ObjectId, field_name: str = "id") -> ObjectId:
     """
     Convert a string ID to ObjectId for MongoDB queries.
 
@@ -52,7 +52,7 @@ def to_object_id(id_str: Union[str, ObjectId], field_name: str = "id") -> Object
     )
 
 
-def to_str_id(obj: Union[ObjectId, str, dict, Any]) -> str:
+def to_str_id(obj: ObjectId | str | dict | Any) -> str:
     """
     Convert an ObjectId, dict with _id field, or any object to string ID.
 
@@ -135,7 +135,7 @@ def validate_object_id(id_str: str, field_name: str = "id") -> bool:
         return False
 
 
-def extract_id_from_doc(doc: dict) -> Optional[str]:
+def extract_id_from_doc(doc: dict) -> str | None:
     """
     Safely extract string ID from a document, trying multiple key names.
 
@@ -158,7 +158,7 @@ def extract_id_from_doc(doc: dict) -> Optional[str]:
     return None
 
 
-def compare_ids(id1: Union[str, ObjectId], id2: Union[str, ObjectId]) -> bool:
+def compare_ids(id1: str | ObjectId, id2: str | ObjectId) -> bool:
     """
     Safely compare two IDs regardless of their types.
 

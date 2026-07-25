@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -10,7 +10,7 @@ class SubscriptionPlanModel(BaseModel):
     id: str = Field(..., alias="_id")
     name: str = Field(..., description="Plan name (e.g., Basic, Pro, Enterprise)")
     price: float = Field(..., description="Monthly price in USD")
-    features: List[str] = Field(
+    features: list[str] = Field(
         default_factory=list, description="List of features included"
     )
     max_weddings: int = Field(default=1, description="Maximum weddings allowed")
@@ -22,8 +22,8 @@ class SubscriptionPlanModel(BaseModel):
     is_active: bool = Field(
         default=True, description="Whether plan is available for signup"
     )
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     class Config:
         populate_by_name = True
@@ -36,11 +36,11 @@ class SaasContentModel(BaseModel):
     section: str = Field(
         ..., description="Section name: hero, features, pricing, testimonials, etc."
     )
-    content: Dict[str, Any] = Field(..., description="Section content as flexible JSON")
+    content: dict[str, Any] = Field(..., description="Section content as flexible JSON")
     is_active: bool = Field(default=True, description="Whether section is displayed")
     display_order: int = Field(default=0, description="Display order on page")
     updated_by: str = Field(..., description="Admin email who last updated")
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     class Config:
         populate_by_name = True
@@ -55,9 +55,9 @@ class AIUsageModel(BaseModel):
         ..., description="AI feature used: presentation, email, budget, etc."
     )
     credits_used: int = Field(default=1, description="Credits consumed")
-    wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
-    request_data: Optional[Dict[str, Any]] = Field(None, description="Request metadata")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    wedding_id: str | None = Field(None, description="Associated wedding ID")
+    request_data: dict[str, Any] | None = Field(None, description="Request metadata")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     class Config:
         populate_by_name = True
@@ -69,20 +69,20 @@ class VendorModel(BaseModel):
     id: str = Field(..., alias="_id")
     name: str = Field(..., description="Vendor name")
     email: str = Field(..., description="Vendor email")
-    company: Optional[str] = Field(None, description="Vendor company")
+    company: str | None = Field(None, description="Vendor company")
     service_type: str = Field(
         ..., description="Type of service: photographer, caterer, etc."
     )
     wedding_id: str = Field(..., description="Wedding they're assigned to")
     created_by: str = Field(..., description="Wedding planner email who created vendor")
-    permissions: List[str] = Field(
+    permissions: list[str] = Field(
         default_factory=list, description="Checklist sections they can update"
     )
     is_active: bool = Field(
         default=True, description="Whether vendor account is active"
     )
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    last_login: Optional[datetime] = Field(None, description="Last login timestamp")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    last_login: datetime | None = Field(None, description="Last login timestamp")
 
     class Config:
         populate_by_name = True
@@ -97,17 +97,17 @@ class WeddingChecklistModel(BaseModel):
         ..., description="Checklist category: venue, catering, photography, etc."
     )
     task: str = Field(..., description="Task description")
-    assigned_vendor_id: Optional[str] = Field(
+    assigned_vendor_id: str | None = Field(
         None, description="Vendor responsible for this task"
     )
     status: str = Field(
         default="pending", description="Status: pending, in_progress, completed"
     )
-    due_date: Optional[datetime] = Field(None, description="Task due date")
-    notes: Optional[str] = Field(None, description="Additional notes")
-    updated_by: Optional[str] = Field(None, description="Last updated by (email)")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    due_date: datetime | None = Field(None, description="Task due date")
+    notes: str | None = Field(None, description="Additional notes")
+    updated_by: str | None = Field(None, description="Last updated by (email)")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     class Config:
         populate_by_name = True

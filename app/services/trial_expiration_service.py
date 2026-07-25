@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.constants.registration_sources import REGISTRATION_SOURCE_PUBLIC_SIGNUP
 from app.core.database import mongo
@@ -52,7 +52,7 @@ class TrialExpirationService:
             if not trial_settings.get("auto_expire_trials", True):
                 return {"message": "Auto trial expiration is disabled"}
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             expired_count = 0
 
             # Find users with expired trials using Motor async cursor
@@ -140,7 +140,7 @@ class TrialExpirationService:
             }
 
         except Exception as e:
-            logger.error(f"Error in trial expiration check: {str(e)}")
+            logger.error(f"Error in trial expiration check: {e!s}")
             return {"error": str(e)}
 
     async def send_trial_warning_emails(self) -> dict:
@@ -154,7 +154,7 @@ class TrialExpirationService:
         """
         try:
             trial_settings = await self.get_trial_settings()
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             warning_count = 0
 
@@ -233,7 +233,7 @@ class TrialExpirationService:
             }
 
         except Exception as e:
-            logger.error(f"Error in trial warning check: {str(e)}")
+            logger.error(f"Error in trial warning check: {e!s}")
             return {"error": str(e)}
 
     async def send_trial_warning_email(
@@ -333,7 +333,7 @@ class TrialExpirationService:
 
         except Exception as e:
             logger.error(
-                f"Error sending trial expired email to {user.get('email', 'unknown')}: {str(e)}"
+                f"Error sending trial expired email to {user.get('email', 'unknown')}: {e!s}"
             )
             return False
 

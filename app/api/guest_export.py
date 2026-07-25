@@ -8,7 +8,6 @@ Endpoints for exporting guest data:
 """
 
 import logging
-from typing import List
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -30,7 +29,7 @@ router = APIRouter()
 class QRExportRequest(BaseModel):
     """Request model for bulk QR export"""
 
-    guest_ids: List[str] = []  # Empty list means all guests
+    guest_ids: list[str] = []  # Empty list means all guests
     wedding_id: str
 
 
@@ -135,14 +134,14 @@ async def export_guest_list_pdf(
         )
 
     except ImportError as e:
-        logger.error(f"PDF generation dependency missing: {str(e)}")
+        logger.error(f"PDF generation dependency missing: {e!s}")
         raise HTTPException(
             status_code=503,
             detail="PDF generation not available. WeasyPrint may not be installed.",
         )
     except Exception as e:
-        logger.error(f"Failed to generate guest list PDF: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
+        logger.error(f"Failed to generate guest list PDF: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {e!s}")
 
 
 @router.post("/guests/export/qr-zip", tags=["Guest Export"])
@@ -224,5 +223,5 @@ async def export_qr_codes_zip(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to generate QR ZIP: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate ZIP: {str(e)}")
+        logger.error(f"Failed to generate QR ZIP: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate ZIP: {e!s}")

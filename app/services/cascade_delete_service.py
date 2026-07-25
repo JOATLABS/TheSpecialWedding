@@ -13,8 +13,7 @@ This service ensures referential integrity when deleting a wedding by:
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Dict, List
+from datetime import UTC, datetime
 
 from app.core.database import mongo
 from app.utils.planner_ownership import build_wedding_owner_query
@@ -62,7 +61,7 @@ GUEST_DEPENDENT_COLLECTIONS = [
 class CascadeDeleteService:
     """Service for safely cascading wedding deletion across all dependent collections."""
 
-    async def soft_delete_wedding(self, wedding_id: str, deleted_by: str) -> Dict:
+    async def soft_delete_wedding(self, wedding_id: str, deleted_by: str) -> dict:
         """
         Archive a wedding and mark all dependent data as deleted without removing it.
 
@@ -85,7 +84,7 @@ class CascadeDeleteService:
             counts = await self._get_dependent_counts(wedding_id)
             logger.info(f"Soft delete counts for wedding {wedding_id}: {counts}")
 
-            deleted_at = datetime.now(timezone.utc)
+            deleted_at = datetime.now(UTC)
             update_data = {
                 "deleted_at": deleted_at,
                 "deleted_by": deleted_by,
@@ -118,9 +117,7 @@ class CascadeDeleteService:
                         f"Soft deleted {result.modified_count} records from {collection_name}"
                     )
                 except Exception as e:
-                    logger.error(
-                        f"Error soft deleting from {collection_name}: {str(e)}"
-                    )
+                    logger.error(f"Error soft deleting from {collection_name}: {e!s}")
                     raise
 
             # Soft delete guest-dependent collections (via guest_id)
@@ -135,7 +132,7 @@ class CascadeDeleteService:
                     )
                 except Exception as e:
                     logger.error(
-                        f"Error soft deleting from {collection_name} (guest_id): {str(e)}"
+                        f"Error soft deleting from {collection_name} (guest_id): {e!s}"
                     )
                     raise
 
@@ -159,10 +156,10 @@ class CascadeDeleteService:
             }
 
         except Exception as e:
-            logger.error(f"Error in soft delete for wedding {wedding_id}: {str(e)}")
+            logger.error(f"Error in soft delete for wedding {wedding_id}: {e!s}")
             raise
 
-    async def hard_delete_wedding(self, wedding_id: str, deleted_by: str) -> Dict:
+    async def hard_delete_wedding(self, wedding_id: str, deleted_by: str) -> dict:
         """
         Permanently delete a wedding and ALL dependent data.
 
@@ -208,9 +205,7 @@ class CascadeDeleteService:
                         f"Hard deleted {result.deleted_count} records from {collection_name}"
                     )
                 except Exception as e:
-                    logger.error(
-                        f"Error hard deleting from {collection_name}: {str(e)}"
-                    )
+                    logger.error(f"Error hard deleting from {collection_name}: {e!s}")
                     raise
 
             # Hard delete guest-dependent collections (via guest_id)
@@ -225,7 +220,7 @@ class CascadeDeleteService:
                     )
                 except Exception as e:
                     logger.error(
-                        f"Error hard deleting from {collection_name} (guest_id): {str(e)}"
+                        f"Error hard deleting from {collection_name} (guest_id): {e!s}"
                     )
                     raise
 
@@ -241,7 +236,7 @@ class CascadeDeleteService:
                 "status": "success",
                 "deletion_type": "hard",
                 "wedding_id": wedding_id,
-                "deleted_at": datetime.now(timezone.utc).isoformat(),
+                "deleted_at": datetime.now(UTC).isoformat(),
                 "deleted_by": deleted_by,
                 "records_deleted": sum(counts.values()),
                 "counts": counts,
@@ -249,10 +244,10 @@ class CascadeDeleteService:
             }
 
         except Exception as e:
-            logger.error(f"Error in hard delete for wedding {wedding_id}: {str(e)}")
+            logger.error(f"Error in hard delete for wedding {wedding_id}: {e!s}")
             raise
 
-    async def _get_dependent_counts(self, wedding_id: str) -> Dict[str, int]:
+    async def _get_dependent_counts(self, wedding_id: str) -> dict[str, int]:
         """
         Count all dependent records before deletion.
         Useful for confirmation dialogs and logging.
@@ -275,7 +270,7 @@ class CascadeDeleteService:
                 count = await collection.count_documents({"wedding_id": wedding_id})
                 counts[collection_name] = count
             except Exception as e:
-                logger.warning(f"Error counting {collection_name}: {str(e)}")
+                logger.warning(f"Error counting {collection_name}: {e!s}")
                 counts[collection_name] = 0
 
         # Get guest IDs and count indirect references
@@ -290,7 +285,7 @@ class CascadeDeleteService:
                 # Add to collection name to distinguish from direct references
                 counts[f"{collection_name}_via_guest"] = count
             except Exception as e:
-                logger.warning(f"Error counting {collection_name} (guest_id): {str(e)}")
+                logger.warning(f"Error counting {collection_name} (guest_id): {e!s}")
                 counts[f"{collection_name}_via_guest"] = 0
 
         # Include the wedding record itself
@@ -298,7 +293,7 @@ class CascadeDeleteService:
 
         return counts
 
-    async def _get_guest_ids_for_wedding(self, wedding_id: str) -> List:
+    async def _get_guest_ids_for_wedding(self, wedding_id: str) -> list:
         """
         Get all guest IDs for a wedding.
         Used to delete records that reference guests via guest_id.
@@ -321,7 +316,7 @@ class CascadeDeleteService:
             return guest_ids
 
         except Exception as e:
-            logger.error(f"Error getting guest IDs for wedding {wedding_id}: {str(e)}")
+            logger.error(f"Error getting guest IDs for wedding {wedding_id}: {e!s}")
             raise
 
     async def _delete_plus_ones_for_wedding(self, wedding_id: str) -> int:
@@ -348,11 +343,11 @@ class CascadeDeleteService:
             return result.deleted_count
 
         except Exception as e:
-            logger.error(f"Error deleting plus_ones for wedding {wedding_id}: {str(e)}")
+            logger.error(f"Error deleting plus_ones for wedding {wedding_id}: {e!s}")
             raise
 
     async def _log_deletion_operation(
-        self, wedding_id: str, deletion_type: str, deleted_by: str, counts: Dict
+        self, wedding_id: str, deletion_type: str, deleted_by: str, counts: dict
     ) -> None:
         """
         Log the deletion operation for audit and compliance purposes.
@@ -368,7 +363,7 @@ class CascadeDeleteService:
                 "wedding_id": wedding_id,
                 "deletion_type": deletion_type,
                 "deleted_by": deleted_by,
-                "deleted_at": datetime.now(timezone.utc),
+                "deleted_at": datetime.now(UTC),
                 "counts": counts,
                 "total_records": sum(counts.values()),
                 "event_type": "wedding_deletion",
@@ -383,10 +378,10 @@ class CascadeDeleteService:
             )
 
         except Exception as e:
-            logger.error(f"Error logging deletion operation: {str(e)}")
+            logger.error(f"Error logging deletion operation: {e!s}")
             # Don't raise - logging failure shouldn't fail the deletion
 
-    async def verify_deletion(self, wedding_id: str) -> Dict:
+    async def verify_deletion(self, wedding_id: str) -> dict:
         """
         Verify that a wedding and all its dependents have been deleted.
         Useful for confirming successful hard delete operations.
@@ -431,14 +426,14 @@ class CascadeDeleteService:
                 "wedding_id": wedding_id,
                 "is_fully_deleted": is_fully_deleted,
                 "remaining_records": remaining,
-                "verified_at": datetime.now(timezone.utc).isoformat(),
+                "verified_at": datetime.now(UTC).isoformat(),
             }
 
         except Exception as e:
-            logger.error(f"Error verifying deletion for wedding {wedding_id}: {str(e)}")
+            logger.error(f"Error verifying deletion for wedding {wedding_id}: {e!s}")
             raise
 
-    async def suspend_planner_data(self, planner_id: str, planner_email: str) -> Dict:
+    async def suspend_planner_data(self, planner_id: str, planner_email: str) -> dict:
         """
         Suspend all data access for a planner by stamping suspension fields.
         This prevents the planner from accessing weddings, packages, and contracts.
@@ -457,7 +452,7 @@ class CascadeDeleteService:
                 f"Starting data suspension for planner {planner_email} (ID: {planner_id})"
             )
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             suspension_data = {
                 "data_access_suspended_at": now,
                 "data_access_suspended_reason": "planner_subscription_cancelled",
@@ -509,10 +504,10 @@ class CascadeDeleteService:
             }
 
         except Exception as e:
-            logger.error(f"Error suspending data for planner {planner_email}: {str(e)}")
+            logger.error(f"Error suspending data for planner {planner_email}: {e!s}")
             raise
 
-    async def unsuspend_planner_data(self, planner_id: str, planner_email: str) -> Dict:
+    async def unsuspend_planner_data(self, planner_id: str, planner_email: str) -> dict:
         """
         Unsuspend data access for a planner by removing suspension fields.
         Restores access to previously suspended weddings, packages, and contracts.
@@ -549,7 +544,7 @@ class CascadeDeleteService:
                         "data_access_suspended_reason": "",
                     },
                     "$set": {
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     },
                 },
             )
@@ -566,7 +561,7 @@ class CascadeDeleteService:
                         "data_access_suspended_reason": "",
                     },
                     "$set": {
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     },
                 },
             )
@@ -586,7 +581,7 @@ class CascadeDeleteService:
                         "data_access_suspended_reason": "",
                     },
                     "$set": {
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     },
                 },
             )
@@ -602,15 +597,13 @@ class CascadeDeleteService:
                 "weddings_unsuspended": weddings_result.modified_count,
                 "packages_unsuspended": packages_result.modified_count,
                 "contracts_unsuspended": contracts_result.modified_count,
-                "unsuspended_at": datetime.now(timezone.utc).isoformat(),
+                "unsuspended_at": datetime.now(UTC).isoformat(),
                 "status": "success",
                 "message": f"Data unsuspended for planner {planner_email}",
             }
 
         except Exception as e:
-            logger.error(
-                f"Error unsuspending data for planner {planner_email}: {str(e)}"
-            )
+            logger.error(f"Error unsuspending data for planner {planner_email}: {e!s}")
             raise
 
 

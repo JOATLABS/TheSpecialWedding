@@ -1,6 +1,6 @@
 import inspect
 import logging
-from typing import Any, List, Literal, Optional
+from typing import Any, Literal
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -50,7 +50,7 @@ class SeatingConstraintRequest(BaseModel):
 class BulkSeatingConstraintRequest(BaseModel):
     """Bulk update seating constraints"""
 
-    constraints: List[SeatingConstraintRequest] = Field(
+    constraints: list[SeatingConstraintRequest] = Field(
         ..., description="List of constraints to apply"
     )
 
@@ -69,8 +69,8 @@ async def get_guest(token: str, wedding_id: str = Query(...)):
 @router.get("/invite/search", tags=["Guest"])
 async def search_guest(
     wedding_id: str = Query(..., description="Wedding ID to search within"),
-    phone: Optional[str] = Query(None, description="Guest phone number"),
-    name: Optional[str] = Query(None, description="Guest name"),
+    phone: str | None = Query(None, description="Guest phone number"),
+    name: str | None = Query(None, description="Guest name"),
     current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
 ):
     """
@@ -104,21 +104,17 @@ async def list_guests(
     fetch_all: bool = Query(
         False, description="Return all matching guests without pagination"
     ),
-    name: Optional[str] = Query(None, description="Filter by guest name"),
-    email: Optional[str] = Query(None, description="Filter by guest email"),
-    phone: Optional[str] = Query(None, description="Filter by guest phone"),
-    group_id: Optional[str] = Query(None, description="Filter by guest group"),
-    role: Optional[str] = Query(None, description="Filter by guest role"),
-    rsvp_status: Optional[str] = Query(None, description="Filter by RSVP status"),
-    plus_one_status: Optional[str] = Query(
-        None, description="Filter by plus-one status"
-    ),
-    phone_issue: Optional[str] = Query(
-        None, description="Filter by phone/contact issue"
-    ),
-    sms_status: Optional[str] = Query(None, description="Filter by SMS opt-in status"),
-    sort_field: Optional[str] = Query("name", description="Sort field"),
-    sort_direction: Optional[str] = Query("asc", description="Sort direction"),
+    name: str | None = Query(None, description="Filter by guest name"),
+    email: str | None = Query(None, description="Filter by guest email"),
+    phone: str | None = Query(None, description="Filter by guest phone"),
+    group_id: str | None = Query(None, description="Filter by guest group"),
+    role: str | None = Query(None, description="Filter by guest role"),
+    rsvp_status: str | None = Query(None, description="Filter by RSVP status"),
+    plus_one_status: str | None = Query(None, description="Filter by plus-one status"),
+    phone_issue: str | None = Query(None, description="Filter by phone/contact issue"),
+    sms_status: str | None = Query(None, description="Filter by SMS opt-in status"),
+    sort_field: str | None = Query("name", description="Sort field"),
+    sort_direction: str | None = Query("asc", description="Sort direction"),
     current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
 ):
     # Check if user has access to this wedding
@@ -230,9 +226,7 @@ async def update_guest(
     except HTTPException as e:
         raise e
     except Exception as err:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to update guest: {str(err)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to update guest: {err!s}")
 
 
 @router.delete("/guests/{guest_id}", tags=["Admin"])
@@ -317,9 +311,7 @@ async def create_guest(
     except HTTPException as e:
         raise e
     except Exception as err:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to create guest: {str(err)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to create guest: {err!s}")
 
 
 # =========================================================================
@@ -438,7 +430,7 @@ async def get_guest_activity(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching guest activity: {str(e)}", exc_info=True)
+        logger.error(f"Error fetching guest activity: {e!s}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch guest activity")
 
 
@@ -583,9 +575,9 @@ async def update_seating_constraints(
         )
 
     except Exception as err:
-        logger.error(f"Failed to update seating constraints: {str(err)}")
+        logger.error(f"Failed to update seating constraints: {err!s}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to update seating constraints: {str(err)}"
+            status_code=500, detail=f"Failed to update seating constraints: {err!s}"
         )
 
 
@@ -681,7 +673,7 @@ async def get_seating_constraints(
         )
 
     except Exception as err:
-        logger.error(f"Failed to get seating constraints: {str(err)}")
+        logger.error(f"Failed to get seating constraints: {err!s}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to get seating constraints: {str(err)}"
+            status_code=500, detail=f"Failed to get seating constraints: {err!s}"
         )

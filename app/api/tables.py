@@ -1,6 +1,5 @@
 import logging
-from datetime import datetime, timezone
-from typing import List
+from datetime import UTC, datetime
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -100,7 +99,7 @@ async def update_venue_layout(
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     layout_data = layout.dict()
     layout_data.update(
         {
@@ -311,7 +310,7 @@ async def assign_guests(
 
 @router.post("/tables/unassign", tags=["Seating"])
 async def unassign_guests(
-    guest_ids: List[str] = Body(...),
+    guest_ids: list[str] = Body(...),
     wedding_id: str = Body(...),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
@@ -401,11 +400,11 @@ async def export_seating_chart_pdf(
         )
 
     except ImportError as e:
-        logger.error(f"PDF generation dependency missing: {str(e)}")
+        logger.error(f"PDF generation dependency missing: {e!s}")
         raise HTTPException(
             status_code=503,
             detail="PDF generation not available. WeasyPrint may not be installed.",
         )
     except Exception as e:
-        logger.error(f"Failed to generate seating chart PDF: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
+        logger.error(f"Failed to generate seating chart PDF: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {e!s}")

@@ -20,8 +20,8 @@ PRD Reference: Phase 9 — Auction Engine
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class AdAuctionService:
 
         Returns: float between 0 and 1
         """
-        cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+        cutoff = datetime.now(UTC) - timedelta(days=lookback_days)
 
         pipeline = [
             {
@@ -140,9 +140,9 @@ class AdAuctionService:
 
     async def run_auction(
         self,
-        eligible_campaigns: List[Dict[str, Any]],
+        eligible_campaigns: list[dict[str, Any]],
         max_winners: int = 3,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Run a full auction on a list of eligible campaigns.
 

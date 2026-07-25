@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
@@ -17,7 +16,7 @@ class BudgetSubcategory(BaseModel):
         ge=0, description="Budgeted amount for this subcategory"
     )
     actual_spent: float = Field(default=0.0, ge=0, description="Actual amount spent")
-    notes: Optional[str] = Field(
+    notes: str | None = Field(
         None, max_length=500, description="Notes about this subcategory"
     )
 
@@ -28,7 +27,7 @@ class BudgetCategory(BaseModel):
     id: PyObjectId = Field(default_factory=generate_object_id, alias="_id")
     wedding_id: str = Field(..., description="ID of the wedding this budget belongs to")
     name: str = Field(..., min_length=1, max_length=100, description="Category name")
-    description: Optional[str] = Field(
+    description: str | None = Field(
         None, max_length=500, description="Category description"
     )
     budgeted_amount: float = Field(
@@ -43,20 +42,20 @@ class BudgetCategory(BaseModel):
     priority: int = Field(
         default=1, ge=1, le=5, description="Priority level (1=highest, 5=lowest)"
     )
-    percentage_of_total: Optional[float] = Field(
+    percentage_of_total: float | None = Field(
         None, ge=0, le=100, description="Percentage of total wedding budget"
     )
-    subcategories: List[BudgetSubcategory] = Field(
+    subcategories: list[BudgetSubcategory] = Field(
         default_factory=list, description="Subcategories within this category"
     )
-    vendor_quotes: List[str] = Field(
+    vendor_quotes: list[str] = Field(
         default_factory=list, description="List of vendor quote IDs for this category"
     )
-    payments: List[Dict] = Field(
+    payments: list[dict] = Field(
         default_factory=list, description="List of payments made for this category"
     )
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(
         populate_by_name=True, arbitrary_types_allowed=True, str_strip_whitespace=True
@@ -97,39 +96,37 @@ class VendorQuote(BaseModel):
 
     id: PyObjectId = Field(default_factory=generate_object_id, alias="_id")
     wedding_id: str = Field(..., description="ID of the wedding")
-    vendor_id: Optional[str] = Field(
-        None, description="ID of the vendor (if registered)"
-    )
+    vendor_id: str | None = Field(None, description="ID of the vendor (if registered)")
     vendor_name: str = Field(
         ..., min_length=1, max_length=200, description="Vendor name"
     )
-    vendor_email: Optional[str] = Field(None, description="Vendor email")
-    vendor_phone: Optional[str] = Field(None, description="Vendor phone")
+    vendor_email: str | None = Field(None, description="Vendor email")
+    vendor_phone: str | None = Field(None, description="Vendor phone")
     service_category: str = Field(
         ..., description="Service category (photography, catering, etc.)"
     )
     quote_amount: float = Field(ge=0, description="Total quote amount")
-    quote_details: Dict = Field(
+    quote_details: dict = Field(
         default_factory=dict, description="Detailed quote breakdown"
     )
-    includes: List[str] = Field(
+    includes: list[str] = Field(
         default_factory=list, description="What's included in the quote"
     )
-    excludes: List[str] = Field(
+    excludes: list[str] = Field(
         default_factory=list, description="What's excluded from the quote"
     )
-    terms_conditions: Optional[str] = Field(None, description="Terms and conditions")
+    terms_conditions: str | None = Field(None, description="Terms and conditions")
     status: str = Field(
         default="pending",
         description="Quote status: pending, accepted, rejected, expired",
     )
-    valid_until: Optional[datetime] = Field(None, description="Quote expiration date")
-    notes: Optional[str] = Field(None, max_length=1000, description="Additional notes")
-    rating: Optional[int] = Field(
+    valid_until: datetime | None = Field(None, description="Quote expiration date")
+    notes: str | None = Field(None, max_length=1000, description="Additional notes")
+    rating: int | None = Field(
         None, ge=1, le=5, description="Quality/value rating (1-5)"
     )
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(
         populate_by_name=True, arbitrary_types_allowed=True, str_strip_whitespace=True
@@ -173,7 +170,7 @@ class BudgetTemplate(BaseModel):
 
     id: PyObjectId = Field(default_factory=generate_object_id, alias="_id")
     name: str = Field(..., min_length=1, max_length=100, description="Template name")
-    description: Optional[str] = Field(
+    description: str | None = Field(
         None, max_length=500, description="Template description"
     )
     wedding_type: str = Field(
@@ -182,18 +179,18 @@ class BudgetTemplate(BaseModel):
     )
     target_budget_min: float = Field(ge=0, description="Minimum recommended budget")
     target_budget_max: float = Field(ge=0, description="Maximum recommended budget")
-    guest_count_range: Dict = Field(
+    guest_count_range: dict = Field(
         default_factory=dict, description="Recommended guest count range"
     )
-    categories: List[Dict] = Field(
+    categories: list[dict] = Field(
         default_factory=list, description="Default categories with percentages"
     )
-    created_by: Optional[str] = Field(None, description="Created by user email")
+    created_by: str | None = Field(None, description="Created by user email")
     is_public: bool = Field(
         default=True, description="Whether template is available to all planners"
     )
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(
         populate_by_name=True, arbitrary_types_allowed=True, str_strip_whitespace=True
@@ -253,7 +250,7 @@ class BudgetSummary(BaseModel):
     vendor_quotes_count: int = Field(
         default=0, ge=0, description="Total vendor quotes collected"
     )
-    last_updated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_updated: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class PaymentRecord(BaseModel):
@@ -261,19 +258,19 @@ class PaymentRecord(BaseModel):
 
     id: PyObjectId = Field(default_factory=generate_object_id)
     category_id: str = Field(..., description="Budget category this payment belongs to")
-    vendor_name: Optional[str] = Field(None, description="Vendor who received payment")
+    vendor_name: str | None = Field(None, description="Vendor who received payment")
     amount: float = Field(gt=0, description="Payment amount")
     payment_method: str = Field(
         ..., description="Payment method: cash, check, card, transfer"
     )
     payment_date: datetime = Field(..., description="Date payment was made")
-    description: Optional[str] = Field(None, description="Payment description")
-    receipt_url: Optional[str] = Field(None, description="URL to receipt/invoice")
+    description: str | None = Field(None, description="Payment description")
+    receipt_url: str | None = Field(None, description="URL to receipt/invoice")
     status: str = Field(
         default="completed", description="Payment status: pending, completed, failed"
     )
-    notes: Optional[str] = Field(None, description="Additional notes")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    notes: str | None = Field(None, description="Additional notes")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class BudgetAlert(BaseModel):
@@ -281,7 +278,7 @@ class BudgetAlert(BaseModel):
 
     id: PyObjectId = Field(default_factory=generate_object_id)
     wedding_id: str = Field(..., description="Wedding ID")
-    category_id: Optional[str] = Field(
+    category_id: str | None = Field(
         default=None, description="Specific category if applicable"
     )
     alert_type: str = Field(
@@ -292,15 +289,15 @@ class BudgetAlert(BaseModel):
     )
     title: str = Field(..., description="Alert title")
     message: str = Field(..., description="Alert message")
-    amount: Optional[float] = Field(default=None, description="Amount related to alert")
-    threshold: Optional[float] = Field(
+    amount: float | None = Field(default=None, description="Amount related to alert")
+    threshold: float | None = Field(
         default=None, description="Threshold that triggered alert"
     )
     is_read: bool = Field(default=False, description="Whether alert has been read")
     is_resolved: bool = Field(
         default=False, description="Whether alert has been resolved"
     )
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    resolved_at: Optional[datetime] = Field(
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    resolved_at: datetime | None = Field(
         default=None, description="When alert was resolved"
     )

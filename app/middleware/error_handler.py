@@ -14,8 +14,8 @@ import logging
 import os
 import traceback
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -110,7 +110,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
 
         # Error rate limiting (per IP)
         self.max_error_rate = 100  # per minute per IP
-        self.error_tracking: Dict[str, Dict[str, Any]] = {}
+        self.error_tracking: dict[str, dict[str, Any]] = {}
         self.blocked_ips: set[str] = set()
 
         # Allow additional trusted IPs/CIDRs via environment variable (comma-separated).
@@ -230,7 +230,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
 
     # ==================== SUPPORTING METHODS ====================
 
-    def _extract_payload(self, response: JSONResponse) -> Dict:
+    def _extract_payload(self, response: JSONResponse) -> dict:
         """Safely parse JSON payload from a JSONResponse."""
         try:
             return json.loads(bytes(response.body).decode("utf-8"))
@@ -240,7 +240,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             )
             return {}
 
-    def _get_error_id(self, payload: Dict) -> str:
+    def _get_error_id(self, payload: dict) -> str:
         return payload.get("error", {}).get("error_id") or str(uuid.uuid4())
 
     def _reset_success(self, client_ip: str) -> None:
@@ -291,7 +291,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             return False
 
     def _track_error(self, client_ip: str) -> None:
-        current_time = datetime.now(timezone.utc)
+        current_time = datetime.now(UTC)
         if client_ip not in self.error_tracking:
             self.error_tracking[client_ip] = {
                 "error_count": 0,
@@ -370,7 +370,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 "error": {
                     "code": "IP_BLOCKED",
                     "message": "Your IP has been temporarily blocked due to excessive errors. Please try again later.",
-                    "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+                    "timestamp": datetime.now(UTC).isoformat() + "Z",
                     "retry_after": 3600,
                 }
             },
@@ -378,7 +378,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         )
 
     def _cleanup_old_tracking(self) -> None:
-        current_time = datetime.now(timezone.utc)
+        current_time = datetime.now(UTC)
         cutoff_time = current_time - timedelta(hours=1)
         expired_ips = [
             ip
@@ -393,14 +393,14 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         self,
         request: Request,
         exc: Exception,
-        payload: Dict,
+        payload: dict,
         client_ip: str,
         error_id: str,
     ) -> None:
         """Persist unexpected errors to MongoDB when available."""
         error_doc = {
             "error_id": error_id,
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": datetime.now(UTC),
             "error_type": type(exc).__name__,
             "error_message": str(exc),
             "stack_trace": traceback.format_exc(),
@@ -431,7 +431,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             await mongo.db["errors"].insert_one(error_doc)
             logger.info(f"Error {error_id} saved to database")
         except Exception as db_error:
-            logger.error(f"Failed to save error to database: {str(db_error)}")
+            logger.error(f"Failed to save error to database: {db_error!s}")
 
     def _is_critical_error(self, exc: Exception) -> bool:
         error_type = type(exc).__name__
@@ -468,10 +468,10 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
 
     async def _send_alert_email(
         self,
-        payload: Dict,
-        exc: Optional[Exception] = None,
-        request: Optional[Request] = None,
-        client_ip: Optional[str] = None,
+        payload: dict,
+        exc: Exception | None = None,
+        request: Request | None = None,
+        client_ip: str | None = None,
     ) -> None:
         """Send alert email for critical errors using Resend."""
         if not self.resend or not self.resend_api_key:
@@ -490,14 +490,14 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             self.resend.Emails.send(params)  # type: ignore
             logger.info(f"Alert email sent for error {error.get('error_id')}")
         except Exception as e:
-            logger.error(f"Failed to send alert email: {str(e)}")
+            logger.error(f"Failed to send alert email: {e!s}")
 
     def _build_error_email_html(
         self,
-        error: Dict,
-        exc: Optional[Exception] = None,
-        request: Optional[Request] = None,
-        client_ip: Optional[str] = None,
+        error: dict,
+        exc: Exception | None = None,
+        request: Request | None = None,
+        client_ip: str | None = None,
     ) -> str:
         """Build a detailed HTML email for error alerts."""
         dashboard_url = os.getenv("FRONTEND_URL")

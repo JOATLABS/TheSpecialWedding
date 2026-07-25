@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Optional
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -125,9 +124,9 @@ class ExternalConflictSource(str, Enum):
 
 
 def attach_timezone_if_naive(
-    value: Optional[datetime],
+    value: datetime | None,
     timezone_name: str,
-) -> Optional[datetime]:
+) -> datetime | None:
     """Attach the requested IANA timezone when an incoming datetime is naive."""
     if value is None or value.tzinfo is not None:
         return value
@@ -139,23 +138,23 @@ class PlannerTaskModel(BaseModel):
 
     id: str = Field(..., alias="_id")
     planner_email: str = Field(..., description="Legacy planner owner email")
-    owner_planner_id: Optional[str] = Field(
+    owner_planner_id: str | None = Field(
         None, description="Canonical planner owner user id"
     )
-    owner_planner_email: Optional[str] = Field(
+    owner_planner_email: str | None = Field(
         None, description="Canonical planner owner email"
     )
-    created_by_user_id: Optional[str] = Field(
+    created_by_user_id: str | None = Field(
         None, description="Internal user id that created the item"
     )
-    created_by_email: Optional[str] = Field(
+    created_by_email: str | None = Field(
         None, description="Internal email that created the item"
     )
     assigned_user_ids: list[str] = Field(default_factory=list)
     assigned_user_emails: list[str] = Field(default_factory=list)
-    wedding_id: Optional[str] = Field(None, description="Associated wedding (optional)")
+    wedding_id: str | None = Field(None, description="Associated wedding (optional)")
     title: str = Field(..., description="Task title")
-    description: Optional[str] = Field(None, description="Detailed task description")
+    description: str | None = Field(None, description="Detailed task description")
     category: str = Field(default=TaskCategory.OTHER.value, description="Task category")
     priority: str = Field(default=TaskPriority.MEDIUM.value, description="Priority")
     status: str = Field(default=TaskStatus.PENDING.value, description="Task status")
@@ -182,11 +181,11 @@ class PlannerTaskModel(BaseModel):
 
     # Scheduling fields
     start_date: datetime = Field(..., description="Task start date/time")
-    end_date: Optional[datetime] = Field(
+    end_date: datetime | None = Field(
         None, description="Task end date/time (for events)"
     )
     all_day: bool = Field(default=False, description="Whether this is an all-day event")
-    due_date: Optional[datetime] = Field(None, description="Due date for the task")
+    due_date: datetime | None = Field(None, description="Due date for the task")
     timezone: str = Field(default="UTC", description="IANA timezone identifier")
 
     # Planner/couple participants
@@ -194,42 +193,40 @@ class PlannerTaskModel(BaseModel):
     external_attendees: list[dict] = Field(default_factory=list)
 
     # Meeting metadata
-    conference_provider: Optional[str] = Field(
+    conference_provider: str | None = Field(
         None, description="Conference provider label"
     )
-    conference_url: Optional[str] = Field(None, description="Join URL")
+    conference_url: str | None = Field(None, description="Join URL")
     invite_delivery_mode: str = Field(
         default=InviteDeliveryMode.NONE.value, description="Invite delivery mode"
     )
-    meeting_status: Optional[str] = Field(
+    meeting_status: str | None = Field(
         default=None, description="Lifecycle state for meetings"
     )
 
     # Reminders
-    reminder_minutes: Optional[int] = Field(
+    reminder_minutes: int | None = Field(
         None,
         description="Minutes before to send reminder (e.g., 30, 60, 1440 for 1 day)",
     )
 
     # Recurrence (optional)
     is_recurring: bool = Field(default=False, description="Whether task repeats")
-    recurrence_rule: Optional[str] = Field(
+    recurrence_rule: str | None = Field(
         None, description="iCal RRULE string (e.g., 'FREQ=WEEKLY;BYDAY=MO')"
     )
 
     # Metadata
-    color: Optional[str] = Field(None, description="Display color (hex code)")
-    notes: Optional[str] = Field(None, description="Additional notes")
+    color: str | None = Field(None, description="Display color (hex code)")
+    notes: str | None = Field(None, description="Additional notes")
     attachments: list[str] = Field(
         default_factory=list, description="File attachment URLs"
     )
 
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     version: int = Field(default=1, ge=1)
-    completed_at: Optional[datetime] = Field(
-        None, description="When task was completed"
-    )
+    completed_at: datetime | None = Field(None, description="When task was completed")
 
     # ---------------- External-conflict tracking ----------------
     # Populated by the Aurinko webhook handler (process_event_change_async)
@@ -240,30 +237,30 @@ class PlannerTaskModel(BaseModel):
         default=ExternalConflictStatus.NONE.value,
         description="Tri-state badge — none / pending_review / resolved",
     )
-    external_conflict_source: Optional[str] = Field(
+    external_conflict_source: str | None = Field(
         default=None,
         description="Which mechanism detected the divergence (webhook/drift_check/manual)",
     )
-    external_conflict_detected_at: Optional[datetime] = Field(
+    external_conflict_detected_at: datetime | None = Field(
         default=None, description="When the most recent divergence was observed"
     )
-    external_last_modified_at: Optional[datetime] = Field(
+    external_last_modified_at: datetime | None = Field(
         default=None,
         description="Provider-reported lastModifiedDateTime for the linked event",
     )
-    external_start_date: Optional[datetime] = Field(
+    external_start_date: datetime | None = Field(
         default=None, description="External event start (if snapshot fetched)"
     )
-    external_end_date: Optional[datetime] = Field(
+    external_end_date: datetime | None = Field(
         default=None, description="External event end (if snapshot fetched)"
     )
-    external_title: Optional[str] = Field(
+    external_title: str | None = Field(
         default=None, description="External event subject/title (if snapshot fetched)"
     )
-    external_description: Optional[str] = Field(
+    external_description: str | None = Field(
         default=None, description="External event body preview (if snapshot fetched)"
     )
-    external_location: Optional[str] = Field(
+    external_location: str | None = Field(
         default=None, description="External event location (if snapshot fetched)"
     )
 
@@ -275,19 +272,19 @@ class CalendarEventCreate(BaseModel):
     """Schema for creating a new calendar event/task."""
 
     title: str = Field(..., min_length=1, max_length=200)
-    description: Optional[str] = Field(None, max_length=2000)
-    wedding_id: Optional[str] = None
+    description: str | None = Field(None, max_length=2000)
+    wedding_id: str | None = None
     category: str = Field(default=TaskCategory.OTHER.value)
     priority: str = Field(default=TaskPriority.MEDIUM.value)
     start_date: datetime
-    end_date: Optional[datetime] = None
+    end_date: datetime | None = None
     all_day: bool = False
-    due_date: Optional[datetime] = None
-    reminder_minutes: Optional[int] = Field(None, ge=0, le=40320)  # Max 4 weeks
+    due_date: datetime | None = None
+    reminder_minutes: int | None = Field(None, ge=0, le=40320)  # Max 4 weeks
     is_recurring: bool = False
-    recurrence_rule: Optional[str] = None
-    color: Optional[str] = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
-    notes: Optional[str] = None
+    recurrence_rule: str | None = None
+    color: str | None = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    notes: str | None = None
     schedule_item_type: str = Field(default=ScheduleItemType.TASK.value)
     timezone: str = Field(default="UTC")
     visibility_mode: str = Field(default=VisibilityMode.DETAILS.value)
@@ -295,13 +292,13 @@ class CalendarEventCreate(BaseModel):
     assigned_user_ids: list[str] = Field(default_factory=list)
     assigned_user_emails: list[str] = Field(default_factory=list)
     couple_attendee_emails: list[str] = Field(default_factory=list)
-    conference_provider: Optional[str] = None
-    conference_url: Optional[str] = None
+    conference_provider: str | None = None
+    conference_url: str | None = None
     invite_delivery_mode: str = Field(default=InviteDeliveryMode.NONE.value)
-    meeting_status: Optional[str] = None
+    meeting_status: str | None = None
     sync_target_override_enabled: bool = False
     sync_target_connection_ids: list[str] = Field(default_factory=list)
-    external_sync_requested: Optional[bool] = Field(
+    external_sync_requested: bool | None = Field(
         default=None,
         description="Explicit request to project this task onto external calendars",
     )
@@ -326,7 +323,7 @@ class CalendarEventCreate(BaseModel):
 
     @field_validator("recurrence_rule")
     @classmethod
-    def validate_recurrence_rule(cls, value: Optional[str]) -> Optional[str]:
+    def validate_recurrence_rule(cls, value: str | None) -> str | None:
         if value and "FREQ=" not in value:
             raise ValueError("recurrence_rule must include FREQ=")
         return value
@@ -359,39 +356,39 @@ class CalendarEventCreate(BaseModel):
 class CalendarEventUpdate(BaseModel):
     """Schema for updating an existing calendar event/task."""
 
-    title: Optional[str] = Field(None, min_length=1, max_length=200)
-    description: Optional[str] = Field(None, max_length=2000)
-    wedding_id: Optional[str] = None
-    category: Optional[str] = None
-    priority: Optional[str] = None
-    status: Optional[str] = None
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
-    all_day: Optional[bool] = None
-    due_date: Optional[datetime] = None
-    reminder_minutes: Optional[int] = Field(None, ge=0, le=40320)
-    is_recurring: Optional[bool] = None
-    recurrence_rule: Optional[str] = None
-    color: Optional[str] = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
-    notes: Optional[str] = None
-    schedule_item_type: Optional[str] = None
-    timezone: Optional[str] = None
-    visibility_mode: Optional[str] = None
-    calendar_sync_policy: Optional[str] = None
-    assigned_user_ids: Optional[list[str]] = None
-    assigned_user_emails: Optional[list[str]] = None
-    couple_attendee_emails: Optional[list[str]] = None
-    conference_provider: Optional[str] = None
-    conference_url: Optional[str] = None
-    invite_delivery_mode: Optional[str] = None
-    meeting_status: Optional[str] = None
-    sync_target_override_enabled: Optional[bool] = None
-    sync_target_connection_ids: Optional[list[str]] = None
-    external_sync_requested: Optional[bool] = Field(
+    title: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = Field(None, max_length=2000)
+    wedding_id: str | None = None
+    category: str | None = None
+    priority: str | None = None
+    status: str | None = None
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    all_day: bool | None = None
+    due_date: datetime | None = None
+    reminder_minutes: int | None = Field(None, ge=0, le=40320)
+    is_recurring: bool | None = None
+    recurrence_rule: str | None = None
+    color: str | None = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    notes: str | None = None
+    schedule_item_type: str | None = None
+    timezone: str | None = None
+    visibility_mode: str | None = None
+    calendar_sync_policy: str | None = None
+    assigned_user_ids: list[str] | None = None
+    assigned_user_emails: list[str] | None = None
+    couple_attendee_emails: list[str] | None = None
+    conference_provider: str | None = None
+    conference_url: str | None = None
+    invite_delivery_mode: str | None = None
+    meeting_status: str | None = None
+    sync_target_override_enabled: bool | None = None
+    sync_target_connection_ids: list[str] | None = None
+    external_sync_requested: bool | None = Field(
         default=None,
         description="Canonical request to project this task onto external calendars",
     )
-    expected_version: Optional[int] = Field(None, ge=1)
+    expected_version: int | None = Field(None, ge=1)
 
     @model_validator(mode="before")
     @classmethod
@@ -404,7 +401,7 @@ class CalendarEventUpdate(BaseModel):
 
     @field_validator("timezone")
     @classmethod
-    def validate_timezone(cls, value: Optional[str]) -> Optional[str]:
+    def validate_timezone(cls, value: str | None) -> str | None:
         if value is None:
             return value
         try:
@@ -415,7 +412,7 @@ class CalendarEventUpdate(BaseModel):
 
     @field_validator("recurrence_rule")
     @classmethod
-    def validate_recurrence_rule(cls, value: Optional[str]) -> Optional[str]:
+    def validate_recurrence_rule(cls, value: str | None) -> str | None:
         if value and "FREQ=" not in value:
             raise ValueError("recurrence_rule must include FREQ=")
         return value
@@ -441,8 +438,8 @@ class CalendarSyncStatus(BaseModel):
     """Status of Google Calendar connection for a user."""
 
     connected: bool = Field(..., description="Whether Google Calendar is connected")
-    calendar_id: Optional[str] = Field(None, description="Connected calendar ID")
-    last_sync: Optional[datetime] = Field(None, description="Last sync timestamp")
+    calendar_id: str | None = Field(None, description="Connected calendar ID")
+    last_sync: datetime | None = Field(None, description="Last sync timestamp")
     sync_enabled: bool = Field(
         default=False, description="Whether auto-sync is enabled"
     )

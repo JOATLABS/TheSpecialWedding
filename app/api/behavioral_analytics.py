@@ -7,7 +7,6 @@ signals, MRR movement, and per-wedding engagement data.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -32,7 +31,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _resolve_planner_scope_email(current_user: ExtendedAuthUser) -> Optional[str]:
+def _resolve_planner_scope_email(current_user: ExtendedAuthUser) -> str | None:
     """Map admin/team auth to the planner owner scope used by wedding records."""
     if current_user.is_root_admin:
         return None

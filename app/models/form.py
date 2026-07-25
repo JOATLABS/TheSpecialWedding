@@ -1,8 +1,8 @@
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -44,8 +44,8 @@ class ValidationRule(BaseModel):
         ...,
         description="Validation type: required, min_length, max_length, pattern, min, max",
     )
-    value: Union[str, int, bool] = Field(..., description="Validation value")
-    message: Optional[str] = Field(None, description="Custom validation error message")
+    value: str | int | bool = Field(..., description="Validation value")
+    message: str | None = Field(None, description="Custom validation error message")
 
 
 _VALID_CONDITION_OPERATORS = frozenset(
@@ -54,7 +54,7 @@ _VALID_CONDITION_OPERATORS = frozenset(
 _FIELD_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 
-def _validate_conditional_logic(value: Any) -> Optional[Dict[str, Any]]:
+def _validate_conditional_logic(value: Any) -> dict[str, Any] | None:
     """Pydantic field validator for ``FormField.conditional_logic``.
 
     Accepts ``None`` / empty dicts (= no rule). When a rule is present we
@@ -121,16 +121,16 @@ class FormField(BaseModel):
     id: str = Field(..., description="Unique field identifier")
     label: str = Field(..., description="Field label")
     type: FieldType = Field(..., description="Field input type")
-    placeholder: Optional[str] = Field(None, description="Field placeholder text")
+    placeholder: str | None = Field(None, description="Field placeholder text")
     required: bool = Field(default=False, description="Whether field is required")
-    description: Optional[str] = Field(None, description="Field description/help text")
-    options: List[str] = Field(
+    description: str | None = Field(None, description="Field description/help text")
+    options: list[str] = Field(
         default_factory=list, description="Options for select/radio/checkbox fields"
     )
-    validation_rules: List[ValidationRule] = Field(
+    validation_rules: list[ValidationRule] = Field(
         default_factory=list, description="Field validation rules"
     )
-    conditional_logic: Optional[Dict[str, Any]] = Field(
+    conditional_logic: dict[str, Any] | None = Field(
         None, description="Show/hide conditions"
     )
     order: int = Field(default=0, description="Field display order")
@@ -210,14 +210,12 @@ class FormField(BaseModel):
 
 class FormSettings(BaseModel):
     title: str = Field(..., description="Form title")
-    description: Optional[str] = Field(None, description="Form description")
+    description: str | None = Field(None, description="Form description")
     submit_button_text: str = Field(default="Submit", description="Submit button text")
     success_message: str = Field(
         default="Thank you for your submission!", description="Success message"
     )
-    redirect_url: Optional[str] = Field(
-        None, description="Redirect URL after submission"
-    )
+    redirect_url: str | None = Field(None, description="Redirect URL after submission")
     allow_multiple_submissions: bool = Field(
         default=False, description="Allow multiple submissions from same user"
     )
@@ -326,7 +324,7 @@ class FormType(str, Enum):
 
 
 class FormModel(BaseModel):
-    id: Optional[str] = Field(None, alias="_id", description="Form ID")
+    id: str | None = Field(None, alias="_id", description="Form ID")
     name: str = Field(..., description="Internal form name")
     form_type: FormType = Field(
         default=FormType.GENERAL,
@@ -335,24 +333,24 @@ class FormModel(BaseModel):
         "field default to 'general'.",
     )
     settings: FormSettings = Field(..., description="Form configuration")
-    fields: List[FormField] = Field(..., description="Form fields")
-    email_distribution: Optional[EmailDistributionSettings] = Field(
+    fields: list[FormField] = Field(..., description="Form fields")
+    email_distribution: EmailDistributionSettings | None = Field(
         None, description="Email settings"
     )
     created_by: str = Field(..., description="Creator email")
-    wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
-    template_type: Optional[str] = Field(
+    wedding_id: str | None = Field(None, description="Associated wedding ID")
+    template_type: str | None = Field(
         None,
         description="DEPRECATED — use form_type instead. Retained for backward compatibility "
         "with existing documents. Will be removed in a future sprint.",
     )
     is_active: bool = Field(default=True, description="Whether form is active")
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Creation timestamp",
     )
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Last update timestamp",
     )
     submission_count: int = Field(default=0, description="Total submissions received")
@@ -392,9 +390,9 @@ class FormModel(BaseModel):
 
 
 class FormResponse(BaseModel):
-    id: Optional[str] = Field(None, alias="_id", description="Response ID")
+    id: str | None = Field(None, alias="_id", description="Response ID")
     form_id: str = Field(..., description="Form ID")
-    distribution_id: Optional[str] = Field(
+    distribution_id: str | None = Field(
         None,
         description=(
             "FK to FormDistribution. Set when the response was submitted via "
@@ -402,19 +400,19 @@ class FormResponse(BaseModel):
             "'who has not responded yet' analytics independent of email match."
         ),
     )
-    responses: Dict[str, Any] = Field(
+    responses: dict[str, Any] = Field(
         ..., description="Field responses keyed by field ID"
     )
-    submitted_by_email: Optional[str] = Field(None, description="Submitter email")
-    submitted_by_name: Optional[str] = Field(None, description="Submitter name")
-    wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
-    ip_address: Optional[str] = Field(None, description="Submitter IP address")
-    user_agent: Optional[str] = Field(None, description="Submitter user agent")
+    submitted_by_email: str | None = Field(None, description="Submitter email")
+    submitted_by_name: str | None = Field(None, description="Submitter name")
+    wedding_id: str | None = Field(None, description="Associated wedding ID")
+    ip_address: str | None = Field(None, description="Submitter IP address")
+    user_agent: str | None = Field(None, description="Submitter user agent")
     submitted_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Submission timestamp",
     )
-    metadata: Dict[str, Any] = Field(
+    metadata: dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata"
     )
 
@@ -435,22 +433,18 @@ class FormResponse(BaseModel):
 
 
 class FormDistribution(BaseModel):
-    id: Optional[str] = Field(None, alias="_id", description="Distribution ID")
+    id: str | None = Field(None, alias="_id", description="Distribution ID")
     form_id: str = Field(..., description="Form ID")
     recipient_email: str = Field(..., description="Recipient email address")
-    recipient_name: Optional[str] = Field(None, description="Recipient name")
-    wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
+    recipient_name: str | None = Field(None, description="Recipient name")
+    wedding_id: str | None = Field(None, description="Associated wedding ID")
     sent_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Email sent timestamp",
     )
-    opened_at: Optional[datetime] = Field(None, description="Email opened timestamp")
-    clicked_at: Optional[datetime] = Field(
-        None, description="Form link clicked timestamp"
-    )
-    submitted_at: Optional[datetime] = Field(
-        None, description="Form submitted timestamp"
-    )
+    opened_at: datetime | None = Field(None, description="Email opened timestamp")
+    clicked_at: datetime | None = Field(None, description="Form link clicked timestamp")
+    submitted_at: datetime | None = Field(None, description="Form submitted timestamp")
     status: FormDistributionStatus = Field(
         default=FormDistributionStatus.SENT,
         description=(
@@ -459,8 +453,8 @@ class FormDistribution(BaseModel):
             "typo can't slip through and silently break analytics queries."
         ),
     )
-    email_id: Optional[str] = Field(None, description="Email service provider ID")
-    access_token_hash: Optional[str] = Field(
+    email_id: str | None = Field(None, description="Email service provider ID")
+    access_token_hash: str | None = Field(
         None,
         description=(
             "HMAC-SHA256 hash of the per-recipient access token. The raw "
@@ -468,7 +462,7 @@ class FormDistribution(BaseModel):
             "present it for verification."
         ),
     )
-    token_expires_at: Optional[datetime] = Field(
+    token_expires_at: datetime | None = Field(
         None, description="When the access token expires (default 30 days from send)."
     )
     send_reminder: bool = Field(
@@ -479,16 +473,16 @@ class FormDistribution(BaseModel):
         default=7,
         description="Days after sent_at to wait before sending a reminder.",
     )
-    reminder_subject: Optional[str] = Field(
+    reminder_subject: str | None = Field(
         None, description="Subject line snapshot for the reminder email."
     )
-    reminder_message: Optional[str] = Field(
+    reminder_message: str | None = Field(
         None, description="Body message snapshot for the reminder email."
     )
-    reminder_sender_name: Optional[str] = Field(
+    reminder_sender_name: str | None = Field(
         None, description="From-name snapshot for the reminder email."
     )
-    reminder_sent_at: Optional[datetime] = Field(
+    reminder_sent_at: datetime | None = Field(
         None, description="When the reminder was last sent."
     )
     reminder_count: int = Field(
@@ -510,9 +504,9 @@ class CreateFormRequest(BaseModel):
         description="Form category discriminator. Defaults to 'general' for backward compatibility.",
     )
     settings: FormSettings = Field(..., description="Form settings")
-    fields: List[FormField] = Field(..., description="Form fields")
-    wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
-    template_type: Optional[str] = Field(None, description="Template type")
+    fields: list[FormField] = Field(..., description="Form fields")
+    wedding_id: str | None = Field(None, description="Associated wedding ID")
+    template_type: str | None = Field(None, description="Template type")
 
     @field_validator("name")
     @classmethod
@@ -590,13 +584,13 @@ class FormViewUpdateRequest(BaseModel):
     scope: Literal["responses", "analytics"] = Field(
         ..., description="Area of the product that was viewed"
     )
-    submission_count: Optional[int] = Field(
+    submission_count: int | None = Field(
         None, description="Latest known submission count for the form"
     )
 
     @field_validator("submission_count")
     @classmethod
-    def validate_submission_count(cls, value: Optional[int]) -> Optional[int]:
+    def validate_submission_count(cls, value: int | None) -> int | None:
         if value is None:
             return value
 
@@ -609,25 +603,25 @@ class FormViewUpdateRequest(BaseModel):
 
 
 class UpdateFormRequest(BaseModel):
-    name: Optional[str] = Field(None, description="Form name")
-    settings: Optional[FormSettings] = Field(None, description="Form settings")
-    fields: Optional[List[FormField]] = Field(None, description="Form fields")
-    is_active: Optional[bool] = Field(None, description="Form active status")
+    name: str | None = Field(None, description="Form name")
+    settings: FormSettings | None = Field(None, description="Form settings")
+    fields: list[FormField] | None = Field(None, description="Form fields")
+    is_active: bool | None = Field(None, description="Form active status")
 
 
 class SendFormRequest(BaseModel):
-    recipient_emails: List[str] = Field(..., description="Recipient email addresses")
+    recipient_emails: list[str] = Field(..., description="Recipient email addresses")
     email_settings: EmailDistributionSettings = Field(
         ..., description="Email configuration"
     )
-    wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
+    wedding_id: str | None = Field(None, description="Associated wedding ID")
 
 
 class SubmitFormRequest(BaseModel):
-    responses: Dict[str, Any] = Field(..., description="Form field responses")
-    submitted_by_email: Optional[str] = Field(None, description="Submitter email")
-    submitted_by_name: Optional[str] = Field(None, description="Submitter name")
-    distribution_id: Optional[str] = Field(
+    responses: dict[str, Any] = Field(..., description="Form field responses")
+    submitted_by_email: str | None = Field(None, description="Submitter email")
+    submitted_by_name: str | None = Field(None, description="Submitter name")
+    distribution_id: str | None = Field(
         None,
         description=(
             "Optional FormDistribution ID supplied by per-recipient email "
@@ -637,7 +631,7 @@ class SubmitFormRequest(BaseModel):
             "fallback."
         ),
     )
-    access_token: Optional[str] = Field(
+    access_token: str | None = Field(
         None,
         description=(
             "Raw per-recipient access token from the email link "
@@ -646,7 +640,7 @@ class SubmitFormRequest(BaseModel):
             "rejects a second submission for the same distribution."
         ),
     )
-    idempotency_key: Optional[str] = Field(
+    idempotency_key: str | None = Field(
         None,
         description=(
             "Client-generated UUID-ish token, stable for the lifetime "

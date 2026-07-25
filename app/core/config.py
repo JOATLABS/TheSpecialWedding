@@ -1,5 +1,4 @@
 import os
-from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -12,9 +11,9 @@ class Settings:
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://mongo:27017")
     MONGO_DB: str = os.getenv("MONGO_DB", "wedding")
-    SECRET_KEY: Optional[str] = os.getenv("SECRET_KEY")
-    API_KEY: Optional[str] = os.getenv("API_KEY")
-    PLATFORM_METRICS_TOKEN: Optional[str] = (
+    SECRET_KEY: str | None = os.getenv("SECRET_KEY")
+    API_KEY: str | None = os.getenv("API_KEY")
+    PLATFORM_METRICS_TOKEN: str | None = (
         os.getenv("PLATFORM_METRICS_TOKEN") or os.getenv("API_TOKEN") or API_KEY
     )
 
@@ -43,19 +42,19 @@ class Settings:
     #                       from the NEXT_PUBLIC_ version so the backend never
     #                       reads a client-bundled env var.
     # UMAMI_DASHBOARD_URL — public Umami URL for "open in Umami" deep links.
-    UMAMI_API_BASE: Optional[str] = os.getenv("UMAMI_API_BASE")
-    UMAMI_USERNAME: Optional[str] = os.getenv("UMAMI_USERNAME")
-    UMAMI_PASSWORD: Optional[str] = os.getenv("UMAMI_PASSWORD")
-    UMAMI_API_KEY: Optional[str] = os.getenv("UMAMI_API_KEY")
-    UMAMI_WEBSITE_ID: Optional[str] = os.getenv("UMAMI_WEBSITE_ID")
-    UMAMI_DASHBOARD_URL: Optional[str] = os.getenv("UMAMI_DASHBOARD_URL")
+    UMAMI_API_BASE: str | None = os.getenv("UMAMI_API_BASE")
+    UMAMI_USERNAME: str | None = os.getenv("UMAMI_USERNAME")
+    UMAMI_PASSWORD: str | None = os.getenv("UMAMI_PASSWORD")
+    UMAMI_API_KEY: str | None = os.getenv("UMAMI_API_KEY")
+    UMAMI_WEBSITE_ID: str | None = os.getenv("UMAMI_WEBSITE_ID")
+    UMAMI_DASHBOARD_URL: str | None = os.getenv("UMAMI_DASHBOARD_URL")
 
     # ==================== URL Configuration ====================
     # Single source of truth - NO FALLBACKS
     # Missing vars will trigger root admin notification at startup
-    FRONTEND_URL: Optional[str] = os.getenv("FRONTEND_URL")
-    NEXT_PUBLIC_API_BASE_URL: Optional[str] = os.getenv("NEXT_PUBLIC_API_BASE_URL")
-    MEDIA_DOMAIN: Optional[str] = os.getenv("MEDIA_DOMAIN")
+    FRONTEND_URL: str | None = os.getenv("FRONTEND_URL")
+    NEXT_PUBLIC_API_BASE_URL: str | None = os.getenv("NEXT_PUBLIC_API_BASE_URL")
+    MEDIA_DOMAIN: str | None = os.getenv("MEDIA_DOMAIN")
 
     def get_required_url(self, url_name: str) -> str:
         """
@@ -73,23 +72,21 @@ class Settings:
         return value
 
     # Google Calendar Integration
-    GOOGLE_CLIENT_ID: Optional[str] = os.getenv("GOOGLE_CLIENT_ID")
-    GOOGLE_CLIENT_SECRET: Optional[str] = os.getenv("GOOGLE_CLIENT_SECRET")
-    GOOGLE_REDIRECT_URI: Optional[str] = os.getenv("GOOGLE_REDIRECT_URI")
-    GOOGLE_OAUTH_STATE_SIGNING_KEY: Optional[str] = os.getenv(
+    GOOGLE_CLIENT_ID: str | None = os.getenv("GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET: str | None = os.getenv("GOOGLE_CLIENT_SECRET")
+    GOOGLE_REDIRECT_URI: str | None = os.getenv("GOOGLE_REDIRECT_URI")
+    GOOGLE_OAUTH_STATE_SIGNING_KEY: str | None = os.getenv(
         "GOOGLE_OAUTH_STATE_SIGNING_KEY"
     )
-    TOKEN_ENCRYPTION_KEY: Optional[str] = os.getenv("TOKEN_ENCRYPTION_KEY")
+    TOKEN_ENCRYPTION_KEY: str | None = os.getenv("TOKEN_ENCRYPTION_KEY")
     GOOGLE_CALENDAR_DEFAULT_TIMEZONE: str = os.getenv(
         "GOOGLE_CALENDAR_DEFAULT_TIMEZONE", "UTC"
     )
-    GOOGLE_APP_PUBLIC_HOME_URL: Optional[str] = os.getenv("GOOGLE_APP_PUBLIC_HOME_URL")
-    GOOGLE_APP_PRIVACY_URL: Optional[str] = os.getenv("GOOGLE_APP_PRIVACY_URL")
-    GOOGLE_APP_TERMS_URL: Optional[str] = os.getenv("GOOGLE_APP_TERMS_URL")
-    GOOGLE_APP_SUPPORT_URL: Optional[str] = os.getenv("GOOGLE_APP_SUPPORT_URL")
-    GOOGLE_APP_DATA_DELETION_URL: Optional[str] = os.getenv(
-        "GOOGLE_APP_DATA_DELETION_URL"
-    )
+    GOOGLE_APP_PUBLIC_HOME_URL: str | None = os.getenv("GOOGLE_APP_PUBLIC_HOME_URL")
+    GOOGLE_APP_PRIVACY_URL: str | None = os.getenv("GOOGLE_APP_PRIVACY_URL")
+    GOOGLE_APP_TERMS_URL: str | None = os.getenv("GOOGLE_APP_TERMS_URL")
+    GOOGLE_APP_SUPPORT_URL: str | None = os.getenv("GOOGLE_APP_SUPPORT_URL")
+    GOOGLE_APP_DATA_DELETION_URL: str | None = os.getenv("GOOGLE_APP_DATA_DELETION_URL")
     CALENDAR_SHARED_EVENTS_CACHE_SECONDS: int = int(
         os.getenv("CALENDAR_SHARED_EVENTS_CACHE_SECONDS", "60")
     )
@@ -128,8 +125,8 @@ class Settings:
     ]
 
     # Web Push Notification Service (VAPID)
-    VAPID_PUBLIC_KEY: Optional[str] = os.getenv("VAPID_PUBLIC_KEY")
-    VAPID_PRIVATE_KEY: Optional[str] = os.getenv("VAPID_PRIVATE_KEY")
+    VAPID_PUBLIC_KEY: str | None = os.getenv("VAPID_PUBLIC_KEY")
+    VAPID_PRIVATE_KEY: str | None = os.getenv("VAPID_PRIVATE_KEY")
     VAPID_EMAIL: str = os.getenv("VAPID_EMAIL", "mailto:admin@thespecialwedding.io")
 
     # ==================== Aurinko (multi-provider calendar) ====================
@@ -147,16 +144,16 @@ class Settings:
     AURINKO_API_BASE_URL: str = os.getenv(
         "AURINKO_API_BASE_URL", "https://api.aurinko.io/v1"
     )
-    AURINKO_APP_ID: Optional[str] = os.getenv("AURINKO_APP_ID")
-    AURINKO_CLIENT_ID: Optional[str] = os.getenv("AURINKO_CLIENT_ID")
-    AURINKO_CLIENT_SECRET: Optional[str] = os.getenv("AURINKO_CLIENT_SECRET")
-    AURINKO_API_KEY: Optional[str] = os.getenv("AURINKO_API_KEY")
+    AURINKO_APP_ID: str | None = os.getenv("AURINKO_APP_ID")
+    AURINKO_CLIENT_ID: str | None = os.getenv("AURINKO_CLIENT_ID")
+    AURINKO_CLIENT_SECRET: str | None = os.getenv("AURINKO_CLIENT_SECRET")
+    AURINKO_API_KEY: str | None = os.getenv("AURINKO_API_KEY")
     # Signature verification key (dashboard "Signing secret"). MUST NOT be the
     # client secret — clobbering this with the client secret will silently fail
     # every webhook signature check.
-    AURINKO_WEBHOOK_SECRET: Optional[str] = os.getenv("AURINKO_WEBHOOK_SECRET")
-    AURINKO_REDIRECT_URI: Optional[str] = os.getenv("AURINKO_REDIRECT_URI")
-    AURINKO_OAUTH_STATE_SIGNING_KEY: Optional[str] = os.getenv(
+    AURINKO_WEBHOOK_SECRET: str | None = os.getenv("AURINKO_WEBHOOK_SECRET")
+    AURINKO_REDIRECT_URI: str | None = os.getenv("AURINKO_REDIRECT_URI")
+    AURINKO_OAUTH_STATE_SIGNING_KEY: str | None = os.getenv(
         "AURINKO_OAUTH_STATE_SIGNING_KEY"
     )
     # Comma-separated provider list passed to the hosted-auth URL as

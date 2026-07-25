@@ -3,7 +3,6 @@ import json
 import logging
 import time
 from collections import defaultdict, deque
-from typing import Deque, Dict, Optional
 from urllib.parse import parse_qs
 
 from fastapi import Request
@@ -42,7 +41,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.login_period = login_period
 
         # Store request timestamps for each IP/bucket (Fallback)
-        self.request_windows: Dict[str, Deque[float]] = defaultdict(lambda: deque())
+        self.request_windows: dict[str, deque[float]] = defaultdict(lambda: deque())
 
         # Lock for thread safety (Fallback)
         self.lock = asyncio.Lock()
@@ -169,7 +168,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def _uses_login_identity(self, bucket: str) -> bool:
         return bucket in {"admin_login_identity", "couple_login_identity"}
 
-    async def _extract_login_identifier(self, request: Request) -> Optional[str]:
+    async def _extract_login_identifier(self, request: Request) -> str | None:
         try:
             raw_body = await request.body()
         except Exception:
@@ -179,7 +178,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return None
 
         content_type = request.headers.get("content-type", "").lower()
-        email: Optional[str] = None
+        email: str | None = None
 
         if "application/json" in content_type:
             try:
@@ -217,7 +216,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         return f"fallback:{client_ip}"
 
-    async def _cleanup_old_requests(self, request_queue: Deque[float], period: int):
+    async def _cleanup_old_requests(self, request_queue: deque[float], period: int):
         """Remove old requests outside the time window"""
         current_time = time.time()
         while request_queue and current_time - request_queue[0] > period:
@@ -256,7 +255,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return current_count > limit, remaining, reset_time
 
         except Exception as e:
-            logger.error(f"Redis rate limit check failed: {str(e)}")
+            logger.error(f"Redis rate limit check failed: {e!s}")
             # Fallback to memory if Redis fails
             # We must acquire lock here as we are entering critical section for memory storage
             async with self.lock:
@@ -332,8 +331,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 )
             )
 
-        header_remaining: Optional[int] = None
-        header_reset: Optional[int] = None
+        header_remaining: int | None = None
+        header_reset: int | None = None
 
         for bucket, limit, period, subject in rate_limit_targets:
             if cache.enabled and cache.redis_client:

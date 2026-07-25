@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from app.core.cache import CacheKeys, cache
 from app.core.database import mongo
@@ -12,7 +11,7 @@ from app.utils.planner_ownership import normalize_query_id
 logger = logging.getLogger(__name__)
 
 
-def _normalized_slug(slug: Optional[str]) -> Optional[str]:
+def _normalized_slug(slug: str | None) -> str | None:
     if not isinstance(slug, str):
         return None
     normalized = slug.strip()
@@ -22,7 +21,7 @@ def _normalized_slug(slug: Optional[str]) -> Optional[str]:
 async def invalidate_wedding_projection_caches(
     wedding_id: str,
     *,
-    previous_slug: Optional[str] = None,
+    previous_slug: str | None = None,
 ) -> None:
     """Clear public privacy data after one durable wedding write.
 
@@ -35,7 +34,7 @@ async def invalidate_wedding_projection_caches(
     if not normalized_wedding_id:
         return
 
-    current_slug: Optional[str] = None
+    current_slug: str | None = None
     try:
         wedding = await mongo.db["weddings"].find_one(
             {"_id": normalize_query_id(normalized_wedding_id)},

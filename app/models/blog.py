@@ -5,7 +5,6 @@ visible on /resources/blog to the public (no auth required).
 """
 
 from datetime import datetime
-from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -64,7 +63,7 @@ class BlogArticleModel(MongoModel):
 
     # Classification
     category: str = Field(default="general", description="Blog category")
-    tags: List[str] = Field(default_factory=list, description="SEO tags")
+    tags: list[str] = Field(default_factory=list, description="SEO tags")
 
     # Status & Visibility
     status: str = Field(default="published", description="draft | published | archived")
@@ -75,21 +74,21 @@ class BlogArticleModel(MongoModel):
     author_email: str = Field(default="hello@thespecialwedding.io", max_length=254)
 
     # SEO
-    meta_title: Optional[str] = Field(
+    meta_title: str | None = Field(
         None, max_length=70, description="SEO title override"
     )
-    meta_description: Optional[str] = Field(
+    meta_description: str | None = Field(
         None, max_length=160, description="SEO description override"
     )
-    og_image: Optional[str] = Field(None, description="Open Graph image URL")
+    og_image: str | None = Field(None, description="Open Graph image URL")
 
     # Metrics
     view_count: int = Field(default=0, ge=0)
     estimated_read_minutes: int = Field(default=5, ge=1, le=60)
 
     # Display
-    card_image: Optional[str] = Field(None, description="Card thumbnail URL")
-    published_at: Optional[datetime] = Field(
+    card_image: str | None = Field(None, description="Card thumbnail URL")
+    published_at: datetime | None = Field(
         default=None, description="When the article was published"
     )
 
@@ -133,14 +132,14 @@ class BlogArticleCreateModel(BaseModel):
     content: str = Field(..., min_length=50, max_length=100000)
     excerpt: str = Field(..., min_length=20, max_length=500)
     category: str = Field(default="general")
-    tags: List[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
     status: str = Field(default="published")
     featured: bool = Field(default=False)
     author_name: str = Field(default="The Special Wedding")
-    meta_title: Optional[str] = Field(None, max_length=70)
-    meta_description: Optional[str] = Field(None, max_length=160)
-    og_image: Optional[str] = None
-    card_image: Optional[str] = None
+    meta_title: str | None = Field(None, max_length=70)
+    meta_description: str | None = Field(None, max_length=160)
+    og_image: str | None = None
+    card_image: str | None = None
 
     @field_validator("category")
     @classmethod
@@ -160,18 +159,18 @@ class BlogArticleCreateModel(BaseModel):
 class BlogArticleUpdateModel(BaseModel):
     """Partial update model for blog articles"""
 
-    title: Optional[str] = Field(None, min_length=5, max_length=200)
-    content: Optional[str] = Field(None, min_length=50, max_length=100000)
-    excerpt: Optional[str] = Field(None, min_length=20, max_length=500)
-    category: Optional[str] = None
-    tags: Optional[List[str]] = None
-    status: Optional[str] = None
-    featured: Optional[bool] = None
-    author_name: Optional[str] = Field(None, max_length=100)
-    meta_title: Optional[str] = Field(None, max_length=70)
-    meta_description: Optional[str] = Field(None, max_length=160)
-    og_image: Optional[str] = None
-    card_image: Optional[str] = None
+    title: str | None = Field(None, min_length=5, max_length=200)
+    content: str | None = Field(None, min_length=50, max_length=100000)
+    excerpt: str | None = Field(None, min_length=20, max_length=500)
+    category: str | None = None
+    tags: list[str] | None = None
+    status: str | None = None
+    featured: bool | None = None
+    author_name: str | None = Field(None, max_length=100)
+    meta_title: str | None = Field(None, max_length=70)
+    meta_description: str | None = Field(None, max_length=160)
+    og_image: str | None = None
+    card_image: str | None = None
 
     @field_validator("category")
     @classmethod

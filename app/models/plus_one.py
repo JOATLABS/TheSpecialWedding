@@ -1,6 +1,5 @@
 import re
 from datetime import datetime
-from typing import List, Optional
 
 from bson import ObjectId
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -49,26 +48,22 @@ class PlusOneModel(BaseModel):
 
     guest_id: str = Field(...)  # Store as string, convert to ObjectId when needed
     name: str = Field(..., min_length=2, max_length=100)
-    phone: Optional[str] = None
-    email: Optional[str] = None
-    attending: List[str] = Field(default_factory=list)
-    dietary: Optional[str] = None
-    sms_opt_in: Optional[bool] = Field(
+    phone: str | None = None
+    email: str | None = None
+    attending: list[str] = Field(default_factory=list)
+    dietary: str | None = None
+    sms_opt_in: bool | None = Field(
         default=None, description="Opted in for SMS reminders"
     )
-    sms_opt_in_date: Optional[datetime] = Field(
-        None, description="When opted in to SMS"
-    )
-    sms_opt_out_date: Optional[datetime] = Field(
-        None, description="When opted out of SMS"
-    )
-    email_opt_in: Optional[bool] = Field(
+    sms_opt_in_date: datetime | None = Field(None, description="When opted in to SMS")
+    sms_opt_out_date: datetime | None = Field(None, description="When opted out of SMS")
+    email_opt_in: bool | None = Field(
         default=None, description="Opted in for email reminders"
     )
-    email_opt_in_date: Optional[datetime] = Field(
+    email_opt_in_date: datetime | None = Field(
         None, description="When opted in to email"
     )
-    email_opt_out_date: Optional[datetime] = Field(
+    email_opt_out_date: datetime | None = Field(
         None, description="When opted out of email"
     )
 
