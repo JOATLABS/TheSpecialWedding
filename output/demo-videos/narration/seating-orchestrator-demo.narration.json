@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "demoId": "seating-orchestrator-demo",
-  "generatedAt": "2026-07-22T01:03:13.650Z",
+  "generatedAt": "2026-07-25T18:35:31.461Z",
   "generator": "scripts/demo-videos/generate-narration.ts",
   "provider": "elevenlabs",
   "modelId": "eleven_multilingual_v2",
@@ -19,14 +19,14 @@
   "segments": [
     {
       "index": 0,
-      "text": "Seating starts with the actual room — the venue outline, its fixtures, and the tables placed where they will really stand, not a blank generic grid.",
-      "textSha256": "ee534b95b5fda7a717a7a7cda02db6ca4c91217249fbbf8fee4c758988e718ea",
-      "characterCount": 148,
+      "text": "This is the seating chart, built on the actual room — the venue outline, its fixtures, and tables placed where they will really stand.",
+      "textSha256": "2d8d1c22183c1e268dc349999b60ddd28e3473ea894416cf4a5b72db5b8d4d2e",
+      "characterCount": 134,
       "scheduledStartSeconds": 0,
       "scheduledEndSeconds": 12,
       "placedStartSeconds": 0,
-      "audioDurationSeconds": 9.848163,
-      "placedEndSeconds": 9.848163
+      "audioDurationSeconds": 9.430204,
+      "placedEndSeconds": 9.430204
     },
     {
       "index": 1,
@@ -36,8 +36,8 @@
       "scheduledStartSeconds": 12,
       "scheduledEndSeconds": 36,
       "placedStartSeconds": 12,
-      "audioDurationSeconds": 15.072653,
-      "placedEndSeconds": 27.072653000000003
+      "audioDurationSeconds": 14.863673,
+      "placedEndSeconds": 26.863673
     },
     {
       "index": 2,
@@ -47,13 +47,13 @@
       "scheduledStartSeconds": 36,
       "scheduledEndSeconds": 60,
       "placedStartSeconds": 36,
-      "audioDurationSeconds": 16.613878,
-      "placedEndSeconds": 52.613878
+      "audioDurationSeconds": 15.177143,
+      "placedEndSeconds": 51.177143
     }
   ],
-  "totalCharacterCount": 599,
-  "inputsSha256": "8a0f93d1814e035ff33f6fb346189ce3d29957eebc4610b20451677e3f162e5f",
+  "totalCharacterCount": 585,
+  "inputsSha256": "8848ef39a9c43be62bca675b72413a68c5d14faea3825aafd2c8d9e67f585afe",
   "masterPath": "output/demo-videos/narration/seating-orchestrator-demo.m4a",
-  "masterSha256": "b76982798a14bdfc690662ff65a81705b0aea748fbfd05c67b096aff570d3111",
+  "masterSha256": "11bfefff20af4b02a267144a7d5b694cfa49f7b42ccfa8083eab9fe905b60fc1",
   "masterDurationSeconds": 60
 }

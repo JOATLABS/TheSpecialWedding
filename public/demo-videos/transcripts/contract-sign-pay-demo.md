@@ -9,7 +9,7 @@ Target duration: 50 seconds
 
 Action: Open the existing planner contract and inspect its details and status.
 
-A vendor agreement starts from the record the planner already owns: the vendor, the value, the status, and the key dates, together in one place.
+This is a vendor contract record: the vendor, the value, the status, and the key dates, together in the workspace the planner owns.
 
 ### 0:12-0:30
 

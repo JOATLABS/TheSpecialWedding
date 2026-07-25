@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "demoId": "planner-command-center-walkthrough",
-  "generatedAt": "2026-07-22T01:02:34.362Z",
+  "generatedAt": "2026-07-25T18:35:23.485Z",
   "generator": "scripts/demo-videos/generate-narration.ts",
   "provider": "elevenlabs",
   "modelId": "eleven_multilingual_v2",
@@ -19,14 +19,14 @@
   "segments": [
     {
       "index": 0,
-      "text": "Start with one wedding in the planner command center, then follow its plan instead of touring disconnected tools.",
-      "textSha256": "2b3a8f3cb955d63b7ec53ea83187081bd964ee98aba9da99dd0a18b63669be95",
-      "characterCount": 113,
+      "text": "This is the planner command center: every active wedding in one portfolio. Start with one and follow its plan.",
+      "textSha256": "ec743dc933727bbff19376f0f48ebcab5177762e8f9c8f661cde9b6a096fd609",
+      "characterCount": 110,
       "scheduledStartSeconds": 0,
       "scheduledEndSeconds": 9.862,
       "placedStartSeconds": 0,
-      "audioDurationSeconds": 6.948571,
-      "placedEndSeconds": 6.948571
+      "audioDurationSeconds": 6.452245,
+      "placedEndSeconds": 6.452245
     },
     {
       "index": 1,
@@ -36,8 +36,8 @@
       "scheduledStartSeconds": 9.862,
       "scheduledEndSeconds": 29.587,
       "placedStartSeconds": 9.862,
-      "audioDurationSeconds": 15.36,
-      "placedEndSeconds": 25.222
+      "audioDurationSeconds": 15.229388,
+      "placedEndSeconds": 25.091388000000002
     },
     {
       "index": 2,
@@ -47,8 +47,8 @@
       "scheduledStartSeconds": 29.587,
       "scheduledEndSeconds": 39.449,
       "placedStartSeconds": 29.587,
-      "audioDurationSeconds": 7.418776,
-      "placedEndSeconds": 37.005776
+      "audioDurationSeconds": 9.377959,
+      "placedEndSeconds": 38.964959
     },
     {
       "index": 3,
@@ -58,8 +58,8 @@
       "scheduledStartSeconds": 39.449,
       "scheduledEndSeconds": 49.311,
       "placedStartSeconds": 39.449,
-      "audioDurationSeconds": 8.594286,
-      "placedEndSeconds": 48.043285999999995
+      "audioDurationSeconds": 8.907755,
+      "placedEndSeconds": 48.356755
     },
     {
       "index": 4,
@@ -69,8 +69,8 @@
       "scheduledStartSeconds": 49.311,
       "scheduledEndSeconds": 64.104,
       "placedStartSeconds": 49.311,
-      "audioDurationSeconds": 11.964082,
-      "placedEndSeconds": 61.275082
+      "audioDurationSeconds": 11.467755,
+      "placedEndSeconds": 60.778755000000004
     },
     {
       "index": 5,
@@ -80,13 +80,13 @@
       "scheduledStartSeconds": 64.104,
       "scheduledEndSeconds": 73.967,
       "placedStartSeconds": 64.104,
-      "audioDurationSeconds": 3.761633,
-      "placedEndSeconds": 67.865633
+      "audioDurationSeconds": 3.160816,
+      "placedEndSeconds": 67.264816
     }
   ],
-  "totalCharacterCount": 800,
-  "inputsSha256": "5e8cd244a1d4bdc2f120c5304dfac4ad5dae5e65f04783847c90c3ac61931627",
+  "totalCharacterCount": 797,
+  "inputsSha256": "9589e940393ded361f6c4c2bcd8fea80bf5d5802bcbf0a21cb656b0ae3d1a270",
   "masterPath": "output/demo-videos/narration/planner-command-center-walkthrough.m4a",
-  "masterSha256": "e7082c9234790ed23cc209711d4369cd30b2b4705699530d84531660aede0cc5",
+  "masterSha256": "c680b4f2e903a7ebcc436935c933b8d4ee6365854da713cee15f8786b07629fe",
   "masterDurationSeconds": 73.967007
 }
