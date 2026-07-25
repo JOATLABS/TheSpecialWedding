@@ -17,7 +17,10 @@ describe('demo video WebVTT captions', () => {
 
     assert.match(webVtt, /^WEBVTT\n\n/);
     assert.match(webVtt, /00:00:00\.000 --> 00:00:10\.000/);
-    assert.match(webVtt, /Start with one wedding in the planner command center/);
+    // Pinned to the opening line's job, not its wording: every walkthrough now
+    // names the surface on screen before describing it, so a viewer knows what
+    // they are looking at. Rewording is fine; dropping the orientation is not.
+    assert.match(webVtt, /^This is the planner command center\b/m);
     assert.match(webVtt, /00:01:05\.000 --> 00:01:15\.000/);
   });
 
