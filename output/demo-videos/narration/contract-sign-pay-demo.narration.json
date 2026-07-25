@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "demoId": "contract-sign-pay-demo",
-  "generatedAt": "2026-07-22T01:03:21.361Z",
+  "generatedAt": "2026-07-25T18:35:39.158Z",
   "generator": "scripts/demo-videos/generate-narration.ts",
   "provider": "elevenlabs",
   "modelId": "eleven_multilingual_v2",
@@ -19,14 +19,14 @@
   "segments": [
     {
       "index": 0,
-      "text": "A vendor agreement starts from the record the planner already owns: the vendor, the value, the status, and the key dates, together in one place.",
-      "textSha256": "f340720733b0957f7eec1f1a1627e1344602d4f8e1e50c0fcc8969b69672c3f2",
-      "characterCount": 144,
+      "text": "This is a vendor contract record: the vendor, the value, the status, and the key dates, together in the workspace the planner owns.",
+      "textSha256": "11aea432a868573d265fea3a38da9854b8c51fe40cd96f5a1be3c707a230bcd4",
+      "characterCount": 131,
       "scheduledStartSeconds": 0,
       "scheduledEndSeconds": 12,
       "placedStartSeconds": 0,
-      "audioDurationSeconds": 9.142857,
-      "placedEndSeconds": 9.142857
+      "audioDurationSeconds": 8.594286,
+      "placedEndSeconds": 8.594286
     },
     {
       "index": 1,
@@ -36,8 +36,8 @@
       "scheduledStartSeconds": 12,
       "scheduledEndSeconds": 30,
       "placedStartSeconds": 12,
-      "audioDurationSeconds": 14.576327,
-      "placedEndSeconds": 26.576327
+      "audioDurationSeconds": 14.759184,
+      "placedEndSeconds": 26.759183999999998
     },
     {
       "index": 2,
@@ -47,13 +47,13 @@
       "scheduledStartSeconds": 30,
       "scheduledEndSeconds": 50,
       "placedStartSeconds": 30,
-      "audioDurationSeconds": 15.542857,
-      "placedEndSeconds": 45.542857
+      "audioDurationSeconds": 16.300408,
+      "placedEndSeconds": 46.300408000000004
     }
   ],
-  "totalCharacterCount": 593,
-  "inputsSha256": "c83e288fd9a15034f0130a220ece11ed51fcac618efff41880711819dac4f5d5",
+  "totalCharacterCount": 580,
+  "inputsSha256": "f777aafbcc3fbb7965391bd80009d25c6487754c0fd3c63793094440645cb32e",
   "masterPath": "output/demo-videos/narration/contract-sign-pay-demo.m4a",
-  "masterSha256": "ee371121272710db02f3abb63ddecc77f3c126c25eda48276421df47d1eb2139",
+  "masterSha256": "9b720f2a3add3bb62efcfa6b50e346af0b87149965d2e8cb1e87edbd6c7f58ce",
   "masterDurationSeconds": 50
 }
