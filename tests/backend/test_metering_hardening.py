@@ -342,10 +342,14 @@ def test_c5_naive_datetime_uses_utc_constant_not_runtime_local():
         f"accidentally on UTC hosts but breaks on any other timezone. "
         f"See METERING_GAP_SCENARIOS §C5."
     )
-    assert "tzinfo=timezone.utc" in src, (
-        "period_parsing.py no longer uses `tzinfo=timezone.utc` for the "
-        "naive-datetime coercion. If you intentionally restructured, "
-        "update this guard."
+    # `datetime.UTC` is the same singleton object as `datetime.timezone.utc`
+    # (added as an alias in 3.11), so either spelling satisfies this guard.
+    # What must not change is that the coercion tags a fixed UTC constant
+    # rather than deriving one from the host clock.
+    assert "tzinfo=UTC" in src or "tzinfo=timezone.utc" in src, (
+        "period_parsing.py no longer tags the naive-datetime coercion with a "
+        "fixed UTC constant (`tzinfo=UTC` / `tzinfo=timezone.utc`). If you "
+        "intentionally restructured, update this guard."
     )
 
 
