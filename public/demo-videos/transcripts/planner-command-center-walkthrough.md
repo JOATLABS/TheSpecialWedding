@@ -9,7 +9,7 @@ Target duration: 75 seconds
 
 Action: Scan the planner portfolio and choose Manage for Sofia & Daniel.
 
-Start with one wedding in the planner command center, then follow its plan instead of touring disconnected tools.
+This is the planner command center: every active wedding in one portfolio. Start with one and follow its plan.
 
 ### 0:10-0:30
 
