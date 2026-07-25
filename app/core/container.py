@@ -4,8 +4,9 @@ Dependency Injection Container for better testability and loose coupling
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from enum import Enum
-from typing import Any, Callable, Dict, Optional, Type, TypeVar
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +26,9 @@ class ServiceDescriptor:
 
     def __init__(
         self,
-        service_type: Type,
-        implementation: Optional[Type] = None,
-        factory: Optional[Callable] = None,
+        service_type: type,
+        implementation: type | None = None,
+        factory: Callable | None = None,
         instance: Any = None,
         lifetime: Lifetime = Lifetime.TRANSIENT,
     ):
@@ -43,12 +44,12 @@ class DependencyContainer:
     """Dependency injection container"""
 
     def __init__(self):
-        self._services: Dict[Type, ServiceDescriptor] = {}
-        self._scoped_services: Dict[str, Dict[Type, Any]] = {}
-        self._current_scope: Optional[str] = None
+        self._services: dict[type, ServiceDescriptor] = {}
+        self._scoped_services: dict[str, dict[type, Any]] = {}
+        self._current_scope: str | None = None
 
     def register_singleton(
-        self, service_type: Type[T], implementation: Optional[Type[T]] = None
+        self, service_type: type[T], implementation: type[T] | None = None
     ) -> "DependencyContainer":
         """Register a singleton service"""
         self._services[service_type] = ServiceDescriptor(
@@ -59,7 +60,7 @@ class DependencyContainer:
         return self
 
     def register_scoped(
-        self, service_type: Type[T], implementation: Optional[Type[T]] = None
+        self, service_type: type[T], implementation: type[T] | None = None
     ) -> "DependencyContainer":
         """Register a scoped service"""
         self._services[service_type] = ServiceDescriptor(
@@ -70,7 +71,7 @@ class DependencyContainer:
         return self
 
     def register_transient(
-        self, service_type: Type[T], implementation: Optional[Type[T]] = None
+        self, service_type: type[T], implementation: type[T] | None = None
     ) -> "DependencyContainer":
         """Register a transient service"""
         self._services[service_type] = ServiceDescriptor(
@@ -81,7 +82,7 @@ class DependencyContainer:
         return self
 
     def register_instance(
-        self, service_type: Type[T], instance: T
+        self, service_type: type[T], instance: T
     ) -> "DependencyContainer":
         """Register a service instance"""
         self._services[service_type] = ServiceDescriptor(
@@ -91,7 +92,7 @@ class DependencyContainer:
 
     def register_factory(
         self,
-        service_type: Type[T],
+        service_type: type[T],
         factory: Callable[[], T],
         lifetime: Lifetime = Lifetime.TRANSIENT,
     ) -> "DependencyContainer":
@@ -101,7 +102,7 @@ class DependencyContainer:
         )
         return self
 
-    def resolve(self, service_type: Type[T]) -> T:
+    def resolve(self, service_type: type[T]) -> T:
         """Resolve a service instance"""
         if service_type not in self._services:
             raise ValueError(f"Service {service_type.__name__} not registered")
@@ -148,7 +149,7 @@ class DependencyContainer:
         # Use dependency injection to create instance
         return self._create_with_dependencies(descriptor.implementation)
 
-    def _create_with_dependencies(self, implementation_type: Type):
+    def _create_with_dependencies(self, implementation_type: type):
         """Create instance with dependency injection"""
         try:
             # Get constructor parameters
@@ -175,13 +176,11 @@ class DependencyContainer:
             return implementation_type(**parameters)
 
         except Exception as e:
-            logger.error(
-                f"Failed to create instance of {implementation_type}: {str(e)}"
-            )
+            logger.error(f"Failed to create instance of {implementation_type}: {e!s}")
             # Fallback to parameterless constructor
             return implementation_type()
 
-    def create_scope(self, scope_id: Optional[str] = None) -> "ServiceScope":
+    def create_scope(self, scope_id: str | None = None) -> "ServiceScope":
         """Create a new service scope"""
         if scope_id is None:
             scope_id = f"scope_{id(object())}"
@@ -204,7 +203,7 @@ class DependencyContainer:
                     try:
                         service.dispose()
                     except Exception as e:
-                        logger.error(f"Error disposing service: {str(e)}")
+                        logger.error(f"Error disposing service: {e!s}")
 
             del self._scoped_services[scope_id]
 
@@ -257,7 +256,7 @@ class ISubscriptionService(ABC):
     @abstractmethod
     async def check_usage_limits(
         self, user_id: str, resource_type: str, amount: int
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         pass
 
 
@@ -328,7 +327,7 @@ def inject(*dependencies):
 
 
 # FastAPI dependency provider
-def get_service(service_type: Type[T]) -> Callable[[], T]:
+def get_service(service_type: type[T]) -> Callable[[], T]:
     """Create FastAPI dependency provider"""
 
     def provider() -> T:

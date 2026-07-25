@@ -11,8 +11,9 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, AsyncIterator, Dict, List, Mapping, Optional, Sequence, Tuple
+from collections.abc import AsyncIterator, Mapping, Sequence
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 try:  # pragma: no cover - optional Motor runtime
     from motor.motor_asyncio import AsyncIOMotorCollection
@@ -34,7 +35,7 @@ class PlatformMetricsService:
         self._index_lock = asyncio.Lock()
         self._indexes_ready = False
 
-    async def get_latest_snapshot(self) -> Optional[Dict[str, Any]]:
+    async def get_latest_snapshot(self) -> dict[str, Any] | None:
         """Return the most recent metrics snapshot or ``None`` when empty."""
 
         await self._ensure_indexes()
@@ -51,14 +52,14 @@ class PlatformMetricsService:
 
         return self._prepare_snapshot_document(document)
 
-    async def save_snapshot(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+    async def save_snapshot(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         """Persist a metrics snapshot payload and return the stored document."""
 
         await self._ensure_indexes()
 
         collection = self._mongo.get_platform_metrics_collection()
 
-        document: Dict[str, Any] = {
+        document: dict[str, Any] = {
             key: value for key, value in payload.items() if key != "id"
         }
 
@@ -67,19 +68,17 @@ class PlatformMetricsService:
         )
         snapshot_time = self._parse_datetime(snapshot_time_candidate)
         if snapshot_time is None:
-            snapshot_time = datetime.now(timezone.utc)
+            snapshot_time = datetime.now(UTC)
         snapshot_time = self._normalize_to_utc(snapshot_time)
 
         document["snapshot_time"] = snapshot_time
 
-        ingested_at = datetime.now(timezone.utc)
+        ingested_at = datetime.now(UTC)
         document["ingested_at"] = ingested_at
 
         document.setdefault(
             "timestamp",
-            snapshot_time.replace(tzinfo=timezone.utc)
-            .isoformat()
-            .replace("+00:00", "Z"),
+            snapshot_time.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z"),
         )
         document.setdefault("metrics", {})
 
@@ -92,16 +91,14 @@ class PlatformMetricsService:
 
         return self._prepare_snapshot_document(document)
 
-    async def get_history(
-        self, since: Optional[datetime] = None
-    ) -> List[Dict[str, Any]]:
+    async def get_history(self, since: datetime | None = None) -> list[dict[str, Any]]:
         """Return ordered snapshots, optionally filtered by ``since``."""
 
         await self._ensure_indexes()
 
         collection = self._mongo.get_platform_metrics_collection()
 
-        query: Dict[str, Any] = {}
+        query: dict[str, Any] = {}
         if since is not None:
             query["snapshot_time"] = {"$gte": self._normalize_to_utc(since)}
 
@@ -110,13 +107,13 @@ class PlatformMetricsService:
 
         return [self._prepare_snapshot_document(doc) for doc in documents]
 
-    async def compile_metrics(self, timeframe: str) -> Dict[str, Any]:
+    async def compile_metrics(self, timeframe: str) -> dict[str, Any]:
         """Return the payload consumed by `/admin/saas/analytics/platform`."""
 
         await self._ensure_indexes()
 
         period_days = self._resolve_timeframe(timeframe)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         period_start = now - timedelta(days=period_days)
 
         users_task = asyncio.create_task(self._compile_user_metrics(period_start))
@@ -164,7 +161,7 @@ class PlatformMetricsService:
 
             self._indexes_ready = True
 
-    async def _compile_user_metrics(self, period_start: datetime) -> Dict[str, Any]:
+    async def _compile_user_metrics(self, period_start: datetime) -> dict[str, Any]:
         users_collection = self._mongo.get_users_collection()
 
         total_task = asyncio.create_task(self._count_documents(users_collection, {}))
@@ -213,7 +210,7 @@ class PlatformMetricsService:
 
     async def _compile_subscription_metrics(
         self, period_start: datetime
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         subscriptions_collection = self._mongo.db.get_collection("user_subscriptions")
         plans_collection = self._mongo.get_subscription_plans_collection()
 
@@ -229,7 +226,7 @@ class PlatformMetricsService:
         total_subscriptions_task = asyncio.create_task(
             self._count_documents(subscriptions_collection, {})
         )
-        status_breakdown: Dict[str, int] = {}
+        status_breakdown: dict[str, int] = {}
         for doc in status_docs:
             raw_status = str(doc.get("_id") or "").strip()
             canonical_status = normalize_subscription_status(raw_status) or "unknown"
@@ -288,7 +285,7 @@ class PlatformMetricsService:
 
     async def _compile_operations_metrics(
         self, period_start: datetime, now: datetime
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         weddings_task = asyncio.create_task(
             self._compile_wedding_metrics(period_start, now)
         )
@@ -309,10 +306,10 @@ class PlatformMetricsService:
 
     async def _compile_wedding_metrics(
         self, period_start: datetime, now: datetime
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         weddings_collection = self._mongo.get_weddings_collection()
 
-        pipeline: List[Dict[str, Any]] = [
+        pipeline: list[dict[str, Any]] = [
             {
                 "$addFields": {
                     "event_date": {
@@ -426,7 +423,7 @@ class PlatformMetricsService:
         period_start: datetime,
         now: datetime,
         weddings_collection: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         total = active = upcoming = created = 0
 
         async for wedding in self._iterate_documents(
@@ -462,7 +459,7 @@ class PlatformMetricsService:
             "rsvp_total": rsvp_total,
         }
 
-    async def _compile_form_metrics(self, period_start: datetime) -> Dict[str, Any]:
+    async def _compile_form_metrics(self, period_start: datetime) -> dict[str, Any]:
         forms_collection = self._mongo.get_forms_collection()
         responses_collection = self._mongo.get_form_responses_collection()
 
@@ -502,7 +499,7 @@ class PlatformMetricsService:
 
     async def _compile_communications_metrics(
         self, period_start: datetime
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         notifications_collection = self._mongo.db.get_collection("notifications")
         email_logs_collection = self._mongo.db.get_collection("email_logs")
         ai_usage_collection = self._mongo.get_ai_usage_collection()
@@ -561,9 +558,9 @@ class PlatformMetricsService:
 
     async def _calculate_revenue_summary(
         self, subscriptions_collection: Any, plans_collection: Any
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         # --- Step 1: Revenue aggregation from subscriptions ---
-        pipeline: List[Dict[str, Any]] = [
+        pipeline: list[dict[str, Any]] = [
             # Keep trial users visible in the plan breakdown, but only count paid
             # active subscriptions toward recurring revenue.
             {"$match": {"status": {"$in": ["active", "trial"]}}},
@@ -685,7 +682,7 @@ class PlatformMetricsService:
 
         monthly_total = 0.0
         annual_total = 0.0
-        plan_breakdown: Dict[str, Dict[str, Any]] = {}
+        plan_breakdown: dict[str, dict[str, Any]] = {}
 
         for doc in revenue_docs:
             plan_id = doc.get("_id")
@@ -748,8 +745,8 @@ class PlatformMetricsService:
 
     async def _revenue_fallback(
         self, subscriptions_collection: Any, plans_collection: Any
-    ) -> Dict[str, Any]:
-        plans_lookup: Dict[Any, Mapping[str, Any]] = {}
+    ) -> dict[str, Any]:
+        plans_lookup: dict[Any, Mapping[str, Any]] = {}
         async for plan in self._iterate_documents(
             plans_collection,
             {},
@@ -759,7 +756,7 @@ class PlatformMetricsService:
 
         monthly_total = 0.0
         annual_total = 0.0
-        plan_breakdown: Dict[str, Dict[str, Any]] = {}
+        plan_breakdown: dict[str, dict[str, Any]] = {}
 
         async for subscription in self._iterate_documents(
             subscriptions_collection,
@@ -830,7 +827,7 @@ class PlatformMetricsService:
         self,
         collection: Any,
         filter_query: Mapping[str, Any],
-        projection: Optional[Mapping[str, int]] = None,
+        projection: Mapping[str, int] | None = None,
     ) -> AsyncIterator[Mapping[str, Any]]:
         cursor = collection.find(filter_query, projection)
 
@@ -839,7 +836,7 @@ class PlatformMetricsService:
                 yield document
             return
 
-        def sync_iter() -> List[Mapping[str, Any]]:
+        def sync_iter() -> list[Mapping[str, Any]]:
             return list(cursor)
 
         for document in await asyncio.to_thread(sync_iter):
@@ -847,20 +844,20 @@ class PlatformMetricsService:
 
     async def _aggregate(
         self, collection: Any, pipeline: Sequence[Mapping[str, Any]]
-    ) -> List[Mapping[str, Any]]:
+    ) -> list[Mapping[str, Any]]:
         cursor = collection.aggregate(pipeline)
 
         if hasattr(cursor, "__aiter__"):
             return [document async for document in cursor]
 
-        def sync_aggregate() -> List[Mapping[str, Any]]:
+        def sync_aggregate() -> list[Mapping[str, Any]]:
             return list(cursor)
 
         return await asyncio.to_thread(sync_aggregate)
 
     async def _safe_aggregate(
         self, collection: Any, pipeline: Sequence[Mapping[str, Any]]
-    ) -> List[Mapping[str, Any]]:
+    ) -> list[Mapping[str, Any]]:
         try:
             return await self._aggregate(collection, pipeline)
         except Exception as exc:  # pragma: no cover - mongomock fallback path
@@ -896,8 +893,8 @@ class PlatformMetricsService:
         collection: Any,
         filter_query: Mapping[str, Any],
         *,
-        sort: Optional[Sequence[Tuple[str, int]]] = None,
-    ) -> Optional[Mapping[str, Any]]:
+        sort: Sequence[tuple[str, int]] | None = None,
+    ) -> Mapping[str, Any] | None:
         if sort is None:
             return await self._call_collection_method(
                 collection, "find_one", filter_query
@@ -906,11 +903,11 @@ class PlatformMetricsService:
             collection, "find_one", filter_query, sort=list(sort)
         )
 
-    async def _collect_cursor(self, cursor: Any) -> List[Mapping[str, Any]]:
+    async def _collect_cursor(self, cursor: Any) -> list[Mapping[str, Any]]:
         if hasattr(cursor, "__aiter__"):
             return [document async for document in cursor]
 
-        def sync_collect() -> List[Mapping[str, Any]]:
+        def sync_collect() -> list[Mapping[str, Any]]:
             return list(cursor)
 
         return await asyncio.to_thread(sync_collect)
@@ -923,7 +920,7 @@ class PlatformMetricsService:
         )
         return int(result)
 
-    def _prepare_snapshot_document(self, document: Mapping[str, Any]) -> Dict[str, Any]:
+    def _prepare_snapshot_document(self, document: Mapping[str, Any]) -> dict[str, Any]:
         prepared = dict(document)
         identifier = prepared.get("_id")
         if identifier is not None:
@@ -931,7 +928,7 @@ class PlatformMetricsService:
         return prepared
 
     @staticmethod
-    def _parse_datetime(value: Any) -> Optional[datetime]:
+    def _parse_datetime(value: Any) -> datetime | None:
         if isinstance(value, datetime):
             return value
         if isinstance(value, str) and value.strip():
@@ -949,12 +946,12 @@ class PlatformMetricsService:
     @staticmethod
     def _normalize_to_utc(value: datetime) -> datetime:
         if value.tzinfo is not None:
-            return value.astimezone(timezone.utc).replace(tzinfo=None)
+            return value.astimezone(UTC).replace(tzinfo=None)
         return value
 
     @staticmethod
     def _calculate_monthly_value(
-        monthly_price: float, yearly_price: float, interval: Optional[str]
+        monthly_price: float, yearly_price: float, interval: str | None
     ) -> float:
         interval_normalized = (interval or "").lower()
         if interval_normalized == "yearly":

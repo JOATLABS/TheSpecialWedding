@@ -5,7 +5,7 @@ Redis caching layer for performance optimization
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Optional, Union
+from typing import Any
 
 import redis.asyncio as redis
 
@@ -20,7 +20,7 @@ class CacheManager:
     """
 
     def __init__(self):
-        self.redis_client: Optional[redis.Redis] = None
+        self.redis_client: redis.Redis | None = None
         self.enabled = settings.redis_enabled
 
     async def connect(self):
@@ -49,7 +49,7 @@ class CacheManager:
             logger.info("Connected to Redis cache")
 
         except Exception as e:
-            logger.error(f"Failed to connect to Redis: {str(e)}")
+            logger.error(f"Failed to connect to Redis: {e!s}")
             self.enabled = False
             self.redis_client = None
 
@@ -117,11 +117,11 @@ class CacheManager:
             return self._deserialize_value(value)
 
         except Exception as e:
-            logger.warning(f"Cache get failed for key {key}: {str(e)}")
+            logger.warning(f"Cache get failed for key {key}: {e!s}")
             return default
 
     async def set(
-        self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
+        self, key: str, value: Any, expire: int | timedelta | None = None
     ) -> bool:
         """
         Set value in cache
@@ -149,7 +149,7 @@ class CacheManager:
             return True
 
         except Exception as e:
-            logger.warning(f"Cache set failed for key {key}: {str(e)}")
+            logger.warning(f"Cache set failed for key {key}: {e!s}")
             return False
 
     async def delete(self, key: str) -> bool:
@@ -170,7 +170,7 @@ class CacheManager:
             return bool(result)
 
         except Exception as e:
-            logger.warning(f"Cache delete failed for key {key}: {str(e)}")
+            logger.warning(f"Cache delete failed for key {key}: {e!s}")
             return False
 
     async def exists(self, key: str) -> bool:
@@ -191,15 +191,15 @@ class CacheManager:
             return bool(result)
 
         except Exception as e:
-            logger.warning(f"Cache exists check failed for key {key}: {str(e)}")
+            logger.warning(f"Cache exists check failed for key {key}: {e!s}")
             return False
 
     async def increment(
         self,
         key: str,
         amount: int = 1,
-        expire: Optional[Union[int, timedelta]] = None,
-    ) -> Optional[int]:
+        expire: int | timedelta | None = None,
+    ) -> int | None:
         """
         Atomically increment a numeric cache key.
 
@@ -225,15 +225,15 @@ class CacheManager:
 
             return int(current_value)
         except Exception as e:
-            logger.warning(f"Cache increment failed for key {key}: {str(e)}")
+            logger.warning(f"Cache increment failed for key {key}: {e!s}")
             return None
 
     async def acquire_lock(
         self,
         key: str,
         value: str,
-        expire: Optional[Union[int, timedelta]] = None,
-    ) -> Optional[bool]:
+        expire: int | timedelta | None = None,
+    ) -> bool | None:
         """
         Acquire a distributed lock if it is not already held.
 
@@ -256,10 +256,10 @@ class CacheManager:
             result = await self.redis_client.set(prefixed_key, value, **kwargs)
             return bool(result)
         except Exception as e:
-            logger.warning(f"Cache lock acquire failed for key {key}: {str(e)}")
+            logger.warning(f"Cache lock acquire failed for key {key}: {e!s}")
             return None
 
-    async def release_lock(self, key: str, value: str) -> Optional[bool]:
+    async def release_lock(self, key: str, value: str) -> bool | None:
         """
         Release a distributed lock only if it is still owned by value.
 
@@ -284,7 +284,7 @@ class CacheManager:
             )
             return bool(result)
         except Exception as e:
-            logger.warning(f"Cache lock release failed for key {key}: {str(e)}")
+            logger.warning(f"Cache lock release failed for key {key}: {e!s}")
             return None
 
     async def ttl(self, key: str) -> int:
@@ -304,10 +304,10 @@ class CacheManager:
             prefixed_key = self._get_key_with_prefix(key)
             return int(await self.redis_client.ttl(prefixed_key))
         except Exception as e:
-            logger.warning(f"Cache TTL lookup failed for key {key}: {str(e)}")
+            logger.warning(f"Cache TTL lookup failed for key {key}: {e!s}")
             return -2
 
-    async def expire(self, key: str, time: Union[int, timedelta]) -> bool:
+    async def expire(self, key: str, time: int | timedelta) -> bool:
         """
         Set expiration time for key
 
@@ -331,7 +331,7 @@ class CacheManager:
             return bool(result)
 
         except Exception as e:
-            logger.warning(f"Cache expire failed for key {key}: {str(e)}")
+            logger.warning(f"Cache expire failed for key {key}: {e!s}")
             return False
 
     async def clear_pattern(self, pattern: str) -> int:
@@ -370,14 +370,14 @@ class CacheManager:
             return deleted
 
         except Exception as e:
-            logger.warning(f"Cache clear pattern failed for {pattern}: {str(e)}")
+            logger.warning(f"Cache clear pattern failed for {pattern}: {e!s}")
             return 0
 
     async def get_or_set(
         self,
         key: str,
         func,
-        expire: Optional[Union[int, timedelta]] = None,
+        expire: int | timedelta | None = None,
         *args,
         **kwargs,
     ) -> Any:
@@ -415,7 +415,7 @@ class CacheManager:
             return value
 
         except Exception as e:
-            logger.error(f"Function call failed in get_or_set for key {key}: {str(e)}")
+            logger.error(f"Function call failed in get_or_set for key {key}: {e!s}")
             return None
 
 
@@ -434,7 +434,7 @@ async def close_cache():
 
 
 # Convenience functions
-async def cached(key: str, expire: Union[int, timedelta] = timedelta(minutes=15)):
+async def cached(key: str, expire: int | timedelta = timedelta(minutes=15)):
     """
     Decorator for caching function results
     Args:

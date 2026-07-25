@@ -28,7 +28,6 @@ References:
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import stripe
 from stripe import InvalidRequestError, StripeError
@@ -79,7 +78,7 @@ METER_EVENT_NAME_WEDDING_ACTIVE = "wedding_active"
 
 def ensure_stripe_meter(
     event_name: str,
-    display_name: Optional[str] = None,
+    display_name: str | None = None,
 ) -> str:
     """Idempotently provision a Stripe Billing Meter.
 

@@ -7,7 +7,7 @@ Shared enums and persisted document models remain in `app.models.vendor`.
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -17,7 +17,7 @@ from app.models.vendor import ContractKind, ContractStatus, VendorCategory
 class VendorContractSectionInput(BaseModel):
     """Normalized contract section input for create/update flows."""
 
-    id: Optional[str] = None
+    id: str | None = None
     title: str
     content: str = ""
     order: int = 0
@@ -31,13 +31,13 @@ class CreateVendorContractTemplateRequest(BaseModel):
     """
 
     name: str
-    description: Optional[str] = None
-    service_category: Optional[VendorCategory] = None
-    sections: List[VendorContractSectionInput] = Field(default_factory=list)
-    terms_and_conditions: Optional[str] = None
-    cancellation_policy: Optional[str] = None
-    default_deposit_percentage: Optional[float] = Field(None, ge=0, le=100)
-    default_payment_schedule: List[Dict[str, Any]] = Field(default_factory=list)
+    description: str | None = None
+    service_category: VendorCategory | None = None
+    sections: list[VendorContractSectionInput] = Field(default_factory=list)
+    terms_and_conditions: str | None = None
+    cancellation_policy: str | None = None
+    default_deposit_percentage: float | None = Field(None, ge=0, le=100)
+    default_payment_schedule: list[dict[str, Any]] = Field(default_factory=list)
     is_public: bool = False
 
 
@@ -47,30 +47,30 @@ class CreateVendorContractRequest(BaseModel):
     wedding_id: str
     vendor_profile_id: str
     total_amount: float = Field(..., ge=0)
-    template_id: Optional[str] = None
-    quote_id: Optional[str] = None
-    deposit_percentage: Optional[float] = Field(None, ge=0, le=100)
-    service_date: Optional[datetime] = None
-    service_location: Optional[str] = None
-    custom_sections: List[VendorContractSectionInput] = Field(default_factory=list)
+    template_id: str | None = None
+    quote_id: str | None = None
+    deposit_percentage: float | None = Field(None, ge=0, le=100)
+    service_date: datetime | None = None
+    service_location: str | None = None
+    custom_sections: list[VendorContractSectionInput] = Field(default_factory=list)
 
 
 class UpdateVendorContractRequest(BaseModel):
     """Partial update request for editable vendor contract fields."""
 
-    contract_title: Optional[str] = Field(None, min_length=1, max_length=300)
-    total_amount: Optional[float] = Field(None, ge=0)
-    deposit_amount: Optional[float] = Field(None, ge=0)
-    deposit_due_date: Optional[datetime] = None
-    terms_and_conditions: Optional[str] = None
-    cancellation_policy: Optional[str] = None
-    custom_clauses: Optional[str] = None
-    service_date: Optional[datetime] = None
-    service_start_time: Optional[str] = None
-    service_end_time: Optional[str] = None
-    service_location: Optional[str] = None
-    internal_notes: Optional[str] = None
-    sections: Optional[List[VendorContractSectionInput]] = None
+    contract_title: str | None = Field(None, min_length=1, max_length=300)
+    total_amount: float | None = Field(None, ge=0)
+    deposit_amount: float | None = Field(None, ge=0)
+    deposit_due_date: datetime | None = None
+    terms_and_conditions: str | None = None
+    cancellation_policy: str | None = None
+    custom_clauses: str | None = None
+    service_date: datetime | None = None
+    service_start_time: str | None = None
+    service_end_time: str | None = None
+    service_location: str | None = None
+    internal_notes: str | None = None
+    sections: list[VendorContractSectionInput] | None = None
 
     @model_validator(mode="after")
     def _validate_deposit_within_total(self) -> "UpdateVendorContractRequest":
@@ -91,10 +91,10 @@ class UpdateVendorContractRequest(BaseModel):
 class UpdateVendorContractSectionsRequest(BaseModel):
     """Update section content and adjacent editable contract copy together."""
 
-    sections: List[VendorContractSectionInput]
-    terms_and_conditions: Optional[str] = None
-    cancellation_policy: Optional[str] = None
-    custom_clauses: Optional[str] = None
+    sections: list[VendorContractSectionInput]
+    terms_and_conditions: str | None = None
+    cancellation_policy: str | None = None
+    custom_clauses: str | None = None
 
 
 class VendorContractFormSubmissionSummary(BaseModel):
@@ -116,9 +116,9 @@ class VendorContractFormSubmissionSummary(BaseModel):
 
     id: str = Field(alias="_id")
     form_name: str
-    submitted_at: Optional[datetime] = None
+    submitted_at: datetime | None = None
     source: str
-    data: Dict[str, Any] = Field(default_factory=dict)
+    data: dict[str, Any] = Field(default_factory=dict)
 
 
 class VendorContractAvailableField(BaseModel):
@@ -140,13 +140,13 @@ class VendorContractSuggestedField(BaseModel):
 class VendorContractFormDataResponse(BaseModel):
     """Normalized vendor form-data payload for contract editing surfaces."""
 
-    vendor_submissions: List[VendorContractFormSubmissionSummary] = Field(
+    vendor_submissions: list[VendorContractFormSubmissionSummary] = Field(
         default_factory=list
     )
-    available_fields: Dict[str, VendorContractAvailableField] = Field(
+    available_fields: dict[str, VendorContractAvailableField] = Field(
         default_factory=dict
     )
-    suggested_contract_fields: Dict[str, VendorContractSuggestedField] = Field(
+    suggested_contract_fields: dict[str, VendorContractSuggestedField] = Field(
         default_factory=dict
     )
 
@@ -155,14 +155,14 @@ class ApplyVendorContractFormDataRequest(BaseModel):
     """Apply one vendor submission to a contract with explicit field mappings."""
 
     form_submission_id: str
-    field_mappings: Dict[str, str] = Field(default_factory=dict)
+    field_mappings: dict[str, str] = Field(default_factory=dict)
 
 
 class SendVendorContractRequest(BaseModel):
     """Send a contract to a vendor for review/signing."""
 
-    message: Optional[str] = None
-    cc_emails: List[str] = Field(default_factory=list)
+    message: str | None = None
+    cc_emails: list[str] = Field(default_factory=list)
 
 
 class PaymentMilestoneInput(BaseModel):
@@ -171,14 +171,14 @@ class PaymentMilestoneInput(BaseModel):
     description: str
     amount: float = Field(..., gt=0)
     due_date: datetime
-    percentage_of_total: Optional[float] = Field(None, ge=0, le=100)
-    days_before_event: Optional[int] = None
+    percentage_of_total: float | None = Field(None, ge=0, le=100)
+    days_before_event: int | None = None
 
 
 class CreateVendorPaymentMilestonesRequest(BaseModel):
     """Create one or more milestones for a vendor contract."""
 
-    milestones: List[PaymentMilestoneInput] = Field(default_factory=list)
+    milestones: list[PaymentMilestoneInput] = Field(default_factory=list)
 
 
 class RecordVendorMilestonePaymentRequest(BaseModel):
@@ -186,16 +186,16 @@ class RecordVendorMilestonePaymentRequest(BaseModel):
 
     amount: float = Field(..., gt=0)
     payment_method: str
-    payment_date: Optional[datetime] = None
-    notes: Optional[str] = None
-    receipt_url: Optional[str] = None
+    payment_date: datetime | None = None
+    notes: str | None = None
+    receipt_url: str | None = None
 
 
 class CreateVendorContractRevisionRequest(BaseModel):
     """Create a new draft revision or amendment from a live contract."""
 
     revision_kind: Literal["revision", "amendment"]
-    reason: Optional[str] = None
+    reason: str | None = None
     copy_sections: bool = True
     copy_terms_and_conditions: bool = True
     copy_cancellation_policy: bool = True
@@ -213,9 +213,9 @@ class DuplicateVendorContractRequest(BaseModel):
     and any form-submission linkage is cleared.
     """
 
-    new_contract_title: Optional[str] = Field(None, min_length=1, max_length=300)
-    target_wedding_id: Optional[str] = None
-    target_vendor_profile_id: Optional[str] = None
+    new_contract_title: str | None = Field(None, min_length=1, max_length=300)
+    target_wedding_id: str | None = None
+    target_vendor_profile_id: str | None = None
     copy_sections: bool = True
     copy_terms_and_conditions: bool = True
     copy_cancellation_policy: bool = True
@@ -227,17 +227,17 @@ class VendorContractRevisionSummary(BaseModel):
     """Compact lineage summary for vendor contract history surfaces."""
 
     id: str
-    contract_number: Optional[str] = None
+    contract_number: str | None = None
     version_number: int
     contract_kind: ContractKind
     status: ContractStatus
     is_current_version: bool
-    parent_contract_id: Optional[str] = None
-    supersedes_contract_id: Optional[str] = None
-    superseded_by_contract_id: Optional[str] = None
+    parent_contract_id: str | None = None
+    supersedes_contract_id: str | None = None
+    superseded_by_contract_id: str | None = None
     created_at: datetime
-    sent_at: Optional[datetime] = None
-    signed_at: Optional[datetime] = None
+    sent_at: datetime | None = None
+    signed_at: datetime | None = None
 
 
 class VendorContractRevisionHistoryResponse(BaseModel):
@@ -245,7 +245,7 @@ class VendorContractRevisionHistoryResponse(BaseModel):
 
     current_contract_id: str
     root_contract_id: str
-    versions: List[VendorContractRevisionSummary] = Field(default_factory=list)
+    versions: list[VendorContractRevisionSummary] = Field(default_factory=list)
 
 
 class VendorContractActivityType(str, Enum):
@@ -268,8 +268,8 @@ class VendorContractActivityActor(BaseModel):
     """Actor metadata attached to a contract activity entry."""
 
     type: Literal["planner", "vendor", "system"]
-    identifier: Optional[str] = None
-    display_name: Optional[str] = None
+    identifier: str | None = None
+    display_name: str | None = None
 
 
 class VendorContractActivityItem(BaseModel):
@@ -280,9 +280,9 @@ class VendorContractActivityItem(BaseModel):
     root_contract_id: str
     activity_type: VendorContractActivityType
     title: str
-    description: Optional[str] = None
+    description: str | None = None
     actor: VendorContractActivityActor
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
 
 
@@ -291,17 +291,17 @@ class VendorContractActivityResponse(BaseModel):
 
     contract_id: str
     root_contract_id: str
-    items: List[VendorContractActivityItem] = Field(default_factory=list)
+    items: list[VendorContractActivityItem] = Field(default_factory=list)
 
 
 class CreateContractFromQuoteRequest(BaseModel):
     """Legacy contract-from-quote request moved out of `vendor.py`."""
 
     quote_id: str
-    template_id: Optional[str] = None
-    custom_sections: List[VendorContractSectionInput] = Field(default_factory=list)
-    deposit_percentage: Optional[float] = Field(None, ge=0, le=100)
-    payment_milestones: List[PaymentMilestoneInput] = Field(default_factory=list)
+    template_id: str | None = None
+    custom_sections: list[VendorContractSectionInput] = Field(default_factory=list)
+    deposit_percentage: float | None = Field(None, ge=0, le=100)
+    payment_milestones: list[PaymentMilestoneInput] = Field(default_factory=list)
 
 
 class UploadContractPdfRequest(BaseModel):
@@ -311,10 +311,10 @@ class UploadContractPdfRequest(BaseModel):
     vendor_profile_id: str
     contract_title: str
     total_amount: float = Field(..., ge=0)
-    deposit_amount: Optional[float] = Field(None, ge=0)
-    service_date: Optional[datetime] = None
-    service_location: Optional[str] = None
-    notes: Optional[str] = None
+    deposit_amount: float | None = Field(None, ge=0)
+    service_date: datetime | None = None
+    service_location: str | None = None
+    notes: str | None = None
 
 
 class GetFormDataForContractRequest(BaseModel):

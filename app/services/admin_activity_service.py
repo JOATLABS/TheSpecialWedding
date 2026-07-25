@@ -10,8 +10,7 @@ This provides audit trail and dashboard display for admin actions.
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from fastapi import HTTPException
 
@@ -53,9 +52,9 @@ class AdminActivityService:
         action_type: str,
         title: str,
         message: str,
-        entity_type: Optional[str] = None,
-        entity_id: Optional[str] = None,
-        metadata: Optional[dict] = None,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        metadata: dict | None = None,
     ) -> dict:
         """
         Create a new activity log entry.
@@ -78,7 +77,7 @@ class AdminActivityService:
                 "entity_type": entity_type,
                 "entity_id": entity_id,
                 "metadata": metadata or {},
-                "created_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
                 "is_read": False,
             }
 
@@ -97,17 +96,17 @@ class AdminActivityService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error logging admin activity: {str(e)}")
+            logger.error(f"Error logging admin activity: {e!s}")
             # Don't raise - activity logging should not block main operations
-            return {"id": None, "message": f"Failed to log activity: {str(e)}"}
+            return {"id": None, "message": f"Failed to log activity: {e!s}"}
 
     async def get_activity_log(
         self,
         page: int = 1,
         limit: int = 50,
-        action_type: Optional[str] = None,
-        entity_type: Optional[str] = None,
-        admin_id: Optional[str] = None,
+        action_type: str | None = None,
+        entity_type: str | None = None,
+        admin_id: str | None = None,
     ) -> dict:
         """
         Get paginated activity log.
@@ -171,12 +170,12 @@ class AdminActivityService:
             }
 
         except Exception as e:
-            logger.error(f"Error getting activity log: {str(e)}", exc_info=True)
+            logger.error(f"Error getting activity log: {e!s}", exc_info=True)
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving activity log: {str(e)}"
+                status_code=500, detail=f"Error retrieving activity log: {e!s}"
             )
 
-    async def get_recent_activities(self, limit: int = 10) -> List[dict]:
+    async def get_recent_activities(self, limit: int = 10) -> list[dict]:
         """
         Get most recent activities for dashboard display.
 
@@ -209,7 +208,7 @@ class AdminActivityService:
             return activities
 
         except Exception as e:
-            logger.error(f"Error getting recent activities: {str(e)}", exc_info=True)
+            logger.error(f"Error getting recent activities: {e!s}", exc_info=True)
             return []
 
     # ==================== CONVENIENCE METHODS ====================
@@ -220,7 +219,7 @@ class AdminActivityService:
         email: str,
         plan_name: str,
         trial_days: int,
-        invitation_id: Optional[str] = None,
+        invitation_id: str | None = None,
     ) -> dict:
         """Log when an invitation is sent to a new planner"""
         return await self.log_activity(
@@ -234,7 +233,7 @@ class AdminActivityService:
         )
 
     async def log_invitation_resent(
-        self, admin_id: str, email: str, invitation_id: Optional[str] = None
+        self, admin_id: str, email: str, invitation_id: str | None = None
     ) -> dict:
         """Log when an invitation is resent"""
         return await self.log_activity(
@@ -251,8 +250,8 @@ class AdminActivityService:
         self,
         admin_id: str,
         email: str,
-        reason: Optional[str] = None,
-        invitation_id: Optional[str] = None,
+        reason: str | None = None,
+        invitation_id: str | None = None,
     ) -> dict:
         """Log when an invitation is cancelled"""
         msg = f"Cancelled invitation for {email}"
@@ -270,7 +269,7 @@ class AdminActivityService:
         )
 
     async def log_invitation_completed(
-        self, admin_id: str, email: str, invitation_id: Optional[str] = None
+        self, admin_id: str, email: str, invitation_id: str | None = None
     ) -> dict:
         """Log when a planner completes their account setup from invitation"""
         return await self.log_activity(
@@ -287,8 +286,8 @@ class AdminActivityService:
         self,
         admin_id: str,
         planner_email: str,
-        reason: Optional[str] = None,
-        planner_id: Optional[str] = None,
+        reason: str | None = None,
+        planner_id: str | None = None,
     ) -> dict:
         """Log when a planner is suspended"""
         msg = f"Suspended planner {planner_email}"
@@ -306,7 +305,7 @@ class AdminActivityService:
         )
 
     async def log_planner_activated(
-        self, admin_id: str, planner_email: str, planner_id: Optional[str] = None
+        self, admin_id: str, planner_email: str, planner_id: str | None = None
     ) -> dict:
         """Log when a planner is activated/unsuspended"""
         return await self.log_activity(
@@ -320,7 +319,7 @@ class AdminActivityService:
         )
 
     async def log_planner_deleted(
-        self, admin_id: str, planner_email: str, planner_id: Optional[str] = None
+        self, admin_id: str, planner_email: str, planner_id: str | None = None
     ) -> dict:
         """Log when a planner account is deleted"""
         return await self.log_activity(

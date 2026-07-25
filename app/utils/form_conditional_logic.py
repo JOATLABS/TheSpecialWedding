@@ -26,7 +26,8 @@ server-side required-field check.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List
+from collections.abc import Iterable
+from typing import Any
 
 _VALID_OPERATORS = {
     "equals",
@@ -49,7 +50,7 @@ def _is_empty(value: Any) -> bool:
     return False
 
 
-def _evaluate_condition(condition: Dict[str, Any], responses: Dict[str, Any]) -> bool:
+def _evaluate_condition(condition: dict[str, Any], responses: dict[str, Any]) -> bool:
     if not isinstance(condition, dict):
         return True
 
@@ -90,7 +91,7 @@ def _evaluate_condition(condition: Dict[str, Any], responses: Dict[str, Any]) ->
     return True
 
 
-def is_field_visible(field: Dict[str, Any], responses: Dict[str, Any]) -> bool:
+def is_field_visible(field: dict[str, Any], responses: dict[str, Any]) -> bool:
     """Return True if ``field`` should be visible given the current ``responses``.
 
     Fields with no ``conditional_logic`` (or with malformed logic) are always
@@ -121,11 +122,11 @@ def is_field_visible(field: Dict[str, Any], responses: Dict[str, Any]) -> bool:
 
 
 def filter_responses_to_visible(
-    fields: Iterable[Dict[str, Any]],
-    responses: Dict[str, Any],
+    fields: Iterable[dict[str, Any]],
+    responses: dict[str, Any],
     *,
     keep_unknown: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Drop response values for fields that are not visible under the current state.
 
     Visibility depends on responses to *other* fields, so we evaluate
@@ -162,10 +163,10 @@ def filter_responses_to_visible(
 
 
 def required_visible_field_ids(
-    fields: Iterable[Dict[str, Any]], responses: Dict[str, Any]
-) -> List[str]:
+    fields: Iterable[dict[str, Any]], responses: dict[str, Any]
+) -> list[str]:
     """List the IDs of fields that are both required and currently visible."""
-    out: List[str] = []
+    out: list[str] = []
     for field in fields:
         if not isinstance(field, dict):
             continue
@@ -177,7 +178,7 @@ def required_visible_field_ids(
 
 
 __all__ = [
-    "is_field_visible",
     "filter_responses_to_visible",
+    "is_field_visible",
     "required_visible_field_ids",
 ]

@@ -7,8 +7,8 @@ the public listing endpoint is unauthenticated so the landing page can
 fetch reviews at runtime.
 """
 
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
@@ -39,7 +39,7 @@ PRIYA_PLANNER_QUOTE = (
 
 # ── Default seed data (kept in sync with public SaaS defaults) ────────────────
 
-DEFAULT_TESTIMONIALS: List[Dict[str, Any]] = [
+DEFAULT_TESTIMONIALS: list[dict[str, Any]] = [
     {
         "name": "Maya Glenn",
         "company": "Aurora Collective",
@@ -54,8 +54,8 @@ DEFAULT_TESTIMONIALS: List[Dict[str, Any]] = [
         ),
         "is_active": True,
         "display_order": 1,
-        "created_at": datetime(2025, 1, 1, tzinfo=timezone.utc),
-        "updated_at": datetime(2025, 1, 1, tzinfo=timezone.utc),
+        "created_at": datetime(2025, 1, 1, tzinfo=UTC),
+        "updated_at": datetime(2025, 1, 1, tzinfo=UTC),
     },
     {
         "name": "Elias Romero",
@@ -70,8 +70,8 @@ DEFAULT_TESTIMONIALS: List[Dict[str, Any]] = [
         ),
         "is_active": True,
         "display_order": 2,
-        "created_at": datetime(2025, 1, 1, tzinfo=timezone.utc),
-        "updated_at": datetime(2025, 1, 1, tzinfo=timezone.utc),
+        "created_at": datetime(2025, 1, 1, tzinfo=UTC),
+        "updated_at": datetime(2025, 1, 1, tzinfo=UTC),
     },
     {
         "name": "Priya Chandran",
@@ -80,8 +80,8 @@ DEFAULT_TESTIMONIALS: List[Dict[str, Any]] = [
         "quote": PRIYA_PLANNER_QUOTE,
         "is_active": True,
         "display_order": 3,
-        "created_at": datetime(2025, 1, 1, tzinfo=timezone.utc),
-        "updated_at": datetime(2025, 1, 1, tzinfo=timezone.utc),
+        "created_at": datetime(2025, 1, 1, tzinfo=UTC),
+        "updated_at": datetime(2025, 1, 1, tzinfo=UTC),
     },
     {
         "name": "Tom\u00e1s Vega",
@@ -97,8 +97,8 @@ DEFAULT_TESTIMONIALS: List[Dict[str, Any]] = [
         ),
         "is_active": True,
         "display_order": 4,
-        "created_at": datetime(2025, 1, 1, tzinfo=timezone.utc),
-        "updated_at": datetime(2025, 1, 1, tzinfo=timezone.utc),
+        "created_at": datetime(2025, 1, 1, tzinfo=UTC),
+        "updated_at": datetime(2025, 1, 1, tzinfo=UTC),
     },
 ]
 
@@ -115,7 +115,7 @@ class TestimonialCreate(BaseModel):
     quote: str = Field(
         ..., min_length=1, max_length=2000, description="Testimonial text"
     )
-    avatar_url: Optional[str] = Field(
+    avatar_url: str | None = Field(
         None, max_length=500, description="Optional avatar image URL"
     )
     is_active: bool = Field(True, description="Show on landing page")
@@ -123,19 +123,19 @@ class TestimonialCreate(BaseModel):
 
 
 class TestimonialUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=200)
-    company: Optional[str] = Field(None, max_length=200)
-    role: Optional[str] = Field(None, max_length=200)
-    quote: Optional[str] = Field(None, min_length=1, max_length=2000)
-    avatar_url: Optional[str] = Field(None, max_length=500)
-    is_active: Optional[bool] = None
-    display_order: Optional[int] = None
+    name: str | None = Field(None, min_length=1, max_length=200)
+    company: str | None = Field(None, max_length=200)
+    role: str | None = Field(None, max_length=200)
+    quote: str | None = Field(None, min_length=1, max_length=2000)
+    avatar_url: str | None = Field(None, max_length=500)
+    is_active: bool | None = None
+    display_order: int | None = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _serialize(doc: Dict[str, Any]) -> Dict[str, Any]:
+def _serialize(doc: dict[str, Any]) -> dict[str, Any]:
     """Convert a MongoDB document to a JSON-safe dict."""
     doc["_id"] = str(doc["_id"])
     for key in ("created_at", "updated_at"):
@@ -171,7 +171,7 @@ async def _ensure_seeded() -> None:
         {
             "$set": {
                 "quote": PRIYA_PLANNER_QUOTE,
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(UTC),
             }
         },
     )
@@ -220,7 +220,7 @@ async def create_testimonial(
 ):
     """Create a new customer testimonial."""
     try:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         doc = body.model_dump()
         doc.update(
             created_by=current_user.email,
@@ -251,7 +251,7 @@ async def update_testimonial(
             raise HTTPException(status_code=400, detail="No fields to update")
 
         updates["updated_by"] = current_user.email
-        updates["updated_at"] = datetime.now(timezone.utc)
+        updates["updated_at"] = datetime.now(UTC)
 
         result = await mongo.db[COLLECTION].update_one(
             {"_id": ObjectId(testimonial_id)},
@@ -315,7 +315,7 @@ async def toggle_testimonial(
                 "$set": {
                     "is_active": new_status,
                     "updated_by": current_user.email,
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }
             },
         )

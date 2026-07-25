@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import logging
 import re
-from typing import Any
 import unicodedata
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import HTTPException, status
 from pydantic import ValidationError
@@ -36,7 +36,6 @@ from app.services.storefront_entitlement_service import (
     storefront_entitlement_service,
 )
 from app.utils.planner_ownership import normalize_planner_id, normalize_query_id
-
 
 DEFAULT_THEME_COLOR = "#0f172a"
 logger = logging.getLogger(__name__)
@@ -218,7 +217,7 @@ class StorefrontService:
             # two claim tokens are never intentionally persisted together.
             await self._media.recover_pending_settings_assets(owner)
             current = await collection.find_one({"planner_id": owner_id})
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             if normalized_requested_slug is not None:
                 slug = normalized_requested_slug

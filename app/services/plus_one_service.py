@@ -1,6 +1,5 @@
 import logging
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from fastapi import HTTPException
 
@@ -84,7 +83,7 @@ class PlusOneService:
                     {
                         "$set": {
                             "plus_one_submitted": True,
-                            "updated_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(UTC),
                         }
                     },
                 )
@@ -97,7 +96,7 @@ class PlusOneService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Failed to add plus-one: {str(e)}"
+                status_code=500, detail=f"Failed to add plus-one: {e!s}"
             )
 
     async def get_plus_ones_by_guest(self, guest_id: str):
@@ -111,11 +110,11 @@ class PlusOneService:
             return results
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Failed to retrieve plus-ones: {str(e)}"
+                status_code=500, detail=f"Failed to retrieve plus-ones: {e!s}"
             )
 
     async def get_plus_ones_by_wedding_id(
-        self, wedding_id: str, guest_ids: Optional[List[str]] = None
+        self, wedding_id: str, guest_ids: list[str] | None = None
     ):
         try:
             # 1. Get all guest IDs for this wedding
@@ -152,10 +151,10 @@ class PlusOneService:
 
             return results
         except Exception as e:
-            logger.error(f"Error fetching plus-ones for wedding {wedding_id}: {str(e)}")
+            logger.error(f"Error fetching plus-ones for wedding {wedding_id}: {e!s}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to retrieve plus-ones for wedding: {str(e)}",
+                detail=f"Failed to retrieve plus-ones for wedding: {e!s}",
             )
 
     async def update_plus_one(self, plus_one_id: str, data: dict):
@@ -167,7 +166,7 @@ class PlusOneService:
             return {"message": "Plus-one updated successfully"}
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Failed to update plus-one: {str(e)}"
+                status_code=500, detail=f"Failed to update plus-one: {e!s}"
             )
 
     async def delete_plus_one(self, plus_one_id: str):
@@ -214,7 +213,7 @@ class PlusOneService:
                         {
                             "$set": {
                                 "plus_one_submitted": False,
-                                "updated_at": datetime.now(timezone.utc),
+                                "updated_at": datetime.now(UTC),
                             }
                         },
                     )
@@ -224,5 +223,5 @@ class PlusOneService:
             raise
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Failed to delete plus-one: {str(e)}"
+                status_code=500, detail=f"Failed to delete plus-one: {e!s}"
             )

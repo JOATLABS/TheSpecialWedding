@@ -26,9 +26,12 @@ describe('planner workspace audience contract', () => {
     const navigation = readSource('app/components/saas/SaasNav.tsx');
     const directory = readSource('app/vendors/VendorsDirectoryClient.tsx');
 
+    // The nav CTA is the unified "Start free" signup label; the planner audience is
+    // still signalled by the directory link, and vendor signup stays absent.
     assert.match(navigation, /Planner vendor directory/);
-    assert.match(navigation, /Create planner workspace/);
+    assert.match(navigation, /Start free/);
     assert.doesNotMatch(navigation, /portal\/ads\/signup/);
+    assert.doesNotMatch(navigation, /List your business|Vendor sign ?up/i);
     assert.match(directory, /Use this directory to discover vendors for the weddings you manage/);
     assert.doesNotMatch(directory, /portal\/ads\/signup/);
     assert.doesNotMatch(directory, /List Your Business/);

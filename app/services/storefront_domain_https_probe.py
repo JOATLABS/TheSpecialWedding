@@ -12,7 +12,8 @@ import hashlib
 import hmac
 import re
 import secrets
-from typing import Any, Callable, Mapping
+from collections.abc import Callable, Mapping
+from typing import Any
 
 from fastapi import HTTPException, status
 
@@ -20,7 +21,6 @@ from app.core.database import mongo
 from app.core.settings import settings
 from app.services.storefront_domain_service import normalize_custom_hostname
 from app.utils.planner_ownership import normalize_planner_id
-
 
 PROBE_PATH = "/.well-known/tsw-storefront-verification"
 PROBE_HEADER = "x-tsw-storefront-probe"
@@ -45,7 +45,7 @@ def _ingress_payload(hostname: str, challenge: str) -> bytes:
         "/api/storefront/domain-verification-probe\n"
         f"{hostname}\n"
         f"{challenge}"
-    ).encode("utf-8")
+    ).encode()
 
 
 def build_probe_ingress_proof(
@@ -114,7 +114,7 @@ def _identity(record: Mapping[str, Any]) -> tuple[str, str, str, int]:
 
 def _identity_payload(record: Mapping[str, Any]) -> bytes:
     domain_id, owner_id, hostname, revision = _identity(record)
-    return f"{domain_id}\n{owner_id}\n{hostname}\n{revision}".encode("utf-8")
+    return f"{domain_id}\n{owner_id}\n{hostname}\n{revision}".encode()
 
 
 def _signature(key: bytes, label: bytes, payload: bytes) -> str:

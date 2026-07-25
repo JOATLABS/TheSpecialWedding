@@ -38,13 +38,13 @@ Contract
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def coerce_period_start(value: Any) -> Optional[datetime]:
+def coerce_period_start(value: Any) -> datetime | None:
     """Normalize ``current_period_start`` into a UTC-aware datetime.
 
     Args:
@@ -95,7 +95,7 @@ def coerce_period_start(value: Any) -> Optional[datetime]:
     # convention; this matches what the rest of the codebase does (see
     # app/api/billing_jobs.py for the canonical pattern).
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
+        return value.replace(tzinfo=UTC)
 
     # Aware but possibly non-UTC: normalize.
-    return value.astimezone(timezone.utc)
+    return value.astimezone(UTC)

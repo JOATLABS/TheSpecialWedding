@@ -6,7 +6,6 @@ import asyncio
 import logging
 import time
 from collections import defaultdict, deque
-from typing import Dict, List
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -34,11 +33,11 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
         self.metrics_window_size = metrics_window_size
         self.enable_detailed_logging = enable_detailed_logging
         # In-memory metrics storage
-        self.request_times: Dict[str, deque] = defaultdict(
+        self.request_times: dict[str, deque] = defaultdict(
             lambda: deque(maxlen=metrics_window_size)
         )
-        self.request_counts: Dict[str, int] = defaultdict(int)
-        self.error_counts: Dict[str, int] = defaultdict(int)
+        self.request_counts: dict[str, int] = defaultdict(int)
+        self.error_counts: dict[str, int] = defaultdict(int)
 
         # Background task for metrics aggregation
         self._metrics_task = None
@@ -65,7 +64,7 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
         """Record error for metrics"""
         self.error_counts[endpoint_key] += 1
 
-    def _calculate_percentiles(self, times: List[float]) -> Dict[str, float]:
+    def _calculate_percentiles(self, times: list[float]) -> dict[str, float]:
         """Calculate response time percentiles"""
         if not times:
             return {"p50": 0, "p95": 0, "p99": 0}
@@ -104,7 +103,7 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
             await cache.set("performance_metrics", metrics, expire=300)
 
         except Exception as e:
-            logger.error(f"Failed to cache performance metrics: {str(e)}")
+            logger.error(f"Failed to cache performance metrics: {e!s}")
 
     async def _start_metrics_task(self):
         """Start background metrics aggregation task"""
@@ -120,7 +119,7 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Metrics loop error: {str(e)}")
+                logger.error(f"Metrics loop error: {e!s}")
 
     async def dispatch(self, request: Request, call_next) -> Response:
         """Monitor request performance"""
@@ -172,13 +171,13 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
             self._record_error(endpoint_key)
             logger.error(
                 f"Request error: {request.method} {request.url.path} "
-                f"after {duration:.3f}s - {str(e)}"
+                f"after {duration:.3f}s - {e!s}"
             )
 
             # Re-raise the exception
             raise
 
-    async def get_metrics(self) -> Dict:
+    async def get_metrics(self) -> dict:
         """Get current performance metrics"""
         # Try to get from cache first
         cached_metrics = await cache.get("performance_metrics")
@@ -245,7 +244,7 @@ class DatabaseQueryMonitor:
             duration = time.time() - start_time
             logger.error(
                 f"Database query error: {collection_name}.{operation} "
-                f"after {duration:.3f}s - {str(e)}"
+                f"after {duration:.3f}s - {e!s}"
             )
             raise
 

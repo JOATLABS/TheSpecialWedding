@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 from urllib.parse import urlencode
 
 SupportConversation = Literal["sms_support", "support_ticket"]
@@ -9,7 +9,7 @@ SupportConversation = Literal["sms_support", "support_ticket"]
 def build_support_inbox_path(
     conversation: SupportConversation,
     ticket_id: str,
-    wedding_id: Optional[str] = None,
+    wedding_id: str | None = None,
 ) -> str:
     """Build a fail-closed communications inbox deep link for support threads."""
     if conversation not in {"sms_support", "support_ticket"}:
@@ -28,7 +28,7 @@ def build_support_inbox_url(
     frontend_url: str,
     conversation: SupportConversation,
     ticket_id: str,
-    wedding_id: Optional[str] = None,
+    wedding_id: str | None = None,
 ) -> str:
     """Build an absolute communications inbox deep link for support threads."""
     base_url = (frontend_url or "").rstrip("/")

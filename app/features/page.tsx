@@ -31,10 +31,10 @@ export default function FeaturesPage() {
         />
         <div className="mx-auto max-w-5xl text-center">
           <h1 className="text-4xl font-semibold leading-tight tracking-[-0.025em] text-white sm:text-5xl md:text-6xl">
-            One connected operating system, built specifically for wedding planners.
+            Every capability, in detail.
           </h1>
           <p className="mx-auto mt-6 max-w-3xl text-base leading-8 text-slate-300 sm:text-lg">
-            Protect planner time, give couples a calmer experience, and present one coherent wedding plan across planner, couple, public, and guest-response views.
+            The complete planner operating system — seventeen connected surfaces spanning weddings, guests, seating, vendors, forms, and finances.
           </p>
           <div className="mt-9 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <a
@@ -147,7 +147,7 @@ export default function FeaturesPage() {
               href={PUBLIC_LOGIN_PATH}
               className="inline-flex min-h-12 items-center justify-center rounded-full bg-white px-7 py-3 text-base font-semibold text-slate-950 transition hover:bg-slate-100"
             >
-              Start one wedding free
+              Start free
             </Link>
             <a
               href="mailto:hello@thespecialwedding.io?subject=Planner workspace walkthrough"

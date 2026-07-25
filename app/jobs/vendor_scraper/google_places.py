@@ -10,7 +10,6 @@ Requires GOOGLE_MAPS_API_KEY in environment.
 
 import logging
 import os
-from typing import Dict, List, Optional
 
 import httpx
 
@@ -43,7 +42,7 @@ FIELD_MASK = ",".join(
 )
 
 
-async def search_vendors(query: str, max_results: int = 20) -> List[Dict]:
+async def search_vendors(query: str, max_results: int = 20) -> list[dict]:
     """
     Search Google Places for vendors matching the query.
 
@@ -96,7 +95,7 @@ async def search_vendors(query: str, max_results: int = 20) -> List[Dict]:
         return []
 
 
-def _normalize_place(place: Dict) -> Optional[Dict]:
+def _normalize_place(place: dict) -> dict | None:
     """Extract and normalize fields from a Google Places result."""
     place_id = place.get("id")
     display_name = place.get("displayName", {}).get("text", "").strip()
@@ -131,7 +130,7 @@ def _normalize_place(place: Dict) -> Optional[Dict]:
     }
 
 
-def _parse_address_components(components: List[Dict]) -> Dict[str, str]:
+def _parse_address_components(components: list[dict]) -> dict[str, str]:
     """Extract city, state, country, postal_code from Google address components."""
     result = {}
     for comp in components:

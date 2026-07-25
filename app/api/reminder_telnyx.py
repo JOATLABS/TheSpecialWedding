@@ -1,6 +1,5 @@
 # app/api/reminder_telnyx.py
 
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -25,7 +24,7 @@ try:
     telnyx_helper = TelnyxRSVPReminderHelper()
     telnyx_available = True
 except Exception as e:
-    print(f"Telnyx services not available: {str(e)}")
+    print(f"Telnyx services not available: {e!s}")
     telnyx_available = False
     telnyx_reminder_service = None
     telnyx_helper = None
@@ -33,7 +32,7 @@ except Exception as e:
 
 class SlugModel(BaseModel):
     slug: str
-    custom_message: Optional[str] = None
+    custom_message: str | None = None
 
 
 class TelnyxReminderModel(BaseModel):
@@ -111,7 +110,7 @@ async def get_telnyx_logs(
     current_user: ExtendedAuthUser = Depends(
         require_communication_capability(CommunicationCapability.HISTORY)
     ),
-    wedding_slug: Optional[str] = Query(None),
+    wedding_slug: str | None = Query(None),
 ):
     """Get SMS logs for messages sent via Telnyx"""
     if not telnyx_available:

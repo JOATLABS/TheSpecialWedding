@@ -15,8 +15,7 @@ Redis is down.
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Dict, Optional, Set
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -35,11 +34,11 @@ class SSEManager:
 
     def __init__(self):
         # Map of user_email -> set of asyncio.Queue (one per browser tab/connection)
-        self._connections: Dict[str, Set[asyncio.Queue]] = {}
+        self._connections: dict[str, set[asyncio.Queue]] = {}
         # Redis subscriber connection (dedicated — cannot be shared with cache ops)
         self._redis_sub = None  # type: Optional[object]
         self._redis_pub = None  # type: Optional[object]
-        self._listener_task: Optional[asyncio.Task] = None
+        self._listener_task: asyncio.Task | None = None
         self._total_connections = 0
 
     # ------------------------------------------------------------------
@@ -229,7 +228,7 @@ class SSEManager:
         event = {
             "type": event_type,
             "data": data,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         # Try Redis first (reaches all workers)

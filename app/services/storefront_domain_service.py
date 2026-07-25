@@ -9,47 +9,48 @@ deletes or rewrites a mapping merely because its entitlement is later lost.
 from __future__ import annotations
 
 import base64
-from datetime import datetime, timedelta, timezone
 import hashlib
 import html
 import ipaddress
 import logging
 import re
 import secrets
-from typing import Any, Callable, Iterable
+from collections.abc import Callable, Iterable
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from fastapi import HTTPException, status
-from cryptography.fernet import Fernet, InvalidToken
 import idna
+from cryptography.fernet import Fernet, InvalidToken
+from fastapi import HTTPException, status
 from pymongo.errors import DuplicateKeyError
 
 from app.constants.roles import is_wedding_planner_role
 from app.constants.storefront_domain import (
-    ACTIVE,
     ACTION_REQUIRED,
+    ACTIVE,
     AUTHORIZATION_CANCELLED,
     CERTIFICATE_VALIDATION,
     CLAIM_PENDING,
     CUTOVER_READY,
     DEPLOYING,
-    DISCONNECTED,
     DISCONNECT_FAILED,
+    DISCONNECTED,
     DISCONNECTING,
-    DOMAIN_DISCONNECTED,
     DNS_SETUP_PENDING,
+    DOMAIN_DISCONNECTED,
     EXPIRED,
     HOSTNAME_VALIDATION,
     MIGRATION_PREVALIDATION,
     OPERATOR_REVIEW,
     OWNERSHIP_REVIEW_CANCELLED,
-    PROVIDER_PROVISIONING,
     PROVIDER_CREATE_REQUEST_WINDOW_SECONDS,
-    STOREFRONT_DOMAIN_INSTRUCTIONS_EMAIL_TYPE,
-    STOREFRONT_DOMAIN_APPLICATION_STATUSES,
-    STOREFRONT_DOMAIN_REMOVAL_KINDS,
+    PROVIDER_PROVISIONING,
     SETUP_CANCELLED,
+    STOREFRONT_DOMAIN_APPLICATION_STATUSES,
+    STOREFRONT_DOMAIN_INSTRUCTIONS_EMAIL_TYPE,
+    STOREFRONT_DOMAIN_REMOVAL_KINDS,
 )
 from app.core.database import mongo
 from app.core.settings import settings
@@ -60,14 +61,13 @@ from app.services.storefront_dns_service import (
     StorefrontDnsResolver,
     storefront_dns_resolver,
 )
+from app.services.storefront_domain_rollout import StorefrontDomainRolloutPolicy
 from app.services.storefront_entitlement_service import (
     StorefrontEntitlementResolutionError,
     StorefrontEntitlementService,
     storefront_entitlement_service,
 )
-from app.services.storefront_domain_rollout import StorefrontDomainRolloutPolicy
 from app.utils.planner_ownership import normalize_planner_id
-
 
 logger = logging.getLogger(__name__)
 
@@ -292,7 +292,7 @@ async def discover_authoritative_dns_delegation(
 
     normalized_hostname = normalize_custom_hostname(hostname, platform_domains=())
     labels = normalized_hostname.split(".")
-    for offset in range(0, len(labels) - 1):
+    for offset in range(len(labels) - 1):
         candidate = ".".join(labels[offset:])
         nameservers = await resolver.query(candidate, "NS")
         normalized = normalize_authoritative_dns_snapshot(
@@ -454,13 +454,13 @@ class StorefrontDomainService:
 
     @staticmethod
     def _now() -> datetime:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     @staticmethod
     def _aware(value: object) -> datetime | None:
         if not isinstance(value, datetime):
             return None
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
 
     @staticmethod
     def _error_detail(
@@ -3271,7 +3271,7 @@ class StorefrontDomainService:
         )
         quota_expiry = datetime.fromtimestamp(
             (quota_bucket + 2) * int(_INSTRUCTION_QUOTA_WINDOW.total_seconds()),
-            tz=timezone.utc,
+            tz=UTC,
         )
         hourly_quota_keys = await self._acquire_instruction_quotas(
             [
@@ -4631,8 +4631,8 @@ class StorefrontDomainService:
         if not isinstance(value, datetime):
             return False
         if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value <= datetime.now(timezone.utc) - timedelta(seconds=seconds)
+            value = value.replace(tzinfo=UTC)
+        return value <= datetime.now(UTC) - timedelta(seconds=seconds)
 
     async def _recover_stale_provisioning(
         self,
@@ -4648,7 +4648,7 @@ class StorefrontDomainService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Custom-domain provisioning is still in progress",
             )
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         recovered = await collection.update_one(
             {
                 "_id": record["_id"],
@@ -4705,7 +4705,7 @@ class StorefrontDomainService:
         attempt_id: str,
         error: CloudflareServiceError,
     ) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result = await collection.update_one(
             {
                 "_id": record_id,
@@ -4768,7 +4768,7 @@ class StorefrontDomainService:
                 {
                     "$set": {
                         "last_error": exc.message,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -4810,7 +4810,7 @@ class StorefrontDomainService:
                         "last_error": (
                             "Cloudflare returned ambiguous hostname reconciliation"
                         ),
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -4819,7 +4819,7 @@ class StorefrontDomainService:
                 detail="Cloudflare returned ambiguous custom-hostname matches",
             )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         reconciliation_error: dict[str, Any] | None = None
         if not exact_rows:
             previous_absences = record.get("provisioning_absent_observations", 0)
@@ -5010,7 +5010,7 @@ class StorefrontDomainService:
             )
 
         collection = self._mongo.db["storefront_domains"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         provisioning_attempt_id = uuid4().hex
         reservation = {
             "planner_id": owner_id,
@@ -5086,10 +5086,10 @@ class StorefrontDomainService:
                     "$set": {
                         "status": _PROVISIONING,
                         "provisioning_attempt_id": provisioning_attempt_id,
-                        "provisioning_started_at": datetime.now(timezone.utc),
+                        "provisioning_started_at": datetime.now(UTC),
                         "provider_ids_before": sorted(rows_before),
                         "last_error": None,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -5184,7 +5184,7 @@ class StorefrontDomainService:
                     "$set": {
                         "provider_hostname_id": provider_id,
                         **projection,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     },
                     "$unset": {
                         "provisioning_attempt_id": "",
@@ -5315,7 +5315,7 @@ class StorefrontDomainService:
             provider_result = await self._cloudflare.get_custom_hostname(provider_id)
         except CloudflareServiceError as exc:
             if self._provider_not_found(exc):
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 applied, superseding_result = await self._write_refresh_observation(
                     collection,
                     record,
@@ -5358,7 +5358,7 @@ class StorefrontDomainService:
                 {
                     "$set": {
                         "last_error": exc.message,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -5386,7 +5386,7 @@ class StorefrontDomainService:
                         "last_error": (
                             "Cloudflare returned a mismatched hostname mapping"
                         ),
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -5406,7 +5406,7 @@ class StorefrontDomainService:
                 "$set": {
                     **projection,
                     "last_error": None,
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }
             },
         )
@@ -5694,7 +5694,7 @@ class StorefrontDomainService:
             )
             if conflict:
                 await self._cancel_conflict_claim(conflict, owner_id)
-                return None
+                return
             record = await collection.find_one(
                 {"planner_id": owner_id, "claim_attempt_id": attempt_id}
             )
@@ -5713,13 +5713,13 @@ class StorefrontDomainService:
                 ].find_one({"current_owner_key": owner_id})
                 if conflict:
                     await self._cancel_conflict_claim(conflict, owner_id)
-                return None
+                return
         if not record:
-            return None
+            return
 
         if record.get("application_status"):
             await self._disconnect_claim_record(collection, record, owner_id)
-            return None
+            return
 
         if (
             not record.get("provider_hostname_id")
@@ -5755,7 +5755,7 @@ class StorefrontDomainService:
                     }
                 )
                 if getattr(deleted, "deleted_count", 0):
-                    return None
+                    return
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Custom-domain provisioning changed during disconnect",
@@ -5766,7 +5766,7 @@ class StorefrontDomainService:
             or self._status(record.get("status")) == "provider_deleted"
         ):
             await self._finish_local_cleanup(collection, record, owner_id)
-            return None
+            return
 
         # Claim deletion intent locally before making an irreversible provider
         # call. The compare-and-set prevents two requests that read the same
@@ -5800,7 +5800,7 @@ class StorefrontDomainService:
                         or self._now(),
                         "last_error": None,
                         "retry_due_at": self._now(),
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     },
                     "$inc": {"delete_attempts": 1},
                 },
@@ -5815,7 +5815,7 @@ class StorefrontDomainService:
                 {"_id": record["_id"], "planner_id": owner_id}
             )
             if not current:
-                return None
+                return
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Custom-domain mapping changed during deletion",
@@ -5874,7 +5874,7 @@ class StorefrontDomainService:
                             "deletion_status": _PROVIDER_DELETE_RETRY_PENDING,
                             "last_error": retry_error,
                             "retry_due_at": self._now() + timedelta(minutes=5),
-                            "updated_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(UTC),
                         },
                         "$unset": {"deletion_attempt_id": ""},
                     },
@@ -5888,7 +5888,7 @@ class StorefrontDomainService:
 
         # Provider success is durable before local cleanup. If Mongo cleanup
         # fails, retries can skip the already-completed external deletion.
-        provider_deleted_at = datetime.now(timezone.utc)
+        provider_deleted_at = datetime.now(UTC)
         try:
             persisted = await collection.update_one(
                 {
@@ -5926,7 +5926,7 @@ class StorefrontDomainService:
                 {"_id": record["_id"], "planner_id": owner_id}
             )
             if not current:
-                return None
+                return
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Custom-domain mapping changed after provider deletion",
@@ -5944,7 +5944,7 @@ class StorefrontDomainService:
             },
             owner_id,
         )
-        return None
+        return
 
     async def _finish_local_cleanup(
         self,

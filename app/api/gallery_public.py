@@ -1,5 +1,3 @@
-from typing import Optional
-
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
@@ -18,31 +16,23 @@ wedding_service = WeddingService()
 
 class VerifiedGalleryRequest(BaseModel):
     wedding_slug: str = Field(..., description="Wedding slug")
-    token: Optional[str] = Field(None, description="Guest invitation token")
-    name: Optional[str] = Field(
-        None, description="Guest name for verification fallback"
-    )
-    phone: Optional[str] = Field(
-        None, description="Guest phone for verification fallback"
-    )
-    email: Optional[str] = Field(
-        None, description="Guest email for verification fallback"
-    )
-    password: Optional[str] = Field(
+    token: str | None = Field(None, description="Guest invitation token")
+    name: str | None = Field(None, description="Guest name for verification fallback")
+    phone: str | None = Field(None, description="Guest phone for verification fallback")
+    email: str | None = Field(None, description="Guest email for verification fallback")
+    password: str | None = Field(
         None, description="Wedding password if password protected"
     )
-    otp_code: Optional[str] = Field(None, description="OTP verification code")
-    contact: Optional[str] = Field(
-        None, description="Contact used for OTP verification"
-    )
+    otp_code: str | None = Field(None, description="OTP verification code")
+    contact: str | None = Field(None, description="Contact used for OTP verification")
     limit: int = Field(default=60, ge=1, le=100, description="Maximum files to return")
-    cursor: Optional[str] = Field(
+    cursor: str | None = Field(
         None, description="Continuation cursor from the previous page"
     )
 
 
 async def _list_gallery_page_for_wedding(
-    wedding_slug: str, limit: int, cursor: Optional[str]
+    wedding_slug: str, limit: int, cursor: str | None
 ):
     wedding = await wedding_service.get_wedding_by_slug(wedding_slug)
     planner_scope = gallery_service.get_planner_scope_from_wedding(wedding)
@@ -81,7 +71,7 @@ async def _list_gallery_page_for_wedding(
 async def public_gallery(
     wedding_slug: str = Query(...),
     limit: int = Query(12, ge=1, le=100),
-    cursor: Optional[str] = Query(None),
+    cursor: str | None = Query(None),
 ):
     """
     Get gallery images for a specific wedding - DEPRECATED for security reasons.

@@ -7,7 +7,7 @@ import json
 import logging
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from typing import Any, Optional
+from typing import Any
 
 from pymongo import ReturnDocument
 
@@ -83,7 +83,7 @@ class CalendarJobService:
         task: dict[str, Any],
         *,
         method: str,
-        recipient_emails: Optional[list[str]] = None,
+        recipient_emails: list[str] | None = None,
         reason: str,
     ) -> list[dict[str, Any]]:
         recipients = sorted(

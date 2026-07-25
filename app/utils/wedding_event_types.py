@@ -1,6 +1,5 @@
 from collections.abc import Iterable
-from typing import Any, List
-
+from typing import Any
 
 ALL_WEDDING_EVENTS = "all"
 
@@ -29,7 +28,7 @@ def normalize_reminder_event_type(event_type: str) -> str:
     return ALL_WEDDING_EVENTS if is_all_wedding_events(normalized) else normalized
 
 
-def normalize_attending_event_types(attending: Any) -> List[str]:
+def normalize_attending_event_types(attending: Any) -> list[str]:
     if isinstance(attending, str):
         attending_values: Iterable[Any] = [attending]
     elif isinstance(attending, dict):
@@ -41,7 +40,7 @@ def normalize_attending_event_types(attending: Any) -> List[str]:
     else:
         return []
 
-    normalized: List[str] = []
+    normalized: list[str] = []
     seen: set[str] = set()
     for event_type in attending_values:
         if not isinstance(event_type, str):
@@ -62,8 +61,8 @@ def attending_matches_reminder_event(attending: Any, event_type: str) -> bool:
     return normalized_event_type in attending_events
 
 
-def normalize_event_type_list(event_types: Iterable[str]) -> List[str]:
-    normalized: List[str] = []
+def normalize_event_type_list(event_types: Iterable[str]) -> list[str]:
+    normalized: list[str] = []
     seen: set[str] = set()
 
     for event_type in event_types:

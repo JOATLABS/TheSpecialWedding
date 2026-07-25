@@ -403,7 +403,7 @@ const HERO_DEMO_VIDEO_DRAFT: DemoVideo = {
     {
       timestamp: '0:00-0:10',
       action: 'Scan the planner portfolio and choose Manage for Sofia & Daniel.',
-      voiceover: 'Start with one wedding in the planner command center, then follow its plan instead of touring disconnected tools.',
+      voiceover: 'This is the planner command center: every active wedding in one portfolio. Start with one and follow its plan.',
     },
     {
       timestamp: '0:10-0:30',
@@ -517,7 +517,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         timestamp: '0:00-0:12',
         action: 'Open event-day setup for the wedding.',
-        voiceover: 'A wedding is not one calendar block. Each event day has its own venue, time, attire, and guest-facing details.',
+        voiceover: 'This is the wedding’s event schedule. Each day carries its own venue, time, attire, and guest-facing details.',
       },
       {
         timestamp: '0:12-0:30',
@@ -814,7 +814,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         timestamp: '0:00-0:12',
         action: 'Open Seating, use the in-product Zoom out control twice to reach 70%, and show the room outline with fixtures.',
-        voiceover: 'Seating starts with the actual room — the venue outline, its fixtures, and the tables placed where they will really stand, not a blank generic grid.',
+        voiceover: 'This is the seating chart, built on the actual room — the venue outline, its fixtures, and tables placed where they will really stand.',
       },
       {
         timestamp: '0:12-0:36',
@@ -847,7 +847,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         timestamp: '0:00-0:12',
         action: 'Open the guest upload link as a guest.',
-        voiceover: 'Guests scan a QR code and upload memories without an app or account.',
+        voiceover: 'This is the guest memories upload: guests scan a QR code and add photos without an app or an account.',
       },
       {
         timestamp: '0:12-0:28',
@@ -943,7 +943,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         timestamp: '0:00-0:12',
         action: 'Open the existing planner contract and inspect its details and status.',
-        voiceover: 'A vendor agreement starts from the record the planner already owns: the vendor, the value, the status, and the key dates, together in one place.',
+        voiceover: 'This is a vendor contract record: the vendor, the value, the status, and the key dates, together in the workspace the planner owns.',
       },
       {
         timestamp: '0:12-0:30',
@@ -1109,7 +1109,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         timestamp: '0:00-0:10',
         action: 'Open the knowledge base inside the admin workspace.',
-        voiceover: 'The operating manual lives where planners are already working.',
+        voiceover: 'This is the knowledge base: the studio’s operating manual, right where planners are already working.',
       },
       {
         timestamp: '0:10-0:22',
@@ -1169,7 +1169,7 @@ const FEATURE_DEMO_VIDEO_DRAFTS: readonly DemoVideo[] = [
       {
         timestamp: '0:00-0:15',
         action: 'Open team management and inspect one assistant.',
-        voiceover: 'A studio can give assistants access to the weddings and actions they actually own.',
+        voiceover: 'This is team access: a studio gives assistants exactly the weddings and actions they actually own.',
       },
       {
         timestamp: '0:15-0:30',

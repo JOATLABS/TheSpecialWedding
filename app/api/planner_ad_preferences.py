@@ -20,7 +20,7 @@ Auth model:
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Body, Depends
 
@@ -87,7 +87,7 @@ async def hide_vendor(
     user: ExtendedAuthUser = Depends(require_team_permission("manage_vendors")),
 ):
     planner_id = _get_planner_id(user)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     await mongo.db["planner_ad_preferences"].update_one(
         {"planner_id": planner_id},
@@ -137,7 +137,7 @@ async def unhide_vendor(
         {"planner_id": planner_id},
         {
             "$pull": {"hidden_vendor_ids": vendor_id},
-            "$set": {"updated_at": datetime.now(timezone.utc)},
+            "$set": {"updated_at": datetime.now(UTC)},
         },
     )
     return {"status": "unhidden", "vendor_id": vendor_id}
@@ -158,7 +158,7 @@ async def suppress_category(
     user: ExtendedAuthUser = Depends(require_team_permission("manage_vendors")),
 ):
     planner_id = _get_planner_id(user)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     await mongo.db["planner_ad_preferences"].update_one(
         {"planner_id": planner_id},
@@ -207,7 +207,7 @@ async def unsuppress_category(
         {"planner_id": planner_id},
         {
             "$pull": {"suppressed_categories": category},
-            "$set": {"updated_at": datetime.now(timezone.utc)},
+            "$set": {"updated_at": datetime.now(UTC)},
         },
     )
     return {"status": "unsuppressed", "category": category}
@@ -228,7 +228,7 @@ async def toggle_frequency(
     user: ExtendedAuthUser = Depends(require_team_permission("manage_vendors")),
 ):
     planner_id = _get_planner_id(user)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     await mongo.db["planner_ad_preferences"].update_one(
         {"planner_id": planner_id},

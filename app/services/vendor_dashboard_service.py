@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Dict, List, Optional, Sequence
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from app.core.database import mongo
 
 
-def _isoformat(value: Optional[datetime | str]) -> Optional[str]:
+def _isoformat(value: datetime | str | None) -> str | None:
     """Convert datetime-like values to ISO-8601 strings."""
 
     if value is None:
@@ -42,11 +42,11 @@ class VendorDashboardService:
         self,
         *,
         vendor_email: str,
-        assigned_wedding_ids: Optional[Sequence[str]] = None,
-    ) -> Dict[str, List[str]]:
+        assigned_wedding_ids: Sequence[str] | None = None,
+    ) -> dict[str, list[str]]:
         """Return vendor and wedding identifiers associated with the account."""
 
-        vendor_ids: List[str] = []
+        vendor_ids: list[str] = []
         wedding_ids = set(str(w_id) for w_id in assigned_wedding_ids or [])
 
         for record in self.vendors.find({"email": vendor_email}):
@@ -62,7 +62,7 @@ class VendorDashboardService:
 
     def _build_wedding_snapshot(
         self, wedding_ids: Sequence[str]
-    ) -> Dict[str, Dict[str, str]]:
+    ) -> dict[str, dict[str, str]]:
         """Fetch minimal wedding metadata for display."""
 
         if not wedding_ids:
@@ -71,7 +71,7 @@ class VendorDashboardService:
         query_ids = [
             ObjectId(w_id) if ObjectId.is_valid(w_id) else w_id for w_id in wedding_ids
         ]
-        snapshot: Dict[str, Dict[str, str]] = {}
+        snapshot: dict[str, dict[str, str]] = {}
 
         for wedding in self.weddings.find({"_id": {"$in": query_ids}}):
             key = str(wedding.get("_id"))
@@ -86,7 +86,7 @@ class VendorDashboardService:
         return snapshot
 
     def _serialize_task(
-        self, task: dict, wedding_map: Dict[str, Dict[str, str]]
+        self, task: dict, wedding_map: dict[str, dict[str, str]]
     ) -> dict:
         wedding_id = (
             str(task.get("wedding_id")) if task.get("wedding_id") is not None else ""
@@ -108,8 +108,8 @@ class VendorDashboardService:
     def _serialize_form(
         self,
         form: dict,
-        submissions: Dict[str, dict],
-        wedding_map: Dict[str, Dict[str, str]],
+        submissions: dict[str, dict],
+        wedding_map: dict[str, dict[str, str]],
     ) -> dict:
         form_id = str(form.get("_id"))
         wedding_id = (
@@ -136,7 +136,7 @@ class VendorDashboardService:
         self,
         *,
         vendor_email: str,
-        assigned_wedding_ids: Optional[Sequence[str]] = None,
+        assigned_wedding_ids: Sequence[str] | None = None,
     ) -> dict:
         """Compile dashboard data for the vendor experience."""
 
@@ -150,7 +150,7 @@ class VendorDashboardService:
 
         wedding_map = self._build_wedding_snapshot(wedding_ids)
 
-        task_filters: List[dict] = []
+        task_filters: list[dict] = []
         if vendor_ids:
             task_filters.append({"assigned_vendor_id": {"$in": vendor_ids}})
         task_filters.append({"assigned_vendor_email": vendor_email})
@@ -178,7 +178,7 @@ class VendorDashboardService:
             form_query["wedding_id"] = {"$in": wedding_ids}
 
         raw_forms = list(self.vendor_forms.find(form_query))
-        submission_map: Dict[str, dict] = {}
+        submission_map: dict[str, dict] = {}
 
         if raw_forms:
             form_ids = [str(form.get("_id")) for form in raw_forms]

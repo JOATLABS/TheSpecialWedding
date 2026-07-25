@@ -10,8 +10,8 @@ import asyncio
 import logging
 import secrets
 import string
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from bson import ObjectId
 from fastapi import HTTPException, status
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 INVITE_TOKEN_EXPIRY_DAYS = 7
 
 
-async def _invalidate_auth_cache_safe(email: Optional[str]) -> None:
+async def _invalidate_auth_cache_safe(email: str | None) -> None:
     """Best-effort auth-cache invalidation that never raises.
 
     Used after team-member mutations so a Redis hiccup does not break
@@ -57,12 +57,12 @@ async def _invalidate_auth_cache_safe(email: Optional[str]) -> None:
 
 
 # ── P2-26: Timezone helper ──
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     """Ensure a datetime is timezone-aware (UTC). Handles naive datetimes from MongoDB."""
     if dt is None:
         return None
     if isinstance(dt, datetime) and dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
+        return dt.replace(tzinfo=UTC)
     return dt
 
 
@@ -148,8 +148,8 @@ class TeamManagementService:
 
     @staticmethod
     def _resolve_permissions(
-        role: str, custom_permissions: Optional[Dict[str, bool]] = None
-    ) -> Dict[str, bool]:
+        role: str, custom_permissions: dict[str, bool] | None = None
+    ) -> dict[str, bool]:
         """
         Merge role preset with any custom permission overrides.
         Custom permissions take precedence over the preset.
@@ -164,9 +164,9 @@ class TeamManagementService:
 
     async def _validate_wedding_ownership(
         self,
-        owner_id: Optional[str],
-        owner_email: Optional[str],
-        wedding_ids: Optional[List[str]],
+        owner_id: str | None,
+        owner_email: str | None,
+        wedding_ids: list[str] | None,
     ) -> None:
         """
         Validate that all provided wedding IDs belong to the planner.
@@ -215,7 +215,7 @@ class TeamManagementService:
                 detail=f"Wedding(s) not found or do not belong to you: {', '.join(invalid)}",
             )
 
-    async def _get_owner_plan(self, owner_email: str) -> Optional[dict]:
+    async def _get_owner_plan(self, owner_email: str) -> dict | None:
         """Get the owner planner's current subscription plan (with staff_seats)"""
         # Find subscription
         subscription = await self.subscriptions_collection.find_one(
@@ -278,8 +278,8 @@ class TeamManagementService:
     @staticmethod
     def _build_team_activation_update(
         user_id: str,
-        first_name: Optional[str],
-        last_name: Optional[str],
+        first_name: str | None,
+        last_name: str | None,
         accepted_at: datetime,
     ) -> dict:
         """Finalize an accepted invite and consume its token without leaving null-index collisions."""
@@ -321,7 +321,7 @@ class TeamManagementService:
 
     # ─── Seat Enforcement ─────────────────────────────────────────────────
 
-    async def check_seat_limit(self, owner_id: str, owner_email: str) -> Dict[str, Any]:
+    async def check_seat_limit(self, owner_id: str, owner_email: str) -> dict[str, Any]:
         """
         Check seat usage against the plan limit.
         Returns seat info and whether a new invite is allowed.
@@ -344,7 +344,7 @@ class TeamManagementService:
             "can_invite": used_seats < total_seats,
         }
 
-    async def get_seats_info(self, owner_id: str, owner_email: str) -> Dict[str, Any]:
+    async def get_seats_info(self, owner_id: str, owner_email: str) -> dict[str, Any]:
         """Get detailed seat usage for the UI"""
         seat_check = await self.check_seat_limit(owner_id, owner_email)
 
@@ -353,7 +353,7 @@ class TeamManagementService:
             {"$match": {"owner_id": owner_id}},
             {"$group": {"_id": "$status", "count": {"$sum": 1}}},
         ]
-        status_counts: Dict[str, int] = {}
+        status_counts: dict[str, int] = {}
         async for doc in self.team_collection.aggregate(pipeline):
             status_counts[doc["_id"]] = doc["count"]
 
@@ -372,9 +372,9 @@ class TeamManagementService:
         owner_email: str,
         email: str,
         role: str,
-        custom_permissions: Optional[Dict[str, bool]] = None,
+        custom_permissions: dict[str, bool] | None = None,
         wedding_access: str = "all",
-        assigned_wedding_ids: Optional[List[str]] = None,
+        assigned_wedding_ids: list[str] | None = None,
     ) -> dict:
         """
         Invite a new team member. Creates a team_members doc and sends an email.
@@ -441,7 +441,7 @@ class TeamManagementService:
 
         # 6. Generate invite token
         token = self._generate_token()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         doc = {
             "owner_id": owner_id,
@@ -530,7 +530,7 @@ class TeamManagementService:
         to_email: str,
         owner_email: str,
         role: str,
-        permissions: Dict[str, bool],
+        permissions: dict[str, bool],
         token: str,
     ):
         """Send the team invitation email via Resend"""
@@ -620,7 +620,7 @@ class TeamManagementService:
 
         # Generate new token
         new_token = self._generate_token()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         await self.team_collection.update_one(
             {"_id": doc["_id"]},
             {
@@ -662,14 +662,14 @@ class TeamManagementService:
 
         # P2-26: Use timezone helper for cleaner, more maintainable logic
         expires_at = _ensure_utc(doc.get("invite_token_expires_at"))
-        is_expired = expires_at is not None and datetime.now(timezone.utc) > expires_at
+        is_expired = expires_at is not None and datetime.now(UTC) > expires_at
 
         # Invalidate expired tokens to prevent future lookups
         if is_expired:
             await self.team_collection.update_one(
                 {"_id": doc["_id"]},
                 {
-                    "$set": {"updated_at": datetime.now(timezone.utc)},
+                    "$set": {"updated_at": datetime.now(UTC)},
                     "$unset": {"invite_token": "", "invite_token_expires_at": ""},
                 },
             )
@@ -705,7 +705,7 @@ class TeamManagementService:
         """
         # First, atomically claim the token by setting status to "accepting" (transitional)
         # This ensures only ONE request can proceed past this point for a given token.
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         doc = await self.team_collection.find_one_and_update(
             {
@@ -738,8 +738,8 @@ class TeamManagementService:
             expires_at = doc.get("invite_token_expires_at")
             if expires_at:
                 if isinstance(expires_at, datetime) and expires_at.tzinfo is None:
-                    expires_at = expires_at.replace(tzinfo=timezone.utc)
-                if datetime.now(timezone.utc) > expires_at:
+                    expires_at = expires_at.replace(tzinfo=UTC)
+                if datetime.now(UTC) > expires_at:
                     await self._restore_pending_invite_lock(doc["_id"], now)
                     raise HTTPException(
                         status_code=400,
@@ -761,7 +761,7 @@ class TeamManagementService:
                 ):
                     accepted_at = existing_user.get("created_at") or now
                     if isinstance(accepted_at, datetime) and accepted_at.tzinfo is None:
-                        accepted_at = accepted_at.replace(tzinfo=timezone.utc)
+                        accepted_at = accepted_at.replace(tzinfo=UTC)
 
                     await self.team_collection.update_one(
                         {"_id": doc["_id"]},
@@ -976,7 +976,7 @@ class TeamManagementService:
                 detail="No updates provided. Specify role, permissions, wedding_access, or assigned_wedding_ids.",
             )
 
-        set_fields: Dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
+        set_fields: dict[str, Any] = {"updated_at": datetime.now(UTC)}
 
         # Handle role change
         new_role = updates.get("role")
@@ -1062,7 +1062,7 @@ class TeamManagementService:
         if doc["status"] == TeamMemberStatus.DEACTIVATED.value:
             raise HTTPException(status_code=400, detail="Member is already deactivated")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Step 1: Update team_members collection
         await self.team_collection.update_one(
@@ -1181,7 +1181,7 @@ class TeamManagementService:
                     detail="Cannot reactivate: some assigned weddings no longer exist. Please update this member's wedding assignments first.",
                 )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Step 1: Update team_members collection
         await self.team_collection.update_one(
@@ -1218,7 +1218,7 @@ class TeamManagementService:
                     {
                         "$set": {
                             "status": TeamMemberStatus.DEACTIVATED.value,
-                            "deactivated_at": datetime.now(timezone.utc),
+                            "deactivated_at": datetime.now(UTC),
                             "updated_at": now,
                         }
                     },
@@ -1265,7 +1265,7 @@ class TeamManagementService:
         if not doc:
             raise HTTPException(status_code=404, detail="Team member not found")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Step 1: Deactivate user account and clear team_member_id foreign key
         if doc.get("user_id"):
@@ -1356,7 +1356,7 @@ class TeamManagementService:
         Used when owner's subscription is cancelled or account is suspended.
         Also deactivates their user accounts to prevent login.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Find all active team members for this owner
         team_members = await self.team_collection.find(
@@ -1474,7 +1474,7 @@ class TeamManagementService:
         Used when owner's subscription is restored or account is reactivated.
         Also reactivates their user accounts to enable login.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Find all suspended_owner_cancelled team members for this owner
         team_members = await self.team_collection.find(
@@ -1587,7 +1587,7 @@ class TeamManagementService:
 
     # ─── Permission Resolution (used by auth middleware) ──────────────────
 
-    async def get_member_permissions(self, user_id: str) -> Optional[dict]:
+    async def get_member_permissions(self, user_id: str) -> dict | None:
         """
         Load the team_members doc for a given user_id.
         Returns None if the user is not a team member.

@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -33,10 +33,8 @@ class RSVPService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error submitting RSVP: {str(e)}", exc_info=True)
-            raise HTTPException(
-                status_code=500, detail="Error submitting RSVP: {}".format(str(e))
-            )
+            logger.error(f"Error submitting RSVP: {e!s}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Error submitting RSVP: {e!s}")
 
     async def submit_rsvp_for_guest(self, guest_id: str, rsvp_data: RSVPModel):
         try:
@@ -53,11 +51,9 @@ class RSVPService:
             raise
         except Exception as e:
             logger.error(
-                f"Error submitting RSVP for guest {guest_id}: {str(e)}", exc_info=True
+                f"Error submitting RSVP for guest {guest_id}: {e!s}", exc_info=True
             )
-            raise HTTPException(
-                status_code=500, detail="Error submitting RSVP: {}".format(str(e))
-            )
+            raise HTTPException(status_code=500, detail=f"Error submitting RSVP: {e!s}")
 
     async def _submit_rsvp_for_guest_doc(self, guest: dict, rsvp_data: RSVPModel):
         guest_id = ObjectId(guest["_id"])
@@ -77,7 +73,7 @@ class RSVPService:
                     "wedding_id": wedding_id_str,
                     "attending": rsvp_data.attending,
                     "dietary": rsvp_data.dietary,
-                    "submitted_at": datetime.now(timezone.utc),
+                    "submitted_at": datetime.now(UTC),
                 },
                 "$unset": DEPRECATED_RSVP_FIELDS_UNSET,
             },
@@ -86,22 +82,22 @@ class RSVPService:
 
         update_data: dict[str, object] = {
             "phone": rsvp_data.phone,
-            "updated_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(UTC),
         }
 
         if hasattr(rsvp_data, "sms_opt_in"):
             update_data["sms_opt_in"] = rsvp_data.sms_opt_in
             if rsvp_data.sms_opt_in:
-                update_data["sms_opt_in_date"] = datetime.now(timezone.utc)
+                update_data["sms_opt_in_date"] = datetime.now(UTC)
             elif rsvp_data.sms_opt_in is False:
-                update_data["sms_opt_out_date"] = datetime.now(timezone.utc)
+                update_data["sms_opt_out_date"] = datetime.now(UTC)
 
         if hasattr(rsvp_data, "email_opt_in"):
             update_data["email_opt_in"] = rsvp_data.email_opt_in
             if rsvp_data.email_opt_in:
-                update_data["email_opt_in_date"] = datetime.now(timezone.utc)
+                update_data["email_opt_in_date"] = datetime.now(UTC)
             elif rsvp_data.email_opt_in is False:
-                update_data["email_opt_out_date"] = datetime.now(timezone.utc)
+                update_data["email_opt_out_date"] = datetime.now(UTC)
 
         await self.guest_collection.update_one({"_id": guest_id}, {"$set": update_data})
 
@@ -126,7 +122,7 @@ class RSVPService:
                     detail=f"Cannot add {new_plus_ones_count} plus-one(s). Maximum allowed: {max_plus_ones}",
                 )
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             plus_ones_to_insert = []
             for plus_one_data in rsvp_data.plus_ones:
                 plus_one_doc: dict[str, object] = {
@@ -258,6 +254,6 @@ class RSVPService:
         except Exception as e:
             # Don't fail the RSVP submission if notification fails
             logger.error(
-                f"Failed to send RSVP notification for wedding {wedding_id}: {str(e)}",
+                f"Failed to send RSVP notification for wedding {wedding_id}: {e!s}",
                 exc_info=True,
             )

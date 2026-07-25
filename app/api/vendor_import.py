@@ -14,7 +14,7 @@ POST /admin/vendors/import
 import ipaddress
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
@@ -37,24 +37,24 @@ MAX_IMPORT_SIZE = 500  # Hard cap on vendors per import
 class VendorImportItem(BaseModel):
     """A single vendor entry from the scraper export JSON."""
 
-    google_place_id: Optional[str] = None
+    google_place_id: str | None = None
     business_name: str = Field(..., min_length=1, max_length=200)
-    email: Optional[str] = Field(default="", max_length=200)
-    phone: Optional[str] = Field(default=None, max_length=30)
-    website: Optional[str] = Field(default=None, max_length=500)
-    address: Optional[str] = Field(default=None, max_length=500)
-    city: Optional[str] = Field(default=None, max_length=100)
-    state: Optional[str] = Field(default=None, max_length=100)
-    country: Optional[str] = Field(default="US", max_length=10)
-    postal_code: Optional[str] = Field(default=None, max_length=20)
+    email: str | None = Field(default="", max_length=200)
+    phone: str | None = Field(default=None, max_length=30)
+    website: str | None = Field(default=None, max_length=500)
+    address: str | None = Field(default=None, max_length=500)
+    city: str | None = Field(default=None, max_length=100)
+    state: str | None = Field(default=None, max_length=100)
+    country: str | None = Field(default="US", max_length=10)
+    postal_code: str | None = Field(default=None, max_length=20)
     service_category: str = Field(...)
-    service_description: Optional[str] = Field(default=None, max_length=2000)
-    logo_url: Optional[str] = Field(default=None, max_length=1000)
-    typical_price_min: Optional[float] = Field(default=None, ge=0)
-    typical_price_max: Optional[float] = Field(default=None, ge=0)
+    service_description: str | None = Field(default=None, max_length=2000)
+    logo_url: str | None = Field(default=None, max_length=1000)
+    typical_price_min: float | None = Field(default=None, ge=0)
+    typical_price_max: float | None = Field(default=None, ge=0)
     currency: str = Field(default="USD", max_length=5)
-    tags: List[str] = Field(default_factory=list)
-    scraped_from_state: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
+    scraped_from_state: str | None = None
 
     @field_validator("service_category")
     @classmethod
@@ -73,7 +73,7 @@ class VendorImportItem(BaseModel):
 
     @field_validator("service_description")
     @classmethod
-    def sanitize_description(cls, v: Optional[str]) -> Optional[str]:
+    def sanitize_description(cls, v: str | None) -> str | None:
         if v is None:
             return None
         # Strip HTML tags
@@ -81,7 +81,7 @@ class VendorImportItem(BaseModel):
 
     @field_validator("website")
     @classmethod
-    def validate_website(cls, v: Optional[str]) -> Optional[str]:
+    def validate_website(cls, v: str | None) -> str | None:
         if v is None or v == "":
             return None
         # Block internal/private IPs and localhost — SSRF prevention
@@ -101,8 +101,7 @@ class VendorImportItem(BaseModel):
         # Extract host portion for IP-range checks (strip scheme + path)
         host = lower
         for prefix in ("https://", "http://"):
-            if host.startswith(prefix):
-                host = host[len(prefix) :]
+            host = host.removeprefix(prefix)
         host = host.split("/")[0].split(":")[0]  # strip port and path
         # Block private/reserved IP ranges by parsing the host
         try:
@@ -125,7 +124,7 @@ class VendorImportItem(BaseModel):
 class VendorImportRequest(BaseModel):
     """Request body for bulk vendor import."""
 
-    vendors: List[VendorImportItem] = Field(
+    vendors: list[VendorImportItem] = Field(
         ..., min_length=1, max_length=MAX_IMPORT_SIZE
     )
 
@@ -137,7 +136,7 @@ class VendorImportResponse(BaseModel):
     updated: int = 0
     skipped: int = 0
     errors: int = 0
-    error_details: List[Dict[str, Any]] = Field(default_factory=list)
+    error_details: list[dict[str, Any]] = Field(default_factory=list)
     total: int = 0
 
 

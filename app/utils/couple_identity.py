@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from app.utils.id_utils import to_str_id
 from app.utils.planner_ownership import normalize_query_id
 
 
-def normalize_couple_id(value: Any) -> Optional[str]:
+def normalize_couple_id(value: Any) -> str | None:
     """Normalize a couple record identifier into a stable string form."""
     if value is None:
         return None
@@ -14,7 +14,7 @@ def normalize_couple_id(value: Any) -> Optional[str]:
     return normalized or None
 
 
-def normalize_couple_email(value: Any) -> Optional[str]:
+def normalize_couple_email(value: Any) -> str | None:
     """Normalize a couple email for consistent comparisons."""
     if value is None:
         return None

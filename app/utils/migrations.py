@@ -12,16 +12,17 @@ Usage:
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any
 
-from app.core.database import mongo
 from app.constants.support_conversations import (
     CONVERSATION_KIND_FIELD,
     GUEST_SMS_KIND,
     PLATFORM_SUPPORT_KIND,
     UNKNOWN_SUPPORT_KIND,
 )
+from app.core.database import mongo
 from app.utils.planner_billing_scope import planner_billing_unset_fields
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ class Migration:
         version: str,
         name: str,
         up_func: Callable,
-        down_func: Optional[Callable] = None,
+        down_func: Callable | None = None,
         description: str = "",
     ):
         self.version = version
@@ -56,7 +57,7 @@ class MigrationManager:
     def __init__(self):
         self.migrations_collection_name = "_migrations"
 
-    async def run_migrations(self, migrations: List[Migration]):
+    async def run_migrations(self, migrations: list[Migration]):
         """
         Run all pending migrations in order
 
@@ -85,7 +86,7 @@ class MigrationManager:
                             "version": migration.version,
                             "name": migration.name,
                             "description": migration.description,
-                            "applied_at": datetime.now(timezone.utc),
+                            "applied_at": datetime.now(UTC),
                             "status": "success",
                         }
                     )
@@ -95,7 +96,7 @@ class MigrationManager:
                     )
 
                 except Exception as e:
-                    logger.error(f"✗ Migration {migration.version} failed: {str(e)}")
+                    logger.error(f"✗ Migration {migration.version} failed: {e!s}")
 
                     # Log failed migration
                     await mongo.db[self.migrations_collection_name].insert_one(
@@ -103,13 +104,13 @@ class MigrationManager:
                             "version": migration.version,
                             "name": migration.name,
                             "description": migration.description,
-                            "applied_at": datetime.now(timezone.utc),
+                            "applied_at": datetime.now(UTC),
                             "status": "failed",
                             "error": str(e),
                         }
                     )
 
-                    raise Exception(f"Migration {migration.version} failed: {str(e)}")
+                    raise Exception(f"Migration {migration.version} failed: {e!s}")
             else:
                 logger.debug(
                     f"⊘ Migration {migration.version} already applied, skipping"
@@ -149,17 +150,17 @@ class MigrationManager:
             logger.info(f"✓ Migration {version} rolled back successfully")
 
         except Exception as e:
-            logger.error(f"✗ Rollback of {version} failed: {str(e)}")
+            logger.error(f"✗ Rollback of {version} failed: {e!s}")
             raise
 
-    async def get_applied_migrations(self) -> List[Dict[str, Any]]:
+    async def get_applied_migrations(self) -> list[dict[str, Any]]:
         """Get list of all applied migrations"""
         cursor = mongo.db[self.migrations_collection_name].find().sort("applied_at", 1)
         return await cursor.to_list(length=None)
 
     async def get_pending_migrations(
-        self, all_migrations: List[Migration]
-    ) -> List[Migration]:
+        self, all_migrations: list[Migration]
+    ) -> list[Migration]:
         """Get list of pending migrations"""
         pending = []
         for migration in all_migrations:
@@ -179,8 +180,8 @@ class MigrationRegistry:
     """Registry to store and manage migrations"""
 
     def __init__(self):
-        self.migrations: Dict[str, Migration] = {}
-        self._ordered_migrations: List[Migration] = []
+        self.migrations: dict[str, Migration] = {}
+        self._ordered_migrations: list[Migration] = []
 
     def register(self, version: str, name: str, description: str = ""):
         """
@@ -256,11 +257,11 @@ class MigrationRegistry:
 
         return decorator
 
-    def get_all_migrations(self) -> List[Migration]:
+    def get_all_migrations(self) -> list[Migration]:
         """Get all migrations in order"""
         return self._ordered_migrations.copy()
 
-    def get_migration(self, version: str) -> Optional[Migration]:
+    def get_migration(self, version: str) -> Migration | None:
         """Get a specific migration by version"""
         return self.migrations.get(version)
 
@@ -576,7 +577,7 @@ async def migration_007_repair_team_invites(db):
     """Repair team-member records that were left inconsistent by invite_token=null collisions."""
     team_members = db["team_members"]
     users = db["users"]
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Sparse unique indexes still include explicit null values, so accepted invites
     # must remove invite_token entirely rather than store null.
@@ -616,7 +617,7 @@ async def migration_007_repair_team_invites(db):
 
         accepted_at = user.get("created_at") or member.get("updated_at") or now
         if isinstance(accepted_at, datetime) and accepted_at.tzinfo is None:
-            accepted_at = accepted_at.replace(tzinfo=timezone.utc)
+            accepted_at = accepted_at.replace(tzinfo=UTC)
 
         await team_members.update_one(
             {"_id": member["_id"]},

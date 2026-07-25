@@ -30,9 +30,10 @@ caller's local unless we use a mutable object.
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 from app.core.database import mongo
@@ -56,7 +57,7 @@ JOB_CALENDAR_MAINTENANCE = "calendar-maintenance"
 JOB_CLEANUP_REMINDERS = "cleanup-reminders"
 JOB_PLANNER_ONBOARDING_EMAILS = "planner-onboarding-emails"
 
-KNOWN_JOBS: Dict[str, Dict[str, Any]] = {
+KNOWN_JOBS: dict[str, dict[str, Any]] = {
     JOB_CALENDAR_INVITE_JOBS: {
         "label": "Calendar invite jobs",
         "description": "Processes queued calendar invite delivery jobs.",
@@ -98,8 +99,8 @@ STATUS_FAILED = "failed"
 @asynccontextmanager
 async def track_scheduler_job(
     job_name: str,
-    params: Optional[Dict[str, Any]] = None,
-) -> AsyncIterator[Dict[str, Any]]:
+    params: dict[str, Any] | None = None,
+) -> AsyncIterator[dict[str, Any]]:
     """Record a scheduler job run to Mongo.
 
     On entry: inserts a row with ``status="running"``.
@@ -123,8 +124,8 @@ async def track_scheduler_job(
         )
 
     run_id = str(uuid4())
-    started_at = datetime.now(timezone.utc)
-    container: Dict[str, Any] = {"result": None, "run_id": run_id}
+    started_at = datetime.now(UTC)
+    container: dict[str, Any] = {"result": None, "run_id": run_id}
 
     try:
         await mongo.db[JOB_RUNS_COLLECTION].insert_one(
@@ -139,7 +140,7 @@ async def track_scheduler_job(
                 "error": None,
             }
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         # Don't let Mongo hiccups block the actual job. The job's own errors
         # matter much more than whether we got a row in.
         logger.exception("Failed to record scheduler_job_runs start row")
@@ -151,7 +152,7 @@ async def track_scheduler_job(
             run_id,
             {
                 "status": STATUS_FAILED,
-                "finished_at": datetime.now(timezone.utc),
+                "finished_at": datetime.now(UTC),
                 "error": str(exc)[:2000] or exc.__class__.__name__,
             },
         )
@@ -161,20 +162,20 @@ async def track_scheduler_job(
             run_id,
             {
                 "status": STATUS_SUCCESS,
-                "finished_at": datetime.now(timezone.utc),
+                "finished_at": datetime.now(UTC),
                 "result": _truncate_result(container.get("result")),
             },
         )
 
 
-async def _safe_update(run_id: str, fields: Dict[str, Any]) -> None:
+async def _safe_update(run_id: str, fields: dict[str, Any]) -> None:
     """Update a run row, swallowing (but logging) Mongo errors."""
     try:
         await mongo.db[JOB_RUNS_COLLECTION].update_one(
             {"_id": run_id},
             {"$set": fields},
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception(
             "Failed to update scheduler_job_runs row %s with %r", run_id, fields
         )
@@ -202,7 +203,7 @@ def _truncate_result(result: Any, max_chars: int = 4000) -> Any:
 
 
 # ─── Query helpers (used by admin_platform_metrics.py) ─────────────────────
-async def get_last_run_per_job() -> Dict[str, Optional[Dict[str, Any]]]:
+async def get_last_run_per_job() -> dict[str, dict[str, Any] | None]:
     """Return {job_name: last_run_document_or_None} for every KNOWN_JOBS entry.
 
     Runs are sorted by started_at desc, so "last" means most recently started.
@@ -217,13 +218,13 @@ async def get_last_run_per_job() -> Dict[str, Optional[Dict[str, Any]]]:
         },
     ]
     cursor = mongo.db[JOB_RUNS_COLLECTION].aggregate(pipeline)
-    results: Dict[str, Optional[Dict[str, Any]]] = {name: None for name in KNOWN_JOBS}
+    results: dict[str, dict[str, Any] | None] = {name: None for name in KNOWN_JOBS}
     async for row in cursor:
         results[row["_id"]] = row["doc"]
     return results
 
 
-async def get_last_success_per_job() -> Dict[str, Optional[datetime]]:
+async def get_last_success_per_job() -> dict[str, datetime | None]:
     """Return {job_name: last_success_started_at_or_None}."""
     pipeline = [
         {"$match": {"status": STATUS_SUCCESS}},
@@ -236,7 +237,7 @@ async def get_last_success_per_job() -> Dict[str, Optional[datetime]]:
         },
     ]
     cursor = mongo.db[JOB_RUNS_COLLECTION].aggregate(pipeline)
-    results: Dict[str, Optional[datetime]] = {name: None for name in KNOWN_JOBS}
+    results: dict[str, datetime | None] = {name: None for name in KNOWN_JOBS}
     async for row in cursor:
         results[row["_id"]] = row["started_at"]
     return results
@@ -244,7 +245,7 @@ async def get_last_success_per_job() -> Dict[str, Optional[datetime]]:
 
 async def get_recent_runs_for_job(
     job_name: str, limit: int = 50
-) -> list[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Return the N most recent runs for a single job, newest first."""
     cursor = (
         mongo.db[JOB_RUNS_COLLECTION]
@@ -256,8 +257,8 @@ async def get_recent_runs_for_job(
 
 
 def compute_stale_flag(
-    job_name: str, last_success_at: Optional[datetime]
-) -> Dict[str, Any]:
+    job_name: str, last_success_at: datetime | None
+) -> dict[str, Any]:
     """Return {is_stale, threshold_minutes, minutes_since_success}.
 
     A job is stale if it hasn't had a successful run in longer than
@@ -285,9 +286,9 @@ def compute_stale_flag(
         }
 
     if last_success_at.tzinfo is None:
-        last_success_at = last_success_at.replace(tzinfo=timezone.utc)
+        last_success_at = last_success_at.replace(tzinfo=UTC)
 
-    delta = datetime.now(timezone.utc) - last_success_at
+    delta = datetime.now(UTC) - last_success_at
     minutes_since = delta.total_seconds() / 60
 
     return {

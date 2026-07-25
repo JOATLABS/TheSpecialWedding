@@ -15,7 +15,6 @@ Routes:
 
 import logging
 import re
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
@@ -76,14 +75,14 @@ class ChangePasswordRequest(BaseModel):
 class UpdateProfileRequest(BaseModel):
     """Vendor profile update."""
 
-    business_name: Optional[str] = Field(None, min_length=2, max_length=200)
-    vendor_category: Optional[str] = Field(None, max_length=100)
-    vendor_location: Optional[str] = Field(None, max_length=200)
-    vendor_phone: Optional[str] = Field(None, max_length=20)
-    vendor_website: Optional[str] = Field(None, max_length=300)
-    vendor_description: Optional[str] = Field(None, max_length=2000)
-    logo_url: Optional[str] = Field(None, max_length=500)
-    portfolio_urls: Optional[List[str]] = None
+    business_name: str | None = Field(None, min_length=2, max_length=200)
+    vendor_category: str | None = Field(None, max_length=100)
+    vendor_location: str | None = Field(None, max_length=200)
+    vendor_phone: str | None = Field(None, max_length=20)
+    vendor_website: str | None = Field(None, max_length=300)
+    vendor_description: str | None = Field(None, max_length=2000)
+    logo_url: str | None = Field(None, max_length=500)
+    portfolio_urls: list[str] | None = None
 
 
 # =============================================================================
@@ -178,7 +177,7 @@ class VendorPushSubscription(BaseModel):
 
     endpoint: str
     keys: VendorPushSubscriptionKeys
-    expirationTime: Optional[int] = None
+    expirationTime: int | None = None
 
 
 class VendorSubscribeRequest(BaseModel):
@@ -238,7 +237,7 @@ async def vendor_subscribe_to_push(
 
 @router.delete("/web-push/unsubscribe")
 async def vendor_unsubscribe_from_push(
-    body: Optional[VendorUnsubscribeRequest] = None,
+    body: VendorUnsubscribeRequest | None = None,
     current_user: ExtendedAuthUser = Depends(require_advertising_vendor),
 ):
     """Unsubscribe vendor from push notifications."""

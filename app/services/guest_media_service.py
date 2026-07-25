@@ -8,8 +8,8 @@ import os
 import re
 import tempfile
 import zipfile
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from urllib.parse import urlparse
 
 import aiohttp
@@ -72,15 +72,15 @@ def _safe_filename(filename: str) -> str:
     return f"{normalized_name}{normalized_extension}"[:180]
 
 
-def _coerce_datetime(value: Any) -> Optional[datetime]:
+def _coerce_datetime(value: Any) -> datetime | None:
     if value is None:
         return None
     if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
     if isinstance(value, str):
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
         except ValueError:
             return None
     return None
@@ -95,7 +95,7 @@ class GuestMediaStorage:
         return self.storage.target_health(StorageTarget.GUEST_MEDIA)
 
     @property
-    def bucket_name(self) -> Optional[str]:
+    def bucket_name(self) -> str | None:
         return self.storage.target(StorageTarget.GUEST_MEDIA).bucket_name
 
     @property
@@ -111,20 +111,20 @@ class GuestMediaStorage:
         return self.health.status
 
     @property
-    def issue(self) -> Optional[str]:
+    def issue(self) -> str | None:
         return self.health.issue
 
     def build_key(
         self, wedding_slug: str, upload_batch_id: str, asset_id: str, filename: str
     ) -> str:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return (
             f"guest-media/{wedding_slug}/{now.strftime('%Y')}/{now.strftime('%m')}/"
             f"{upload_batch_id}/{asset_id}-{_safe_filename(filename)}"
         )
 
     def build_export_key(self, wedding_slug: str, export_id: str) -> str:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return (
             f"guest-media-exports/{wedding_slug}/{now.strftime('%Y')}/{now.strftime('%m')}/"
             f"{export_id}.zip"
@@ -148,7 +148,7 @@ class GuestMediaStorage:
         self,
         key: str,
         expires_in: int = DOWNLOAD_URL_EXPIRES_IN,
-        filename: Optional[str] = None,
+        filename: str | None = None,
     ) -> str:
         if not self.bucket_name:
             raise HTTPException(
@@ -231,7 +231,9 @@ class GuestMediaService:
     def _build_upload_token(
         self, wedding_id: str, wedding_slug: str, rotated_at: datetime
     ) -> str:
-        payload = f"{wedding_id}:{wedding_slug}:{rotated_at.astimezone(timezone.utc).isoformat()}"
+        payload = (
+            f"{wedding_id}:{wedding_slug}:{rotated_at.astimezone(UTC).isoformat()}"
+        )
         digest = hmac.new(
             settings.secret_key.encode("utf-8"),
             payload.encode("utf-8"),
@@ -239,7 +241,7 @@ class GuestMediaService:
         ).digest()
         return base64.urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
 
-    def _serialize_datetime(self, value: Any) -> Optional[str]:
+    def _serialize_datetime(self, value: Any) -> str | None:
         serialized = _coerce_datetime(value)
         return serialized.isoformat() if serialized else None
 
@@ -277,12 +279,12 @@ class GuestMediaService:
                 return parsed + timedelta(days=DEFAULT_UPLOAD_WINDOW_DAYS)
             except ValueError:
                 pass
-        return datetime.now(timezone.utc) + timedelta(days=DEFAULT_UPLOAD_WINDOW_DAYS)
+        return datetime.now(UTC) + timedelta(days=DEFAULT_UPLOAD_WINDOW_DAYS)
 
     async def ensure_guest_media_config(
         self, wedding: dict[str, Any]
     ) -> dict[str, Any]:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         guest_media = dict(wedding.get("guest_media") or {})
         changed = False
 
@@ -334,7 +336,7 @@ class GuestMediaService:
         wedding_slug: str,
         upload_token: str,
         *,
-        wedding_public_url: Optional[str] = None,
+        wedding_public_url: str | None = None,
     ) -> str:
         if wedding_public_url:
             parsed_public_url = urlparse(wedding_public_url)
@@ -362,7 +364,7 @@ class GuestMediaService:
         self,
         wedding: dict[str, Any],
         asset: dict[str, Any],
-    ) -> Optional[str]:
+    ) -> str | None:
         """Resolve one repository-owned preview only for an exact local demo seed."""
         if not self._allow_demo_context_without_storage(wedding):
             return None
@@ -402,8 +404,8 @@ class GuestMediaService:
         return options
 
     def _normalize_event_type(
-        self, event_type: Optional[str], wedding: dict[str, Any]
-    ) -> Optional[str]:
+        self, event_type: str | None, wedding: dict[str, Any]
+    ) -> str | None:
         if not event_type or event_type == NOT_SURE_EVENT:
             return None
 
@@ -563,9 +565,7 @@ class GuestMediaService:
 
                 await response.content.read(1)
 
-    def _stream_base_url_from_result(
-        self, stream_result: dict[str, Any]
-    ) -> Optional[str]:
+    def _stream_base_url_from_result(self, stream_result: dict[str, Any]) -> str | None:
         candidates = [
             stream_result.get("preview"),
             stream_result.get("thumbnail"),
@@ -587,7 +587,7 @@ class GuestMediaService:
             raise HTTPException(
                 status_code=403, detail="Guest uploads are currently closed"
             )
-        if upload_closes_at and upload_closes_at < datetime.now(timezone.utc):
+        if upload_closes_at and upload_closes_at < datetime.now(UTC):
             raise HTTPException(
                 status_code=403, detail="Guest uploads are closed for this wedding"
             )
@@ -693,7 +693,7 @@ class GuestMediaService:
         slug: str,
         upload_token: str,
         uploader_name: str,
-        batch_event_type: Optional[str],
+        batch_event_type: str | None,
         files: list[dict[str, Any]],
     ) -> dict[str, Any]:
         if not self.storage.is_configured:
@@ -806,12 +806,10 @@ class GuestMediaService:
                 )
 
         upload_batch_id = hashlib.sha1(
-            f"{slug}:{cleaned_name}:{datetime.now(timezone.utc).isoformat()}".encode(
-                "utf-8"
-            ),
+            f"{slug}:{cleaned_name}:{datetime.now(UTC).isoformat()}".encode(),
             usedforsecurity=False,
         ).hexdigest()[:20]
-        created_at = datetime.now(timezone.utc)
+        created_at = datetime.now(UTC)
         wedding_id = str(wedding.get("_id"))
 
         asset_docs = []
@@ -819,9 +817,7 @@ class GuestMediaService:
 
         for index, file_data in enumerate(normalized_files):
             asset_id = hashlib.sha1(
-                f"{upload_batch_id}:{index}:{file_data['filename']}:{created_at.isoformat()}".encode(
-                    "utf-8"
-                ),
+                f"{upload_batch_id}:{index}:{file_data['filename']}:{created_at.isoformat()}".encode(),
                 usedforsecurity=False,
             ).hexdigest()[:24]
             key = self.storage.build_key(
@@ -915,7 +911,7 @@ class GuestMediaService:
 
         finalized_ids: list[str] = []
         failed_assets: list[dict[str, str]] = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         for doc in docs:
             try:
@@ -980,15 +976,14 @@ class GuestMediaService:
         }
 
     async def _stream_request(
-        self, method: str, path: str, payload: Optional[dict[str, Any]] = None
+        self, method: str, path: str, payload: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         if not self.stream_api_base or not self.cloudflare_api_token:
             raise RuntimeError("Cloudflare Stream is not configured")
 
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=30)
-        ) as session:
-            async with session.request(
+        async with (
+            aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session,
+            session.request(
                 method,
                 f"{self.stream_api_base}{path}",
                 json=payload,
@@ -996,16 +991,17 @@ class GuestMediaService:
                     "Authorization": f"Bearer {self.cloudflare_api_token}",
                     "Content-Type": "application/json",
                 },
-            ) as response:
-                data = await response.json(content_type=None)
-                if response.status >= 400 or not data.get("success", False):
-                    raise RuntimeError(f"Cloudflare Stream error: {data}")
-                return data.get("result") or {}
+            ) as response,
+        ):
+            data = await response.json(content_type=None)
+            if response.status >= 400 or not data.get("success", False):
+                raise RuntimeError(f"Cloudflare Stream error: {data}")
+            return data.get("result") or {}
 
     async def _create_stream_signed_token(
         self, stream_uid: str
     ) -> tuple[str, datetime]:
-        now_ts = int(datetime.now(timezone.utc).timestamp())
+        now_ts = int(datetime.now(UTC).timestamp())
         result = await self._stream_request(
             "POST",
             f"/{stream_uid}/token",
@@ -1019,9 +1015,7 @@ class GuestMediaService:
             raise RuntimeError(
                 "Cloudflare Stream did not return a signed playback token"
             )
-        expires_at = datetime.fromtimestamp(
-            now_ts + STREAM_TOKEN_EXPIRES_IN, tz=timezone.utc
-        )
+        expires_at = datetime.fromtimestamp(now_ts + STREAM_TOKEN_EXPIRES_IN, tz=UTC)
         return token, expires_at
 
     async def _enforce_stream_security(self, stream_uid: str) -> None:
@@ -1047,13 +1041,13 @@ class GuestMediaService:
                 {
                     "$set": {
                         "stream_status": "unconfigured",
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
             return
 
-        stream_uid: Optional[str] = None
+        stream_uid: str | None = None
         try:
             source_url = self.storage.create_presigned_download_url(
                 asset["original_key"],
@@ -1079,7 +1073,7 @@ class GuestMediaService:
                             result
                         ),
                         "stream_security_signature": self._stream_security_signature(),
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -1100,7 +1094,7 @@ class GuestMediaService:
                     "$set": {
                         "stream_status": "failed",
                         "stream_error": str(exc),
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -1126,7 +1120,7 @@ class GuestMediaService:
                 update_data = {
                     "stream_status": "failed",
                     "stream_error": error_reason,
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }
             else:
                 update_data = {
@@ -1135,13 +1129,11 @@ class GuestMediaService:
                         result
                     ),
                     "stream_security_signature": self._stream_security_signature(),
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }
                 ready_at = _coerce_datetime(result.get("readyToStreamAt"))
                 if ready:
-                    update_data["stream_ready_at"] = ready_at or datetime.now(
-                        timezone.utc
-                    )
+                    update_data["stream_ready_at"] = ready_at or datetime.now(UTC)
             await self.assets.update_one({"_id": asset_id}, {"$set": update_data})
         except Exception as exc:
             logger.warning("Stream readiness poll failed for %s: %s", asset_id, exc)
@@ -1150,7 +1142,7 @@ class GuestMediaService:
         from pymongo import ReturnDocument
 
         processed = 0
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         stale_cutoff = now - timedelta(minutes=STREAM_JOB_STALE_MINUTES)
         poll_cutoff = now - timedelta(seconds=STREAM_POLL_INTERVAL_SECONDS)
 
@@ -1171,7 +1163,7 @@ class GuestMediaService:
                 {
                     "$set": {
                         "stream_status": "ingesting",
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
                 sort=[("uploaded_at", 1)],
@@ -1234,7 +1226,7 @@ class GuestMediaService:
 
         upload_closes_at = _coerce_datetime(guest_media.get("upload_closes_at"))
         is_open = guest_media.get("enabled", True) and (
-            not upload_closes_at or upload_closes_at >= datetime.now(timezone.utc)
+            not upload_closes_at or upload_closes_at >= datetime.now(UTC)
         )
 
         return {
@@ -1284,13 +1276,13 @@ class GuestMediaService:
         self,
         wedding_id: str,
         *,
-        enabled: Optional[bool] = None,
-        upload_closes_at: Optional[datetime] = None,
+        enabled: bool | None = None,
+        upload_closes_at: datetime | None = None,
     ) -> dict[str, Any]:
         wedding = await self._get_wedding_by_id(wedding_id)
         ensured = await self.ensure_guest_media_config(wedding)
         guest_media = dict(ensured["config"])
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         if enabled is not None:
             guest_media["enabled"] = enabled
@@ -1305,7 +1297,7 @@ class GuestMediaService:
             normalized_close = (
                 upload_closes_at
                 if upload_closes_at.tzinfo
-                else upload_closes_at.replace(tzinfo=timezone.utc)
+                else upload_closes_at.replace(tzinfo=UTC)
             )
             guest_media["upload_closes_at"] = normalized_close
 
@@ -1324,7 +1316,7 @@ class GuestMediaService:
     async def rotate_upload_link(self, wedding_id: str) -> dict[str, Any]:
         wedding = await self._get_wedding_by_id(wedding_id)
         guest_media = dict(wedding.get("guest_media") or {})
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         guest_media["last_rotated_at"] = now
         upload_token = self._build_upload_token(
             str(wedding.get("_id")), wedding.get("slug", ""), now
@@ -1386,7 +1378,7 @@ class GuestMediaService:
                     "$set": {
                         "stream_status": "failed",
                         "stream_error": error_reason,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -1404,20 +1396,20 @@ class GuestMediaService:
                 "$set": {
                     "stream_playback_base_url": base_url,
                     "stream_security_signature": self._stream_security_signature(),
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }
             },
         )
         return base_url
 
-    def _get_cached_stream_token(self, asset: dict[str, Any]) -> Optional[str]:
+    def _get_cached_stream_token(self, asset: dict[str, Any]) -> str | None:
         token = asset.get("stream_token")
         expires_at = _coerce_datetime(asset.get("stream_token_expires_at"))
         if not token or not expires_at:
             return None
 
         reuse_buffer = timedelta(seconds=STREAM_TOKEN_REUSE_BUFFER_SECONDS)
-        if expires_at <= datetime.now(timezone.utc) + reuse_buffer:
+        if expires_at <= datetime.now(UTC) + reuse_buffer:
             return None
         return str(token)
 
@@ -1495,7 +1487,7 @@ class GuestMediaService:
         review_status: str = "all",
         media_type: str = "all",
         event_type: str = "all",
-        uploader_query: Optional[str] = None,
+        uploader_query: str | None = None,
         page: int = 1,
         limit: int = 24,
     ) -> dict[str, Any]:
@@ -1559,8 +1551,8 @@ class GuestMediaService:
             {
                 "$set": {
                     "review_status": review_status,
-                    "reviewed_at": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc),
+                    "reviewed_at": datetime.now(UTC),
+                    "updated_at": datetime.now(UTC),
                 }
             },
         )
@@ -1652,7 +1644,7 @@ class GuestMediaService:
         wedding_id: str,
         requested_by: str,
         *,
-        asset_ids: Optional[list[str]] = None,
+        asset_ids: list[str] | None = None,
         review_status: str = "kept",
     ) -> dict[str, Any]:
         wedding = await self._get_wedding_by_id(wedding_id)
@@ -1680,12 +1672,10 @@ class GuestMediaService:
             )
 
         export_id = hashlib.sha1(
-            f"{normalized_wedding_id}:{requested_by}:{datetime.now(timezone.utc).isoformat()}".encode(
-                "utf-8"
-            ),
+            f"{normalized_wedding_id}:{requested_by}:{datetime.now(UTC).isoformat()}".encode(),
             usedforsecurity=False,
         ).hexdigest()[:24]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         export_key = self.storage.build_export_key(
             wedding.get("slug", "wedding"), export_id
         )
@@ -1737,9 +1727,7 @@ class GuestMediaService:
                 os.remove(temp_path)
 
     async def process_export_job(self, export_id: str) -> None:
-        stale_cutoff = datetime.now(timezone.utc) - timedelta(
-            minutes=EXPORT_JOB_STALE_MINUTES
-        )
+        stale_cutoff = datetime.now(UTC) - timedelta(minutes=EXPORT_JOB_STALE_MINUTES)
         export_doc = await self.exports.find_one_and_update(
             {
                 "_id": export_id,
@@ -1751,8 +1739,8 @@ class GuestMediaService:
             {
                 "$set": {
                     "status": "processing",
-                    "updated_at": datetime.now(timezone.utc),
-                    "processing_started_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
+                    "processing_started_at": datetime.now(UTC),
                 }
             },
         )
@@ -1785,8 +1773,8 @@ class GuestMediaService:
                 {
                     "$set": {
                         "status": "completed",
-                        "completed_at": datetime.now(timezone.utc),
-                        "updated_at": datetime.now(timezone.utc),
+                        "completed_at": datetime.now(UTC),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -1798,15 +1786,13 @@ class GuestMediaService:
                     "$set": {
                         "status": "failed",
                         "error": str(exc),
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
 
     async def process_pending_export_jobs(self, *, limit: int = 1) -> int:
-        stale_cutoff = datetime.now(timezone.utc) - timedelta(
-            minutes=EXPORT_JOB_STALE_MINUTES
-        )
+        stale_cutoff = datetime.now(UTC) - timedelta(minutes=EXPORT_JOB_STALE_MINUTES)
         export_docs = (
             await self.exports.find(
                 {

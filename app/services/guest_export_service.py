@@ -9,10 +9,9 @@ import base64
 import logging
 import os
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from html import escape
 from io import BytesIO
-from typing import Dict, List, Optional
 from urllib.parse import quote
 
 from app.core.database import mongo
@@ -79,7 +78,7 @@ class GuestExportService:
             )
             raise
         except Exception as e:
-            logger.error(f"Failed to generate QR code: {str(e)}")
+            logger.error(f"Failed to generate QR code: {e!s}")
             raise
 
     def build_rsvp_url(self, slug: str, token: str) -> str:
@@ -102,7 +101,7 @@ class GuestExportService:
             f"&token={quote(token, safe='')}"
         )
 
-    async def get_guest_with_rsvp(self, guest: Dict, rsvp_map: Dict[str, Dict]) -> Dict:
+    async def get_guest_with_rsvp(self, guest: dict, rsvp_map: dict[str, dict]) -> dict:
         """
         Combine guest data with their RSVP status.
 
@@ -299,7 +298,7 @@ class GuestExportService:
             <body>
                 <div class="header">
                     <h1>{wedding_name} - Guest List</h1>
-                    <p>Generated on {datetime.now(timezone.utc).strftime("%B %d, %Y at %H:%M UTC")}</p>
+                    <p>Generated on {datetime.now(UTC).strftime("%B %d, %Y at %H:%M UTC")}</p>
                 </div>
 
                 <table>
@@ -351,10 +350,10 @@ class GuestExportService:
             logger.error("WeasyPrint not installed. Run: pip install weasyprint")
             raise
         except Exception as e:
-            logger.error(f"Failed to generate guest list PDF: {str(e)}")
+            logger.error(f"Failed to generate guest list PDF: {e!s}")
             raise
 
-    async def generate_guests_qr_zip(self, guests: List[Dict], slug: str) -> bytes:
+    async def generate_guests_qr_zip(self, guests: list[dict], slug: str) -> bytes:
         """
         Generate a ZIP file containing QR codes for multiple guests.
 
@@ -397,7 +396,7 @@ class GuestExportService:
             return buffer.getvalue()
 
         except Exception as e:
-            logger.error(f"Failed to generate QR ZIP: {str(e)}")
+            logger.error(f"Failed to generate QR ZIP: {e!s}")
             raise
 
     async def generate_guest_memories_sign_pdf(
@@ -406,7 +405,7 @@ class GuestExportService:
         couple_names: str,
         upload_url: str,
         qr_png_bytes: bytes,
-        upload_closes_at: Optional[datetime] = None,
+        upload_closes_at: datetime | None = None,
     ) -> bytes:
         """
         Generate a printable sign that invites guests to upload photos and videos.
@@ -426,7 +425,7 @@ class GuestExportService:
             escaped_couple_names = escape(couple_names or "Wedding")
             escaped_upload_url = escape(upload_url)
             close_label = (
-                upload_closes_at.astimezone(timezone.utc).strftime("%B %d, %Y")
+                upload_closes_at.astimezone(UTC).strftime("%B %d, %Y")
                 if upload_closes_at
                 else "After the celebration"
             )
@@ -612,12 +611,10 @@ class GuestExportService:
             logger.error("WeasyPrint not installed. Run: pip install weasyprint")
             raise
         except Exception as e:
-            logger.error(f"Failed to generate guest memories sign PDF: {str(e)}")
+            logger.error(f"Failed to generate guest memories sign PDF: {e!s}")
             raise
 
-    async def get_single_guest_qr(
-        self, guest_id: str, wedding_id: str
-    ) -> Optional[tuple]:
+    async def get_single_guest_qr(self, guest_id: str, wedding_id: str) -> tuple | None:
         """
         Get QR code for a single guest.
 
@@ -661,7 +658,7 @@ class GuestExportService:
             return (qr_bytes, filename)
 
         except Exception as e:
-            logger.error(f"Failed to get guest QR: {str(e)}")
+            logger.error(f"Failed to get guest QR: {e!s}")
             return None
 
 

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
-from io import BytesIO
 import logging
+import warnings
+from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from typing import Any
 from uuid import uuid4
-import warnings
 
 from bson import ObjectId
 from fastapi import HTTPException, status
@@ -35,7 +35,6 @@ from app.services.storefront_entitlement_service import (
     storefront_entitlement_service,
 )
 from app.utils.planner_ownership import normalize_planner_id, normalize_query_id
-
 
 logger = logging.getLogger(__name__)
 
@@ -354,7 +353,7 @@ class StorefrontMediaService:
         cdn_url_hint = self._storage.build_public_url(
             StorageTarget.BLOG_ASSETS, key_hint
         )
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         reservation_expires_at = now + timedelta(
             seconds=STOREFRONT_RESERVATION_TTL_SECONDS
         )
@@ -460,25 +459,25 @@ class StorefrontMediaService:
         if not isinstance(value, datetime):
             return True
         if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value <= datetime.now(timezone.utc) - timedelta(
+            value = value.replace(tzinfo=UTC)
+        return value <= datetime.now(UTC) - timedelta(
             seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS
         )
 
     @staticmethod
     def _datetime_is_expired(value: datetime) -> bool:
         if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value <= datetime.now(timezone.utc)
+            value = value.replace(tzinfo=UTC)
+        return value <= datetime.now(UTC)
 
     @staticmethod
     def _reservation_created_at(asset: dict) -> datetime | None:
         created_at = asset.get("created_at")
         if isinstance(created_at, datetime):
             return (
-                created_at.replace(tzinfo=timezone.utc)
+                created_at.replace(tzinfo=UTC)
                 if created_at.tzinfo is None
-                else created_at.astimezone(timezone.utc)
+                else created_at.astimezone(UTC)
             )
         asset_id = asset.get("_id")
         if isinstance(asset_id, ObjectId):
@@ -510,7 +509,7 @@ class StorefrontMediaService:
             {
                 "$set": {
                     "reservation_expires_at": effective_expiry,
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }
             },
         )
@@ -529,7 +528,7 @@ class StorefrontMediaService:
     async def _reap_expired_reservation(self, owner_id: str, asset: dict) -> None:
         assets = self._mongo.db["storefront_assets"]
         reap_token = uuid4().hex
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         claimed = await assets.update_one(
             {
                 "_id": asset["_id"],
@@ -609,7 +608,7 @@ class StorefrontMediaService:
             if state == "finalization_recovery"
             else "stale_finalization"
         )
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         set_fields: dict[str, Any] = {
             "state": "reaping",
             "reap_token": reap_token,
@@ -663,7 +662,7 @@ class StorefrontMediaService:
             )
         assets = self._mongo.db["storefront_assets"]
         reap_token = uuid4().hex
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         claimed = await assets.update_one(
             {
                 "_id": asset["_id"],
@@ -709,7 +708,7 @@ class StorefrontMediaService:
                 detail="Storefront image cleanup is already in progress",
             )
         reap_token = uuid4().hex
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         claimed = await assets.update_one(
             {
                 "_id": asset["_id"],
@@ -748,7 +747,7 @@ class StorefrontMediaService:
         lease_field = (
             "deleting_started_at" if "deleting_started_at" in asset else "updated_at"
         )
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         reap_token = uuid4().hex
         source_state = asset.get("cleanup_source_state") or "deleting"
         claimed = await self._mongo.db["storefront_assets"].update_one(
@@ -806,7 +805,7 @@ class StorefrontMediaService:
 
         if await self._is_referenced(owner_id, str(asset["_id"])):
             source_state = asset.get("reap_source_state")
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             if source_state in {"ready", "cleanup_retry"}:
                 retention_seconds = (
                     STOREFRONT_READY_ASSET_CLEANUP_SECONDS
@@ -1091,7 +1090,7 @@ class StorefrontMediaService:
         expected_reap_token: str | None = None,
         expected_cleanup_token: str | None = None,
     ) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         claim_filter: dict[str, Any] = {
             "_id": asset["_id"],
             "owner_id": asset["owner_id"],
@@ -1150,7 +1149,7 @@ class StorefrontMediaService:
         )
         if canonical:
             return
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         receipts = self._mongo.db["storefront_asset_cleanup_receipts"]
         receipt_filter = {"owner_id": owner_id, "candidate_key": candidate_key}
         receipt_update = {
@@ -1218,7 +1217,7 @@ class StorefrontMediaService:
     ) -> None:
         assets = self._mongo.db["storefront_assets"]
         cleanup_token = uuid4().hex
-        deleting_started_at = datetime.now(timezone.utc)
+        deleting_started_at = datetime.now(UTC)
         fenced = await assets.update_one(
             {
                 "_id": asset["_id"],
@@ -1318,8 +1317,8 @@ class StorefrontMediaService:
                     {
                         "$unset": {"staging_cleanup_pending": ""},
                         "$set": {
-                            "staging_deleted_at": datetime.now(timezone.utc),
-                            "updated_at": datetime.now(timezone.utc),
+                            "staging_deleted_at": datetime.now(UTC),
+                            "updated_at": datetime.now(UTC),
                         },
                     },
                 )
@@ -1359,7 +1358,7 @@ class StorefrontMediaService:
                 {
                     "$set": {
                         "recovery_token": recovery_token,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -1383,10 +1382,10 @@ class StorefrontMediaService:
                             "state": "cleanup_retry",
                             "cleanup_reason": "stale_finalization_recovery",
                             "last_cleanup_error": exc.__class__.__name__,
-                            "last_cleanup_attempt_at": datetime.now(timezone.utc),
-                            "cleanup_due_at": datetime.now(timezone.utc)
+                            "last_cleanup_attempt_at": datetime.now(UTC),
+                            "cleanup_due_at": datetime.now(UTC)
                             + timedelta(seconds=STOREFRONT_CLEANUP_RETRY_SECONDS),
-                            "updated_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(UTC),
                         },
                         "$inc": {"cleanup_attempts": 1},
                         "$unset": {"recovery_token": ""},
@@ -1406,7 +1405,7 @@ class StorefrontMediaService:
                 {
                     "$set": {
                         "state": "reserved",
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     },
                     "$unset": {
                         "recovery_token": "",
@@ -1424,9 +1423,7 @@ class StorefrontMediaService:
                 for key, value in asset.items()
                 if key not in {"recovery_token", "cleanup_candidate_key"}
             }
-            asset.update(
-                {"state": "reserved", "updated_at": datetime.now(timezone.utc)}
-            )
+            asset.update({"state": "reserved", "updated_at": datetime.now(UTC)})
         if asset.get("state") == "finalizing" and self._operation_lease_is_stale(
             asset.get("finalization_started_at") or asset.get("updated_at")
         ):
@@ -1459,7 +1456,7 @@ class StorefrontMediaService:
                         "state": "finalization_recovery",
                         "recovery_token": recovery_token,
                         "cleanup_candidate_key": stale_candidate_key,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     },
                     "$unset": {
                         "finalization_token": "",
@@ -1487,10 +1484,10 @@ class StorefrontMediaService:
                             "state": "cleanup_retry",
                             "cleanup_reason": "stale_finalization",
                             "last_cleanup_error": exc.__class__.__name__,
-                            "last_cleanup_attempt_at": datetime.now(timezone.utc),
-                            "cleanup_due_at": datetime.now(timezone.utc)
+                            "last_cleanup_attempt_at": datetime.now(UTC),
+                            "cleanup_due_at": datetime.now(UTC)
                             + timedelta(seconds=STOREFRONT_CLEANUP_RETRY_SECONDS),
-                            "updated_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(UTC),
                         },
                         "$inc": {"cleanup_attempts": 1},
                         "$unset": {"recovery_token": ""},
@@ -1510,7 +1507,7 @@ class StorefrontMediaService:
                 {
                     "$set": {
                         "state": "reserved",
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     },
                     "$unset": {
                         "recovery_token": "",
@@ -1526,7 +1523,7 @@ class StorefrontMediaService:
             asset = {
                 **asset,
                 "state": "reserved",
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(UTC),
             }
         if asset.get("state") != "reserved":
             raise HTTPException(
@@ -1549,7 +1546,7 @@ class StorefrontMediaService:
             ) from exc
 
         finalization_token = uuid4().hex
-        finalization_started_at = datetime.now(timezone.utc)
+        finalization_started_at = datetime.now(UTC)
         claim = await self._mongo.db["storefront_assets"].update_one(
             {
                 "_id": asset["_id"],
@@ -1592,7 +1589,7 @@ class StorefrontMediaService:
                 {
                     "$set": {
                         "state": "reserved",
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     },
                     "$unset": {
                         "finalization_token": "",
@@ -1602,7 +1599,7 @@ class StorefrontMediaService:
             )
 
         async def renew_finalization_lease() -> None:
-            heartbeat_at = datetime.now(timezone.utc)
+            heartbeat_at = datetime.now(UTC)
             heartbeat = await self._mongo.db["storefront_assets"].update_one(
                 {
                     "_id": asset["_id"],
@@ -1649,10 +1646,10 @@ class StorefrontMediaService:
                             "cleanup_candidate_key": candidate_key,
                             "cleanup_reason": reason,
                             "last_cleanup_error": cleanup_exc.__class__.__name__,
-                            "last_cleanup_attempt_at": datetime.now(timezone.utc),
-                            "cleanup_due_at": datetime.now(timezone.utc)
+                            "last_cleanup_attempt_at": datetime.now(UTC),
+                            "cleanup_due_at": datetime.now(UTC)
                             + timedelta(seconds=STOREFRONT_CLEANUP_RETRY_SECONDS),
-                            "updated_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(UTC),
                         },
                         "$inc": {"cleanup_attempts": 1},
                         "$unset": {
@@ -1776,7 +1773,7 @@ class StorefrontMediaService:
 
         await renew_finalization_lease()
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         update = {
             "state": "ready",
             "key": candidate_key,
@@ -1864,7 +1861,7 @@ class StorefrontMediaService:
                 {
                     "$set": {
                         "staging_cleanup_pending": True,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -1880,8 +1877,8 @@ class StorefrontMediaService:
             },
             {
                 "$set": {
-                    "staging_deleted_at": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc),
+                    "staging_deleted_at": datetime.now(UTC),
+                    "updated_at": datetime.now(UTC),
                 }
             },
         )
@@ -1927,7 +1924,7 @@ class StorefrontMediaService:
             return {"status": "deleted", "asset_id": normalized_asset_id}
         if asset.get("state") != "deleting":
             cleanup_token = uuid4().hex
-            deleting_started_at = datetime.now(timezone.utc)
+            deleting_started_at = datetime.now(UTC)
             claim = await assets.update_one(
                 {
                     "_id": asset["_id"],
@@ -1970,7 +1967,7 @@ class StorefrontMediaService:
                 {
                     "$set": {
                         "state": "attached",
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     },
                     "$unset": {
                         "cleanup_due_at": "",
@@ -2080,8 +2077,8 @@ class StorefrontMediaService:
                 {
                     "$set": {
                         "state": "attached",
-                        "updated_at": datetime.now(timezone.utc),
-                        "attached_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
+                        "attached_at": datetime.now(UTC),
                     },
                     "$unset": {
                         "attach_claim_id": "",
@@ -2344,7 +2341,7 @@ class StorefrontMediaService:
                 normalized_asset_id = str(asset["_id"])
                 values[field_name] = normalized_asset_id
 
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 claim_filter: dict[str, Any] = {
                     "_id": asset["_id"],
                     "owner_id": owner_id,
@@ -2447,7 +2444,7 @@ class StorefrontMediaService:
         for entry in entries:
             pending_asset_field = f"pending_{entry['slot']}_asset_id"
             pending_claim_field = f"pending_{entry['slot']}_claim_id"
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             row = await settings.find_one(
                 {"planner_id": owner_id},
                 {
@@ -2597,7 +2594,7 @@ class StorefrontMediaService:
                     status_code=status.HTTP_409_CONFLICT,
                     detail=("Storefront asset claim has no durable settings reference"),
                 )
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             result = await assets.update_one(
                 {
                     "_id": self._asset_query_id(entry["asset_id"]),
@@ -2714,7 +2711,7 @@ class StorefrontMediaService:
             {
                 "$set": {
                     **stable_updates,
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 },
                 "$unset": pending_unsets,
                 "$inc": {"revision": 1},
@@ -2805,7 +2802,7 @@ class StorefrontMediaService:
                 clear_filter,
                 {
                     "$unset": pending_unsets,
-                    "$set": {"updated_at": datetime.now(timezone.utc)},
+                    "$set": {"updated_at": datetime.now(UTC)},
                     "$inc": {"revision": 1},
                 },
             )
@@ -2867,19 +2864,19 @@ class StorefrontMediaService:
                 target_state = "attached" if stable_reference else "ready"
                 set_fields: dict[str, Any] = {
                     "state": target_state,
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }
                 unset_fields = {
                     "attach_claim_id": "",
                     "attach_claimed_at": "",
                 }
                 if stable_reference:
-                    set_fields["attached_at"] = datetime.now(timezone.utc)
+                    set_fields["attached_at"] = datetime.now(UTC)
                     unset_fields["cleanup_due_at"] = ""
                 else:
-                    set_fields["cleanup_due_at"] = datetime.now(
-                        timezone.utc
-                    ) + timedelta(seconds=STOREFRONT_READY_ASSET_CLEANUP_SECONDS)
+                    set_fields["cleanup_due_at"] = datetime.now(UTC) + timedelta(
+                        seconds=STOREFRONT_READY_ASSET_CLEANUP_SECONDS
+                    )
                     unset_fields.update({"attached_at": "", "attached_claim_id": ""})
                 await assets.update_one(
                     {
@@ -2911,9 +2908,9 @@ class StorefrontMediaService:
                 {
                     "$set": {
                         "state": "ready",
-                        "cleanup_due_at": datetime.now(timezone.utc)
+                        "cleanup_due_at": datetime.now(UTC)
                         + timedelta(seconds=STOREFRONT_READY_ASSET_CLEANUP_SECONDS),
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     },
                     "$unset": {"attached_at": "", "attached_claim_id": ""},
                 },
@@ -2923,7 +2920,7 @@ class StorefrontMediaService:
     def _due_cleanup_query(owner_id: str | None = None) -> dict[str, Any]:
         """Build the durable maintenance query without any destructive TTL."""
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         query: dict[str, Any] = {
             "$or": [
                 {"state": "ready", "cleanup_due_at": {"$lte": now}},
@@ -3018,7 +3015,7 @@ class StorefrontMediaService:
                     "$set": {
                         "state": "invalid_cleanup_receipt",
                         "cleanup_validation_error": "invalid_owner_or_slot",
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -3041,7 +3038,7 @@ class StorefrontMediaService:
                 if source_state == "ready"
                 else STOREFRONT_CLEANUP_RETRY_SECONDS
             )
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             due_filter: dict[str, Any] = {
                 "_id": asset["_id"],
                 "owner_id": owner_id,
@@ -3064,7 +3061,7 @@ class StorefrontMediaService:
             return False
 
         source_state = asset["state"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         reap_token = uuid4().hex
         claim_filter: dict[str, Any] = {
             "_id": asset["_id"],
@@ -3137,7 +3134,7 @@ class StorefrontMediaService:
         self, *, limit: int
     ) -> tuple[int, int]:
         receipts = self._mongo.db["storefront_asset_cleanup_receipts"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cursor = receipts.find(
             {
                 "$or": [
@@ -3187,7 +3184,7 @@ class StorefrontMediaService:
                         "$set": {
                             "state": "invalid",
                             "cleanup_validation_error": "invalid_owner_slot_or_key",
-                            "updated_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(UTC),
                         }
                     },
                 )
@@ -3234,7 +3231,7 @@ class StorefrontMediaService:
                 try:
                     await self._delete_storage_keys([candidate_key])
                 except Exception as exc:
-                    retry_at = datetime.now(timezone.utc)
+                    retry_at = datetime.now(UTC)
                     await receipts.update_one(
                         {
                             "_id": receipt["_id"],
@@ -3275,7 +3272,7 @@ class StorefrontMediaService:
     def _due_pending_settings_query() -> dict[str, Any]:
         """Find durable pending manifests whose recovery lease is available."""
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return {
             PENDING_ASSET_GROUP_FIELD: {"$exists": True},
             "$or": [
@@ -3313,7 +3310,7 @@ class StorefrontMediaService:
 
         planner_id = candidate.get("planner_id")
         recovery_token = uuid4().hex
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         claim_filter: dict[str, Any] = {
             "_id": candidate.get("_id"),
             **self._pending_manifest_snapshot(candidate),
@@ -3367,7 +3364,7 @@ class StorefrontMediaService:
     ) -> bool:
         """Remove malformed settings intent from the hot queue without deleting it."""
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result = await self._mongo.db["storefront_settings"].update_one(
             {
                 "_id": candidate.get("_id"),
@@ -3399,7 +3396,7 @@ class StorefrontMediaService:
     ) -> bool:
         """Defer a transient failure behind its exact lease token."""
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result = await self._mongo.db["storefront_settings"].update_one(
             {
                 "_id": candidate.get("_id"),
@@ -3539,7 +3536,7 @@ class StorefrontMediaService:
     def _due_settings_claim_query() -> dict[str, Any]:
         """Return stale claim receipts eligible for global reconciliation."""
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         stale_before = now - timedelta(seconds=STOREFRONT_ASSET_OPERATION_LEASE_SECONDS)
         return {
             "$or": [
@@ -3605,7 +3602,7 @@ class StorefrontMediaService:
         return snapshot
 
     async def _quarantine_settings_claim_candidate(self, asset: dict) -> bool:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result = await self._mongo.db["storefront_assets"].update_one(
             self._settings_claim_snapshot_filter(asset),
             {
@@ -3623,7 +3620,7 @@ class StorefrontMediaService:
     async def _defer_settings_claim_candidate(
         self, asset: dict, exc: Exception
     ) -> bool:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result = await self._mongo.db["storefront_assets"].update_one(
             self._settings_claim_snapshot_filter(asset),
             {
@@ -3707,7 +3704,7 @@ class StorefrontMediaService:
             return True
 
         stable_reference = settings_row.get(f"{slot}_asset_id") == asset_id
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if state == "attaching":
             target_state = "attached" if stable_reference else "ready"
             set_fields: dict[str, Any] = {
@@ -3846,7 +3843,7 @@ class StorefrontMediaService:
             self._sweep_pending_settings_manifests,
         )
         start = self._maintenance_queue_cursor % len(queues)
-        queue_order = [*range(start, len(queues)), *range(0, start)]
+        queue_order = [*range(start, len(queues)), *range(start)]
         remaining = limit
         processed = 0
         last_attempted_queue: int | None = None
@@ -3943,7 +3940,7 @@ class StorefrontMediaService:
                     },
                     {
                         "$unset": {PENDING_ASSET_GROUP_FIELD: ""},
-                        "$set": {"updated_at": datetime.now(timezone.utc)},
+                        "$set": {"updated_at": datetime.now(UTC)},
                         "$inc": {"revision": 1},
                     },
                 )
@@ -3993,7 +3990,7 @@ class StorefrontMediaService:
                     },
                     {
                         "$unset": {asset_field: "", claim_field: ""},
-                        "$set": {"updated_at": datetime.now(timezone.utc)},
+                        "$set": {"updated_at": datetime.now(UTC)},
                         "$inc": {"revision": 1},
                     },
                 )
@@ -4035,7 +4032,7 @@ class StorefrontMediaService:
                 detail="Storefront asset must be saved in its settings slot before attachment",
             )
         if asset.get("state") == "ready":
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             result = await self._mongo.db["storefront_assets"].update_one(
                 {
                     "_id": asset["_id"],
@@ -4070,7 +4067,7 @@ class StorefrontMediaService:
         ):
             return self._serialize_asset(asset)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result = await self._mongo.db["storefront_assets"].update_one(
             {
                 "_id": asset["_id"],

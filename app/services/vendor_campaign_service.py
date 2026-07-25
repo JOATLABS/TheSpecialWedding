@@ -11,8 +11,8 @@ Images stored in separate R2 bucket: vendor-ad-assets (S3_AD_BUCKET_NAME).
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -24,7 +24,7 @@ from app.services.ad_upload_service import AdUploadService, VendorMediaAssetKind
 logger = logging.getLogger(__name__)
 
 
-def _serialize(doc: Dict[str, Any]) -> Dict[str, Any]:
+def _serialize(doc: dict[str, Any]) -> dict[str, Any]:
     """Convert ObjectId _id to string for JSON serialization."""
     if doc and "_id" in doc and isinstance(doc["_id"], ObjectId):
         doc["_id"] = str(doc["_id"])
@@ -63,8 +63,8 @@ class VendorCampaignService:
         vendor_id: str,
         vendor_email: str,
         vendor_name: str,
-        data: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
         """Create a new draft campaign for an advertising vendor."""
         # ── Profile Completeness Gate (Phase 10) ──────────────────
         from app.services.ad_platform_config_service import AdPlatformConfigService
@@ -97,7 +97,7 @@ class VendorCampaignService:
                 )
         # ──────────────────────────────────────────────────────────
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         vendor_doc = await self.db["users"].find_one({"_id": ObjectId(vendor_id)})
         if not vendor_doc:
             raise HTTPException(status_code=404, detail="Vendor account not found")
@@ -164,11 +164,11 @@ class VendorCampaignService:
     async def get_campaign(
         self,
         campaign_id: str,
-        vendor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        vendor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Get a single campaign. If vendor_id provided, enforces access control."""
         oid = _to_oid(campaign_id, "campaign_id")
-        query: Dict[str, Any] = {"_id": oid}
+        query: dict[str, Any] = {"_id": oid}
         if vendor_id:
             query["vendor_id"] = vendor_id
 
@@ -180,12 +180,12 @@ class VendorCampaignService:
     async def list_campaigns(
         self,
         vendor_id: str,
-        status_filter: Optional[str] = None,
+        status_filter: str | None = None,
         limit: int = 50,
         skip: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List a vendor's campaigns."""
-        query: Dict[str, Any] = {"vendor_id": vendor_id}
+        query: dict[str, Any] = {"vendor_id": vendor_id}
         if status_filter:
             query["status"] = status_filter
 
@@ -200,8 +200,8 @@ class VendorCampaignService:
         self,
         campaign_id: str,
         vendor_id: str,
-        updates: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        updates: dict[str, Any],
+    ) -> dict[str, Any]:
         """Update a draft campaign. Only allowed when status is 'draft'."""
         oid = _to_oid(campaign_id, "campaign_id")
 
@@ -225,7 +225,7 @@ class VendorCampaignService:
         ):
             updates.pop(key, None)
 
-        updates["updated_at"] = datetime.now(timezone.utc)
+        updates["updated_at"] = datetime.now(UTC)
 
         updated = await self.campaigns.find_one_and_update(
             {"_id": oid, "vendor_id": vendor_id},
@@ -238,7 +238,7 @@ class VendorCampaignService:
         logger.info(f"Updated campaign {campaign_id}")
         return _serialize(updated)
 
-    async def delete_campaign(self, campaign_id: str, vendor_id: str) -> Dict[str, Any]:
+    async def delete_campaign(self, campaign_id: str, vendor_id: str) -> dict[str, Any]:
         """Delete a draft campaign (hard delete, only drafts)."""
         oid = _to_oid(campaign_id, "campaign_id")
 
@@ -258,7 +258,7 @@ class VendorCampaignService:
 
     async def submit_for_review(
         self, campaign_id: str, vendor_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Submit a draft campaign for root admin review."""
         oid = _to_oid(campaign_id, "campaign_id")
 
@@ -279,7 +279,7 @@ class VendorCampaignService:
                 detail=f"Campaign not ready for review: {'; '.join(errors)}",
             )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         updated = await self.campaigns.find_one_and_update(
             {"_id": oid},
             {
@@ -313,7 +313,7 @@ class VendorCampaignService:
 
         return _serialize(updated)
 
-    def _validate_campaign_ready(self, campaign: Dict[str, Any]) -> List[str]:
+    def _validate_campaign_ready(self, campaign: dict[str, Any]) -> list[str]:
         """Check if campaign has everything needed for review submission."""
         errors = []
         if not campaign.get("campaign_name"):
@@ -326,7 +326,7 @@ class VendorCampaignService:
             errors.append("At least one target region is required")
         return errors
 
-    async def pause_campaign(self, campaign_id: str, vendor_id: str) -> Dict[str, Any]:
+    async def pause_campaign(self, campaign_id: str, vendor_id: str) -> dict[str, Any]:
         """Vendor pauses their active campaign."""
         oid = _to_oid(campaign_id, "campaign_id")
 
@@ -335,7 +335,7 @@ class VendorCampaignService:
             {
                 "$set": {
                     "status": CampaignStatus.PAUSED.value,
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }
             },
             return_document=True,
@@ -354,15 +354,15 @@ class VendorCampaignService:
         self,
         campaign_id: str,
         vendor_id: str,
-        data: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Create a new creative for a campaign.
         Images uploaded separately via AdUploadService to vendor-ad-assets R2 bucket.
         """
         # Verify campaign ownership
         campaign = await self.get_campaign(campaign_id, vendor_id)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         image_url = self.ad_upload_service.ensure_vendor_asset_url(
             data.get("image_url"),
             vendor_id,
@@ -396,7 +396,7 @@ class VendorCampaignService:
         creative["_id"] = creative_id
 
         # Add to campaign's creative list
-        update_fields: Dict[str, Any] = {
+        update_fields: dict[str, Any] = {
             "$addToSet": {"creative_ids": creative_id},
             "$set": {"updated_at": now},
         }
@@ -412,10 +412,10 @@ class VendorCampaignService:
     async def list_creatives(
         self,
         campaign_id: str,
-        vendor_id: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        vendor_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         """List creatives for a campaign."""
-        query: Dict[str, Any] = {"campaign_id": campaign_id}
+        query: dict[str, Any] = {"campaign_id": campaign_id}
         if vendor_id:
             query["vendor_id"] = vendor_id
 
@@ -427,11 +427,11 @@ class VendorCampaignService:
     async def get_creative(
         self,
         creative_id: str,
-        vendor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        vendor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Get a single creative."""
         oid = _to_oid(creative_id, "creative_id")
-        query: Dict[str, Any] = {"_id": oid}
+        query: dict[str, Any] = {"_id": oid}
         if vendor_id:
             query["vendor_id"] = vendor_id
 
@@ -444,8 +444,8 @@ class VendorCampaignService:
         self,
         creative_id: str,
         vendor_id: str,
-        updates: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        updates: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Update a creative. If content changes on an approved creative,
         it goes back to pending review (creative freeze policy).
@@ -469,7 +469,7 @@ class VendorCampaignService:
                 field_name="image_url",
             )
 
-        updates["updated_at"] = datetime.now(timezone.utc)
+        updates["updated_at"] = datetime.now(UTC)
 
         # If creative content changed and was approved, reset to pending review
         content_fields = {
@@ -485,7 +485,7 @@ class VendorCampaignService:
             and existing.get("review_status") == CreativeReviewStatus.APPROVED.value
         ):
             updates["review_status"] = CreativeReviewStatus.PENDING.value
-            updates["submitted_at"] = datetime.now(timezone.utc)
+            updates["submitted_at"] = datetime.now(UTC)
 
         updated = await self.creatives.find_one_and_update(
             {"_id": oid, "vendor_id": vendor_id},
@@ -515,7 +515,7 @@ class VendorCampaignService:
         campaign_id: str,
         creative_id: str,
         vendor_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Set a creative as the campaign's primary."""
         creative = await self.get_creative(creative_id, vendor_id)
         if creative["campaign_id"] != campaign_id:
@@ -541,7 +541,7 @@ class VendorCampaignService:
             {
                 "$set": {
                     "primary_creative_id": creative_id,
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }
             },
             return_document=True,
@@ -557,11 +557,11 @@ class VendorCampaignService:
     async def get_vendor_leads(
         self,
         vendor_id: str,
-        status_filter: Optional[str] = None,
-        lead_type_filter: Optional[str] = None,
+        status_filter: str | None = None,
+        lead_type_filter: str | None = None,
         limit: int = 50,
         skip: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get leads for all of a vendor's campaigns."""
         # Get all campaign IDs for this vendor
         campaign_ids = []
@@ -571,7 +571,7 @@ class VendorCampaignService:
         if not campaign_ids:
             return []
 
-        query: Dict[str, Any] = {"campaign_id": {"$in": campaign_ids}}
+        query: dict[str, Any] = {"campaign_id": {"$in": campaign_ids}}
         if status_filter:
             query["status"] = status_filter
         if lead_type_filter:
@@ -591,11 +591,11 @@ class VendorCampaignService:
         campaign_id: str,
         vendor_id: str,
         days: int = 30,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get performance stats for a campaign from campaign_day_stats rollups."""
         campaign = await self.get_campaign(campaign_id, vendor_id)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         period_start = (now - timedelta(days=days)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
@@ -633,10 +633,10 @@ class VendorCampaignService:
 
     async def get_servable_campaigns(
         self,
-        planner_location: Optional[str] = None,
-        categories: Optional[List[str]] = None,
+        planner_location: str | None = None,
+        categories: list[str] | None = None,
         limit: int = 3,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get active campaigns eligible for the planner rail.
 
@@ -645,9 +645,9 @@ class VendorCampaignService:
         Deduplicates by vendor_id (one campaign per vendor).
         Sorted by quality_score descending.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
-        query: Dict[str, Any] = {
+        query: dict[str, Any] = {
             "status": CampaignStatus.ACTIVE.value,
             "primary_creative_id": {"$ne": None},
             "$and": [
@@ -737,7 +737,7 @@ class VendorCampaignService:
         Called by the nightly rollup scheduler.
         Returns count of campaigns completed.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         result = await self.campaigns.update_many(
             {

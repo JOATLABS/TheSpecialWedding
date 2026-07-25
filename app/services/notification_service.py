@@ -1,7 +1,7 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
-from typing import Any, Optional, TypedDict
+from datetime import UTC, datetime
+from typing import Any, TypedDict
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -42,8 +42,8 @@ class NotificationService:
                 "user_id": notification_data.get("user_id"),
                 "action_url": notification_data.get("action_url"),
                 "created_by": created_by,
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
                 "expiry_date": notification_data.get("expiry_date"),
                 "is_dismissible": notification_data["is_dismissible"],
                 "priority": notification_data["priority"],
@@ -91,13 +91,13 @@ class NotificationService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error creating notification: {str(e)}")
+            logger.error(f"Error creating notification: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error creating notification: {str(e)}"
+                status_code=500, detail=f"Error creating notification: {e!s}"
             )
 
     async def get_notifications(
-        self, page: int = 1, limit: int = 20, filters: Optional[dict[str, Any]] = None
+        self, page: int = 1, limit: int = 20, filters: dict[str, Any] | None = None
     ) -> dict:
         """Get notifications with filtering and pagination"""
         try:
@@ -146,9 +146,9 @@ class NotificationService:
             }
 
         except Exception as e:
-            logger.error(f"Error getting notifications: {str(e)}")
+            logger.error(f"Error getting notifications: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving notifications: {str(e)}"
+                status_code=500, detail=f"Error retrieving notifications: {e!s}"
             )
 
     async def get_notification(self, notification_id: str) -> dict:
@@ -180,9 +180,9 @@ class NotificationService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error getting notification: {str(e)}")
+            logger.error(f"Error getting notification: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving notification: {str(e)}"
+                status_code=500, detail=f"Error retrieving notification: {e!s}"
             )
 
     async def update_notification(
@@ -206,7 +206,7 @@ class NotificationService:
                 raise HTTPException(status_code=404, detail="Notification not found")
 
             # Prepare update data
-            update_data["updated_at"] = datetime.now(timezone.utc)
+            update_data["updated_at"] = datetime.now(UTC)
             update_data["updated_by"] = updated_by
 
             # Update notification
@@ -227,9 +227,9 @@ class NotificationService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error updating notification: {str(e)}")
+            logger.error(f"Error updating notification: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error updating notification: {str(e)}"
+                status_code=500, detail=f"Error updating notification: {e!s}"
             )
 
     async def delete_notification(self, notification_id: str) -> dict:
@@ -256,9 +256,9 @@ class NotificationService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error deleting notification: {str(e)}")
+            logger.error(f"Error deleting notification: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error deleting notification: {str(e)}"
+                status_code=500, detail=f"Error deleting notification: {e!s}"
             )
 
     async def send_notification(self, notification_id: str) -> dict:
@@ -278,7 +278,7 @@ class NotificationService:
                     detail="No active recipients found for this notification",
                 )
 
-            dispatch_started = datetime.now(timezone.utc)
+            dispatch_started = datetime.now(UTC)
             sent = []
             failed = []
 
@@ -304,7 +304,7 @@ class NotificationService:
                                 "error": result.get("error", "Unknown error"),
                             }
                         )
-                except Exception as email_error:  # noqa: BLE001 - capture and record delivery issues
+                except Exception as email_error:
                     logger.error(
                         "Error sending notification email to %s: %s",
                         recipient.get("email"),
@@ -343,7 +343,7 @@ class NotificationService:
                     "$set": {
                         "status": "sent",
                         "sent_at": dispatch_started,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                         "delivery_summary": delivery_summary,
                         "total_recipients": len(recipients),
                     },
@@ -390,9 +390,9 @@ class NotificationService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error sending notification: {str(e)}")
+            logger.error(f"Error sending notification: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error sending notification: {str(e)}"
+                status_code=500, detail=f"Error sending notification: {e!s}"
             )
 
     async def get_user_notifications(
@@ -436,7 +436,7 @@ class NotificationService:
                         "$or": [
                             {"expiry_date": {"$exists": False}},
                             {"expiry_date": None},
-                            {"expiry_date": {"$gt": datetime.now(timezone.utc)}},
+                            {"expiry_date": {"$gt": datetime.now(UTC)}},
                         ]
                     },
                     # Check target audience
@@ -495,9 +495,9 @@ class NotificationService:
             }
 
         except Exception as e:
-            logger.error(f"Error getting user notifications: {str(e)}")
+            logger.error(f"Error getting user notifications: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving user notifications: {str(e)}"
+                status_code=500, detail=f"Error retrieving user notifications: {e!s}"
             )
 
     async def mark_notification_read(
@@ -530,7 +530,7 @@ class NotificationService:
                     "$push": {
                         "read_by": {
                             "user_id": user_id,
-                            "read_at": datetime.now(timezone.utc),
+                            "read_at": datetime.now(UTC),
                         }
                     }
                 },
@@ -560,9 +560,9 @@ class NotificationService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error marking notification as read: {str(e)}")
+            logger.error(f"Error marking notification as read: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error marking notification as read: {str(e)}"
+                status_code=500, detail=f"Error marking notification as read: {e!s}"
             )
 
     async def mark_all_notifications_read(
@@ -577,7 +577,7 @@ class NotificationService:
                     "$addToSet": {
                         "read_by": {
                             "user_id": user_id,
-                            "read_at": datetime.now(timezone.utc),
+                            "read_at": datetime.now(UTC),
                         }
                     }
                 },
@@ -605,9 +605,9 @@ class NotificationService:
             }
 
         except Exception as e:
-            logger.error(f"Error marking all notifications as read: {str(e)}")
+            logger.error(f"Error marking all notifications as read: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error marking all as read: {str(e)}"
+                status_code=500, detail=f"Error marking all as read: {e!s}"
             )
 
     async def dismiss_notification(self, notification_id: str, user_id: str) -> dict:
@@ -648,7 +648,7 @@ class NotificationService:
                     "$push": {
                         "dismissed_by": {
                             "user_id": user_id,
-                            "dismissed_at": datetime.now(timezone.utc),
+                            "dismissed_at": datetime.now(UTC),
                         }
                     }
                 },
@@ -662,9 +662,9 @@ class NotificationService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error dismissing notification: {str(e)}")
+            logger.error(f"Error dismissing notification: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error dismissing notification: {str(e)}"
+                status_code=500, detail=f"Error dismissing notification: {e!s}"
             )
 
     async def get_user_notification_count(
@@ -700,7 +700,7 @@ class NotificationService:
                         "$or": [
                             {"expiry_date": {"$exists": False}},
                             {"expiry_date": None},
-                            {"expiry_date": {"$gt": datetime.now(timezone.utc)}},
+                            {"expiry_date": {"$gt": datetime.now(UTC)}},
                         ]
                     },
                     {"$or": audience_conditions},
@@ -719,9 +719,9 @@ class NotificationService:
             return {"total": total, "unread": unread, "read": total - unread}
 
         except Exception as e:
-            logger.error(f"Error getting notification count: {str(e)}")
+            logger.error(f"Error getting notification count: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error getting notification count: {str(e)}"
+                status_code=500, detail=f"Error getting notification count: {e!s}"
             )
 
     async def _resolve_recipients(self, notification: dict) -> list[RecipientContact]:
@@ -767,9 +767,7 @@ class NotificationService:
 
         return recipients
 
-    async def _find_user_by_identifier(
-        self, identifier: str
-    ) -> Optional[dict[str, Any]]:
+    async def _find_user_by_identifier(self, identifier: str) -> dict[str, Any] | None:
         """Locate a user by ObjectId or email address."""
         if not identifier:
             return None
@@ -781,7 +779,7 @@ class NotificationService:
                 )
                 if user:
                     return user
-        except Exception as exc:  # noqa: BLE001 - capture lookup issues without aborting send
+        except Exception as exc:
             logger.debug(
                 "Failed ObjectId lookup for user identifier %s: %s",
                 identifier,
@@ -848,7 +846,7 @@ class NotificationService:
                   <td style=\"padding:0 40px 32px;font-family:'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:rgba(15,23,42,0.56);\">
                     <hr style=\"border:none;height:1px;background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,0.8),rgba(255,255,255,0));margin:0 0 20px;\" />
                     <p style=\"margin:0 0 12px;\">You are receiving this message because your account has access to platform announcements.</p>
-                    <p style=\"margin:0;color:rgba(15,23,42,0.45);\">© {datetime.now(timezone.utc).year} The Special Wedding. All rights reserved.</p>
+                    <p style=\"margin:0;color:rgba(15,23,42,0.45);\">© {datetime.now(UTC).year} The Special Wedding. All rights reserved.</p>
                   </td>
                 </tr>
               </table>
@@ -878,7 +876,7 @@ class NotificationService:
                 return 0
 
         except Exception as e:
-            logger.error(f"Error counting target audience: {str(e)}")
+            logger.error(f"Error counting target audience: {e!s}")
             return 0
 
     # ==================== WEB PUSH HELPERS ====================
@@ -946,8 +944,8 @@ class NotificationService:
                 "variables": template_data.get("variables", []),
                 "is_active": template_data.get("is_active", True),
                 "created_by": created_by,
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
             }
 
             result = await self.templates_collection.insert_one(template)
@@ -964,13 +962,13 @@ class NotificationService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error creating template: {str(e)}")
+            logger.error(f"Error creating template: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error creating template: {str(e)}"
+                status_code=500, detail=f"Error creating template: {e!s}"
             )
 
     async def get_templates(
-        self, page: int = 1, limit: int = 50, filters: Optional[dict[str, Any]] = None
+        self, page: int = 1, limit: int = 50, filters: dict[str, Any] | None = None
     ) -> dict:
         """Get notification templates with filtering and pagination"""
         try:
@@ -1006,9 +1004,9 @@ class NotificationService:
             }
 
         except Exception as e:
-            logger.error(f"Error getting templates: {str(e)}")
+            logger.error(f"Error getting templates: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving templates: {str(e)}"
+                status_code=500, detail=f"Error retrieving templates: {e!s}"
             )
 
     async def get_template(self, template_id: str) -> dict:
@@ -1035,9 +1033,9 @@ class NotificationService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error getting template: {str(e)}")
+            logger.error(f"Error getting template: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving template: {str(e)}"
+                status_code=500, detail=f"Error retrieving template: {e!s}"
             )
 
     async def update_template(
@@ -1058,7 +1056,7 @@ class NotificationService:
             if not existing:
                 raise HTTPException(status_code=404, detail="Template not found")
 
-            update_data["updated_at"] = datetime.now(timezone.utc)
+            update_data["updated_at"] = datetime.now(UTC)
             update_data["updated_by"] = updated_by
 
             result = await self.templates_collection.update_one(
@@ -1076,9 +1074,9 @@ class NotificationService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error updating template: {str(e)}")
+            logger.error(f"Error updating template: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error updating template: {str(e)}"
+                status_code=500, detail=f"Error updating template: {e!s}"
             )
 
     async def delete_template(self, template_id: str) -> dict:
@@ -1103,9 +1101,9 @@ class NotificationService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error deleting template: {str(e)}")
+            logger.error(f"Error deleting template: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error deleting template: {str(e)}"
+                status_code=500, detail=f"Error deleting template: {e!s}"
             )
 
     # =========================================================================
@@ -1139,7 +1137,7 @@ class NotificationService:
         member_name: str,
         member_role: str,
         action_description: str,
-        wedding_name: Optional[str] = None,
+        wedding_name: str | None = None,
     ) -> dict:
         """
         Notify the planner owner when a team member performs a significant action.

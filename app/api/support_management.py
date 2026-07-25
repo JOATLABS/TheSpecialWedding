@@ -1,15 +1,15 @@
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field, validator
 
-from app.core.database import mongo
 from app.constants.support_conversations import (
     guest_sms_ticket_scope,
     support_ticket_owner_scope,
 )
+from app.core.database import mongo
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     check_wedding_access,
@@ -38,8 +38,8 @@ class TicketCreateModel(BaseModel):
     )
     priority: str = Field(default="medium", description="Ticket priority")
     category: str = Field(default="general", description="Ticket category")
-    wedding_id: Optional[str] = Field(None, description="Related wedding ID")
-    attachments: List[str] = Field(
+    wedding_id: str | None = Field(None, description="Related wedding ID")
+    attachments: list[str] = Field(
         default_factory=list, description="Attachment file URLs"
     )
 
@@ -65,12 +65,12 @@ class TicketCreateModel(BaseModel):
 
 
 class TicketUpdateModel(BaseModel):
-    subject: Optional[str] = Field(None, min_length=1, max_length=200)
-    description: Optional[str] = Field(None, min_length=1, max_length=2000)
-    priority: Optional[str] = None
-    category: Optional[str] = None
-    status: Optional[str] = None
-    assigned_to: Optional[str] = None
+    subject: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = Field(None, min_length=1, max_length=2000)
+    priority: str | None = None
+    category: str | None = None
+    status: str | None = None
+    assigned_to: str | None = None
 
     @validator("priority")
     def validate_priority(cls, v):
@@ -143,12 +143,12 @@ async def create_ticket(
 async def get_tickets(
     page: int = Query(1, ge=1, le=10000, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
-    status: Optional[str] = Query(None, description="Filter by status"),
-    priority: Optional[str] = Query(None, description="Filter by priority"),
-    category: Optional[str] = Query(None, description="Filter by category"),
-    assigned_to: Optional[str] = Query(None, description="Filter by assigned admin"),
-    created_by: Optional[str] = Query(None, description="Filter by creator"),
-    wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
+    status: str | None = Query(None, description="Filter by status"),
+    priority: str | None = Query(None, description="Filter by priority"),
+    category: str | None = Query(None, description="Filter by category"),
+    assigned_to: str | None = Query(None, description="Filter by assigned admin"),
+    created_by: str | None = Query(None, description="Filter by creator"),
+    wedding_id: str | None = Query(None, description="Filter by wedding ID"),
     active_only: bool = Query(
         False, description="Show only active ticket statuses for inbox surfaces"
     ),
@@ -322,7 +322,7 @@ async def upload_attachment(
 async def get_my_tickets(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(10, ge=1, le=50, description="Items per page"),
-    status: Optional[str] = Query(None, description="Filter by status"),
+    status: str | None = Query(None, description="Filter by status"),
     active_only: bool = Query(
         False, description="Show only active ticket statuses for inbox surfaces"
     ),
@@ -415,7 +415,7 @@ class SMSResponseModel(BaseModel):
     )
 
 
-def _phone_lookup_variants(phone: Optional[str]) -> list[str]:
+def _phone_lookup_variants(phone: str | None) -> list[str]:
     sanitized = sanitize_phone(phone)
     if not sanitized:
         return []
@@ -437,8 +437,8 @@ def _phone_lookup_variants(phone: Optional[str]) -> list[str]:
 
 
 async def _resolve_guest_for_sms_ticket(
-    ticket: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
+    ticket: dict[str, Any],
+) -> dict[str, Any] | None:
     from bson import ObjectId
 
     guest_collection = mongo.get_guest_collection()
@@ -486,7 +486,7 @@ async def _resolve_guest_for_sms_ticket(
     return None
 
 
-async def _enrich_sms_ticket_guest_context(ticket: Dict[str, Any]) -> Dict[str, Any]:
+async def _enrich_sms_ticket_guest_context(ticket: dict[str, Any]) -> dict[str, Any]:
     has_guest_name = bool((ticket.get("guest_name") or "").strip())
     has_guest_id = bool(ticket.get("guest_id"))
     if has_guest_name and has_guest_id:
@@ -496,7 +496,7 @@ async def _enrich_sms_ticket_guest_context(ticket: Dict[str, Any]) -> Dict[str, 
     if not guest:
         return ticket
 
-    updates: Dict[str, Any] = {}
+    updates: dict[str, Any] = {}
 
     if guest.get("name") and not has_guest_name:
         ticket["guest_name"] = guest["name"]
@@ -518,7 +518,7 @@ async def _enrich_sms_ticket_guest_context(ticket: Dict[str, Any]) -> Dict[str, 
 
 @router.get("/sms-tickets", tags=["SMS Support"])
 async def get_sms_tickets(
-    status: Optional[str] = Query(
+    status: str | None = Query(
         None, description="Filter by status: new, in_progress, resolved"
     ),
     page: int = Query(1, ge=1, description="Page number"),
@@ -542,7 +542,7 @@ async def get_sms_tickets(
         )
 
     # Build query
-    query: Dict[str, Any] = guest_sms_ticket_scope()
+    query: dict[str, Any] = guest_sms_ticket_scope()
 
     if status:
         query["status"] = status
@@ -568,9 +568,9 @@ async def get_sms_tickets(
     for ticket in tickets:
         await _enrich_sms_ticket_guest_context(ticket)
         ticket["_id"] = str(ticket["_id"])
-        if "guest_id" in ticket and ticket["guest_id"]:
+        if ticket.get("guest_id"):
             ticket["guest_id"] = str(ticket["guest_id"])
-        if "wedding_id" in ticket and ticket["wedding_id"]:
+        if ticket.get("wedding_id"):
             ticket["wedding_id"] = str(ticket["wedding_id"])
 
     total = await mongo.db["support_tickets"].count_documents(query)
@@ -615,7 +615,7 @@ async def get_sms_ticket(
             {
                 "$set": {
                     "is_read": True,
-                    "read_at": datetime.now(timezone.utc),
+                    "read_at": datetime.now(UTC),
                 }
             },
         )
@@ -625,9 +625,9 @@ async def get_sms_ticket(
 
     # Convert ObjectId to string
     ticket["_id"] = str(ticket["_id"])
-    if "guest_id" in ticket and ticket["guest_id"]:
+    if ticket.get("guest_id"):
         ticket["guest_id"] = str(ticket["guest_id"])
-    if "wedding_id" in ticket and ticket["wedding_id"]:
+    if ticket.get("wedding_id"):
         ticket["wedding_id"] = str(ticket["wedding_id"])
 
     return serialize_mongo_doc({"ticket": ticket})
@@ -682,14 +682,14 @@ async def respond_to_sms_ticket(
         )
 
     # Calculate response time
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     response_time_minutes = None
     if ticket.get("created_at"):
         delta = now - ticket["created_at"]
         response_time_minutes = int(delta.total_seconds() / 60)
 
     # Build update
-    update: Dict[str, Any] = {
+    update: dict[str, Any] = {
         "$push": {
             "responses": {
                 "message": response_data.message,
@@ -752,7 +752,7 @@ async def update_sms_ticket_status(
     ),
 ):
     """Update SMS ticket status without sending a response"""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from bson import ObjectId
 
@@ -778,12 +778,12 @@ async def update_sms_ticket_status(
     # Update status
     update = {
         "status": status,
-        "updated_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(UTC),
         "updated_by": current_user.email,
     }
 
     if status == "resolved" and not ticket.get("resolved_at"):
-        update["resolved_at"] = datetime.now(timezone.utc)
+        update["resolved_at"] = datetime.now(UTC)
 
     await mongo.db["support_tickets"].update_one(query, {"$set": update})
 

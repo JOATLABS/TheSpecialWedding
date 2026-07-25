@@ -7,8 +7,7 @@ Endpoints for planners to invite couples to the portal.
 import html
 import logging
 import secrets
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
@@ -49,9 +48,9 @@ class InviteCoupleRequest(BaseModel):
 
     email: str = Field(..., max_length=254)
     partner1_name: str = Field(..., min_length=1, max_length=100)
-    partner2_name: Optional[str] = Field(None, max_length=100)
+    partner2_name: str | None = Field(None, max_length=100)
     wedding_id: str = Field(..., description="Wedding ID to link")
-    phone: Optional[str] = Field(None, max_length=20)
+    phone: str | None = Field(None, max_length=20)
 
 
 class ResendInviteRequest(BaseModel):
@@ -84,12 +83,12 @@ async def _ensure_unique_couple_email_for_wedding(email: str, wedding_id: str) -
         )
 
 
-def _normalize_invite_expiry(value: object) -> Optional[datetime]:
+def _normalize_invite_expiry(value: object) -> datetime | None:
     """Best-effort normalize an invite expiry value into an aware UTC datetime."""
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
     if isinstance(value, str):
         try:
@@ -98,21 +97,19 @@ def _normalize_invite_expiry(value: object) -> Optional[datetime]:
         except ValueError:
             return None
         if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
 
     return None
 
 
-def _build_active_setup_link(
-    couple: dict, normalized_frontend_url: str
-) -> Optional[str]:
+def _build_active_setup_link(couple: dict, normalized_frontend_url: str) -> str | None:
     """Return the current setup link only when the invite token is still active."""
     if couple.get("setup_completed") or not couple.get("invite_token"):
         return None
 
     invite_expires = _normalize_invite_expiry(couple.get("invite_token_expires"))
-    if invite_expires is None or invite_expires <= datetime.now(timezone.utc):
+    if invite_expires is None or invite_expires <= datetime.now(UTC):
         return None
 
     return f"{normalized_frontend_url}/couple/setup/{couple['invite_token']}"
@@ -172,7 +169,7 @@ async def invite_couple(
 
     # Generate invite token
     invite_token = secrets.token_urlsafe(48)
-    invite_expires = datetime.now(timezone.utc) + timedelta(days=7)
+    invite_expires = datetime.now(UTC) + timedelta(days=7)
 
     couple_doc = {
         "email": normalized_email,
@@ -193,8 +190,8 @@ async def invite_couple(
         "owner_cancelled_at": None,
         "owner_cancelled_by_planner_id": None,
         "owner_cancelled_by_planner_email": None,
-        "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc),
+        "created_at": datetime.now(UTC),
+        "updated_at": datetime.now(UTC),
         "last_login": None,
     }
 
@@ -218,7 +215,7 @@ async def invite_couple(
                     "owner_cancelled_at": None,
                     "owner_cancelled_by_planner_id": None,
                     "owner_cancelled_by_planner_email": None,
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }
             },
         )
@@ -234,7 +231,7 @@ async def invite_couple(
             "$set": {
                 "couple_portal_email": normalized_email,
                 "couple_portal_enabled": True,
-                "couple_portal_invited_at": datetime.now(timezone.utc),
+                "couple_portal_invited_at": datetime.now(UTC),
                 "updated_by": current_user.email,
             }
         },
@@ -350,7 +347,7 @@ async def resend_invite(
 
     # Generate new token
     invite_token = secrets.token_urlsafe(48)
-    invite_expires = datetime.now(timezone.utc) + timedelta(days=7)
+    invite_expires = datetime.now(UTC) + timedelta(days=7)
 
     await mongo.db["couple_users"].update_one(
         {"_id": couple["_id"]},
@@ -358,7 +355,7 @@ async def resend_invite(
             "$set": {
                 "invite_token": invite_token,
                 "invite_token_expires": invite_expires,
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(UTC),
             }
         },
     )
@@ -430,7 +427,7 @@ async def resend_invite(
 
 @router.get("/couple-portal/couples", tags=["Couple Portal"])
 async def list_couples(
-    wedding_id: Optional[str] = None,
+    wedding_id: str | None = None,
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """List all couples for the planner's weddings."""

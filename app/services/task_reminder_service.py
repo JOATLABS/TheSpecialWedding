@@ -11,8 +11,7 @@ Usage:
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Dict
+from datetime import UTC, datetime, timedelta
 
 from app.core.database import mongo
 from app.services.planner_notification_service import planner_notification_service
@@ -27,7 +26,7 @@ class TaskReminderService:
         self.tasks_collection = mongo.db["planner_tasks"]
         self.sent_reminders_collection = mongo.db["sent_task_reminders"]
 
-    async def process_due_reminders(self, dry_run: bool = False) -> Dict:
+    async def process_due_reminders(self, dry_run: bool = False) -> dict:
         """
         Process all tasks with reminder_minutes that are due for notification.
 
@@ -42,7 +41,7 @@ class TaskReminderService:
         Returns:
             Dict with processing results
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         results = {
             "processed_at": now.isoformat(),
             "tasks_checked": 0,
@@ -69,7 +68,7 @@ class TaskReminderService:
                 try:
                     await self._process_single_task(task, now, results, dry_run)
                 except Exception as e:
-                    error_msg = f"Error processing task {task.get('_id')}: {str(e)}"
+                    error_msg = f"Error processing task {task.get('_id')}: {e!s}"
                     logger.error(error_msg)
                     results["errors"].append(error_msg)
 
@@ -82,12 +81,12 @@ class TaskReminderService:
             return results
 
         except Exception as e:
-            logger.error(f"Error in process_due_reminders: {str(e)}")
+            logger.error(f"Error in process_due_reminders: {e!s}")
             results["errors"].append(str(e))
             return results
 
     async def _process_single_task(
-        self, task: Dict, now: datetime, results: Dict, dry_run: bool
+        self, task: dict, now: datetime, results: dict, dry_run: bool
     ):
         """Process a single task for reminder notification"""
         task_id = str(task["_id"])
@@ -163,7 +162,7 @@ class TaskReminderService:
             )
 
         except Exception as e:
-            error_msg = f"Failed to send reminder for task {task_id}: {str(e)}"
+            error_msg = f"Failed to send reminder for task {task_id}: {e!s}"
             logger.error(error_msg)
             results["errors"].append(error_msg)
 
@@ -193,13 +192,13 @@ class TaskReminderService:
                 "task_id": task_id,
                 "planner_email": planner_email,
                 "reminder_time": reminder_time,
-                "sent_at": datetime.now(timezone.utc),
+                "sent_at": datetime.now(UTC),
             }
         )
 
     async def cleanup_old_records(self, days_old: int = 7) -> int:
         """Remove old sent reminder records to prevent collection bloat"""
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days_old)
+        cutoff = datetime.now(UTC) - timedelta(days=days_old)
         result = await self.sent_reminders_collection.delete_many(
             {"sent_at": {"$lt": cutoff}}
         )

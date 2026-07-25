@@ -7,8 +7,9 @@ Provides comprehensive metrics for the ROOT_ADMIN dashboard.
 
 import logging
 import os
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, List, Optional
+from collections.abc import Iterable
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -35,7 +36,7 @@ except ImportError:
     )
 
 
-def _normalize_timestamp(value: Any) -> Optional[str]:
+def _normalize_timestamp(value: Any) -> str | None:
     """Return an ISO formatted timestamp string with Z suffix for UTC indication.
 
     Ensures the output never has both a UTC offset (+00:00) AND a Z suffix,
@@ -66,7 +67,7 @@ def _normalize_timestamp(value: Any) -> Optional[str]:
     return None
 
 
-def _coerce_datetime(value: Any) -> Optional[datetime]:
+def _coerce_datetime(value: Any) -> datetime | None:
     """Convert string/datetime values into datetime objects when possible."""
     if isinstance(value, datetime):
         return value
@@ -81,7 +82,7 @@ def _coerce_datetime(value: Any) -> Optional[datetime]:
     return None
 
 
-def _derive_severity(explicit: Optional[str], status_code: Optional[int]) -> str:
+def _derive_severity(explicit: str | None, status_code: int | None) -> str:
     """Determine severity label from explicit value or HTTP status."""
     if explicit:
         return explicit
@@ -94,7 +95,7 @@ def _derive_severity(explicit: Optional[str], status_code: Optional[int]) -> str
     return "info"
 
 
-def _coerce_status_code(value: Any) -> Optional[int]:
+def _coerce_status_code(value: Any) -> int | None:
     """Return an integer HTTP status code when audit data has a usable value."""
     try:
         if value is None:
@@ -125,10 +126,10 @@ def _normalize_performance_route_key(value: Any) -> str:
 
 
 def _merge_endpoint_performance_buckets(
-    endpoint_metrics_raw: Iterable[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    endpoint_metrics_raw: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """Merge legacy high-cardinality route keys before ranking endpoint performance."""
-    buckets: Dict[str, Dict[str, Any]] = {}
+    buckets: dict[str, dict[str, Any]] = {}
 
     for endpoint in endpoint_metrics_raw:
         route_key = _normalize_performance_route_key(endpoint.get("_id"))
@@ -146,7 +147,7 @@ def _merge_endpoint_performance_buckets(
         bucket["response_times"].extend(response_times)
         bucket["response_statuses"].extend(response_statuses)
 
-    merged: List[Dict[str, Any]] = []
+    merged: list[dict[str, Any]] = []
     for bucket in buckets.values():
         response_times = bucket["response_times"]
         if not response_times:
@@ -165,7 +166,7 @@ def _merge_endpoint_performance_buckets(
     )
 
 
-def _extract_error_summary(error: Dict[str, Any]) -> Dict[str, Any]:
+def _extract_error_summary(error: dict[str, Any]) -> dict[str, Any]:
     """Build a UI-friendly summary payload for dashboard error listings."""
     status_code = error.get("response_status") or error.get("status_code")
     request_info = error.get("request", {})
@@ -199,13 +200,13 @@ def _extract_error_summary(error: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _extract_error_detail(error: Dict[str, Any]) -> Dict[str, Any]:
+def _extract_error_detail(error: dict[str, Any]) -> dict[str, Any]:
     """Return detailed error document with full debugging information for root admin."""
     summary = _extract_error_summary(error)
     request_info = error.get("request", {})
     user_info = error.get("user", {})
 
-    normalized_request: Optional[Dict[str, Any]] = None
+    normalized_request: dict[str, Any] | None = None
 
     if request_info:
         normalized_request = {
@@ -299,7 +300,7 @@ def _extract_error_detail(error: Dict[str, Any]) -> Dict[str, Any]:
     return detail
 
 
-def _merge_query_filters(*filters: Dict[str, Any]) -> Dict[str, Any]:
+def _merge_query_filters(*filters: dict[str, Any]) -> dict[str, Any]:
     """Combine query fragments while avoiding empty `$and` wrappers."""
     active_filters = [query for query in filters if query]
     if not active_filters:
@@ -309,7 +310,7 @@ def _merge_query_filters(*filters: Dict[str, Any]) -> Dict[str, Any]:
     return {"$and": active_filters}
 
 
-def _error_severity_query(bucket: str) -> Dict[str, Any]:
+def _error_severity_query(bucket: str) -> dict[str, Any]:
     """Return an errors-collection severity query aligned with `_derive_severity`."""
     explicit_severity_missing = {
         "$or": [
@@ -353,7 +354,7 @@ def _error_severity_query(bucket: str) -> Dict[str, Any]:
     return {}
 
 
-def _audit_severity_query(bucket: str) -> Dict[str, Any]:
+def _audit_severity_query(bucket: str) -> dict[str, Any]:
     """Return an audit-logs severity query aligned with `_derive_severity`."""
     if bucket == "critical":
         return {"response_status": {"$gte": 500}}
@@ -364,7 +365,7 @@ def _audit_severity_query(bucket: str) -> Dict[str, Any]:
     return {"response_status": {"$gte": 400}}
 
 
-def _audit_expected_noise_exclusion_query() -> Dict[str, Any]:
+def _audit_expected_noise_exclusion_query() -> dict[str, Any]:
     """Exclude handled client/auth noise from the platform-error dashboard.
 
     Audit logs keep these rows for compliance and forensic review, but the root
@@ -390,16 +391,16 @@ def _audit_expected_noise_exclusion_query() -> Dict[str, Any]:
 def _build_errors_query(
     since: datetime,
     severity: str = "all",
-    acknowledged: Optional[bool] = None,
-) -> Dict[str, Any]:
+    acknowledged: bool | None = None,
+) -> dict[str, Any]:
     """Build the canonical errors-collection query for dashboard summaries and lists."""
-    base_query: Dict[str, Any] = {"timestamp": {"$gte": since}}
+    base_query: dict[str, Any] = {"timestamp": {"$gte": since}}
     if acknowledged is not None:
         base_query["acknowledged"] = acknowledged
     return _merge_query_filters(base_query, _error_severity_query(severity))
 
 
-def _build_audit_logs_query(since: datetime, severity: str = "all") -> Dict[str, Any]:
+def _build_audit_logs_query(since: datetime, severity: str = "all") -> dict[str, Any]:
     """Build the canonical audit-logs query for dashboard summaries and lists."""
     return _merge_query_filters(
         {"timestamp": {"$gte": since}},
@@ -408,7 +409,7 @@ def _build_audit_logs_query(since: datetime, severity: str = "all") -> Dict[str,
     )
 
 
-async def _safe_count_documents(collection_name: str, query: Dict[str, Any]) -> int:
+async def _safe_count_documents(collection_name: str, query: dict[str, Any]) -> int:
     """Count documents without failing the whole dashboard when one source errors."""
     try:
         return await mongo.db[collection_name].count_documents(query)
@@ -420,8 +421,8 @@ async def _safe_count_documents(collection_name: str, query: Dict[str, Any]) -> 
 async def _compute_error_scope_summary(
     since: datetime,
     severity: str = "all",
-    acknowledged: Optional[bool] = None,
-) -> Dict[str, int]:
+    acknowledged: bool | None = None,
+) -> dict[str, int]:
     """Return full-scope error counts for the selected window and filters."""
     include_audit_logs = acknowledged is not True
     errors_query = _build_errors_query(since, severity, acknowledged)
@@ -495,9 +496,9 @@ async def _compute_error_scope_summary(
     }
 
 
-def _generate_troubleshooting_hints(error_detail: Dict[str, Any]) -> List[str]:
+def _generate_troubleshooting_hints(error_detail: dict[str, Any]) -> list[str]:
     """Generate contextual troubleshooting hints based on error details."""
-    hints: List[str] = []
+    hints: list[str] = []
     error_type = str(error_detail.get("exception_type") or "")
     status_code = error_detail.get("status_code")
     endpoint = str(error_detail.get("endpoint") or "")
@@ -555,7 +556,7 @@ def _generate_troubleshooting_hints(error_detail: Dict[str, Any]) -> List[str]:
     return hints
 
 
-async def _check_twilio_health(since: datetime) -> Dict[str, Any]:
+async def _check_twilio_health(since: datetime) -> dict[str, Any]:
     """
     Check Twilio SMS service health and delivery statistics.
 
@@ -686,9 +687,9 @@ async def _check_twilio_health(since: datetime) -> Dict[str, Any]:
             )
 
     except Exception as e:
-        logger.error(f"Failed to get Twilio delivery stats: {str(e)}")
+        logger.error(f"Failed to get Twilio delivery stats: {e!s}")
         result["status"] = "error"
-        result["error"] = f"Failed to query delivery stats: {str(e)}"
+        result["error"] = f"Failed to query delivery stats: {e!s}"
 
     return result
 
@@ -707,14 +708,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/platform", tags=["ROOT_ADMIN", "Monitoring"])
 
 
-async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
+async def build_platform_health_payload(days: int = 1) -> dict[str, Any]:
     """Build the ROOT_ADMIN platform health payload with plain Python inputs.
 
     This helper keeps the business logic separate from the FastAPI route layer so
     other admin endpoints and snapshot jobs can safely reuse the same metrics path
     without leaking `Query(...)` defaults into runtime execution.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     day_ago = now - timedelta(days=1)
     week_ago = now - timedelta(days=7)
     error_window_start = now - timedelta(days=days)
@@ -724,24 +725,24 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
 
         # Database health check
         try:
-            db_start = datetime.now(timezone.utc)
+            db_start = datetime.now(UTC)
             await mongo.db.command("ping")
-            db_latency = (datetime.now(timezone.utc) - db_start).total_seconds() * 1000
+            db_latency = (datetime.now(UTC) - db_start).total_seconds() * 1000
             db_status = "healthy" if db_latency < 100 else "degraded"
         except Exception as e:
-            logger.error(f"Database health check failed: {str(e)}")
+            logger.error(f"Database health check failed: {e!s}")
             db_status = "down"
             db_latency = 9999
 
         # System resources (if psutil available)
-        cpu_metrics: Dict[str, Any] = {"percent": 0.0, "cores": 0, "status": "unknown"}
-        memory_metrics: Dict[str, Any] = {
+        cpu_metrics: dict[str, Any] = {"percent": 0.0, "cores": 0, "status": "unknown"}
+        memory_metrics: dict[str, Any] = {
             "total_gb": 0.0,
             "used_gb": 0.0,
             "available_gb": 0.0,
             "percent_used": 0.0,
         }
-        disk_metrics: Dict[str, Any] = {
+        disk_metrics: dict[str, Any] = {
             "total_gb": 0.0,
             "used_gb": 0.0,
             "free_gb": 0.0,
@@ -793,7 +794,7 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
                     }
                 )
             except Exception as e:
-                logger.error(f"Failed to get system metrics: {str(e)}")
+                logger.error(f"Failed to get system metrics: {e!s}")
                 cpu_metrics["status"] = "unavailable"
         else:
             cpu_metrics["status"] = "psutil_not_installed"
@@ -819,10 +820,10 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
         top_error_endpoints = await error_stats_cursor.to_list(length=5)
 
         # Build consolidated recent error list from both error sources
-        recent_error_docs: List[Dict[str, Any]] = []
+        recent_error_docs: list[dict[str, Any]] = []
         seen_error_ids = set()
 
-        def extend_recent_errors(docs: Iterable[Dict[str, Any]]):
+        def extend_recent_errors(docs: Iterable[dict[str, Any]]):
             for doc in docs:
                 doc_identifier = doc.get("error_id") or doc.get("_id")
                 doc_identifier_str = (
@@ -1071,8 +1072,8 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
         )[:20]
 
         # Calculate percentiles and format response
-        endpoint_performance: List[Dict[str, Any]] = []
-        slow_endpoints: List[Dict[str, Any]] = []
+        endpoint_performance: list[dict[str, Any]] = []
+        slow_endpoints: list[dict[str, Any]] = []
 
         for endpoint in endpoint_metrics_raw:
             response_times = sorted(endpoint.get("response_times", []))
@@ -1224,10 +1225,10 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
 
             web_push_health = await web_push_service.health_check()
         except Exception as e:
-            logger.error(f"Failed to check Web Push health: {str(e)}")
+            logger.error(f"Failed to check Web Push health: {e!s}")
             web_push_health = {
                 "status": "error",
-                "error": f"Health check failed: {str(e)}",
+                "error": f"Health check failed: {e!s}",
                 "enabled": False,
                 "configured": False,
             }
@@ -1327,17 +1328,15 @@ async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error(f"Failed to get platform metrics: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch metrics: {str(e)}"
-        )
+        logger.error(f"Failed to get platform metrics: {e!s}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch metrics: {e!s}")
 
 
 @router.get("/health")
 async def get_platform_health(
     days: int = Query(1, ge=1, le=90, description="Error summary window in days"),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get comprehensive platform metrics for ROOT_ADMIN dashboard
 
@@ -1353,11 +1352,11 @@ async def get_platform_health(
 @router.get("/metrics/history")
 async def get_metrics_history(
     days: int = Query(7, ge=1, le=90, description="Number of days of history"),
-    start_date: Optional[str] = Query(
+    start_date: str | None = Query(
         None, description="ISO start date (overrides days param)"
     ),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get historical metrics for charts/trends
 
@@ -1370,9 +1369,9 @@ async def get_metrics_history(
         try:
             since = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
         except ValueError:
-            since = datetime.now(timezone.utc) - timedelta(days=days)
+            since = datetime.now(UTC) - timedelta(days=days)
     else:
-        since = datetime.now(timezone.utc) - timedelta(days=days)
+        since = datetime.now(UTC) - timedelta(days=days)
 
     # Get stored metrics snapshots
     cursor = (
@@ -1406,7 +1405,7 @@ async def get_metrics_history(
 @router.post("/metrics/snapshot")
 async def save_metrics_snapshot(
     current_user: ExtendedAuthUser = Depends(require_root_admin),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Save current metrics as a snapshot for historical tracking
 
@@ -1417,7 +1416,7 @@ async def save_metrics_snapshot(
     metrics = await build_platform_health_payload()
 
     # Save to platform_metrics collection
-    snapshot = {**metrics, "snapshot_time": datetime.now(timezone.utc)}
+    snapshot = {**metrics, "snapshot_time": datetime.now(UTC)}
 
     result = await mongo.db["platform_metrics"].insert_one(snapshot)
 
@@ -1535,14 +1534,14 @@ async def get_recent_errors(
     page: int = Query(1, ge=1, le=10000, description="Page number"),
     limit: int = Query(50, ge=1, le=200, description="Number of errors per page"),
     days: int = Query(1, ge=1, le=90, description="Error list window in days"),
-    severity: Optional[str] = Query(
+    severity: str | None = Query(
         None, description="Filter by severity: all, critical, warning, other"
     ),
-    acknowledged: Optional[bool] = Query(
+    acknowledged: bool | None = Query(
         None, description="Filter by acknowledged status"
     ),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get recent errors with filtering and page-based pagination.
 
@@ -1563,7 +1562,7 @@ async def get_recent_errors(
     )
     acknowledged = validated_boolean_filter(acknowledged)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     default_cutoff = now - timedelta(days=days)
     errors_query = _build_errors_query(default_cutoff, severity, acknowledged)
     audit_query = _build_audit_logs_query(default_cutoff, severity)
@@ -1579,10 +1578,10 @@ async def get_recent_errors(
     skip = (page - 1) * limit
 
     # Fetch errors using skip/limit pagination
-    errors_docs: List[Dict[str, Any]] = []
+    errors_docs: list[dict[str, Any]] = []
     seen_ids: set = set()
 
-    def extend_errors(docs: Iterable[Dict[str, Any]], max_items: int):
+    def extend_errors(docs: Iterable[dict[str, Any]], max_items: int):
         added = 0
         for doc in docs:
             if added >= max_items:
@@ -1660,7 +1659,7 @@ async def get_recent_errors(
 @router.get("/errors/{error_id}")
 async def get_error_details(
     error_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Get detailed information about a specific error"""
 
     try:
@@ -1683,18 +1682,18 @@ async def get_error_details(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get error details: {str(e)}")
+        logger.error(f"Failed to get error details: {e!s}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/errors/{error_id}/acknowledge")
 async def acknowledge_error(
     error_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Mark an error as acknowledged in errors or audit_logs collection"""
 
     try:
-        acknowledged_at = datetime.now(timezone.utc)
+        acknowledged_at = datetime.now(UTC)
         update_payload = {
             "$set": {
                 "acknowledged": True,
@@ -1733,12 +1732,12 @@ async def acknowledge_error(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to acknowledge error: {str(e)}")
+        logger.error(f"Failed to acknowledge error: {e!s}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 class BulkAcknowledgeRequest(BaseModel):
-    error_ids: List[str]
+    error_ids: list[str]
     delete_after_acknowledge: bool = False
 
 
@@ -1751,11 +1750,11 @@ class ErrorExportFormat(str):
 async def acknowledge_errors_bulk(
     request: BulkAcknowledgeRequest,
     current_user: ExtendedAuthUser = Depends(require_root_admin),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Acknowledge multiple errors in both errors and audit_logs collections"""
 
     try:
-        acknowledged_at = datetime.now(timezone.utc)
+        acknowledged_at = datetime.now(UTC)
         update_payload = {
             "$set": {
                 "acknowledged": True,
@@ -1798,21 +1797,21 @@ async def acknowledge_errors_bulk(
         }
 
     except Exception as e:
-        logger.error(f"Failed to bulk acknowledge errors: {str(e)}")
+        logger.error(f"Failed to bulk acknowledge errors: {e!s}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/errors/export")
 async def export_errors(
     format: str = Query("json", description="Export format: json or csv"),
-    acknowledged: Optional[bool] = Query(
+    acknowledged: bool | None = Query(
         None, description="Filter by acknowledged status"
     ),
     days: int = Query(
         30, ge=1, le=365, description="Export errors from the last N days"
     ),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Export errors for audit compliance before pruning.
 
@@ -1829,10 +1828,10 @@ async def export_errors(
         format = validated_enum_filter(format, ["json", "csv"]) or "json"
         acknowledged = validated_boolean_filter(acknowledged)
 
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff_date = datetime.now(UTC) - timedelta(days=days)
 
         # Build query
-        query: Dict[str, Any] = {"timestamp": {"$gte": cutoff_date}}
+        query: dict[str, Any] = {"timestamp": {"$gte": cutoff_date}}
         if acknowledged is not None:
             query["acknowledged"] = acknowledged
 
@@ -1901,31 +1900,31 @@ async def export_errors(
             "total_count": len(exported_errors),
             "date_range": {
                 "from": cutoff_date.isoformat() + "Z",
-                "to": datetime.now(timezone.utc).isoformat() + "Z",
+                "to": datetime.now(UTC).isoformat() + "Z",
             },
             "filters": {"acknowledged": acknowledged, "days": days},
             "data": exported_errors if format.lower() == "json" else None,
             "csv_data": csv_data if format.lower() == "csv" else None,
-            "exported_at": datetime.now(timezone.utc).isoformat() + "Z",
+            "exported_at": datetime.now(UTC).isoformat() + "Z",
             "exported_by": current_user.email,
         }
 
     except Exception as e:
-        logger.error(f"Failed to export errors: {str(e)}")
+        logger.error(f"Failed to export errors: {e!s}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/errors/{error_id}/acknowledge-and-delete")
 async def acknowledge_and_delete_error(
     error_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Acknowledge and immediately delete an error.
 
     Use the export endpoint first if you need to keep the data for audit compliance.
     """
     try:
-        acknowledged_at = datetime.now(timezone.utc)
+        acknowledged_at = datetime.now(UTC)
 
         # Find and delete from errors collection
         error = None
@@ -1957,7 +1956,7 @@ async def acknowledge_and_delete_error(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to acknowledge and delete error: {str(e)}")
+        logger.error(f"Failed to acknowledge and delete error: {e!s}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1965,14 +1964,14 @@ async def acknowledge_and_delete_error(
 async def acknowledge_and_delete_errors_bulk(
     request: BulkAcknowledgeRequest,
     current_user: ExtendedAuthUser = Depends(require_root_admin),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Acknowledge and immediately delete multiple errors.
 
     Use the export endpoint first if you need to keep the data for audit compliance.
     """
     try:
-        acknowledged_at = datetime.now(timezone.utc)
+        acknowledged_at = datetime.now(UTC)
 
         # Build filter for both error_id and ObjectId matches
         object_ids = [
@@ -2008,7 +2007,7 @@ async def acknowledge_and_delete_errors_bulk(
         }
 
     except Exception as e:
-        logger.error(f"Failed to bulk acknowledge and delete errors: {str(e)}")
+        logger.error(f"Failed to bulk acknowledge and delete errors: {e!s}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -2018,7 +2017,7 @@ async def cleanup_old_errors(
         30, ge=7, le=365, description="Delete errors older than this many days"
     ),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Clean up old acknowledged errors.
 
@@ -2028,7 +2027,7 @@ async def cleanup_old_errors(
     Args:
         days: Delete errors older than this many days (default: 30)
     """
-    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff_date = datetime.now(UTC) - timedelta(days=days)
 
     # Delete from errors collection
     result = await mongo.db["errors"].delete_many(
@@ -2048,14 +2047,14 @@ async def cleanup_old_audit_logs(
         30, ge=7, le=365, description="Delete audit logs older than this many days"
     ),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Clean up old audit logs.
 
     Args:
         days: Delete audit logs older than this many days (default: 30)
     """
-    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff_date = datetime.now(UTC) - timedelta(days=days)
 
     result = await mongo.db["audit_logs"].delete_many(
         {"timestamp": {"$lt": cutoff_date}}
@@ -2075,7 +2074,7 @@ async def cleanup_old_security_logs(
         180, ge=30, le=365, description="Delete security logs older than this many days"
     ),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Clean up old security audit logs.
 
@@ -2084,7 +2083,7 @@ async def cleanup_old_security_logs(
     Args:
         days: Delete security logs older than this many days (default: 180)
     """
-    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff_date = datetime.now(UTC) - timedelta(days=days)
 
     result = await mongo.db["security_audit_logs"].delete_many(
         {"timestamp": {"$lt": cutoff_date}}
@@ -2111,12 +2110,12 @@ async def cleanup_old_security_logs(
 #  Cloudflare Workers cron, legacy calendar-scheduler.yml, or manual curl.
 
 
-def _serialize_run(run: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _serialize_run(run: dict[str, Any] | None) -> dict[str, Any] | None:
     """Normalize a scheduler_job_runs document for JSON output."""
     if run is None:
         return None
 
-    serialized: Dict[str, Any] = {
+    serialized: dict[str, Any] = {
         "run_id": str(run.get("_id")),
         "job_name": run.get("job_name"),
         "status": run.get("status"),
@@ -2141,7 +2140,7 @@ def _serialize_run(run: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
 @router.get("/scheduler/jobs")
 async def get_scheduler_jobs_summary(
     current_user: ExtendedAuthUser = Depends(require_root_admin),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     One row per known scheduler job. Each row includes:
       - static config (label, description, expected cadence)
@@ -2164,7 +2163,7 @@ async def get_scheduler_jobs_summary(
     last_successes = await get_last_success_per_job()
 
     # 24h aggregate counts for the tab header / per-job stats.
-    since_24h = datetime.now(timezone.utc) - timedelta(hours=24)
+    since_24h = datetime.now(UTC) - timedelta(hours=24)
     stats_pipeline = [
         {"$match": {"started_at": {"$gte": since_24h}}},
         {
@@ -2174,7 +2173,7 @@ async def get_scheduler_jobs_summary(
             }
         },
     ]
-    stats_by_job: Dict[str, Dict[str, int]] = {name: {} for name in KNOWN_JOBS}
+    stats_by_job: dict[str, dict[str, int]] = {name: {} for name in KNOWN_JOBS}
     async for row in mongo.db["scheduler_job_runs"].aggregate(stats_pipeline):
         job_name = row["_id"]["job_name"]
         status_name = row["_id"]["status"]
@@ -2219,7 +2218,7 @@ async def get_scheduler_jobs_summary(
         # appending "Z" yields "+00:00Z", which is not valid ISO 8601 and is
         # rejected by JavaScript's Date parser — that broke the scheduler
         # dashboard's "Last updated" label.
-        "generated_at": _normalize_timestamp(datetime.now(timezone.utc)),
+        "generated_at": _normalize_timestamp(datetime.now(UTC)),
         "jobs": jobs_out,
         "summary": {
             "total_jobs": len(jobs_out),
@@ -2234,7 +2233,7 @@ async def get_scheduler_job_runs(
     job_name: str,
     limit: int = Query(50, ge=1, le=500),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Recent runs for a single job, newest first. Drill-in view."""
     from app.utils.scheduler_job_tracker import (
         KNOWN_JOBS,

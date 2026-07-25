@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -7,8 +6,8 @@ from fastapi import HTTPException
 from app.core.database import mongo
 from app.utils.csv_export import CSVExportUtils
 from app.utils.id_utils import to_object_id
-from app.utils.rsvp_storage import DEPRECATED_RSVP_FIELDS_UNSET
 from app.utils.rsvp_status import get_rsvp_status
+from app.utils.rsvp_storage import DEPRECATED_RSVP_FIELDS_UNSET
 from app.utils.wedding_event_types import normalize_event_type_list
 
 
@@ -18,9 +17,7 @@ class AdminRSVPService:
         self.rsvp_collection = mongo.db["rsvps"]
         self.plus_one_collection = mongo.db["plus_ones"]
 
-    async def get_all_rsvps(
-        self, wedding_id=None, guest_ids: Optional[List[str]] = None
-    ):
+    async def get_all_rsvps(self, wedding_id=None, guest_ids: list[str] | None = None):
         try:
             guest_query = {"wedding_id": wedding_id} if wedding_id else {}
 
@@ -111,10 +108,10 @@ class AdminRSVPService:
             return result
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Failed to retrieve RSVPs: {str(e)}"
+                status_code=500, detail=f"Failed to retrieve RSVPs: {e!s}"
             )
 
-    def sanitize_csv_field(self, field_value: Optional[str]) -> str:
+    def sanitize_csv_field(self, field_value: str | None) -> str:
         """
         Sanitize CSV field to prevent Formula Injection (CSV Injection).
         If the field starts with =, +, -, or @, prepend a single quote.
@@ -177,7 +174,7 @@ class AdminRSVPService:
             return CSVExportUtils.generate_csv_content(headers, rows)
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Failed to export RSVPs: {str(e)}"
+                status_code=500, detail=f"Failed to export RSVPs: {e!s}"
             )
 
     async def get_rsvp_by_guest_id(self, guest_id: str):
@@ -212,7 +209,7 @@ class AdminRSVPService:
             }
         except Exception as e:
             raise HTTPException(
-                status_code=500, detail=f"Failed to retrieve RSVP: {str(e)}"
+                status_code=500, detail=f"Failed to retrieve RSVP: {e!s}"
             )
 
     async def update_rsvp(self, guest_id: str, rsvp_data: dict):
@@ -234,9 +231,7 @@ class AdminRSVPService:
 
             return {"message": "RSVP updated successfully"}
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to update RSVP: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to update RSVP: {e!s}")
 
     async def delete_rsvp(self, guest_id: str):
         try:
@@ -256,16 +251,14 @@ class AdminRSVPService:
 
             return {"message": "RSVP deleted successfully"}
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to delete RSVP: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to delete RSVP: {e!s}")
 
     async def admin_create_or_update_rsvp(
         self,
         guest_id: str,
         wedding_id: str,
-        attending: List[str],
-        dietary: Optional[str] = None,
+        attending: list[str],
+        dietary: str | None = None,
         confirmed_by_admin: bool = True,
     ):
         """Admin endpoint to create or update an RSVP manually (e.g., phone confirmation)."""
@@ -287,7 +280,7 @@ class AdminRSVPService:
                 "wedding_id": wedding_id,
                 "attending": attending,
                 "dietary": dietary,
-                "submitted_at": datetime.now(timezone.utc),
+                "submitted_at": datetime.now(UTC),
                 "confirmed_by_admin": confirmed_by_admin,
             }
 
@@ -309,6 +302,4 @@ class AdminRSVPService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to update RSVP: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to update RSVP: {e!s}")

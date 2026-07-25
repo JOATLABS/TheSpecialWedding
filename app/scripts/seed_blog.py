@@ -9,7 +9,7 @@ Or call seed_blog() from app startup.
 """
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from bson import ObjectId
 
@@ -834,7 +834,7 @@ async def seed_blog():
                         # created_at == updated_at invariant is the durable
                         # signal that no operator has edited this seeded copy,
                         # so later canonical revisions can still advance.
-                        "seed_refreshed_at": datetime.now(timezone.utc),
+                        "seed_refreshed_at": datetime.now(UTC),
                     }
                 },
             )
@@ -846,7 +846,7 @@ async def seed_blog():
         }
 
     inserted = 0
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     for article_data in BLOG_ARTICLES:
         # Parse published date

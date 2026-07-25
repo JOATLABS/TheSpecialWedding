@@ -10,8 +10,7 @@ Event Types: email.sent, email.delivered, email.bounced, email.delivery_delayed,
 
 import logging
 import os
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from bson import ObjectId
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -35,9 +34,9 @@ async def verify_resend_webhook():
 @router.post("/webhook/resend", tags=["Webhooks"])
 async def handle_resend_webhook(
     request: Request,
-    svix_id: Optional[str] = Header(None, alias="svix-id"),
-    svix_timestamp: Optional[str] = Header(None, alias="svix-timestamp"),
-    svix_signature: Optional[str] = Header(None, alias="svix-signature"),
+    svix_id: str | None = Header(None, alias="svix-id"),
+    svix_timestamp: str | None = Header(None, alias="svix-timestamp"),
+    svix_signature: str | None = Header(None, alias="svix-signature"),
 ):
     """
     Handle incoming webhook events from Resend.
@@ -116,7 +115,7 @@ async def handle_resend_webhook(
             }
 
         # Parse timestamp
-        created_at = datetime.now(timezone.utc)
+        created_at = datetime.now(UTC)
         if created_at_str and isinstance(created_at_str, str):
             try:
                 created_at = datetime.fromisoformat(
@@ -138,7 +137,7 @@ async def handle_resend_webhook(
             "from": event_data.get("from"),
             "subject": event_data.get("subject"),
             "created_at": created_at,
-            "received_at": datetime.now(timezone.utc),
+            "received_at": datetime.now(UTC),
             "raw_payload": verified_payload,
             "processed": False,
         }
@@ -181,7 +180,7 @@ async def handle_resend_webhook(
         # Mark event as processed
         await email_events_collection.update_one(
             {"_id": ObjectId(event_id)},
-            {"$set": {"processed": True, "processed_at": datetime.now(timezone.utc)}},
+            {"$set": {"processed": True, "processed_at": datetime.now(UTC)}},
         )
 
         logger.info(
@@ -193,18 +192,18 @@ async def handle_resend_webhook(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error processing Resend webhook: {str(e)}")
+        logger.error(f"❌ Error processing Resend webhook: {e!s}")
         # Still return 200 to prevent retries for unrecoverable errors
         return {"status": "error", "message": str(e)}
 
 
 def _verify_resend_webhook(
     payload: str,
-    svix_id: Optional[str],
-    svix_timestamp: Optional[str],
-    svix_signature: Optional[str],
+    svix_id: str | None,
+    svix_timestamp: str | None,
+    svix_signature: str | None,
     secret: str,
-) -> Optional[dict]:
+) -> dict | None:
     """
     Verify webhook signature using Resend's verification method.
 
@@ -231,7 +230,7 @@ def _verify_resend_webhook(
         return verified
 
     except Exception as e:
-        logger.error(f"Webhook verification failed: {str(e)}")
+        logger.error(f"Webhook verification failed: {e!s}")
         return None
 
 
@@ -261,7 +260,7 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
                     "recipient": recipient_email,
                     "email_id": event_data.get("email_id"),
                     "event_id": event_id,
-                    "timestamp": datetime.now(timezone.utc),
+                    "timestamp": datetime.now(UTC),
                 },
             },
             "email.delivered": {
@@ -271,7 +270,7 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
                     "recipient": recipient_email,
                     "email_id": event_data.get("email_id"),
                     "event_id": event_id,
-                    "timestamp": datetime.now(timezone.utc),
+                    "timestamp": datetime.now(UTC),
                 },
             },
             "email.bounced": {
@@ -283,7 +282,7 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
                     "event_id": event_id,
                     "bounce_type": event_data.get("bounce_type"),
                     "reason": event_data.get("reason"),
-                    "timestamp": datetime.now(timezone.utc),
+                    "timestamp": datetime.now(UTC),
                 },
             },
             "email.delivery_delayed": {
@@ -295,7 +294,7 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
                     "event_id": event_id,
                     "attempt": event_data.get("attempt"),
                     "reason": event_data.get("reason"),
-                    "timestamp": datetime.now(timezone.utc),
+                    "timestamp": datetime.now(UTC),
                 },
             },
             "email.opened": {
@@ -305,7 +304,7 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
                     "recipient": recipient_email,
                     "email_id": event_data.get("email_id"),
                     "event_id": event_id,
-                    "timestamp": datetime.now(timezone.utc),
+                    "timestamp": datetime.now(UTC),
                 },
             },
             "email.clicked": {
@@ -316,7 +315,7 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
                     "email_id": event_data.get("email_id"),
                     "event_id": event_id,
                     "link": event_data.get("link"),
-                    "timestamp": datetime.now(timezone.utc),
+                    "timestamp": datetime.now(UTC),
                 },
             },
             "email.complained": {
@@ -327,7 +326,7 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
                     "email_id": event_data.get("email_id"),
                     "event_id": event_id,
                     "feedback_type": event_data.get("feedback_type"),
-                    "timestamp": datetime.now(timezone.utc),
+                    "timestamp": datetime.now(UTC),
                 },
             },
         }
@@ -341,7 +340,7 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
         update_operation = {
             "$inc": {f"delivery_summary.{mapping['counter']}": 1},
             "$push": {"delivery_events": mapping["event_data"]},
-            "$set": {"updated_at": datetime.now(timezone.utc)},
+            "$set": {"updated_at": datetime.now(UTC)},
         }
 
         # Update all notifications that were sent to this recipient
@@ -363,5 +362,5 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
             )
 
     except Exception as e:
-        logger.error(f"Error updating notification status: {str(e)}")
+        logger.error(f"Error updating notification status: {e!s}")
         # Don't raise - webhook should succeed even if status update fails

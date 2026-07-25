@@ -19,15 +19,15 @@ Collections:
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from bson import ObjectId
 
 logger = logging.getLogger(__name__)
 
 
-def _serialize(doc: Dict[str, Any]) -> Dict[str, Any]:
+def _serialize(doc: dict[str, Any]) -> dict[str, Any]:
     if doc and "_id" in doc and isinstance(doc["_id"], ObjectId):
         doc["_id"] = str(doc["_id"])
     return doc
@@ -60,7 +60,7 @@ class AdBillingService:
 
     # ─── Free Tier Check ──────────────────────────────────────────
 
-    async def is_campaign_free(self, campaign: Dict[str, Any]) -> bool:
+    async def is_campaign_free(self, campaign: dict[str, Any]) -> bool:
         """
         Check if a campaign should be billed at $0.
 
@@ -85,7 +85,7 @@ class AdBillingService:
             if vendor_override:
                 # Check expiry
                 expires = vendor_override.get("expires_at")
-                if expires is None or expires > datetime.now(timezone.utc):
+                if expires is None or expires > datetime.now(UTC):
                     return True
 
         return False
@@ -94,12 +94,12 @@ class AdBillingService:
 
     async def charge_for_lead(
         self,
-        campaign: Dict[str, Any],
+        campaign: dict[str, Any],
         lead_id: str,
         lead_type: str,
-        planner_id: Optional[str] = None,
-        click_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        planner_id: str | None = None,
+        click_id: str | None = None,
+    ) -> dict[str, Any]:
         """
         Process a CPL charge when a lead is created.
 
@@ -117,7 +117,7 @@ class AdBillingService:
         Returns:
             Dict with charge details (charge_id, amount, is_free, budget_status)
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         campaign_id = str(campaign["_id"])
         vendor_id = campaign.get("vendor_id", "")
 
@@ -193,7 +193,7 @@ class AdBillingService:
                         "$set": {
                             "stripe_invoice_item_id": stripe_item_id,
                             "charge_status": "charged",
-                            "updated_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(UTC),
                         }
                     },
                 )
@@ -224,7 +224,7 @@ class AdBillingService:
 
     # ─── Budget Enforcement ───────────────────────────────────────
 
-    async def _check_budget_enforcement(self, campaign: Dict[str, Any]) -> str:
+    async def _check_budget_enforcement(self, campaign: dict[str, Any]) -> str:
         """
         Check if campaign has hit its budget cap and auto-pause if so.
 
@@ -248,10 +248,8 @@ class AdBillingService:
                         "$set": {
                             "status": "paused",
                             "metadata.paused_reason": "budget_exhausted",
-                            "metadata.paused_at": datetime.now(
-                                timezone.utc
-                            ).isoformat(),
-                            "updated_at": datetime.now(timezone.utc),
+                            "metadata.paused_at": datetime.now(UTC).isoformat(),
+                            "updated_at": datetime.now(UTC),
                         }
                     },
                 )
@@ -296,7 +294,7 @@ class AdBillingService:
         lead_type: str,
         charge_amount: float,
         charge_id: str,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Create a Stripe invoice item for a CPL charge.
 
@@ -429,14 +427,14 @@ class AdBillingService:
         is_free: bool,
         reason: str = "",
         granted_by: str = "",
-        expires_at: Optional[datetime] = None,
-    ) -> Dict[str, Any]:
+        expires_at: datetime | None = None,
+    ) -> dict[str, Any]:
         """
         Set or remove vendor-level free tier. Root admin only.
 
         When enabled, ALL campaigns from this vendor are free.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Look up vendor info
         users = self.db["users"]
@@ -475,11 +473,11 @@ class AdBillingService:
         campaign_id: str,
         is_free: bool,
         admin_email: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Toggle free tier on a single campaign. Root admin only.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         oid = ObjectId(campaign_id)
 
         campaign = await self.campaigns.find_one({"_id": oid})
@@ -510,7 +508,7 @@ class AdBillingService:
 
     async def get_vendor_free_tier_status(
         self, vendor_id: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Check if a vendor has free tier enabled."""
         doc = await self.vendor_free_tier.find_one({"vendor_id": vendor_id})
         if not doc:
@@ -519,13 +517,13 @@ class AdBillingService:
 
     async def get_lead_charges(
         self,
-        campaign_id: Optional[str] = None,
-        vendor_id: Optional[str] = None,
+        campaign_id: str | None = None,
+        vendor_id: str | None = None,
         limit: int = 50,
         skip: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List lead charges with optional filters."""
-        query: Dict[str, Any] = {}
+        query: dict[str, Any] = {}
         if campaign_id:
             query["campaign_id"] = campaign_id
         if vendor_id:
@@ -540,7 +538,7 @@ class AdBillingService:
         self,
         vendor_id: str,
         limit: int = 12,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List recent billing periods for a vendor."""
         cursor = (
             self.billing.find({"vendor_id": vendor_id})
@@ -549,7 +547,7 @@ class AdBillingService:
         )
         return [_serialize(doc) async for doc in cursor]
 
-    async def get_campaign_billing_summary(self, campaign_id: str) -> Dict[str, Any]:
+    async def get_campaign_billing_summary(self, campaign_id: str) -> dict[str, Any]:
         """Get billing summary for a specific campaign."""
         pipeline = [
             {"$match": {"campaign_id": campaign_id}},
@@ -587,21 +585,21 @@ class AdBillingService:
             "paid_leads": 0,
         }
 
-    async def list_all_free_tier_vendors(self) -> List[Dict[str, Any]]:
+    async def list_all_free_tier_vendors(self) -> list[dict[str, Any]]:
         """List all vendors with free tier enabled."""
         cursor = self.vendor_free_tier.find({"is_free": True}).sort("created_at", -1)
         results = []
         async for doc in cursor:
             # Check expiry
             expires = doc.get("expires_at")
-            if expires and expires <= datetime.now(timezone.utc):
+            if expires and expires <= datetime.now(UTC):
                 continue
             results.append(_serialize(doc))
         return results
 
     # ─── Stripe Invoice Finalization (called by cron) ─────────────
 
-    async def finalize_monthly_invoices(self) -> Dict[str, Any]:
+    async def finalize_monthly_invoices(self) -> dict[str, Any]:
         """
         Finalize pending Stripe invoices for all vendors with charges.
 
@@ -616,7 +614,7 @@ class AdBillingService:
         import stripe
 
         # Find all billing periods with status "pending" and non-zero spend
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         period_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
         pending_billing = self.billing.find(

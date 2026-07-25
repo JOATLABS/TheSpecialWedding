@@ -8,8 +8,8 @@ Sprint 3: Adds email digest generation for unread updates, messages, payments.
 import asyncio
 import html
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, cast
+from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
 from app.core.database import mongo
 from app.services.guest_media_service import guest_media_service
@@ -23,7 +23,7 @@ class CouplePortalService:
     """Service for couple portal data aggregation."""
 
     @staticmethod
-    def _normalize_attending_events(rsvp: Dict[str, Any]) -> List[str]:
+    def _normalize_attending_events(rsvp: dict[str, Any]) -> list[str]:
         """Return a normalized list of event types a guest is attending."""
         attending = rsvp.get("attending")
         if isinstance(attending, list):
@@ -34,7 +34,7 @@ class CouplePortalService:
 
     async def get_portal_dashboard(
         self, wedding_id: str, couple_email: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Get complete portal dashboard data for a couple.
         Aggregates wedding info, guest stats, budget summary, events, and planner info.
@@ -92,7 +92,7 @@ class CouplePortalService:
             self._get_updates(wedding_id),
             guest_media_service.get_dashboard_summary(wedding_id),
         )
-        planner = cast(Optional[Dict[str, Any]], planner)
+        planner = cast(dict[str, Any] | None, planner)
 
         dashboard = {
             "wedding": {
@@ -143,7 +143,7 @@ class CouplePortalService:
 
         return dashboard
 
-    async def _get_guest_stats(self, wedding: Dict[str, Any]) -> Dict[str, Any]:
+    async def _get_guest_stats(self, wedding: dict[str, Any]) -> dict[str, Any]:
         """Get aggregated guest statistics in couple-friendly language."""
         try:
             wedding_id = str(wedding.get("_id", ""))
@@ -177,7 +177,7 @@ class CouplePortalService:
             confirmed = 0
             declined = 0
             responded_guest_ids: set[str] = set()
-            event_counts: Dict[str, int] = {}
+            event_counts: dict[str, int] = {}
 
             for rsvp in rsvps:
                 guest_id = str(rsvp.get("guest_id", ""))
@@ -212,9 +212,9 @@ class CouplePortalService:
             )
 
             configured_events = wedding.get("events", []) or []
-            ordered_event_types: List[str] = []
-            event_dates: Dict[str, str] = {}
-            event_labels: Dict[str, str] = {}
+            ordered_event_types: list[str] = []
+            event_dates: dict[str, str] = {}
+            event_labels: dict[str, str] = {}
             for event in configured_events:
                 event_type = event.get("type")
                 if event_type and event_type not in ordered_event_types:
@@ -266,7 +266,7 @@ class CouplePortalService:
                 "event_breakdown": [],
             }
 
-    async def _get_budget_summary(self, wedding_id: str) -> Dict[str, Any]:
+    async def _get_budget_summary(self, wedding_id: str) -> dict[str, Any]:
         """Get budget totals using the same sources as the planner budget surface."""
         try:
             wedding = await mongo.db["weddings"].find_one(
@@ -301,7 +301,7 @@ class CouplePortalService:
             logger.error(f"Error getting budget summary for wedding {wedding_id}: {e}")
             return {"total_budget": 0, "total_spent": 0, "remaining": 0}
 
-    async def _get_contract_payments(self, contract: Dict[str, Any]) -> List[Dict]:
+    async def _get_contract_payments(self, contract: dict[str, Any]) -> list[dict]:
         """Read the canonical scheduled-payment rows for a client contract."""
         contract_id = str(contract["_id"])
         cursor = (
@@ -326,7 +326,7 @@ class CouplePortalService:
         ]
 
     @staticmethod
-    def _contract_total_amount(contract: Dict[str, Any], payments: List[Dict]) -> float:
+    def _contract_total_amount(contract: dict[str, Any], payments: list[dict]) -> float:
         """Prefer the signed package total, with legacy fallbacks."""
         package_snapshot = contract.get("package_snapshot") or {}
         total_amount = package_snapshot.get("total_amount")
@@ -338,7 +338,7 @@ class CouplePortalService:
 
     async def _get_contract_info(
         self, wedding_id: str, couple_email: str
-    ) -> Optional[Dict]:
+    ) -> dict | None:
         """Get contract and payment information for the couple."""
         try:
             contract = await mongo.db["contracts"].find_one(
@@ -400,7 +400,7 @@ class CouplePortalService:
             logger.error(f"Error getting contract info for wedding {wedding_id}: {e}")
             return None
 
-    async def _get_shared_forms(self, wedding_id: str, couple_email: str) -> List[Dict]:
+    async def _get_shared_forms(self, wedding_id: str, couple_email: str) -> list[dict]:
         """Get forms shared with this couple."""
         try:
             # Collect all shared forms first
@@ -465,7 +465,7 @@ class CouplePortalService:
             logger.error(f"Error getting shared forms for wedding {wedding_id}: {e}")
             return []
 
-    async def _get_updates(self, wedding_id: str) -> List[Dict]:
+    async def _get_updates(self, wedding_id: str) -> list[dict]:
         """Get planner updates/milestones for the couple."""
         try:
             updates = []
@@ -516,7 +516,7 @@ class CouplePortalService:
 
     async def get_contract_for_couple(
         self, wedding_id: str, couple_email: str
-    ) -> Optional[Dict]:
+    ) -> dict | None:
         """
         Get full contract details for the couple portal.
         Returns payment info, sections, and timestamps — all read-only for the couple.
@@ -599,7 +599,7 @@ class CouplePortalService:
             )
             return None
 
-    async def archive_wedding_data(self, wedding_id: str) -> Dict[str, Any]:
+    async def archive_wedding_data(self, wedding_id: str) -> dict[str, Any]:
         """
         Archive all wedding data when a wedding is completed/removed.
         Stores in archived_weddings collection for analytics.
@@ -666,7 +666,7 @@ class CouplePortalService:
                 "forms": forms,
                 "form_submissions": form_submissions,
                 "updates": updates,
-                "archived_at": datetime.now(timezone.utc),
+                "archived_at": datetime.now(UTC),
                 "archived_by": planner_email,
                 # Analytics-friendly fields
                 "wedding_date": wedding.get("date"),
@@ -688,13 +688,13 @@ class CouplePortalService:
                 {
                     "$set": {
                         "wedding_archived": True,
-                        "archived_at": datetime.now(timezone.utc),
+                        "archived_at": datetime.now(UTC),
                     }
                 },
             )
 
             logger.info(
-                f"Wedding {wedding_id} archived successfully: {str(result.inserted_id)}"
+                f"Wedding {wedding_id} archived successfully: {result.inserted_id!s}"
             )
 
             return {
@@ -714,7 +714,7 @@ class CouplePortalService:
 
     async def generate_couple_digest(
         self, couple_email: str, wedding_id: str, since: datetime
-    ) -> Optional[Dict]:
+    ) -> dict | None:
         """
         Generate digest data for a couple: unread messages, new updates, upcoming payments.
         Returns None if there's nothing new to report.
@@ -759,7 +759,7 @@ class CouplePortalService:
             upcoming_payments = []
             contract = await mongo.db["contracts"].find_one({"wedding_id": wedding_id})
             if contract:
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 cutoff = now + timedelta(days=14)
                 for p in contract.get("payments", []):
                     if p.get("status") not in ("succeeded", "refunded"):
@@ -830,7 +830,7 @@ class CouplePortalService:
             logger.error(f"Error generating couple digest for {couple_email}: {e}")
             return None
 
-    async def send_couple_digest_email(self, couple_doc: dict, digest: Dict) -> bool:
+    async def send_couple_digest_email(self, couple_doc: dict, digest: dict) -> bool:
         """
         Format and send a digest email to a couple.
         Reuses the existing email_service (Resend) — no new email infra.

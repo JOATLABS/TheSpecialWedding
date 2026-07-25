@@ -194,12 +194,12 @@ describe('public marketing copy truth contract', () => {
   it('pins the approved planner-first hero and Phase 1 story copy', () => {
     assert.ok(
       source('app/page.tsx').includes(
-        'Manage the wedding record, public details, couple timeline, and guest-response context from one planner-owned workspace—while planner-only operations stay private.',
+        'Planner, couple, and guests — one connected record, with your operations kept private.',
       ),
     );
     assert.ok(
       source('app/features/page.tsx').includes(
-        'Protect planner time, give couples a calmer experience, and present one coherent wedding plan across planner, couple, public, and guest-response views.',
+        'The complete planner operating system — seventeen connected surfaces spanning weddings, guests, seating, vendors, forms, and finances.',
       ),
     );
 

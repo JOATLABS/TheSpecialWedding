@@ -7,7 +7,7 @@ Sends contract lifecycle emails using Resend.
 import html
 import logging
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.core.database import mongo
 from app.core.settings import settings
@@ -39,7 +39,7 @@ class ContractEmailService:
                 resend.api_key = settings.resend_api_key
                 self._resend = resend
             except Exception as e:
-                logger.error(f"Failed to initialize Resend: {str(e)}")
+                logger.error(f"Failed to initialize Resend: {e!s}")
                 raise
         return self._resend
 
@@ -71,7 +71,7 @@ class ContractEmailService:
         return str(value)
 
     @staticmethod
-    def _resolve_couple_names(couple: Dict[str, Any]) -> tuple[str, Optional[str], str]:
+    def _resolve_couple_names(couple: dict[str, Any]) -> tuple[str, str | None, str]:
         primary = (couple.get("partner1_name") or couple.get("name") or "").strip()
         secondary = (
             couple.get("partner2_name") or couple.get("partner_name") or ""
@@ -80,16 +80,16 @@ class ContractEmailService:
         return primary, secondary, display
 
     @staticmethod
-    def _format_currency(amount: float, currency: Optional[str] = "USD") -> str:
+    def _format_currency(amount: float, currency: str | None = "USD") -> str:
         normalized = (currency or "USD").upper()
         return f"${amount:,.2f} {normalized}"
 
     @staticmethod
-    def _is_completed_payment(status: Optional[str]) -> bool:
+    def _is_completed_payment(status: str | None) -> bool:
         return status in {"succeeded", "paid_externally"}
 
     @staticmethod
-    def _payment_status_label(status: Optional[str]) -> str:
+    def _payment_status_label(status: str | None) -> str:
         labels = {
             "scheduled": "Scheduled",
             "processing": "Processing",
@@ -101,13 +101,13 @@ class ContractEmailService:
         return labels.get(status or "", status or "Unknown")
 
     @staticmethod
-    def _payment_id(payment: Dict[str, Any]) -> Optional[str]:
+    def _payment_id(payment: dict[str, Any]) -> str | None:
         value = payment.get("id") or payment.get("_id")
         return str(value) if value is not None else None
 
     async def _load_contract_payment_schedule(
         self, contract_id: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         if not contract_id:
             return []
 
@@ -118,7 +118,7 @@ class ContractEmailService:
             .to_list(length=None)
         )
 
-        serialized: List[Dict[str, Any]] = []
+        serialized: list[dict[str, Any]] = []
         for payment in payments:
             amount = float(payment.get("amount", 0) or 0)
             serialized.append(
@@ -136,7 +136,7 @@ class ContractEmailService:
 
         return serialized
 
-    def _render_payment_schedule_rows(self, payments: List[Dict[str, Any]]) -> str:
+    def _render_payment_schedule_rows(self, payments: list[dict[str, Any]]) -> str:
         rows = ""
         for payment in payments:
             safe_name = html.escape(str(payment.get("name", "Payment")), quote=True)
@@ -174,7 +174,7 @@ class ContractEmailService:
         vendor_email: str,
         vendor_name: str,
         contract_title: str,
-        planner_message: Optional[str] = None,
+        planner_message: str | None = None,
     ) -> bool:
         """
         Send contract to vendor for review and signing.
@@ -247,10 +247,10 @@ class ContractEmailService:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to send contract email to {vendor_email}: {str(e)}")
+            logger.error(f"Failed to send contract email to {vendor_email}: {e!s}")
             raise
 
-    async def send_package_contract_email(self, contract: Dict[str, Any]) -> bool:
+    async def send_package_contract_email(self, contract: dict[str, Any]) -> bool:
         """
         Send a package contract invitation to the couple for review/signing.
 
@@ -417,14 +417,14 @@ class ContractEmailService:
             return False
 
         except Exception as e:
-            logger.error(f"Failed to send package contract email: {str(e)}")
+            logger.error(f"Failed to send package contract email: {e!s}")
             return False
 
     async def send_contract_payment_receipt(
         self,
-        contract: Dict[str, Any],
-        payment: Dict[str, Any],
-        receipt_url: Optional[str] = None,
+        contract: dict[str, Any],
+        payment: dict[str, Any],
+        receipt_url: str | None = None,
     ) -> bool:
         """Send a payment receipt with remaining balance/schedule details to the couple."""
         try:
@@ -636,13 +636,13 @@ class ContractEmailService:
             )
             return False
         except Exception as e:
-            logger.error(f"Failed to send contract payment receipt: {str(e)}")
+            logger.error(f"Failed to send contract payment receipt: {e!s}")
             return False
 
     async def send_planner_payment_notification(
         self,
-        contract: Dict[str, Any],
-        payment: Dict[str, Any],
+        contract: dict[str, Any],
+        payment: dict[str, Any],
     ) -> bool:
         """Send a payment-received notification email to the planner."""
         try:
@@ -776,11 +776,11 @@ class ContractEmailService:
             )
             return False
         except Exception as e:
-            logger.error(f"Failed to send planner payment notification: {str(e)}")
+            logger.error(f"Failed to send planner payment notification: {e!s}")
             return False
 
     async def send_signed_confirmation(
-        self, contract: Dict, pdf_url: Optional[str] = None
+        self, contract: dict, pdf_url: str | None = None
     ) -> bool:
         """
         Send confirmation email to couple after signing.
@@ -976,11 +976,11 @@ class ContractEmailService:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to send confirmation email: {str(e)}")
+            logger.error(f"Failed to send confirmation email: {e!s}")
             return False
 
     async def send_planner_notification(
-        self, contract: Dict, planner_email: str
+        self, contract: dict, planner_email: str
     ) -> bool:
         """
         Send notification to planner when contract is signed.
@@ -1069,7 +1069,7 @@ class ContractEmailService:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to send planner notification: {str(e)}")
+            logger.error(f"Failed to send planner notification: {e!s}")
             return False
 
 

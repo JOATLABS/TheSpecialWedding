@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
-from typing import Any, Optional
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from bson import ObjectId
@@ -29,7 +29,6 @@ from app.utils.planner_ownership import (
     normalize_wedding_query_id,
 )
 
-
 # Defaults — Mon-Fri 9am-6pm in the staff's timezone.
 DEFAULT_WORKING_HOURS_START = time(9, 0)
 DEFAULT_WORKING_HOURS_END = time(18, 0)
@@ -43,7 +42,7 @@ DEFAULT_TIMEZONE = "UTC"
 @dataclass(slots=True)
 class AvailabilitySlot:
     staff_id: str
-    staff_email: Optional[str]
+    staff_email: str | None
     start: datetime
     end: datetime
     requires_approval: bool = False
@@ -61,7 +60,7 @@ class AvailabilitySlot:
 @dataclass(slots=True)
 class _CandidateStaff:
     user_id: str
-    user_email: Optional[str]
+    user_email: str | None
     timezone: str
     requires_approval: bool = False
 
@@ -185,7 +184,7 @@ class AvailabilitySlotService:
         self,
         *,
         wedding_id: str,
-        staff_id: Optional[str],
+        staff_id: str | None,
     ) -> tuple[list[_CandidateStaff], dict[str, Any]]:
         wedding = await self.weddings_collection.find_one(
             {"_id": normalize_wedding_query_id(wedding_id)}
@@ -252,7 +251,7 @@ class AvailabilitySlotService:
         self,
         day: datetime,
         timezone_name: str,
-    ) -> Optional[tuple[datetime, datetime]]:
+    ) -> tuple[datetime, datetime] | None:
         local = day.astimezone(ZoneInfo(timezone_name))
         if local.weekday() not in DEFAULT_WORKING_DAYS:
             return None
@@ -293,7 +292,7 @@ class AvailabilitySlotService:
         return self._merge_intervals(intervals)
 
     @staticmethod
-    def _coerce_aware_datetime(value: Any) -> Optional[datetime]:
+    def _coerce_aware_datetime(value: Any) -> datetime | None:
         if isinstance(value, datetime):
             if value.tzinfo is None:
                 return value.replace(tzinfo=UTC)
@@ -366,9 +365,9 @@ class AvailabilitySlotService:
         *,
         wedding_id: str,
         duration_minutes: int,
-        range_start: Optional[datetime] = None,
-        range_end: Optional[datetime] = None,
-        staff_id: Optional[str] = None,
+        range_start: datetime | None = None,
+        range_end: datetime | None = None,
+        staff_id: str | None = None,
     ) -> list[AvailabilitySlot]:
         """Return bookable slots for the wedding's allowed planner team.
 

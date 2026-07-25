@@ -9,8 +9,8 @@ Includes Web Push notification support for instant browser notifications.
 
 import asyncio
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import quote
 
 from bson import ObjectId
@@ -36,7 +36,7 @@ class PlannerNotificationService:
 
     # ==================== CRUD OPERATIONS ====================
 
-    async def _get_wedding_name(self, wedding_id: Optional[str]) -> Optional[str]:
+    async def _get_wedding_name(self, wedding_id: str | None) -> str | None:
         """Get wedding name for push notification context"""
         if not wedding_id:
             return None
@@ -69,8 +69,8 @@ class PlannerNotificationService:
         notification_type: str,
         title: str,
         message: str,
-        wedding_name: Optional[str] = None,
-        action_url: Optional[str] = None,
+        wedding_name: str | None = None,
+        action_url: str | None = None,
     ):
         """Send push notification via Web Push API (non-blocking)"""
         try:
@@ -97,7 +97,7 @@ class PlannerNotificationService:
                 )
         except Exception as e:
             # Don't fail the main notification if push fails
-            logger.warning(f"Failed to send push notification: {str(e)}")
+            logger.warning(f"Failed to send push notification: {e!s}")
 
     async def create_notification(
         self,
@@ -105,10 +105,10 @@ class PlannerNotificationService:
         notification_type: NotificationType,
         title: str,
         message: str,
-        wedding_id: Optional[str] = None,
-        metadata: Optional[dict] = None,
+        wedding_id: str | None = None,
+        metadata: dict | None = None,
         priority: str = "medium",
-        action_url: Optional[str] = None,
+        action_url: str | None = None,
     ) -> dict:
         """Create a new activity notification for a planner"""
         try:
@@ -200,9 +200,9 @@ class PlannerNotificationService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error creating planner notification: {str(e)}")
+            logger.error(f"Error creating planner notification: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error creating notification: {str(e)}"
+                status_code=500, detail=f"Error creating notification: {e!s}"
             )
 
     async def get_notifications(
@@ -211,12 +211,12 @@ class PlannerNotificationService:
         page: int = 1,
         limit: int = 20,
         unread_only: bool = False,
-        wedding_id: Optional[str] = None,
-        notification_type: Optional[str] = None,
+        wedding_id: str | None = None,
+        notification_type: str | None = None,
     ) -> dict:
         """Get activity notifications for a planner"""
         try:
-            query: Dict[str, Any] = {"planner_id": planner_id}
+            query: dict[str, Any] = {"planner_id": planner_id}
 
             if unread_only:
                 query["is_read"] = False
@@ -244,7 +244,7 @@ class PlannerNotificationService:
             unique_wedding_ids = {
                 doc["wedding_id"] for doc in page_docs if doc.get("wedding_id")
             }
-            wedding_lookup: Dict[str, Dict[str, Any]] = {}
+            wedding_lookup: dict[str, dict[str, Any]] = {}
             if unique_wedding_ids:
                 wedding_cursor = self.weddings_collection.find(
                     {"wedding_id": {"$in": list(unique_wedding_ids)}},
@@ -302,9 +302,9 @@ class PlannerNotificationService:
             }
 
         except Exception as e:
-            logger.error(f"Error getting planner notifications: {str(e)}")
+            logger.error(f"Error getting planner notifications: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error retrieving notifications: {str(e)}"
+                status_code=500, detail=f"Error retrieving notifications: {e!s}"
             )
 
     async def get_notification_count(self, planner_id: str) -> dict:
@@ -318,10 +318,8 @@ class PlannerNotificationService:
             return {"total": total, "unread": unread, "read": total - unread}
 
         except Exception as e:
-            logger.error(f"Error getting notification count: {str(e)}")
-            raise HTTPException(
-                status_code=500, detail=f"Error getting count: {str(e)}"
-            )
+            logger.error(f"Error getting notification count: {e!s}")
+            raise HTTPException(status_code=500, detail=f"Error getting count: {e!s}")
 
     async def mark_as_read(self, notification_id: str, planner_id: str) -> dict:
         """Mark a notification as read"""
@@ -333,7 +331,7 @@ class PlannerNotificationService:
         try:
             result = await self.collection.update_one(
                 {"_id": obj_id, "planner_id": planner_id},
-                {"$set": {"is_read": True, "read_at": datetime.now(timezone.utc)}},
+                {"$set": {"is_read": True, "read_at": datetime.now(UTC)}},
             )
 
             if result.matched_count == 0:
@@ -362,9 +360,9 @@ class PlannerNotificationService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error marking notification as read: {str(e)}")
+            logger.error(f"Error marking notification as read: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error updating notification: {str(e)}"
+                status_code=500, detail=f"Error updating notification: {e!s}"
             )
 
     async def mark_action_completed(
@@ -387,7 +385,7 @@ class PlannerNotificationService:
             raise HTTPException(status_code=400, detail="Invalid notification ID")
 
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             result = await self.collection.update_one(
                 {"_id": obj_id, "planner_id": planner_id},
                 {
@@ -425,13 +423,13 @@ class PlannerNotificationService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error marking notification actioned: {str(e)}")
+            logger.error(f"Error marking notification actioned: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error updating notification: {str(e)}"
+                status_code=500, detail=f"Error updating notification: {e!s}"
             )
 
     async def mark_all_as_read(
-        self, planner_id: str, wedding_id: Optional[str] = None
+        self, planner_id: str, wedding_id: str | None = None
     ) -> dict:
         """Mark all notifications as read for a planner"""
         try:
@@ -441,7 +439,7 @@ class PlannerNotificationService:
 
             result = await self.collection.update_many(
                 query,
-                {"$set": {"is_read": True, "read_at": datetime.now(timezone.utc)}},
+                {"$set": {"is_read": True, "read_at": datetime.now(UTC)}},
             )
 
             # Broadcast updated count via SSE
@@ -468,9 +466,9 @@ class PlannerNotificationService:
             }
 
         except Exception as e:
-            logger.error(f"Error marking all as read: {str(e)}")
+            logger.error(f"Error marking all as read: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error updating notifications: {str(e)}"
+                status_code=500, detail=f"Error updating notifications: {e!s}"
             )
 
     async def delete_notification(self, notification_id: str, planner_id: str) -> dict:
@@ -493,9 +491,9 @@ class PlannerNotificationService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error deleting notification: {str(e)}")
+            logger.error(f"Error deleting notification: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error deleting notification: {str(e)}"
+                status_code=500, detail=f"Error deleting notification: {e!s}"
             )
 
     # ==================== TRIGGER HELPERS ====================
@@ -507,7 +505,7 @@ class PlannerNotificationService:
         wedding_id: str,
         form_type: str,
         submitter_name: str,
-        form_id: Optional[str] = None,
+        form_id: str | None = None,
     ):
         """Trigger notification when a form is submitted"""
         return await self.create_notification(
@@ -597,7 +595,7 @@ class PlannerNotificationService:
         self,
         planner_id: str,
         wedding_id: str,
-        couple_names: Optional[str] = None,
+        couple_names: str | None = None,
     ):
         """Stage 1: a wedding has just been created.
 
@@ -629,10 +627,10 @@ class PlannerNotificationService:
     async def notify_couple_portal_accepted(
         self,
         planner_id: str,
-        wedding_id: Optional[str],
+        wedding_id: str | None,
         couple_email: str,
-        couple_names: Optional[str],
-        seeded_form_id: Optional[str],
+        couple_names: str | None,
+        seeded_form_id: str | None,
     ):
         """Stage 2: the couple has accepted the portal invite.
 
@@ -684,7 +682,7 @@ class PlannerNotificationService:
         guest_name: str,
         status: str,
         guest_count: int = 1,
-        guest_id: Optional[str] = None,
+        guest_id: str | None = None,
     ):
         """Trigger notification when RSVP status changes"""
         status_text = {
@@ -714,7 +712,7 @@ class PlannerNotificationService:
         wedding_id: str,
         guest_name: str,
         message_preview: str,
-        guest_id: Optional[str] = None,
+        guest_id: str | None = None,
     ):
         """Trigger notification when a guest sends a message"""
         preview = (
@@ -740,7 +738,7 @@ class PlannerNotificationService:
         wedding_id: str,
         amount: float,
         payer_name: str,
-        payment_id: Optional[str] = None,
+        payment_id: str | None = None,
     ):
         """Trigger notification when a payment is received"""
         return await self.create_notification(
@@ -764,8 +762,8 @@ class PlannerNotificationService:
         wedding_id: str,
         amount: float,
         payer_name: str,
-        reason: Optional[str] = None,
-        payment_id: Optional[str] = None,
+        reason: str | None = None,
+        payment_id: str | None = None,
     ):
         """Trigger notification when a payment fails"""
         return await self.create_notification(
@@ -790,7 +788,7 @@ class PlannerNotificationService:
         planner_id: str,
         wedding_id: str,
         signer_name: str,
-        contract_id: Optional[str] = None,
+        contract_id: str | None = None,
     ):
         """Trigger notification when a contract is signed"""
         return await self.create_notification(
@@ -810,7 +808,7 @@ class PlannerNotificationService:
         wedding_id: str,
         vendor_name: str,
         response_type: str,
-        vendor_id: Optional[str] = None,
+        vendor_id: str | None = None,
     ):
         """Trigger notification when a vendor responds"""
         return await self.create_notification(
@@ -832,9 +830,9 @@ class PlannerNotificationService:
         planner_id: str,
         task_title: str,
         due_date: str,
-        wedding_id: Optional[str] = None,
-        task_id: Optional[str] = None,
-        reminder_minutes: Optional[int] = None,
+        wedding_id: str | None = None,
+        task_id: str | None = None,
+        reminder_minutes: int | None = None,
     ):
         """Trigger notification for a task reminder (calendar task due soon)"""
         if reminder_minutes:
@@ -874,9 +872,9 @@ class PlannerNotificationService:
         wedding_id: str,
         channel: str,
         to_address: str,
-        error_message: Optional[str] = None,
-        guest_name: Optional[str] = None,
-        metadata: Optional[dict] = None,
+        error_message: str | None = None,
+        guest_name: str | None = None,
+        metadata: dict | None = None,
     ):
         """Trigger notification when an SMS or email delivery fails"""
         recipient = guest_name or to_address
@@ -908,7 +906,7 @@ class PlannerNotificationService:
         sent: int,
         failed: int,
         skipped: int = 0,
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ):
         """Trigger notification summarizing a bulk send operation"""
         channel_label = "SMS" if channel == "sms" else "Email"
@@ -942,7 +940,7 @@ class PlannerNotificationService:
         ticket_subject: str,
         responder_name: str,
         ticket_id: str,
-        message_preview: Optional[str] = None,
+        message_preview: str | None = None,
     ):
         """Notify planner when root admin responds to their support ticket"""
         preview = ""

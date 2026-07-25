@@ -1,7 +1,7 @@
 # app/services/reminder_service.py
 
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import HTTPException
 from twilio.http.http_client import TwilioHttpClient
@@ -68,7 +68,7 @@ class ReminderService:
             raise HTTPException(status_code=400, detail="Wedding scope is required")
 
         logs = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         skipped_no_phone = 0
         skipped_opted_out = 0
 

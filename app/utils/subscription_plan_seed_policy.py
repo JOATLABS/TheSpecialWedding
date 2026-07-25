@@ -14,7 +14,6 @@ from typing import Any
 from app.constants.billing import CANONICAL_PUBLIC_PLAN_IDS_BY_NAME
 from app.utils.mongo_dates import to_utc_datetime
 
-
 PLAN_SEED_VERSION = "2026-07-14T00:00:00+00:00"
 PUBLIC_PLAN_COPY_SEED_VERSION = "2026-07-14T15:30:33+00:00"
 

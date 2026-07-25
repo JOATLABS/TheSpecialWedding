@@ -86,7 +86,7 @@ async def _event_stream(user_email: str, user_role: str, request: Request):
                     # which resource changed so it can refetch the relevant data.
                     yield f"event: data-change\ndata: {json.dumps(event['data'])}\n\n"
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # No events — send heartbeat to keep connection alive
                 yield ": heartbeat\n\n"
 

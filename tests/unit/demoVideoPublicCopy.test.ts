@@ -75,7 +75,13 @@ describe('public demo video copy', () => {
     assert.match(source, /src=\{demo\.captionUrl\}/);
     assert.match(source, /srcLang="en"/);
     assert.match(source, /label="English"/);
-    assert.match(source, /default/);
+    // Captions ship and stay selectable from the player, but are not forced on:
+    // burned-in text covered the product UI the walkthroughs exist to show, and
+    // the narration already speaks every line. The previous `/default/` pin was
+    // satisfied by `export default function` regardless of the attribute, so it
+    // never actually guarded this either way — assert the attribute directly.
+    const trackElement = source.slice(source.indexOf('<track'), source.indexOf('/>', source.indexOf('<track')));
+    assert.doesNotMatch(trackElement, /\bdefault\b/);
   });
 
   it('does not import internal recording data into public client demo components', () => {

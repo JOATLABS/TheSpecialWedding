@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Any, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -11,14 +11,14 @@ logger = logging.getLogger(__name__)
 
 class PlusOneInputModel(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
-    phone: Optional[str] = None
-    email: Optional[str] = None
-    attending: List[str] = Field(default_factory=list)
-    dietary: Optional[str] = Field(default=None, max_length=250)
-    sms_opt_in: Optional[bool] = Field(
+    phone: str | None = None
+    email: str | None = None
+    attending: list[str] = Field(default_factory=list)
+    dietary: str | None = Field(default=None, max_length=250)
+    sms_opt_in: bool | None = Field(
         default=None, description="Opt-in for SMS reminders"
     )
-    email_opt_in: Optional[bool] = Field(
+    email_opt_in: bool | None = Field(
         default=None, description="Opt-in for email updates"
     )
 
@@ -74,17 +74,17 @@ class PlusOneInputModel(BaseModel):
 
 
 class RSVPModel(BaseModel):
-    attending: List[str] = Field(default_factory=list)
-    dietary: Optional[str] = Field(default=None, max_length=250)
-    phone: Optional[str] = None
-    sms_opt_in: Optional[bool] = Field(
+    attending: list[str] = Field(default_factory=list)
+    dietary: str | None = Field(default=None, max_length=250)
+    phone: str | None = None
+    sms_opt_in: bool | None = Field(
         default=False, description="Opt-in to receive SMS reminders"
     )
-    email_opt_in: Optional[bool] = Field(
+    email_opt_in: bool | None = Field(
         default=False, description="Opt-in to receive email updates"
     )
-    plus_ones: Optional[List[PlusOneInputModel]] = Field(
-        default_factory=lambda: [], max_length=10
+    plus_ones: list[PlusOneInputModel] | None = Field(
+        default_factory=list, max_length=10
     )
 
     @model_validator(mode="before")

@@ -17,16 +17,16 @@ Phase 10 of the Vendor Advertising Monetization Platform.
 import logging
 import secrets
 import string
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from bson import ObjectId
 from fastapi import HTTPException
 
 from app.core.database import mongo
 from app.core.settings import settings as app_settings
-from app.services.ad_upload_service import AdUploadService, VendorMediaAssetKind
 from app.services.ad_platform_config_service import AdPlatformConfigService
+from app.services.ad_upload_service import AdUploadService, VendorMediaAssetKind
 from app.services.email_service_resend import ResendEmailService
 from app.services.notification_service import NotificationService
 from app.utils.auth_utils import get_password_hash
@@ -57,7 +57,7 @@ REQUIRED_PROFILE_FIELDS = [
 ]
 
 
-def check_profile_completeness(vendor_doc: dict) -> Dict[str, Any]:
+def check_profile_completeness(vendor_doc: dict) -> dict[str, Any]:
     """
     Evaluate how complete a vendor's profile is.
 
@@ -147,7 +147,7 @@ class VendorSignupService:
 
     # ─── Public Signup ─────────────────────────────────────────────
 
-    async def signup(self, signup_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def signup(self, signup_data: dict[str, Any]) -> dict[str, Any]:
         """
         Public vendor self-signup.
 
@@ -189,7 +189,7 @@ class VendorSignupService:
                 ),
             }
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         vendor_doc = {
             "email": email,
             "business_name": business_name,
@@ -253,7 +253,7 @@ class VendorSignupService:
 
     # ─── Admin Approval Workflow ───────────────────────────────────
 
-    async def approve_vendor(self, vendor_id: str, admin_email: str) -> Dict[str, Any]:
+    async def approve_vendor(self, vendor_id: str, admin_email: str) -> dict[str, Any]:
         """
         Admin approves a pending vendor.
 
@@ -273,12 +273,12 @@ class VendorSignupService:
 
     async def _approve_vendor(
         self, vendor_id: str, vendor_email: str, admin_email: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Internal approval logic shared by manual and auto-approve paths."""
         _require_vendor_portal_url()
         temp_password = self._generate_temp_password()
         password_hash = get_password_hash(temp_password)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         await self.users.update_one(
             {"_id": ObjectId(vendor_id)},
@@ -311,7 +311,7 @@ class VendorSignupService:
 
     async def suspend_vendor(
         self, vendor_id: str, admin_email: str, reason: str = ""
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Admin suspends an active vendor. Pauses all their active campaigns.
         """
@@ -325,7 +325,7 @@ class VendorSignupService:
         if vendor.get("vendor_account_status") == "suspended":
             raise HTTPException(status_code=400, detail="Vendor is already suspended")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         await self.users.update_one(
             {"_id": ObjectId(vendor_id)},
             {
@@ -377,7 +377,7 @@ class VendorSignupService:
 
     async def reactivate_vendor(
         self, vendor_id: str, admin_email: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Reactivate a suspended vendor."""
         vendor = await self.users.find_one({"_id": ObjectId(vendor_id)})
         if not vendor:
@@ -387,7 +387,7 @@ class VendorSignupService:
                 status_code=400, detail="Vendor is not currently suspended"
             )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         await self.users.update_one(
             {"_id": ObjectId(vendor_id)},
             {
@@ -427,7 +427,7 @@ class VendorSignupService:
 
     async def change_temp_password(
         self, vendor_email: str, temp_password: str, new_password: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Vendor changes their temp password on first login.
 
@@ -451,7 +451,7 @@ class VendorSignupService:
 
         # Check if temp password has expired (72-hour window)
         expires_at = vendor.get("temp_password_expires_at")
-        if expires_at and expires_at < datetime.now(timezone.utc):
+        if expires_at and expires_at < datetime.now(UTC):
             raise HTTPException(
                 status_code=400,
                 detail="Temporary password has expired. Please contact support.",
@@ -459,7 +459,7 @@ class VendorSignupService:
 
         # Hash new password and clear temp flags
         new_hash = get_password_hash(new_password)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         await self.users.update_one(
             {"_id": vendor["_id"]},
@@ -485,8 +485,8 @@ class VendorSignupService:
     # ─── Profile Update ───────────────────────────────────────────
 
     async def update_vendor_profile(
-        self, vendor_email: str, updates: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, vendor_email: str, updates: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Update vendor profile fields.
 
@@ -523,7 +523,7 @@ class VendorSignupService:
                 field_name="logo_url",
             )
 
-        filtered["updated_at"] = datetime.now(timezone.utc)
+        filtered["updated_at"] = datetime.now(UTC)
 
         result = await self.users.update_one(
             {"email": vendor_email, "role": "advertising_vendor"},
@@ -539,7 +539,7 @@ class VendorSignupService:
                 {
                     "$set": {
                         "vendor_logo_url": new_logo_url,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -558,7 +558,7 @@ class VendorSignupService:
         if completeness["is_complete"] and not vendor.get("profile_completed_at"):
             await self.users.update_one(
                 {"_id": vendor["_id"]},
-                {"$set": {"profile_completed_at": datetime.now(timezone.utc)}},
+                {"$set": {"profile_completed_at": datetime.now(UTC)}},
             )
 
         logger.info(f"Vendor {vendor_email} profile updated: {list(filtered.keys())}")
@@ -568,7 +568,7 @@ class VendorSignupService:
             "profile_completeness": completeness,
         }
 
-    async def get_vendor_profile(self, vendor_email: str) -> Dict[str, Any]:
+    async def get_vendor_profile(self, vendor_email: str) -> dict[str, Any]:
         """Get vendor profile with completeness status."""
         vendor = await self.users.find_one(
             {"email": vendor_email, "role": "advertising_vendor"}

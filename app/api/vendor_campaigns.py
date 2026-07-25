@@ -12,7 +12,7 @@ Routes: /portal/ads/campaigns/*
 """
 
 import logging
-from typing import Literal, Optional
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -84,7 +84,7 @@ class VendorMediaUploadRequest(BaseModel):
     filename: str = Field(..., min_length=1, max_length=255)
     content_type: str = Field(..., min_length=1, max_length=200)
     asset_kind: Literal["creative", "vendor_logo"] = Field(default="creative")
-    replace_url: Optional[str] = Field(default=None, max_length=2000)
+    replace_url: str | None = Field(default=None, max_length=2000)
 
 
 # =============================================================================
@@ -117,7 +117,7 @@ async def create_campaign(
 
 @router.get("/campaigns")
 async def list_campaigns(
-    status: Optional[str] = Query(None, description="Filter by campaign status"),
+    status: str | None = Query(None, description="Filter by campaign status"),
     limit: int = Query(50, ge=1, le=100),
     skip: int = Query(0, ge=0),
     service: VendorCampaignService = Depends(get_vendor_campaign_service),
@@ -328,8 +328,8 @@ async def set_primary_creative(
 
 @router.get("/leads")
 async def get_vendor_leads(
-    status: Optional[str] = Query(None, description="Filter by lead status"),
-    lead_type: Optional[str] = Query(None, description="Filter by lead type"),
+    status: str | None = Query(None, description="Filter by lead status"),
+    lead_type: str | None = Query(None, description="Filter by lead type"),
     limit: int = Query(50, ge=1, le=100),
     skip: int = Query(0, ge=0),
     service: VendorCampaignService = Depends(get_vendor_campaign_service),
@@ -400,7 +400,7 @@ async def get_billing_summary(
 
 @router.get("/billing/charges")
 async def get_billing_charges(
-    campaign_id: Optional[str] = Query(None, description="Filter by campaign"),
+    campaign_id: str | None = Query(None, description="Filter by campaign"),
     limit: int = Query(50, ge=1, le=200),
     skip: int = Query(0, ge=0),
     billing_svc: AdBillingService = Depends(get_ad_billing_service),

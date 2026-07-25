@@ -8,7 +8,6 @@ import os
 import re
 import unicodedata
 from pathlib import Path
-from typing import Optional, Tuple
 
 # Configure logging
 path_logger = logging.getLogger("wedding_path_security")
@@ -133,8 +132,8 @@ class PathValidator:
         ]
 
     def validate_path(
-        self, path: str, base_dir: Optional[str] = None, file_type: Optional[str] = None
-    ) -> Tuple[bool, Optional[str], str]:
+        self, path: str, base_dir: str | None = None, file_type: str | None = None
+    ) -> tuple[bool, str | None, str]:
         """
         Validate and sanitize a file path.
 
@@ -177,7 +176,7 @@ class PathValidator:
             try:
                 canonical_path = self._canonicalize_path(decoded_path)
             except Exception as e:
-                path_logger.error(f"Path canonicalization failed: {str(e)}")
+                path_logger.error(f"Path canonicalization failed: {e!s}")
                 return False, None, "Path normalization failed"
             # 6. Directory traversal check
             if not self._check_directory_traversal(canonical_path, base_dir):
@@ -204,7 +203,7 @@ class PathValidator:
             return True, canonical_path, "Path is valid"
 
         except Exception as e:
-            path_logger.error(f"Path validation error: {str(e)}")
+            path_logger.error(f"Path validation error: {e!s}")
             return False, None, "Path validation failed due to error"
 
     def _safe_url_decode(self, path: str) -> str:
@@ -262,7 +261,7 @@ class PathValidator:
             return os.path.normpath(os.path.abspath(path))
 
     def _check_directory_traversal(
-        self, canonical_path: str, base_dir: Optional[str]
+        self, canonical_path: str, base_dir: str | None
     ) -> bool:
         """Check for directory traversal attempts"""
 
@@ -365,9 +364,7 @@ class PathValidator:
 
         return True
 
-    def _final_security_check(
-        self, canonical_path: str, base_dir: Optional[str]
-    ) -> bool:
+    def _final_security_check(self, canonical_path: str, base_dir: str | None) -> bool:
         """Perform final security validation"""
 
         # Check path doesn't contain null bytes
@@ -447,7 +444,7 @@ class PathValidator:
 
     def get_safe_upload_path(
         self, base_upload_dir: str, filename: str, user_id: str = "anonymous"
-    ) -> Tuple[bool, Optional[str], str]:
+    ) -> tuple[bool, str | None, str]:
         """
         Generate a safe upload path for files.
 
@@ -480,12 +477,12 @@ class PathValidator:
                 try:
                     os.makedirs(dir_path, mode=0o755, exist_ok=True)
                 except OSError as e:
-                    return False, None, f"Failed to create upload directory: {str(e)}"
+                    return False, None, f"Failed to create upload directory: {e!s}"
 
             return is_valid, canonical_path, error_msg
 
         except Exception as e:
-            path_logger.error(f"Safe upload path generation failed: {str(e)}")
+            path_logger.error(f"Safe upload path generation failed: {e!s}")
             return False, None, "Failed to generate safe upload path"
 
 

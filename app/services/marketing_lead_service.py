@@ -33,8 +33,8 @@ from __future__ import annotations
 import base64
 import html
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from app.core.database import mongo
 from app.services.email_service_resend import ResendEmailService
@@ -54,14 +54,14 @@ _TRIAL_LINK = "https://thespecialwedding.io/saas?utm_source=template_download"
 STARTER_PACK_TEMPLATE_ID = "starter_pack"
 
 
-def _resolve_template(template_id: str) -> Optional[Dict[str, Any]]:
+def _resolve_template(template_id: str) -> dict[str, Any] | None:
     for tpl in FORM_TEMPLATES:
         if tpl.get("id") == template_id:
             return tpl
     return None
 
 
-def _starter_pack_descriptor() -> Dict[str, Any]:
+def _starter_pack_descriptor() -> dict[str, Any]:
     """Metadata for the starter-pack 'pseudo-template' used by the
     homepage email-gated band. Not part of FORM_TEMPLATES because it
     isn't a real template — it's a bundle of all 9."""
@@ -80,7 +80,7 @@ def _normalize_email(email: str) -> str:
     return (email or "").strip().lower()
 
 
-def _truncate(value: Optional[str], cap: int) -> Optional[str]:
+def _truncate(value: str | None, cap: int) -> str | None:
     """Bound stored UTM strings so a user can't write a 1 MB attribution
     blob. Returns None on falsy input."""
     if not value:
@@ -91,7 +91,7 @@ def _truncate(value: Optional[str], cap: int) -> Optional[str]:
     return trimmed[:cap]
 
 
-def _confirmation_html(template: Dict[str, Any], recipient_name: Optional[str]) -> str:
+def _confirmation_html(template: dict[str, Any], recipient_name: str | None) -> str:
     """Discreet, branded confirmation email with one trial CTA.
 
     Kept short on purpose — the PDF attachment is the value; the
@@ -154,13 +154,13 @@ class MarketingLeadService:
         *,
         email: str,
         template_id: str,
-        recipient_name: Optional[str] = None,
-        utm_source: Optional[str] = None,
-        utm_medium: Optional[str] = None,
-        utm_campaign: Optional[str] = None,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        recipient_name: str | None = None,
+        utm_source: str | None = None,
+        utm_medium: str | None = None,
+        utm_campaign: str | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> dict[str, Any]:
         """Idempotently record a lead and send the template PDF by email.
 
         Returns ``{status, email_dispatched, lead_id}`` where ``status``
@@ -183,7 +183,7 @@ class MarketingLeadService:
             if template is None:
                 raise KeyError(template_id)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Lookup existing lead for this (email, template) pair so we can
         # report whether this is a fresh capture or a re-send.

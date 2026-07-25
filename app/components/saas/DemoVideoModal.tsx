@@ -73,13 +73,19 @@ export default function DemoVideoModal({ demo, open, onClose }: DemoVideoModalPr
                   poster={demo.thumbnailUrl}
                 >
                   <source src={demo.assetUrl} />
+                  {/*
+                    Deliberately not `default`. The narration already speaks
+                    every caption line, so burning them on screen by default
+                    covered the product UI the video exists to show. The track
+                    stays shipped and selectable from the player's own captions
+                    control, so viewers who need it lose nothing.
+                  */}
                   {demo.captionUrl ? (
                     <track
                       kind="captions"
                       src={demo.captionUrl}
                       srcLang="en"
                       label="English"
-                      default
                     />
                   ) : null}
                 </video>

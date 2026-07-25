@@ -17,8 +17,8 @@ NOT the old sponsored_vendors system.
 import html
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 
-def _serialize(doc: Dict[str, Any]) -> Dict[str, Any]:
+def _serialize(doc: dict[str, Any]) -> dict[str, Any]:
     """Convert ObjectId _id to string for JSON serialization."""
     if doc and "_id" in doc and isinstance(doc["_id"], ObjectId):
         doc["_id"] = str(doc["_id"])
@@ -95,9 +95,7 @@ class PlannerAdInteractionService:
         Uses an index on (event_type, campaign_id, planner_id, created_at)
         for efficient lookback.
         """
-        cutoff = datetime.now(timezone.utc) - timedelta(
-            seconds=self.DEDUP_WINDOW_SECONDS
-        )
+        cutoff = datetime.now(UTC) - timedelta(seconds=self.DEDUP_WINDOW_SECONDS)
         existing = await self.ad_events.find_one(
             {
                 "event_type": event_type,
@@ -113,8 +111,8 @@ class PlannerAdInteractionService:
         event_type: str,
         campaign_id: str,
         planner_id: str,
-        event_data: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
+        event_data: dict[str, Any],
+    ) -> dict[str, Any] | None:
         """
         Record an ad event with deduplication. Returns the event doc if created,
         or None if it was a duplicate.
@@ -131,7 +129,7 @@ class PlannerAdInteractionService:
             )
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         event = {
             "event_type": event_type,
             "campaign_id": campaign_id,
@@ -155,7 +153,7 @@ class PlannerAdInteractionService:
 
     # ─── Shared: Resolve Campaign + Creative ─────────────────────────
 
-    async def _get_active_campaign(self, campaign_id: str) -> Dict[str, Any]:
+    async def _get_active_campaign(self, campaign_id: str) -> dict[str, Any]:
         """Load a campaign and verify it is active/servable."""
         oid = _to_oid(campaign_id, "campaign_id")
         campaign = await self.campaigns.find_one({"_id": oid})
@@ -169,8 +167,8 @@ class PlannerAdInteractionService:
         return campaign
 
     async def _get_primary_creative(
-        self, campaign: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
+        self, campaign: dict[str, Any]
+    ) -> dict[str, Any] | None:
         """Load the primary creative for a campaign."""
         cid = campaign.get("primary_creative_id")
         if not cid:
@@ -187,9 +185,9 @@ class PlannerAdInteractionService:
         self,
         campaign_id: str,
         planner_email: str,
-        planner_id: Optional[str] = None,
-        click_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        planner_id: str | None = None,
+        click_id: str | None = None,
+    ) -> dict[str, Any]:
         """
         Copy vendor info from an active campaign into the planner's
         vendor_profiles collection.
@@ -215,7 +213,7 @@ class PlannerAdInteractionService:
         vendor_email = campaign.get("vendor_email", "")
         vendor_name = campaign.get("vendor_name", "")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         generated_click_id = click_id or str(uuid.uuid4())
 
         # ── 1. Create vendor profile (race-safe via unique index guard) ──
@@ -408,13 +406,13 @@ class PlannerAdInteractionService:
         campaign_id: str,
         planner_email: str,
         planner_name: str,
-        planner_id: Optional[str] = None,
-        wedding_id: Optional[str] = None,
+        planner_id: str | None = None,
+        wedding_id: str | None = None,
         message: str = "",
-        wedding_context: Optional[Dict[str, Any]] = None,
-        click_id: Optional[str] = None,
+        wedding_context: dict[str, Any] | None = None,
+        click_id: str | None = None,
         auto_add_to_directory: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Planner sends a quote request to the advertising vendor.
 
@@ -440,7 +438,7 @@ class PlannerAdInteractionService:
                 detail="Quote request message cannot be empty",
             )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         generated_click_id = click_id or str(uuid.uuid4())
         creative = await self._get_primary_creative(campaign)
 
@@ -605,12 +603,12 @@ class PlannerAdInteractionService:
 
     async def _create_directory_entry(
         self,
-        campaign: Dict[str, Any],
-        creative: Optional[Dict[str, Any]],
+        campaign: dict[str, Any],
+        creative: dict[str, Any] | None,
         planner_email: str,
         now: datetime,
-        planner_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        planner_id: str | None = None,
+    ) -> dict[str, Any]:
         """Create a slim vendor profile entry (shared between flows)."""
         campaign_id = (
             str(campaign["_id"])
@@ -674,7 +672,7 @@ class PlannerAdInteractionService:
         vendor_name: str,
         campaign_name: str,
         message: str,
-        wedding_context: Optional[Dict[str, Any]] = None,
+        wedding_context: dict[str, Any] | None = None,
     ) -> str:
         """Build the HTML email body for a quote request.
 
@@ -749,11 +747,11 @@ class PlannerAdInteractionService:
     async def get_sponsored_cards(
         self,
         planner_email: str,
-        planner_id: Optional[str] = None,
-        planner_location: Optional[str] = None,
-        categories: Optional[List[str]] = None,
+        planner_id: str | None = None,
+        planner_location: str | None = None,
+        categories: list[str] | None = None,
         limit: int = 3,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get sponsored vendor cards for the planner rail.
 
@@ -763,7 +761,7 @@ class PlannerAdInteractionService:
         - Suppressed categories (planner_ad_preferences)
         Respects reduced_frequency setting (max 1 card if enabled).
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # ── Load planner ad preferences ──
         hidden_vendor_ids = []
@@ -793,7 +791,7 @@ class PlannerAdInteractionService:
                 already_added_campaign_ids.append(cid)
 
         # ── Query active, servable campaigns ──
-        query: Dict[str, Any] = {
+        query: dict[str, Any] = {
             "status": CampaignStatus.ACTIVE.value,
             "primary_creative_id": {"$ne": None},
             "$and": [
@@ -973,7 +971,7 @@ class PlannerAdInteractionService:
 
     @staticmethod
     def _build_targeting_reason(
-        campaign: Dict[str, Any], planner_location: Optional[str] = None
+        campaign: dict[str, Any], planner_location: str | None = None
     ) -> str:
         """
         Build an FTC-compliant targeting disclosure string explaining
@@ -1014,7 +1012,7 @@ class PlannerAdInteractionService:
         self,
         campaign_id: str,
         planner_email: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Check if a planner already has this campaign's vendor in their directory."""
         existing = await self.vendor_profiles.find_one(
             {

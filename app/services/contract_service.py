@@ -6,9 +6,9 @@ Handles signing, payment method capture, and status transitions.
 """
 
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -66,7 +66,7 @@ class ContractService:
         self.max_money_overview_payments = 20000
 
     @staticmethod
-    def _normalize_couple(couple: Any) -> Dict[str, Any]:
+    def _normalize_couple(couple: Any) -> dict[str, Any]:
         if not isinstance(couple, dict):
             return {}
 
@@ -87,8 +87,8 @@ class ContractService:
 
     @staticmethod
     def _build_planner_snapshot(
-        planner: Optional[Dict[str, Any]],
-    ) -> Dict[str, Optional[str]]:
+        planner: dict[str, Any] | None,
+    ) -> dict[str, str | None]:
         planner = planner or {}
         planner_name = (
             planner.get("company_name")
@@ -113,8 +113,8 @@ class ContractService:
         }
 
     async def _get_planner_record(
-        self, planner_id: Optional[str]
-    ) -> Optional[Dict[str, Any]]:
+        self, planner_id: str | None
+    ) -> dict[str, Any] | None:
         if not planner_id:
             return None
 
@@ -129,8 +129,8 @@ class ContractService:
         return await self.users.find_one({"email": planner_id})
 
     async def _get_wedding_record(
-        self, wedding_id: Optional[str]
-    ) -> Optional[Dict[str, Any]]:
+        self, wedding_id: str | None
+    ) -> dict[str, Any] | None:
         if not wedding_id:
             return None
 
@@ -143,14 +143,12 @@ class ContractService:
 
         return None
 
-    async def _serialize_contract_response(
-        self, contract: Optional[Dict]
-    ) -> Optional[Dict]:
+    async def _serialize_contract_response(self, contract: dict | None) -> dict | None:
         if not contract:
             return None
 
         hydrated = {**contract}
-        updates: Dict[str, Any] = {}
+        updates: dict[str, Any] = {}
         package_snapshot = dict(hydrated.get("package_snapshot") or {})
         effective_schedule = build_effective_payment_schedule(package_snapshot)
         if package_snapshot.get("payment_schedule") != effective_schedule:
@@ -216,8 +214,8 @@ class ContractService:
         return self._serialize_contract(hydrated)
 
     async def get_contract(
-        self, contract_id: str, planner_id: Optional[str] = None
-    ) -> Optional[Dict]:
+        self, contract_id: str, planner_id: str | None = None
+    ) -> dict | None:
         """
         Get a contract by ID.
 
@@ -229,7 +227,7 @@ class ContractService:
             Contract dict or None
         """
         try:
-            query: Dict[str, Any] = {"_id": ObjectId(contract_id)}
+            query: dict[str, Any] = {"_id": ObjectId(contract_id)}
             if planner_id:
                 query["planner_id"] = planner_id
 
@@ -237,10 +235,10 @@ class ContractService:
             return await self._serialize_contract_response(contract)
 
         except Exception as e:
-            logger.error(f"Failed to get contract: {str(e)}")
+            logger.error(f"Failed to get contract: {e!s}")
             raise
 
-    async def get_contract_by_token(self, token: str) -> Optional[Dict]:
+    async def get_contract_by_token(self, token: str) -> dict | None:
         """
         Get a contract by public token.
         Used for public contract viewing/signing.
@@ -275,7 +273,7 @@ class ContractService:
             sent_at = contract.get("sent_at")
             if sent_at and isinstance(sent_at, datetime):
                 expiry = sent_at + timedelta(days=30)
-                if datetime.now(timezone.utc) > expiry:
+                if datetime.now(UTC) > expiry:
                     raise ValueError(
                         "This contract link has expired. Please contact the planner for a new link."
                     )
@@ -285,16 +283,16 @@ class ContractService:
         except ValueError:
             raise
         except Exception as e:
-            logger.error(f"Failed to get contract by token: {str(e)}")
+            logger.error(f"Failed to get contract by token: {e!s}")
             raise
 
     async def list_contracts(
         self,
         planner_id: str,
-        status: Optional[str] = None,
+        status: str | None = None,
         limit: int = 50,
         skip: int = 0,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         List contracts for a planner.
 
@@ -320,7 +318,7 @@ class ContractService:
             )
             contracts = await cursor.to_list(length=limit)
 
-            serialized_contracts: List[Dict] = []
+            serialized_contracts: list[dict] = []
             for c in contracts:
                 serialized = await self._serialize_contract_response(c)
                 if serialized is not None:
@@ -329,10 +327,10 @@ class ContractService:
             return serialized_contracts
 
         except Exception as e:
-            logger.error(f"Failed to list contracts: {str(e)}")
+            logger.error(f"Failed to list contracts: {e!s}")
             raise
 
-    async def mark_viewed(self, token: str, ip_address: str) -> Dict:
+    async def mark_viewed(self, token: str, ip_address: str) -> dict:
         """
         Mark a contract as viewed by the couple.
 
@@ -356,8 +354,8 @@ class ContractService:
                     {
                         "$set": {
                             "status": "viewed",
-                            "viewed_at": datetime.now(timezone.utc),
-                            "updated_at": datetime.now(timezone.utc),
+                            "viewed_at": datetime.now(UTC),
+                            "updated_at": datetime.now(UTC),
                         }
                     },
                 )
@@ -370,7 +368,7 @@ class ContractService:
             return serialized
 
         except Exception as e:
-            logger.error(f"Failed to mark contract as viewed: {str(e)}")
+            logger.error(f"Failed to mark contract as viewed: {e!s}")
             raise
 
     async def sign_contract(
@@ -381,9 +379,9 @@ class ContractService:
         user_agent: str,
         stripe_customer_id: str,
         stripe_payment_method_id: str,
-        payment_method_last4: Optional[str] = None,
-        payment_method_brand: Optional[str] = None,
-    ) -> Dict:
+        payment_method_last4: str | None = None,
+        payment_method_brand: str | None = None,
+    ) -> dict:
         """
         Sign a contract and capture payment method.
 
@@ -412,7 +410,7 @@ class ContractService:
             # Create signature
             signature = ContractSignature(
                 signed_by=signature_name,
-                signed_at=datetime.now(timezone.utc),
+                signed_at=datetime.now(UTC),
                 ip_address=ip_address,
                 user_agent=user_agent[:500] if user_agent else "",
             )
@@ -424,12 +422,12 @@ class ContractService:
                     "$set": {
                         "status": "signed",
                         "signature": signature.model_dump(),
-                        "signed_at": datetime.now(timezone.utc),
+                        "signed_at": datetime.now(UTC),
                         "stripe_customer_id": stripe_customer_id,
                         "stripe_payment_method_id": stripe_payment_method_id,
                         "payment_method_last4": payment_method_last4,
                         "payment_method_brand": payment_method_brand,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -452,7 +450,7 @@ class ContractService:
 
                 pdf_url = await contract_pdf_service.generate_pdf(str(contract["_id"]))
             except Exception as e:
-                logger.warning(f"PDF generation failed (non-blocking): {str(e)}")
+                logger.warning(f"PDF generation failed (non-blocking): {e!s}")
                 pdf_url = None
 
             # Get updated contract with payments
@@ -500,18 +498,18 @@ class ContractService:
                             )
                         except Exception as notif_err:
                             logger.warning(
-                                f"Activity notification failed: {str(notif_err)}"
+                                f"Activity notification failed: {notif_err!s}"
                             )
             except Exception as e:
-                logger.warning(f"Email notification failed (non-blocking): {str(e)}")
+                logger.warning(f"Email notification failed (non-blocking): {e!s}")
 
             return result
 
         except Exception as e:
-            logger.error(f"Failed to sign contract: {str(e)}")
+            logger.error(f"Failed to sign contract: {e!s}")
             raise
 
-    async def _create_scheduled_payments(self, contract: Dict) -> List[Dict]:
+    async def _create_scheduled_payments(self, contract: dict) -> list[dict]:
         """
         Create scheduled payments from contract's payment schedule.
 
@@ -528,7 +526,7 @@ class ContractService:
             currency = package_snapshot.get("currency", "usd")
 
             wedding_date = contract.get("wedding_date")
-            signed_at = contract.get("signed_at") or datetime.now(timezone.utc)
+            signed_at = contract.get("signed_at") or datetime.now(UTC)
 
             created_payments = []
 
@@ -584,18 +582,18 @@ class ContractService:
             return created_payments
 
         except Exception as e:
-            logger.error(f"Failed to create scheduled payments: {str(e)}")
+            logger.error(f"Failed to create scheduled payments: {e!s}")
             raise
 
     def _calculate_due_date(
         self,
         trigger: str,
         signed_at: datetime,
-        wedding_date: Optional[date],
-        days_after: Optional[int],
-        days_before: Optional[int],
-        fixed_date: Optional[date],
-    ) -> Optional[date]:
+        wedding_date: date | None,
+        days_after: int | None,
+        days_before: int | None,
+        fixed_date: date | None,
+    ) -> date | None:
         """Calculate payment due date based on trigger type."""
 
         if trigger == "on_signing":
@@ -623,7 +621,7 @@ class ContractService:
 
     async def _process_deposit_payment(
         self, contract_id: str, customer_id: str, payment_method_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Process the first payment (deposit) if due on signing.
 
@@ -660,7 +658,7 @@ class ContractService:
             if due_date and hasattr(due_date, "date"):
                 due_date = due_date.date()
 
-            if due_date and due_date > datetime.now(timezone.utc).date():
+            if due_date and due_date > datetime.now(UTC).date():
                 logger.info(f"First payment not due yet (due: {due_date})")
                 return {"success": True, "message": "First payment not due yet"}
 
@@ -687,7 +685,7 @@ class ContractService:
 
             # Create PaymentIntent and charge immediately
             # Use idempotency key to prevent double-charging on retries/duplicate requests
-            idempotency_key = f"deposit_{contract_id}_{str(payment['_id'])}"
+            idempotency_key = f"deposit_{contract_id}_{payment['_id']!s}"
 
             payment_intent_params = {
                 "amount": amount_cents,
@@ -748,7 +746,7 @@ class ContractService:
                                 else "processing"
                             ),
                             "stripe_payment_intent_id": payment_intent.id,
-                            "updated_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(UTC),
                         }
                     },
                 )
@@ -760,15 +758,15 @@ class ContractService:
                 }
 
         except stripe.error.CardError as e:
-            logger.error(f"Card error processing deposit: {str(e)}")
+            logger.error(f"Card error processing deposit: {e!s}")
             return {"success": False, "error": str(e.user_message)}
         except Exception as e:
-            logger.error(f"Failed to process deposit: {str(e)}")
+            logger.error(f"Failed to process deposit: {e!s}")
             return {"success": False, "error": str(e)}
 
     async def get_contract_payments(
-        self, contract_id: str, status: Optional[str] = None
-    ) -> List[Dict]:
+        self, contract_id: str, status: str | None = None
+    ) -> list[dict]:
         """
         Get scheduled payments for a contract.
 
@@ -787,7 +785,7 @@ class ContractService:
             cursor = self.scheduled_payments.find(query).sort("due_date", 1)
             payments = await cursor.to_list(length=None)
 
-            serialized_payments: List[Dict] = []
+            serialized_payments: list[dict] = []
             for payment in payments:
                 serialized = self._serialize_payment(payment)
                 if serialized is not None:
@@ -796,21 +794,21 @@ class ContractService:
             return serialized_payments
 
         except Exception as e:
-            logger.error(f"Failed to get contract payments: {str(e)}")
+            logger.error(f"Failed to get contract payments: {e!s}")
             raise
 
     async def get_planner_payment_overview(
         self,
         planner_id: str,
-        contract_statuses: Optional[List[str]] = None,
-    ) -> List[Dict]:
+        contract_statuses: list[str] | None = None,
+    ) -> list[dict]:
         """
         Get scheduled payments across a planner's contracts in one query set.
 
         Used by the admin money dashboard to avoid N+1 contract payment fetches.
         """
         try:
-            contract_query: Dict[str, Any] = {"planner_id": planner_id}
+            contract_query: dict[str, Any] = {"planner_id": planner_id}
             if contract_statuses:
                 contract_query["status"] = {"$in": contract_statuses}
 
@@ -829,8 +827,8 @@ class ContractService:
             if not contracts:
                 return []
 
-            contract_lookup: Dict[str, Dict[str, Any]] = {}
-            contract_ids: List[str] = []
+            contract_lookup: dict[str, dict[str, Any]] = {}
+            contract_ids: list[str] = []
             for contract in contracts:
                 contract_id = str(contract["_id"])
                 couple = self._normalize_couple(contract.get("couple"))
@@ -852,7 +850,7 @@ class ContractService:
                 length=self.max_money_overview_payments
             )
 
-            overview: List[Dict[str, Any]] = []
+            overview: list[dict[str, Any]] = []
             for payment in payments:
                 serialized = self._serialize_payment(payment)
                 if serialized is None:
@@ -876,12 +874,12 @@ class ContractService:
             return overview
 
         except Exception as e:
-            logger.error(f"Failed to get planner payment overview: {str(e)}")
+            logger.error(f"Failed to get planner payment overview: {e!s}")
             raise
 
     async def update_wedding_date(
         self, contract_id: str, planner_id: str, new_wedding_date: date
-    ) -> Dict:
+    ) -> dict:
         """
         Update wedding date and recalculate payment schedules.
 
@@ -918,7 +916,7 @@ class ContractService:
                 {
                     "$set": {
                         "wedding_date": to_mongo_datetime(new_wedding_date),
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -932,10 +930,10 @@ class ContractService:
             return serialized
 
         except Exception as e:
-            logger.error(f"Failed to update wedding date: {str(e)}")
+            logger.error(f"Failed to update wedding date: {e!s}")
             raise
 
-    async def _recalculate_payment_dates(self, contract: Dict, new_wedding_date: date):
+    async def _recalculate_payment_dates(self, contract: dict, new_wedding_date: date):
         """Recalculate due dates for payments with days_before_wedding trigger."""
         try:
             package_snapshot = contract.get("package_snapshot", {})
@@ -957,17 +955,17 @@ class ContractService:
                         {
                             "$set": {
                                 "due_date": to_mongo_datetime(new_due_date),
-                                "updated_at": datetime.now(timezone.utc),
+                                "updated_at": datetime.now(UTC),
                             }
                         },
                     )
 
         except Exception as e:
-            logger.error(f"Failed to recalculate payment dates: {str(e)}")
+            logger.error(f"Failed to recalculate payment dates: {e!s}")
 
     async def cancel_contract(
         self, contract_id: str, planner_id: str, reason: str
-    ) -> Dict:
+    ) -> dict:
         """
         Cancel a contract and all pending payments.
 
@@ -992,7 +990,7 @@ class ContractService:
                     f"Cannot cancel contract in status: {contract['status']}"
                 )
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Cancel contract
             await self.contracts.update_one(
@@ -1026,16 +1024,16 @@ class ContractService:
             return serialized
 
         except Exception as e:
-            logger.error(f"Failed to cancel contract: {str(e)}")
+            logger.error(f"Failed to cancel contract: {e!s}")
             raise
 
     async def mark_payment_paid_externally(
         self,
         payment_id: str,
         planner_id: str,
-        payment_method: Optional[str] = None,
-        note: Optional[str] = None,
-    ) -> Dict:
+        payment_method: str | None = None,
+        note: str | None = None,
+    ) -> dict:
         """
         Mark a scheduled payment as paid externally (cash, check, wire, etc.)
 
@@ -1067,7 +1065,7 @@ class ContractService:
                     f"Cannot mark payment with status '{payment.get('status')}' as paid externally"
                 )
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Update the payment
             await self.scheduled_payments.update_one(
@@ -1095,16 +1093,16 @@ class ContractService:
             return self._serialize_payment(updated)
 
         except Exception as e:
-            logger.error(f"Failed to mark payment as paid externally: {str(e)}")
+            logger.error(f"Failed to mark payment as paid externally: {e!s}")
             raise
 
     async def process_refund(
         self,
         payment_id: str,
         planner_id: str,
-        amount: Optional[float] = None,
-        reason: Optional[str] = None,
-    ) -> Dict:
+        amount: float | None = None,
+        reason: str | None = None,
+    ) -> dict:
         """
         Process a refund for a succeeded payment.
 
@@ -1172,7 +1170,7 @@ class ContractService:
 
             refund = stripe.Refund.create(**refund_params)
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Update payment record
             update_data = {
@@ -1204,13 +1202,13 @@ class ContractService:
             return self._serialize_payment(updated)
 
         except stripe.error.StripeError as e:
-            logger.error(f"Stripe refund error: {str(e)}")
-            raise ValueError(f"Stripe refund failed: {str(e)}")
+            logger.error(f"Stripe refund error: {e!s}")
+            raise ValueError(f"Stripe refund failed: {e!s}")
         except Exception as e:
-            logger.error(f"Failed to process refund: {str(e)}")
+            logger.error(f"Failed to process refund: {e!s}")
             raise
 
-    async def retry_payment(self, payment_id: str, planner_id: str) -> Dict:
+    async def retry_payment(self, payment_id: str, planner_id: str) -> dict:
         """
         Retry a failed scheduled payment.
 
@@ -1251,7 +1249,7 @@ class ContractService:
                 {
                     "$set": {
                         "status": "scheduled",
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(UTC),
                     }
                 },
             )
@@ -1279,12 +1277,12 @@ class ContractService:
             return self._serialize_payment(updated)
 
         except Exception as e:
-            logger.error(f"Failed to retry payment: {str(e)}")
+            logger.error(f"Failed to retry payment: {e!s}")
             raise
 
     async def cancel_payment(
-        self, payment_id: str, planner_id: str, reason: Optional[str] = None
-    ) -> Dict:
+        self, payment_id: str, planner_id: str, reason: str | None = None
+    ) -> dict:
         """
         Cancel a scheduled payment.
 
@@ -1314,7 +1312,7 @@ class ContractService:
                     f"Cannot cancel payment with status '{payment.get('status')}'. Only scheduled or failed payments can be cancelled."
                 )
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             await self.scheduled_payments.update_one(
                 {"_id": ObjectId(payment_id)},
@@ -1337,10 +1335,10 @@ class ContractService:
             return self._serialize_payment(updated)
 
         except Exception as e:
-            logger.error(f"Failed to cancel payment: {str(e)}")
+            logger.error(f"Failed to cancel payment: {e!s}")
             raise
 
-    async def get_contract_stats(self, planner_id: str) -> Dict[str, Any]:
+    async def get_contract_stats(self, planner_id: str) -> dict[str, Any]:
         """
         Get contract statistics for a planner.
 
@@ -1364,7 +1362,7 @@ class ContractService:
             }
 
         except Exception as e:
-            logger.error(f"Failed to get contract stats: {str(e)}")
+            logger.error(f"Failed to get contract stats: {e!s}")
             raise
 
     # ========================================================================
@@ -1376,7 +1374,7 @@ class ContractService:
         Auto-generate a unique contract number (C5).
         Format: CON-YYYYMMDD-XXXX where XXXX is a sequential counter.
         """
-        today = datetime.now(timezone.utc).strftime("%Y%m%d")
+        today = datetime.now(UTC).strftime("%Y%m%d")
         prefix = f"CON-{today}-"
 
         # Find the latest contract number with today's prefix
@@ -1402,13 +1400,13 @@ class ContractService:
         wedding_id: str,
         vendor_profile_id: str,
         total_amount: float,
-        template_id: Optional[str] = None,
+        template_id: str | None = None,
         deposit_percentage: float = 50.0,
-        service_date: Optional[str] = None,
-        service_location: Optional[str] = None,
-        custom_sections: Optional[List[Dict]] = None,
-        actor_email: Optional[str] = None,
-    ) -> Dict:
+        service_date: str | None = None,
+        service_location: str | None = None,
+        custom_sections: list[dict] | None = None,
+        actor_email: str | None = None,
+    ) -> dict:
         """
         Create a new vendor contract (C3).
 
@@ -1482,7 +1480,7 @@ class ContractService:
                         f"{couple} - {vendor.get('business_name', 'Vendor')} Contract"
                     )
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             doc = {
                 "planner_id": planner_id,
@@ -1520,12 +1518,12 @@ class ContractService:
             return await self._serialize_contract_response(doc)
 
         except Exception as e:
-            logger.error(f"Failed to create contract: {str(e)}")
+            logger.error(f"Failed to create contract: {e!s}")
             raise
 
     async def update_contract(
-        self, contract_id: str, planner_id: str, update_data: Dict
-    ) -> Optional[Dict]:
+        self, contract_id: str, planner_id: str, update_data: dict
+    ) -> dict | None:
         """
         Update a contract (only allowed in draft/pending_review status).
 
@@ -1567,7 +1565,7 @@ class ContractService:
             }
 
             filtered = {k: v for k, v in update_data.items() if k in safe_fields}
-            filtered["updated_at"] = datetime.now(timezone.utc)
+            filtered["updated_at"] = datetime.now(UTC)
 
             # Recalculate deposit if total_amount or deposit_percentage changed
             if "total_amount" in filtered or "deposit_percentage" in filtered:
@@ -1585,18 +1583,18 @@ class ContractService:
             return await self._serialize_contract_response(updated)
 
         except Exception as e:
-            logger.error(f"Failed to update contract: {str(e)}")
+            logger.error(f"Failed to update contract: {e!s}")
             raise
 
     async def update_contract_sections(
         self,
         contract_id: str,
         planner_id: str,
-        sections: List[Dict],
-        terms_and_conditions: Optional[str] = None,
-        cancellation_policy: Optional[str] = None,
-        custom_clauses: Optional[str] = None,
-    ) -> Optional[Dict]:
+        sections: list[dict],
+        terms_and_conditions: str | None = None,
+        cancellation_policy: str | None = None,
+        custom_clauses: str | None = None,
+    ) -> dict | None:
         """
         Update contract sections (C4).
 
@@ -1622,9 +1620,9 @@ class ContractService:
             if contract.get("status") not in ("draft", "pending_review"):
                 raise ValueError("Cannot update sections on a non-draft contract")
 
-            update: Dict[str, Any] = {
+            update: dict[str, Any] = {
                 "sections": sections,
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(UTC),
             }
             if terms_and_conditions is not None:
                 update["terms_and_conditions"] = terms_and_conditions
@@ -1641,15 +1639,15 @@ class ContractService:
             return await self._serialize_contract_response(updated)
 
         except Exception as e:
-            logger.error(f"Failed to update contract sections: {str(e)}")
+            logger.error(f"Failed to update contract sections: {e!s}")
             raise
 
     async def send_contract(
         self,
         contract_id: str,
         planner_id: str,
-        message: Optional[str] = None,
-    ) -> Dict:
+        message: str | None = None,
+    ) -> dict:
         """
         Send a contract to the vendor for review/signing.
 
@@ -1684,7 +1682,7 @@ class ContractService:
             if not vendor_email:
                 raise ValueError("Contract has no vendor email address")
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             await self.contracts.update_one(
                 {"_id": ObjectId(contract_id)},
                 {
@@ -1719,15 +1717,15 @@ class ContractService:
             }
 
         except Exception as e:
-            logger.error(f"Failed to send contract: {str(e)}")
+            logger.error(f"Failed to send contract: {e!s}")
             raise
 
     async def create_payment_milestones(
         self,
         contract_id: str,
         planner_id: str,
-        milestones: List[Dict],
-    ) -> List[Dict]:
+        milestones: list[dict],
+    ) -> list[dict]:
         """
         Create payment milestones for a contract.
 
@@ -1748,7 +1746,7 @@ class ContractService:
                 raise ValueError("Contract not found")
 
             created = []
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             for m in milestones:
                 doc = {
@@ -1774,16 +1772,16 @@ class ContractService:
             return created
 
         except Exception as e:
-            logger.error(f"Failed to create payment milestones: {str(e)}")
+            logger.error(f"Failed to create payment milestones: {e!s}")
             raise
 
     async def get_milestones(
         self,
         planner_id: str,
-        contract_id: Optional[str] = None,
-        wedding_id: Optional[str] = None,
-        status: Optional[str] = None,
-    ) -> List[Dict]:
+        contract_id: str | None = None,
+        wedding_id: str | None = None,
+        status: str | None = None,
+    ) -> list[dict]:
         """
         Get payment milestones filtered by contract, wedding, or status.
 
@@ -1797,7 +1795,7 @@ class ContractService:
             List of milestone dicts
         """
         try:
-            query: Dict[str, Any] = {}
+            query: dict[str, Any] = {}
 
             if contract_id:
                 # Verify planner owns this contract
@@ -1822,7 +1820,7 @@ class ContractService:
             return [self._serialize_payment(m) for m in milestones if m]
 
         except Exception as e:
-            logger.error(f"Failed to get milestones: {str(e)}")
+            logger.error(f"Failed to get milestones: {e!s}")
             raise
 
     async def record_milestone_payment(
@@ -1831,9 +1829,9 @@ class ContractService:
         planner_id: str,
         amount: float,
         payment_method: str = "manual",
-        payment_date: Optional[str] = None,
-        notes: Optional[str] = None,
-    ) -> Optional[Dict]:
+        payment_date: str | None = None,
+        notes: str | None = None,
+    ) -> dict | None:
         """
         Record a payment against a milestone (C2).
 
@@ -1868,7 +1866,7 @@ class ContractService:
                         "Milestone's contract not found or not owned by planner"
                     )
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             new_paid = milestone.get("paid_amount", 0) + amount
 
             # Determine new status
@@ -1905,14 +1903,14 @@ class ContractService:
             return self._serialize_payment(updated)
 
         except Exception as e:
-            logger.error(f"Failed to record milestone payment: {str(e)}")
+            logger.error(f"Failed to record milestone payment: {e!s}")
             raise
 
     async def get_contract_form_data(
         self,
         contract_id: str,
         planner_id: str,
-    ) -> Dict:
+    ) -> dict:
         """
         Get form data submissions for a contract's vendor.
 
@@ -1952,10 +1950,10 @@ class ContractService:
             }
 
         except Exception as e:
-            logger.error(f"Failed to get contract form data: {str(e)}")
+            logger.error(f"Failed to get contract form data: {e!s}")
             raise
 
-    def _serialize_contract(self, contract: Optional[Dict]) -> Optional[Dict]:
+    def _serialize_contract(self, contract: dict | None) -> dict | None:
         """Serialize contract for API response."""
         if not contract:
             return None
@@ -1979,7 +1977,7 @@ class ContractService:
             "created_at",
             "updated_at",
         ]:
-            if date_field in serialized and serialized[date_field]:
+            if serialized.get(date_field):
                 if hasattr(serialized[date_field], "isoformat"):
                     serialized[date_field] = serialized[date_field].isoformat()
 
@@ -1988,7 +1986,7 @@ class ContractService:
             for section in serialized["sections"]:
                 if isinstance(section, dict):
                     for date_field in ["created_at", "updated_at"]:
-                        if date_field in section and section[date_field]:
+                        if section.get(date_field):
                             if hasattr(section[date_field], "isoformat"):
                                 section[date_field] = section[date_field].isoformat()
 
@@ -2007,13 +2005,13 @@ class ContractService:
                         "created_at",
                         "updated_at",
                     ]:
-                        if date_field in payment and payment[date_field]:
+                        if payment.get(date_field):
                             if hasattr(payment[date_field], "isoformat"):
                                 payment[date_field] = payment[date_field].isoformat()
 
         return serialized
 
-    def _serialize_payment(self, payment: Dict) -> Optional[Dict]:
+    def _serialize_payment(self, payment: dict) -> dict | None:
         """Serialize scheduled payment for API response."""
         if not payment:
             return None

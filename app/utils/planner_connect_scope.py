@@ -17,7 +17,8 @@ exposing predicates over a user document.
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 # Mongo `users` collection field names — kept here so callers don't sprinkle
 # string literals across the codebase.
