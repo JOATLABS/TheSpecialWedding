@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-23 — Marketing landing decluttered: one idea per section, depth deferred to /features
+
+- Diagnosed the landing page as doing the `/features` page's job: a near-identical hero, the same four pillars, and a twelve-window product tour duplicating the feature catalog. Restructured it on the "one focal point per surface / progressive disclosure" model (Apple marketing pages, pitch-deck and social-post design conventions): **the landing pitches, `/features` explains.**
+- **Showcase collapsed from 12 product windows to 1** (verified in-browser). The landing now renders one lead outcome — "One plan. Three clear views." (reusing the `connection-over-tools` social-video title so video and site read as one brand) — with a single large product window, plus the remaining three pillars as compact text teasers linking to `/features`. The full four-story treatment with supporting windows is untouched on `/features`, which keeps `PhaseOneProductStories` as its deep-catalog renderer.
+- **Hero rebuilt as a single centered idea**: outcome-led headline ("One workspace. Every wedding you run."), one-line subhead (26 words → 13), one primary CTA plus a quiet text link, and the product window shown large below the copy instead of cramped in a side column. Dropped the competing gold glow so rose is the only accent.
+- **Removed all four narrated section dividers** ("See what's inside" etc.) and the now-unused `SectionBridge` helper; whitespace separates sections instead.
+- **Unified the signup CTA to "Start free"** across the nav (desktop + mobile), hero, `/features`, and pricing — it previously read three different ways for the same action.
+- **De-duplicated the `/features` hero** ("Every capability, in detail.") so it reads as the catalog rather than a second landing page.
+- Updated the marketing copy-truth test pins to the new approved copy, preserving each test's intent rather than weakening it: the planner-audience contract still asserts planner-specific framing and the absence of vendor signup, now against the unified CTA label.
+- Verified: 584 tests, lint, type-check, and production build (including the published-video gate) all pass; landing and `/features` render 200 with no console errors and no horizontal overflow at 1440px and 390px.
+- Known follow-up, deliberately not bundled: `tailwind.config.js` declares Playfair Display + Inter but neither is loaded, so headings fall back to Georgia and body to system-ui at a hacked 14px root. The type scale is therefore accidental rather than designed; changing it is a global-blast-radius decision left for its own change.
+
 ## 2026-07-21 — Voiceover scripts densified to the cloned voice's measured pace
 
 - Rewrote the under-filled voiceover lines across the published website demos, the hero walkthrough, and three social stories after review rejected the long dead-air stretches between lines. Line lengths are calibrated to the cloned voice's measured speaking rate from the first clone synthesis run (p10 12.4 chars/sec, median 14.2): every densified line targets most of its caption window at the median rate while still fitting at the slowest measured rate, raising median window fill from 23-54% to 64-88% on the previously sparse lines. Capture checkpoints, script actions, durations, and receipts are untouched — narration text is the only change, so no retakes are required and the committed exports remain valid until the next regeneration pass.

@@ -12,7 +12,10 @@ describe('Phase 1 planner operating-system message', () => {
   const heroProof = source('app/components/landing-page/PhaseOneHeroProof.tsx');
 
   it('keeps the buyer and founder story planner-specific', () => {
-    assert.match(homepage, /connected operating system built specifically for wedding planners/i);
+    // The landing hero is outcome-led ("One workspace. Every wedding you run.") and the
+    // /features hero carries the system framing, so they stop reading as duplicates.
+    assert.match(homepage, /One workspace\. Every wedding you run\./);
+    assert.match(homepage, /Planner, couple, and guests/i);
     assert.match(homepage, /Founder perspective/);
     assert.match(homepage, /Emmanuel Akinwale/);
     assert.match(homepage, /The gaps between them are/);
@@ -39,7 +42,7 @@ describe('Phase 1 planner operating-system message', () => {
     assert.match(homepage, /HERO_DEMO_VIDEO/);
     assert.match(homepage, /<PhaseOneHeroProof demo=\{heroDemo\}/);
     assert.match(heroProof, /DemoVideoLauncher/);
-    assert.match(heroProof, /Watch the planner workspace walkthrough/);
+    assert.match(heroProof, /Watch the walkthrough/);
   });
 
   it('keeps the Features product-story CTA on the current page', () => {
