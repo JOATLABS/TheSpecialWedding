@@ -1,19 +1,19 @@
 {
   "schemaVersion": 1,
   "demoId": "seating-orchestrator-demo",
-  "reviewedAt": "2026-07-22T22:43:10.996Z",
+  "reviewedAt": "2026-07-26T03:47:55.242Z",
   "reviewer": "Emmanuel Akinwale",
   "reviewMethod": "human-normal-speed-playback",
   "sidecars": {
     "captions": {
       "artifactPath": "public/demo-videos/captions/seating-orchestrator-demo.vtt",
-      "artifactSha256": "973680e73fa895488ad27196723748aa8cecb28c01d571e9a4f69a9332c90882",
-      "byteLength": 712
+      "artifactSha256": "5ad8872e9f1e83024fde635f850723edae37543626b9b93d7af88c5442379fff",
+      "byteLength": 698
     },
     "transcript": {
       "artifactPath": "public/demo-videos/transcripts/seating-orchestrator-demo.md",
-      "artifactSha256": "259844f5ae8fc74ca1aa2a22816b668e5a87c50c948a6a6745c1a755ed6cb149",
-      "byteLength": 1095
+      "artifactSha256": "9b7f374cd9e7cc786eb93612028245204b3ef06616d7b9c5c77a1a1328a6acfe",
+      "byteLength": 1081
     }
   },
   "targets": [
@@ -21,7 +21,7 @@
       "format": "web-16x9",
       "video": {
         "artifactPath": "public/demo-videos/exports/seating-orchestrator-demo-16x9.mp4",
-        "artifactSha256": "954ada20fab8c9b47e99dbda1af640ea4c196117d2bc4c988b1ac2c33d72f3a7",
+        "artifactSha256": "c58bb0e36852ec866b7ec4f5c863fbd1928f545a0c7ad71ed768ab88e2e2b29e",
         "byteLength": 4109793,
         "width": 1920,
         "height": 1080,
