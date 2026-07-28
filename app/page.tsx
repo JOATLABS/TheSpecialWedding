@@ -96,7 +96,7 @@ const faqs = [
   {
     question: "We're a couple planning our own wedding — can we use The Special Wedding without a planner?",
     answer:
-      "Yes. Couples can get lifetime access to their own wedding workspace for a one-time $199 fee — it is not a subscription and nothing renews. That covers full planning tools for your entire planning window: guest list and RSVP tracking, your wedding website, galleries, and data export for one wedding.",
+      "Yes. Couples can get their own wedding workspace for a one-time $199 fee — it is not a subscription and nothing renews. That covers full planning tools for your entire planning window: guest list and RSVP tracking, your wedding website, galleries, and data export for one wedding, through 90 days after your wedding day.",
   },
   {
     question: "What happens when my 30-day trial ends?",

@@ -291,7 +291,7 @@ def _get_default_saas_config():
             },
             {
                 "question": "Do couples pay for The Special Wedding?",
-                "answer": "Couples invited by a planner pay nothing — the couple portal is included in the planner's plan. Couples planning their own wedding can purchase Couple Lifetime Access: a one-time $199 fee (not a subscription) covering one wedding workspace for the lifetime of the wedding.",
+                "answer": "Couples invited by a planner pay nothing — the couple portal is included in the planner's plan. Couples planning their own wedding can purchase the Couple Plan: a one-time $199 fee (not a subscription) covering one wedding workspace through 90 days after the wedding — export your data before the workspace closes.",
             },
             {
                 "question": "What's next for messaging?",

@@ -33,14 +33,16 @@ CANONICAL_PUBLIC_PLAN_IDS = frozenset(CANONICAL_PUBLIC_PLAN_IDS_BY_NAME.values()
 # against them.
 RETIRED_PUBLIC_PLAN_IDS = frozenset({"plan_solo", "plan_signature", "plan_enterprise"})
 
-# Couple-side one-time offer (lifetime-of-wedding access), locked 2026-07-27.
+# Couple-side one-time offer (one wedding workspace, active through 90 days
+# after the wedding — the workspace is then removed automatically like any
+# other ended wedding; NOT lifetime access), locked 2026-07-27/28.
 # There is no couple checkout flow yet — the catalog encodes the price and the
 # env key that will carry the real Stripe Price id once the operator creates
 # it (mode=payment, $199 USD). An unset env var means "not purchasable yet";
 # code must never fabricate a placeholder price id.
 COUPLE_LIFETIME_OFFER = {
     "id": "offer_couple_lifetime",
-    "name": "Couple Lifetime Access",
+    "name": "Couple Plan — One Wedding",
     "amount_usd": 199,
     "billing": "one_time",
     "stripe_price_env": "STRIPE_COUPLE_LIFETIME_PRICE_ID",
