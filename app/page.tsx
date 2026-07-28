@@ -36,24 +36,12 @@ const defaultTheme: ThemeConfig = {
 // and swaps this fallback out after ~800ms, but server-rendered HTML uses
 // THIS array — which means crawlers, social share previews, and the
 // first-paint flash all read from here. Stale values here = stale SEO.
+// 2026-07 pricing: the free tier is retired — every plan is paid with a
+// 30-day trial. Two planner tiers; yearly = monthly × 10.
 const fallbackPricing: PricingTier[] = [
   {
-    id: "plan_solo",
-    name: "Solo",
-    price: "$0",
-    period: "/month",
-    features: [
-      "1 wedding to try us out",
-      "Guest list & RSVP system",
-      "Branded wedding website",
-      "Basic timeline builder",
-      "1GB guest memories storage",
-    ],
-    cta: "Start free",
-  },
-  {
     id: "plan_boutique",
-    name: "Boutique",
+    name: "Solo Founding",
     price: "$49",
     period: "/month",
     features: [
@@ -67,46 +55,24 @@ const fallbackPricing: PricingTier[] = [
       "25GB guest memories storage",
       "Email support",
     ],
-    cta: "Choose Boutique",
-  },
-  {
-    id: "plan_signature",
-    name: "Signature",
-    price: "$149",
-    period: "/month",
-    features: [
-      "Unlimited weddings",
-      "Unlimited guests",
-      "Everything in Boutique",
-      "Team collaboration (5 staff seats)",
-      "Planner storefront on a shareable platform URL",
-      "Optional custom domain (app.yourbrand.com)",
-      "1,500 AI credits/month",
-      "100GB guest memories storage",
-      "Priority support (12h response)",
-      "Support-assisted onboarding by request",
-    ],
-    cta: "Choose Signature",
+    cta: "Choose Solo Founding",
     popular: true,
-    savings: "Most popular",
+    savings: "Founding-member rate",
   },
   {
-    id: "plan_enterprise",
-    name: "Enterprise",
-    price: "$399",
+    id: "plan_solo_standard",
+    name: "Solo Standard",
+    price: "$99",
     period: "/month",
     features: [
       "Unlimited weddings",
       "Unlimited guests",
-      "Everything in Signature",
-      "Planner storefront on a shareable platform URL",
-      "Optional custom domain",
-      "20 staff seats",
-      "5,000 AI credits/month",
-      "500GB guest memories storage",
-      "Support-assisted launch planning",
+      "Everything in Solo Founding",
+      "750 AI credits/month",
+      "50GB guest memories storage",
+      "Email support",
     ],
-    cta: "Choose Enterprise",
+    cta: "Choose Solo Standard",
   },
 ];
 
@@ -127,9 +93,9 @@ const faqs = [
       "Yes. Roles, handoffs, dashboards, and shared planning workflows are designed for studios with multiple planners and assistants.",
   },
   {
-    question: "What happens after the free wedding?",
+    question: "What happens when my 30-day trial ends?",
     answer:
-      "Your data stays intact. You can select a paid plan, pause new wedding intake, or export the core workspace data before deciding.",
+      "Your data stays intact. Keep your plan to continue without interruption, or export the core workspace data before deciding.",
   },
 ];
 
@@ -178,7 +144,7 @@ export default function HomePage() {
                 href="/#pricing"
                 className="inline-flex min-h-12 items-center justify-center rounded-full bg-wedding-rose px-8 py-3 text-base font-semibold text-slate-950 shadow-lg shadow-wedding-rose/20 transition hover:bg-wedding-blush focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-wedding-rose"
               >
-                Start free
+                Start your 30-day trial
               </Link>
               <Link
                 href="/#showcase"

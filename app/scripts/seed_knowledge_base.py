@@ -517,9 +517,7 @@ Welcome to Special Wedding! This guide covers everything about your trial period
 
 ## Your Free Trial
 
-Solo is **permanently free** — no trial clock, no credit card. You get one active wedding at a time to try the platform; finish or delete it and you can start another.
-
-All paid plans (Boutique, Signature, Enterprise) include a **30-day free trial**. During the trial you have full access to all features included in your plan — no limitations.
+Every plan (Solo Founding, Solo Standard) includes a **30-day free trial**. During the trial you have full access to all features included in your plan — no limitations.
 
 ### What's included in your trial?
 
@@ -552,18 +550,10 @@ All paid plans (Boutique, Signature, Enterprise) include a **30-day free trial**
 
 ## Subscription Plans
 
-Special Wedding offers four plans. All paid plans include **unlimited weddings and unlimited guests** — what changes between them is team size, AI credits, guest memories storage, and support level.
+Special Wedding offers two plans. Every plan includes **unlimited weddings and unlimited guests** — what changes between them is AI credits and guest memories storage. All plans include a 30-day free trial, and both can be billed monthly or yearly (yearly costs ten times the monthly price — two months free).
 
-### Solo — Free
-Try us with your first client. One wedding, on us.
-- 1 active wedding at a time (delete to start another)
-- Guest list & RSVP system
-- Branded wedding website
-- Basic timeline builder
-- 1GB guest memories storage
-
-### Boutique — $49/month
-For independent planners running their solo practice with paid planning tools and higher limits.
+### Solo Founding — $49/month
+Founding-member rate for independent planners running their solo practice.
 - Unlimited weddings
 - Unlimited guests
 - Vendor management
@@ -574,28 +564,14 @@ For independent planners running their solo practice with paid planning tools an
 - 25GB guest memories storage
 - Email support
 
-### Signature — $149/month *(Most Popular)*
-For agencies running a team of planners. Everything in Boutique, plus five staff seats, higher AI and storage limits, a planner storefront, and custom-domain options.
+### Solo Standard — $99/month
+The standard rate for independent planners — everything a solo practice needs to run client weddings end to end.
 - Unlimited weddings
 - Unlimited guests
-- Everything in Boutique, plus:
-- Team collaboration (5 staff seats)
-- Planner storefront on a shareable platform URL
-- Optional custom domain
-- 1,500 AI credits/month
-- 100GB guest memories storage
-- Priority support (12h response)
-- Support-assisted onboarding by request
-
-### Enterprise — $399/month
-For larger planning teams that need more seats, higher AI usage, expanded guest memories storage, and launch support.
-- Unlimited weddings
-- Unlimited guests
-- Everything in Signature, plus:
-- 20 staff seats
-- 5,000 AI credits/month
-- 500GB guest memories storage
-- Support-assisted launch planning
+- Everything in Solo Founding, plus:
+- 750 AI credits/month
+- 50GB guest memories storage
+- Email support
 
 ---
 
@@ -610,7 +586,7 @@ For larger planning teams that need more seats, higher AI usage, expanded guest 
 
 ### Switching between monthly and yearly billing
 
-You can switch between monthly and yearly billing at any time from the Billing page. Yearly billing saves you 15% compared to monthly.
+You can switch between monthly and yearly billing at any time from the Billing page. Yearly billing costs ten times the monthly price, so you get two months free compared to paying monthly.
 
 ### Updating your payment method
 

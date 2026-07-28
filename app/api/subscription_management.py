@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.constants.billing import (
     CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
     CANONICAL_PUBLIC_PLAN_IDS_BY_NAME,
+    RETIRED_PUBLIC_PLAN_IDS,
     plan_billing_model,
 )
 from app.dependencies.auth_extended import (
@@ -385,65 +386,14 @@ async def seed_default_subscription_plans(
     """
     default_plans = [
         # ============================================================
-        # SOLO — free tier, 1 ACTIVE wedding at a time
+        # SOLO FOUNDING — $49/mo, founding-member rate for solo planners
+        # (formerly "Boutique"; same canonical id plan_boutique)
         # ============================================================
         {
-            "name": "Solo",
-            "description": "Try us with your first client. One wedding, on us.",
-            "price_monthly": 0,
-            "price_yearly": 0,
-            "trial_days": 0,
-            "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
-            "is_metered": False,
-            "max_weddings": 1,
-            "max_weddings_lifetime": False,
-            "max_guests_per_wedding": 50,
-            "ai_credits_monthly": 0,
-            "storage_gb": 1,
-            "staff_seats": 1,
-            "features": {
-                "guest_management": True,
-                "email_invitations": True,
-                "rsvp_system": True,
-                "wedding_website": True,
-                "timeline_builder": True,
-                "basic_analytics": False,
-                "vendor_management": False,
-                "seating_orchestration": False,
-                "ai_features": False,
-                "qr_checkin": False,
-                "automated_reminders": False,
-                "calendar_sync": False,
-                "payment_processing": False,
-                "vendor_collaboration": False,
-                "advanced_analytics": False,
-                "planner_storefront": False,
-                "custom_domain": False,
-                "priority_support": False,
-                "white_label": False,
-                "api_access": False,
-                "dedicated_support": False,
-            },
-            "features_list": [
-                "1 wedding to try us out",
-                "Guest list & RSVP system",
-                "Branded wedding website",
-                "Basic timeline builder",
-                "1GB guest memories storage",
-            ],
-            "is_featured": False,
-            "is_active": True,
-            "display_order": 0,
-            "sort_order": 0,
-        },
-        # ============================================================
-        # BOUTIQUE — $49/mo, the solo planner running their business
-        # ============================================================
-        {
-            "name": "Boutique",
-            "description": "For independent planners running their solo practice with paid planning tools and higher limits.",
+            "name": "Solo Founding",
+            "description": "Founding-member rate for independent planners running their solo practice.",
             "price_monthly": 49,
-            "price_yearly": 490,
+            "price_yearly": 490,  # 10x monthly — two months free
             "trial_days": 30,
             "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
             "is_metered": False,
@@ -487,28 +437,28 @@ async def seed_default_subscription_plans(
                 "25GB guest memories storage",
                 "Email support",
             ],
-            "is_featured": False,
+            "is_featured": True,
             "is_active": True,
             "display_order": 1,
             "sort_order": 1,
         },
         # ============================================================
-        # SIGNATURE — $149/mo (featured), team-of-planners agency
+        # SOLO STANDARD — $99/mo, standard rate for solo planners (new)
         # ============================================================
         {
-            "name": "Signature",
-            "description": "For agencies running a team of planners. Everything in Boutique, plus five staff seats, higher AI and storage limits, a planner storefront, and custom-domain options.",
-            "price_monthly": 149,
-            "price_yearly": 1490,
+            "name": "Solo Standard",
+            "description": "The standard rate for independent planners — everything a solo practice needs to run client weddings end to end.",
+            "price_monthly": 99,
+            "price_yearly": 990,  # 10x monthly — two months free
             "trial_days": 30,
             "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
             "is_metered": False,
             "max_weddings": -1,
             "max_weddings_lifetime": False,
             "max_guests_per_wedding": -1,
-            "ai_credits_monthly": 1500,
-            "storage_gb": 100,
-            "staff_seats": 5,
+            "ai_credits_monthly": 750,
+            "storage_gb": 50,
+            "staff_seats": 1,
             "features": {
                 "guest_management": True,
                 "email_invitations": True,
@@ -524,10 +474,10 @@ async def seed_default_subscription_plans(
                 "calendar_sync": True,
                 "payment_processing": True,
                 "vendor_collaboration": False,
-                "advanced_analytics": True,
-                "planner_storefront": True,
-                "custom_domain": True,
-                "priority_support": True,
+                "advanced_analytics": False,
+                "planner_storefront": False,
+                "custom_domain": False,
+                "priority_support": False,
                 "white_label": False,
                 "api_access": False,
                 "dedicated_support": False,
@@ -535,75 +485,15 @@ async def seed_default_subscription_plans(
             "features_list": [
                 "Unlimited weddings",
                 "Unlimited guests",
-                "Everything in Boutique",
-                "Team collaboration (5 staff seats)",
-                "Planner storefront on a shareable platform URL",
-                "Optional custom domain (app.yourbrand.com)",
-                "1,500 AI credits/month",
-                "100GB guest memories storage",
-                "Priority support (12h response)",
-                "Support-assisted onboarding by request",
-            ],
-            "is_featured": True,
-            "is_active": True,
-            "display_order": 2,
-            "sort_order": 2,
-        },
-        # ============================================================
-        # ENTERPRISE — $399/mo, larger-team support tier
-        # ============================================================
-        {
-            "name": "Enterprise",
-            "description": "For larger planning teams that need more seats, higher AI usage, expanded guest memories storage, and launch support.",
-            "price_monthly": 399,
-            "price_yearly": 3990,
-            "trial_days": 30,
-            "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
-            "is_metered": False,
-            "max_weddings": -1,
-            "max_weddings_lifetime": False,
-            "max_guests_per_wedding": -1,
-            "ai_credits_monthly": 5000,
-            "storage_gb": 500,
-            "staff_seats": 20,
-            "features": {
-                "guest_management": True,
-                "email_invitations": True,
-                "rsvp_system": True,
-                "wedding_website": True,
-                "timeline_builder": True,
-                "basic_analytics": True,
-                "advanced_analytics": True,
-                "vendor_management": True,
-                "seating_orchestration": True,
-                "ai_features": True,
-                "qr_checkin": True,
-                "automated_reminders": True,
-                "calendar_sync": True,
-                "payment_processing": True,
-                "vendor_collaboration": False,
-                "planner_storefront": True,
-                "custom_domain": True,
-                "priority_support": True,
-                "white_label": True,
-                "api_access": True,
-                "dedicated_support": True,
-            },
-            "features_list": [
-                "Unlimited weddings",
-                "Unlimited guests",
-                "Everything in Signature",
-                "Planner storefront on a shareable platform URL",
-                "Optional custom domain",
-                "20 staff seats",
-                "5,000 AI credits/month",
-                "500GB guest memories storage",
-                "Support-assisted launch planning",
+                "Everything in Solo Founding",
+                "750 AI credits/month",
+                "50GB guest memories storage",
+                "Email support",
             ],
             "is_featured": False,
             "is_active": True,
-            "display_order": 3,
-            "sort_order": 3,
+            "display_order": 2,
+            "sort_order": 2,
         },
     ]
 
@@ -655,17 +545,33 @@ async def seed_default_subscription_plans(
             )
             if archived:
                 archived_aliases.append(str(legacy_plan_id))
+
+    # 2026-07 strategy: the free tier (plan_solo), Signature (plan_signature
+    # — retired, never renamed; White-Glove is a one-time setup add-on, not a
+    # tier), and Enterprise (plan_enterprise) are permanently off sale. Mirror
+    # the boot seed's retirement so this fallback can never leave a retired
+    # plan purchasable.
+    retired_plans = []
+    for retired_plan_id in sorted(RETIRED_PUBLIC_PLAN_IDS):
+        if retired_plan_id not in existing_by_id:
+            continue
+        retired = await subscription_service.retire_public_plan(retired_plan_id)
+        if retired:
+            retired_plans.append(retired_plan_id)
+
     return {
         "message": "Default subscription plans seeding completed",
         "created_plans": len(created_plans),
         "updated_plans": len(updated_plans),
         "skipped_plans": len(skipped_plans),
         "archived_aliases": len(archived_aliases),
+        "retired_plans": len(retired_plans),
         "details": {
             "created": created_plans,
             "updated": updated_plans,
             "skipped": skipped_plans,
             "archived_aliases": archived_aliases,
+            "retired": retired_plans,
         },
     }
 

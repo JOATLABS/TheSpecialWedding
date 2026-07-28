@@ -138,8 +138,9 @@ def test_canonical_public_billing_model_is_flat_rate():
     The metering infrastructure remains available — a plan can still be
     flipped to metered by setting is_metered=True + meter_event_name on
     that specific plan and redeploying. But the default reflects what we
-    actually ship today: a 4-tier flat catalog (Solo / Boutique /
-    Signature / Enterprise).
+    actually ship today: a 2-tier flat catalog (Solo Founding / Solo
+    Standard; 2026-07 strategy — the free tier, Signature, and Enterprise
+    are retired).
     """
     from app.constants.billing import (
         BILLING_MODEL_FLAT_RATE,
@@ -154,18 +155,16 @@ def test_canonical_public_billing_model_is_flat_rate():
     # that any current plan is metered.
     assert CANONICAL_PUBLIC_PLAN_METER_EVENT_NAME == "wedding_active"
     assert CANONICAL_PUBLIC_PLAN_IDS == frozenset(
-        {"plan_solo", "plan_boutique", "plan_signature", "plan_enterprise"}
+        {"plan_boutique", "plan_solo_standard"}
     )
 
 
 def test_seed_canonical_plans_declare_flat_billing_model():
     """Every default plan in the seed script ships with FLAT billing.
 
-    Solo (the free tier) omits the ``billing_model`` key entirely and
-    relies on the seed pipeline's ``_build_effective_seed_plan`` default
-    (which resolves to ``CANONICAL_PUBLIC_PLAN_BILLING_MODEL`` → flat).
-    Boutique / Signature / Enterprise set it explicitly through the
-    same constant. Either way: no metered seed plan, ever.
+    All 2026-07 plans (Solo Founding / Solo Standard) set
+    ``billing_model`` explicitly through the canonical constant. Either
+    way: no metered seed plan, ever.
 
     If this test fails, either:
     - A plan was intentionally flipped to metered → update this test and
@@ -175,9 +174,9 @@ def test_seed_canonical_plans_declare_flat_billing_model():
     from app.constants.billing import BILLING_MODEL_FLAT_RATE
 
     plans = _seed_plan_fields()
-    assert len(plans) >= 4, (
-        f"Seed catalog shrank below the 4-plan baseline (Solo / Boutique / "
-        f"Signature / Enterprise). Got {len(plans)} plans."
+    assert len(plans) >= 2, (
+        f"Seed catalog shrank below the 2-plan baseline (Solo Founding / "
+        f"Solo Standard). Got {len(plans)} plans."
     )
 
     metered_drift = [p for p in plans if p.get("is_metered") is True]
@@ -199,7 +198,7 @@ def test_seed_canonical_plans_declare_flat_billing_model():
             f"meter_event_name={plan.get('meter_event_name')!r}. Either "
             "finish the metered setup or clear the field."
         )
-        # billing_model is allowed to be absent on free tiers (Solo);
+        # billing_model is allowed to be absent (legacy free-tier shape);
         # when present it must be flat_rate (or the constant reference
         # that resolves to flat_rate).
         bm = plan.get("billing_model")
