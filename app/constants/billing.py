@@ -10,12 +10,11 @@ BILLING_MODEL_FLAT_RATE = "flat_rate"
 BILLING_MODEL_METERED = "metered"
 
 # 2026-07-28 locked pricing scheme (final operator ruling): the free tier is
-# retired entirely and the catalog becomes two paid planner tiers, monthly
-# only — no yearly prices are sold. Mongo _ids stay stable so existing Stripe
-# products/subscriptions stay attached; the boot seed supersedes drifted
-# Stripe prices per the immutability policy (new Price, archive old).
-#   plan_boutique      -> "Solo Founding"  $149/mo (was Boutique $49)
-#   plan_solo_standard -> "Solo Standard"  $199/mo (new)
+# retired entirely and the catalog becomes two paid planner tiers. Yearly =
+# monthly x 10 exactly (two months free). Mongo _ids stay stable so existing
+# Stripe products, prices, and subscriptions stay attached.
+#   plan_boutique      -> "Solo Founding"  $49/mo · $490/yr (was Boutique $49)
+#   plan_solo_standard -> "Solo Standard"  $99/mo · $990/yr (new)
 # plan_solo ($0), plan_signature (Signature $149 — NOT renamed to a "White
 # Glove" tier; White-Glove is a one-time setup add-on, see
 # WHITE_GLOVE_SETUP_ADDON), and plan_enterprise ($399) are retired — see
@@ -29,7 +28,7 @@ CANONICAL_PUBLIC_PLAN_IDS = frozenset(CANONICAL_PUBLIC_PLAN_IDS_BY_NAME.values()
 # Plans removed from sale by the 2026-07 pricing strategy. Their Mongo
 # documents are retained (historical subscriptions must keep resolving —
 # plan_signature carries an in-flight trial that converts onto Solo Founding
-# at the same $149/mo) but they are forced inactive on every seed run and
+# at $49/mo) but they are forced inactive on every seed run and
 # their Stripe products are archived so no new checkout can be created
 # against them.
 RETIRED_PUBLIC_PLAN_IDS = frozenset({"plan_solo", "plan_signature", "plan_enterprise"})

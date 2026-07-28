@@ -30,10 +30,12 @@ The marketing site at https://thespecialwedding.io is written for independent pl
 
 ### Pricing Plans
 
-The public pricing model uses two paid plans (there is no free plan), billed monthly only:
+The public pricing model uses two paid plans (there is no free plan):
 
-- **Solo Founding**: $149/month founding-member rate for independent planners. Includes unlimited weddings, unlimited guests, vendor management, seating orchestration, automated reminders, Google and Outlook calendar sync, 300 AI credits per month, 25GB guest memories storage, and email support.
-- **Solo Standard**: $199/month standard rate for independent planners. Includes everything in Solo Founding plus 750 AI credits per month and 50GB guest memories storage.
+- **Solo Founding**: $49/month founding-member rate for independent planners. Includes unlimited weddings, unlimited guests, vendor management, seating orchestration, automated reminders, Google and Outlook calendar sync, 300 AI credits per month, 25GB guest memories storage, and email support.
+- **Solo Standard**: $99/month standard rate for independent planners. Includes everything in Solo Founding plus 750 AI credits per month and 50GB guest memories storage.
+
+Both plans can be billed monthly or annually; annual billing costs ten times the monthly price (two months free).
 
 All plans include a 30-day free trial with no credit card required at signup.
 

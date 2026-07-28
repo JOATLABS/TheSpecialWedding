@@ -265,10 +265,11 @@ def _ensure_seed_price(
     charged the wrong amount.
     """
     if amount is None:
-        # The seed no longer sells this interval (2026-07-28: yearly billing
-        # was removed from the catalog). Supersede any previously recorded
-        # Stripe Price so it stops surfacing for new Checkout sessions —
-        # existing subscriptions on it are grandfathered by Stripe.
+        # The catalog no longer sells this interval for this plan. Supersede
+        # any previously recorded Stripe Price so it stops surfacing for new
+        # Checkout sessions — existing subscriptions on it are grandfathered
+        # by Stripe. (Both live plans currently sell monthly AND yearly; this
+        # path is the generic guard for any future interval retirement.)
         if existing_price_id:
             try:
                 stripe.Price.modify(existing_price_id, active=False)
@@ -529,24 +530,23 @@ def _guard_seed_billing_model_transition(
 
 # Define plans
 #
-# 2026-07-28 pricing strategy (FINAL operator ruling, 2026-07-28 07:55 CDT):
+# 2026-07-28 pricing strategy (FINAL operator ruling, 2026-07-28 07:59 CDT):
 #   - THE FREE TIER IS RETIRED. Every free account carries real Twilio/cloud/AI
 #     cost; plan_solo is forced inactive below (see RETIRED_PUBLIC_PLAN_IDS).
-#   - Solo Founding ($149/mo, id plan_boutique): founding-member rate, 1 seat.
-#   - Solo Standard ($199/mo, id plan_solo_standard): standard solo rate, 1 seat.
-#   - NO YEARLY PRICES. Monthly billing only — price_yearly is None on every
-#     plan and the seed archives any previously created yearly Stripe Price.
+#   - Solo Founding ($49/mo, id plan_boutique): founding-member rate, 1 seat.
+#   - Solo Standard ($99/mo, id plan_solo_standard): standard solo rate, 1 seat.
+#   - Yearly = monthly x 10 exactly ($490 / $990) — two months free.
 #   - Signature ($149/mo, id plan_signature) is RETIRED, not renamed. The
-#     in-flight Signature trial converts onto Solo Founding at the same
-#     $149/mo (see the ops runbook in the pricing research doc).
+#     in-flight Signature trial converts onto Solo Founding at $49/mo (launch
+#     cohort — see the ops runbook in the pricing research doc).
 #   - "White-Glove Setup" is a one-time $149 add-on (guided activation), NOT
 #     a subscription tier — app/constants/billing.py::WHITE_GLOVE_SETUP_ADDON.
 #   - Couple one-time $199 (lifetime-of-wedding) lives in
 #     app/constants/billing.py::COUPLE_LIFETIME_OFFER — no recurring plan doc.
 #
-# Mongo _ids deliberately stay stable (plan_boutique keeps its product; the
-# price change is superseded per Stripe immutability — new $149 Price created,
-# old $49 Price archived, existing subscriptions grandfathered).
+# Mongo _ids deliberately stay stable; plan_boutique keeps its Stripe product
+# AND its existing $49/$490 prices (the seed's price matcher reuses them), so
+# no Stripe churn happens for the renamed Boutique -> Solo Founding plan.
 #
 # Differentiation is by implemented limits and support paths (team seats, AI credits,
 # guest memories storage, planner storefronts, optional custom domains, and
@@ -560,15 +560,15 @@ def _guard_seed_billing_model_transition(
 # See docs/analysis/METERING_IMPLEMENTATION_2026-05-04.md for the metering option.
 plans = [
     # ============================================================
-    # SOLO FOUNDING — $149/mo, founding-member rate for solo planners
-    # (formerly "Boutique"; same _id + Stripe product, superseded price)
+    # SOLO FOUNDING — $49/mo, founding-member rate for solo planners
+    # (formerly "Boutique"; same _id, same Stripe product and prices)
     # ============================================================
     {
         "_id": "plan_boutique",
         "name": "Solo Founding",
         "description": "Founding-member rate for independent planners running their solo practice.",
-        "price_monthly": 149,
-        "price_yearly": None,  # 2026-07-28: yearly billing is not sold
+        "price_monthly": 49,
+        "price_yearly": 490,  # 10x monthly — two months free
         "trial_days": 30,
         "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
         "is_metered": False,
@@ -621,14 +621,14 @@ plans = [
         "updated_at": datetime.now(timezone.utc),
     },
     # ============================================================
-    # SOLO STANDARD — $199/mo, standard rate for solo planners (new)
+    # SOLO STANDARD — $99/mo, standard rate for solo planners (new)
     # ============================================================
     {
         "_id": "plan_solo_standard",
         "name": "Solo Standard",
         "description": "The standard rate for independent planners — everything a solo practice needs to run client weddings end to end.",
-        "price_monthly": 199,
-        "price_yearly": None,  # 2026-07-28: yearly billing is not sold
+        "price_monthly": 99,
+        "price_yearly": 990,  # 10x monthly — two months free
         "trial_days": 30,
         "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
         "is_metered": False,

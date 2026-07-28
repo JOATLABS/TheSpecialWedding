@@ -24,9 +24,8 @@ describe('server-rendered storefront plan copy', () => {
     }
   });
 
-  it('does not server-render retired tiers or yearly pricing', () => {
+  it('does not server-render retired tiers or a free price', () => {
     assert.doesNotMatch(homePageSource, /plan_solo"|plan_signature|plan_enterprise/);
     assert.doesNotMatch(homePageSource, /"\$0"/);
-    assert.doesNotMatch(homePageSource, /\/year|\/yr/);
   });
 });

@@ -550,9 +550,9 @@ Every plan (Solo Founding, Solo Standard) includes a **30-day free trial**. Duri
 
 ## Subscription Plans
 
-Special Wedding offers two plans, billed monthly. Every plan includes **unlimited weddings and unlimited guests** — what changes between them is AI credits and guest memories storage. All plans include a 30-day free trial.
+Special Wedding offers two plans. Every plan includes **unlimited weddings and unlimited guests** — what changes between them is AI credits and guest memories storage. All plans include a 30-day free trial, and both can be billed monthly or yearly (yearly costs ten times the monthly price — two months free).
 
-### Solo Founding — $149/month
+### Solo Founding — $49/month
 Founding-member rate for independent planners running their solo practice.
 - Unlimited weddings
 - Unlimited guests
@@ -564,7 +564,7 @@ Founding-member rate for independent planners running their solo practice.
 - 25GB guest memories storage
 - Email support
 
-### Solo Standard — $199/month
+### Solo Standard — $99/month
 The standard rate for independent planners — everything a solo practice needs to run client weddings end to end.
 - Unlimited weddings
 - Unlimited guests
@@ -583,6 +583,10 @@ The standard rate for independent planners — everything a solo practice needs 
 2. View your current plan and available options
 3. Click **Change Plan** to switch to a different tier
 4. Stripe handles the payment — prorated charges apply automatically
+
+### Switching between monthly and yearly billing
+
+You can switch between monthly and yearly billing at any time from the Billing page. Yearly billing costs ten times the monthly price, so you get two months free compared to paying monthly.
 
 ### Updating your payment method
 
