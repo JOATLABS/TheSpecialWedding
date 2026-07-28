@@ -132,9 +132,10 @@ def test_seed_plans_are_flat_by_default():
     - A plan was accidentally flipped to metered → revert before merge.
     """
     plans = _load_seed_plans()
-    assert len(plans) >= 4, (
-        "Seed catalog shrank below the 4-plan baseline "
-        "(Solo / Boutique / Signature / Enterprise). Confirm this is intentional."
+    assert len(plans) >= 2, (
+        "Seed catalog shrank below the 2-plan baseline "
+        "(Solo Founding / Solo Standard). Confirm this is "
+        "intentional."
     )
 
     metered = [p for p in plans if p.get("is_metered")]

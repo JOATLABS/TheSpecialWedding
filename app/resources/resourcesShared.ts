@@ -132,7 +132,7 @@ export const faqs: FAQ[] = [
   {
     question: 'Can I manage multiple weddings at once?',
     answer:
-      'Yes. Each wedding gets its own workspace with separate guest lists, budgets, seating, and branding — all managed from a single dashboard. Enterprise supports unlimited weddings with team member assignments.',
+      'Yes. Each wedding gets its own workspace with separate guest lists, budgets, seating, and branding — all managed from a single dashboard. Every plan supports unlimited weddings.',
     category: 'Getting Started',
   },
   {
@@ -144,7 +144,7 @@ export const faqs: FAQ[] = [
   {
     question: 'Is there support on the wedding day?',
     answer:
-      'Boutique includes email support. Signature includes priority support with a 12-hour response target, and Enterprise includes support-assisted launch planning. We do not currently advertise an on-call day-of service.',
+      'Solo Founding and Solo Standard include email support. We do not currently advertise an on-call day-of service.',
     category: 'Day-of Support',
   },
   {
@@ -197,9 +197,9 @@ export const faqs: FAQ[] = [
     category: 'Pricing & Billing',
   },
   {
-    question: "What's included in the Enterprise tier?",
+    question: "What's the difference between Solo Founding and Solo Standard?",
     answer:
-      'Enterprise is built for firms that need unlimited weddings, unlimited guests, 20 staff seats, higher AI usage, expanded guest memories storage, and support-assisted launch planning.',
+      'Both plans include unlimited weddings and unlimited guests. Solo Founding is the founding-member rate with 300 AI credits per month and 25GB of guest memories storage; Solo Standard includes 750 AI credits per month and 50GB of guest memories storage.',
     category: 'Pricing & Billing',
   },
 ];

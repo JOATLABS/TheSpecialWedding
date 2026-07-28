@@ -98,9 +98,14 @@ export function PricingSignupSection({ pricing, theme }: Props) {
               price: `$${plan.price_monthly}`,
               period: getPlanPeriod(plan),
               features: plan.features_list?.length ? plan.features_list : [],
-              cta: plan.price_monthly === 0 ? "Start free" : `Choose ${plan.name}`,
+              // 2026-07 pricing: no $0 tier exists — every plan is paid.
+              cta: `Choose ${plan.name}`,
               popular: Boolean(plan.is_featured),
-              savings: plan.is_featured ? "Most popular" : undefined,
+              savings: plan.is_featured
+                ? plan._id === "plan_boutique"
+                  ? "Founding-member rate"
+                  : "Most popular"
+                : undefined,
             }));
 
           if (mappedPlans.length > 0) {
