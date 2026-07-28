@@ -14,8 +14,8 @@ from typing import Any
 from app.constants.billing import CANONICAL_PUBLIC_PLAN_IDS_BY_NAME
 from app.utils.mongo_dates import to_utc_datetime
 
-PLAN_SEED_VERSION = "2026-07-28T00:00:00+00:00"
-PUBLIC_PLAN_COPY_SEED_VERSION = "2026-07-28T00:00:00+00:00"
+PLAN_SEED_VERSION = "2026-07-28T13:00:00+00:00"
+PUBLIC_PLAN_COPY_SEED_VERSION = "2026-07-28T13:00:00+00:00"
 
 # Only the fields changed by the follow-up copy refresh receive the later
 # cutoff. Commercial settings continue to use PLAN_SEED_VERSION, so a price,

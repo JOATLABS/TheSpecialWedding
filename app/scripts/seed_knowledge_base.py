@@ -517,7 +517,7 @@ Welcome to Special Wedding! This guide covers everything about your trial period
 
 ## Your Free Trial
 
-Every plan (Solo Founding, Solo Standard, White Glove) includes a **30-day free trial**. During the trial you have full access to all features included in your plan — no limitations.
+Every plan (Solo Founding, Solo Standard) includes a **30-day free trial**. During the trial you have full access to all features included in your plan — no limitations.
 
 ### What's included in your trial?
 
@@ -550,9 +550,9 @@ Every plan (Solo Founding, Solo Standard, White Glove) includes a **30-day free 
 
 ## Subscription Plans
 
-Special Wedding offers three plans. Every plan includes **unlimited weddings and unlimited guests** — what changes between them is team size, AI credits, guest memories storage, and support level. All plans include a 30-day free trial.
+Special Wedding offers two plans, billed monthly. Every plan includes **unlimited weddings and unlimited guests** — what changes between them is AI credits and guest memories storage. All plans include a 30-day free trial.
 
-### Solo Founding — $49/month
+### Solo Founding — $149/month
 Founding-member rate for independent planners running their solo practice.
 - Unlimited weddings
 - Unlimited guests
@@ -564,7 +564,7 @@ Founding-member rate for independent planners running their solo practice.
 - 25GB guest memories storage
 - Email support
 
-### Solo Standard — $99/month
+### Solo Standard — $199/month
 The standard rate for independent planners — everything a solo practice needs to run client weddings end to end.
 - Unlimited weddings
 - Unlimited guests
@@ -572,19 +572,6 @@ The standard rate for independent planners — everything a solo practice needs 
 - 750 AI credits/month
 - 50GB guest memories storage
 - Email support
-
-### White Glove — $149/month *(Most Popular)*
-White-glove service for planning teams. Everything in Solo Standard, plus five staff seats, a planner storefront, custom-domain options, and support-assisted onboarding.
-- Unlimited weddings
-- Unlimited guests
-- Everything in Solo Standard, plus:
-- Team collaboration (5 staff seats)
-- Planner storefront on a shareable platform URL
-- Optional custom domain
-- 1,500 AI credits/month
-- 100GB guest memories storage
-- Priority support (12h response)
-- Support-assisted onboarding by request
 
 ---
 
@@ -596,10 +583,6 @@ White-glove service for planning teams. Everything in Solo Standard, plus five s
 2. View your current plan and available options
 3. Click **Change Plan** to switch to a different tier
 4. Stripe handles the payment — prorated charges apply automatically
-
-### Switching between monthly and yearly billing
-
-You can switch between monthly and yearly billing at any time from the Billing page. Yearly billing saves you 15% compared to monthly.
 
 ### Updating your payment method
 

@@ -265,6 +265,22 @@ def _ensure_seed_price(
     charged the wrong amount.
     """
     if amount is None:
+        # The seed no longer sells this interval (2026-07-28: yearly billing
+        # was removed from the catalog). Supersede any previously recorded
+        # Stripe Price so it stops surfacing for new Checkout sessions —
+        # existing subscriptions on it are grandfathered by Stripe.
+        if existing_price_id:
+            try:
+                stripe.Price.modify(existing_price_id, active=False)
+                print(
+                    f"  [ARCHIVED] {interval.title()} price {existing_price_id} "
+                    "retired from sale (interval no longer offered)"
+                )
+            except StripeError as exc:
+                print(
+                    f"  [WARN] Could not deactivate removed {interval} price "
+                    f"{existing_price_id}: {exc}"
+                )
         return None
 
     expected_cents = int(amount * 100)
@@ -430,7 +446,7 @@ def create_stripe_product_and_prices(
             product_id,
             plan,
             "year",
-            plan["price_yearly"],
+            plan.get("price_yearly"),
             existing_mongo.get("stripe_price_id_yearly"),
             meter_id,
         )
@@ -513,20 +529,24 @@ def _guard_seed_billing_model_transition(
 
 # Define plans
 #
-# 2026-07-28 pricing strategy (locked by the operator on 2026-07-27):
+# 2026-07-28 pricing strategy (FINAL operator ruling, 2026-07-28 07:55 CDT):
 #   - THE FREE TIER IS RETIRED. Every free account carries real Twilio/cloud/AI
 #     cost; plan_solo is forced inactive below (see RETIRED_PUBLIC_PLAN_IDS).
-#   - Solo Founding ($49/mo, id plan_boutique): founding-member rate, 1 seat.
-#   - Solo Standard ($99/mo, id plan_solo_standard): standard solo rate, 1 seat.
-#   - White Glove ($149/mo, id plan_signature): 5 seats, storefront, custom
-#     domain, support-assisted onboarding.
+#   - Solo Founding ($149/mo, id plan_boutique): founding-member rate, 1 seat.
+#   - Solo Standard ($199/mo, id plan_solo_standard): standard solo rate, 1 seat.
+#   - NO YEARLY PRICES. Monthly billing only — price_yearly is None on every
+#     plan and the seed archives any previously created yearly Stripe Price.
+#   - Signature ($149/mo, id plan_signature) is RETIRED, not renamed. The
+#     in-flight Signature trial converts onto Solo Founding at the same
+#     $149/mo (see the ops runbook in the pricing research doc).
+#   - "White-Glove Setup" is a one-time $149 add-on (guided activation), NOT
+#     a subscription tier — app/constants/billing.py::WHITE_GLOVE_SETUP_ADDON.
 #   - Couple one-time $199 (lifetime-of-wedding) lives in
 #     app/constants/billing.py::COUPLE_LIFETIME_OFFER — no recurring plan doc.
 #
-# Mongo _ids deliberately stay stable where the price did not change
-# (plan_boutique @ $49, plan_signature @ $149) so existing Stripe products,
-# prices, and subscriptions — including in-flight trials — are renamed in
-# place rather than replaced.
+# Mongo _ids deliberately stay stable (plan_boutique keeps its product; the
+# price change is superseded per Stripe immutability — new $149 Price created,
+# old $49 Price archived, existing subscriptions grandfathered).
 #
 # Differentiation is by implemented limits and support paths (team seats, AI credits,
 # guest memories storage, planner storefronts, optional custom domains, and
@@ -540,15 +560,15 @@ def _guard_seed_billing_model_transition(
 # See docs/analysis/METERING_IMPLEMENTATION_2026-05-04.md for the metering option.
 plans = [
     # ============================================================
-    # SOLO FOUNDING — $49/mo, founding-member rate for solo planners
-    # (formerly "Boutique"; same _id, same Stripe prices)
+    # SOLO FOUNDING — $149/mo, founding-member rate for solo planners
+    # (formerly "Boutique"; same _id + Stripe product, superseded price)
     # ============================================================
     {
         "_id": "plan_boutique",
         "name": "Solo Founding",
         "description": "Founding-member rate for independent planners running their solo practice.",
-        "price_monthly": 49,
-        "price_yearly": 490,  # 10x monthly
+        "price_monthly": 149,
+        "price_yearly": None,  # 2026-07-28: yearly billing is not sold
         "trial_days": 30,
         "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
         "is_metered": False,
@@ -593,7 +613,7 @@ plans = [
             "Email support",
         ],
         "is_active": True,
-        "is_featured": False,
+        "is_featured": True,
         "sort_order": 1,
         "display_order": 1,
         "created_by": "system",
@@ -601,14 +621,14 @@ plans = [
         "updated_at": datetime.now(timezone.utc),
     },
     # ============================================================
-    # SOLO STANDARD — $99/mo, standard rate for solo planners (new)
+    # SOLO STANDARD — $199/mo, standard rate for solo planners (new)
     # ============================================================
     {
         "_id": "plan_solo_standard",
         "name": "Solo Standard",
         "description": "The standard rate for independent planners — everything a solo practice needs to run client weddings end to end.",
-        "price_monthly": 99,
-        "price_yearly": 990,  # 10x monthly
+        "price_monthly": 199,
+        "price_yearly": None,  # 2026-07-28: yearly billing is not sold
         "trial_days": 30,
         "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
         "is_metered": False,
@@ -657,91 +677,32 @@ plans = [
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
     },
-    # ============================================================
-    # WHITE GLOVE — $149/mo, team seats + storefront + assisted onboarding
-    # (formerly "Signature"; same _id, same Stripe prices)
-    # ============================================================
-    {
-        "_id": "plan_signature",
-        "name": "White Glove",
-        "description": "White-glove service for planning teams. Everything in Solo Standard, plus five staff seats, a planner storefront, custom-domain options, and support-assisted onboarding.",
-        "price_monthly": 149,
-        "price_yearly": 1490,  # 10x monthly
-        "trial_days": 30,
-        "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
-        "is_metered": False,
-        "max_weddings": -1,  # Unlimited (cap removed 2026-05-12)
-        "max_weddings_lifetime": False,
-        "max_guests_per_wedding": -1,  # Unlimited (cap removed 2026-05-12)
-        "ai_credits_monthly": 1500,
-        "storage_gb": 100,
-        "staff_seats": 5,
-        "features": {
-            "guest_management": True,
-            "email_invitations": True,
-            "rsvp_system": True,
-            "wedding_website": True,
-            "timeline_builder": True,
-            "basic_analytics": True,
-            "vendor_management": True,
-            "seating_orchestration": True,
-            "ai_features": True,
-            "qr_checkin": True,
-            "automated_reminders": True,
-            "calendar_sync": True,
-            "payment_processing": True,
-            "vendor_collaboration": False,
-            "advanced_analytics": True,
-            "planner_storefront": True,
-            "custom_domain": True,
-            "priority_support": True,
-            "white_label": False,
-            "api_access": False,
-            "dedicated_support": False,
-        },
-        "features_list": [
-            "Unlimited weddings",
-            "Unlimited guests",
-            "Everything in Solo Standard",
-            "Team collaboration (5 staff seats)",
-            "Planner storefront on a shareable platform URL",
-            "Optional custom domain (app.yourbrand.com)",
-            "1,500 AI credits/month",
-            "100GB guest memories storage",
-            "Priority support (12h response)",
-            "Support-assisted onboarding by request",
-        ],
-        "is_active": True,
-        "is_featured": True,
-        "sort_order": 3,
-        "display_order": 3,
-        "created_by": "system",
-        "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc),
-    },
 ]
 
 print("\n[SEED] Seeding Subscription Plans...")
 print("=" * 50)
 
-# ---- 2026-07 one-time display-order migration ----
-# display_order / sort_order are operator-preserved fields, so the new
-# ordering (Solo Founding 1, Solo Standard 2, White Glove 3) cannot land via
-# the normal upsert on databases seeded before this release. Detect the
-# pre-migration document by its OLD name so this can never fight a future
-# operator edit — once renamed, this block is a no-op forever.
-if collection.find_one({"_id": "plan_signature", "name": "Signature"}):
+# ---- 2026-07 one-time display/featured migration ----
+# display_order / sort_order / is_featured are operator-preserved fields, so
+# the new defaults (Solo Founding first + featured) cannot land via the
+# normal upsert on databases seeded before this release. Detect the
+# pre-migration document by its OLD name ("Boutique") so this can never fight
+# a future operator edit — once renamed, this block is a no-op forever.
+if collection.find_one({"_id": "plan_boutique", "name": "Boutique"}):
     collection.update_one(
-        {"_id": "plan_signature"},
+        {"_id": "plan_boutique"},
         {
             "$set": {
-                "sort_order": 3,
-                "display_order": 3,
+                "sort_order": 1,
+                "display_order": 1,
+                "is_featured": True,
                 "updated_at": datetime.now(timezone.utc),
             }
         },
     )
-    print("[MIGRATE] plan_signature display order 2 -> 3 (Signature -> White Glove)")
+    print(
+        "[MIGRATE] plan_boutique display order -> 1, featured (Boutique -> Solo Founding)"
+    )
 
 created = 0
 updated = 0
@@ -848,9 +809,14 @@ for plan in plans:
                     if stripe_ids.get("stripe_price_id_monthly")
                     else {}
                 ),
+                # Yearly is written whenever the Stripe sync ran (even as
+                # None) so a removed yearly interval clears the stale price
+                # pointer instead of leaving Mongo pointing at an archived
+                # Stripe Price. Error paths omit the key and leave Mongo
+                # untouched.
                 **(
                     {"stripe_price_id_yearly": stripe_ids["stripe_price_id_yearly"]}
-                    if stripe_ids.get("stripe_price_id_yearly")
+                    if "stripe_price_id_yearly" in stripe_ids
                     else {}
                 ),
             },
@@ -869,7 +835,9 @@ for plan in plans:
         skipped += 1
 
 # ---- 2026-07 retired plans ----
-# plan_solo (the free tier) and plan_enterprise are permanently off sale.
+# plan_solo (the free tier), plan_signature (Signature — never renamed; the
+# in-flight trial converts onto Solo Founding per the ops runbook), and
+# plan_enterprise are permanently off sale.
 # Force them inactive with an operator-grade override (admin_overrides.is_active)
 # so the ADMIN_PRESERVED merge policy and the Stripe product.updated webhook can
 # never resurrect them, and archive their Stripe products/prices so no new
@@ -910,9 +878,7 @@ for retired_plan_id in sorted(RETIRED_PUBLIC_PLAN_IDS):
                 ).auto_paging_iter():
                     stripe.Price.modify(retired_price.id, active=False)
                 stripe.Product.modify(retired_product_id, active=False)
-                print(
-                    f"  [STRIPE] Archived retired product '{retired_product_id}'"
-                )
+                print(f"  [STRIPE] Archived retired product '{retired_product_id}'")
         except StripeError as exc:
             print(
                 f"  [WARN] Could not archive retired Stripe product "

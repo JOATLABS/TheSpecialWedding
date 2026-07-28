@@ -287,7 +287,7 @@ def _get_default_saas_config():
             },
             {
                 "question": "Is there support on the wedding day?",
-                "answer": "Solo Founding and Solo Standard include email support. White Glove includes priority support with a 12-hour response target and support-assisted onboarding. We do not currently advertise an on-call day-of service.",
+                "answer": "Solo Founding and Solo Standard include email support. We do not currently advertise an on-call day-of service.",
             },
             {
                 "question": "What's next for messaging?",

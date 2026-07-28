@@ -114,10 +114,10 @@ export default function RootLayout({
                   description: 'A planner-owned wedding workspace connecting client setup, couple experience, guests, vendors, contracts, budgets, timelines, seating, and communications.',
                   offers: {
                     '@type': 'AggregateOffer',
-                    lowPrice: '49',
-                    highPrice: '149',
+                    lowPrice: '149',
+                    highPrice: '199',
                     priceCurrency: 'USD',
-                    offerCount: 3,
+                    offerCount: 2,
                   },
                 },
               ],

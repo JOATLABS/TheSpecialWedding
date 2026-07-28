@@ -132,7 +132,7 @@ export const faqs: FAQ[] = [
   {
     question: 'Can I manage multiple weddings at once?',
     answer:
-      'Yes. Each wedding gets its own workspace with separate guest lists, budgets, seating, and branding — all managed from a single dashboard. Every plan supports unlimited weddings, and White Glove adds team member assignments.',
+      'Yes. Each wedding gets its own workspace with separate guest lists, budgets, seating, and branding — all managed from a single dashboard. Every plan supports unlimited weddings.',
     category: 'Getting Started',
   },
   {
@@ -144,7 +144,7 @@ export const faqs: FAQ[] = [
   {
     question: 'Is there support on the wedding day?',
     answer:
-      'Solo Founding and Solo Standard include email support. White Glove includes priority support with a 12-hour response target and support-assisted onboarding. We do not currently advertise an on-call day-of service.',
+      'Solo Founding and Solo Standard include email support. We do not currently advertise an on-call day-of service.',
     category: 'Day-of Support',
   },
   {
@@ -197,9 +197,9 @@ export const faqs: FAQ[] = [
     category: 'Pricing & Billing',
   },
   {
-    question: "What's included in the White Glove tier?",
+    question: "What's the difference between Solo Founding and Solo Standard?",
     answer:
-      'White Glove is built for planning teams that need staff seats (5 included), a planner storefront, optional custom domain, higher AI usage, expanded guest memories storage, priority support, and support-assisted onboarding.',
+      'Both plans include unlimited weddings and unlimited guests. Solo Founding is the founding-member rate with 300 AI credits per month and 25GB of guest memories storage; Solo Standard includes 750 AI credits per month and 50GB of guest memories storage.',
     category: 'Pricing & Billing',
   },
 ];

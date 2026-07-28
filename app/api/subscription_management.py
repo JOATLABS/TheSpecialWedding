@@ -386,14 +386,14 @@ async def seed_default_subscription_plans(
     """
     default_plans = [
         # ============================================================
-        # SOLO FOUNDING — $49/mo, founding-member rate for solo planners
+        # SOLO FOUNDING — $149/mo, founding-member rate for solo planners
         # (formerly "Boutique"; same canonical id plan_boutique)
         # ============================================================
         {
             "name": "Solo Founding",
             "description": "Founding-member rate for independent planners running their solo practice.",
-            "price_monthly": 49,
-            "price_yearly": 490,
+            "price_monthly": 149,
+            "price_yearly": None,  # 2026-07-28: yearly billing is not sold
             "trial_days": 30,
             "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
             "is_metered": False,
@@ -437,19 +437,19 @@ async def seed_default_subscription_plans(
                 "25GB guest memories storage",
                 "Email support",
             ],
-            "is_featured": False,
+            "is_featured": True,
             "is_active": True,
             "display_order": 1,
             "sort_order": 1,
         },
         # ============================================================
-        # SOLO STANDARD — $99/mo, standard rate for solo planners (new)
+        # SOLO STANDARD — $199/mo, standard rate for solo planners (new)
         # ============================================================
         {
             "name": "Solo Standard",
             "description": "The standard rate for independent planners — everything a solo practice needs to run client weddings end to end.",
-            "price_monthly": 99,
-            "price_yearly": 990,
+            "price_monthly": 199,
+            "price_yearly": None,  # 2026-07-28: yearly billing is not sold
             "trial_days": 30,
             "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
             "is_metered": False,
@@ -494,65 +494,6 @@ async def seed_default_subscription_plans(
             "is_active": True,
             "display_order": 2,
             "sort_order": 2,
-        },
-        # ============================================================
-        # WHITE GLOVE — $149/mo (featured), team seats + storefront +
-        # support-assisted onboarding (formerly "Signature"; same
-        # canonical id plan_signature)
-        # ============================================================
-        {
-            "name": "White Glove",
-            "description": "White-glove service for planning teams. Everything in Solo Standard, plus five staff seats, a planner storefront, custom-domain options, and support-assisted onboarding.",
-            "price_monthly": 149,
-            "price_yearly": 1490,
-            "trial_days": 30,
-            "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
-            "is_metered": False,
-            "max_weddings": -1,
-            "max_weddings_lifetime": False,
-            "max_guests_per_wedding": -1,
-            "ai_credits_monthly": 1500,
-            "storage_gb": 100,
-            "staff_seats": 5,
-            "features": {
-                "guest_management": True,
-                "email_invitations": True,
-                "rsvp_system": True,
-                "wedding_website": True,
-                "timeline_builder": True,
-                "basic_analytics": True,
-                "vendor_management": True,
-                "seating_orchestration": True,
-                "ai_features": True,
-                "qr_checkin": True,
-                "automated_reminders": True,
-                "calendar_sync": True,
-                "payment_processing": True,
-                "vendor_collaboration": False,
-                "advanced_analytics": True,
-                "planner_storefront": True,
-                "custom_domain": True,
-                "priority_support": True,
-                "white_label": False,
-                "api_access": False,
-                "dedicated_support": False,
-            },
-            "features_list": [
-                "Unlimited weddings",
-                "Unlimited guests",
-                "Everything in Solo Standard",
-                "Team collaboration (5 staff seats)",
-                "Planner storefront on a shareable platform URL",
-                "Optional custom domain (app.yourbrand.com)",
-                "1,500 AI credits/month",
-                "100GB guest memories storage",
-                "Priority support (12h response)",
-                "Support-assisted onboarding by request",
-            ],
-            "is_featured": True,
-            "is_active": True,
-            "display_order": 3,
-            "sort_order": 3,
         },
     ]
 
@@ -605,9 +546,11 @@ async def seed_default_subscription_plans(
             if archived:
                 archived_aliases.append(str(legacy_plan_id))
 
-    # 2026-07 strategy: the free tier (plan_solo) and Enterprise
-    # (plan_enterprise) are permanently off sale. Mirror the boot seed's
-    # retirement so this fallback can never leave a purchasable free plan.
+    # 2026-07 strategy: the free tier (plan_solo), Signature (plan_signature
+    # — retired, never renamed; White-Glove is a one-time setup add-on, not a
+    # tier), and Enterprise (plan_enterprise) are permanently off sale. Mirror
+    # the boot seed's retirement so this fallback can never leave a retired
+    # plan purchasable.
     retired_plans = []
     for retired_plan_id in sorted(RETIRED_PUBLIC_PLAN_IDS):
         if retired_plan_id not in existing_by_id:

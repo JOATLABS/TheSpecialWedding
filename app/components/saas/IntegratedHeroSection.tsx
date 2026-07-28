@@ -21,7 +21,9 @@ interface SubscriptionPlan {
   name: string;
   description: string;
   price_monthly: number;
-  price_yearly: number;
+  // 2026-07-28 pricing: yearly billing is not sold; live plan docs carry
+  // price_yearly: null. Optional for legacy plan documents only.
+  price_yearly?: number | null;
   trial_days?: number;
   is_featured?: boolean;
 }

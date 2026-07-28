@@ -37,12 +37,12 @@ const defaultTheme: ThemeConfig = {
 // THIS array — which means crawlers, social share previews, and the
 // first-paint flash all read from here. Stale values here = stale SEO.
 // 2026-07 pricing: the free tier is retired — every plan is paid with a
-// 30-day trial.
+// 30-day trial. Monthly billing only; no yearly prices are sold.
 const fallbackPricing: PricingTier[] = [
   {
     id: "plan_boutique",
     name: "Solo Founding",
-    price: "$49",
+    price: "$149",
     period: "/month",
     features: [
       "Unlimited weddings",
@@ -56,12 +56,13 @@ const fallbackPricing: PricingTier[] = [
       "Email support",
     ],
     cta: "Choose Solo Founding",
+    popular: true,
     savings: "Founding-member rate",
   },
   {
     id: "plan_solo_standard",
     name: "Solo Standard",
-    price: "$99",
+    price: "$199",
     period: "/month",
     features: [
       "Unlimited weddings",
@@ -72,27 +73,6 @@ const fallbackPricing: PricingTier[] = [
       "Email support",
     ],
     cta: "Choose Solo Standard",
-  },
-  {
-    id: "plan_signature",
-    name: "White Glove",
-    price: "$149",
-    period: "/month",
-    features: [
-      "Unlimited weddings",
-      "Unlimited guests",
-      "Everything in Solo Standard",
-      "Team collaboration (5 staff seats)",
-      "Planner storefront on a shareable platform URL",
-      "Optional custom domain (app.yourbrand.com)",
-      "1,500 AI credits/month",
-      "100GB guest memories storage",
-      "Priority support (12h response)",
-      "Support-assisted onboarding by request",
-    ],
-    cta: "Choose White Glove",
-    popular: true,
-    savings: "Most popular",
   },
 ];
 
