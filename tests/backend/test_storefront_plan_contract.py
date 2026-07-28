@@ -133,7 +133,7 @@ def test_boot_and_manual_seed_feature_dictionaries_have_exact_parity(
     boot_matrix: dict[str, dict[str, bool]],
     manual_matrix: dict[str, dict[str, bool]],
 ):
-    expected_plans = {"Solo Founding", "Solo Standard", "White Glove"}
+    expected_plans = {"Solo Founding", "Solo Standard"}
     assert set(boot_matrix) == expected_plans
     assert set(manual_matrix) == expected_plans
     assert manual_matrix == boot_matrix
@@ -169,18 +169,6 @@ def test_canonical_plan_highlights_match_the_visible_pricing_contract(
             "50GB guest memories storage",
             "Email support",
         ],
-        "White Glove": [
-            "Unlimited weddings",
-            "Unlimited guests",
-            "Everything in Solo Standard",
-            "Team collaboration (5 staff seats)",
-            "Planner storefront on a shareable platform URL",
-            "Optional custom domain (app.yourbrand.com)",
-            "1,500 AI credits/month",
-            "100GB guest memories storage",
-            "Priority support (12h response)",
-            "Support-assisted onboarding by request",
-        ],
     }
 
     assert {
@@ -191,9 +179,10 @@ def test_canonical_plan_highlights_match_the_visible_pricing_contract(
 @pytest.mark.parametrize(
     ("plan_name", "enabled"),
     [
+        # 2026-07-28 catalog: no live tier sells storefront/custom-domain —
+        # those entitlements shipped with the retired Signature tier.
         ("Solo Founding", False),
         ("Solo Standard", False),
-        ("White Glove", True),
     ],
 )
 def test_storefront_features_are_explicit_and_independent_in_both_seed_paths(
@@ -212,13 +201,13 @@ def test_unfinished_vendor_collaboration_is_disabled_in_both_seed_paths(
     manual_matrix: dict[str, dict[str, bool]],
 ):
     for matrix in (boot_matrix, manual_matrix):
-        for plan_name in ("Solo Founding", "Solo Standard", "White Glove"):
+        for plan_name in ("Solo Founding", "Solo Standard"):
             assert matrix[plan_name]["vendor_collaboration"] is False
 
 
 def test_plan_catalog_change_bumps_the_seed_version():
-    assert PLAN_SEED_VERSION == "2026-07-28T00:00:00+00:00"
-    assert PUBLIC_PLAN_COPY_SEED_VERSION == "2026-07-28T00:00:00+00:00"
+    assert PLAN_SEED_VERSION == "2026-07-28T13:00:00+00:00"
+    assert PUBLIC_PLAN_COPY_SEED_VERSION == "2026-07-28T13:00:00+00:00"
     assert PLAN_FIELD_SEED_VERSIONS == {
         "description": PUBLIC_PLAN_COPY_SEED_VERSION,
         "features_list": PUBLIC_PLAN_COPY_SEED_VERSION,
@@ -248,9 +237,9 @@ def test_copy_refresh_preserves_newer_commercial_and_hidden_plan_intent():
             "description": "2026-07-27T12:00:00+00:00",
             "features_list": "2026-07-27T12:00:00+00:00",
             # Commercial/display intent edited AFTER the refresh — preserved.
-            "price_monthly": "2026-07-28T12:00:00+00:00",
-            "max_weddings": "2026-07-28T12:00:00+00:00",
-            "is_active": "2026-07-28T12:00:00+00:00",
+            "price_monthly": "2026-07-28T14:00:00+00:00",
+            "max_weddings": "2026-07-28T14:00:00+00:00",
+            "is_active": "2026-07-28T14:00:00+00:00",
         },
     }
 
@@ -284,11 +273,10 @@ def test_future_copy_override_survives_the_field_scoped_refresh():
     }
 
 
-def test_all_three_public_plan_ids_are_canonical_for_deduplication():
+def test_all_public_plan_ids_are_canonical_for_deduplication():
     assert CANONICAL_PUBLIC_PLAN_IDS == {
         "plan_boutique",
         "plan_solo_standard",
-        "plan_signature",
     }
     assert set(CANONICAL_PUBLIC_PLAN_IDS_BY_NAME.values()) == set(
         CANONICAL_PUBLIC_PLAN_IDS
@@ -299,7 +287,6 @@ def test_legacy_alias_is_archived_only_after_the_canonical_upsert_succeeds():
     plans = [
         {"_id": "legacy_founding", "name": "Solo Founding", "is_active": True},
         {"_id": "plan_solo_standard", "name": "Solo Standard", "is_active": True},
-        {"_id": "plan_signature", "name": "White Glove", "is_active": True},
     ]
 
     # A failed canonical create must leave the only existing plan selectable.
@@ -352,7 +339,6 @@ async def test_manual_seed_refreshes_existing_plan_defaults_without_creating_pla
     existing = [
         {"_id": "plan_boutique", "name": "Solo Founding"},
         {"_id": "plan_solo_standard", "name": "Solo Standard"},
-        {"_id": "plan_signature", "name": "Operator Agency"},
     ]
 
     class FakeSubscriptionService:
@@ -388,10 +374,10 @@ async def test_manual_seed_refreshes_existing_plan_defaults_without_creating_pla
     )
 
     assert result["created_plans"] == 0
-    assert result["updated_plans"] == 3
+    assert result["updated_plans"] == 2
     assert result["skipped_plans"] == 0
     assert result["retired_plans"] == 0
-    assert len(fake_service.refresh_calls) == 3
+    assert len(fake_service.refresh_calls) == 2
     assert {plan_id for plan_id, _fields in fake_service.refresh_calls} == set(
         CANONICAL_PUBLIC_PLAN_IDS
     )
@@ -407,7 +393,7 @@ async def test_manual_seed_retires_off_sale_plans(monkeypatch):
         {"_id": "plan_solo", "name": "Solo", "is_active": True},
         {"_id": "plan_boutique", "name": "Solo Founding"},
         {"_id": "plan_solo_standard", "name": "Solo Standard"},
-        {"_id": "plan_signature", "name": "White Glove"},
+        {"_id": "plan_signature", "name": "Signature", "is_active": True},
         {"_id": "plan_enterprise", "name": "Enterprise", "is_active": True},
     ]
 
@@ -443,9 +429,17 @@ async def test_manual_seed_retires_off_sale_plans(monkeypatch):
         SimpleNamespace(email="root@example.com")
     )
 
-    assert fake_service.retired == ["plan_enterprise", "plan_solo"]
-    assert result["retired_plans"] == 2
-    assert result["details"]["retired"] == ["plan_enterprise", "plan_solo"]
+    assert fake_service.retired == [
+        "plan_enterprise",
+        "plan_signature",
+        "plan_solo",
+    ]
+    assert result["retired_plans"] == 3
+    assert result["details"]["retired"] == [
+        "plan_enterprise",
+        "plan_signature",
+        "plan_solo",
+    ]
 
 
 @pytest.mark.asyncio
@@ -457,7 +451,6 @@ async def test_manual_seed_restores_canonical_id_and_archives_legacy_alias(
     existing = [
         {"_id": "legacy_founding", "name": " SOLO FOUNDING ", "is_active": True},
         {"_id": "plan_solo_standard", "name": "Solo Standard"},
-        {"_id": "plan_signature", "name": "White Glove"},
     ]
 
     class FakeSubscriptionService:
@@ -517,7 +510,7 @@ async def test_manual_seed_field_refresh_bypasses_stripe_and_preserves_newer_cop
                 "features_list": ["Retired highlight"],
                 "admin_overrides": {
                     "description": "2026-07-28T16:00:00+00:00",
-                    "features": "2026-07-28T12:00:00+00:00",
+                    "features": "2026-07-28T14:00:00+00:00",
                     "features_list": "2026-07-27T12:00:00+00:00",
                 },
             }

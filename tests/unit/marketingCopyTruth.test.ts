@@ -47,8 +47,9 @@ const RETIRED_SUPPORT_PROMISES =
 const RETIRED_PLAN_HIGHLIGHTS =
   /Up to 50 guests|AI-powered timeline & vendor matching|QR check-in & live counts|\b(?:1|25|100|500)GB storage\b|Group onboarding session|White-label \(your brand, no Special Wedding mentions\)|API access \+ webhooks|Dedicated success manager|Custom integrations/i;
 
-// 2026-07 pricing: three paid tiers (Solo Founding / Solo Standard / White
-// Glove); the free tier and Enterprise are retired.
+// 2026-07-28 pricing (final): two paid tiers (Solo Founding $149/mo / Solo
+// Standard $199/mo), monthly only; the free tier, Signature, and Enterprise
+// are retired. White-Glove is a one-time setup add-on, not a tier.
 const APPROVED_PLAN_HIGHLIGHTS = [
   'Unlimited weddings',
   'Unlimited guests',
@@ -62,14 +63,6 @@ const APPROVED_PLAN_HIGHLIGHTS = [
   'Everything in Solo Founding',
   '750 AI credits/month',
   '50GB guest memories storage',
-  'Everything in Solo Standard',
-  'Team collaboration (5 staff seats)',
-  'Planner storefront on a shareable platform URL',
-  'Optional custom domain (app.yourbrand.com)',
-  '1,500 AI credits/month',
-  '100GB guest memories storage',
-  'Priority support (12h response)',
-  'Support-assisted onboarding by request',
 ] as const;
 
 const APPROVED_STORY_COPY = [
@@ -340,7 +333,7 @@ describe('public marketing copy truth contract', () => {
 
     assert.ok(
       source('app/utils/subscription_plan_seed_policy.py').includes(
-        'PUBLIC_PLAN_COPY_SEED_VERSION = "2026-07-28T00:00:00+00:00"',
+        'PUBLIC_PLAN_COPY_SEED_VERSION = "2026-07-28T13:00:00+00:00"',
       ),
       'the 2026-07 pricing strategy refresh must advance the copy revision',
     );

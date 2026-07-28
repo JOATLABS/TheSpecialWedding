@@ -13,22 +13,20 @@ function planFallbackSource(planId: string): string {
 }
 
 describe('server-rendered storefront plan copy', () => {
-  it('qualifies storefront and custom-domain claims to eligible tiers', () => {
-    for (const eligiblePlan of ['plan_signature']) {
-      const source = planFallbackSource(eligiblePlan);
-      assert.match(source, /Planner storefront on a shareable platform URL/);
-      assert.match(source, /Optional custom domain/);
-    }
-
-    for (const ineligiblePlan of ['plan_boutique', 'plan_solo_standard']) {
-      const source = planFallbackSource(ineligiblePlan);
+  it('does not advertise storefront or custom-domain claims on any live tier', () => {
+    // 2026-07-28 catalog: storefront/custom-domain shipped with the retired
+    // Signature tier; no live plan sells them. If a tier regains these
+    // entitlements, gate the copy to that tier only.
+    for (const plan of ['plan_boutique', 'plan_solo_standard']) {
+      const source = planFallbackSource(plan);
       assert.doesNotMatch(source, /Planner storefront/);
       assert.doesNotMatch(source, /custom domain/i);
     }
   });
 
-  it('does not server-render a retired free tier', () => {
-    assert.doesNotMatch(homePageSource, /plan_solo"|plan_enterprise/);
+  it('does not server-render retired tiers or yearly pricing', () => {
+    assert.doesNotMatch(homePageSource, /plan_solo"|plan_signature|plan_enterprise/);
     assert.doesNotMatch(homePageSource, /"\$0"/);
+    assert.doesNotMatch(homePageSource, /\/year|\/yr/);
   });
 });

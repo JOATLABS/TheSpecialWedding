@@ -320,19 +320,18 @@ export const SaasLandingPage: React.FC = () => {
   // IMPORTANT: keep in sync with scripts/seed_subscription_plans.py. Used
   // as fallback only — live data comes from /public/subscription-plans.
   // 2026-07 pricing: the free tier is retired — every plan is paid with a
-  // 30-day trial.
+  // 30-day trial. Monthly billing only; no yearly prices are sold.
   const defaultPlans: SubscriptionPlan[] = useMemo(
     () => [
       {
         _id: 'plan_boutique',
         name: 'Solo Founding',
         description: 'Founding-member rate for independent planners running their solo practice.',
-        price_monthly: 49,
-        price_yearly: 490,
+        price_monthly: 149,
         billing_model: 'flat_rate',
         is_metered: false,
         trial_days: 30,
-        is_featured: false,
+        is_featured: true,
         is_active: true,
         display_order: 1,
       },
@@ -340,27 +339,13 @@ export const SaasLandingPage: React.FC = () => {
         _id: 'plan_solo_standard',
         name: 'Solo Standard',
         description: 'The standard rate for independent planners — everything a solo practice needs to run client weddings end to end.',
-        price_monthly: 99,
-        price_yearly: 990,
+        price_monthly: 199,
         billing_model: 'flat_rate',
         is_metered: false,
         trial_days: 30,
         is_featured: false,
         is_active: true,
         display_order: 2,
-      },
-      {
-        _id: 'plan_signature',
-        name: 'White Glove',
-        description: 'White-glove service for planning teams. Everything in Solo Standard, plus five staff seats, a planner storefront, custom-domain options, and support-assisted onboarding.',
-        price_monthly: 149,
-        price_yearly: 1490,
-        billing_model: 'flat_rate',
-        is_metered: false,
-        trial_days: 30,
-        is_featured: true,
-        is_active: true,
-        display_order: 3,
       },
     ],
     []

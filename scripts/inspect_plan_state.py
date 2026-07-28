@@ -58,8 +58,8 @@ DB_NAME = os.getenv("MONGO_DB", "wedding")
 CANONICAL_IDS = (
     "plan_boutique",
     "plan_solo_standard",
-    "plan_signature",
     "plan_solo",
+    "plan_signature",
     "plan_enterprise",
 )
 

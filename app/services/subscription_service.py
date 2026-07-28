@@ -122,7 +122,7 @@ class SubscriptionService:
         """Create a new subscription plan"""
         try:
             # Canonical public plans keep their historical Mongo _id even when
-            # the display name changes (e.g. "White Glove" -> plan_signature),
+            # the display name changes (e.g. "Solo Founding" -> plan_boutique),
             # so existing Stripe products/subscriptions stay attached. Only
             # non-canonical names fall back to name-derived ids.
             plan_data["_id"] = (

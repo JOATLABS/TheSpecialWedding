@@ -270,7 +270,7 @@ def test_admin_override_timestamps_are_normalized_before_seed_comparison():
 
 
 def test_paid_plans_declare_unlimited_weddings_and_guests():
-    """2026-07 strategy: Solo Founding/Solo Standard/White Glove have no volume caps.
+    """2026-07 strategy: Solo Founding/Solo Standard have no volume caps.
 
     If you intentionally re-add caps to a paid tier, update this test and
     the strategy spec together. Mid-tier upgrade pressure must come from
@@ -291,7 +291,7 @@ def test_paid_plans_declare_unlimited_weddings_and_guests():
 
     assert plans_node is not None and isinstance(plans_node, _ast.List)
 
-    paid_ids = {"plan_boutique", "plan_solo_standard", "plan_signature"}
+    paid_ids = {"plan_boutique", "plan_solo_standard"}
     seen = {}
     for plan_dict_node in plans_node.elts:
         if not isinstance(plan_dict_node, _ast.Dict):
@@ -360,7 +360,7 @@ def test_paid_plans_have_uniform_30_day_trial():
                 plans_node = node.value
                 break
 
-    paid_ids = {"plan_boutique", "plan_solo_standard", "plan_signature"}
+    paid_ids = {"plan_boutique", "plan_solo_standard"}
     trial_days_by_plan = {}
     for plan_dict_node in plans_node.elts:
         if not isinstance(plan_dict_node, _ast.Dict):
