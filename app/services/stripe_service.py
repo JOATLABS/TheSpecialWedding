@@ -1740,21 +1740,37 @@ class StripeService:
             # ── Mark event as successfully processed ──────────────
             # Placed OUTSIDE the handler try/except so a failure here
             # does not get conflated with a handler failure.
+            #
+            # Handlers that return an error RESULT (instead of raising) are
+            # recorded as "failed", not "processed" — otherwise the
+            # idempotency check above would permanently skip a manual resend
+            # of that event from the Stripe dashboard after the underlying
+            # problem is fixed (the status lifecycle exists precisely so
+            # failed events can be debugged and retried).
             if event_id:
+                handler_reported_error = (
+                    isinstance(result, dict) and result.get("status") == "error"
+                )
+                status_update: dict[str, Any] = (
+                    {
+                        "status": "failed",
+                        "error_message": str(result.get("message", "unknown"))[:2000],
+                    }
+                    if handler_reported_error
+                    else {
+                        "status": "processed",
+                        "processed_at": datetime.now(UTC),
+                    }
+                )
                 try:
                     await mongo.db["stripe_webhook_events"].update_one(
                         {"event_id": event_id},
-                        {
-                            "$set": {
-                                "status": "processed",
-                                "processed_at": datetime.now(UTC),
-                            }
-                        },
+                        {"$set": status_update},
                     )
                 except Exception as update_err:
-                    # Handler succeeded — don't crash on status bookkeeping failure
+                    # Handler finished — don't crash on status bookkeeping failure
                     logger.error(
-                        f"Failed to mark event {event_id} as processed: {update_err}"
+                        f"Failed to record status for event {event_id}: {update_err}"
                     )
 
             return result
