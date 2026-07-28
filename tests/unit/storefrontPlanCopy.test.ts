@@ -14,16 +14,21 @@ function planFallbackSource(planId: string): string {
 
 describe('server-rendered storefront plan copy', () => {
   it('qualifies storefront and custom-domain claims to eligible tiers', () => {
-    for (const eligiblePlan of ['plan_signature', 'plan_enterprise']) {
+    for (const eligiblePlan of ['plan_signature']) {
       const source = planFallbackSource(eligiblePlan);
       assert.match(source, /Planner storefront on a shareable platform URL/);
       assert.match(source, /Optional custom domain/);
     }
 
-    for (const ineligiblePlan of ['plan_solo', 'plan_boutique']) {
+    for (const ineligiblePlan of ['plan_boutique', 'plan_solo_standard']) {
       const source = planFallbackSource(ineligiblePlan);
       assert.doesNotMatch(source, /Planner storefront/);
       assert.doesNotMatch(source, /custom domain/i);
     }
+  });
+
+  it('does not server-render a retired free tier', () => {
+    assert.doesNotMatch(homePageSource, /plan_solo"|plan_enterprise/);
+    assert.doesNotMatch(homePageSource, /"\$0"/);
   });
 });

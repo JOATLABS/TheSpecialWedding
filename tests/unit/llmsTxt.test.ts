@@ -8,15 +8,13 @@ describe('llms.txt public authority file', () => {
   it('uses the canonical public pricing tiers and template URL', () => {
     for (const expected of [
       '# The Special Wedding',
-      '**Solo**: Free',
-      '**Boutique**: $49/month',
-      '**Signature**: $149/month',
-      '**Enterprise**: $399/month',
+      '**Solo Founding**: $49/month',
+      '**Solo Standard**: $99/month',
+      '**White Glove**: $149/month',
       'a planner storefront on a shareable platform URL',
       'an optional custom domain',
-      'including the planner storefront and optional custom domain',
       'https://thespecialwedding.io/resources/templates',
-      'Paid plans include a 30-day free trial',
+      'All plans include a 30-day free trial',
     ]) {
       assert.equal(
         llmsText.includes(expected),
@@ -30,6 +28,10 @@ describe('llms.txt public authority file', () => {
     for (const retiredClaim of [
       'Starter',
       'Pro: $59',
+      '**Solo**: Free',
+      '**Boutique**',
+      '**Signature**',
+      '**Enterprise**',
       'QR check-in',
       'white-label',
       'API access',

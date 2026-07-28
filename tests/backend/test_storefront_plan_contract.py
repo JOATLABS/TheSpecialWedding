@@ -133,7 +133,7 @@ def test_boot_and_manual_seed_feature_dictionaries_have_exact_parity(
     boot_matrix: dict[str, dict[str, bool]],
     manual_matrix: dict[str, dict[str, bool]],
 ):
-    expected_plans = {"Solo", "Boutique", "Signature", "Enterprise"}
+    expected_plans = {"Solo Founding", "Solo Standard", "White Glove"}
     assert set(boot_matrix) == expected_plans
     assert set(manual_matrix) == expected_plans
     assert manual_matrix == boot_matrix
@@ -150,14 +150,7 @@ def test_canonical_plan_highlights_match_the_visible_pricing_contract(
     boot_public_copy: dict[str, dict[str, object]],
 ):
     expected_features = {
-        "Solo": [
-            "1 wedding to try us out",
-            "Guest list & RSVP system",
-            "Branded wedding website",
-            "Basic timeline builder",
-            "1GB guest memories storage",
-        ],
-        "Boutique": [
+        "Solo Founding": [
             "Unlimited weddings",
             "Unlimited guests",
             "Vendor management",
@@ -168,10 +161,18 @@ def test_canonical_plan_highlights_match_the_visible_pricing_contract(
             "25GB guest memories storage",
             "Email support",
         ],
-        "Signature": [
+        "Solo Standard": [
             "Unlimited weddings",
             "Unlimited guests",
-            "Everything in Boutique",
+            "Everything in Solo Founding",
+            "750 AI credits/month",
+            "50GB guest memories storage",
+            "Email support",
+        ],
+        "White Glove": [
+            "Unlimited weddings",
+            "Unlimited guests",
+            "Everything in Solo Standard",
             "Team collaboration (5 staff seats)",
             "Planner storefront on a shareable platform URL",
             "Optional custom domain (app.yourbrand.com)",
@@ -179,17 +180,6 @@ def test_canonical_plan_highlights_match_the_visible_pricing_contract(
             "100GB guest memories storage",
             "Priority support (12h response)",
             "Support-assisted onboarding by request",
-        ],
-        "Enterprise": [
-            "Unlimited weddings",
-            "Unlimited guests",
-            "Everything in Signature",
-            "Planner storefront on a shareable platform URL",
-            "Optional custom domain",
-            "20 staff seats",
-            "5,000 AI credits/month",
-            "500GB guest memories storage",
-            "Support-assisted launch planning",
         ],
     }
 
@@ -201,10 +191,9 @@ def test_canonical_plan_highlights_match_the_visible_pricing_contract(
 @pytest.mark.parametrize(
     ("plan_name", "enabled"),
     [
-        ("Solo", False),
-        ("Boutique", False),
-        ("Signature", True),
-        ("Enterprise", True),
+        ("Solo Founding", False),
+        ("Solo Standard", False),
+        ("White Glove", True),
     ],
 )
 def test_storefront_features_are_explicit_and_independent_in_both_seed_paths(
@@ -223,13 +212,13 @@ def test_unfinished_vendor_collaboration_is_disabled_in_both_seed_paths(
     manual_matrix: dict[str, dict[str, bool]],
 ):
     for matrix in (boot_matrix, manual_matrix):
-        assert matrix["Signature"]["vendor_collaboration"] is False
-        assert matrix["Enterprise"]["vendor_collaboration"] is False
+        for plan_name in ("Solo Founding", "Solo Standard", "White Glove"):
+            assert matrix[plan_name]["vendor_collaboration"] is False
 
 
 def test_plan_catalog_change_bumps_the_seed_version():
-    assert PLAN_SEED_VERSION == "2026-07-14T00:00:00+00:00"
-    assert PUBLIC_PLAN_COPY_SEED_VERSION == "2026-07-14T15:30:33+00:00"
+    assert PLAN_SEED_VERSION == "2026-07-28T00:00:00+00:00"
+    assert PUBLIC_PLAN_COPY_SEED_VERSION == "2026-07-28T00:00:00+00:00"
     assert PLAN_FIELD_SEED_VERSIONS == {
         "description": PUBLIC_PLAN_COPY_SEED_VERSION,
         "features_list": PUBLIC_PLAN_COPY_SEED_VERSION,
@@ -238,7 +227,7 @@ def test_plan_catalog_change_bumps_the_seed_version():
 
 def test_copy_refresh_preserves_newer_commercial_and_hidden_plan_intent():
     seed_plan = {
-        "name": "Boutique",
+        "name": "Solo Founding",
         "description": "Current planner-first description",
         "price_monthly": 49,
         "max_weddings": -1,
@@ -255,11 +244,13 @@ def test_copy_refresh_preserves_newer_commercial_and_hidden_plan_intent():
         "is_active": False,
         "display_order": 9,
         "admin_overrides": {
-            "description": "2026-07-14T12:00:00+00:00",
-            "price_monthly": "2026-07-14T12:00:00+00:00",
-            "max_weddings": "2026-07-14T12:00:00+00:00",
-            "features_list": "2026-07-14T12:00:00+00:00",
-            "is_active": "2026-07-14T12:00:00+00:00",
+            # Copy fields edited BEFORE the 2026-07-28 refresh — seed repairs them.
+            "description": "2026-07-27T12:00:00+00:00",
+            "features_list": "2026-07-27T12:00:00+00:00",
+            # Commercial/display intent edited AFTER the refresh — preserved.
+            "price_monthly": "2026-07-28T12:00:00+00:00",
+            "max_weddings": "2026-07-28T12:00:00+00:00",
+            "is_active": "2026-07-28T12:00:00+00:00",
         },
     }
 
@@ -282,8 +273,8 @@ def test_future_copy_override_survives_the_field_scoped_refresh():
         "description": "Operator description",
         "features_list": ["Operator highlight"],
         "admin_overrides": {
-            "description": "2026-07-14T16:00:00+00:00",
-            "features_list": "2026-07-14T16:00:00+00:00",
+            "description": "2026-07-28T16:00:00+00:00",
+            "features_list": "2026-07-28T16:00:00+00:00",
         },
     }
 
@@ -293,32 +284,30 @@ def test_future_copy_override_survives_the_field_scoped_refresh():
     }
 
 
-def test_all_four_public_plan_ids_are_canonical_for_deduplication():
+def test_all_three_public_plan_ids_are_canonical_for_deduplication():
     assert CANONICAL_PUBLIC_PLAN_IDS == {
-        "plan_solo",
         "plan_boutique",
+        "plan_solo_standard",
         "plan_signature",
-        "plan_enterprise",
     }
     assert set(CANONICAL_PUBLIC_PLAN_IDS_BY_NAME.values()) == set(
         CANONICAL_PUBLIC_PLAN_IDS
     )
 
 
-def test_legacy_solo_is_archived_only_after_the_canonical_upsert_succeeds():
+def test_legacy_alias_is_archived_only_after_the_canonical_upsert_succeeds():
     plans = [
-        {"_id": "legacy_solo", "name": "Solo", "is_active": True},
-        {"_id": "plan_boutique", "name": "Boutique", "is_active": True},
-        {"_id": "plan_signature", "name": "Signature", "is_active": True},
-        {"_id": "plan_enterprise", "name": "Enterprise", "is_active": True},
+        {"_id": "legacy_founding", "name": "Solo Founding", "is_active": True},
+        {"_id": "plan_solo_standard", "name": "Solo Standard", "is_active": True},
+        {"_id": "plan_signature", "name": "White Glove", "is_active": True},
     ]
 
-    # A failed canonical create must leave the only existing Solo selectable.
+    # A failed canonical create must leave the only existing plan selectable.
     assert legacy_canonical_plan_aliases(plans) == []
 
-    plans.append({"_id": "plan_solo", "name": "Solo", "is_active": True})
+    plans.append({"_id": "plan_boutique", "name": "Solo Founding", "is_active": True})
     aliases = legacy_canonical_plan_aliases(plans)
-    assert aliases == [("legacy_solo", "plan_solo")]
+    assert aliases == [("legacy_founding", "plan_boutique")]
 
     for legacy_id, canonical_id in aliases:
         legacy = next(plan for plan in plans if plan["_id"] == legacy_id)
@@ -327,7 +316,8 @@ def test_legacy_solo_is_archived_only_after_the_canonical_upsert_succeeds():
         plan["_id"] for plan in plans if plan["is_active"]
     } == CANONICAL_PUBLIC_PLAN_IDS
     assert any(
-        plan["_id"] == "legacy_solo" and plan["canonical_plan_id"] == "plan_solo"
+        plan["_id"] == "legacy_founding"
+        and plan["canonical_plan_id"] == "plan_boutique"
         for plan in plans
     )
 
@@ -335,15 +325,17 @@ def test_legacy_solo_is_archived_only_after_the_canonical_upsert_succeeds():
 def test_previously_archived_alias_without_override_is_selected_for_backfill():
     plans = [
         {
-            "_id": "legacy_solo",
-            "name": "Solo",
+            "_id": "legacy_founding",
+            "name": "Solo Founding",
             "is_active": False,
-            "canonical_plan_id": "plan_solo",
+            "canonical_plan_id": "plan_boutique",
         },
-        {"_id": "plan_solo", "name": "Solo", "is_active": True},
+        {"_id": "plan_boutique", "name": "Solo Founding", "is_active": True},
     ]
 
-    assert legacy_canonical_plan_aliases(plans) == [("legacy_solo", "plan_solo")]
+    assert legacy_canonical_plan_aliases(plans) == [
+        ("legacy_founding", "plan_boutique")
+    ]
 
     plans[0]["admin_overrides"] = {
         "is_active": datetime.now(timezone.utc),
@@ -358,10 +350,9 @@ async def test_manual_seed_refreshes_existing_plan_defaults_without_creating_pla
     from app.api import subscription_management
 
     existing = [
-        {"_id": "plan_solo", "name": "Solo"},
-        {"_id": "plan_boutique", "name": "Boutique"},
+        {"_id": "plan_boutique", "name": "Solo Founding"},
+        {"_id": "plan_solo_standard", "name": "Solo Standard"},
         {"_id": "plan_signature", "name": "Operator Agency"},
-        {"_id": "plan_enterprise", "name": "Enterprise"},
     ]
 
     class FakeSubscriptionService:
@@ -382,6 +373,9 @@ async def test_manual_seed_refreshes_existing_plan_defaults_without_creating_pla
         async def create_plan(self, *_args, **_kwargs):
             raise AssertionError("existing canonical plans must not be recreated")
 
+        async def retire_public_plan(self, *_args, **_kwargs):
+            raise AssertionError("no retired plan document exists in this scenario")
+
     fake_service = FakeSubscriptionService()
     monkeypatch.setattr(
         subscription_management,
@@ -394,14 +388,64 @@ async def test_manual_seed_refreshes_existing_plan_defaults_without_creating_pla
     )
 
     assert result["created_plans"] == 0
-    assert result["updated_plans"] == 4
+    assert result["updated_plans"] == 3
     assert result["skipped_plans"] == 0
-    assert len(fake_service.refresh_calls) == 4
+    assert result["retired_plans"] == 0
+    assert len(fake_service.refresh_calls) == 3
     assert {plan_id for plan_id, _fields in fake_service.refresh_calls} == set(
         CANONICAL_PUBLIC_PLAN_IDS
     )
     for _plan_id, fields in fake_service.refresh_calls:
         assert set(fields) == {"description", "features", "features_list"}
+
+
+@pytest.mark.asyncio
+async def test_manual_seed_retires_off_sale_plans(monkeypatch):
+    from app.api import subscription_management
+
+    existing = [
+        {"_id": "plan_solo", "name": "Solo", "is_active": True},
+        {"_id": "plan_boutique", "name": "Solo Founding"},
+        {"_id": "plan_solo_standard", "name": "Solo Standard"},
+        {"_id": "plan_signature", "name": "White Glove"},
+        {"_id": "plan_enterprise", "name": "Enterprise", "is_active": True},
+    ]
+
+    class FakeSubscriptionService:
+        def __init__(self):
+            self.retired: list[str] = []
+
+        async def list_plans(self, *, include_inactive: bool):
+            assert include_inactive is True
+            return existing
+
+        async def refresh_seeded_plan_fields(self, *_args, **_kwargs):
+            return False
+
+        async def archive_legacy_plan_alias(self, *_args, **_kwargs):
+            raise AssertionError("no legacy aliases exist in this scenario")
+
+        async def create_plan(self, *_args, **_kwargs):
+            raise AssertionError("existing canonical plans must not be recreated")
+
+        async def retire_public_plan(self, plan_id: str):
+            self.retired.append(plan_id)
+            return True
+
+    fake_service = FakeSubscriptionService()
+    monkeypatch.setattr(
+        subscription_management,
+        "subscription_service",
+        fake_service,
+    )
+
+    result = await subscription_management.seed_default_subscription_plans(
+        SimpleNamespace(email="root@example.com")
+    )
+
+    assert fake_service.retired == ["plan_enterprise", "plan_solo"]
+    assert result["retired_plans"] == 2
+    assert result["details"]["retired"] == ["plan_enterprise", "plan_solo"]
 
 
 @pytest.mark.asyncio
@@ -411,10 +455,9 @@ async def test_manual_seed_restores_canonical_id_and_archives_legacy_alias(
     from app.api import subscription_management
 
     existing = [
-        {"_id": "legacy_solo", "name": " SOLO ", "is_active": True},
-        {"_id": "plan_boutique", "name": "Boutique"},
-        {"_id": "plan_signature", "name": "Signature"},
-        {"_id": "plan_enterprise", "name": "Enterprise"},
+        {"_id": "legacy_founding", "name": " SOLO FOUNDING ", "is_active": True},
+        {"_id": "plan_solo_standard", "name": "Solo Standard"},
+        {"_id": "plan_signature", "name": "White Glove"},
     ]
 
     class FakeSubscriptionService:
@@ -431,13 +474,16 @@ async def test_manual_seed_restores_canonical_id_and_archives_legacy_alias(
 
         async def create_plan(self, plan_data: dict, _creator_email: str):
             self.created.append(plan_data["name"])
-            return {"plan_id": f"plan_{plan_data['name'].lower()}"}
+            return {"plan_id": "plan_boutique"}
 
         async def archive_legacy_plan_alias(
             self, legacy_plan_id: object, canonical_plan_id: str
         ):
             self.archived.append((legacy_plan_id, canonical_plan_id))
             return True
+
+        async def retire_public_plan(self, *_args, **_kwargs):
+            raise AssertionError("no retired plan document exists in this scenario")
 
     fake_service = FakeSubscriptionService()
     monkeypatch.setattr(
@@ -450,8 +496,8 @@ async def test_manual_seed_restores_canonical_id_and_archives_legacy_alias(
         SimpleNamespace(email="root@example.com")
     )
 
-    assert fake_service.created == ["Solo"]
-    assert fake_service.archived == [("legacy_solo", "plan_solo")]
+    assert fake_service.created == ["Solo Founding"]
+    assert fake_service.archived == [("legacy_founding", "plan_boutique")]
     assert result["created_plans"] == 1
     assert result["archived_aliases"] == 1
 
@@ -470,9 +516,9 @@ async def test_manual_seed_field_refresh_bypasses_stripe_and_preserves_newer_cop
                 "features": {"vendor_collaboration": True},
                 "features_list": ["Retired highlight"],
                 "admin_overrides": {
-                    "description": "2026-07-14T16:00:00+00:00",
-                    "features": "2026-07-14T12:00:00+00:00",
-                    "features_list": "2026-07-14T12:00:00+00:00",
+                    "description": "2026-07-28T16:00:00+00:00",
+                    "features": "2026-07-28T12:00:00+00:00",
+                    "features_list": "2026-07-27T12:00:00+00:00",
                 },
             }
 
@@ -510,11 +556,15 @@ async def test_legacy_plan_archive_retains_the_document_for_historical_reference
             self.update: dict | None = None
 
         async def find_one(self, query):
-            assert query == {"_id": "legacy_solo"}
-            return {"_id": "legacy_solo", "name": "Solo", "is_active": True}
+            assert query == {"_id": "legacy_founding"}
+            return {
+                "_id": "legacy_founding",
+                "name": "Solo Founding",
+                "is_active": True,
+            }
 
         async def update_one(self, query, update):
-            assert query == {"_id": "legacy_solo"}
+            assert query == {"_id": "legacy_founding"}
             self.update = update
 
     collection = FakeCollection()
@@ -522,15 +572,15 @@ async def test_legacy_plan_archive_retains_the_document_for_historical_reference
     service.plans_collection = collection
 
     archived = await service.archive_legacy_plan_alias(
-        "legacy_solo",
-        "plan_solo",
+        "legacy_founding",
+        "plan_boutique",
     )
 
     assert archived is True
     assert collection.update is not None
     written = collection.update["$set"]
     assert written["is_active"] is False
-    assert written["canonical_plan_id"] == "plan_solo"
+    assert written["canonical_plan_id"] == "plan_boutique"
     assert isinstance(written["admin_overrides.is_active"], datetime)
     assert isinstance(written["archived_as_duplicate_at"], datetime)
 
@@ -542,23 +592,23 @@ async def test_legacy_plan_archive_backfills_missing_stripe_override():
             self.update: dict | None = None
 
         async def find_one(self, query):
-            assert query == {"_id": "legacy_solo"}
+            assert query == {"_id": "legacy_founding"}
             return {
-                "_id": "legacy_solo",
-                "name": "Solo",
+                "_id": "legacy_founding",
+                "name": "Solo Founding",
                 "is_active": False,
-                "canonical_plan_id": "plan_solo",
+                "canonical_plan_id": "plan_boutique",
             }
 
         async def update_one(self, query, update):
-            assert query == {"_id": "legacy_solo"}
+            assert query == {"_id": "legacy_founding"}
             self.update = update
 
     collection = FakeCollection()
     service = SubscriptionService.__new__(SubscriptionService)
     service.plans_collection = collection
 
-    assert await service.archive_legacy_plan_alias("legacy_solo", "plan_solo")
+    assert await service.archive_legacy_plan_alias("legacy_founding", "plan_boutique")
     assert collection.update is not None
     assert isinstance(
         collection.update["$set"]["admin_overrides.is_active"],

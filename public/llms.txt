@@ -30,14 +30,13 @@ The marketing site at https://thespecialwedding.io is written for independent pl
 
 ### Pricing Plans
 
-The public pricing model uses four plans:
+The public pricing model uses three paid plans (there is no free plan):
 
-- **Solo**: Free plan for trying The Special Wedding with one active wedding. Includes guest list and RSVP tools, a branded wedding website, a basic timeline builder, and 1GB guest memories storage.
-- **Boutique**: $49/month for independent planners. Includes unlimited weddings, unlimited guests, vendor management, seating orchestration, automated reminders, Google and Outlook calendar sync, 300 AI credits per month, 25GB guest memories storage, and email support.
-- **Signature**: $149/month for planning agencies. Includes everything in Boutique plus 5 staff seats, a planner storefront on a shareable platform URL, an optional custom domain, 1,500 AI credits per month, 100GB guest memories storage, priority support, and support-assisted onboarding by request.
-- **Enterprise**: $399/month for larger planning teams. Includes everything in Signature, including the planner storefront and optional custom domain, plus 20 staff seats, 5,000 AI credits per month, 500GB guest memories storage, and support-assisted launch planning.
+- **Solo Founding**: $49/month founding-member rate for independent planners. Includes unlimited weddings, unlimited guests, vendor management, seating orchestration, automated reminders, Google and Outlook calendar sync, 300 AI credits per month, 25GB guest memories storage, and email support.
+- **Solo Standard**: $99/month standard rate for independent planners. Includes everything in Solo Founding plus 750 AI credits per month and 50GB guest memories storage.
+- **White Glove**: $149/month for planning teams. Includes everything in Solo Standard plus 5 staff seats, a planner storefront on a shareable platform URL, an optional custom domain, 1,500 AI credits per month, 100GB guest memories storage, priority support, and support-assisted onboarding by request.
 
-Paid plans include a 30-day free trial with no credit card required at signup.
+All plans include a 30-day free trial with no credit card required at signup.
 
 ### Founder And Workflow Proof
 
@@ -55,7 +54,7 @@ Representative outcomes include:
 
 - Existing guest lists can be imported from spreadsheets.
 - Each wedding has its own workspace, guest list, budget, seating, branding, and couple-facing portal.
-- Planner teams can collaborate through staff seats on the Signature and Enterprise plans.
+- Planner teams can collaborate through staff seats on the White Glove plan.
 - Vendor relationships are managed through private planner-owned records; the public vendor directory is separate and vendors are not given access to the planner workspace.
 - Customers can export their data. After cancellation, account data is retained for 30 days before permanent deletion.
 - The Special Wedding differs from generic CRMs because it includes wedding-specific tools such as seating charts, guest RSVPs, timelines, guest memories, vendor contracts, and planner AI workflows.

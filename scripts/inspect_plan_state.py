@@ -53,7 +53,15 @@ MONGO_URI = (
 )
 DB_NAME = os.getenv("MONGO_DB", "wedding")
 
-CANONICAL_IDS = ("plan_solo", "plan_boutique", "plan_signature", "plan_enterprise")
+# Live 2026-07 catalog first, then the retired plans (kept for historical
+# subscription lookups; they should report is_active=False).
+CANONICAL_IDS = (
+    "plan_boutique",
+    "plan_solo_standard",
+    "plan_signature",
+    "plan_solo",
+    "plan_enterprise",
+)
 
 
 def main() -> int:

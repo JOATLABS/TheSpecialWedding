@@ -132,7 +132,7 @@ export const faqs: FAQ[] = [
   {
     question: 'Can I manage multiple weddings at once?',
     answer:
-      'Yes. Each wedding gets its own workspace with separate guest lists, budgets, seating, and branding — all managed from a single dashboard. Enterprise supports unlimited weddings with team member assignments.',
+      'Yes. Each wedding gets its own workspace with separate guest lists, budgets, seating, and branding — all managed from a single dashboard. Every plan supports unlimited weddings, and White Glove adds team member assignments.',
     category: 'Getting Started',
   },
   {
@@ -144,7 +144,7 @@ export const faqs: FAQ[] = [
   {
     question: 'Is there support on the wedding day?',
     answer:
-      'Boutique includes email support. Signature includes priority support with a 12-hour response target, and Enterprise includes support-assisted launch planning. We do not currently advertise an on-call day-of service.',
+      'Solo Founding and Solo Standard include email support. White Glove includes priority support with a 12-hour response target and support-assisted onboarding. We do not currently advertise an on-call day-of service.',
     category: 'Day-of Support',
   },
   {
@@ -197,9 +197,9 @@ export const faqs: FAQ[] = [
     category: 'Pricing & Billing',
   },
   {
-    question: "What's included in the Enterprise tier?",
+    question: "What's included in the White Glove tier?",
     answer:
-      'Enterprise is built for firms that need unlimited weddings, unlimited guests, 20 staff seats, higher AI usage, expanded guest memories storage, and support-assisted launch planning.',
+      'White Glove is built for planning teams that need staff seats (5 included), a planner storefront, optional custom domain, higher AI usage, expanded guest memories storage, priority support, and support-assisted onboarding.',
     category: 'Pricing & Billing',
   },
 ];

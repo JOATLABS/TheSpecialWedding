@@ -29,33 +29,13 @@ interface SubscriptionPlan {
 // fallback in app/page.tsx. This list is only used until the /public/
 // subscription-plans fetch resolves; once that lands, the modal renders
 // from the live Mongo data.
+// 2026-07 pricing: the free tier is retired — every plan is paid with a
+// 30-day trial.
 const FALLBACK_PLANS: SubscriptionPlan[] = [
   {
-    _id: 'plan_solo',
-    name: 'Solo',
-    description: 'Try us with your first client. One wedding, on us.',
-    price_monthly: 0,
-    price_yearly: 0,
-    billing_model: 'flat_rate',
-    is_metered: false,
-    trial_days: 0,
-    max_weddings: 1,
-    max_guests_per_wedding: 50,
-    features_list: [
-      '1 wedding to try us out',
-      'Guest list & RSVP system',
-      'Branded wedding website',
-      'Basic timeline builder',
-      '1GB guest memories storage',
-    ],
-    features: {},
-    is_featured: false,
-    display_order: 0,
-  },
-  {
     _id: 'plan_boutique',
-    name: 'Boutique',
-    description: 'For independent planners running their solo practice with paid planning tools and higher limits.',
+    name: 'Solo Founding',
+    description: 'Founding-member rate for independent planners running their solo practice.',
     price_monthly: 49,
     price_yearly: 490,
     billing_model: 'flat_rate',
@@ -79,9 +59,32 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
     display_order: 1,
   },
   {
+    _id: 'plan_solo_standard',
+    name: 'Solo Standard',
+    description: 'The standard rate for independent planners — everything a solo practice needs to run client weddings end to end.',
+    price_monthly: 99,
+    price_yearly: 990,
+    billing_model: 'flat_rate',
+    is_metered: false,
+    trial_days: 30,
+    max_weddings: -1,
+    max_guests_per_wedding: -1,
+    features_list: [
+      'Unlimited weddings',
+      'Unlimited guests',
+      'Everything in Solo Founding',
+      '750 AI credits/month',
+      '50GB guest memories storage',
+      'Email support',
+    ],
+    features: {},
+    is_featured: false,
+    display_order: 2,
+  },
+  {
     _id: 'plan_signature',
-    name: 'Signature',
-    description: 'For agencies running a team of planners. Everything in Boutique, plus five staff seats, higher AI and storage limits, a planner storefront, and custom-domain options.',
+    name: 'White Glove',
+    description: 'White-glove service for planning teams. Everything in Solo Standard, plus five staff seats, a planner storefront, custom-domain options, and support-assisted onboarding.',
     price_monthly: 149,
     price_yearly: 1490,
     billing_model: 'flat_rate',
@@ -92,7 +95,7 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
     features_list: [
       'Unlimited weddings',
       'Unlimited guests',
-      'Everything in Boutique',
+      'Everything in Solo Standard',
       'Team collaboration (5 staff seats)',
       'Planner storefront on a shareable platform URL',
       'Optional custom domain (app.yourbrand.com)',
@@ -103,34 +106,8 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
     ],
     features: {},
     is_featured: true,
-    display_order: 2,
-  },
-  {
-    _id: 'plan_enterprise',
-    name: 'Enterprise',
-    description: 'For larger planning teams that need more seats, higher AI usage, expanded guest memories storage, and launch support.',
-    price_monthly: 399,
-    price_yearly: 3990,
-    billing_model: 'flat_rate',
-    is_metered: false,
-    trial_days: 30,
-    max_weddings: -1,
-    max_guests_per_wedding: -1,
-    features_list: [
-      'Unlimited weddings',
-      'Unlimited guests',
-      'Everything in Signature',
-      'Planner storefront on a shareable platform URL',
-      'Optional custom domain',
-      '20 staff seats',
-      '5,000 AI credits/month',
-      '500GB guest memories storage',
-      'Support-assisted launch planning',
-    ],
-    features: {},
-    is_featured: false,
     display_order: 3,
-  }
+  },
 ];
 
 interface SignupModalProps {

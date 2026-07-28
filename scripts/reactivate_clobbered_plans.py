@@ -76,7 +76,10 @@ DB_NAME = os.getenv("MONGO_DB", "wedding")
 STRIPE_KEY = os.getenv("STRIPE_SECRET_KEY")
 DRY_RUN = os.getenv("DRY_RUN", "1") != "0"
 
-CANONICAL_IDS = ("plan_solo", "plan_boutique", "plan_signature", "plan_enterprise")
+# 2026-07 pricing strategy: plan_solo and plan_enterprise are RETIRED and
+# must never be reactivated by this recovery script. Only the live catalog
+# (Solo Founding / Solo Standard / White Glove) is eligible for repair.
+CANONICAL_IDS = ("plan_boutique", "plan_solo_standard", "plan_signature")
 
 
 def main() -> int:

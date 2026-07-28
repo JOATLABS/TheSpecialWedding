@@ -41,8 +41,14 @@ os.environ.setdefault("STRIPE_SECRET_KEY", "sk_test_unit")
 # ===========================================================================
 
 
-def test_solo_seed_plan_has_lifetime_cap_enabled():
-    """Pin: the Solo tier is configured for lifetime enforcement.
+def test_retired_free_tier_is_not_reintroduced_by_the_seed():
+    """Pin the 2026-07 strategy: no free tier ships in the seed catalog.
+
+    plan_solo was retired on 2026-07-28 (every free account carries real
+    Twilio/cloud/AI cost). The seed script must not re-declare it — it is
+    forced inactive by the RETIRED_PUBLIC_PLAN_IDS block instead. The
+    lifetime-cap enforcement branch in subscription_service stays tested
+    below for historical plan snapshots that still carry the flag.
 
     Uses an AST parse (matches the pattern in test_metering_gating.py) so
     we don't trigger the seed script's Mongo connection side effects.
@@ -65,44 +71,33 @@ def test_solo_seed_plan_has_lifetime_cap_enabled():
         "Could not locate the `plans = [...]` literal in the seed script."
     )
 
-    solo_plan = None
+    seeded_ids = set()
     for plan_dict_node in plans_node.elts:
         if not isinstance(plan_dict_node, ast.Dict):
             continue
-        plan_id = None
-        lifetime_flag = None
-        max_weddings = None
         for k_node, v_node in zip(plan_dict_node.keys, plan_dict_node.values):
-            if not isinstance(k_node, ast.Constant):
-                continue
-            key = k_node.value
-            if key == "_id" and isinstance(v_node, ast.Constant):
-                plan_id = v_node.value
-            elif key == "max_weddings_lifetime" and isinstance(v_node, ast.Constant):
-                lifetime_flag = v_node.value
-            elif key == "max_weddings" and isinstance(v_node, ast.Constant):
-                max_weddings = v_node.value
-        if plan_id == "plan_solo":
-            solo_plan = {
-                "max_weddings_lifetime": lifetime_flag,
-                "max_weddings": max_weddings,
-            }
-            break
+            if (
+                isinstance(k_node, ast.Constant)
+                and k_node.value == "_id"
+                and isinstance(v_node, ast.Constant)
+            ):
+                seeded_ids.add(v_node.value)
 
-    assert solo_plan is not None, "Solo plan not found in seed script"
-    # 2026-05-12 strategy refresh: Solo uses ACTIVE-count, not lifetime.
-    # Planners can delete a wedding and create another — the upgrade
-    # pressure comes from the 1-active-at-a-time cap + 50-guest cap,
-    # not from a lifetime gate. The lifetime branch still exists in
-    # subscription_service and is tested below — this assertion just
-    # pins that Solo currently uses active-count.
-    assert solo_plan["max_weddings_lifetime"] is False, (
-        "Solo tier currently ships with max_weddings_lifetime=False (active "
-        "count). If you flipped it to True, update this assertion AND the "
-        "docs/specs/PRICING_STRATEGY_*.md spec describing the decision."
+    assert "plan_solo" not in seeded_ids, (
+        "plan_solo (the retired free tier) must not be re-declared by the "
+        "seed catalog. The 2026-07 pricing strategy retired it — see "
+        "RETIRED_PUBLIC_PLAN_IDS in app/constants/billing.py."
     )
-    assert solo_plan["max_weddings"] == 1, (
-        f"Solo tier should cap at 1 wedding, got max_weddings={solo_plan['max_weddings']!r}"
+    assert "plan_enterprise" not in seeded_ids, (
+        "plan_enterprise was retired by the 2026-07 pricing strategy and "
+        "must not be re-declared by the seed catalog."
+    )
+
+    # And the seed must actively retire both.
+    seed_src = seed_path.read_text()
+    assert "RETIRED_PUBLIC_PLAN_IDS" in seed_src, (
+        "The boot seed must force-retire the off-sale plans so a previously "
+        "seeded database cannot keep selling the free tier."
     )
 
 
