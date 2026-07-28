@@ -733,6 +733,12 @@ export const SaasLandingPage: React.FC = () => {
                 {planNotice}
               </p>
             )}
+            {/* SYNC-WITH-CATALOG: Couple Lifetime Access — $199 one-time
+                (COUPLE_LIFETIME_OFFER in app/constants/billing.py). */}
+            <p className="text-center text-sm text-slate-600">
+              Planning your own wedding? Couples can get lifetime access to one wedding workspace for a
+              one-time $199 fee — not a subscription. See the &ldquo;For couples&rdquo; section on the homepage.
+            </p>
           </section>
 
           {config.testimonials_enabled && orderedTestimonials.length > 0 && (

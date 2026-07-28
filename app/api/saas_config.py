@@ -290,6 +290,10 @@ def _get_default_saas_config():
                 "answer": "Solo Founding and Solo Standard include email support. We do not currently advertise an on-call day-of service.",
             },
             {
+                "question": "Do couples pay for The Special Wedding?",
+                "answer": "Couples invited by a planner pay nothing — the couple portal is included in the planner's plan. Couples planning their own wedding can purchase Couple Lifetime Access: a one-time $199 fee (not a subscription) covering one wedding workspace for the lifetime of the wedding.",
+            },
+            {
                 "question": "What's next for messaging?",
                 "answer": "We are crafting a dedicated messaging studio that centralizes vendor, couple, and planner conversations with payment, contract, and budget context—launching soon.",
             },

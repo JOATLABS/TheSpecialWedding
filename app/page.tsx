@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { CouplePlanSection } from "./components/landing-page/CouplePlanSection";
 import { FeatureShowcase } from "./components/landing-page/FeatureShowcase.client";
 import { PhaseOneHeroProof } from "./components/landing-page/PhaseOneHeroProof";
 import { PricingSignupSection } from "./components/landing-page/PricingSignupSection.client";
@@ -93,6 +94,11 @@ const faqs = [
       "Yes. Roles, handoffs, dashboards, and shared planning workflows are designed for studios with multiple planners and assistants.",
   },
   {
+    question: "We're a couple planning our own wedding — can we use The Special Wedding without a planner?",
+    answer:
+      "Yes. Couples can get lifetime access to their own wedding workspace for a one-time $199 fee — it is not a subscription and nothing renews. That covers full planning tools for your entire planning window: guest list and RSVP tracking, your wedding website, galleries, and data export for one wedding.",
+  },
+  {
     question: "What happens when my 30-day trial ends?",
     answer:
       "Your data stays intact. Keep your plan to continue without interruption, or export the core workspace data before deciding.",
@@ -175,6 +181,9 @@ export default function HomePage() {
       </section>
 
       <PricingSignupSection pricing={fallbackPricing} theme={defaultTheme} />
+
+      {/* Couples' one-time offer — secondary to the planner tiers above. */}
+      <CouplePlanSection />
 
       <section className="bg-slate-950 px-6 py-16 sm:px-8 lg:px-12">
         <div className="mx-auto grid max-w-7xl gap-8 rounded-3xl border border-white/10 bg-white/[0.035] p-7 sm:p-10 lg:grid-cols-[0.82fr_1.18fr] lg:items-center">
