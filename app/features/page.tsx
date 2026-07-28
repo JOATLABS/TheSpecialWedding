@@ -141,13 +141,13 @@ export default function FeaturesPage() {
           <h2 className="text-3xl font-semibold text-white sm:text-4xl">
             Start one wedding. Connect the rest of the work.
           </h2>
-          <p className="mt-4 text-base text-slate-300">Your first planner workspace is free.</p>
+          <p className="mt-4 text-base text-slate-300">Every plan starts with a 30-day free trial.</p>
           <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link
               href={PUBLIC_LOGIN_PATH}
               className="inline-flex min-h-12 items-center justify-center rounded-full bg-white px-7 py-3 text-base font-semibold text-slate-950 transition hover:bg-slate-100"
             >
-              Start free
+              Start your trial
             </Link>
             <a
               href="mailto:hello@thespecialwedding.io?subject=Planner workspace walkthrough"

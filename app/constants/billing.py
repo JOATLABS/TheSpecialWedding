@@ -9,13 +9,40 @@ from typing import Any
 BILLING_MODEL_FLAT_RATE = "flat_rate"
 BILLING_MODEL_METERED = "metered"
 
+# 2026-07-27 locked pricing scheme: the free tier is retired entirely and the
+# catalog becomes three paid planner tiers. Mongo _ids stay stable where the
+# price did not change so existing Stripe subscriptions (and the in-flight
+# Signature trial) keep working — the plan is renamed, not replaced.
+#   plan_boutique      -> "Solo Founding"  $49/mo  (was Boutique $49)
+#   plan_solo_standard -> "Solo Standard"  $99/mo  (new)
+#   plan_signature     -> "White Glove"    $149/mo (was Signature $149)
+# plan_solo ($0) and plan_enterprise ($399) are retired — see
+# RETIRED_PUBLIC_PLAN_IDS below.
 CANONICAL_PUBLIC_PLAN_IDS_BY_NAME = {
-    "Solo": "plan_solo",
-    "Boutique": "plan_boutique",
-    "Signature": "plan_signature",
-    "Enterprise": "plan_enterprise",
+    "Solo Founding": "plan_boutique",
+    "Solo Standard": "plan_solo_standard",
+    "White Glove": "plan_signature",
 }
 CANONICAL_PUBLIC_PLAN_IDS = frozenset(CANONICAL_PUBLIC_PLAN_IDS_BY_NAME.values())
+
+# Plans removed from sale by the 2026-07 pricing strategy. Their Mongo
+# documents are retained (historical subscriptions must keep resolving) but
+# they are forced inactive on every seed run and their Stripe products are
+# archived so no new checkout can be created against them.
+RETIRED_PUBLIC_PLAN_IDS = frozenset({"plan_solo", "plan_enterprise"})
+
+# Couple-side one-time offer (lifetime-of-wedding access), locked 2026-07-27.
+# There is no couple checkout flow yet — the catalog encodes the price and the
+# env key that will carry the real Stripe Price id once the operator creates
+# it (mode=payment, $199 USD). An unset env var means "not purchasable yet";
+# code must never fabricate a placeholder price id.
+COUPLE_LIFETIME_OFFER = {
+    "id": "offer_couple_lifetime",
+    "name": "Couple Lifetime Access",
+    "amount_usd": 199,
+    "billing": "one_time",
+    "stripe_price_env": "STRIPE_COUPLE_LIFETIME_PRICE_ID",
+}
 # 2026-05-09 pricing strategy refresh: shipped plans are flat. The metering
 # hardening infrastructure (stripe_meter_helpers, ensure_stripe_meter,
 # assert_meter_config) stays available — a plan can be flipped to metered

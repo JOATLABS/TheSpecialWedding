@@ -6,8 +6,10 @@ from fastapi import HTTPException
 
 from app.constants.billing import (
     CANONICAL_PUBLIC_PLAN_IDS,
+    CANONICAL_PUBLIC_PLAN_IDS_BY_NAME,
     CANONICAL_PUBLIC_PLAN_METER_EVENT_NAME,
     PLAN_BILLING_MODEL_MIGRATION_FLAG,
+    RETIRED_PUBLIC_PLAN_IDS,
     plan_billing_model,
     plan_billing_model_migration_enabled,
 )
@@ -119,7 +121,14 @@ class SubscriptionService:
     async def create_plan(self, plan_data: dict, creator_email: str) -> dict:
         """Create a new subscription plan"""
         try:
-            plan_data["_id"] = f"plan_{plan_data['name'].lower().replace(' ', '_')}"
+            # Canonical public plans keep their historical Mongo _id even when
+            # the display name changes (e.g. "White Glove" -> plan_signature),
+            # so existing Stripe products/subscriptions stay attached. Only
+            # non-canonical names fall back to name-derived ids.
+            plan_data["_id"] = (
+                CANONICAL_PUBLIC_PLAN_IDS_BY_NAME.get(plan_data["name"])
+                or f"plan_{plan_data['name'].lower().replace(' ', '_')}"
+            )
             self._normalize_plan_billing_fields(plan_data)
             plan_data["created_by"] = creator_email
             plan_data["created_at"] = datetime.now(UTC)
@@ -322,6 +331,56 @@ class SubscriptionService:
                     "Failed to archive Stripe product %s for legacy plan %s",
                     stripe_product_id,
                     legacy_plan_id,
+                )
+        return True
+
+    async def retire_public_plan(self, plan_id: str) -> bool:
+        """Take a plan permanently off sale (2026-07 pricing strategy).
+
+        Sets ``is_active=False`` with an operator-grade override timestamp so
+        the seed merge policy and the Stripe ``product.updated`` webhook can
+        never reactivate it, and archives the Stripe product. The document is
+        deliberately retained: historical subscriptions (e.g. legacy free
+        accounts pending convert-or-close) must keep resolving their plan.
+        """
+
+        if plan_id not in RETIRED_PUBLIC_PLAN_IDS:
+            raise HTTPException(status_code=400, detail="Plan is not retirable")
+
+        existing_plan = await self.plans_collection.find_one({"_id": plan_id})
+        if not existing_plan:
+            return False
+        if (
+            existing_plan.get("is_active") is False
+            and (existing_plan.get("admin_overrides") or {}).get("is_active")
+            is not None
+        ):
+            return False
+
+        retired_at = datetime.now(UTC)
+        await self.plans_collection.update_one(
+            {"_id": plan_id},
+            {
+                "$set": {
+                    "is_active": False,
+                    "retired_at": retired_at,
+                    "admin_overrides.is_active": retired_at,
+                    "updated_at": retired_at,
+                }
+            },
+        )
+
+        stripe_product_id = existing_plan.get("stripe_product_id")
+        if stripe_product_id and settings.stripe_enabled and settings.stripe_secret_key:
+            try:
+                stripe_service.archive_stripe_product(stripe_product_id)
+            except Exception:
+                # Mongo remains fail-closed; the override prevents webhook
+                # reactivation even if the Stripe archive fails here.
+                logger.exception(
+                    "Failed to archive Stripe product %s for retired plan %s",
+                    stripe_product_id,
+                    plan_id,
                 )
         return True
 

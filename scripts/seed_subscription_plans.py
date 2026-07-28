@@ -21,6 +21,7 @@ from app.constants.billing import (  # noqa: E402
     BILLING_MODEL_METERED,
     CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
     PLAN_BILLING_MODEL_MIGRATION_FLAG,
+    RETIRED_PUBLIC_PLAN_IDS,
     plan_billing_model_migration_enabled,
 )
 from app.utils.subscription_plan_seed_policy import (  # noqa: E402
@@ -512,88 +513,40 @@ def _guard_seed_billing_model_transition(
 
 # Define plans
 #
-# 2026-05-12 pricing strategy refresh (per docs/specs/PRICING_STRATEGY_2026-05.md):
-#   - Solo (free): 1 ACTIVE wedding (deletable; can have many over time)
-#   - Boutique ($49/mo): UNLIMITED weddings, UNLIMITED guests, 1 seat — solo paid practitioner
-#   - Signature ($149/mo): UNLIMITED weddings, UNLIMITED guests, 5 seats — agency / small team
-#   - Enterprise ($399/mo): UNLIMITED weddings, UNLIMITED guests, 20 seats — support-assisted launch
+# 2026-07-28 pricing strategy (locked by the operator on 2026-07-27):
+#   - THE FREE TIER IS RETIRED. Every free account carries real Twilio/cloud/AI
+#     cost; plan_solo is forced inactive below (see RETIRED_PUBLIC_PLAN_IDS).
+#   - Solo Founding ($49/mo, id plan_boutique): founding-member rate, 1 seat.
+#   - Solo Standard ($99/mo, id plan_solo_standard): standard solo rate, 1 seat.
+#   - White Glove ($149/mo, id plan_signature): 5 seats, storefront, custom
+#     domain, support-assisted onboarding.
+#   - Couple one-time $199 (lifetime-of-wedding) lives in
+#     app/constants/billing.py::COUPLE_LIFETIME_OFFER — no recurring plan doc.
+#
+# Mongo _ids deliberately stay stable where the price did not change
+# (plan_boutique @ $49, plan_signature @ $149) so existing Stripe products,
+# prices, and subscriptions — including in-flight trials — are renamed in
+# place rather than replaced.
 #
 # Differentiation is by implemented limits and support paths (team seats, AI credits,
 # guest memories storage, planner storefronts, optional custom domains, and
-# support-assisted onboarding/launch). Do not advertise capabilities whose
+# support-assisted onboarding). Do not advertise capabilities whose
 # production contracts are not implemented.
-# Trial = uniform 30 days across all paid plans. Solo is permanently free.
+# Trial = uniform 30 days across all paid plans.
 # All plans are FLAT (is_metered=False). The metering hardening shipped 2026-05-04
 # is available infrastructure — flip is_metered=True + add meter_event_name on any
 # plan to switch to per-wedding billing.
 #
 # See docs/analysis/METERING_IMPLEMENTATION_2026-05-04.md for the metering option.
 plans = [
-    {
-        "_id": "plan_solo",
-        "name": "Solo",
-        "description": "Try us with your first client. One wedding, on us.",
-        "price_monthly": 0,
-        "price_yearly": 0,
-        "trial_days": 0,
-        "is_metered": False,
-        "max_weddings": 1,
-        # Active-count cap (NOT lifetime): planner can delete a wedding and
-        # create another. Per-PR 2026-05-12 strategy refresh, we accept the
-        # mild create→delete→re-create cost in exchange for less surprising
-        # behavior. The 50-guest value remains in plan data for future
-        # enforcement, but public copy should not advertise it until guest
-        # creation/import paths actually honor the limit.
-        "max_weddings_lifetime": False,
-        "max_guests_per_wedding": 50,
-        "ai_credits_monthly": 0,
-        "storage_gb": 1,
-        "staff_seats": 1,
-        "features": {
-            "guest_management": True,
-            "email_invitations": True,
-            "rsvp_system": True,
-            "wedding_website": True,
-            "timeline_builder": True,
-            "basic_analytics": False,
-            "vendor_management": False,
-            "seating_orchestration": False,
-            "ai_features": False,
-            "qr_checkin": False,
-            "automated_reminders": False,
-            "calendar_sync": False,
-            "payment_processing": False,
-            "vendor_collaboration": False,
-            "advanced_analytics": False,
-            "planner_storefront": False,
-            "custom_domain": False,
-            "priority_support": False,
-            "white_label": False,
-            "api_access": False,
-            "dedicated_support": False,
-        },
-        "features_list": [
-            "1 wedding to try us out",
-            "Guest list & RSVP system",
-            "Branded wedding website",
-            "Basic timeline builder",
-            "1GB guest memories storage",
-        ],
-        "is_active": True,
-        "is_featured": False,
-        "sort_order": 0,
-        "display_order": 0,
-        "created_by": "system",
-        "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc),
-    },
     # ============================================================
-    # BOUTIQUE — $49/mo, the solo planner running their business
+    # SOLO FOUNDING — $49/mo, founding-member rate for solo planners
+    # (formerly "Boutique"; same _id, same Stripe prices)
     # ============================================================
     {
         "_id": "plan_boutique",
-        "name": "Boutique",
-        "description": "For independent planners running their solo practice with paid planning tools and higher limits.",
+        "name": "Solo Founding",
+        "description": "Founding-member rate for independent planners running their solo practice.",
         "price_monthly": 49,
         "price_yearly": 490,  # 10x monthly
         "trial_days": 30,
@@ -647,10 +600,71 @@ plans = [
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
     },
+    # ============================================================
+    # SOLO STANDARD — $99/mo, standard rate for solo planners (new)
+    # ============================================================
+    {
+        "_id": "plan_solo_standard",
+        "name": "Solo Standard",
+        "description": "The standard rate for independent planners — everything a solo practice needs to run client weddings end to end.",
+        "price_monthly": 99,
+        "price_yearly": 990,  # 10x monthly
+        "trial_days": 30,
+        "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
+        "is_metered": False,
+        "max_weddings": -1,  # Unlimited
+        "max_weddings_lifetime": False,
+        "max_guests_per_wedding": -1,  # Unlimited
+        "ai_credits_monthly": 750,
+        "storage_gb": 50,
+        "staff_seats": 1,
+        "features": {
+            "guest_management": True,
+            "email_invitations": True,
+            "rsvp_system": True,
+            "wedding_website": True,
+            "timeline_builder": True,
+            "basic_analytics": True,
+            "vendor_management": True,
+            "seating_orchestration": True,
+            "ai_features": True,
+            "qr_checkin": True,
+            "automated_reminders": True,
+            "calendar_sync": True,
+            "payment_processing": True,
+            "vendor_collaboration": False,
+            "advanced_analytics": False,
+            "planner_storefront": False,
+            "custom_domain": False,
+            "priority_support": False,
+            "white_label": False,
+            "api_access": False,
+            "dedicated_support": False,
+        },
+        "features_list": [
+            "Unlimited weddings",
+            "Unlimited guests",
+            "Everything in Solo Founding",
+            "750 AI credits/month",
+            "50GB guest memories storage",
+            "Email support",
+        ],
+        "is_active": True,
+        "is_featured": False,
+        "sort_order": 2,
+        "display_order": 2,
+        "created_by": "system",
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    },
+    # ============================================================
+    # WHITE GLOVE — $149/mo, team seats + storefront + assisted onboarding
+    # (formerly "Signature"; same _id, same Stripe prices)
+    # ============================================================
     {
         "_id": "plan_signature",
-        "name": "Signature",
-        "description": "For agencies running a team of planners. Everything in Boutique, plus five staff seats, higher AI and storage limits, a planner storefront, and custom-domain options.",
+        "name": "White Glove",
+        "description": "White-glove service for planning teams. Everything in Solo Standard, plus five staff seats, a planner storefront, custom-domain options, and support-assisted onboarding.",
         "price_monthly": 149,
         "price_yearly": 1490,  # 10x monthly
         "trial_days": 30,
@@ -688,7 +702,7 @@ plans = [
         "features_list": [
             "Unlimited weddings",
             "Unlimited guests",
-            "Everything in Boutique",
+            "Everything in Solo Standard",
             "Team collaboration (5 staff seats)",
             "Planner storefront on a shareable platform URL",
             "Optional custom domain (app.yourbrand.com)",
@@ -699,63 +713,6 @@ plans = [
         ],
         "is_active": True,
         "is_featured": True,
-        "sort_order": 2,
-        "display_order": 2,
-        "created_by": "system",
-        "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc),
-    },
-    {
-        "_id": "plan_enterprise",
-        "name": "Enterprise",
-        "description": "For larger planning teams that need more seats, higher AI usage, expanded guest memories storage, and launch support.",
-        "price_monthly": 399,
-        "price_yearly": 3990,  # ~2 months free
-        "trial_days": 30,
-        "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
-        "is_metered": False,
-        "max_weddings": -1,  # Unlimited
-        "max_weddings_lifetime": False,
-        "max_guests_per_wedding": -1,  # Unlimited
-        "ai_credits_monthly": 5000,
-        "storage_gb": 500,
-        "staff_seats": 20,
-        "features": {
-            "guest_management": True,
-            "email_invitations": True,
-            "rsvp_system": True,
-            "wedding_website": True,
-            "timeline_builder": True,
-            "basic_analytics": True,
-            "advanced_analytics": True,
-            "vendor_management": True,
-            "seating_orchestration": True,
-            "ai_features": True,
-            "qr_checkin": True,
-            "automated_reminders": True,
-            "calendar_sync": True,
-            "payment_processing": True,
-            "vendor_collaboration": False,
-            "planner_storefront": True,
-            "custom_domain": True,
-            "priority_support": True,
-            "white_label": True,
-            "api_access": True,
-            "dedicated_support": True,
-        },
-        "features_list": [
-            "Unlimited weddings",
-            "Unlimited guests",
-            "Everything in Signature",
-            "Planner storefront on a shareable platform URL",
-            "Optional custom domain",
-            "20 staff seats",
-            "5,000 AI credits/month",
-            "500GB guest memories storage",
-            "Support-assisted launch planning",
-        ],
-        "is_active": True,
-        "is_featured": False,
         "sort_order": 3,
         "display_order": 3,
         "created_by": "system",
@@ -766,6 +723,25 @@ plans = [
 
 print("\n[SEED] Seeding Subscription Plans...")
 print("=" * 50)
+
+# ---- 2026-07 one-time display-order migration ----
+# display_order / sort_order are operator-preserved fields, so the new
+# ordering (Solo Founding 1, Solo Standard 2, White Glove 3) cannot land via
+# the normal upsert on databases seeded before this release. Detect the
+# pre-migration document by its OLD name so this can never fight a future
+# operator edit — once renamed, this block is a no-op forever.
+if collection.find_one({"_id": "plan_signature", "name": "Signature"}):
+    collection.update_one(
+        {"_id": "plan_signature"},
+        {
+            "$set": {
+                "sort_order": 3,
+                "display_order": 3,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+    print("[MIGRATE] plan_signature display order 2 -> 3 (Signature -> White Glove)")
 
 created = 0
 updated = 0
@@ -891,6 +867,60 @@ for plan in plans:
     else:
         print("  [SKIP] No changes needed")
         skipped += 1
+
+# ---- 2026-07 retired plans ----
+# plan_solo (the free tier) and plan_enterprise are permanently off sale.
+# Force them inactive with an operator-grade override (admin_overrides.is_active)
+# so the ADMIN_PRESERVED merge policy and the Stripe product.updated webhook can
+# never resurrect them, and archive their Stripe products/prices so no new
+# checkout can be created. Documents are deliberately retained: existing
+# subscriptions (e.g. legacy free accounts pending convert-or-close) must keep
+# resolving their plan snapshot.
+retired_count = 0
+for retired_plan_id in sorted(RETIRED_PUBLIC_PLAN_IDS):
+    retired_plan = collection.find_one({"_id": retired_plan_id})
+    if not retired_plan:
+        continue
+    already_retired = (
+        retired_plan.get("is_active") is False
+        and (retired_plan.get("admin_overrides") or {}).get("is_active") is not None
+    )
+    if not already_retired:
+        retired_at = datetime.now(timezone.utc)
+        collection.update_one(
+            {"_id": retired_plan_id},
+            {
+                "$set": {
+                    "is_active": False,
+                    "retired_at": retired_at,
+                    "admin_overrides.is_active": retired_at,
+                    "updated_at": retired_at,
+                }
+            },
+        )
+        retired_count += 1
+        print(f"  [RETIRED] Plan '{retired_plan_id}' removed from sale")
+    retired_product_id = retired_plan.get("stripe_product_id")
+    if STRIPE_CONFIGURED and retired_product_id:
+        try:
+            retired_product = stripe.Product.retrieve(retired_product_id)
+            if getattr(retired_product, "active", False):
+                for retired_price in stripe.Price.list(
+                    product=retired_product_id, active=True
+                ).auto_paging_iter():
+                    stripe.Price.modify(retired_price.id, active=False)
+                stripe.Product.modify(retired_product_id, active=False)
+                print(
+                    f"  [STRIPE] Archived retired product '{retired_product_id}'"
+                )
+        except StripeError as exc:
+            print(
+                f"  [WARN] Could not archive retired Stripe product "
+                f"'{retired_product_id}': {exc}"
+            )
+
+if retired_count:
+    print(f"[RETIRED] {retired_count} plans removed from sale this run")
 
 # ---- Canonical identity cleanup ----
 # Only archive same-name aliases after every canonical upsert succeeded. If
