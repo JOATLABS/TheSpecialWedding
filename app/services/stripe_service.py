@@ -2,6 +2,7 @@
 
 import html
 import logging
+import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -11,7 +12,7 @@ from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 from stripe import InvalidRequestError, SignatureVerificationError, StripeError
 
-from app.constants.billing import plan_billing_model
+from app.constants.billing import COUPLE_LIFETIME_OFFER, plan_billing_model
 from app.core.database import mongo
 from app.core.settings import settings
 from app.models.subscription import (
@@ -1775,6 +1776,13 @@ class StripeService:
         self, session: dict[str, Any]
     ) -> dict[str, Any]:
         """Handle successful checkout session completion"""
+        # One-time payment sessions (Payment Links / mode=payment) are not
+        # planner subscription checkouts — they carry no user_id/plan_id
+        # metadata. Route them by line-item price instead of falling through
+        # to the metadata-required subscription path below.
+        if (session.get("mode") or "").lower() == "payment":
+            return await self._handle_one_time_checkout_completed(session)
+
         user_id = session.get("metadata", {}).get("user_id")
         plan_id = session.get("metadata", {}).get("plan_id")
         subscription_id = session.get("subscription")
@@ -1914,6 +1922,68 @@ class StripeService:
             "status": "success",
             "user_id": user_id,
             "subscription_id": subscription_id,
+        }
+
+    def _list_checkout_session_price_ids(self, session_id: str) -> list[str]:
+        """Resolve the line-item price ids for a completed checkout session.
+
+        The webhook payload does not embed line items; fetch them from Stripe.
+        StripeErrors propagate so the event is marked failed and retried — a
+        paid session must never be dropped because of a transient API blip.
+        """
+        line_items = stripe.checkout.Session.list_line_items(session_id, limit=100)
+        price_ids: list[str] = []
+        for item in getattr(line_items, "data", None) or []:
+            price = (
+                item.get("price")
+                if isinstance(item, dict)
+                else getattr(item, "price", None)
+            )
+            if isinstance(price, dict):
+                price_id = price.get("id")
+            else:
+                price_id = getattr(price, "id", None)
+            if price_id:
+                price_ids.append(str(price_id))
+        return price_ids
+
+    async def _handle_one_time_checkout_completed(
+        self, session: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Route a completed one-time (mode=payment) checkout session.
+
+        Currently the only auto-fulfilled one-time purchase is the Couple
+        Plan — One Wedding offer (price id in env STRIPE_COUPLE_LIFETIME_PRICE_ID).
+        Anything else is logged and acknowledged as a no-op so planner
+        subscription processing (and Stripe retry behavior) is unaffected.
+        """
+        session_id = str(session.get("id") or "")
+        couple_price_id = (
+            os.getenv(COUPLE_LIFETIME_OFFER["stripe_price_env"], "") or ""
+        ).strip()
+
+        price_ids = self._list_checkout_session_price_ids(session_id)
+
+        if couple_price_id and couple_price_id in price_ids:
+            from app.services.couple_plan_fulfillment_service import (
+                couple_plan_fulfillment_service,
+            )
+
+            return await couple_plan_fulfillment_service.fulfill_checkout_session(
+                session
+            )
+
+        logger.warning(
+            "One-time checkout session %s completed with unmatched price(s) %s "
+            "(couple price env %s); acknowledging as no-op",
+            session_id,
+            price_ids,
+            "set" if couple_price_id else "UNSET",
+        )
+        return {
+            "status": "ignored_unmatched_one_time_price",
+            "session_id": session_id,
+            "price_ids": price_ids,
         }
 
     async def _handle_subscription_created(
