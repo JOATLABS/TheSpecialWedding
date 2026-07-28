@@ -196,9 +196,7 @@ def fulfillment_env(monkeypatch):
 def test_paid_couple_session_provisions_workspace(fulfillment_env):
     stripe_service, storage, email_service, _ = fulfillment_env
 
-    result = asyncio.run(
-        stripe_service._handle_checkout_completed(_couple_session())
-    )
+    result = asyncio.run(stripe_service._handle_checkout_completed(_couple_session()))
 
     assert result["status"] == "success"
 
@@ -347,6 +345,51 @@ def test_welcome_email_failure_raises_then_retry_resends(fulfillment_env):
     assert storage["couple_users"][0]["welcome_email_sent"] is True
     assert len(storage["weddings"]) == 1
     assert len(storage["payment_records"]) == 1
+
+
+def test_handler_error_result_marks_event_failed_and_replayable(fulfillment_env):
+    """An error RESULT must mark the webhook event 'failed', not 'processed'.
+
+    Otherwise a manual Stripe-dashboard resend of the same event id (e.g. a
+    couple purchase that landed before fulfillment code deployed) would be
+    skipped forever by the idempotency check.
+    """
+    stripe_service, storage, _, monkeypatch = fulfillment_env
+    monkeypatch.setattr(
+        stripe_service_module.settings,
+        "stripe_webhook_secret",
+        "whsec_test",
+        raising=False,
+    )
+    event = {
+        "id": "evt_gap_1",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_gap_1",
+                "mode": "subscription",
+                "metadata": {},
+            }
+        },
+    }
+    monkeypatch.setattr(
+        stripe_service_module.stripe.Webhook,
+        "construct_event",
+        staticmethod(lambda payload, sig, secret: event),
+    )
+
+    result = asyncio.run(stripe_service.handle_webhook_event(b"{}", "sig"))
+    assert result["status"] == "error"
+
+    rows = storage["stripe_webhook_events"]
+    assert len(rows) == 1
+    assert rows[0]["status"] == "failed"
+    assert "Missing user_id" in rows[0]["error_message"]
+
+    # A resend of the same event id re-enters processing (is NOT skipped).
+    replay = asyncio.run(stripe_service.handle_webhook_event(b"{}", "sig"))
+    assert replay["status"] == "error"
+    assert replay["status"] != "already_processed"
 
 
 def test_self_serve_couple_is_never_owner_blocked(monkeypatch):
