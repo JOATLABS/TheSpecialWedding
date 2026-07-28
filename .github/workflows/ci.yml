@@ -411,6 +411,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend
           build-args: |
             FRONTEND_URL=${{ env.FRONTEND_BUILD_URL }}
+            NEXT_PUBLIC_COUPLE_CHECKOUT_URL=${{ vars.NEXT_PUBLIC_COUPLE_CHECKOUT_URL }}
 
   # ── Smoke Test: Validate built images start correctly ──────────────────────
   smoke-test:
@@ -595,6 +596,7 @@ jobs:
           cache-from: type=gha,scope=frontend
           build-args: |
             FRONTEND_URL=${{ env.FRONTEND_BUILD_URL }}
+            NEXT_PUBLIC_COUPLE_CHECKOUT_URL=${{ vars.NEXT_PUBLIC_COUPLE_CHECKOUT_URL }}
 
   # ── CI Passed: Branch-protection aggregator ────────────────────────────────
   # Single required status check for branch protection rulesets. This is the

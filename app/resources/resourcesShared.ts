@@ -204,10 +204,10 @@ export const faqs: FAQ[] = [
   },
   {
     question: "We're a couple, not a planner — is there a plan for us?",
-    // SYNC-WITH-CATALOG: Couple Lifetime Access — $199 one-time
+    // SYNC-WITH-CATALOG: Couple Plan — One Wedding, $199 one-time
     // (COUPLE_LIFETIME_OFFER in app/constants/billing.py).
     answer:
-      'Yes. Couple Lifetime Access is a one-time $199 fee — not a subscription — that gives you one wedding workspace for the lifetime of your wedding: full planning tools for your entire planning window, guest list and RSVP tracking, your wedding website, galleries, and data export. If you already work with a planner, ask them to invite you instead — the couple portal is included in their plan.',
+      'Yes. The couple plan is a one-time $199 fee — not a subscription — that gives you one wedding workspace through 90 days after your wedding: full planning tools for your entire planning window, guest list and RSVP tracking, your wedding website, galleries, and data export. Export your data before the workspace closes. If you already work with a planner, ask them to invite you instead — the couple portal is included in their plan.',
     category: 'Pricing & Billing',
   },
 ];

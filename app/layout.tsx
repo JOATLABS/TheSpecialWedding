@@ -137,8 +137,8 @@ export default function RootLayout({
                       },
                       {
                         '@type': 'Offer',
-                        name: 'Couple Lifetime Access',
-                        description: 'One-time fee giving a couple one wedding workspace for the lifetime of the wedding. Not a subscription.',
+                        name: 'Couple Plan — One Wedding',
+                        description: 'One-time fee giving a couple one wedding workspace through 90 days after the wedding. Not a subscription.',
                         price: '199',
                         priceCurrency: 'USD',
                       },

@@ -3,8 +3,9 @@ import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 // Contract for the couples' one-time tier display (2026-07-28 catalog:
-// Couple Lifetime Access — $199 one-time, COUPLE_LIFETIME_OFFER in
-// app/constants/billing.py). The couple offer is NOT a subscription plan:
+// Couple Plan — One Wedding, $199 one-time, COUPLE_LIFETIME_OFFER in
+// app/constants/billing.py; workspace closes 90 days post-wedding — NOT
+// lifetime access). The couple offer is NOT a subscription plan:
 // it must render as a separated, secondary section below the planner tiers
 // and must never enter the planner signup/checkout flow.
 
@@ -15,7 +16,7 @@ const coupleSection = source('app/components/landing-page/CouplePlanSection.tsx'
 const rootLayout = source('app/layout.tsx');
 const billingConstants = source('app/constants/billing.py');
 
-describe('couple lifetime offer display contract', () => {
+describe('couple one-time plan display contract', () => {
   it('keeps the catalog constant at $199 one-time', () => {
     assert.match(billingConstants, /"amount_usd": 199/);
     assert.match(billingConstants, /"billing": "one_time"/);
@@ -41,8 +42,13 @@ describe('couple lifetime offer display contract', () => {
     assert.match(coupleSection, /For couples/);
     assert.match(coupleSection, /\$199/);
     assert.match(coupleSection, /one-time/);
-    assert.match(coupleSection, /Lifetime of the wedding/);
+    assert.match(coupleSection, /Through 90 days after your wedding/);
     assert.match(coupleSection, /Not a subscription\. Nothing renews\./);
+    // Emmanuel 2026-07-28: there is NO lifetime access — the workspace is
+    // removed 90 days after the wedding ends. No user-facing lifetime claims
+    // (the code-internal constant COUPLE_LIFETIME_OFFER is exempt).
+    assert.doesNotMatch(coupleSection, /lifetime (access|of the wedding)/i);
+    assert.doesNotMatch(coupleSection, /Lifetime of the wedding/);
     // Grounded in the locked scheme — one wedding, whole planning window.
     assert.match(coupleSection, /One live wedding workspace/);
     assert.match(coupleSection, /entire planning window/);
@@ -71,7 +77,8 @@ describe('couple lifetime offer display contract', () => {
   });
 
   it('advertises the $199 one-time offer in the public JSON-LD catalog', () => {
-    assert.match(rootLayout, /name: 'Couple Lifetime Access'/);
+    assert.match(rootLayout, /name: 'Couple Plan — One Wedding'/);
+    assert.doesNotMatch(rootLayout, /lifetime of the wedding/i);
     assert.match(rootLayout, /price: '199'/);
     assert.match(rootLayout, /highPrice: '199'/);
     assert.match(rootLayout, /offerCount: 3/);
@@ -79,9 +86,11 @@ describe('couple lifetime offer display contract', () => {
 
   it('answers couple pricing in the homepage FAQ and resources FAQ', () => {
     assert.match(homePage, /one-time \$199 fee/);
+    assert.match(homePage, /90 days after your wedding day/);
     const resourcesFaq = source('app/resources/resourcesShared.ts');
     assert.match(resourcesFaq, /one-time \$199 fee/);
-    assert.match(resourcesFaq, /lifetime of your wedding/i);
+    assert.match(resourcesFaq, /90 days after your wedding/i);
+    assert.doesNotMatch(resourcesFaq, /lifetime of your wedding/i);
   });
 
   it('documents both couple env keys in .env.example', () => {

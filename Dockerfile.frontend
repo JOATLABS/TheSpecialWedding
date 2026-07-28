@@ -26,6 +26,12 @@ COPY . .
 ARG FRONTEND_URL
 ENV FRONTEND_URL=${FRONTEND_URL}
 
+# Stripe Payment Link for the couple one-time plan. NEXT_PUBLIC_* values are
+# inlined into the client bundle at build time, so this must be a build ARG
+# (supplied by CI from the repo Actions variable of the same name).
+ARG NEXT_PUBLIC_COUPLE_CHECKOUT_URL
+ENV NEXT_PUBLIC_COUPLE_CHECKOUT_URL=${NEXT_PUBLIC_COUPLE_CHECKOUT_URL}
+
 # Build Next.js application, then remove caches that should never ship in the
 # runtime image.
 RUN npm run build \
