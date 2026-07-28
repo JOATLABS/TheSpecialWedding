@@ -33,9 +33,13 @@ describe('Phase 1 planner operating-system message', () => {
     assert.match(featuresMetadata, /connected wedding planner workspace/i);
     assert.doesNotMatch(rootMetadata, /featureCount/);
     assert.doesNotMatch(featuresMetadata, /\d+ tools/i);
+    // 2026-07 catalog: two planner subscriptions ($49/$99 monthly) plus the
+    // couples' $199 one-time lifetime offer.
     assert.match(rootMetadata, /lowPrice: '49'/);
-    assert.match(rootMetadata, /highPrice: '99'/);
-    assert.match(rootMetadata, /offerCount: 2/);
+    assert.match(rootMetadata, /highPrice: '199'/);
+    assert.match(rootMetadata, /offerCount: 3/);
+    assert.match(rootMetadata, /name: 'Couple Lifetime Access'/);
+    assert.match(rootMetadata, /price: '199'/);
   });
 
   it('has a gated homepage entry point for the manually approved hero walkthrough', () => {
