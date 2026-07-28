@@ -386,14 +386,14 @@ async def seed_default_subscription_plans(
     """
     default_plans = [
         # ============================================================
-        # SOLO FOUNDING — $149/mo, founding-member rate for solo planners
+        # SOLO FOUNDING — $49/mo, founding-member rate for solo planners
         # (formerly "Boutique"; same canonical id plan_boutique)
         # ============================================================
         {
             "name": "Solo Founding",
             "description": "Founding-member rate for independent planners running their solo practice.",
-            "price_monthly": 149,
-            "price_yearly": None,  # 2026-07-28: yearly billing is not sold
+            "price_monthly": 49,
+            "price_yearly": 490,  # 10x monthly — two months free
             "trial_days": 30,
             "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
             "is_metered": False,
@@ -443,13 +443,13 @@ async def seed_default_subscription_plans(
             "sort_order": 1,
         },
         # ============================================================
-        # SOLO STANDARD — $199/mo, standard rate for solo planners (new)
+        # SOLO STANDARD — $99/mo, standard rate for solo planners (new)
         # ============================================================
         {
             "name": "Solo Standard",
             "description": "The standard rate for independent planners — everything a solo practice needs to run client weddings end to end.",
-            "price_monthly": 199,
-            "price_yearly": None,  # 2026-07-28: yearly billing is not sold
+            "price_monthly": 99,
+            "price_yearly": 990,  # 10x monthly — two months free
             "trial_days": 30,
             "billing_model": CANONICAL_PUBLIC_PLAN_BILLING_MODEL,
             "is_metered": False,

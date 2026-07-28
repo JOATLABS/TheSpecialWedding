@@ -8,8 +8,9 @@ describe('llms.txt public authority file', () => {
   it('uses the canonical public pricing tiers and template URL', () => {
     for (const expected of [
       '# The Special Wedding',
-      '**Solo Founding**: $149/month',
-      '**Solo Standard**: $199/month',
+      '**Solo Founding**: $49/month',
+      '**Solo Standard**: $99/month',
+      'annual billing costs ten times the monthly price',
       'https://thespecialwedding.io/resources/templates',
       'All plans include a 30-day free trial',
     ]) {
@@ -30,8 +31,6 @@ describe('llms.txt public authority file', () => {
       '**Signature**',
       '**White Glove**',
       '**Enterprise**',
-      '/year',
-      'yearly',
       'planner storefront',
       'custom domain',
       'staff seats',

@@ -37,12 +37,12 @@ const defaultTheme: ThemeConfig = {
 // THIS array — which means crawlers, social share previews, and the
 // first-paint flash all read from here. Stale values here = stale SEO.
 // 2026-07 pricing: the free tier is retired — every plan is paid with a
-// 30-day trial. Monthly billing only; no yearly prices are sold.
+// 30-day trial. Two planner tiers; yearly = monthly × 10.
 const fallbackPricing: PricingTier[] = [
   {
     id: "plan_boutique",
     name: "Solo Founding",
-    price: "$149",
+    price: "$49",
     period: "/month",
     features: [
       "Unlimited weddings",
@@ -62,7 +62,7 @@ const fallbackPricing: PricingTier[] = [
   {
     id: "plan_solo_standard",
     name: "Solo Standard",
-    price: "$199",
+    price: "$99",
     period: "/month",
     features: [
       "Unlimited weddings",

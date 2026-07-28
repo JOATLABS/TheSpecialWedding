@@ -320,14 +320,15 @@ export const SaasLandingPage: React.FC = () => {
   // IMPORTANT: keep in sync with scripts/seed_subscription_plans.py. Used
   // as fallback only — live data comes from /public/subscription-plans.
   // 2026-07 pricing: the free tier is retired — every plan is paid with a
-  // 30-day trial. Monthly billing only; no yearly prices are sold.
+  // 30-day trial. Two planner tiers; yearly = monthly × 10.
   const defaultPlans: SubscriptionPlan[] = useMemo(
     () => [
       {
         _id: 'plan_boutique',
         name: 'Solo Founding',
         description: 'Founding-member rate for independent planners running their solo practice.',
-        price_monthly: 149,
+        price_monthly: 49,
+        price_yearly: 490,
         billing_model: 'flat_rate',
         is_metered: false,
         trial_days: 30,
@@ -339,7 +340,8 @@ export const SaasLandingPage: React.FC = () => {
         _id: 'plan_solo_standard',
         name: 'Solo Standard',
         description: 'The standard rate for independent planners — everything a solo practice needs to run client weddings end to end.',
-        price_monthly: 199,
+        price_monthly: 99,
+        price_yearly: 990,
         billing_model: 'flat_rate',
         is_metered: false,
         trial_days: 30,

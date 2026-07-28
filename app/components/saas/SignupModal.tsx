@@ -12,9 +12,7 @@ interface SubscriptionPlan {
   name: string;
   description: string;
   price_monthly: number;
-  // 2026-07-28 pricing: yearly billing is not sold; live plan docs carry
-  // price_yearly: null. Kept optional for legacy plan documents only.
-  price_yearly?: number | null;
+  price_yearly: number;
   billing_model?: string;
   is_metered?: boolean;
   max_weddings: number;
@@ -32,13 +30,14 @@ interface SubscriptionPlan {
 // subscription-plans fetch resolves; once that lands, the modal renders
 // from the live Mongo data.
 // 2026-07 pricing: the free tier is retired — every plan is paid with a
-// 30-day trial. Monthly billing only; no yearly prices are sold.
+// 30-day trial. Two planner tiers; yearly = monthly × 10.
 const FALLBACK_PLANS: SubscriptionPlan[] = [
   {
     _id: 'plan_boutique',
     name: 'Solo Founding',
     description: 'Founding-member rate for independent planners running their solo practice.',
-    price_monthly: 149,
+    price_monthly: 49,
+    price_yearly: 490,
     billing_model: 'flat_rate',
     is_metered: false,
     trial_days: 30,
@@ -63,7 +62,8 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
     _id: 'plan_solo_standard',
     name: 'Solo Standard',
     description: 'The standard rate for independent planners — everything a solo practice needs to run client weddings end to end.',
-    price_monthly: 199,
+    price_monthly: 99,
+    price_yearly: 990,
     billing_model: 'flat_rate',
     is_metered: false,
     trial_days: 30,
@@ -101,9 +101,12 @@ type FormValues = {
   acceptTerms: boolean;
 };
 
-function getBillingUnitLabel(plan: SubscriptionPlan | null | undefined) {
+function getBillingUnitLabel(plan: SubscriptionPlan | null | undefined, interval: 'monthly' | 'yearly') {
   const isMetered = plan?.is_metered || plan?.billing_model === 'metered';
-  return isMetered ? 'active wedding / month' : 'month';
+  if (isMetered) {
+    return interval === 'yearly' ? 'active wedding / year' : 'active wedding / month';
+  }
+  return interval === 'yearly' ? 'year' : 'month';
 }
 
 function getCompactBillingUnit(plan: SubscriptionPlan | null | undefined) {
@@ -119,8 +122,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(
     FALLBACK_PLANS.find((p) => p.is_featured) ?? FALLBACK_PLANS[0]
   );
-  // 2026-07-28 pricing: monthly billing only — yearly is not sold.
-  const billingInterval = 'monthly' as const;
+  const [billingInterval, setBillingInterval] = useState<'monthly' | 'yearly'>('monthly');
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(true);
 
@@ -219,7 +221,9 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
 
   if (!isOpen) return null;
 
-  const displayPrice = selectedPlan ? selectedPlan.price_monthly : 0;
+  const displayPrice = selectedPlan
+    ? (billingInterval === 'yearly' ? selectedPlan.price_yearly : selectedPlan.price_monthly)
+    : 0;
 
   const handleNext = async () => {
     const fieldsToValidate: (keyof FormValues)[] = step === 1
@@ -340,9 +344,27 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
               <div className="text-xs font-semibold uppercase tracking-wider text-indigo-200 mb-1">Selected Plan</div>
               <div className="text-2xl font-bold mb-4">{selectedPlan?.name}</div>
 
+              <div className="flex gap-1 mb-4">
+                {['monthly', 'yearly'].map((interval) => (
+                  <button
+                    key={interval}
+                    type="button"
+                    onClick={() => setBillingInterval(interval as 'monthly' | 'yearly')}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                      billingInterval === interval
+                        ? 'bg-white text-indigo-600'
+                        : 'bg-white/20 text-white hover:bg-white/30'
+                    }`}
+                  >
+                    {interval === 'monthly' ? 'Monthly' : 'Yearly'}
+                    {interval === 'yearly' && <span className="ml-1 text-emerald-300">save 2 mo</span>}
+                  </button>
+                ))}
+              </div>
+
               <div className="bg-white/10 rounded-xl p-4 mb-4">
                 <div className="text-3xl font-bold">${displayPrice}</div>
-                <div className="text-sm text-indigo-200">per {getBillingUnitLabel(selectedPlan)}</div>
+                <div className="text-sm text-indigo-200">per {getBillingUnitLabel(selectedPlan, billingInterval)}</div>
                 {selectedPlan?.trial_days ? (
                   <div className="mt-1 text-xs font-medium text-emerald-200">
                     {selectedPlan.trial_days}-day free trial · no card required
@@ -386,10 +408,28 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
                   <option key={plan._id} value={plan._id}>{plan.name}</option>
                 ))}
               </select>
+              <div className="flex rounded-lg overflow-hidden border border-slate-600">
+                {['monthly', 'yearly'].map((interval) => (
+                  <button
+                    key={interval}
+                    type="button"
+                    onClick={() => setBillingInterval(interval as 'monthly' | 'yearly')}
+                    className={`px-3 py-2 text-xs font-medium transition ${
+                      billingInterval === interval
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    {interval === 'monthly' ? 'Mo' : 'Yr'}
+                  </button>
+                ))}
+              </div>
               <div className="text-right">
                 <div className="text-lg font-bold text-white">${displayPrice}</div>
                 <div className="text-[10px] text-slate-400">
-                  /{getCompactBillingUnit(selectedPlan)}
+                  /{selectedPlan?.is_metered || selectedPlan?.billing_model === 'metered'
+                    ? billingInterval === 'yearly' ? 'active wedding/yr' : 'active wedding/mo'
+                    : billingInterval === 'yearly' ? 'yr' : 'mo'}
                 </div>
               </div>
             </div>

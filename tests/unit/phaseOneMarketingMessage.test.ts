@@ -33,8 +33,8 @@ describe('Phase 1 planner operating-system message', () => {
     assert.match(featuresMetadata, /connected wedding planner workspace/i);
     assert.doesNotMatch(rootMetadata, /featureCount/);
     assert.doesNotMatch(featuresMetadata, /\d+ tools/i);
-    assert.match(rootMetadata, /lowPrice: '149'/);
-    assert.match(rootMetadata, /highPrice: '199'/);
+    assert.match(rootMetadata, /lowPrice: '49'/);
+    assert.match(rootMetadata, /highPrice: '99'/);
     assert.match(rootMetadata, /offerCount: 2/);
   });
 

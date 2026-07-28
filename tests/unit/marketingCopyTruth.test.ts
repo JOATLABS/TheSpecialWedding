@@ -47,9 +47,9 @@ const RETIRED_SUPPORT_PROMISES =
 const RETIRED_PLAN_HIGHLIGHTS =
   /Up to 50 guests|AI-powered timeline & vendor matching|QR check-in & live counts|\b(?:1|25|100|500)GB storage\b|Group onboarding session|White-label \(your brand, no Special Wedding mentions\)|API access \+ webhooks|Dedicated success manager|Custom integrations/i;
 
-// 2026-07-28 pricing (final): two paid tiers (Solo Founding $149/mo / Solo
-// Standard $199/mo), monthly only; the free tier, Signature, and Enterprise
-// are retired. White-Glove is a one-time setup add-on, not a tier.
+// 2026-07-28 pricing (final): two paid tiers (Solo Founding $49/mo / Solo
+// Standard $99/mo), yearly = monthly × 10; the free tier, Signature, and
+// Enterprise are retired. White-Glove is a one-time setup add-on, not a tier.
 const APPROVED_PLAN_HIGHLIGHTS = [
   'Unlimited weddings',
   'Unlimited guests',
