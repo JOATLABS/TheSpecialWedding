@@ -54,7 +54,9 @@ COUPLE_LIFETIME_OFFER = {
 # planner tiers in exactly four ways (operator ruling 2026-07-28; nothing
 # else is gated):
 #   1. no couple-portal surfaces (they ARE the couple — no couple invites),
-#   2. no service packages (planner-to-client feature),
+#   2. no packaging/storefront (planner-to-client feature — operator
+#      clarification 2026-07-28: this covers BOTH package management and the
+#      storefront surfaces that present/sell planner packages),
 #   3. no team member seats (staff_seats=0 fails the team gate closed),
 #   4. exactly ONE wedding — max_weddings=1 with the lifetime-style cap so
 #      delete-and-recreate cannot mint a second workspace on a one-time
@@ -101,8 +103,8 @@ COUPLE_PLAN_SEED = {
         "automated_reminders": True,
         "calendar_sync": True,
         "payment_processing": True,
-        # The four couple-plan exclusions. ``packages`` and ``couple_portal``
-        # are include-by-default features (see
+        # The couple-plan exclusions. ``packages`` and ``couple_portal`` are
+        # include-by-default features (see
         # app/dependencies/feature_gates.py::require_plan_included_feature):
         # planner plans that never declare these keys keep access; an
         # explicit False here is what blocks the couple plan server-side.
@@ -110,6 +112,11 @@ COUPLE_PLAN_SEED = {
         "couple_portal": False,
         "vendor_collaboration": False,
         "advanced_analytics": False,
+        # The storefront half of the packaging/storefront gate. These two are
+        # the OPPOSITE polarity — fail-closed, literal True required (see
+        # storefront_entitlement_service / require_storefront_feature) — so
+        # the explicit False keeps every storefront endpoint 403 for the
+        # couple plan through the existing entitlement machinery.
         "planner_storefront": False,
         "custom_domain": False,
         "priority_support": False,

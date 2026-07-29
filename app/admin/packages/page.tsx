@@ -357,19 +357,21 @@ export default function PackagesPage() {
     }).format(amount);
   };
 
-  // Couple-plan workspaces have no service packages (planner-to-client
-  // feature). The sidebar never links here, but a direct URL visit gets a
-  // clear explanation instead of a wall of 403s.
+  // Couple-plan workspaces have no packaging/storefront surfaces (both are
+  // planner-to-client features; this page hosts package management AND the
+  // storefront settings). The sidebar never links here, but a direct URL
+  // visit gets a clear explanation instead of a wall of 403s.
   if (isCouplePlan(userProfile)) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
         <div className="text-center max-w-md">
           <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-            Service packages
+            Packages &amp; storefront
           </h1>
           <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
             {INCLUDED_WITH_PLANNER_PLANS_COPY} Your couple plan covers
-            planning your own wedding, so there are no client packages here.
+            planning your own wedding, so there are no client packages or
+            storefront here.
           </p>
         </div>
       </div>

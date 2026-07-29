@@ -1,10 +1,13 @@
 """Couple-plan feature gates (operator ruling 2026-07-28).
 
 The self-serve couple-plan purchaser uses the PLANNER dashboard for their own
-single wedding. Exactly FOUR things are gated — nothing else:
+single wedding. Exactly FOUR things are gated — nothing else (operator
+rejected every additional gate proposal: no CRM, analytics, templates,
+branding, or usage-cap gating):
 
 1. couple-portal surfaces (they ARE the couple — no couple invitations),
-2. service packages (planner-to-client feature),
+2. packaging/storefront (package management AND the storefront surfaces
+   that present/sell planner packages — operator clarification 2026-07-28),
 3. team member seats (staff_seats=0 fails the existing team gate closed),
 4. a second wedding (max_weddings=1 with the lifetime-style count; the
    user-facing copy is "the couple plan covers one wedding" — never
@@ -212,6 +215,68 @@ def test_team_member_resolves_owner_plan_for_included_features(monkeypatch):
     assert asyncio.run(require_packages_feature(current_user=member)) is member
 
 
+# ── Gate 2 (storefront half): entitlements fail closed for the couple plan ─
+
+
+def test_couple_plan_storefront_entitlements_are_disabled():
+    """Storefront capabilities require a literal ``features.<key> is True``
+    (fail-closed — see require_storefront_feature); the couple plan ships
+    both keys explicitly False, so every storefront endpoint 403s through
+    the existing entitlement machinery."""
+    from app.services.storefront_entitlement_service import (
+        StorefrontEntitlementService,
+    )
+
+    owner_id = "64b000000000000000000001"
+
+    class _Cursor:
+        def __init__(self, docs):
+            self._docs = docs
+
+        def limit(self, n):
+            self._docs = self._docs[:n]
+            return self
+
+        async def to_list(self, length):
+            return self._docs[:length]
+
+    class _Subscriptions:
+        def find(self, _query, _projection=None):
+            return _Cursor(
+                [
+                    {
+                        "user_id": owner_id,
+                        "plan_id": COUPLE_PLAN_ID,
+                        "status": "active",
+                    }
+                ]
+            )
+
+    class _Plans:
+        async def find_one(self, _query, _projection=None):
+            return {
+                "_id": COUPLE_PLAN_ID,
+                "features": deepcopy(COUPLE_PLAN_SEED["features"]),
+            }
+
+    class _Mongo:
+        db = {"user_subscriptions": _Subscriptions()}
+
+        def get_subscription_plans_collection(self):
+            return _Plans()
+
+    service = StorefrontEntitlementService(mongo_client=_Mongo())
+    entitlements = asyncio.run(
+        service.resolve_for_owner(
+            {"_id": owner_id, "role": "wedding_planner", "is_active": True}
+        )
+    )
+
+    assert entitlements.plan_id == COUPLE_PLAN_ID
+    assert entitlements.storefront_enabled is False
+    assert entitlements.custom_domain_enabled is False
+
+
 # ── Gate 3: team seats (existing staff_seats gate, couple plan = 0) ─────────
 
 
@@ -369,6 +434,10 @@ def test_couple_plan_seed_is_internal_only():
     assert COUPLE_PLAN_SEED["staff_seats"] == 0
     assert COUPLE_PLAN_SEED["features"]["packages"] is False
     assert COUPLE_PLAN_SEED["features"]["couple_portal"] is False
+    # Storefront half of the packaging/storefront gate — these keys are
+    # fail-closed (literal True required), so explicit False locks them.
+    assert COUPLE_PLAN_SEED["features"]["planner_storefront"] is False
+    assert COUPLE_PLAN_SEED["features"]["custom_domain"] is False
     # No user-facing "lifetime" language in catalog copy.
     assert "lifetime" not in COUPLE_PLAN_SEED["description"].lower()
     for line in COUPLE_PLAN_SEED["features_list"]:
