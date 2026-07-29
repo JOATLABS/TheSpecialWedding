@@ -37,6 +37,12 @@ describe('couple plan gating contract', () => {
     assert.match(seed, /"staff_seats": 0/);
     assert.match(seed, /"packages": False/);
     assert.match(seed, /"couple_portal": False/);
+    // Storefront half of the packaging\/storefront gate (operator
+    // clarification 2026-07-28): these keys are fail-closed — literal True
+    // required by storefront_entitlement_service — so explicit False keeps
+    // every storefront endpoint 403 for the couple plan.
+    assert.match(seed, /"planner_storefront": False/);
+    assert.match(seed, /"custom_domain": False/);
   });
 
   it('hides Packages and Team from the couple-plan sidebar', () => {
