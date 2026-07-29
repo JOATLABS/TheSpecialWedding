@@ -2,6 +2,10 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
+import {
+  INCLUDED_WITH_PLANNER_PLANS_COPY,
+  isCouplePlan,
+} from '@/admin/utils/planAccess';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
 import { usePagination } from '@/admin/hooks/usePagination';
@@ -49,7 +53,7 @@ interface SeatsInfo {
 }
 
 export default function TeamManagementPage() {
-  const { token } = useAdmin();
+  const { token, userProfile } = useAdmin();
   const baseUrl = getApiBaseUrl();
   const { confirm } = useConfirmDialog();
   const pagination = usePagination({ initialItemsPerPage: 50 });
@@ -297,6 +301,25 @@ export default function TeamManagementPage() {
     if (days === 1) return 'Yesterday';
     return `${days}d ago`;
   };
+
+  // Couple-plan workspaces have no team seats. The sidebar never links
+  // here, but a direct URL visit gets a clear explanation instead of the
+  // backend's 403.
+  if (isCouplePlan(userProfile)) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <div className="text-center max-w-md">
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+            Team management
+          </h1>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+            {INCLUDED_WITH_PLANNER_PLANS_COPY} The couple plan is a personal
+            workspace for your own wedding and doesn&apos;t include team seats.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
