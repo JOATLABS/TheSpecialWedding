@@ -1,4 +1,5 @@
 import type { UserProfile } from '@/contexts/AdminContext';
+import { isCouplePlan } from '@/admin/utils/planAccess';
 
 type TeamPermissionKey =
   | 'manage_guests'
@@ -37,6 +38,11 @@ const TEAM_PERMISSION_NAV_MAP: Record<TeamPermissionKey, string[]> = {
 
 export function canManageCouplePortal(userProfile?: UserProfile | null): boolean {
   if (!userProfile) return false;
+  // Couple-plan workspaces have no couple-portal surfaces at all: the
+  // purchaser IS the couple and works in the planner dashboard. Backend
+  // enforcement lives on the couple-portal endpoints (403); this keeps the
+  // UI from rendering dead couple-portal affordances.
+  if (isCouplePlan(userProfile)) return false;
   return Boolean(
     userProfile.is_root_admin ||
       userProfile.is_wedding_planner ||
