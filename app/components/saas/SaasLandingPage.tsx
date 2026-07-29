@@ -733,6 +733,13 @@ export const SaasLandingPage: React.FC = () => {
                 {planNotice}
               </p>
             )}
+            {/* SYNC-WITH-CATALOG: Couple Plan — One Wedding, $199 one-time
+                (COUPLE_LIFETIME_OFFER in app/constants/billing.py). */}
+            <p className="text-center text-sm text-slate-600">
+              Planning your own wedding? Couples can get one wedding workspace for a one-time $199
+              fee — not a subscription, active through 90 days after your wedding. See the
+              &ldquo;For couples&rdquo; section on the homepage.
+            </p>
           </section>
 
           {config.testimonials_enabled && orderedTestimonials.length > 0 && (

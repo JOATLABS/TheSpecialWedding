@@ -550,7 +550,7 @@ Every plan (Solo Founding, Solo Standard) includes a **30-day free trial**. Duri
 
 ## Subscription Plans
 
-Special Wedding offers two plans. Every plan includes **unlimited weddings and unlimited guests** — what changes between them is AI credits and guest memories storage. All plans include a 30-day free trial, and both can be billed monthly or yearly (yearly costs ten times the monthly price — two months free).
+Special Wedding offers two planner plans (plus a one-time offer for couples planning their own wedding). Every planner plan includes **unlimited weddings and unlimited guests** — what changes between them is AI credits and guest memories storage. All plans include a 30-day free trial, and both can be billed monthly or yearly (yearly costs ten times the monthly price — two months free).
 
 ### Solo Founding — $49/month
 Founding-member rate for independent planners running their solo practice.
@@ -572,6 +572,9 @@ The standard rate for independent planners — everything a solo practice needs 
 - 750 AI credits/month
 - 50GB guest memories storage
 - Email support
+
+### Couple Lifetime Access — $199 one-time
+Couples planning their own wedding (without a planner) can purchase lifetime access to a single wedding workspace for a one-time $199 fee. It is not a subscription and does not renew — one payment covers full planning tools for the whole planning window, guest list and RSVP tracking, a wedding website, galleries, and data export, for the lifetime of the wedding. Couples you invite as a planner do **not** need this — their couple portal is included in your plan.
 
 ---
 

@@ -541,7 +541,7 @@ def _guard_seed_billing_model_transition(
 #     cohort — see the ops runbook in the pricing research doc).
 #   - "White-Glove Setup" is a one-time $149 add-on (guided activation), NOT
 #     a subscription tier — app/constants/billing.py::WHITE_GLOVE_SETUP_ADDON.
-#   - Couple one-time $199 (lifetime-of-wedding) lives in
+#   - Couple one-time $199 (one wedding; workspace closes 90 days post-wedding) lives in
 #     app/constants/billing.py::COUPLE_LIFETIME_OFFER — no recurring plan doc.
 #
 # Mongo _ids deliberately stay stable; plan_boutique keeps its Stripe product

@@ -102,6 +102,13 @@ async def get_current_user_profile(
             if is_planner_billing_role(current_user.role)
             else None
         ),
+        # Plan identity for plan-scoped UI (the self-serve couple plan hides
+        # Packages/Team/couple-portal surfaces and the extra-wedding CTA).
+        "plan_id": (
+            serialized_user_data.get("plan_id")
+            if is_planner_billing_role(current_user.role)
+            else None
+        ),
         "trial_end_date": (
             serialized_user_data.get("trial_end_date")
             if is_planner_billing_role(current_user.role)

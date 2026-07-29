@@ -43,6 +43,9 @@ export interface UserProfile {
     // Subscription fields
     subscription_status?: string;
     trial_end_date?: string;
+    // Plan identity for plan-scoped UI (couple plan hides Packages/Team/
+    // couple-portal surfaces and the extra-wedding CTA). Planner roles only.
+    plan_id?: string | null;
     _subscription_blocked?: boolean;
     _subscription_block_reason?: string;
     // Team member fields

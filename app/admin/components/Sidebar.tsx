@@ -5,6 +5,10 @@ import { usePathname } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getAllowedTeamNavNames } from '@/admin/utils/teamAccess';
 import {
+  COUPLE_PLAN_HIDDEN_NAV_NAMES,
+  isCouplePlan,
+} from '@/admin/utils/planAccess';
+import {
   WorkspaceSidebar,
   type WorkspaceNavItem,
 } from '@/components/layout/WorkspaceChrome';
@@ -109,8 +113,16 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
       return adminNavItems;
     }
 
-    // Wedding planner gets full planner navigation
+    // Wedding planner gets full planner navigation. Couple-plan workspaces
+    // (self-serve couples on the planner dashboard) never see Packages or
+    // Team — those are planner-business features, and the backend rejects
+    // them anyway; no dead menu items.
     if (userProfile.is_wedding_planner) {
+      if (isCouplePlan(userProfile)) {
+        return plannerNavItems.filter(
+          (item) => !COUPLE_PLAN_HIDDEN_NAV_NAMES.has(item.name)
+        );
+      }
       return plannerNavItems;
     }
 
