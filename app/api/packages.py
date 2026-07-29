@@ -3,6 +3,12 @@ Package API Routes
 
 Admin endpoints for managing wedding service packages.
 All endpoints require planner authentication.
+
+Every endpoint runs through ``require_packages_feature``: service packages
+are a planner-to-client feature, included with every planner tier but
+explicitly excluded from the self-serve couple plan (features.packages=False
+— see app/constants/billing.py::COUPLE_PLAN_SEED). The gate wraps
+require_team_or_planner, so planner/team role semantics are unchanged.
 """
 
 import logging
@@ -17,8 +23,8 @@ from app.dependencies.auth_extended import (
     check_wedding_access,
     enforce_team_permission,
     get_owner_identity,
-    require_team_or_planner,
 )
+from app.dependencies.feature_gates import require_packages_feature
 from app.services.package_service import package_service
 from app.utils.planner_connect_scope import (
     connect_not_ready_detail,
@@ -149,7 +155,7 @@ async def list_packages(
     status: str | None = Query(None, pattern="^(draft|active|archived)$"),
     limit: int = Query(50, ge=1, le=100),
     skip: int = Query(0, ge=0),
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(require_packages_feature),
 ):
     """
     List all packages for the authenticated planner.
@@ -177,7 +183,7 @@ async def list_packages(
 @router.post("/packages", tags=["Packages"], status_code=201)
 async def create_package(
     package_data: CreatePackageRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(require_packages_feature),
 ):
     """
     Create a new package.
@@ -203,7 +209,7 @@ async def create_package(
 
 @router.get("/packages/stats", tags=["Packages"])
 async def get_package_stats(
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(require_packages_feature),
 ):
     """Get package statistics for the planner."""
     planner_id = _require_package_owner_id(current_user)
@@ -218,7 +224,7 @@ async def get_package_stats(
 
 @router.get("/packages/{package_id}", tags=["Packages"])
 async def get_package(
-    package_id: str, current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    package_id: str, current_user: ExtendedAuthUser = Depends(require_packages_feature)
 ):
     """Get a specific package by ID."""
     planner_id = _require_package_owner_id(current_user)
@@ -240,7 +246,7 @@ async def get_package(
 async def update_package(
     package_id: str,
     update_data: UpdatePackageRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(require_packages_feature),
 ):
     """
     Update an existing package.
@@ -267,7 +273,7 @@ async def update_package(
 
 @router.delete("/packages/{package_id}", tags=["Packages"])
 async def delete_package(
-    package_id: str, current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    package_id: str, current_user: ExtendedAuthUser = Depends(require_packages_feature)
 ):
     """
     Delete a draft package.
@@ -293,7 +299,7 @@ async def duplicate_package(
     package_id: str,
     name: str | None = None,
     as_template: bool = True,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(require_packages_feature),
 ):
     """
     Duplicate a package.
@@ -323,7 +329,7 @@ async def duplicate_package(
 async def send_package_to_couple(
     package_id: str,
     send_data: SendPackageRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(require_packages_feature),
 ):
     """
     Send a package to a couple, creating a contract.
@@ -391,7 +397,7 @@ class AIPricingSuggestionRequest(BaseModel):
 @router.post("/packages/ai-pricing", tags=["Packages"])
 async def get_ai_pricing_suggestion(
     request_data: AIPricingSuggestionRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(require_packages_feature),
 ):
     """
     Get AI-powered pricing suggestions for a package.

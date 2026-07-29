@@ -202,6 +202,14 @@ export const faqs: FAQ[] = [
       'Both plans include unlimited weddings and unlimited guests. Solo Founding is the founding-member rate with 300 AI credits per month and 25GB of guest memories storage; Solo Standard includes 750 AI credits per month and 50GB of guest memories storage.',
     category: 'Pricing & Billing',
   },
+  {
+    question: "We're a couple, not a planner — is there a plan for us?",
+    // SYNC-WITH-CATALOG: Couple Plan — One Wedding, $199 one-time
+    // (COUPLE_LIFETIME_OFFER in app/constants/billing.py).
+    answer:
+      'Yes. The couple plan is a one-time $199 fee — not a subscription — that gives you one wedding workspace through 90 days after your wedding: full planning tools for your entire planning window, guest list and RSVP tracking, your wedding website, galleries, and data export. Export your data before the workspace closes. If you already work with a planner, ask them to invite you instead — the couple portal is included in their plan.',
+    category: 'Pricing & Billing',
+  },
 ];
 
 export function apiArticleToBlogPost(article: PublicBlogApiArticle): BlogPost {

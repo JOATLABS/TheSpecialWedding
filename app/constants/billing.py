@@ -33,17 +33,112 @@ CANONICAL_PUBLIC_PLAN_IDS = frozenset(CANONICAL_PUBLIC_PLAN_IDS_BY_NAME.values()
 # against them.
 RETIRED_PUBLIC_PLAN_IDS = frozenset({"plan_solo", "plan_signature", "plan_enterprise"})
 
-# Couple-side one-time offer (lifetime-of-wedding access), locked 2026-07-27.
+# Couple-side one-time offer (one wedding workspace, active through 90 days
+# after the wedding — the workspace is then removed automatically like any
+# other ended wedding; NOT lifetime access), locked 2026-07-27/28.
 # There is no couple checkout flow yet — the catalog encodes the price and the
 # env key that will carry the real Stripe Price id once the operator creates
 # it (mode=payment, $199 USD). An unset env var means "not purchasable yet";
 # code must never fabricate a placeholder price id.
 COUPLE_LIFETIME_OFFER = {
     "id": "offer_couple_lifetime",
-    "name": "Couple Lifetime Access",
+    "name": "Couple Plan — One Wedding",
     "amount_usd": 199,
     "billing": "one_time",
     "stripe_price_env": "STRIPE_COUPLE_LIFETIME_PRICE_ID",
+}
+
+# Internal entitlement plan backing the couple offer (locked 2026-07-28).
+# The couple-plan purchaser uses the PLANNER dashboard for their own single
+# wedding — they are NOT a couple-portal user. Their plan differs from the
+# planner tiers in exactly four ways (operator ruling 2026-07-28; nothing
+# else is gated):
+#   1. no couple-portal surfaces (they ARE the couple — no couple invites),
+#   2. no packaging/storefront (planner-to-client feature — operator
+#      clarification 2026-07-28: this covers BOTH package management and the
+#      storefront surfaces that present/sell planner packages),
+#   3. no team member seats (staff_seats=0 fails the team gate closed),
+#   4. exactly ONE wedding — max_weddings=1 with the lifetime-style cap so
+#      delete-and-recreate cannot mint a second workspace on a one-time
+#      purchase. (Internal cap semantics only — user-facing copy must say
+#      "the couple plan covers one wedding", never "lifetime".)
+#
+# ``is_active`` stays False FOREVER: /public/subscription-plans returns every
+# active plan, so an active plan_couple would leak onto the planner pricing
+# page. Entitlement resolution for the account that owns it does not require
+# an active plan — subscriptions resolve through plan_snapshot and
+# SubscriptionService.get_user_billing_plan explicitly supports inactive plan
+# documents reached through the user's own subscription.
+COUPLE_PLAN_ID = "plan_couple"
+COUPLE_PLAN_NAME = "Couple Plan — One Wedding"
+COUPLE_PLAN_SEED = {
+    "_id": COUPLE_PLAN_ID,
+    "name": COUPLE_PLAN_NAME,
+    "description": (
+        "One wedding workspace for a couple planning their own wedding. "
+        "Active through 90 days after the wedding date."
+    ),
+    "price_monthly": 0,
+    "price_yearly": None,
+    "trial_days": 0,
+    "billing_model": BILLING_MODEL_FLAT_RATE,
+    "is_metered": False,
+    "max_weddings": 1,
+    "max_weddings_lifetime": True,
+    "max_guests_per_wedding": -1,
+    "ai_credits_monthly": 300,
+    "storage_gb": 25,
+    "staff_seats": 0,
+    "features": {
+        "guest_management": True,
+        "email_invitations": True,
+        "rsvp_system": True,
+        "wedding_website": True,
+        "timeline_builder": True,
+        "basic_analytics": True,
+        "vendor_management": True,
+        "seating_orchestration": True,
+        "ai_features": True,
+        "qr_checkin": True,
+        "automated_reminders": True,
+        "calendar_sync": True,
+        "payment_processing": True,
+        # The couple-plan exclusions. ``packages`` and ``couple_portal`` are
+        # include-by-default features (see
+        # app/dependencies/feature_gates.py::require_plan_included_feature):
+        # planner plans that never declare these keys keep access; an
+        # explicit False here is what blocks the couple plan server-side.
+        "packages": False,
+        "couple_portal": False,
+        "vendor_collaboration": False,
+        "advanced_analytics": False,
+        # The storefront half of the packaging/storefront gate. These two are
+        # the OPPOSITE polarity — fail-closed, literal True required (see
+        # storefront_entitlement_service / require_storefront_feature) — so
+        # the explicit False keeps every storefront endpoint 403 for the
+        # couple plan through the existing entitlement machinery.
+        "planner_storefront": False,
+        "custom_domain": False,
+        "priority_support": False,
+        "white_label": False,
+        "api_access": False,
+        "dedicated_support": False,
+    },
+    "features_list": [
+        "One wedding workspace",
+        "Unlimited guests",
+        "Vendor management",
+        "Seating orchestration",
+        "Automated reminders",
+        "Calendar sync (Google, Outlook)",
+        "300 AI credits/month",
+        "25GB guest memories storage",
+        "Email support",
+    ],
+    "is_featured": False,
+    "is_active": False,
+    "display_order": 99,
+    "sort_order": 99,
 }
 
 # White-Glove Setup add-on, locked 2026-07-28. This is NOT a subscription

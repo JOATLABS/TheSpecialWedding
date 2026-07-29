@@ -82,6 +82,13 @@ class CoupleLifecycleService:
     async def _owner_is_blocked(
         self, couple: dict, wedding: dict | None = None
     ) -> bool:
+        # Self-serve couple workspaces (Couple Plan — One Wedding purchase)
+        # have no planner owner — access is governed by the one-time purchase
+        # and the wedding's own lifecycle (through 90 days post-wedding), not
+        # by a planner subscription. Never owner-block them.
+        if couple.get("self_serve") or (wedding or {}).get("self_serve_couple"):
+            return False
+
         suspended_reason = (
             wedding.get("data_access_suspended_reason") if wedding else None
         )

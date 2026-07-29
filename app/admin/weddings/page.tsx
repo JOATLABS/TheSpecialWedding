@@ -5,6 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
 import { canManageCouplePortal, getPlannerScopedUserId } from '@/admin/utils/teamAccess';
+import { COUPLE_PLAN_ONE_WEDDING_COPY, isCouplePlan } from '@/admin/utils/planAccess';
 import { formatDate, formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import { EVENT_TIME_FORMAT_HINT, getEventTimeValidationMessage, normalizeEventTimeInput } from '@/utils/eventTime';
 import {
@@ -667,24 +668,32 @@ export default function AdminWeddingsPage() {
           : 'Manage your wedding events and client details'
         }
       >
-        <button
-          onClick={() => {
-            if (atWeddingCap) return;
-            setEventTimeErrors({});
-            setShowForm(true);
-          }}
-          disabled={atWeddingCap}
-          title={atWeddingCap
-            ? (weddingLimit !== null
-                ? `Plan limit reached — ${weddingLimit} of ${weddingLimit} weddings in use. Upgrade or delete a wedding to add another.`
-                : 'Plan wedding limit reached. Upgrade or delete a wedding to add another.')
-            : undefined}
-          className={atWeddingCap
-            ? 'px-4 py-2 bg-gray-300 dark:bg-slate-700 text-gray-500 dark:text-gray-400 font-semibold rounded-lg cursor-not-allowed opacity-70'
-            : 'px-4 py-2 bg-wedding-rose text-white font-semibold rounded-lg hover:bg-wedding-gold transition'}
-        >
-          + Add Wedding
-        </button>
+        {isCouplePlan(userProfile) ? (
+          // The couple plan covers exactly one wedding — no add-wedding CTA
+          // at all (backend rejects creation anyway; no dead buttons).
+          <p className="text-sm text-gray-500 dark:text-gray-400 self-center">
+            {COUPLE_PLAN_ONE_WEDDING_COPY}
+          </p>
+        ) : (
+          <button
+            onClick={() => {
+              if (atWeddingCap) return;
+              setEventTimeErrors({});
+              setShowForm(true);
+            }}
+            disabled={atWeddingCap}
+            title={atWeddingCap
+              ? (weddingLimit !== null
+                  ? `Plan limit reached — ${weddingLimit} of ${weddingLimit} weddings in use. Upgrade or delete a wedding to add another.`
+                  : 'Plan wedding limit reached. Upgrade or delete a wedding to add another.')
+              : undefined}
+            className={atWeddingCap
+              ? 'px-4 py-2 bg-gray-300 dark:bg-slate-700 text-gray-500 dark:text-gray-400 font-semibold rounded-lg cursor-not-allowed opacity-70'
+              : 'px-4 py-2 bg-wedding-rose text-white font-semibold rounded-lg hover:bg-wedding-gold transition'}
+          >
+            + Add Wedding
+          </button>
+        )}
       </PageHeader>
       <div>
 

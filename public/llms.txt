@@ -4,7 +4,7 @@
 
 The Special Wedding is an all-in-one planning workspace and CRM for professional wedding planners. It consolidates client onboarding, wedding websites, guest management, RSVPs, seating, vendor records, contracts, budgets, timelines, reminders, galleries, and couple communication into one planner-controlled platform.
 
-The marketing site at https://thespecialwedding.io is written for independent planners and planning agencies. Couples use The Special Wedding through a planner-invited couple portal; they do not self-sign up as the primary buyer.
+The marketing site at https://thespecialwedding.io is written for independent planners and planning agencies. Couples working with a planner use The Special Wedding through a planner-invited couple portal. Couples planning their own wedding can also purchase the Couple Plan directly — a one-time $199 fee for one wedding workspace, active through 90 days after the wedding.
 
 ## Core Content
 
@@ -30,14 +30,15 @@ The marketing site at https://thespecialwedding.io is written for independent pl
 
 ### Pricing Plans
 
-The public pricing model uses two paid plans (there is no free plan):
+The public pricing model uses two paid planner plans plus a one-time couple offer (there is no free plan):
 
 - **Solo Founding**: $49/month founding-member rate for independent planners. Includes unlimited weddings, unlimited guests, vendor management, seating orchestration, automated reminders, Google and Outlook calendar sync, 300 AI credits per month, 25GB guest memories storage, and email support.
 - **Solo Standard**: $99/month standard rate for independent planners. Includes everything in Solo Founding plus 750 AI credits per month and 50GB guest memories storage.
+- **Couple Plan — One Wedding**: $199 one-time fee for couples planning their own wedding — not a subscription, nothing renews. Includes one wedding workspace with full planning tools for the whole planning window: guest list and RSVP tracking, a wedding website, galleries, and data export. The workspace stays active through 90 days after the wedding, then closes automatically.
 
-Both plans can be billed monthly or annually; annual billing costs ten times the monthly price (two months free).
+Both planner plans can be billed monthly or annually; annual billing costs ten times the monthly price (two months free).
 
-All plans include a 30-day free trial with no credit card required at signup.
+Both planner plans include a 30-day free trial with no credit card required at signup. The Couple Plan is a single one-time payment with no trial and no renewal; the wedding workspace closes 90 days after the wedding.
 
 ### Founder And Workflow Proof
 

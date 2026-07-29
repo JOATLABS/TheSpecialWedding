@@ -10,9 +10,11 @@ describe('llms.txt public authority file', () => {
       '# The Special Wedding',
       '**Solo Founding**: $49/month',
       '**Solo Standard**: $99/month',
+      '**Couple Plan — One Wedding**: $199 one-time',
+      'not a subscription, nothing renews',
       'annual billing costs ten times the monthly price',
       'https://thespecialwedding.io/resources/templates',
-      'All plans include a 30-day free trial',
+      'Both planner plans include a 30-day free trial',
     ]) {
       assert.equal(
         llmsText.includes(expected),

@@ -115,9 +115,34 @@ export default function RootLayout({
                   offers: {
                     '@type': 'AggregateOffer',
                     lowPrice: '49',
-                    highPrice: '99',
+                    highPrice: '199',
                     priceCurrency: 'USD',
-                    offerCount: 2,
+                    offerCount: 3,
+                    // Keep in sync with scripts/seed_subscription_plans.py and
+                    // COUPLE_LIFETIME_OFFER in app/constants/billing.py.
+                    offers: [
+                      {
+                        '@type': 'Offer',
+                        name: 'Solo Founding',
+                        description: 'Planner workspace subscription, billed monthly or yearly.',
+                        price: '49',
+                        priceCurrency: 'USD',
+                      },
+                      {
+                        '@type': 'Offer',
+                        name: 'Solo Standard',
+                        description: 'Planner workspace subscription, billed monthly or yearly.',
+                        price: '99',
+                        priceCurrency: 'USD',
+                      },
+                      {
+                        '@type': 'Offer',
+                        name: 'Couple Plan — One Wedding',
+                        description: 'One-time fee giving a couple one wedding workspace through 90 days after the wedding. Not a subscription.',
+                        price: '199',
+                        priceCurrency: 'USD',
+                      },
+                    ],
                   },
                 },
               ],

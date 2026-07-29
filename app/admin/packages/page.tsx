@@ -4,6 +4,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
+import {
+  INCLUDED_WITH_PLANNER_PLANS_COPY,
+  isCouplePlan,
+} from '@/admin/utils/planAccess';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -82,7 +86,7 @@ function getPackageStatusConfig(status: string) {
 }
 
 export default function PackagesPage() {
-  const { token, apiRequest } = useAdmin();
+  const { token, apiRequest, userProfile } = useAdmin();
   const apiRequestRef = useRef(apiRequest);
   useEffect(() => {
     apiRequestRef.current = apiRequest;
@@ -352,6 +356,27 @@ export default function PackagesPage() {
       currency: currency.toUpperCase(),
     }).format(amount);
   };
+
+  // Couple-plan workspaces have no packaging/storefront surfaces (both are
+  // planner-to-client features; this page hosts package management AND the
+  // storefront settings). The sidebar never links here, but a direct URL
+  // visit gets a clear explanation instead of a wall of 403s.
+  if (isCouplePlan(userProfile)) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <div className="text-center max-w-md">
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+            Packages &amp; storefront
+          </h1>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+            {INCLUDED_WITH_PLANNER_PLANS_COPY} Your couple plan covers
+            planning your own wedding, so there are no client packages or
+            storefront here.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
