@@ -8,6 +8,7 @@ from app.constants.billing import (
     CANONICAL_PUBLIC_PLAN_IDS,
     CANONICAL_PUBLIC_PLAN_IDS_BY_NAME,
     CANONICAL_PUBLIC_PLAN_METER_EVENT_NAME,
+    COUPLE_PLAN_ID,
     PLAN_BILLING_MODEL_MIGRATION_FLAG,
     RETIRED_PUBLIC_PLAN_IDS,
     plan_billing_model,
@@ -849,7 +850,14 @@ class SubscriptionService:
                     else f"{max_weddings} wedding{'s' if max_weddings != 1 else ''}"
                 )
                 if billing_plan.get("max_weddings_lifetime"):
-                    wedding_label += " (lifetime)"
+                    # Locked copy rule (2026-07-28): the couple plan's cap is
+                    # lifetime-style internally, but the word "lifetime" must
+                    # never reach a couple-plan user — their workspace closes
+                    # 90 days post-wedding.
+                    if plan_id == COUPLE_PLAN_ID:
+                        wedding_label = "One wedding workspace"
+                    else:
+                        wedding_label += " (lifetime)"
                 billing_plan["features_list"] = [
                     wedding_label,
                     (
@@ -1406,19 +1414,31 @@ class SubscriptionService:
                     current = await self._live_wedding_count(user_id)
                 limit = limits_source.get("max_weddings", 1)
                 if limit != -1 and current + requested_amount > limit:
-                    msg_suffix = (
-                        " (lifetime cap — deleted weddings still count)"
-                        if use_lifetime_cap
-                        else ""
-                    )
+                    if subscription.get("plan_id") == COUPLE_PLAN_ID:
+                        # Couple-plan copy is locked (2026-07-28): one
+                        # wedding, stated plainly. Never the generic limit
+                        # message and never the word "lifetime" — the
+                        # workspace closes 90 days post-wedding, so
+                        # "lifetime" would be both off-brand and false.
+                        message = (
+                            "The couple plan covers one wedding — your "
+                            "workspace already includes it."
+                        )
+                    else:
+                        msg_suffix = (
+                            " (lifetime cap — deleted weddings still count)"
+                            if use_lifetime_cap
+                            else ""
+                        )
+                        message = (
+                            f"Wedding limit exceeded. Plan allows {limit} "
+                            f"weddings, you have {current}{msg_suffix}"
+                        )
                     return {
                         "allowed": False,
                         "current_usage": current,
                         "limit": limit,
-                        "message": (
-                            f"Wedding limit exceeded. Plan allows {limit} "
-                            f"weddings, you have {current}{msg_suffix}"
-                        ),
+                        "message": message,
                     }
             elif resource_type == "ai_credits":
                 # Soft cap with overage. Live-query the usage log so we

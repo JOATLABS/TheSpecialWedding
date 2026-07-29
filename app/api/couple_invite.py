@@ -21,8 +21,8 @@ from app.dependencies.auth_extended import (
     enforce_team_permission,
     get_accessible_wedding_ids,
     get_owner_identity,
-    require_team_or_planner,
 )
+from app.dependencies.feature_gates import require_couple_portal_feature
 from app.services.couple_lifecycle_service import (
     COUPLE_PORTAL_STATE_PENDING_SETUP,
     couple_lifecycle_service,
@@ -118,7 +118,10 @@ def _build_active_setup_link(couple: dict, normalized_frontend_url: str) -> str 
 @router.post("/couple-portal/invite", tags=["Couple Portal"])
 async def invite_couple(
     data: InviteCoupleRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    # Couple-plan workspaces have no couple portal — the purchaser IS the
+    # couple. The gate wraps require_team_or_planner, so role semantics for
+    # planner tiers are unchanged.
+    current_user: ExtendedAuthUser = Depends(require_couple_portal_feature),
 ):
     """
     Invite a couple to the wedding portal.
@@ -325,7 +328,7 @@ async def invite_couple(
 @router.post("/couple-portal/resend-invite", tags=["Couple Portal"])
 async def resend_invite(
     data: ResendInviteRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(require_couple_portal_feature),
 ):
     """Resend the invitation email to a couple."""
     _enforce_manage_couple_portal(current_user)
@@ -428,7 +431,7 @@ async def resend_invite(
 @router.get("/couple-portal/couples", tags=["Couple Portal"])
 async def list_couples(
     wedding_id: str | None = None,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    current_user: ExtendedAuthUser = Depends(require_couple_portal_feature),
 ):
     """List all couples for the planner's weddings."""
     _enforce_manage_couple_portal(current_user)

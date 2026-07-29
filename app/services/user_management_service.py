@@ -1017,12 +1017,20 @@ class UserManagementService:
             plan_id = invite_data.get("plan_id")
             trial_end_behavior = invite_data.get("trial_end_behavior", "pause")
             stripe_customer_id = invitation.get("stripe_customer_id")
+            # Self-serve couple purchase (see couple_plan_fulfillment_service):
+            # the buyer already paid the one-time price, so the account lands
+            # immediately ACTIVE on the internal couple plan — no trial and
+            # no pending_payment checkout detour.
+            is_couple_plan = bool(invite_data.get("couple_plan"))
 
             # Determine subscription status based on trial configuration.
             # Admin-invited users with no trial should follow the existing
             # payment-required Stripe Checkout path instead of landing as
             # accessible unpaid planners.
-            subscription_status = "trial" if trial_days > 0 else "pending_payment"
+            if is_couple_plan:
+                subscription_status = "active"
+            else:
+                subscription_status = "trial" if trial_days > 0 else "pending_payment"
             trial_end_date = (
                 datetime.now(UTC) + timedelta(days=trial_days)
                 if trial_days > 0
@@ -1163,8 +1171,63 @@ class UserManagementService:
                         f"Failed to update stripe_customers user_id: {e}"
                     )
 
-            # Create subscription record if trial granted
-            if trial_days > 0 and plan_id:
+            # Create subscription record if trial granted (or couple plan)
+            if is_couple_plan and plan_id:
+                try:
+                    from app.services.couple_plan_fulfillment_service import (
+                        ensure_couple_plan,
+                    )
+                    from app.services.subscription_service import subscription_service
+
+                    # The purchase webhook seeds the plan document, but a
+                    # claim must never fail on a missing catalog row.
+                    await ensure_couple_plan(mongo.db["subscription_plans"])
+
+                    # plan_couple has no Stripe prices, so this creates a
+                    # local-only subscription: status "active", plan_snapshot
+                    # carrying the couple caps (one wedding, no packages, no
+                    # couple-portal invites, zero staff seats), and the users
+                    # doc updated to plan_id/subscription_status=active.
+                    await subscription_service.assign_subscription(
+                        user_id=user_id,
+                        plan_id=plan_id,
+                        billing_interval="monthly",
+                        trial_days=0,
+                        creator_email=invitation.get("invited_by", "system"),
+                        existing_stripe_customer_id=stripe_customer_id,
+                    )
+                except Exception as sub_error:
+                    self.logger.error(
+                        f"Failed to create couple plan subscription record: {sub_error!s}"
+                    )
+                    # ROLLBACK: Delete the user document since subscription failed
+                    await self.users_collection.delete_one({"_id": result.inserted_id})
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Account created but subscription setup failed. Please try again or contact support.",
+                    )
+
+                # Attach the paid wedding workspace to the new owner. The
+                # wedding was provisioned at purchase time with no owner.
+                wedding_id = invite_data.get("wedding_id")
+                if wedding_id:
+                    await mongo.db["weddings"].update_one(
+                        {"_id": wedding_id},
+                        {
+                            "$set": {
+                                "assigned_planner_id": user_id,
+                                "assigned_planner_email": invitation["email"],
+                                "updated_by": invitation["email"],
+                                "updated_at": datetime.now(UTC),
+                            }
+                        },
+                    )
+                else:  # pragma: no cover - defensive
+                    self.logger.error(
+                        "Couple plan invitation %s has no wedding_id to attach",
+                        invitation.get("token"),
+                    )
+            elif trial_days > 0 and plan_id:
                 try:
                     from app.services.subscription_service import subscription_service
 
