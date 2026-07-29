@@ -6,34 +6,48 @@ env STRIPE_COUPLE_LIFETIME_PRICE_ID). Stripe fires ``checkout.session.completed`
 at the existing ``/stripe/webhook`` endpoint; ``StripeService`` routes one-time
 payment sessions whose line-item price matches the couple offer here.
 
+Account model (operator ruling 2026-07-28): the couple-plan purchaser uses the
+PLANNER dashboard for their own single wedding. They are NOT a couple-portal
+user — they ARE the couple, so their workspace has no couple-portal surfaces
+at all. Their entitlements come from the internal ``plan_couple`` subscription
+plan (see app/constants/billing.py::COUPLE_PLAN_SEED): one wedding, no service
+packages, no couple-portal invitations, no team seats.
+
 What fulfillment provisions (idempotently, keyed on the checkout session id):
 
-1. A wedding workspace document (``weddings``) flagged ``self_serve_couple`` —
-   no planner owner. The workspace follows the standard wedding lifecycle:
-   it stays active through 90 days after the wedding date and is then removed
-   by the existing archival/cleanup path. NOT lifetime access.
-2. A ``couple_users`` portal account in ``pending_setup`` state carrying an
-   invite token — the exact mechanism planners use when inviting couples
-   (see app/api/couple_invite.py). The couple sets a password at
-   ``/couple/setup/{token}`` and lands in their portal.
-3. A payment audit row in ``payment_records`` under the sentinel
+1. The internal ``plan_couple`` plan document, if it does not exist yet
+   (insert-only — an operator-edited plan document is never overwritten).
+2. A wedding workspace document (``weddings``) flagged ``self_serve_couple``.
+   It has no owner yet; ownership is attached when the buyer claims their
+   account. The workspace follows the standard wedding lifecycle: it stays
+   active through 90 days after the wedding date and is then removed by the
+   existing archival/cleanup path. NOT lifetime access.
+3. A ``user_invitations`` row carrying ``invite_data.couple_plan=True`` — the
+   exact mechanism admin-invited planners use. The buyer sets a password at
+   ``/setup-account/{token}`` (existing page); ``complete_account_setup``
+   detects the couple flag, creates the planner-dashboard account as
+   immediately ACTIVE (no trial, no pending_payment — they already paid),
+   assigns the ``plan_couple`` subscription, and attaches the wedding.
+4. A payment audit row in ``payment_records`` under the sentinel
    ``category_id="platform:couple_plan"`` (never a real budget category, so
    wedding budget aggregations — which join through the wedding's own
    budget_categories — can never pick it up).
-4. A welcome/claim email through the existing Resend email service. A paying
+5. A welcome/claim email through the existing Resend email service. A paying
    couple gets into their workspace with zero manual steps from us.
 
 Edge handling:
 
-- Email already backs an existing couple portal (any wedding): we must NOT
-  create a second portal on the same email (couple login is a single
-  email/password surface — see _ensure_unique_couple_email_for_wedding in
-  couple_invite.py). The paid session is never dropped: we record the payment,
-  open a ``couple_plan_fulfillment_issues`` row, notify support, and email the
-  customer an acknowledgement.
-- Email belongs to an existing planner (``users``): couple-portal auth is a
-  separate surface (couple_users collection), so provisioning proceeds; the
-  couple record is annotated for observability.
+- Email already backs an existing planner/user account: we must NOT create a
+  second account on the same email (dashboard login is a single
+  email/password surface). The paid session is never dropped: we record the
+  payment, open a ``couple_plan_fulfillment_issues`` row, notify support, and
+  email the customer an acknowledgement.
+- A pending invitation already exists for the email (e.g. an admin invite in
+  flight): flagged for support the same way — auto-creating a competing
+  invitation would race the admin flow.
+- Email belongs to an existing couple-portal login (``couple_users``): that is
+  a separate auth surface, so provisioning proceeds; the invitation is
+  annotated for observability.
 - Any infrastructure failure raises, so the webhook marks the event failed and
   Stripe retries; every step here re-enters safely.
 """
@@ -45,9 +59,9 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from app.constants.billing import COUPLE_PLAN_ID, COUPLE_PLAN_SEED
 from app.core.database import mongo
 from app.core.settings import settings
-from app.services.couple_lifecycle_service import COUPLE_PORTAL_STATE_PENDING_SETUP
 from app.services.email_service_resend import ResendEmailService
 from app.services.wedding_service import WeddingService
 from app.utils.couple_identity import normalize_couple_email
@@ -56,8 +70,9 @@ logger = logging.getLogger(__name__)
 
 COUPLE_PLAN_PAYMENT_CATEGORY = "platform:couple_plan"
 COUPLE_PLAN_PURPOSE = "couple_plan_purchase"
-# Paid customers get a longer claim window than planner-sent invites (7 days):
-# there is no planner to click "resend" for them.
+COUPLE_PLAN_INVITED_BY = "system:couple_plan_checkout"
+# Paid customers get a longer claim window than admin-sent invites (7 days):
+# there is no admin watching to click "resend" for them.
 INVITE_TOKEN_TTL_DAYS = 30
 # If the buyer left the optional wedding-date field blank (or unparseable), we
 # still need a wedding date — the workspace lifecycle (through 90 days after
@@ -74,6 +89,22 @@ _WEDDING_DATE_FORMATS = (
     "%B %d %Y",
     "%b %d %Y",
 )
+
+
+async def ensure_couple_plan(plans_collection) -> None:
+    """Insert the internal couple plan document if it is missing.
+
+    Insert-only on purpose: operators may tune the couple plan's caps or
+    feature flags through the admin plan editor, and a webhook replay must
+    never clobber that. The seed is the starting point, not a sync target.
+    """
+    existing = await plans_collection.find_one({"_id": COUPLE_PLAN_ID})
+    if existing:
+        return
+    now = datetime.now(UTC)
+    plan_doc = {**COUPLE_PLAN_SEED, "created_at": now, "updated_at": now}
+    await plans_collection.insert_one(plan_doc)
+    logger.info("Seeded internal couple plan document %s", COUPLE_PLAN_ID)
 
 
 def _extract_custom_field(session: dict[str, Any], *keys: str) -> str | None:
@@ -145,6 +176,14 @@ class CouplePlanFulfillmentService:
         return mongo.db["couple_plan_fulfillment_issues"]
 
     @property
+    def invitations_collection(self):
+        return mongo.db["user_invitations"]
+
+    @property
+    def plans_collection(self):
+        return mongo.db["subscription_plans"]
+
+    @property
     def users_collection(self):
         return mongo.get_users_collection()
 
@@ -161,32 +200,35 @@ class CouplePlanFulfillmentService:
         customer_name = (customer_details.get("name") or "").strip()
 
         # ── Replay/retry short-circuits ────────────────────────────────
-        existing_couple = await self.couples_collection.find_one(
+        existing_invitation = await self.invitations_collection.find_one(
             {"stripe_checkout_session_id": session_id}
         )
-        if existing_couple:
-            if not existing_couple.get("welcome_email_sent"):
+        if existing_invitation:
+            if not existing_invitation.get("welcome_email_sent"):
                 # Previous attempt provisioned but the email failed — finish
                 # the job on this retry instead of silently succeeding.
-                await self._send_welcome_email(existing_couple)
-                await self.couples_collection.update_one(
-                    {"_id": existing_couple["_id"]},
+                await self._send_welcome_email(existing_invitation)
+                await self.invitations_collection.update_one(
+                    {"_id": existing_invitation["_id"]},
                     {
                         "$set": {
                             "welcome_email_sent": True,
-                            "updated_at": datetime.now(UTC),
+                            "email_status": "sent",
+                            "email_sent_at": datetime.now(UTC),
                         }
                     },
                 )
             logger.info(
-                "Couple plan session %s already fulfilled (couple %s); skipping",
+                "Couple plan session %s already fulfilled (invitation for %s); skipping",
                 session_id,
-                existing_couple.get("email"),
+                existing_invitation.get("email"),
             )
             return {
                 "status": "already_fulfilled",
                 "session_id": session_id,
-                "wedding_id": existing_couple.get("wedding_id"),
+                "wedding_id": (existing_invitation.get("invite_data") or {}).get(
+                    "wedding_id"
+                ),
             }
 
         existing_issue = await self.issues_collection.find_one(
@@ -214,34 +256,58 @@ class CouplePlanFulfillmentService:
                 detail="Paid couple-plan checkout session arrived without a customer email.",
             )
 
-        # ── Edge: email already backs an existing couple portal ───────
-        conflicting_couple = await self.couples_collection.find_one({"email": email})
-        if conflicting_couple:
+        # ── Edge: email already backs a dashboard account ──────────────
+        existing_user = await self.users_collection.find_one({"email": email})
+        if existing_user:
             return await self._flag_for_support(
                 session,
                 email=email,
-                reason="email_already_linked_to_couple_portal",
+                reason="email_already_linked_to_account",
                 detail=(
-                    "Customer email already backs couple portal for wedding "
-                    f"{conflicting_couple.get('wedding_id')!r}. Couple login is a "
-                    "single email/password surface, so a second portal on the same "
-                    "email cannot be auto-created. Attach the purchase manually."
+                    f"Customer email already backs a {existing_user.get('role')!r} "
+                    "dashboard account. Dashboard login is a single email/password "
+                    "surface, so a second account on the same email cannot be "
+                    "auto-created. Attach the purchase manually."
                 ),
-                existing_wedding_id=conflicting_couple.get("wedding_id"),
                 notify_customer=True,
             )
 
-        # Planner email overlap is allowed (separate auth surface) — annotate only.
-        planner_user = await self.users_collection.find_one({"email": email})
-        if planner_user:
+        pending_invitation = await self.invitations_collection.find_one(
+            {
+                "email": email,
+                "status": "pending",
+                "expires_at": {"$gt": datetime.now(UTC)},
+            }
+        )
+        if pending_invitation:
+            return await self._flag_for_support(
+                session,
+                email=email,
+                reason="pending_invitation_exists",
+                detail=(
+                    "Customer email already has a pending account invitation "
+                    f"(role {pending_invitation.get('role')!r}, invited by "
+                    f"{pending_invitation.get('invited_by')!r}). Auto-creating a "
+                    "competing couple-plan invitation would race that flow. "
+                    "Attach the purchase manually."
+                ),
+                notify_customer=True,
+            )
+
+        # Couple-portal overlap is allowed (separate auth surface) — annotate only.
+        portal_couple = await self.couples_collection.find_one({"email": email})
+        if portal_couple:
             logger.info(
-                "Couple plan buyer %s also has a planner/user account; "
-                "provisioning couple portal anyway (separate auth surface)",
+                "Couple plan buyer %s also has a couple-portal login (wedding %s); "
+                "provisioning planner-dashboard account anyway (separate auth surface)",
                 email,
+                portal_couple.get("wedding_id"),
             )
 
         # ── Provision ──────────────────────────────────────────────────
         now = datetime.now(UTC)
+        await ensure_couple_plan(self.plans_collection)
+
         partner_names_raw = _extract_custom_field(
             session, "partnernames", "partner_names", "couplenames"
         )
@@ -275,41 +341,38 @@ class CouplePlanFulfillmentService:
         )
 
         invite_token = secrets.token_urlsafe(48)
-        invite_expires = now + timedelta(days=INVITE_TOKEN_TTL_DAYS)
-        couple_doc = {
+        invitation_doc = {
             "email": email,
-            "partner1_name": partner1_name,
-            "partner2_name": partner2_name,
-            "phone": (customer_details.get("phone") or None),
-            "wedding_id": wedding_id,
-            # No planner owns a self-serve workspace. The couple lifecycle
-            # service short-circuits owner-blocked checks on this flag.
-            "planner_id": "",
-            "planner_email": None,
-            "self_serve": True,
-            "plan": "couple_one_wedding",
-            "invite_token": invite_token,
-            "invite_token_expires": invite_expires,
-            "is_active": False,
-            "access_state": COUPLE_PORTAL_STATE_PENDING_SETUP,
-            "setup_completed": False,
-            "password_hash": None,
-            "revoked_at": None,
-            "revoked_by": None,
-            "owner_cancelled_at": None,
-            "owner_cancelled_by_planner_id": None,
-            "owner_cancelled_by_planner_email": None,
+            "role": "wedding_planner",
+            "token": invite_token,
+            "invite_data": {
+                # The couple flag is what complete_account_setup branches on:
+                # account lands ACTIVE on plan_couple with the wedding
+                # attached — no trial, no pending_payment (they already paid).
+                "couple_plan": True,
+                "plan_id": COUPLE_PLAN_ID,
+                "trial_days": 0,
+                "wedding_id": wedding_id,
+                "company_name": couple_names,
+                "partner1_name": partner1_name,
+                "partner2_name": partner2_name,
+                "source": "couple_plan_checkout",
+                "email_matches_couple_portal": bool(portal_couple),
+            },
+            "invited_by": COUPLE_PLAN_INVITED_BY,
+            "created_at": now,
+            "expires_at": now + timedelta(days=INVITE_TOKEN_TTL_DAYS),
+            "status": "pending",
+            "stripe_customer_id": session.get("customer"),
             "stripe_checkout_session_id": session_id,
             "stripe_payment_intent_id": session.get("payment_intent"),
-            "stripe_customer_id": session.get("customer"),
-            "email_matches_planner_account": bool(planner_user),
             "welcome_email_sent": False,
-            "created_at": now,
-            "updated_at": now,
-            "last_login": None,
+            "email_status": "pending",
+            "email_sent_at": None,
+            "resend_count": 0,
         }
-        insert_result = await self.couples_collection.insert_one(couple_doc)
-        couple_doc["_id"] = insert_result.inserted_id
+        insert_result = await self.invitations_collection.insert_one(invitation_doc)
+        invitation_doc["_id"] = insert_result.inserted_id
 
         await self._record_payment(
             session,
@@ -323,14 +386,20 @@ class CouplePlanFulfillmentService:
         # able to reach their workspace without any manual step from us. If it
         # fails, raise: the webhook marks the event failed, Stripe retries,
         # and the replay path above resends the email for the existing record.
-        await self._send_welcome_email(couple_doc)
-        await self.couples_collection.update_one(
-            {"_id": couple_doc["_id"]},
-            {"$set": {"welcome_email_sent": True, "updated_at": datetime.now(UTC)}},
+        await self._send_welcome_email(invitation_doc)
+        await self.invitations_collection.update_one(
+            {"_id": invitation_doc["_id"]},
+            {
+                "$set": {
+                    "welcome_email_sent": True,
+                    "email_status": "sent",
+                    "email_sent_at": datetime.now(UTC),
+                }
+            },
         )
 
         logger.info(
-            "Couple plan fulfilled: session %s -> wedding %s, couple %s",
+            "Couple plan fulfilled: session %s -> wedding %s, invitation for %s",
             session_id,
             wedding_id,
             email,
@@ -339,7 +408,7 @@ class CouplePlanFulfillmentService:
             "status": "success",
             "session_id": session_id,
             "wedding_id": wedding_id,
-            "couple_id": str(couple_doc["_id"]),
+            "invitation_id": str(invitation_doc["_id"]),
         }
 
     # ── provisioning pieces ────────────────────────────────────────────
@@ -389,18 +458,20 @@ class CouplePlanFulfillmentService:
             "registries": [],
             "faqs": [],
             "status": "active",
-            # Self-serve couple workspace: no planner owner. This flag is what
-            # keeps the couple-portal lifecycle from treating the missing
-            # planner as a blocked owner.
+            # Self-serve couple workspace. The buyer becomes the planner-side
+            # owner when they claim their account (complete_account_setup);
+            # until then the workspace has no owner. The flag also keeps the
+            # couple lifecycle from treating the missing planner as a blocked
+            # owner and marks the workspace for the couple-plan gates.
             "self_serve_couple": True,
             "plan": "couple_one_wedding",
             "assigned_planner_id": None,
             "assigned_planner_email": None,
             "created_by": "couple-plan-checkout",
             "updated_by": email,
-            "couple_portal_email": email,
-            "couple_portal_enabled": True,
-            "couple_portal_invited_at": now,
+            # No couple-portal surfaces on a couple-plan workspace: the
+            # purchaser IS the couple and works in the planner dashboard.
+            "couple_portal_enabled": False,
             "stripe_checkout_session_id": session_id,
             "stripe_payment_intent_id": session.get("payment_intent"),
             "billed_period": now.strftime("%Y-%m"),
@@ -539,7 +610,7 @@ class CouplePlanFulfillmentService:
                         'margin: 0 auto; padding: 40px 20px;">'
                         '<h2 style="color: #1e3a5f;">Thank you — your payment went through</h2>'
                         '<p style="color: #333; font-size: 16px; line-height: 1.6;">'
-                        "Your email address is already connected to a wedding portal on "
+                        "Your email address is already connected to an account on "
                         "The Special Wedding, so our team is personally connecting your "
                         "new Couple Plan purchase to the right workspace. We'll be in "
                         "touch shortly — no action needed from you.</p>"
@@ -563,19 +634,20 @@ class CouplePlanFulfillmentService:
 
     # ── welcome email ──────────────────────────────────────────────────
 
-    async def _send_welcome_email(self, couple_doc: dict[str, Any]) -> None:
+    async def _send_welcome_email(self, invitation_doc: dict[str, Any]) -> None:
         """Send the claim email. Raises on failure so Stripe retries."""
-        email = couple_doc["email"]
-        invite_token = couple_doc.get("invite_token")
+        email = invitation_doc["email"]
+        invite_token = invitation_doc.get("token")
         if not invite_token:
             # Defensive: token vanished (e.g. setup already completed on a
             # replay) — nothing to send, and setup already succeeded.
             return
 
-        setup_link = f"{_frontend_base_url()}/couple/setup/{invite_token}"
-        couple_name = couple_doc.get("partner1_name") or email.split("@")[0]
-        if couple_doc.get("partner2_name"):
-            couple_name = f"{couple_name} & {couple_doc['partner2_name']}"
+        invite_data = invitation_doc.get("invite_data") or {}
+        setup_link = f"{_frontend_base_url()}/setup-account/{invite_token}"
+        couple_name = invite_data.get("partner1_name") or email.split("@")[0]
+        if invite_data.get("partner2_name"):
+            couple_name = f"{couple_name} & {invite_data['partner2_name']}"
 
         safe_couple_name = html.escape(str(couple_name), quote=True)
         safe_setup_link = html.escape(setup_link, quote=True)

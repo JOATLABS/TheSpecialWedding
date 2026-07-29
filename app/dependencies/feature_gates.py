@@ -10,10 +10,18 @@ import logging
 from fastapi import Depends, HTTPException, status
 
 from app.core.database import mongo
-from app.dependencies.auth_extended import ExtendedAuthUser, require_admin_or_planner
+from app.dependencies.auth_extended import (
+    ExtendedAuthUser,
+    require_admin_or_planner,
+    require_team_or_planner,
+)
 from app.models.subscription import ACTIVE_SUBSCRIPTION_STATUSES
 
 logger = logging.getLogger(__name__)
+
+# Include-by-default plan feature keys (see require_plan_included_feature).
+PACKAGES_FEATURE = "packages"
+COUPLE_PORTAL_FEATURE = "couple_portal"
 
 
 async def get_user_plan_features(user_email: str) -> dict:
@@ -146,6 +154,119 @@ def require_feature(feature_name: str):
         return current_user
 
     return _check_feature
+
+
+async def _resolve_effective_plan_terms(current_user: ExtendedAuthUser) -> dict:
+    """Resolve the plan terms that govern the acting user's workspace.
+
+    Team members act under their OWNER's plan (caps and entitlements bill
+    against the owner subscription), so the lookup redirects to the owner
+    identity for team sessions. Prefers the subscription's ``plan_snapshot``
+    (grandfathered terms), falling back to the live plan document — the same
+    resolution order ``check_usage_limits`` uses.
+
+    Returns the effective terms dict ({} when nothing can be resolved).
+    """
+    email = current_user.email
+    user_id: str | None = None
+    if current_user.is_team_member:
+        email = current_user.team_owner_email or email
+        user_id = current_user.parent_planner_id
+
+    subscription = None
+    if email:
+        subscription = await mongo.db["user_subscriptions"].find_one(
+            {
+                "user_email": email,
+                "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)},
+            }
+        )
+    if not subscription:
+        if not user_id and email:
+            user = await mongo.get_users_collection().find_one({"email": email})
+            if user:
+                user_id = str(user["_id"])
+        if user_id:
+            subscription = await mongo.db["user_subscriptions"].find_one(
+                {
+                    "user_id": user_id,
+                    "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)},
+                }
+            )
+
+    if not subscription:
+        return {}
+
+    snapshot = subscription.get("plan_snapshot")
+    if isinstance(snapshot, dict) and snapshot:
+        return snapshot
+
+    plan = await mongo.db["subscription_plans"].find_one(
+        {"_id": subscription.get("plan_id")}
+    )
+    return plan or {}
+
+
+def require_plan_included_feature(feature_name: str, denial_message: str):
+    """Gate for features historically INCLUDED with every planner plan.
+
+    ``require_feature`` is opt-in: an absent key means the feature is off.
+    That polarity would break every existing planner tier for features that
+    predate feature flags (packages, couple-portal invitations), because no
+    planner plan document declares those keys. This gate has the opposite
+    polarity: plans that don't declare the key keep access; only a plan that
+    EXPLICITLY sets the key to ``False`` — the self-serve couple plan — is
+    blocked. Backend-enforced 403 so hidden UI is never the only barrier.
+    """
+
+    async def _check_included_feature(
+        current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    ) -> ExtendedAuthUser:
+        if current_user.is_root_admin:
+            return current_user
+
+        try:
+            terms = await _resolve_effective_plan_terms(current_user)
+            features = terms.get("features") if isinstance(terms, dict) else None
+            excluded = (
+                isinstance(features, dict) and features.get(feature_name) is False
+            )
+        except Exception as e:
+            logger.error(f"Error checking included feature '{feature_name}': {e!s}")
+            # Fail open for planner tiers: this gate exists to exclude one
+            # explicitly-flagged plan, not to lock planners out on lookup
+            # errors. The couple plan's snapshot carries the flag, so a
+            # transient error here never grants it dashboard-wide access to
+            # anything beyond what the UI already hides.
+            excluded = False
+
+        if excluded:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "error": "feature_not_available",
+                    "message": denial_message,
+                    "feature": feature_name,
+                    "upgrade_required": False,
+                },
+            )
+
+        return current_user
+
+    return _check_included_feature
+
+
+# The two couple-plan exclusions enforced through plan feature flags. Team
+# management (staff_seats=0) and the one-wedding cap (max_weddings=1 with the
+# lifetime-style count) ride the existing limit checks instead.
+require_packages_feature = require_plan_included_feature(
+    PACKAGES_FEATURE,
+    "Service packages are included with planner plans.",
+)
+require_couple_portal_feature = require_plan_included_feature(
+    COUPLE_PORTAL_FEATURE,
+    "Couple portal invitations are included with planner plans.",
+)
 
 
 async def require_team_management(

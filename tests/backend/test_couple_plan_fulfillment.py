@@ -2,14 +2,26 @@
 
 Mirrors the fake-mongo pattern of test_stripe_checkout_lifecycle.py.
 
+Account model (operator ruling 2026-07-28): the couple-plan purchaser uses the
+PLANNER dashboard for their own single wedding — fulfillment provisions a
+claimable planner-account invitation (``user_invitations``), NOT a
+couple-portal login.
+
 Covers:
-- paid couple-price session → wedding workspace + portal account + payment
-  record + welcome email (routed through StripeService's mode=payment branch)
-- duplicate delivery → idempotent (no second wedding/couple/payment/email)
+- paid couple-price session → wedding workspace (unowned, portal disabled) +
+  planner-account invitation + internal plan_couple document + payment record
+  + welcome email pointing at /setup-account/{token}
+- duplicate delivery → idempotent (no second wedding/invitation/payment/email)
 - unmatched one-time price → acknowledged no-op, zero writes
-- email already backing an existing couple portal → support path, payment
+- email already backing an existing dashboard account → support path, payment
   never dropped
+- email with a pending admin invitation → support path
+- email backing a couple-portal login (separate auth surface) → provisioning
+  proceeds, annotated
 - welcome email failure → raises (Stripe retries), retry resends email only
+- claim: complete_account_setup on the couple invitation → ACTIVE planner
+  account on plan_couple (no trial, no pending_payment), local subscription
+  with the couple caps in plan_snapshot, wedding ownership attached
 - self-serve couples are never owner-blocked by the couple lifecycle service
 """
 
@@ -27,9 +39,12 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-import app.services.couple_lifecycle_service as couple_lifecycle_module  # noqa: E402
-import app.services.couple_plan_fulfillment_service as fulfillment_module  # noqa: E402
-import app.services.stripe_service as stripe_service_module  # noqa: E402
+import app.services.couple_lifecycle_service as couple_lifecycle_module
+import app.services.couple_plan_fulfillment_service as fulfillment_module
+import app.services.stripe_service as stripe_service_module
+import app.services.subscription_service as subscription_service_module
+import app.services.user_management_service as user_management_module
+from app.constants.billing import COUPLE_PLAN_ID
 
 COUPLE_PRICE_ID = "price_couple_199_test"
 OTHER_PRICE_ID = "price_vendor_milestone_test"
@@ -76,8 +91,22 @@ class AsyncCollection:
             if _matches(document, query):
                 for key, value in update.get("$set", {}).items():
                     document[key] = value
+                for key in update.get("$unset", {}):
+                    document.pop(key, None)
                 return SimpleNamespace(modified_count=1)
+        if upsert and "$set" in update:
+            stored = {**query, **update["$set"]}
+            stored.setdefault("_id", ObjectId())
+            self.storage.append(stored)
+            return SimpleNamespace(modified_count=0, upserted_id=stored["_id"])
         return SimpleNamespace(modified_count=0)
+
+    async def delete_one(self, query):
+        for index, document in enumerate(self.storage):
+            if _matches(document, query):
+                del self.storage[index]
+                return SimpleNamespace(deleted_count=1)
+        return SimpleNamespace(deleted_count=0)
 
 
 class AsyncDatabase:
@@ -154,9 +183,11 @@ def fulfillment_env(monkeypatch):
         "weddings": [],
         "payment_records": [],
         "couple_plan_fulfillment_issues": [],
+        "user_invitations": [],
         "users": [],
         "user_subscriptions": [],
         "subscription_plans": [],
+        "usage_tracking": [],
         "stripe_customers": [],
     }
     fake_mongo = FakeMongo(storage)
@@ -193,7 +224,7 @@ def fulfillment_env(monkeypatch):
     return stripe_service, storage, email_service, monkeypatch
 
 
-def test_paid_couple_session_provisions_workspace(fulfillment_env):
+def test_paid_couple_session_provisions_planner_invitation(fulfillment_env):
     stripe_service, storage, email_service, _ = fulfillment_env
 
     result = asyncio.run(stripe_service._handle_checkout_completed(_couple_session()))
@@ -204,25 +235,45 @@ def test_paid_couple_session_provisions_workspace(fulfillment_env):
     assert len(weddings) == 1
     wedding = weddings[0]
     assert wedding["self_serve_couple"] is True
-    assert wedding["couple_portal_enabled"] is True
     assert wedding["couple_names"] == "Amara & Jide"
     assert wedding["status"] == "active"
+    # Unowned until the buyer claims the account; NO couple portal — the
+    # purchaser IS the couple and works in the planner dashboard.
     assert wedding["assigned_planner_id"] is None
+    assert wedding["couple_portal_enabled"] is False
     assert wedding["stripe_checkout_session_id"] == "cs_couple_1"
     assert wedding["wedding_date_confirmed"] is True
 
-    couples = storage["couple_users"]
-    assert len(couples) == 1
-    couple = couples[0]
-    assert couple["email"] == "amara.jide@example.com"
-    assert couple["self_serve"] is True
-    assert couple["wedding_id"] == str(wedding["_id"])
-    assert couple["access_state"] == "pending_setup"
-    assert couple["setup_completed"] is False
-    assert couple["invite_token"]
-    assert couple["welcome_email_sent"] is True
-    assert couple["partner1_name"] == "Amara"
-    assert couple["partner2_name"] == "Jide"
+    # No couple-portal login is created for a couple-plan workspace.
+    assert storage["couple_users"] == []
+
+    invitations = storage["user_invitations"]
+    assert len(invitations) == 1
+    invitation = invitations[0]
+    assert invitation["email"] == "amara.jide@example.com"
+    assert invitation["role"] == "wedding_planner"
+    assert invitation["status"] == "pending"
+    assert invitation["token"]
+    assert invitation["welcome_email_sent"] is True
+    invite_data = invitation["invite_data"]
+    assert invite_data["couple_plan"] is True
+    assert invite_data["plan_id"] == COUPLE_PLAN_ID
+    assert invite_data["trial_days"] == 0
+    assert invite_data["wedding_id"] == str(wedding["_id"])
+    assert invite_data["partner1_name"] == "Amara"
+    assert invite_data["partner2_name"] == "Jide"
+
+    # The internal entitlement plan was seeded with the four couple gates.
+    plans = storage["subscription_plans"]
+    assert len(plans) == 1
+    plan = plans[0]
+    assert plan["_id"] == COUPLE_PLAN_ID
+    assert plan["is_active"] is False  # never in the public catalog
+    assert plan["max_weddings"] == 1
+    assert plan["max_weddings_lifetime"] is True
+    assert plan["staff_seats"] == 0
+    assert plan["features"]["packages"] is False
+    assert plan["features"]["couple_portal"] is False
 
     payments = storage["payment_records"]
     assert len(payments) == 1
@@ -236,7 +287,7 @@ def test_paid_couple_session_provisions_workspace(fulfillment_env):
     assert len(email_service.sent) == 1
     welcome = email_service.sent[0]
     assert welcome["to_email"] == "amara.jide@example.com"
-    assert f"/couple/setup/{couple['invite_token']}" in welcome["html_content"]
+    assert f"/setup-account/{invitation['token']}" in welcome["html_content"]
     # No lifetime-access claims in the welcome email.
     assert "lifetime" not in welcome["html_content"].lower()
     assert "90 days after your wedding" in welcome["html_content"]
@@ -254,7 +305,7 @@ def test_duplicate_delivery_is_idempotent(fulfillment_env):
     assert first["status"] == "success"
     assert second["status"] == "already_fulfilled"
     assert len(storage["weddings"]) == 1
-    assert len(storage["couple_users"]) == 1
+    assert len(storage["user_invitations"]) == 1
     assert len(storage["payment_records"]) == 1
     assert len(email_service.sent) == 1
 
@@ -280,26 +331,25 @@ def test_unmatched_one_time_price_is_noop(fulfillment_env):
     assert result["status"] == "ignored_unmatched_one_time_price"
     assert result["price_ids"] == [OTHER_PRICE_ID]
     assert storage["weddings"] == []
-    assert storage["couple_users"] == []
+    assert storage["user_invitations"] == []
     assert storage["payment_records"] == []
     assert email_service.sent == []
 
 
-def test_existing_couple_email_routes_to_support(fulfillment_env):
+def test_existing_account_email_routes_to_support(fulfillment_env):
     stripe_service, storage, email_service, _ = fulfillment_env
-    storage["couple_users"].append(
+    storage["users"].append(
         {
             "_id": ObjectId(),
             "email": "amara.jide@example.com",
-            "wedding_id": "wedding_existing_1",
-            "setup_completed": True,
+            "role": "wedding_planner",
         }
     )
 
     result = asyncio.run(stripe_service._handle_checkout_completed(_couple_session()))
 
     assert result["status"] == "flagged_for_support"
-    assert result["reason"] == "email_already_linked_to_couple_portal"
+    assert result["reason"] == "email_already_linked_to_account"
 
     # The paid session is never dropped: payment recorded + issue opened.
     assert len(storage["payment_records"]) == 1
@@ -307,11 +357,11 @@ def test_existing_couple_email_routes_to_support(fulfillment_env):
     issues = storage["couple_plan_fulfillment_issues"]
     assert len(issues) == 1
     assert issues[0]["stripe_checkout_session_id"] == "cs_couple_1"
-    assert issues[0]["existing_wedding_id"] == "wedding_existing_1"
     assert issues[0]["resolved"] is False
 
-    # No second portal / workspace was created.
-    assert len(storage["couple_users"]) == 1
+    # No second account / invitation / workspace was created.
+    assert len(storage["users"]) == 1
+    assert storage["user_invitations"] == []
     assert storage["weddings"] == []
 
     # Support alert + customer acknowledgement both went out.
@@ -326,6 +376,53 @@ def test_existing_couple_email_routes_to_support(fulfillment_env):
     assert len(storage["payment_records"]) == 1
 
 
+def test_pending_invitation_email_routes_to_support(fulfillment_env):
+    stripe_service, storage, _, _ = fulfillment_env
+    storage["user_invitations"].append(
+        {
+            "_id": ObjectId(),
+            "email": "amara.jide@example.com",
+            "role": "wedding_planner",
+            "status": "pending",
+            "invited_by": "root@thespecialwedding.io",
+            "expires_at": datetime.now(UTC) + timedelta(days=3),
+        }
+    )
+
+    result = asyncio.run(stripe_service._handle_checkout_completed(_couple_session()))
+
+    assert result["status"] == "flagged_for_support"
+    assert result["reason"] == "pending_invitation_exists"
+    assert len(storage["payment_records"]) == 1
+    assert len(storage["couple_plan_fulfillment_issues"]) == 1
+    # The pre-existing admin invitation is untouched; no competing invite.
+    assert len(storage["user_invitations"]) == 1
+    assert storage["weddings"] == []
+
+
+def test_couple_portal_email_overlap_still_provisions(fulfillment_env):
+    """A couple-portal login is a separate auth surface — not a conflict."""
+    stripe_service, storage, email_service, _ = fulfillment_env
+    storage["couple_users"].append(
+        {
+            "_id": ObjectId(),
+            "email": "amara.jide@example.com",
+            "wedding_id": "wedding_existing_1",
+            "setup_completed": True,
+        }
+    )
+
+    result = asyncio.run(stripe_service._handle_checkout_completed(_couple_session()))
+
+    assert result["status"] == "success"
+    assert len(storage["weddings"]) == 1
+    assert len(storage["user_invitations"]) == 1
+    invitation = storage["user_invitations"][0]
+    assert invitation["invite_data"]["email_matches_couple_portal"] is True
+    assert storage["couple_plan_fulfillment_issues"] == []
+    assert len(email_service.sent) == 1
+
+
 def test_welcome_email_failure_raises_then_retry_resends(fulfillment_env):
     stripe_service, storage, email_service, _ = fulfillment_env
     email_service.fail_next = True
@@ -333,18 +430,91 @@ def test_welcome_email_failure_raises_then_retry_resends(fulfillment_env):
     with pytest.raises(RuntimeError):
         asyncio.run(stripe_service._handle_checkout_completed(_couple_session()))
 
-    # Workspace was provisioned but the email is still owed.
-    assert len(storage["couple_users"]) == 1
-    assert storage["couple_users"][0]["welcome_email_sent"] is False
+    # Invitation was provisioned but the email is still owed.
+    assert len(storage["user_invitations"]) == 1
+    assert storage["user_invitations"][0]["welcome_email_sent"] is False
     assert email_service.sent == []
 
     # Stripe retry: same session id → resend the email, no duplicate writes.
     retry = asyncio.run(stripe_service._handle_checkout_completed(_couple_session()))
     assert retry["status"] == "already_fulfilled"
     assert len(email_service.sent) == 1
-    assert storage["couple_users"][0]["welcome_email_sent"] is True
+    assert storage["user_invitations"][0]["welcome_email_sent"] is True
     assert len(storage["weddings"]) == 1
     assert len(storage["payment_records"]) == 1
+
+
+def test_claim_creates_active_planner_account_on_couple_plan(fulfillment_env):
+    """complete_account_setup on the couple invitation → ACTIVE planner account.
+
+    No trial, no pending_payment (they already paid): the account lands on
+    plan_couple with a local-only subscription whose plan_snapshot carries the
+    couple caps, and the paid wedding is attached to the new owner.
+    """
+    stripe_service, storage, _, monkeypatch = fulfillment_env
+
+    result = asyncio.run(stripe_service._handle_checkout_completed(_couple_session()))
+    assert result["status"] == "success"
+    invitation = storage["user_invitations"][0]
+    wedding_id = invitation["invite_data"]["wedding_id"]
+
+    fake_mongo = FakeMongo(storage)
+    monkeypatch.setattr(user_management_module, "mongo", fake_mongo)
+    monkeypatch.setattr(subscription_service_module, "mongo", fake_mongo)
+    monkeypatch.setattr(
+        subscription_service_module,
+        "subscription_service",
+        subscription_service_module.SubscriptionService(),
+    )
+
+    service = user_management_module.UserManagementService()
+
+    async def _noop_notify(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "_notify_root_admin_account_created", _noop_notify)
+
+    claim = asyncio.run(
+        service.complete_account_setup(
+            token=invitation["token"],
+            password="CoupleStrongPass!42",
+            first_name="Amara",
+            last_name="Obi",
+        )
+    )
+
+    assert claim["subscription_status"] == "active"
+    assert claim["role"] == "wedding_planner"
+
+    users = storage["users"]
+    assert len(users) == 1
+    user = users[0]
+    assert user["email"] == "amara.jide@example.com"
+    assert user["role"] == "wedding_planner"
+    assert user["plan_id"] == COUPLE_PLAN_ID
+    assert user["subscription_status"] == "active"
+
+    subs = storage["user_subscriptions"]
+    assert len(subs) == 1
+    sub = subs[0]
+    assert sub["plan_id"] == COUPLE_PLAN_ID
+    assert sub["status"] == "active"
+    assert sub["stripe_subscription_id"] is None  # local-only, already paid
+    snapshot = sub["plan_snapshot"]
+    assert snapshot["max_weddings"] == 1
+    assert snapshot["max_weddings_lifetime"] is True
+    assert snapshot["staff_seats"] == 0
+    assert snapshot["features"]["packages"] is False
+    assert snapshot["features"]["couple_portal"] is False
+
+    # The paid wedding now belongs to the claimed account.
+    wedding = storage["weddings"][0]
+    assert str(wedding["_id"]) == wedding_id
+    assert wedding["assigned_planner_id"] == str(user["_id"])
+    assert wedding["assigned_planner_email"] == "amara.jide@example.com"
+
+    # Invitation is consumed.
+    assert storage["user_invitations"][0]["status"] == "completed"
 
 
 def test_handler_error_result_marks_event_failed_and_replayable(fulfillment_env):
