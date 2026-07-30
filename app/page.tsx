@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { CouplePlanSection } from "./components/landing-page/CouplePlanSection";
 import { FeatureShowcase } from "./components/landing-page/FeatureShowcase.client";
 import { PhaseOneHeroProof } from "./components/landing-page/PhaseOneHeroProof";
 import { PricingSignupSection } from "./components/landing-page/PricingSignupSection.client";
@@ -180,10 +179,8 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Couple one-time offer renders as a card inside the pricing grid. */}
       <PricingSignupSection pricing={fallbackPricing} theme={defaultTheme} />
-
-      {/* Couples' one-time offer — secondary to the planner tiers above. */}
-      <CouplePlanSection />
 
       <section className="bg-slate-950 px-6 py-16 sm:px-8 lg:px-12">
         <div className="mx-auto grid max-w-7xl gap-8 rounded-3xl border border-white/10 bg-white/[0.035] p-7 sm:p-10 lg:grid-cols-[0.82fr_1.18fr] lg:items-center">
