@@ -5,6 +5,7 @@ import { startTransition, useEffect, useRef, useState } from "react";
 import type { ThemeConfig } from "@/types/wedding";
 import { getApiBaseUrl } from "@/utils/env";
 import { umamiTrack } from "@/utils/umami";
+import { CouplePlanCard } from "./CouplePlanSection";
 
 const SignupModal = dynamic(() => import("@/components/saas/SignupModal").then((mod) => mod.SignupModal), {
   ssr: false,
@@ -138,15 +139,19 @@ export function PricingSignupSection({ pricing, theme }: Props) {
     <section ref={sectionRef} id="pricing" className="scroll-mt-28 bg-slate-950 px-5 py-10 sm:px-8 sm:py-16 lg:px-12">
       <div className="mx-auto max-w-7xl">
         <div className="mx-auto mb-7 max-w-3xl text-center sm:mb-10">
-          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-rose-200">Planner workspace plans</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-rose-200">Plans for planners &amp; couples</p>
           <h2 className="mt-3 text-3xl font-semibold tracking-normal text-white sm:mt-4 sm:text-5xl">
             Start small, then scale the studio.
           </h2>
           <p className="mx-auto mt-4 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
-            Every plan opens the wedding planner workspace used to manage client weddings, couples, guests, vendors, and teams.
+            Planner plans open the full workspace for client weddings. Planning your own wedding? The couple plan is a single one-time fee.
           </p>
         </div>
-        <div className="grid items-stretch gap-3 sm:gap-5 md:grid-cols-2 lg:auto-rows-fr lg:grid-cols-4">
+        <div
+          className={`grid items-stretch gap-3 sm:gap-5 md:grid-cols-2 lg:auto-rows-fr ${
+            displayPricing.length + 1 >= 4 ? "lg:grid-cols-4" : "lg:grid-cols-3"
+          }`}
+        >
           {displayPricing.map((tier) => (
             <article
               key={tier.id}
@@ -182,6 +187,8 @@ export function PricingSignupSection({ pricing, theme }: Props) {
               </div>
             </article>
           ))}
+          {/* Couple one-time offer rendered as a peer card so all tiers align. */}
+          <CouplePlanCard />
         </div>
       </div>
 
