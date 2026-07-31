@@ -79,6 +79,56 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Install Wrangler retry wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "${RUNNER_TEMP}/wrangler-retry" <<'BASH'
+          #!/usr/bin/env bash
+          set -u
+
+          secret_value=""
+          if [ "${1:-}" = "secret" ] && [ "${2:-}" = "put" ]; then
+            secret_value="$(cat)"
+          fi
+
+          attempt=1
+          max_attempts="${WRANGLER_RETRY_ATTEMPTS:-3}"
+          delay_seconds="${WRANGLER_RETRY_DELAY_SECONDS:-10}"
+
+          while true; do
+            stdout_file="$(mktemp)"
+            stderr_file="$(mktemp)"
+            if [ "${1:-}" = "secret" ] && [ "${2:-}" = "put" ]; then
+              printf '%s' "${secret_value}" | npx --yes "wrangler@${WRANGLER_VERSION}" "$@" >"${stdout_file}" 2>"${stderr_file}"
+            else
+              npx --yes "wrangler@${WRANGLER_VERSION}" "$@" >"${stdout_file}" 2>"${stderr_file}"
+            fi
+            status=$?
+            if [ "${status}" -eq 0 ]; then
+              cat "${stdout_file}"
+              cat "${stderr_file}" >&2
+              rm -f "${stdout_file}" "${stderr_file}"
+              exit 0
+            fi
+            if [ "${attempt}" -ge "${max_attempts}" ]; then
+              cat "${stdout_file}" >&2
+              cat "${stderr_file}" >&2
+              rm -f "${stdout_file}" "${stderr_file}"
+              exit "${status}"
+            fi
+            attempt=$((attempt + 1))
+            cat "${stdout_file}" >&2
+            cat "${stderr_file}" >&2
+            rm -f "${stdout_file}" "${stderr_file}"
+            echo "Wrangler command failed with ${status}; retrying ${attempt}/${max_attempts} after ${delay_seconds}s." >&2
+            sleep "${delay_seconds}"
+            delay_seconds=$((delay_seconds * 2))
+          done
+          BASH
+          chmod +x "${RUNNER_TEMP}/wrangler-retry"
+          echo "${RUNNER_TEMP}" >> "${GITHUB_PATH}"
+
       - name: Validate Cloudflare deployment inputs
         shell: bash
         run: |
@@ -163,7 +213,7 @@ jobs:
           # `--json` flag was removed because it was redundant. v3 required
           # the explicit flag, so this used to be `--json`. Trying that
           # against v4 fails with `Unknown argument: json`.
-          namespaces_json="$(npx --yes "wrangler@${WRANGLER_VERSION}" kv namespace list)"
+          namespaces_json="$(wrangler-retry kv namespace list)"
           if ! echo "${namespaces_json}" | jq -e --arg id "${UPTIME_KV_NAMESPACE_ID}" '.[] | select(.id == $id)' >/dev/null; then
             echo "UPTIME_KV_NAMESPACE_ID=${UPTIME_KV_NAMESPACE_ID} was not found in this Cloudflare account."
             exit 1
@@ -178,12 +228,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config cloudflare-workers/autopilot.wrangler.toml
-          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/autopilot.wrangler.toml
-          printf '%s' "$CRON_SECRET" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put CRON_SECRET --config cloudflare-workers/autopilot.wrangler.toml
-          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config cloudflare-workers/autopilot.wrangler.toml
-          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config cloudflare-workers/autopilot.wrangler.toml
-          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/autopilot.wrangler.toml
+          wrangler-retry deploy --config cloudflare-workers/autopilot.wrangler.toml
+          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | wrangler-retry secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/autopilot.wrangler.toml
+          printf '%s' "$CRON_SECRET" | wrangler-retry secret put CRON_SECRET --config cloudflare-workers/autopilot.wrangler.toml
+          printf '%s' "$RESEND_API_KEY" | wrangler-retry secret put RESEND_API_KEY --config cloudflare-workers/autopilot.wrangler.toml
+          printf '%s' "$ALERT_EMAIL" | wrangler-retry secret put ALERT_EMAIL --config cloudflare-workers/autopilot.wrangler.toml
+          printf '%s' "$ROOT_ADMIN_EMAIL" | wrangler-retry secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/autopilot.wrangler.toml
 
       - name: Deploy Metrics Snapshot Worker
         shell: bash
@@ -193,56 +243,56 @@ jobs:
           # DEPLOYMENT_ENV = "production". See "Prepare metrics-snapshot
           # worker config (env-aware)" earlier in this workflow.
           CFG="cloudflare-workers/metrics-snapshot.wrangler.rendered.toml"
-          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config "$CFG"
-          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config "$CFG"
-          printf '%s' "$PLATFORM_METRICS_TOKEN" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put PLATFORM_METRICS_TOKEN --config "$CFG"
-          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config "$CFG"
-          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config "$CFG"
-          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config "$CFG"
+          wrangler-retry deploy --config "$CFG"
+          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | wrangler-retry secret put NEXT_PUBLIC_API_BASE_URL --config "$CFG"
+          printf '%s' "$PLATFORM_METRICS_TOKEN" | wrangler-retry secret put PLATFORM_METRICS_TOKEN --config "$CFG"
+          printf '%s' "$RESEND_API_KEY" | wrangler-retry secret put RESEND_API_KEY --config "$CFG"
+          printf '%s' "$ALERT_EMAIL" | wrangler-retry secret put ALERT_EMAIL --config "$CFG"
+          printf '%s' "$ROOT_ADMIN_EMAIL" | wrangler-retry secret put ROOT_ADMIN_EMAIL --config "$CFG"
 
       - name: Deploy Backup Cron Worker
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config cloudflare-workers/backup.wrangler.toml
-          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/backup.wrangler.toml
-          printf '%s' "$BACKUP_SECRET" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put BACKUP_SECRET --config cloudflare-workers/backup.wrangler.toml
-          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config cloudflare-workers/backup.wrangler.toml
-          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config cloudflare-workers/backup.wrangler.toml
-          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/backup.wrangler.toml
+          wrangler-retry deploy --config cloudflare-workers/backup.wrangler.toml
+          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | wrangler-retry secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/backup.wrangler.toml
+          printf '%s' "$BACKUP_SECRET" | wrangler-retry secret put BACKUP_SECRET --config cloudflare-workers/backup.wrangler.toml
+          printf '%s' "$RESEND_API_KEY" | wrangler-retry secret put RESEND_API_KEY --config cloudflare-workers/backup.wrangler.toml
+          printf '%s' "$ALERT_EMAIL" | wrangler-retry secret put ALERT_EMAIL --config cloudflare-workers/backup.wrangler.toml
+          printf '%s' "$ROOT_ADMIN_EMAIL" | wrangler-retry secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/backup.wrangler.toml
 
       - name: Deploy Uptime Cron Worker
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config cloudflare-workers/uptime.wrangler.rendered.toml
-          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/uptime.wrangler.rendered.toml
-          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config cloudflare-workers/uptime.wrangler.rendered.toml
-          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config cloudflare-workers/uptime.wrangler.rendered.toml
-          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/uptime.wrangler.rendered.toml
+          wrangler-retry deploy --config cloudflare-workers/uptime.wrangler.rendered.toml
+          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | wrangler-retry secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/uptime.wrangler.rendered.toml
+          printf '%s' "$RESEND_API_KEY" | wrangler-retry secret put RESEND_API_KEY --config cloudflare-workers/uptime.wrangler.rendered.toml
+          printf '%s' "$ALERT_EMAIL" | wrangler-retry secret put ALERT_EMAIL --config cloudflare-workers/uptime.wrangler.rendered.toml
+          printf '%s' "$ROOT_ADMIN_EMAIL" | wrangler-retry secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/uptime.wrangler.rendered.toml
 
       - name: Deploy Trial Cron Worker
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config cloudflare-workers/trial.wrangler.toml
-          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/trial.wrangler.toml
-          printf '%s' "$CRON_SECRET" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put CRON_SECRET --config cloudflare-workers/trial.wrangler.toml
-          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config cloudflare-workers/trial.wrangler.toml
-          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config cloudflare-workers/trial.wrangler.toml
-          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/trial.wrangler.toml
+          wrangler-retry deploy --config cloudflare-workers/trial.wrangler.toml
+          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | wrangler-retry secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/trial.wrangler.toml
+          printf '%s' "$CRON_SECRET" | wrangler-retry secret put CRON_SECRET --config cloudflare-workers/trial.wrangler.toml
+          printf '%s' "$RESEND_API_KEY" | wrangler-retry secret put RESEND_API_KEY --config cloudflare-workers/trial.wrangler.toml
+          printf '%s' "$ALERT_EMAIL" | wrangler-retry secret put ALERT_EMAIL --config cloudflare-workers/trial.wrangler.toml
+          printf '%s' "$ROOT_ADMIN_EMAIL" | wrangler-retry secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/trial.wrangler.toml
 
       - name: Deploy Scheduler Cron Worker
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config cloudflare-workers/scheduler.wrangler.toml
-          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/scheduler.wrangler.toml
-          printf '%s' "$SCHEDULER_HMAC_SECRET" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put SCHEDULER_HMAC_SECRET --config cloudflare-workers/scheduler.wrangler.toml
-          printf '%s' "$CRON_SECRET" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put CRON_SECRET --config cloudflare-workers/scheduler.wrangler.toml
-          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config cloudflare-workers/scheduler.wrangler.toml
-          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config cloudflare-workers/scheduler.wrangler.toml
-          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/scheduler.wrangler.toml
+          wrangler-retry deploy --config cloudflare-workers/scheduler.wrangler.toml
+          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | wrangler-retry secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/scheduler.wrangler.toml
+          printf '%s' "$SCHEDULER_HMAC_SECRET" | wrangler-retry secret put SCHEDULER_HMAC_SECRET --config cloudflare-workers/scheduler.wrangler.toml
+          printf '%s' "$CRON_SECRET" | wrangler-retry secret put CRON_SECRET --config cloudflare-workers/scheduler.wrangler.toml
+          printf '%s' "$RESEND_API_KEY" | wrangler-retry secret put RESEND_API_KEY --config cloudflare-workers/scheduler.wrangler.toml
+          printf '%s' "$ALERT_EMAIL" | wrangler-retry secret put ALERT_EMAIL --config cloudflare-workers/scheduler.wrangler.toml
+          printf '%s' "$ROOT_ADMIN_EMAIL" | wrangler-retry secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/scheduler.wrangler.toml
 
       - name: Notify on Success
         if: success()

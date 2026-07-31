@@ -30,6 +30,10 @@
  * Cost: $0/month on Cloudflare Workers free tier.
  */
 
+const SCHEDULER_FETCH_ATTEMPTS = 3;
+const SCHEDULER_FETCH_RETRY_BASE_MS = 1500;
+const RETRYABLE_SCHEDULER_STATUS_CODES = new Set([408, 409, 425, 429, 500, 502, 503, 504, 520, 522, 523, 524]);
+
 // ─── HMAC helper ────────────────────────────────────────────────────────────
 async function hmacSha256Hex(secret, payload) {
   const encoder = new TextEncoder();
@@ -57,6 +61,18 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableSchedulerStatus(status) {
+  return RETRYABLE_SCHEDULER_STATUS_CODES.has(status);
+}
+
+function retryDelayMs(attempt) {
+  return SCHEDULER_FETCH_RETRY_BASE_MS * attempt;
+}
+
 // ─── Call a scheduler endpoint with HMAC signing ────────────────────────────
 // `path` must start with '/'; `queryString` must be '' or 'key=value&...'
 async function callScheduler(env, { method = 'POST', path, queryString = '' }) {
@@ -70,41 +86,68 @@ async function callScheduler(env, { method = 'POST', path, queryString = '' }) {
     throw new Error('SCHEDULER_HMAC_SECRET is not set');
   }
 
-  const timestamp = String(Math.floor(Date.now() / 1000));
-  // Backend signs `timestamp.METHOD.path` — query string is deliberately excluded.
-  const payload = `${timestamp}.${method.toUpperCase()}.${path}`;
-  const digest = await hmacSha256Hex(env.SCHEDULER_HMAC_SECRET, payload);
-
   const base = env.NEXT_PUBLIC_API_BASE_URL.replace(/\/$/, '');
   const url = `${base}${path}${queryString ? `?${queryString}` : ''}`;
 
-  const response = await fetchWithTimeout(
-    url,
-    {
-      method: method.toUpperCase(),
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'wedding-scheduler-cron/1.0',
-        'X-Scheduler-Timestamp': timestamp,
-        'X-Scheduler-Signature': `sha256=${digest}`,
-      },
-    },
-    20000
+  let lastError;
+  for (let attempt = 1; attempt <= SCHEDULER_FETCH_ATTEMPTS; attempt += 1) {
+    try {
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      // Backend signs `timestamp.METHOD.path` — query string is deliberately excluded.
+      const payload = `${timestamp}.${method.toUpperCase()}.${path}`;
+      const digest = await hmacSha256Hex(env.SCHEDULER_HMAC_SECRET, payload);
+
+      const response = await fetchWithTimeout(
+        url,
+        {
+          method: method.toUpperCase(),
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'wedding-scheduler-cron/1.0',
+            'X-Scheduler-Timestamp': timestamp,
+            'X-Scheduler-Signature': `sha256=${digest}`,
+          },
+        },
+        20000
+      );
+
+      const bodyText = await response.text();
+      if (!response.ok) {
+        const retryable = isRetryableSchedulerStatus(response.status);
+        lastError = new Error(
+          `Scheduler call ${method} ${path} failed: HTTP ${response.status} - ${bodyText.slice(0, 500)}`
+        );
+        lastError.retryable = retryable;
+        if (attempt < SCHEDULER_FETCH_ATTEMPTS && retryable) {
+          await sleep(retryDelayMs(attempt));
+          continue;
+        }
+        throw lastError;
+      }
+
+      // Responses are JSON; fall back to raw text if parsing fails.
+      try {
+        return { path, status: response.status, attempts: attempt, body: JSON.parse(bodyText) };
+      } catch (_parseErr) {
+        return { path, status: response.status, attempts: attempt, body: bodyText };
+      }
+    } catch (error) {
+      lastError = error;
+      if (error?.retryable === false) {
+        throw error;
+      }
+      if (attempt < SCHEDULER_FETCH_ATTEMPTS) {
+        await sleep(retryDelayMs(attempt));
+        continue;
+      }
+    }
+  }
+
+  throw new Error(
+    `Scheduler call ${method} ${path} failed after ${SCHEDULER_FETCH_ATTEMPTS} attempts: ${
+      lastError?.message || 'unknown error'
+    }`
   );
-
-  const bodyText = await response.text();
-  if (!response.ok) {
-    throw new Error(
-      `Scheduler call ${method} ${path} failed: HTTP ${response.status} — ${bodyText.slice(0, 500)}`
-    );
-  }
-
-  // Responses are JSON; fall back to raw text if parsing fails.
-  try {
-    return { path, status: response.status, body: JSON.parse(bodyText) };
-  } catch (_parseErr) {
-    return { path, status: response.status, body: bodyText };
-  }
 }
 
 // ─── Individual job wrappers ────────────────────────────────────────────────
