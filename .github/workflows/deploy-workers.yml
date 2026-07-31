@@ -97,20 +97,31 @@ jobs:
           delay_seconds="${WRANGLER_RETRY_DELAY_SECONDS:-10}"
 
           while true; do
+            stdout_file="$(mktemp)"
+            stderr_file="$(mktemp)"
             if [ "${1:-}" = "secret" ] && [ "${2:-}" = "put" ]; then
-              printf '%s' "${secret_value}" | npx --yes "wrangler@${WRANGLER_VERSION}" "$@"
+              printf '%s' "${secret_value}" | npx --yes "wrangler@${WRANGLER_VERSION}" "$@" >"${stdout_file}" 2>"${stderr_file}"
             else
-              npx --yes "wrangler@${WRANGLER_VERSION}" "$@"
+              npx --yes "wrangler@${WRANGLER_VERSION}" "$@" >"${stdout_file}" 2>"${stderr_file}"
             fi
             status=$?
             if [ "${status}" -eq 0 ]; then
+              cat "${stdout_file}"
+              cat "${stderr_file}" >&2
+              rm -f "${stdout_file}" "${stderr_file}"
               exit 0
             fi
             if [ "${attempt}" -ge "${max_attempts}" ]; then
+              cat "${stdout_file}" >&2
+              cat "${stderr_file}" >&2
+              rm -f "${stdout_file}" "${stderr_file}"
               exit "${status}"
             fi
             attempt=$((attempt + 1))
-            echo "Wrangler command failed with ${status}; retrying ${attempt}/${max_attempts} after ${delay_seconds}s."
+            cat "${stdout_file}" >&2
+            cat "${stderr_file}" >&2
+            rm -f "${stdout_file}" "${stderr_file}"
+            echo "Wrangler command failed with ${status}; retrying ${attempt}/${max_attempts} after ${delay_seconds}s." >&2
             sleep "${delay_seconds}"
             delay_seconds=$((delay_seconds * 2))
           done
