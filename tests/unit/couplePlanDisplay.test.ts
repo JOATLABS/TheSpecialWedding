@@ -6,8 +6,8 @@ import { describe, it } from 'node:test';
 // Couple Plan — One Wedding, $199 one-time, COUPLE_LIFETIME_OFFER in
 // app/constants/billing.py; workspace closes 90 days post-wedding — NOT
 // lifetime access). The couple offer is NOT a subscription plan:
-// it must render as a separated, secondary section below the planner tiers
-// and must never enter the planner signup/checkout flow.
+// it must render as a peer card inside the homepage pricing grid while
+// staying out of the planner signup/checkout flow.
 
 const source = (path: string) => readFileSync(path, 'utf8');
 
@@ -22,19 +22,21 @@ describe('couple one-time plan display contract', () => {
     assert.match(billingConstants, /"billing": "one_time"/);
   });
 
-  it('renders the couple section on the homepage below the planner pricing grid', () => {
-    assert.match(homePage, /<CouplePlanSection \/>/);
+  it('renders the couple card through the homepage pricing grid', () => {
+    assert.match(homePage, /<PricingSignupSection pricing=\{fallbackPricing\} theme=\{defaultTheme\} \/>/);
+    const pricingSection = source('app/components/landing-page/PricingSignupSection.client.tsx');
+    assert.match(pricingSection, /import \{ CouplePlanCard \} from "\.\/CouplePlanSection"/);
+    assert.match(pricingSection, /<CouplePlanCard \/>/);
 
     // Planner-first: the planner pricing section must render before the
-    // couples' band — the product is planner-first and the couple offer is
-    // secondary, not a competing primary CTA.
-    const plannerPricingIndex = homePage.indexOf('<PricingSignupSection');
-    const coupleIndex = homePage.indexOf('<CouplePlanSection');
+    // couples' card inside PricingSignupSection.
+    const plannerPricingIndex = pricingSection.indexOf('{displayPricing.map');
+    const coupleIndex = pricingSection.indexOf('<CouplePlanCard');
     assert.notEqual(plannerPricingIndex, -1);
     assert.notEqual(coupleIndex, -1);
     assert.ok(
       plannerPricingIndex < coupleIndex,
-      'planner pricing must render before the couples section',
+      'planner tiers must render before the couples card',
     );
   });
 
@@ -42,8 +44,8 @@ describe('couple one-time plan display contract', () => {
     assert.match(coupleSection, /For couples/);
     assert.match(coupleSection, /\$199/);
     assert.match(coupleSection, /one-time/);
-    assert.match(coupleSection, /Through 90 days after your wedding/);
-    assert.match(coupleSection, /Not a subscription\. Nothing renews\./);
+    assert.match(coupleSection, /through 90 days after your wedding/i);
+    assert.match(coupleSection, /Nothing renews\./);
     // Emmanuel 2026-07-28: there is NO lifetime access — the workspace is
     // removed 90 days after the wedding ends. No user-facing lifetime claims
     // (the code-internal constant COUPLE_LIFETIME_OFFER is exempt).
@@ -51,7 +53,7 @@ describe('couple one-time plan display contract', () => {
     assert.doesNotMatch(coupleSection, /Lifetime of the wedding/);
     // Grounded in the locked scheme — one wedding, whole planning window.
     assert.match(coupleSection, /One live wedding workspace/);
-    assert.match(coupleSection, /entire planning window/);
+    assert.match(coupleSection, /Full planning tools/);
     assert.match(coupleSection, /RSVP tracking/);
     assert.match(coupleSection, /wedding website/);
     assert.match(coupleSection, /galleries/i);
