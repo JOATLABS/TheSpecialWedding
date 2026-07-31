@@ -25,6 +25,11 @@
 
 // Alert debounce interval (1 hour in milliseconds)
 const ALERT_DEBOUNCE_MS = 60 * 60 * 1000;
+const HEALTH_FETCH_ATTEMPTS = 3;
+const HEALTH_FETCH_RETRY_BASE_MS = 1500;
+const CONSECUTIVE_FAILURES_BEFORE_ALERT = 2;
+const HEALTH_CONSECUTIVE_FAILURES_KEY = 'consecutive_health_failures';
+const RETRYABLE_HEALTH_STATUS_CODES = new Set([408, 409, 425, 429, 500, 502, 503, 504, 520, 522, 523, 524]);
 
 /**
  * Fetch with timeout to prevent hanging requests
@@ -39,6 +44,18 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableHealthStatus(status) {
+  return RETRYABLE_HEALTH_STATUS_CODES.has(status);
+}
+
+function retryDelayMs(attempt) {
+  return HEALTH_FETCH_RETRY_BASE_MS * attempt;
+}
+
 const worker = {
   async scheduled(event, env, ctx) {
     console.log('Uptime check triggered');
@@ -48,22 +65,35 @@ const worker = {
       const wasDown = await getDowntimeState(env);
 
       if (!result.healthy) {
-        // Service is down
-        const shouldAlert = await shouldSendAlert(env);
-        if (shouldAlert) {
-          ctx.waitUntil(sendDowntimeAlert(env, result));
-          ctx.waitUntil(recordAlertSent(env));
+        const consecutiveFailures = await incrementConsecutiveFailures(env);
+        const alertableFailure = consecutiveFailures >= CONSECUTIVE_FAILURES_BEFORE_ALERT;
+        result.consecutiveFailures = consecutiveFailures;
+
+        if (alertableFailure || wasDown) {
+          // Service is down
+          const shouldAlert = await shouldSendAlert(env);
+          if (shouldAlert) {
+            ctx.waitUntil(sendDowntimeAlert(env, result));
+            ctx.waitUntil(recordAlertSent(env));
+          } else {
+            console.log('Alert debounced - already sent within the last hour');
+          }
+          // Mark service as down
+          ctx.waitUntil(setDowntimeState(env, true));
         } else {
-          console.log('Alert debounced - already sent within the last hour');
+          console.warn(
+            `Health check failed ${consecutiveFailures}/${CONSECUTIVE_FAILURES_BEFORE_ALERT}; suppressing transient alert`
+          );
         }
-        // Mark service as down
-        ctx.waitUntil(setDowntimeState(env, true));
-      } else if (wasDown) {
-        // Service recovered - send recovery notification
-        console.log('Service recovered from downtime');
-        ctx.waitUntil(sendRecoveryAlert(env, result));
-        ctx.waitUntil(setDowntimeState(env, false));
-        ctx.waitUntil(clearAlertTimestamp(env));
+      } else {
+        ctx.waitUntil(clearConsecutiveFailures(env));
+        if (wasDown) {
+          // Service recovered - send recovery notification
+          console.log('Service recovered from downtime');
+          ctx.waitUntil(sendRecoveryAlert(env, result));
+          ctx.waitUntil(setDowntimeState(env, false));
+          ctx.waitUntil(clearAlertTimestamp(env));
+        }
       }
 
       console.log('Uptime check completed:', result);
@@ -94,9 +124,11 @@ const worker = {
         // Return current downtime state
         const isDown = await getDowntimeState(env);
         const lastAlert = await env.UPTIME_KV?.get('last_downtime_alert');
+        const consecutiveFailures = await getConsecutiveFailureCount(env);
         return new Response(JSON.stringify({
           service_down: isDown,
-          last_alert: lastAlert ? new Date(parseInt(lastAlert)).toISOString() : null
+          last_alert: lastAlert ? new Date(parseInt(lastAlert)).toISOString() : null,
+          consecutive_failures: consecutiveFailures
         }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
@@ -124,45 +156,62 @@ export default worker;
  */
 async function checkHealth(env) {
   const startTime = Date.now();
+  const url = `${env.NEXT_PUBLIC_API_BASE_URL}/health/`;
 
-  try {
-    // Hit `/health/` with trailing slash explicitly. The bare `/health`
-    // path responds 307 → `/health/`, and the redirect chain on prod
-    // currently bounces through an http hop. Hitting the canonical URL
-    // directly skips the redirect dance entirely.
-    const response = await fetchWithTimeout(`${env.NEXT_PUBLIC_API_BASE_URL}/health/`, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' }
-    }, 15000); // 15 second timeout
+  let lastResult;
+  for (let attempt = 1; attempt <= HEALTH_FETCH_ATTEMPTS; attempt += 1) {
+    try {
+      // Hit `/health/` with trailing slash explicitly. The bare `/health`
+      // path responds 307 → `/health/`, and the redirect chain on prod
+      // currently bounces through an http hop. Hitting the canonical URL
+      // directly skips the redirect dance entirely.
+      const response = await fetchWithTimeout(url, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      }, 15000); // 15 second timeout
 
-    const responseTime = Date.now() - startTime;
-    const isHealthy = response.ok;
+      const responseTime = Date.now() - startTime;
+      const isHealthy = response.ok;
+      lastResult = {
+        healthy: isHealthy,
+        status: response.status,
+        statusText: response.statusText,
+        responseTime,
+        attempts: attempt,
+        timestamp: new Date().toISOString()
+      };
 
-    if (!isHealthy) {
+      if (isHealthy) {
+        console.log(`Backend healthy - Response time: ${responseTime}ms after ${attempt} attempt(s)`);
+        return lastResult;
+      }
+
       console.error(`Backend health check failed: ${response.status}`);
-    } else {
-      console.log(`Backend healthy - Response time: ${responseTime}ms`);
+      if (attempt < HEALTH_FETCH_ATTEMPTS && isRetryableHealthStatus(response.status)) {
+        await sleep(retryDelayMs(attempt));
+        continue;
+      }
+      return lastResult;
+
+    } catch (error) {
+      const responseTime = Date.now() - startTime;
+      console.error('Health check error:', error.message);
+      lastResult = {
+        healthy: false,
+        error: error.message,
+        responseTime,
+        attempts: attempt,
+        timestamp: new Date().toISOString()
+      };
+
+      if (attempt < HEALTH_FETCH_ATTEMPTS) {
+        await sleep(retryDelayMs(attempt));
+        continue;
+      }
     }
-
-    return {
-      healthy: isHealthy,
-      status: response.status,
-      statusText: response.statusText,
-      responseTime,
-      timestamp: new Date().toISOString()
-    };
-
-  } catch (error) {
-    const responseTime = Date.now() - startTime;
-    console.error('Health check error:', error.message);
-
-    return {
-      healthy: false,
-      error: error.message,
-      responseTime,
-      timestamp: new Date().toISOString()
-    };
   }
+
+  return lastResult;
 }
 
 /**
@@ -209,6 +258,44 @@ async function clearAlertTimestamp(env) {
     await env.UPTIME_KV.delete('last_downtime_alert');
   } catch (error) {
     console.error('Error clearing alert timestamp:', error);
+  }
+}
+
+/**
+ * KV Helper: Track consecutive health failures so one edge timeout does not page.
+ */
+async function getConsecutiveFailureCount(env) {
+  if (!env.UPTIME_KV) return 0;
+
+  try {
+    const value = await env.UPTIME_KV.get(HEALTH_CONSECUTIVE_FAILURES_KEY);
+    return value ? parseInt(value, 10) || 0 : 0;
+  } catch (error) {
+    console.error('Error getting consecutive failure count:', error);
+    return 0;
+  }
+}
+
+async function incrementConsecutiveFailures(env) {
+  if (!env.UPTIME_KV) return CONSECUTIVE_FAILURES_BEFORE_ALERT;
+
+  try {
+    const nextCount = (await getConsecutiveFailureCount(env)) + 1;
+    await env.UPTIME_KV.put(HEALTH_CONSECUTIVE_FAILURES_KEY, nextCount.toString());
+    return nextCount;
+  } catch (error) {
+    console.error('Error incrementing consecutive failure count:', error);
+    return CONSECUTIVE_FAILURES_BEFORE_ALERT;
+  }
+}
+
+async function clearConsecutiveFailures(env) {
+  if (!env.UPTIME_KV) return;
+
+  try {
+    await env.UPTIME_KV.delete(HEALTH_CONSECUTIVE_FAILURES_KEY);
+  } catch (error) {
+    console.error('Error clearing consecutive failure count:', error);
   }
 }
 
