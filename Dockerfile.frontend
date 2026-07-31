@@ -68,8 +68,11 @@ USER nextjs
 
 EXPOSE 3000
 
-# Health check for K8s (Next.js serves on /)
+# Container liveness probe. Must stay host-agnostic: proxy.ts returns 404 for
+# any Host that is not a platform domain, so probing `/` with Host `localhost`
+# marks a healthy container unhealthy (prod incident 2026-07-31). /api/health
+# is excluded from the proxy matcher and has no backend dependency.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
 CMD ["npm", "start"]
