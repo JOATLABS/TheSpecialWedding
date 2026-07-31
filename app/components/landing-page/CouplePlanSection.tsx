@@ -25,12 +25,9 @@ const COUPLE_CONTACT_FALLBACK_HREF =
   "mailto:hello@thespecialwedding.io?subject=Couple%20Plan%20(%24199%20one-time)";
 
 const COUPLE_FEATURES = [
-  "One live wedding workspace",
-  "Full planning tools",
-  "Guest list, plus-ones & RSVP tracking",
-  "Your own wedding website",
-  "Photo galleries & guest memories",
-  "Export your wedding data anytime",
+  "Planning tools, guests & RSVPs",
+  "Wedding website & galleries",
+  "Export your wedding data",
   "Active through 90 days after your wedding",
 ];
 
@@ -44,7 +41,7 @@ export function CouplePlanCard() {
   return (
     <article
       id="for-couples"
-      className="relative flex h-full min-h-full scroll-mt-28 flex-col rounded-xl border border-wedding-rose/40 bg-white/[0.04] p-4 sm:rounded-2xl sm:p-6 lg:min-h-[36rem]"
+      className="relative flex h-full scroll-mt-28 flex-col rounded-xl border border-wedding-rose/40 bg-white/[0.04] p-4 sm:rounded-2xl sm:p-6"
     >
       <span className="absolute right-4 top-4 rounded-full border border-wedding-rose/50 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-rose-200 sm:right-6 sm:top-6">
         For couples
@@ -55,7 +52,7 @@ export function CouplePlanCard() {
         <span className="pb-1 text-sm text-slate-400">one-time</span>
       </div>
       <p className="mt-2 text-xs text-slate-400">
-        One wedding, no planner subscription. Nothing renews.
+        One wedding workspace. One payment. No subscription or renewal.
       </p>
       <ul className="mt-4 grid flex-1 grid-cols-2 gap-x-4 gap-y-2 text-[13px] leading-5 text-slate-200 sm:mt-6 sm:block sm:space-y-3 sm:text-sm sm:leading-normal">
         {COUPLE_FEATURES.map((feature) => (

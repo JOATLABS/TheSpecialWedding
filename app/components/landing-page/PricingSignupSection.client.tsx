@@ -155,7 +155,7 @@ export function PricingSignupSection({ pricing, theme }: Props) {
           {displayPricing.map((tier) => (
             <article
               key={tier.id}
-              className={`relative flex h-full min-h-full flex-col rounded-xl border p-4 sm:rounded-2xl sm:p-6 lg:min-h-[36rem] ${
+              className={`relative flex h-full flex-col rounded-xl border p-4 sm:rounded-2xl sm:p-6 ${
                 tier.popular ? "border-rose-300/60 bg-white/[0.08]" : "border-white/10 bg-white/[0.04]"
               }`}
             >

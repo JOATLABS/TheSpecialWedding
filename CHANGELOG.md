@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-07-31 — Couple Plan is a compact peer in the pricing grid
+
+- Kept Couple Plan beside the two planner tiers, removed the forced 36rem card height, and compressed its seven overlapping feature lines into four decision-ready points. The card retains the source-of-truth details — one wedding workspace, $199 one-time, no renewal, data export, and access through 90 days after the wedding — without making the pricing row unnecessarily tall. Fixed the stale source-contract assertions that still required the retired standalone couple section and old copy, and added source and rendered-DOM guards for in-grid order, compact height, and feature count.
+
 ## 2026-07-25 — Walkthroughs name the screen before describing it; captions stop covering the product
 
 - **Captions are no longer forced on.** Review found the burned-in-looking subtitles were covering the product UI the walkthroughs exist to show. They were never rendered into the video — the Remotion composition draws no caption overlay — they came from the `default` attribute on the WebVTT `<track>` in `DemoVideoModal`, which tells the browser to switch that track on. Dropped `default` only: the sidecar track still ships and stays selectable from the player's own captions control, so nothing is lost for viewers who need it. One change covers every surface, because the landing hero, showcase, product stories, and `/features` all play through the same modal.
