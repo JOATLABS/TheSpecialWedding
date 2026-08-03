@@ -87,7 +87,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
-    "@playwright/test": "^1.61.1",
+    "@playwright/test": "^1.62.1",
     "@remotion/captions": "4.0.484",
     "@remotion/cli": "4.0.484",
     "@remotion/media": "4.0.484",
@@ -109,7 +109,7 @@
     "jsdom": "^29.1.1",
     "playwright": "^1.59.1",
     "postcss": "^8.5.14",
-    "puppeteer": "^25.2.1",
+    "puppeteer": "^25.4.0",
     "remotion": "4.0.484",
     "tailwindcss": "^3.4.19",
     "tsx": "^4.22.4",
