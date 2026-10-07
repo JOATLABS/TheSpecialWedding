@@ -130,7 +130,7 @@ jobs:
 
       - name: Upload narration preview instead of a PR (render disabled)
         if: ${{ github.event.inputs.dry_run != 'true' && steps.changes.outputs.changed == 'true' && github.event.inputs.render != 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: narration-preview-${{ github.run_number }}
           path: output/demo-videos/narration/
