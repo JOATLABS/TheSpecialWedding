@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-12 — Remove committed credentials and protect rewritten history
+
+- Scrubbed exposed credentials from Git history, removed the committed `.env` and obsolete alerts containing copied keys, and removed the corresponding detect-secrets baseline exemptions.
+- The Stripe signup driver now requires environment-provided credentials and no longer prints fragments of its key. Added a full-history credential scan for pushes and pull requests, with narrowly scoped exceptions for reviewed placeholders and baseline hashes.
+- Existing clones must be replaced with fresh clones. GitHub-controlled pull-request refs and cached historical views require GitHub Support cleanup; see `docs/security/REPOSITORY_SECRET_HYGIENE.md`.
+
 ## 2026-07-31 — Couple Plan is a compact peer in the pricing grid
 
 - Kept Couple Plan beside the two planner tiers, removed the forced 36rem card height, and compressed its seven overlapping feature lines into four decision-ready points. The card retains the source-of-truth details — one wedding workspace, $199 one-time, no renewal, data export, and access through 90 days after the wedding — without making the pricing row unnecessarily tall. Fixed the stale source-contract assertions that still required the retired standalone couple section and old copy, and added source and rendered-DOM guards for in-grid order, compact height, and feature count.

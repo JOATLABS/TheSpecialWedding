@@ -1,0 +1,96 @@
+title = "WeddingWebApp credential protection"
+[extend]
+useDefault = true
+
+# Rule-level AND conditions require both the path and reviewed literal.
+# Global path allowlists can skip entire files before checking the content.
+
+[[rules]]
+id = "generic-api-key"
+
+  [[rules.allowlists]]
+  description = "detect-secrets hash records"
+  condition = "AND"
+  regexTarget = "line"
+  paths = ['''(^|/)\.secrets\.baseline$''']
+  regexes = ['''^\s*"hashed_secret": "[0-9a-f]{40}",?\s*$''']
+
+  [[rules.allowlists]]
+  description = "Reviewed literal documentation placeholder or isolated test fixture"
+  condition = "AND"
+  regexTarget = "secret"
+  paths = ['''^tests/backend/test_guest_memories_service\.py$''']
+  regexes = ['''^test\-secret\-key\-with\-sufficient\-length\-123456$''']
+
+  [[rules.allowlists]]
+  description = "Reviewed literal documentation placeholder or isolated test fixture"
+  condition = "AND"
+  regexTarget = "secret"
+  paths = ['''^docs/testing/BROWSER_E2E_KNOWN_ISSUES\.md$''']
+  regexes = ['''^eyJhbGciOiJIUzI1NiIs\.\.\.$''']
+
+  [[rules.allowlists]]
+  description = "Reviewed literal documentation placeholder or isolated test fixture"
+  condition = "AND"
+  regexTarget = "secret"
+  paths = ['''^docs/PAYMENT_COLLECTION_USAGE\.md$''', '''^docs/guides/PAYMENT_COLLECTION_USAGE\.md$''']
+  regexes = ['''^pi_abc123\.\.\._secret_xyz$''']
+
+  [[rules.allowlists]]
+  description = "Reviewed literal documentation placeholder or isolated test fixture"
+  condition = "AND"
+  regexTarget = "secret"
+  paths = ['''^ARCHITECTURE_REVIEW\.md$''', '''^docs/plans/vendor_ads/API_DOCUMENTATION\.md$''', '''^docs/platform\-evaluation/ARCHITECTURE_REVIEW\.md$''']
+  regexes = ['''^eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.\.\.$''']
+
+[[rules]]
+id = "curl-auth-header"
+
+  [[rules.allowlists]]
+  description = "Reviewed literal documentation placeholder or isolated test fixture"
+  condition = "AND"
+  regexTarget = "secret"
+  paths = ['''^ARCHITECTURE_REVIEW\.md$''', '''^docs/plans/vendor_ads/API_DOCUMENTATION\.md$''', '''^docs/platform\-evaluation/ARCHITECTURE_REVIEW\.md$''']
+  regexes = ['''^eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.\.\.$''']
+
+  [[rules.allowlists]]
+  description = "Reviewed literal documentation placeholder or isolated test fixture"
+  condition = "AND"
+  regexTarget = "secret"
+  paths = ['''^docs/qa/QA_FIX_GUIDE\.md$''']
+  regexes = ['''^YOUR_CRON_SECRET$''']
+
+  [[rules.allowlists]]
+  description = "Reviewed literal documentation placeholder or isolated test fixture"
+  condition = "AND"
+  regexTarget = "secret"
+  paths = ['''^app/api/scheduler_jobs\.py$''']
+  regexes = ['''^YOUR_SCHEDULER_API_KEY$''']
+
+  [[rules.allowlists]]
+  description = "Reviewed literal documentation placeholder or isolated test fixture"
+  condition = "AND"
+  regexTarget = "secret"
+  paths = ['''^ZERO_COST_MONITORING_SETUP\.md$''']
+  regexes = ['''^YOUR_BACKUP_SECRET$''']
+
+  [[rules.allowlists]]
+  description = "Reviewed literal documentation placeholder or isolated test fixture"
+  condition = "AND"
+  regexTarget = "secret"
+  paths = ['''^ZERO_COST_MONITORING_SETUP\.md$''']
+  regexes = ['''^YOUR_ADMIN_JWT$''']
+
+  [[rules.allowlists]]
+  description = "Reviewed literal documentation placeholder or isolated test fixture"
+  condition = "AND"
+  regexTarget = "secret"
+  paths = ['''^ZERO_COST_MONITORING_SETUP\.md$''']
+  regexes = ['''^YOUR_RESEND_KEY$''']
+
+  [[rules.allowlists]]
+  description = "Reviewed literal documentation placeholder or isolated test fixture"
+  condition = "AND"
+  regexTarget = "secret"
+  paths = ['''^app/docs/features/PAYMENT_TRACKING\.md$''', '''^docs/PAYMENT_TRACKING\.md$''', '''^docs/STRIPE_INTEGRATION_GUIDE\.md$''', '''^docs/features/PAYMENT_TRACKING\.md$''', '''^docs/guides/PAYMENT_TRACKING\.md$''', '''^docs/guides/STRIPE_INTEGRATION_GUIDE\.md$''']
+  regexes = ['''^YOUR_TOKEN$''']

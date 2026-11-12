@@ -31,16 +31,10 @@ import stripe
 # Test planner credentials from .env
 TEST_EMAIL = os.getenv("TEST_PLANNER_EMAIL", "test.verification@example.com")
 TEST_PASSWORD = os.getenv("TEST_PLANNER_PASSWORD", "testPass123!")
-STRIPE_SECRET_KEY = os.getenv(
-    "STRIPE_SECRET_KEY",
-    "REDACTED",
-)
-STRIPE_WEBHOOK_SECRET = os.getenv(
-    "STRIPE_WEBHOOK_SECRET",
-    "REDACTED",
-)
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 ROOT_ADMIN_EMAIL = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
-ROOT_ADMIN_PASSWORD = os.getenv("ROOT_ADMIN_PASSWORD", "REDACTED")
+ROOT_ADMIN_PASSWORD = os.getenv("ROOT_ADMIN_PASSWORD", "")
 
 # Stripe test card
 TEST_CARD = "4242424242424242"
@@ -84,6 +78,15 @@ warnings = []
 async def run_tests(api_url: str):
     """Run the full signup flow test suite."""
 
+    required = {
+        "STRIPE_SECRET_KEY": STRIPE_SECRET_KEY,
+        "STRIPE_WEBHOOK_SECRET": STRIPE_WEBHOOK_SECRET,
+        "ROOT_ADMIN_PASSWORD": ROOT_ADMIN_PASSWORD,
+    }
+    missing = [name for name, value in required.items() if not value.strip()]
+    if missing:
+        raise SystemExit("Set required environment variables: " + ", ".join(missing))
+
     stripe.api_key = STRIPE_SECRET_KEY
 
     header("=" * 60)
@@ -91,7 +94,7 @@ async def run_tests(api_url: str):
     header("=" * 60)
     info(f"API URL: {api_url}")
     info(f"Test Email: {TEST_EMAIL}")
-    info(f"Stripe Key: {STRIPE_SECRET_KEY[:12]}...{STRIPE_SECRET_KEY[-4:]}")
+    info("Stripe credentials loaded from the environment")
 
     async with httpx.AsyncClient(base_url=api_url, timeout=30.0) as client:
         # ====================================================================

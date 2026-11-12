@@ -12,6 +12,19 @@ __pycache__
 **/.claude/settings.local.json
 # Environment variables
 .env
+.env.*
+!.env.example
+!.env.*.example
+!.env.template
+!.env.*.template
+# Local credential exports and private signing keys
+client_secret_*.json
+credentials.json
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
 venv/
 app/api/__pycache__/health.cpython-311.pyc
 app/__pycache__/main.cpython-311.pyc
