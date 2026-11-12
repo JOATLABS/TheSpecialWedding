@@ -29,7 +29,7 @@ urllib3>=2.5.0
 aiohttp>=3.12.14
 starlette>=0.47.2
 pillow>=11.3.0
-protobuf>=6.31.1
+protobuf>=7.36.2
 stripe>=15.1.0
 psutil>=5.9.0
 # Google Calendar Integration
